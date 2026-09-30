@@ -7,6 +7,9 @@ import { create } from 'zustand';
 export interface FirstSyncQuestion {
   readonly phoneLikes: number;
   readonly phonePlaylists: number;
+  /** null while the first account-library read is unavailable. */
+  readonly accountLikes: number | null;
+  readonly accountPlaylists: number | null;
 }
 
 interface SyncState {

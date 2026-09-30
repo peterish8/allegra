@@ -48,6 +48,8 @@ export function parseSongRef(value: string): { readonly source: SongSource; read
 
 /** An Allegra catalog row (`UnifiedSong`) -> its ref. */
 export function fromAllegraSong(song: { readonly id: string; readonly source: string }): SongRef | null {
+  const embedded = parseSongRef(song.id);
+  if (embedded && embedded.source === song.source.toLowerCase()) return `${embedded.source}:${embedded.id}`;
   return songRef(song.source, song.id);
 }
 

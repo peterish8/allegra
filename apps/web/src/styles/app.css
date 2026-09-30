@@ -5134,6 +5134,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 /* Only the phone lyrics view shows these; the panel's own Karaoke/Translate chrome is dropped
  * inside the player, so the dock carries them (PlayerPanel.tsx). */
 .np-action--tool { display: none; }
+.np-actions > .connect-control-wrap { display: inline-flex; }
 .mobile-lyrics-chip { display: none; }
 .player-sidepanel[hidden] { display: none; }
 

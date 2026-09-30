@@ -12,7 +12,7 @@
     "mock": "node mocks/server.mjs",
     "contract-test": "node tests/contract/contract-smoke.mjs",
     "infra:test": "node --test tests/infra/infra-files.test.mjs",
-    "convex:test": "node --import tsx --test \"tests/convex/**/*.test.ts\"",
+    "convex:test": "node --import tsx --test tests/convex/authRedirect.test.ts && vitest run convex/connect.test.ts",
     "sync:shared": "node scripts/sync-shared.mjs",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
@@ -26,6 +26,8 @@
   "dependencies": {
     "@auth/core": "^0.41.3",
     "@convex-dev/auth": "^0.0.95",
+    "@convex-dev/presence": "^0.4.0",
+    "@convex-dev/rate-limiter": "^0.4.0",
     "convex": "^1.46.0"
   },
   "workspaces": [
@@ -34,6 +36,9 @@
     "packages/*"
   ],
   "devDependencies": {
-    "@playwright/test": "^1.63.0"
+    "@edge-runtime/vm": "^5.0.0",
+    "@playwright/test": "^1.63.0",
+    "convex-test": "^0.0.60",
+    "vitest": "^5.0.2"
   }
 }

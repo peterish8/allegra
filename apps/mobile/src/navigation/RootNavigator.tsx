@@ -28,6 +28,8 @@ import { useStreamSession } from '../hooks/useStreamSession';
 import { useCoverArtBackfill } from '../hooks/useCoverArtBackfill';
 import { useDeepLinks } from '../hooks/useDeepLinks';
 import { useWidgetLinks, useWidgetSync } from '../widget/useWidgetSync';
+import ConnectDeviceSheet from '../components/connect/ConnectDeviceSheet';
+import ConnectMiniPlayer from '../components/connect/ConnectMiniPlayer';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -111,10 +113,12 @@ export const RootNavigator: React.FC = () => {
         
         {/* Mini player pill above the tab bar, on every screen but Luvs. */}
         {showMiniPlayer && <MiniPlayer />}
+        {showMiniPlayer && <ConnectMiniPlayer />}
         {/* After the pill, so the ••• menu opens over it. */}
         <MoreMenuHost />
         {/* Listen together: runs the room sync, shows join requests anywhere. */}
         <ListenTogetherHost />
+        <ConnectDeviceSheet />
         <BackgroundDownloader />
         {/* Hold the mic, say a song: the answer appears here, over everything. */}
         <VoiceSearchCard />

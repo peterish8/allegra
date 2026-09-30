@@ -3,7 +3,7 @@ import { Alert } from 'react-native';
 import { runOnJS, useAnimatedReaction } from 'react-native-reanimated';
 import { usePlayer } from '../contexts/PlayerContext';
 import { diag } from '../utils/diag';
-import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, takeResumePosition } from '../store/playerStore';
+import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeResumePosition } from '../store/playerStore';
 import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
 import { useSongsStore } from '../store/songsStore';
 import { useArtHistoryStore } from '../store/artHistoryStore';
@@ -65,7 +65,8 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
           // unconditionally here fought the user's own pause.
           if (!didAutoPlayRef.current) {
             didAutoPlayRef.current = true;
-            if (!usePlayerStore.getState().isPlaying) requestPlayback(true);
+            if (!shouldAutoPlayLoadedSong(targetSongId)) requestPlayback(false);
+            else if (!usePlayerStore.getState().isPlaying) requestPlayback(true);
           }
         } else {
           if (!beginAudioLoad(targetSongId)) return;
@@ -81,7 +82,7 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
           const resumeAt = takeResumePosition(targetSongId);
           if (resumeAt !== null) playerControls.seekTo(resumeAt);
           didAutoPlayRef.current = true;
-          requestPlayback(true);
+          requestPlayback(shouldAutoPlayLoadedSong(targetSongId));
           diag('audio', `player loaded "${songToPlay.title}", play requested`);
           endAudioLoad(targetSongId);
         }

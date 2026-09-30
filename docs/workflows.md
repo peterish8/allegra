@@ -13,6 +13,33 @@ development — so there is no CORS setup and no `localhost` vs `127.0.0.1` trap
 Nothing needs credentials to run. With no Convex the app is guest-only and user data is in memory.
 Karaoke runs on the listener's device, so it has no API or cloud configuration.
 
+### Connect and account sync
+
+Connect, account library sync, and cross-device recommendations require Convex Auth and the same
+Convex deployment in the web, API, and phone environments. Set `NEXT_PUBLIC_CONVEX_URL` in
+`apps/web/.env.local`, and `CONVEX_URL` plus `CONVEX_SERVER_SECRET` in `apps/api/.env`. Set the
+mobile app's Convex URL to the same development deployment before building it. Deploy additive
+Convex changes to the selected **development** deployment with `npx convex dev --once`; check the
+deployment name printed by the CLI first. The production deployment is a separate owner-controlled
+step.
+
+The two-tab harness tests the complete web command path without a phone:
+
+1. Start the API and web app, sign in to the same account in two tabs, and leave tab A on the normal
+   URL. Open tab B at `http://localhost:5173/?connectDevice=b` (development only).
+2. Start a song in either tab. Open **Playback devices** and transfer to the other tab.
+3. Check pause/play, seek, next/previous, volume, shuffle, repeat, queueing a song while the other
+   tab is active, and transfer back. If a fresh tab blocks autoplay, its picker must offer **Tap to
+   play here** and continue at the transferred position.
+4. Change a like and a playlist item in one tab; the other tab should refresh from the Convex
+   library revision. The `<audio>` element remains the same DOM node across route changes.
+
+For phone coverage, sign in on a dev Android build with the same Google account. Transfer in both
+directions, then test web-to-phone song selection and phone-to-web library edits. Like a streamed song
+without downloading it; toggle a like and edit a playlist while offline, reconnect, and confirm the
+outbox catches up. Listen to a few tracks, then confirm **Quick picks for you** uses that account's
+listening history. Confirm downloads remain available offline and are not removed by library sync.
+
 | Want | Add to `apps/api/.env` |
 |---|---|
 | Durable user data + Google sign-in | `CONVEX_URL`, `CONVEX_SERVER_SECRET` (+ `NEXT_PUBLIC_CONVEX_URL` in `apps/web/.env.local`) — see [auth-convex-google.md](./auth-convex-google.md) |

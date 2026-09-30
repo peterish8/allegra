@@ -27,7 +27,7 @@ import { Radius, Signal } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
 import appConfig from '../../../app.json';
 import { FEEDBACK_MAX, feedbackProblem, sendFeedback } from '../../services/feedback';
-import { fetchLatestBuild, LatestBuild, LATEST_APK_URL, releasedAgo } from '../../services/appUpdate';
+import UpdatePanel from './UpdatePanel';
 
 const WEBSITE = 'https://prathick.vercel.app';
 const INSTAGRAM = 'yourboy_prats';
@@ -62,14 +62,12 @@ const LinkRow: React.FC<{ icon: IconName; label: string; value: string; onPress:
 );
 
 type SendState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'error'; message: string };
-type UpdateState = { kind: 'idle' } | { kind: 'checking' } | { kind: 'found'; build: LatestBuild } | { kind: 'error' };
 
 const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visible, onClose }) => {
   const insets = useSafeAreaInsets();
   const [message, setMessage] = useState('');
   const [contact, setContact] = useState('');
   const [send, setSend] = useState<SendState>({ kind: 'idle' });
-  const [update, setUpdate] = useState<UpdateState>({ kind: 'idle' });
   const [copied, setCopied] = useState(false);
 
   const open = useCallback((url: string) => {
@@ -108,17 +106,6 @@ const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visib
       setSend({ kind: 'error', message: e instanceof Error ? e.message : 'Could not send it. Try again in a bit.' });
     }
   }, [message, contact]);
-
-  const checkUpdate = useCallback(async () => {
-    Haptics.selectionAsync().catch(() => {});
-    setUpdate({ kind: 'checking' });
-    try {
-      const build = await fetchLatestBuild();
-      setUpdate(build ? { kind: 'found', build } : { kind: 'error' });
-    } catch {
-      setUpdate({ kind: 'error' });
-    }
-  }, []);
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
@@ -195,33 +182,7 @@ const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visib
             </Panel>
 
             <Panel>
-              <Text style={styles.panelTitle}>Updates</Text>
-              <Text style={styles.body}>
-                {update.kind === 'found'
-                  ? `The newest build came out ${releasedAgo(update.build.publishedAt)}. Download it and open the file to update — your library stays.`
-                  : update.kind === 'error'
-                    ? 'Could not check right now. You can still download the newest build.'
-                    : `You are on ${appConfig.expo.version}. New features land as new builds.`}
-              </Text>
-              <View style={styles.buttons}>
-                {update.kind === 'found' || update.kind === 'error' ? (
-                  <Tactile
-                    onPress={() => open(update.kind === 'found' ? update.build.downloadUrl : LATEST_APK_URL)}
-                    pressScale={0.95}
-                    accessibilityRole="button"
-                    accessibilityLabel="Download the newest build"
-                    style={styles.primary}
-                  >
-                    <Ionicons name="arrow-down" size={16} color={Signal.waveInk} />
-                    <Text style={styles.primaryText}>Download update</Text>
-                  </Tactile>
-                ) : (
-                  <Tactile onPress={checkUpdate} disabled={update.kind === 'checking'} pressScale={0.95} accessibilityRole="button" accessibilityLabel="Check for updates" style={styles.glass}>
-                    {update.kind === 'checking' ? <ActivityIndicator size="small" color={Signal.ink} /> : <Ionicons name="refresh" size={16} color={Signal.ink} />}
-                    <Text style={styles.glassText}>{update.kind === 'checking' ? 'Checking' : 'Check for updates'}</Text>
-                  </Tactile>
-                )}
-              </View>
+              <UpdatePanel visible={visible} />
             </Panel>
 
             <Panel>
@@ -305,22 +266,9 @@ const styles = StyleSheet.create({
   sendRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
   status: { flex: 1, color: Signal.wave, fontSize: 13, fontWeight: '600' },
   statusError: { color: Signal.accentBright },
-  buttons: { flexDirection: 'row', marginTop: 14 },
   primary: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, paddingHorizontal: 18, borderRadius: Radius.pill, backgroundColor: Signal.wave },
   primaryText: { color: Signal.waveInk, fontSize: 15, fontWeight: '700' },
   dim: { opacity: 0.7 },
-  glass: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    height: 44,
-    paddingHorizontal: 18,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
-  },
-  glassText: { color: Signal.ink, fontSize: 15, fontWeight: '700' },
 });
 
 export default AboutSheet;

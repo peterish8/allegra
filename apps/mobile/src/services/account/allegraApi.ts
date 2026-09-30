@@ -4,6 +4,8 @@
  * Shapes follow docs/api-contract.md: `{ success, data, error? }`.
  */
 import type { LibraryChange, LibraryOp } from '@shared/library';
+import { fromAllegraSong, parseSongRef, type SongRef, type SongSnapshot } from '@shared/songRef';
+import type { UnifiedSong } from '../../types/song';
 
 import { fetchJson } from '../net/fetchWithTimeout';
 import { ALLEGRA_API_URL } from './config';
@@ -57,6 +59,8 @@ const send = async <T>(method: 'GET' | 'POST', path: string, token: string, body
     // an API that doesn't have this route yet (an older deployment): keep the change and retry.
     if (res.status >= 400 && res.status < 500 && ![401, 404, 408, 429].includes(res.status)) return { outcome: 'refused' };
     if (!res.ok) return { outcome: 'offline' };
+    // Listen signals deliberately return 204: no JSON envelope or body exists.
+    if (res.status === 204) return { outcome: 'sent', data: undefined as T };
     const json = (await res.json()) as Envelope<T>;
     return json.success && json.data !== undefined ? { outcome: 'sent', data: json.data } : { outcome: 'offline' };
   } catch {
@@ -84,12 +88,28 @@ export const getLibraryChanges = (token: string, since: number, limit = 200): Pr
   send<ChangesReply>('GET', `/api/me/library/changes?since=${Math.max(0, Math.floor(since))}&limit=${limit}`, token);
 
 /** A play, for Recently played and the taste that ranks Quick picks. `playedAt` for plays made offline. */
-export const postPlay = (token: string, play: { songId: string; playDuration: number; playedAt: string }): Promise<SendOutcome<unknown>> =>
+export interface PlayEventPayload {
+  readonly songId?: string;
+  readonly songRef: SongRef;
+  readonly song?: SongSnapshot;
+  readonly playDuration: number;
+  readonly playedAt: string;
+}
+
+export interface ListenSignalPayload {
+  readonly songId?: string;
+  readonly songRef: SongRef;
+  readonly song?: SongSnapshot;
+  readonly seconds: number;
+  readonly playedAt: string;
+}
+
+export const postPlay = (token: string, play: PlayEventPayload): Promise<SendOutcome<unknown>> =>
   send('POST', '/api/me/recently-played', token, play);
 
 /** How long a song was listened to: the stronger taste signal. */
-export const postListenSignal = (token: string, songId: string, seconds: number): Promise<SendOutcome<unknown>> =>
-  send('POST', '/api/me/taste/signal', token, { songId, seconds });
+export const postListenSignal = (token: string, signal: ListenSignalPayload): Promise<SendOutcome<unknown>> =>
+  send('POST', '/api/me/taste/signal', token, signal);
 
 /** Allegra catalog rows by Saavn id (for synced songs that arrived without their details). */
 export interface AllegraSong {
@@ -98,14 +118,45 @@ export interface AllegraSong {
   artist: string;
   album?: string;
   artwork: string;
+  /** Same-origin API proxy path; never an upstream provider URL. */
+  streamUrl: string;
   duration: number;
-  source: string;
+  source: 'Saavn' | 'Gaana';
 }
 
-/** The catalog's songs for these ids (unknown ids are left out), or null when the API could not be reached. */
-export const getAllegraSongs = async (token: string, ids: readonly string[]): Promise<AllegraSong[] | null> => {
-  if (ids.length === 0) return [];
-  const reply = await send<AllegraSong[]>('GET', `/api/songs?ids=${ids.map(encodeURIComponent).join(',')}`, token);
+/** Converts an account catalog row to the phone's playable shape, accepting only API proxy URLs. */
+export const toPlayableAllegraSong = (song: AllegraSong): UnifiedSong | null => {
+  if (song.source !== 'Saavn' && song.source !== 'Gaana') return null;
+  const ref = fromAllegraSong(song);
+  const parsedRef = ref ? parseSongRef(ref) : null;
+  if (!parsedRef || !song.id) return null;
+  const streamPath = /^\/api\/stream\/([^/?#]+)$/.exec(song.streamUrl);
+  if (!song.id || !streamPath) return null;
+  let decodedId: string;
+  try {
+    decodedId = decodeURIComponent(streamPath[1]);
+  } catch {
+    return null;
+  }
+  const expectedStreamId = parsedRef.source === 'gaana' ? ref : parsedRef.id;
+  if (decodedId !== expectedStreamId || decodedId === '.' || decodedId === '..' || /[\\/?#]/.test(decodedId)) return null;
+  const streamUrl = `${ALLEGRA_API_URL}${song.streamUrl}`;
+  return {
+    id: song.id,
+    title: song.title,
+    artist: song.artist,
+    highResArt: song.artwork,
+    downloadUrl: streamUrl,
+    streamUrl,
+    source: song.source,
+    duration: song.duration,
+  };
+};
+
+/** The catalog rows for provider ids or namespaced SongRefs (unknown rows omitted), or null offline. */
+export const getAllegraSongs = async (token: string, refsOrIds: readonly string[]): Promise<AllegraSong[] | null> => {
+  if (refsOrIds.length === 0) return [];
+  const reply = await send<AllegraSong[]>('GET', `/api/songs?ids=${refsOrIds.map(encodeURIComponent).join(',')}`, token);
   if (reply.outcome === 'offline') return null;
   return reply.outcome === 'sent' && Array.isArray(reply.data) ? reply.data : [];
 };

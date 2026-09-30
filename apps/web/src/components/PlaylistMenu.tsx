@@ -16,7 +16,7 @@ export function PlaylistMenu({ song }: { readonly song: UnifiedSong }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
-  const { playlists, actionError, create, toggleSong } = usePlaylistsContext();
+  const { playlists, actionError, contains, create, toggleSong } = usePlaylistsContext();
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -66,7 +66,7 @@ export function PlaylistMenu({ song }: { readonly song: UnifiedSong }) {
             {playlists.length > 0 ? (
               <ul className="playlist-choices">
                 {playlists.map((playlist) => {
-                  const included = playlist.songIds.includes(song.id);
+                    const included = contains(playlist.id, song);
                   return (
                     <li key={playlist.id}>
                       <button type="button" role="checkbox" aria-checked={included} className={`playlist-choice ${included ? 'is-included' : ''}`} onClick={() => void toggleSong(playlist.id, song)}>

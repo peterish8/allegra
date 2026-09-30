@@ -41,6 +41,41 @@ test('plays sent at the same moment from two devices are both kept', async () =>
   assert.deepEqual(ids, ['p1', 'w1']);
 });
 
+test('Gaana plays keep their provider ref, display snapshot, playback route and taste across account reads', async () => {
+  const ctx = await signedIn();
+  const playedAt = '2026-09-30T08:15:00.000Z';
+  const song = { ref: 'gaana:g1', title: 'Gaana Song', artist: 'Gaana Artist', artwork: 'https://img/song.jpg', duration: 180 };
+  const play = await ctx.as(request(ctx.app).post('/api/me/recently-played').send({ songRef: song.ref, song, playDuration: 130, playedAt }));
+  assert.equal(play.status, 201);
+
+  const recent = await ctx.as(request(ctx.app).get('/api/me/recently-played'));
+  assert.equal(recent.status, 200);
+  assert.equal(recent.body.data[0].id, 'gaana:g1');
+  assert.equal(recent.body.data[0].source, 'Gaana');
+  assert.equal(recent.body.data[0].streamUrl, '/api/stream/gaana%3Ag1');
+
+  const firstTaste = await ctx.as(request(ctx.app).get('/api/me/taste'));
+  assert.deepEqual(firstTaste.body.data.topArtists.map((artist: { name: string }) => artist.name), ['Gaana Artist']);
+  const heard = await ctx.as(request(ctx.app).post('/api/me/taste/signal').send({ songRef: song.ref, song, seconds: 150, playedAt }));
+  assert.equal(heard.status, 204);
+  const tasteAfterListen = await ctx.as(request(ctx.app).get('/api/me/taste'));
+  const retry = await ctx.as(request(ctx.app).post('/api/me/recently-played').send({ songRef: song.ref, song, playDuration: 130, playedAt }));
+  assert.equal(retry.status, 201);
+  const retriedListen = await ctx.as(request(ctx.app).post('/api/me/taste/signal').send({ songRef: song.ref, song, seconds: 150, playedAt }));
+  assert.equal(retriedListen.status, 204);
+  const afterRetry = await ctx.as(request(ctx.app).get('/api/me/taste'));
+  assert.deepEqual(afterRetry.body.data, tasteAfterListen.body.data);
+});
+
+test('Gaana listened signals learn from the provider snapshot without a Saavn id lookup', async () => {
+  const ctx = await signedIn();
+  const song = { ref: 'gaana:g2', title: 'Another Gaana Song', artist: 'Snapshot Artist', artwork: '', duration: 200 };
+  const signal = await ctx.as(request(ctx.app).post('/api/me/taste/signal').send({ songRef: song.ref, song, seconds: 180 }));
+  assert.equal(signal.status, 204);
+  const taste = await ctx.as(request(ctx.app).get('/api/me/taste'));
+  assert.deepEqual(taste.body.data.topArtists.map((artist: { name: string }) => artist.name), ['Snapshot Artist']);
+});
+
 test('a settings change racing a play keeps both, and taste learns from the play', async () => {
   const ctx = await signedIn();
   const [settings, play] = await Promise.all([

@@ -33,7 +33,7 @@ export function normalizeSong(
     artist,
     ...(album ? { album: decodeHtml(album) } : {}),
     artwork: image,
-    streamUrl: `/api/stream/${encodeURIComponent(id)}`,
+    streamUrl: `/api/stream/${encodeURIComponent(source === 'Gaana' ? `gaana:${id}` : id)}`,
     duration,
     hasLyrics: raw.hasLyrics === true,
     ...optional,

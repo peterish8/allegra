@@ -10,6 +10,7 @@ import type { UnifiedSong } from '@shared/types';
 import { SongCard } from './SongCard';
 import { usePlaylistsContext } from '../hooks/usePlaylists';
 import type { LibraryRecord } from '../lib/api';
+import type { LibrarySong } from '../lib/libraryRows';
 import { EmptyState, TactileButton } from './ui';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
 
@@ -105,7 +106,7 @@ function PlaylistsSection({ likedIds, currentSongId, isPlaying, onPlay, onLike, 
       {actionError ? <p className="library-sync-notice" role="status">{actionError}</p> : null}
       {playlists.length === 0 ? <EmptyState title="Start a playlist" copy="Name one above, then use the list-plus button on any track to save it here." action={<TactileButton variant="accent" icon={ArrowUpRight} onClick={onDiscover}>Find something to save</TactileButton>} /> : (
         <div className="playlist-grid">
-          {playlists.map((playlist) => <PlaylistCard key={playlist.id} playlist={playlist} songs={playlist.songIds.map((id) => songs.get(id)).filter((song): song is UnifiedSong => song !== undefined)} likedIds={likedIds} currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} onLike={onLike} onDelete={() => void remove(playlist.id)} />)}
+          {playlists.map((playlist) => <PlaylistCard key={playlist.id} playlist={playlist} songs={playlist.songIds.map((id) => songs.get(id)).filter((song): song is LibrarySong => song !== undefined)} likedIds={likedIds} currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} onLike={onLike} onDelete={() => void remove(playlist.id)} />)}
         </div>
       )}
     </div>

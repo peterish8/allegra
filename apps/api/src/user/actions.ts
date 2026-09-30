@@ -5,9 +5,9 @@ import type { CatalogService } from '../catalog/catalog.js';
 import type { CoverStorage } from '../lib/covers.js';
 import { NotFoundError } from '../lib/errors.js';
 import type { LibraryOp, PlaylistCover, RejectReason } from '../shared/library.js';
-import type { SongRef, SongSnapshot } from '../shared/songRef.js';
+import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { UnifiedSong } from '../types.js';
-import { opsForPlaylistCopy, refForId, snapshotOf } from './libraryOps.js';
+import { opsForPlaylistCopy, refForId, snapshotOf, unifiedSongFromSnapshot } from './libraryOps.js';
 import { RECENTLY_PLAYED_LIMIT, type LibraryRecord, type RecentRecord, type UserData, type UserStore } from './store.js';
 import { SIGNAL_WEIGHT, applySignal, playWeight } from './taste.js';
 
@@ -212,23 +212,72 @@ export class ListenerActions {
   // ── Listening ─────────────────────────────────────────────────────────────
 
   /** A play, for Recently played. Pressing play is a mild vote; how long they stayed arrives as `listened`. */
-  public async recordPlay(user: UserData, songId: string, playDuration: number, playedAt: string): Promise<RecentRecord> {
-    const entry: RecentRecord = { songId, playDuration, playedAt };
-    const song = await this.lookUp(songId);
+  public async recordPlay(user: UserData, songId: string, playDuration: number, playedAt: string, songRef?: SongRef, snapshot?: SongSnapshot): Promise<RecentRecord> {
+    const snapshotSong = snapshot ? unifiedSongFromSnapshot(snapshot) : null;
+    const ref = snapshot?.ref ?? songRef;
+    const entry: RecentRecord = {
+      songId,
+      playDuration,
+      playedAt,
+      ...(ref ? { songRef: ref } : {}),
+      ...(snapshot ? { song: snapshot } : {})
+    };
+    const song = snapshotSong ?? await this.lookUp(songId);
+    const identity = recentIdentity(entry);
     await this.auth.updateProfile(user.userId, (current) => {
-      const recentlyPlayed = [entry, ...current.recentlyPlayed.filter((item) => item.songId !== songId)]
+      // Offline clients retry the same play after a lost response. Keep the history write
+      // idempotent for that event so its taste signal is not applied twice.
+      const priorEvent = current.recentlyPlayed.find((item) => recentIdentity(item) === identity && item.playedAt === playedAt);
+      const alreadyRecorded = priorEvent !== undefined;
+      const savedEntry = priorEvent?.listenSignalApplied ? { ...entry, listenSignalApplied: true } : entry;
+      const recentlyPlayed = [savedEntry, ...current.recentlyPlayed.filter((item) => recentIdentity(item) !== identity)]
         .sort((left, right) => right.playedAt.localeCompare(left.playedAt))
         .slice(0, RECENTLY_PLAYED_LIMIT);
-      const taught = song ? teach(current, song, playDuration > 0 ? playWeight(playDuration, song.duration) : 0.3) : current;
+      const taught = song && !alreadyRecorded
+        ? teach(current, song, ref || playDuration <= 0 ? 0.3 : playWeight(playDuration, song.duration))
+        : current;
       return { ...taught, recentlyPlayed };
     });
     return entry;
   }
 
+  /** Resolves the listener's cross-provider recent history, preferring the saved playback snapshot. */
+  public async recentlyPlayed(user: UserData): Promise<UnifiedSong[]> {
+    const records = [...user.recentlyPlayed].sort((left, right) => right.playedAt.localeCompare(left.playedAt)).slice(0, RECENTLY_PLAYED_LIMIT);
+    const unresolved = records.filter((record) => !record.song).map((record) => record.songId);
+    let hydrated: UnifiedSong[] = [];
+    if (unresolved.length > 0) {
+      try {
+        hydrated = await this.catalog.getSongs([...new Set(unresolved)]);
+      } catch {
+        hydrated = [];
+      }
+    }
+    const byIdentity = new Map(hydrated.map((song) => [songIdentity(song), song]));
+    return records.flatMap((record) => {
+      const fromSnapshot = record.song ? unifiedSongFromSnapshot(record.song) : null;
+      const found = fromSnapshot ?? byIdentity.get(recordIdentity(record)) ?? hydrated.find((song) => song.id === record.songId);
+      return found ? [found] : [];
+    });
+  }
+
   /** How long a song was actually heard: a few seconds counts against it, most of it for it. */
-  public async listened(user: UserData, songId: string, seconds: number): Promise<UserData> {
-    const song = await this.lookUp(songId);
-    return (song ? await this.learn(user.userId, song, playWeight(seconds, song.duration)) : null) ?? user;
+  public async listened(user: UserData, songId: string, seconds: number, snapshot?: SongSnapshot, songRef?: SongRef, playedAt?: string): Promise<UserData> {
+    const song = (snapshot ? unifiedSongFromSnapshot(snapshot) : null) ?? await this.lookUp(songId);
+    if (!song) return user;
+    const ref = snapshot?.ref ?? songRef;
+    const weight = playWeight(seconds, song.duration);
+    if (!ref || !playedAt) return (await this.learn(user.userId, song, weight)) ?? user;
+    return (await this.auth.updateProfile(user.userId, (current) => {
+      const index = current.recentlyPlayed.findIndex((item) => recentIdentity(item) === (ref.startsWith('gaana:') ? ref : parseSongRef(ref)?.id ?? ref) && item.playedAt === playedAt);
+      const prior = index >= 0 ? current.recentlyPlayed[index] : undefined;
+      if (prior?.listenSignalApplied) return null;
+      const taught = teach(current, song, weight);
+      if (index < 0 || !prior) return taught;
+      const recentlyPlayed = [...current.recentlyPlayed];
+      recentlyPlayed[index] = { ...prior, listenSignalApplied: true };
+      return { ...taught, recentlyPlayed };
+    })) ?? user;
   }
 
   public async skipped(user: UserData, songId: string): Promise<void> {
@@ -289,6 +338,20 @@ export class ListenerActions {
 }
 
 type TasteSong = { readonly artist: string; readonly language?: string };
+
+function recentIdentity(record: RecentRecord): string {
+  const parsed = record.songRef ? parseSongRef(record.songRef) : null;
+  return parsed?.source === 'gaana' ? `gaana:${parsed.id}` : parsed?.id ?? record.songId;
+}
+
+function recordIdentity(record: RecentRecord): string {
+  const parsed = record.songRef ? parseSongRef(record.songRef) : null;
+  return parsed ? `${parsed.source}:${parsed.id}` : record.songId;
+}
+
+function songIdentity(song: UnifiedSong): string {
+  return song.source === 'Gaana' ? `gaana:${song.id}` : song.id;
+}
 
 function teach(user: UserData, song: TasteSong, weight: number): UserData {
   return { ...user, taste: applySignal(user.taste, { artist: song.artist, ...(song.language ? { language: song.language } : {}) }, weight) };

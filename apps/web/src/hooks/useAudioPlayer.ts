@@ -23,6 +23,8 @@ export interface AudioPlayerState {
   readonly repeat: RepeatMode;
   readonly error: string | null;
   readonly selectSong: (song: UnifiedSong, queue?: UnifiedSong[]) => void;
+  /** Connect transfer loader. Uses the same audio funnel but preserves paused restores. */
+  readonly loadForConnect: (song: UnifiedSong, queue: UnifiedSong[], play: boolean) => void;
   /** Append similar/radio tracks without interrupting the current song. */
   readonly appendQueue: (songs: readonly UnifiedSong[]) => number;
   readonly togglePlayback: () => void;
@@ -101,12 +103,17 @@ export function useAudioPlayer(): AudioPlayerState {
     }
   }, []);
 
-  const selectSong = useCallback((song: UnifiedSong, nextQueue: UnifiedSong[] = []): void => {
+  const selectSongWithIntent = useCallback((song: UnifiedSong, nextQueue: UnifiedSong[], shouldPlay: boolean): void => {
     const audio = audioRef.current;
     if (currentSongRef.current?.id === song.id && audio) {
-      pendingPlaybackRef.current = true;
-      playbackIntentRef.current = true;
-      void requestPlayback(true);
+      const next = uniqueByIdentity(nextQueue.length > 0 ? nextQueue : [song]);
+      const withCurrent = next.some((item) => item.id === song.id) ? next : [song, ...next];
+      queueRef.current = withCurrent;
+      setQueue(withCurrent);
+      pendingPlaybackRef.current = shouldPlay;
+      playbackIntentRef.current = shouldPlay;
+      if (shouldPlay) void requestPlayback(true);
+      else void requestPlayback(false);
       return;
     }
     sourceOverrideRef.current = null;
@@ -119,8 +126,8 @@ export function useAudioPlayer(): AudioPlayerState {
     playbackGenerationRef.current += 1;
     currentSongRef.current = playable;
     queueRef.current = ordered;
-    pendingPlaybackRef.current = true;
-    playbackIntentRef.current = true;
+    pendingPlaybackRef.current = shouldPlay;
+    playbackIntentRef.current = shouldPlay;
     autoAdvancedRef.current = false;
     setCurrentSong(playable);
     setQueue(ordered);
@@ -128,6 +135,14 @@ export function useAudioPlayer(): AudioPlayerState {
     setDuration(playable.duration);
     setError(null);
   }, [requestPlayback]);
+
+  const selectSong = useCallback((song: UnifiedSong, nextQueue: UnifiedSong[] = []): void => {
+    selectSongWithIntent(song, nextQueue, true);
+  }, [selectSongWithIntent]);
+
+  const loadForConnect = useCallback((song: UnifiedSong, nextQueue: UnifiedSong[], play: boolean): void => {
+    selectSongWithIntent(song, nextQueue, play);
+  }, [selectSongWithIntent]);
 
   const appendQueue = useCallback((songs: readonly UnifiedSong[]): number => {
     if (songs.length === 0) return 0;
@@ -439,6 +454,7 @@ export function useAudioPlayer(): AudioPlayerState {
     repeat,
     error,
     selectSong,
+    loadForConnect,
     appendQueue,
     togglePlayback: () => void requestPlayback(!isPlayingRef.current),
     requestPlayback,

@@ -52,14 +52,29 @@ export async function audioState(page: Page): Promise<AudioState> {
 
 /** Waits until the layout's <audio> element is playing and its clock is moving. */
 export async function expectPlaying(page: Page): Promise<void> {
-  await expect
-    .poll(async () => {
-      const first = await audioState(page);
-      await page.waitForTimeout(400);
-      const second = await audioState(page);
-      return !second.paused && second.time > first.time;
-    }, { timeout: 30_000, message: 'audio never started playing' })
-    .toBe(true);
+  try {
+    await expect
+      .poll(async () => {
+        const first = await audioState(page);
+        await page.waitForTimeout(400);
+        const second = await audioState(page);
+        return !second.paused && second.time > first.time;
+      }, { timeout: 30_000, message: 'audio never started playing' })
+      .toBe(true);
+  } catch (error) {
+    const media = await page.evaluate(() => {
+      const audio = document.querySelector('audio');
+      return audio ? {
+        src: audio.currentSrc,
+        paused: audio.paused,
+        currentTime: audio.currentTime,
+        readyState: audio.readyState,
+        networkState: audio.networkState,
+        error: audio.error ? { code: audio.error.code, message: audio.error.message } : null,
+      } : null;
+    });
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\nMedia state: ${JSON.stringify(media)}`);
+  }
 }
 
 /** Home page → press play on the first song card. */

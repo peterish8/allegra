@@ -34,6 +34,9 @@ test('search finds a song and plays it', async ({ page }) => {
   const option = page.getByRole('option').first();
   await expect(option).toBeVisible({ timeout: 20_000 });
   await option.click();
+  const playResult = page.getByRole('button', { name: /^Play Tum Hi Ho/ }).first();
+  await expect(playResult).toBeVisible({ timeout: 20_000 });
+  await playResult.click();
   await expectPlaying(page);
   expect((await audioState(page)).src).toContain('/api/stream/');
   expect(errors).toEqual([]);
@@ -45,7 +48,7 @@ test('pause stays paused and play resumes (one playback funnel)', async ({ page 
   // Invariant 2: a load effect keyed on isPlaying would resume this within a tick.
   await page.waitForTimeout(1500);
   expect((await audioState(page)).paused).toBe(true);
-  await page.locator(bar).getByRole('button', { name: 'Play' }).click();
+  await page.locator(bar).getByRole('button', { name: 'Play', exact: true }).click();
   await expectPlaying(page);
 });
 
@@ -68,7 +71,7 @@ test('music keeps playing across page navigation', async ({ page }) => {
 test('seeking moves the playhead and playback carries on', async ({ page }) => {
   await startPlayback(page);
   const before = (await audioState(page)).time;
-  const slider = page.locator(bar).getByLabel('Playback progress');
+  const slider = page.locator(bar).getByRole('slider', { name: 'Track position', exact: true });
   await slider.focus();
   for (let i = 0; i < 6; i++) await slider.press('ArrowRight');
   await slider.blur();
@@ -80,8 +83,10 @@ test('seeking moves the playhead and playback carries on', async ({ page }) => {
 test('the full player opens with lyrics and closes again', async ({ page }) => {
   const errors = collectPageErrors(page);
   await startPlayback(page);
-  await page.locator(bar).getByRole('button', { name: 'View player' }).click();
-  const player = page.getByRole('dialog', { name: 'Now playing' });
+  await page.locator(bar).getByRole('button', { name: 'Expand player', exact: true }).click();
+  const player = page.getByRole('dialog').filter({
+    has: page.getByRole('tablist', { name: 'Player surfaces' }),
+  });
   await expect(player).toBeVisible();
   await expect(player.getByRole('tab', { name: 'Lyrics' })).toBeVisible();
   await player.getByRole('tab', { name: 'Up next' }).click();

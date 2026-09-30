@@ -30,6 +30,8 @@ One deployment, three owners of state. Read this before changing anything struct
 |---|---|---|
 | Identity (who you are) | **Convex Auth** | It holds the Google secret and signs session tokens. Our API never touches a credential. |
 | Listener data (likes, playlists, recents, taste, play tally, shares) | **Convex** | Durable, and the API reaches it through one `UserStore` seam. |
+| Cross-device library rows | **Convex** | Revisioned likes, playlist metadata/items, and tombstones use provider-qualified song refs; the phone's SQLite outbox retries offline writes. |
+| Active playback session | **Convex Connect** | One authenticated device owns the player lease; other devices send acknowledged commands and can transfer a song, queue, and position. Audio always streams locally. |
 | Song relations (which songs go with which, shared by everyone) | **Convex** `songRelations` | Derived, so allowed to be lost, but kept durable because each one costs several provider calls to work out and every listener reuses it. Reached through `RelationStore`. |
 | Karaoke output | **Browser memory / device storage** | The worker separates audio locally. A model may be cached locally; no stems or track audio are persisted by the API. |
 
@@ -93,6 +95,29 @@ have. Guest listening works with no Convex deployment at all.
 Signing in calls `POST /api/auth/link` once, handing over the old guest token so likes and playlists
 made before signing in follow the listener into their account. Merging is a union, so it is safe to
 repeat.
+
+## Connect and library sync
+
+`packages/connect` owns the playback-independent session rules. Web and mobile provide a player port
+and a Convex transport; the transport listens to owned devices, player state, and command status. A
+second device never receives audio bytes. It receives a `SongSnapshot` and playback commands, then
+uses its own catalog, stream URL, or downloaded file. Transfer loads the current live position and
+queue on the destination before it takes the active-player lease. The web adapter keeps the one
+layout-owned `<audio>` element and sends play/pause through `requestPlayback`.
+
+Convex Presence owns online status. A heartbeat runs only while the app is visible or playing, and
+the five-minute internal sweep removes expired commands and checks long-stale device registrations.
+The command mutation checks account ownership for both source and target and enforces the shared
+rate cap. A recipient acknowledges only after its player adapter applies the command; the sender
+subscribes to the final status and rolls back an unacknowledged optimistic control.
+
+Likes and playlist items use `saavn:<id>` or `gaana:<id>` refs plus small song snapshots. The API
+change feed keeps tombstones and revisions so offline writes cannot resurrect an item deleted on
+another device. The web hydrates Saavn refs by catalog id; it displays Gaana snapshots directly and
+only plays them after an exact Saavn title/lead-artist match. Mobile keeps downloads separate from
+likes, applies local edits immediately, and retries its SQLite outbox after reconnecting. Quick Picks
+read the same account taste and recent-play signals, so listening on one signed-in device informs
+recommendations on the others.
 
 ## Seams worth knowing
 

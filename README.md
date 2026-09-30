@@ -6,7 +6,7 @@
 
 ## What this is
 
-Allegra began as a fully mocked front-end: hardcoded songs, playback faked with a timer, accounts faked in `localStorage`. It is now a working product: live catalog, streaming audio with working seek, artwork, time-synced lyrics with graceful degradation, guest sessions, likes, recently played and playlists that persist.
+Allegra began as a fully mocked front-end: hardcoded songs, playback faked with a timer, accounts faked in `localStorage`. It is now a working product: live catalog, streaming audio with working seek, artwork, time-synced lyrics with graceful degradation, guest sessions, and persistent likes, recent plays and playlists. Signed-in web and Android clients also sync their libraries and recommendations; Connect can control or transfer playback between online devices on the same account.
 
 ## Architecture
 
@@ -20,8 +20,14 @@ Browser  (Next.js App Router · React 19 · Motion)
                |-- iTunes Search       artwork
                |-- LRCLIB (+ Lyrica / BetterLyrics)  time-synced lyrics
                |-- Convex              Google sign-in, likes, recents, playlists
+               |                       Connect presence, commands and playback state
                `-- Browser worker      on-device karaoke separation
 ```
+
+The phone syncs likes, playlists and listening history through the Allegra API, with an offline
+outbox in SQLite. Account taste drives Quick Picks on both clients. Connect sends player state and
+commands through Convex; each device streams audio itself. A phone must be online with Allegra open
+or active in the background to receive commands; push wake for a closed app is a future feature.
 
 **Why the API is still Express and not route handlers:** `GET /api/stream/:id` proxies audio and must
 forward `Range` and preserve `206 Partial Content`. That path works; rewriting it would risk the
@@ -47,9 +53,10 @@ cp apps/api/.env.example apps/api/.env      # works as-is; no keys needed
 npm run dev                                  # web :5173 · api :8080
 ```
 
-Open http://localhost:5173. No keys are needed to search, play, translate lyrics, get
-recommendations, or use Karaoke. Guest data stays in memory until you set up Convex; Karaoke runs
-on the listener's device — see [`docs/workflows.md`](docs/workflows.md).
+Open http://localhost:5173. No keys are needed to search, play, translate lyrics, get public
+recommendations, or use Karaoke. Cross-device playback, account recommendations and library sync
+need Convex Auth and the Allegra API configured. Guest data stays in memory until Convex is set up;
+Karaoke runs on the listener's device — see [`docs/workflows.md`](docs/workflows.md).
 
 ```bash
 npm run typecheck && npm run lint && npm test
@@ -74,6 +81,7 @@ Keyboard: `Space` play/pause, `←` `→` seek 5 s, `⌘/Ctrl K` search, `Esc` c
 | Catalog, audio, seek, artwork, lyrics | **Real** |
 | Guest sessions, likes, recently played, playlists | **Real**, persisted in Convex when configured |
 | **Google sign-in** | **Real when Convex Auth is configured** — guest data merges into the account on first sign-in. Guest-only otherwise. Setup: [`docs/auth-convex-google.md`](docs/auth-convex-google.md) |
+| **Connect + library sync** | **Real for signed-in web and Android clients** — likes, playlists, play history, account recommendations, remote controls and playback transfer sync through Convex/API. Both devices must be online; a closed phone cannot be woken yet. See [the Connect contract](docs/connect-contract.md). |
 | **Karaoke** | **On-device** — a browser worker uses Mel-Band RoFormer when supported and falls back to mid-side vocal reduction. No track audio, model request, or cloud GPU is sent through the API. |
 | Premium page | **UI demo only** — no payments |
 | AI "set the mood" | **Not built.** The mood pills run a plain search |

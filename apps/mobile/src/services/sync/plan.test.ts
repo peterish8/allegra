@@ -1,7 +1,7 @@
 import type { LibraryChange } from '@shared/library';
 import type { SongRef } from '@shared/songRef';
 
-import { LIKED_PLAYLIST_ID, buildLocalIndex, opsForFirstSync, planInbound, refForLocalSong, snapshotOfLocal } from './plan';
+import { LIKED_PLAYLIST_ID, buildLocalIndex, opsForFirstSync, planInbound, planPhonePlaylistReplacement, refForLocalSong, snapshotOfLocal } from './plan';
 
 const A = 'saavn:a' as SongRef;
 const B = 'saavn:b' as SongRef;
@@ -33,6 +33,31 @@ describe('planInbound', () => {
       { kind: 'like_local', songId: 'row-origin', ref: A, liked: false },
       { kind: 'online_unlike', ref: A },
     ]);
+  });
+
+  it('does not title-match an identified row from a different provider', () => {
+    const saavnRow = buildLocalIndex([
+      { id: 'saavn-row', title: 'Same Song', artist: 'Same Artist', originId: 'saavn:origin' },
+    ]);
+    const gaanaRef = 'gaana:origin' as SongRef;
+    const changeSong = snapshot(gaanaRef, 'Same Song', 'Same Artist');
+    expect(planInbound([
+      { kind: 'like', rev: 1, ref: gaanaRef, song: changeSong, liked: true, likedAt: 2 },
+      { kind: 'playlist', rev: 2, playlistId: 'p1', name: 'List', isPublic: false, deleted: false, createdAt: 1 },
+      { kind: 'playlist_item', rev: 3, playlistId: 'p1', ref: gaanaRef, song: changeSong, deleted: false, addedAt: 3 },
+    ], saavnRow, new Set())).toEqual([
+      { kind: 'online_like', ref: gaanaRef, song: changeSong, likedAt: 2 },
+      { kind: 'playlist_upsert', playlistId: 'p1', name: 'List', createdAt: 1 },
+      { kind: 'playlist_online', playlistId: 'p1', ref: gaanaRef, song: changeSong, present: true, addedAt: 3 },
+    ]);
+  });
+
+  it('keeps title matching available for legacy rows without an origin', () => {
+    const legacyRow = buildLocalIndex([
+      { id: 'legacy-row', title: 'Same Song', artist: 'Same Artist' },
+    ]);
+    const gaanaRef = 'gaana:origin' as SongRef;
+    expect(legacyRow.songFor(gaanaRef, { title: 'Same Song (Official Video)', artist: 'Same Artist' })).toBe('legacy-row');
   });
 
   it('fills a playlist created in the same batch; skips items of unknown playlists and the Liked list', () => {
@@ -103,5 +128,40 @@ describe('opsForFirstSync', () => {
       ['playlist_delete', 'p2'],
     ]);
     expect(ops.map(op => op.at)).toEqual([100, 101, 102, 103, 104, 105]);
+  });
+});
+
+describe('planPhonePlaylistReplacement', () => {
+  it('removes phone-only items from a shared playlist and deletes phone-only playlists', () => {
+    const plan = planPhonePlaylistReplacement(
+      [
+        {
+          id: 'shared',
+          isDefault: false,
+          songIds: ['account-song', 'phone-song', 'local-file'],
+          onlineRefs: [A, B, 'bad-ref'],
+        },
+        { id: 'phone-only', isDefault: false, songIds: ['phone-song'] },
+        { id: LIKED_PLAYLIST_ID, isDefault: true, songIds: ['account-song', 'phone-song'] },
+      ],
+      new Map<string, SongRef | null>([
+        ['account-song', A],
+        ['phone-song', B],
+        ['local-file', null],
+      ]),
+      new Map([['shared', new Set<SongRef>([A])]]),
+    );
+
+    expect(plan).toEqual({
+      deletePlaylistIds: ['phone-only'],
+      removeMemberships: [
+        { playlistId: 'shared', songId: 'phone-song' },
+        { playlistId: 'shared', songId: 'local-file' },
+      ],
+      removeOnlineItems: [
+        { playlistId: 'shared', ref: B },
+        { playlistId: 'shared', ref: 'bad-ref' },
+      ],
+    });
   });
 });

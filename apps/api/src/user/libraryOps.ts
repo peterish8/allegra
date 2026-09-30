@@ -3,7 +3,7 @@
  * bare catalog ids, which are Saavn ids (catalog.getSong only asks Saavn).
  */
 import type { LibraryOp } from '../shared/library.js';
-import { songRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
+import { parseSongRef, songRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { UnifiedSong } from '../types.js';
 import type { LibraryRecord, UserData } from './store.js';
 
@@ -23,6 +23,25 @@ export function snapshotOf(song: UnifiedSong): SongSnapshot | undefined {
     ...(song.album ? { album: song.album } : {}),
     artwork: song.artwork,
     duration: song.duration
+  };
+}
+
+/** Rebuilds a displayable catalog song from an account snapshot without guessing its provider. */
+export function unifiedSongFromSnapshot(snapshot: SongSnapshot): UnifiedSong | null {
+  const parsed = parseSongRef(snapshot.ref);
+  if (!parsed || !snapshot.title.trim()) return null;
+  const id = parsed.source === 'gaana' ? `${parsed.source}:${parsed.id}` : parsed.id;
+  return {
+    id,
+    title: snapshot.title,
+    artist: snapshot.artist,
+    ...(snapshot.album ? { album: snapshot.album } : {}),
+    artwork: snapshot.artwork,
+    streamUrl: `/api/stream/${encodeURIComponent(snapshot.ref)}`,
+    duration: snapshot.duration,
+    hasLyrics: false,
+    playCount: 0,
+    source: parsed.source === 'gaana' ? 'Gaana' : 'Saavn'
   };
 }
 
@@ -52,15 +71,21 @@ export function opsForPlaylistCopy(library: LibraryRecord, at: number, snapshots
 }
 
 /** A guest's likes and playlists, as operations onto the account they just signed in to. */
-export function opsForGuestMerge(account: UserData, guest: UserData, at: number): LibraryOp[] {
+export function opsForGuestMerge(
+  account: UserData,
+  guest: UserData,
+  at: number,
+  snapshots: ReadonlyMap<string, SongSnapshot> = new Map()
+): LibraryOp[] {
   const ops: LibraryOp[] = [];
   for (const id of guest.likedSongIds) {
     const ref = refForId(id);
-    if (ref && !account.likedSongIds.includes(id)) ops.push({ op: 'like', ref, at });
+    const song = snapshots.get(id);
+    if (ref && !account.likedSongIds.includes(id)) ops.push({ op: 'like', ref, ...(song ? { song } : {}), at });
   }
   const known = new Set(account.libraries.map((library) => library.id));
   for (const library of guest.libraries) {
-    if (!known.has(library.id)) ops.push(...opsForPlaylistCopy(library, at));
+    if (!known.has(library.id)) ops.push(...opsForPlaylistCopy(library, at, snapshots));
   }
   return ops;
 }

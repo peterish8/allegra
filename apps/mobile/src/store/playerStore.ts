@@ -3,6 +3,7 @@ import * as queries from '../database/queries';
 import { Song } from '../types/song';
 import { useSongsStore } from './songsStore';
 import { useSettingsStore } from './settingsStore';
+import { usePlaybackModesStore } from './playbackModesStore';
 import { setPlaybackIntent } from '../playback/playbackIntent';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 
@@ -16,11 +17,19 @@ function trackMeta(song: Song) {
   };
 }
 
+let pausedLoadSongId: string | null = null;
+
+/** A remote handoff may restore a track paused; both audio-load owners read this intent. */
+export function shouldAutoPlayLoadedSong(songId: string): boolean {
+  return pausedLoadSongId !== songId;
+}
+
 /** Stage queue[index+1] in Media3 when Android can take it. No-op elsewhere. */
 export function prepareNextInQueue(): void {
   if (!NativeAudioPlayer.isAvailable()) return;
   const { playlistQueue, currentQueueIndex, currentSongId } = usePlayerStore.getState();
   if (!playlistQueue || playlistQueue.length < 2) return;
+  if (usePlaybackModesStore.getState().repeatMode === 'off' && currentQueueIndex >= playlistQueue.length - 1) return;
   const next = playlistQueue[(currentQueueIndex + 1) % playlistQueue.length];
   if (!next?.audioUri || next.id === currentSongId) return;
   NativeAudioPlayer.prepareNext(next.audioUri, trackMeta(next), next.id);
@@ -31,7 +40,9 @@ export function prepareNextInQueue(): void {
 export const playerControls = {
   play: () => { if (__DEV__) console.warn('[playerControls] Player not initialized'); },
   pause: () => { if (__DEV__) console.warn('[playerControls] Player not initialized'); },
-  seekTo: (_pos: number) => { if (__DEV__) console.warn('[playerControls] Player not initialized'); },
+  seekTo: async (_pos: number) => { if (__DEV__) console.warn('[playerControls] Player not initialized'); },
+  setVolume: (_volume: number) => { if (__DEV__) console.warn('[playerControls] Player not initialized'); },
+  getVolume: () => 1,
 };
 
 // When the native player owns playback state (Android, via Media3), it echoes
@@ -118,10 +129,10 @@ interface PlayerState {
   setMiniPlayerHidden: (hidden: boolean) => void;
   setMiniPlayerHiddenSource: (source: string, hidden: boolean) => void;
   // Playlist queue actions
-  setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number) => void;
+  setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number, autoplay?: boolean) => void;
   updateQueue: (songs: Song[]) => void;
   removeFromQueue: (songId: string) => void;
-  nextInPlaylist: () => Promise<void>;
+  nextInPlaylist: (automatic?: boolean) => Promise<void>;
   previousInPlaylist: () => void;
   /** Media3 already advanced — update queue cursor without reloading audio. */
   adoptPreparedTrack: (mediaId: string) => void;
@@ -150,6 +161,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setIsPlaying: (playing: boolean) => set({ isPlaying: playing }),
 
   requestPlayback: (playing: boolean) => {
+    if (playing) pausedLoadSongId = null;
     if (nativeOwnsPlaybackState) {
       // Fire and let the player report back. playWhenReady flips synchronously
       // inside ExoPlayer, so the round trip is a couple of frames.
@@ -199,6 +211,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       prepareNextInQueue();
       return;
     }
+    pausedLoadSongId = null;
     const queue = state.playlistQueue;
     if (!queue) return;
     const idx = queue.findIndex(s => s.id === mediaId);
@@ -274,16 +287,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   }),
 
   // Playlist queue management
-  setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number) => {
+  setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number, autoplay = true) => {
     songDirection = 0;
     const startSongId = songs[startIndex]?.id;
+    pausedLoadSongId = startSongId && !autoplay ? startSongId : null;
     set({ 
       playlistQueue: songs,
       currentPlaylistId: playlistId,
       currentQueueIndex: startIndex,
       currentSong: songs[startIndex],
       currentSongId: startSongId || null,
-      isPlaying: true // FORCE PLAY
     });
     if (__DEV__) {
       console.log(`[PLAYER] Set playlist queue: ${playlistId}, ${songs.length} songs, starting at ${startIndex}`);
@@ -292,8 +305,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // Fetch full song details (lyrics) for the starting song
     if (startSongId) {
         get().loadSong(startSongId);
-        setPlaybackIntent(true);
-        playerControls.play();
+        get().requestPlayback(autoplay);
     }
   },
   
@@ -336,7 +348,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
   
-  nextInPlaylist: async () => {
+  nextInPlaylist: async (automatic = false) => {
     const state = get();
 
     // Safety net: queue was never set (e.g. song launched via fallback path or Recently Played)
@@ -358,9 +370,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const freshState = get();
     if (!freshState.playlistQueue) return;
+    if (automatic && usePlaybackModesStore.getState().repeatMode === 'off' && freshState.currentQueueIndex >= freshState.playlistQueue.length - 1) {
+      freshState.requestPlayback(false);
+      return;
+    }
     songDirection = 1;
     const nextIndex = (freshState.currentQueueIndex + 1) % freshState.playlistQueue.length;
     const nextSong = freshState.playlistQueue[nextIndex];
+    pausedLoadSongId = null;
 
     // Prefer the staged Media3 item — avoids pause → load → prepare gap on skip.
     const usedNative = await NativeAudioPlayer.seekToNextIfReady(nextSong.id);
@@ -407,6 +424,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     songDirection = -1;
     const prevIndex = (state.currentQueueIndex - 1 + state.playlistQueue.length) % state.playlistQueue.length;
     const prevSong = state.playlistQueue[prevIndex];
+    pausedLoadSongId = null;
 
     set({
       currentQueueIndex: prevIndex,
@@ -435,12 +453,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  reset: () => set({ 
-    currentSongId: null, 
-    currentSong: null, 
-    loadedAudioId: null,
-    playlistQueue: null,
-    currentPlaylistId: null,
-    currentQueueIndex: -1
-  }),
+  reset: () => {
+    pausedLoadSongId = null;
+    set({
+      currentSongId: null,
+      currentSong: null,
+      loadedAudioId: null,
+      playlistQueue: null,
+      currentPlaylistId: null,
+      currentQueueIndex: -1,
+    });
+  },
 }));

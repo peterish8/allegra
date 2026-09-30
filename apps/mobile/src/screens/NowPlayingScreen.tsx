@@ -52,6 +52,9 @@ import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { refetchCurrent, setAsRingtone, shareSong, shuffleUpcoming } from '../services/player/playerMenuActions';
 import { usePlaybackModesStore } from '../store/playbackModesStore';
 import { useListenTogetherStore } from '../store/listenTogetherStore';
+import { parseSongRef } from '@shared/songRef';
+import ConnectRemotePlayer from '../components/connect/ConnectRemotePlayer';
+import { useConnect } from '../services/connect/ConnectProvider';
 
 const { Gesture, GestureDetector } = GestureHandler;
 
@@ -87,7 +90,7 @@ const SHEET_CORNER = 22;
 
 type Props = RootStackScreenProps<'NowPlaying'>;
 
-const NowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
+const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const { songId } = route.params;
   const setMiniPlayerHiddenSource = usePlayerStore(state => state.setMiniPlayerHiddenSource);
   // The screen, not the window: on Android the window leaves out the nav bar,
@@ -556,6 +559,8 @@ const NowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const setRepeatOne = usePlaybackModesStore(s => s.setRepeatOne);
   const roomOpen = useListenTogetherStore(s => s.room !== null);
   const listeners = useListenTogetherStore(s => s.room?.users.length ?? 0);
+  const connect = useConnect();
+  const openConnectDevices = connect.openDevices;
 
   const onMenuAction = useCallback(async (action: PlayerMenuAction) => {
     const song = currentSong;
@@ -622,6 +627,10 @@ const NowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       case 'together':
         setSheet('together');
         return;
+      case 'connect':
+        setSheet(null);
+        openConnectDevices();
+        return;
       case 'details':
         setSheet('details');
         return;
@@ -633,7 +642,7 @@ const NowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
         setSheet('advanced');
         return;
     }
-  }, [currentSong, navigation, say, showLyrics, setShowLyrics, onToggleLike, repeatOne, setRepeatOne, openArtist]);
+  }, [currentSong, navigation, say, showLyrics, setShowLyrics, onToggleLike, repeatOne, setRepeatOne, openArtist, openConnectDevices]);
 
   const handleCoverSelect = useCallback(async (uri: string) => {
     setShowCoverSearch(false);
@@ -796,6 +805,14 @@ const NowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       </GestureDetector>
     </View>
   );
+};
+
+const NowPlayingScreen: React.FC<Props> = (props) => {
+  const connect = useConnect();
+  const fromConnect = Boolean(parseSongRef(props.route.params.songId));
+  return connect.remotePlayback || fromConnect
+    ? <ConnectRemotePlayer {...props} />
+    : <LocalNowPlayingScreen {...props} />;
 };
 
 const styles = StyleSheet.create({

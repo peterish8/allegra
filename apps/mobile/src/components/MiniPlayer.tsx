@@ -30,7 +30,7 @@ import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
 
 import { usePlayer } from '../contexts/PlayerContext';
 import { diag } from '../utils/diag';
-import { usePlayerStore, playerControls, beginAudioLoad, endAudioLoad, prepareNextInQueue, takeRestoredLoad, takeResumePosition } from '../store/playerStore';
+import { usePlayerStore, playerControls, beginAudioLoad, endAudioLoad, prepareNextInQueue, shouldAutoPlayLoadedSong, takeRestoredLoad, takeResumePosition } from '../store/playerStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSongsStore } from '../store/songsStore';
 import { useIsSongLiked } from '../hooks/useIsSongLiked';
@@ -45,6 +45,7 @@ import { getCurrentLineIndex } from '../utils/timestampParser';
 import { Fonts } from '../constants/fonts';
 import Artwork from './allegra/Artwork';
 import { Signal } from '../constants/allegraTheme';
+import { useConnect } from '../services/connect/ConnectProvider';
 
 const { width } = Dimensions.get('window');
 
@@ -227,6 +228,7 @@ PlaybackControls.displayName = 'PlaybackControls';
 // UIManager.setLayoutAnimationEnabledExperimental removed to avoid New Architecture warning
 
 export const MiniPlayer: React.FC<{ isHomeTab?: boolean }> = ({ isHomeTab = true }) => {
+  const connect = useConnect();
   const player = usePlayer();
   const currentSong = usePlayerStore(state => state.currentSong);
   const showTransliteration = usePlayerStore(state => state.showTransliteration);
@@ -399,7 +401,8 @@ export const MiniPlayer: React.FC<{ isHomeTab?: boolean }> = ({ isHomeTab = true
           // the listener picked plays. (Keyed to that song: a fresh install
           // used to swallow its first pick because it was the "first load".)
           const restored = takeRestoredLoad(songId);
-          if (!restored) requestPlayback(true);
+          if (!restored && shouldAutoPlayLoadedSong(songId)) requestPlayback(true);
+          else requestPlayback(false);
           diag('audio', `pill loaded "${currentSong.title}", ${restored ? 'restored, waits for a tap' : 'play requested'}`);
         } catch (error) {
           if (__DEV__) console.error('[MiniPlayer] Failed to sync audio:', error);
@@ -958,7 +961,7 @@ export const MiniPlayer: React.FC<{ isHomeTab?: boolean }> = ({ isHomeTab = true
 
   
   // Placeholder check to avoid early null return (safer for Reanimated hooks)
-  const isActuallyVisible = currentSong && !isNowPlaying;
+  const isActuallyVisible = currentSong && !isNowPlaying && !connect.remotePlayback;
   
   if (!isActuallyVisible) return <View style={{ height: 0, opacity: 0 }} />;
   

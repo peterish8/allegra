@@ -80,6 +80,9 @@ never listed as separate top-level search hits.
 ### `GET /api/songs?ids=a,b,c` → `ApiResponse<UnifiedSong[]>` · batch hydrate
 ### `GET /api/songs/:id/suggestions?limit=15` → `ApiResponse<UnifiedSong[]>` · cache 24 h
 Same recording collapse as search — suggestions never return twenty copies of one song.
+Bare IDs remain Saavn-compatible. Provider-qualified IDs (`gaana:<id>`; also `saavn:<id>`) select a
+provider explicitly. Gaana search results and hydrated songs use a provider-qualified stream URL so
+the server resolves audio from the same catalog that returned the song.
 
 ### `GET /api/home`
 `→ ApiResponse<{ trending: UnifiedSong[]; madeForYou: UnifiedSong[]; recommended: UnifiedSong[] }>`
@@ -153,7 +156,8 @@ GET    /api/me/liked                   → ApiResponse<UnifiedSong[]>
 POST   /api/me/liked                   { songId }
 DELETE /api/me/liked/:songId
 GET    /api/me/recently-played     → newest first, at most 25 (older listens are dropped on write)
-POST   /api/me/recently-played         { songId, playDuration, playedAt? }  (ISO, last 7 days: an offline play)
+POST   /api/me/recently-played         { songId, playDuration, playedAt? }
+                                      or { songRef, song?, playDuration, playedAt? }
 GET/PATCH /api/me/settings
 ```
 
@@ -254,9 +258,9 @@ fresh guest session.
 |---|---|---|
 | `GET /api/me/taste` | Bearer | → `{ topArtists: {name,score}[] (<=12), languages: {name,score}[] (<=5), signals: number, onboarded: boolean }` |
 | `POST /api/me/taste/seed` | Bearer | `{ artists: string[] (<=30), languages: string[] (<=8) }` → same as `GET`. Onboarding: strong weight, sets `onboarded: true`. |
-| `POST /api/me/taste/signal` | Bearer | `{ songId, seconds }` → `204`. How long a song was really listened to: `<10 s` counts against the artist, most of a song counts for them. |
+| `POST /api/me/taste/signal` | Bearer | `{ songId, seconds }` or `{ songRef, song?, seconds }` → `204`. How long a song was really listened to: `<10 s` counts against the artist, most of a song counts for them. |
 
-Taste is also updated **automatically** by existing routes (it never fails them; a lookup error leaves taste unchanged): `POST /api/me/recently-played` (+0.3 when `playDuration` is 0, else by listened time), `POST /api/me/liked` (+3), `DELETE /api/me/liked/:songId` (−2), `POST /api/libraries/:id/songs` (+2). Scores decay ×0.985 on every signal, so recent listening outweighs old. Artist credits: headline artist full weight, featured artists half. Recommendations consume this local taste context directly.
+Taste is also updated **automatically** by existing routes. Legacy songId writes resolve through the catalog; provider-aware writes include a validated `SongSnapshot`, so Gaana plays train the same account taste without a colliding bare ID. Recent rows retain the ref and snapshot for account history and recommendation seeds. A play adds +0.3 when `playDuration` is 0, else by listened time; a like adds +3; an unlike subtracts 2; a playlist add adds +2. Scores decay ×0.985 on every signal, so recent listening outweighs old. Artist credits: headline artist full weight, featured artists half. Recommendations consume this account taste context directly.
 
 ### Sharing a playlist
 

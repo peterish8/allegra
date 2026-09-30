@@ -11,6 +11,7 @@ import React, { useState } from 'react';
 import { LayoutChangeEvent } from 'react-native';
 
 import { useAccount } from '../../services/account/AccountProvider';
+import { useConnect } from '../../services/connect/ConnectProvider';
 import { signInMessage } from '../../services/account/signInFlow';
 import { choose } from '../../services/sync/LibrarySync';
 import type { FirstSyncChoice } from '../../services/sync/plan';
@@ -26,6 +27,7 @@ export const AllegraAccountSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent
   onNotice,
 }) => {
   const account = useAccount();
+  const connect = useConnect();
   const question = useSyncStore(state => state.question);
   const syncing = useSyncStore(state => state.syncing);
   const lastSyncedAt = useSyncStore(state => state.lastSyncedAt);
@@ -79,9 +81,15 @@ export const AllegraAccountSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent
           <Row label={who ? `Signed in as ${who}` : 'Signed in'} hint={account.profile?.email && who !== account.profile.email ? account.profile.email : undefined} />
           {question ? (
             <>
+              {question.accountLikes === null || question.accountPlaylists === null ? (
+                <Row
+                  label="Account totals unavailable"
+                  hint="Connect to Allegra to load the other library's counts."
+                />
+              ) : null}
               <Row
                 label="Choose how to sync your library"
-                hint={`${count(question.phoneLikes, 'liked song', 'liked songs')} and ${count(question.phonePlaylists, 'playlist', 'playlists')} on this phone. Nothing syncs until you choose. Downloads are never deleted.`}
+                hint={`${count(question.phoneLikes, 'liked song', 'liked songs')} and ${count(question.phonePlaylists, 'playlist', 'playlists')} on this phone${question.accountLikes === null || question.accountPlaylists === null ? '' : `; ${count(question.accountLikes, 'liked song', 'liked songs')} and ${count(question.accountPlaylists, 'playlist', 'playlists')} in your account`}. Nothing syncs until you choose. Downloads are never deleted.`}
                 stack
               />
               <Action label={busy ? 'Syncing' : 'Merge both'} hint="Recommended. Everything from this phone and your account, in both places." onPress={() => pick('merge')} />
@@ -91,6 +99,7 @@ export const AllegraAccountSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent
           ) : (
             <Row label="Library sync" hint={syncHint} />
           )}
+          <Action label="Connect devices" hint="Choose where playback runs and control it from this phone." onPress={connect.openDevices} />
           <Action label="Sign out" destructive onPress={signOut} />
         </>
       ) : (

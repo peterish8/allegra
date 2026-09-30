@@ -17,6 +17,7 @@ import { AppStrings } from './constants/uiStrings';
 import { PlayerProvider } from './contexts/PlayerContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AccountProvider } from './services/account/AccountProvider';
+import { ConnectProvider } from './services/connect/ConnectProvider';
 import { setAudioModeAsync } from 'expo-audio';
 import * as Font from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
@@ -240,7 +241,9 @@ const App: React.FC = () => {
           <StatusBar style="light" />
           <AccountProvider>
             <PlayerProvider>
-              <RootNavigator />
+              <ConnectProvider>
+                <RootNavigator />
+              </ConnectProvider>
             </PlayerProvider>
           </AccountProvider>
         </ThemeProvider>

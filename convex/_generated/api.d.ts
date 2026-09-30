@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as authRedirect from "../authRedirect.js";
+import type * as connect from "../connect.js";
 import type * as covers from "../covers.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
@@ -28,6 +29,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   authRedirect: typeof authRedirect;
+  connect: typeof connect;
   covers: typeof covers;
   crons: typeof crons;
   http: typeof http;
@@ -64,4 +66,7 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  presence: import("@convex-dev/presence/_generated/component.js").ComponentApi<"presence">;
+  rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+};

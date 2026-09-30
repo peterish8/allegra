@@ -1,8 +1,9 @@
 name: Mobile APK
 
-# Builds the LuvLyrics release APK on every push to main that touches the app (or
-# by hand from the Actions tab) and publishes it to the "apk-latest" release, so
-# one link always has the newest build — the one the app's own updater reads
+# Builds the LuvLyrics APK on pushes that touch the app (or by hand from the
+# Actions tab). Only main publishes to the "apk-latest" release, so a feature
+# branch cannot replace the public download before the backend and site are ready.
+# One link always has the newest main build — the one the app's own updater reads
 # (apps/mobile/src/services/appUpdate.ts):
 #   https://github.com/<owner>/<repo>/releases/download/apk-latest/LuvLyrics.apk
 
@@ -10,16 +11,16 @@ on:
   push:
     branches: [main, feat/connect-and-sync]
     paths:
-      - 'apps/mobile/**'
-      - 'packages/**'
-      - 'convex/_generated/**'
-      - '.github/workflows/mobile-apk.yml'
-      - '!apps/mobile/**/*.md'
-      - '!apps/mobile/docs/**'
+      - "apps/mobile/**"
+      - "packages/**"
+      - "convex/_generated/**"
+      - ".github/workflows/mobile-apk.yml"
+      - "!apps/mobile/**/*.md"
+      - "!apps/mobile/docs/**"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mobile-apk
@@ -31,9 +32,11 @@ defaults:
 
 jobs:
   apk:
-    name: Build and publish APK
+    name: Build APK
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +83,7 @@ jobs:
         working-directory: apps/mobile/android
         env:
           # No Sentry auth token in CI: skip the source-map upload step.
-          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
           EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
           EXPO_PUBLIC_GENIUS_ACCESS_TOKEN: ${{ secrets.EXPO_PUBLIC_GENIUS_ACCESS_TOKEN }}
         # gradlew was committed without the executable bit. gradle.properties caps
@@ -100,6 +103,20 @@ jobs:
           name: LuvLyrics-apk
           path: apps/mobile/LuvLyrics.apk
           retention-days: 14
+
+  publish:
+    name: Publish main APK
+    if: github.ref == 'refs/heads/main'
+    needs: apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: LuvLyrics-apk
+          path: apps/mobile
 
       - name: Publish to the apk-latest release
         env:

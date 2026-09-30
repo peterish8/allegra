@@ -115,20 +115,20 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
  * against a song's artist and most of it counts for them, so the taste profile follows behaviour, not just taps.
  */
 export function useListenTracker(song: UnifiedSong | null, currentTime: number, refreshTaste: () => Promise<unknown>): void {
-  const state = useRef<{ id: string | null; seconds: number }>({ id: null, seconds: 0 });
-  const id = song?.id ?? null;
+  const state = useRef<{ key: string | null; song: UnifiedSong | null; seconds: number }>({ key: null, song: null, seconds: 0 });
+  const key = song ? `${song.source.toLowerCase()}:${song.id}` : null;
   const refreshRef = useRef(refreshTaste);
   refreshRef.current = refreshTaste;
 
   useEffect(() => {
     const heard = state.current;
-    if (heard.id !== id) {
-      if (heard.id && heard.seconds >= 1) {
-        void sendListenSignal(heard.id, heard.seconds).then(() => refreshRef.current()).catch(() => undefined);
+    if (heard.key !== key) {
+      if (heard.song && heard.seconds >= 1) {
+        void sendListenSignal(heard.song, heard.seconds).then(() => refreshRef.current()).catch(() => undefined);
       }
-      state.current = { id, seconds: 0 };
+      state.current = { key, song, seconds: 0 };
       return;
     }
     heard.seconds = Math.max(heard.seconds, currentTime);
-  }, [id, currentTime]);
+  }, [key, currentTime, song]);
 }

@@ -5,7 +5,11 @@ import {
   Languages,
   ListMusic,
   LoaderCircle,
+  MonitorSmartphone,
   Mic,
+  Repeat,
+  Repeat1,
+  Shuffle,
   SkipBack,
   SkipForward,
   SlidersHorizontal,
@@ -42,6 +46,25 @@ import { motionTokens, spring } from '../motion';
 export type ImmersivePlayerMode = 'immersive' | 'workspace';
 type ListeningTab = 'lyrics' | 'queue' | 'related';
 
+interface ConnectPanelState {
+  readonly connected: boolean;
+  readonly deviceId: string | null;
+  readonly devices: readonly { readonly deviceId: string; readonly name: string; readonly kind: 'web' | 'android' | 'ios'; readonly canPlay: boolean; readonly isOnline: boolean }[];
+  readonly activeDeviceId?: string;
+  readonly activeDeviceName?: string;
+  readonly autoplayBlocked: boolean;
+  readonly lastError?: string;
+  readonly volume: number;
+  readonly shuffle: boolean;
+  readonly repeat: 'off' | 'all' | 'one';
+  readonly onTransfer: (deviceId: string) => Promise<boolean>;
+  readonly onSignIn: () => void;
+  readonly onResume: () => void;
+  readonly onVolume: (volume: number) => void;
+  readonly onShuffle: () => void;
+  readonly onRepeat: () => void;
+}
+
 interface PlayerPanelProps {
   readonly mode: ImmersivePlayerMode;
   readonly song: UnifiedSong | null;
@@ -74,6 +97,7 @@ interface PlayerPanelProps {
   readonly onOpenArtist?: (name: string) => void;
   readonly muted: boolean;
   readonly onMute: () => void;
+  readonly connect?: ConnectPanelState;
 }
 
 /**
@@ -126,7 +150,8 @@ export function PlayerPanel({
   onOpenAlbum,
   onOpenArtist,
   muted,
-  onMute
+  onMute,
+  connect
 }: PlayerPanelProps) {
   const reduced = useReducedMotion();
   // Which way the cover travels. Explicit Next / Previous taps and swipes set `intent`; a track
@@ -172,6 +197,9 @@ export function PlayerPanel({
   const [{ playerBlackBackground }] = useSettings();
   // The top bar's right-hand slot: the lyrics panel renders its ⋯ actions there on wide screens.
   const [topActionsSlot, setTopActionsSlot] = useState<HTMLDivElement | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [transferBusy, setTransferBusy] = useState<string | null>(null);
+  const [transferError, setTransferError] = useState<string | null>(null);
   const desktopSolo = !isNarrowViewport && lyricsHidden && tab === 'lyrics';
   const desktopLyricsVisible = tab === 'lyrics' && !lyricsHidden;
   // Desktop: double-clicking the cover puts it away and lets the lyrics take the whole stage,
@@ -180,6 +208,20 @@ export function PlayerPanel({
   const lyricsFull = !isNarrowViewport && coverHidden && desktopLyricsVisible;
   const artHidden = (isNarrowViewport && mode === 'workspace') || lyricsFull;
   const showTranslate = Boolean(lyrics.onToggleTranslate) && lyrics.lines.length > 0;
+
+  const chooseDevice = async (deviceId: string): Promise<void> => {
+    if (!connect) return;
+    if (deviceId === connect.deviceId && deviceId === connect.activeDeviceId) {
+      setConnectOpen(false);
+      return;
+    }
+    setTransferBusy(deviceId);
+    setTransferError(null);
+    const success = await connect.onTransfer(deviceId).catch(() => false);
+    setTransferBusy(null);
+    if (success) setConnectOpen(false);
+    else setTransferError(connect.lastError ?? 'That device is not reachable. Open Allegra on it and try again.');
+  };
 
   useEffect(() => {
     if (mode === 'workspace') setTab('lyrics');
@@ -484,7 +526,7 @@ export function PlayerPanel({
                       )}
                     </MarqueeText>
                   </h2>
-                  <p className="np-artist">
+              <p className="np-artist">
                     {onOpenArtist && artists.length > 0
                       ? artists.map((name, index) => (
                           <span key={`${name}-${index}`}>
@@ -500,7 +542,8 @@ export function PlayerPanel({
                           </span>
                         ))
                       : song.artist}
-                  </p>
+              </p>
+              {connect?.activeDeviceName ? <p className="connect-playing-on">Playing on {connect.activeDeviceName}</p> : null}
                 </motion.div>
                 <div className="np-controls">
                   <Scrubber currentTime={currentTime} duration={duration} progress={audioProgress} onSeek={onSeek} />
@@ -550,6 +593,52 @@ export function PlayerPanel({
                       }}
                     />
                     <PlaylistMenu song={song} />
+                    {connect ? (
+                      <div className="connect-control-wrap np-action--tool">
+                        <IconButton
+                          icon={MonitorSmartphone}
+                          label={connect.connected ? `Listen on a device${connect.activeDeviceName ? ` · ${connect.activeDeviceName}` : ''}` : 'Sign in to connect devices'}
+                          active={Boolean(connect.activeDeviceId)}
+                          aria-expanded={connectOpen}
+                          onClick={() => {
+                            if (!connect.connected) { connect.onSignIn(); return; }
+                            setTransferError(null);
+                            setConnectOpen((open) => !open);
+                          }}
+                        />
+                        {connectOpen ? (
+                          <section className="connect-device-picker" role="dialog" aria-label="Playback devices">
+                            <div className="connect-device-picker__heading"><strong>Listen on</strong><button type="button" onClick={() => setConnectOpen(false)} aria-label="Close device picker">×</button></div>
+                            {!connect.connected ? (
+                              <div className="connect-device-picker__signin"><p>Sign in with Google to play on your other devices.</p><button type="button" onClick={connect.onSignIn}>Sign in</button></div>
+                            ) : (
+                              <>
+                                <ul>
+                                  {connect.devices.map((device) => {
+                                    const active = device.deviceId === connect.activeDeviceId;
+                                    const local = device.deviceId === connect.deviceId;
+                                    return <li key={device.deviceId}>
+                                      <button type="button" disabled={!device.canPlay || !device.isOnline || transferBusy !== null} aria-current={active ? 'true' : undefined} onClick={() => void chooseDevice(device.deviceId)}>
+                                        <span><strong>{device.name}{local ? ' · This device' : ''}</strong><small>{active ? 'Playing now' : device.isOnline ? device.kind : 'Offline'}</small></span>
+                                        {transferBusy === device.deviceId ? <LoaderCircle size={15} className="spin" aria-label="Connecting" /> : active ? <span className="connect-device-active">Playing</span> : null}
+                                      </button>
+                                    </li>;
+                                  })}
+                                  {!connect.devices.some((device) => device.deviceId === connect.deviceId) && connect.deviceId ? <li><button type="button" onClick={() => void chooseDevice(connect.deviceId!)}><span><strong>This device</strong><small>Web player</small></span></button></li> : null}
+                                </ul>
+                                <div className="connect-device-controls">
+                                  <label>Volume <input type="range" min="0" max="1" step="0.01" value={connect.volume} onChange={(event) => connect.onVolume(Number(event.currentTarget.value))} /></label>
+                                  <IconButton icon={Shuffle} label={connect.shuffle ? 'Turn shuffle off' : 'Turn shuffle on'} active={connect.shuffle} onClick={connect.onShuffle} />
+                                  <IconButton icon={connect.repeat === 'one' ? Repeat1 : Repeat} label={`Repeat ${connect.repeat}`} active={connect.repeat !== 'off'} onClick={connect.onRepeat} />
+                                </div>
+                                {connect.autoplayBlocked ? <button className="connect-device-resume" type="button" onClick={() => { connect.onResume(); setConnectOpen(false); }}>Tap to play here</button> : null}
+                              </>
+                            )}
+                            {transferError || connect.lastError ? <p className="connect-device-error" role="status">{transferError ?? connect.lastError}</p> : null}
+                          </section>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <IconButton icon={muted ? VolumeX : Volume2} label={muted ? 'Unmute' : 'Mute'} active={muted} onClick={onMute} />
                     {/* Lyrics-view tools. The panel's own Karaoke/Translate chrome is dropped inside the
                         player, so on a phone they live in the dock beside the like button. CSS shows

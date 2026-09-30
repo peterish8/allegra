@@ -7,6 +7,7 @@ import { MemoryCacheStore } from './cache.js';
 import { ProviderUnavailableError } from './errors.js';
 import { StreamResolver } from './streamResolver.js';
 import { SaavnProvider, type SaavnSong } from '../providers/saavn.js';
+import { GaanaProvider } from '../providers/gaana.js';
 
 const song: SaavnSong = {
   id: 'song-1',
@@ -150,4 +151,29 @@ test('private stream URLs are rejected instead of being fetched', async () => {
 
   await assert.rejects(() => resolver.pipe('song-1', undefined, fakeResponse()), ProviderUnavailableError);
   assert.equal(cdnCalls, 0);
+});
+
+test('provider-qualified Gaana stream requests resolve the Gaana CDN and preserve range responses', async () => {
+  const requested: string[] = [];
+  const resolver = new StreamResolver({
+    cache: new MemoryCacheStore(),
+    saavn: new SaavnProvider({ baseUrl: 'https://saavn.example/api', fetchImpl: async () => json({ success: true, data: song }) }),
+    gaana: new GaanaProvider({
+      baseUrl: 'https://gaana.example/api',
+      fetchImpl: async (input) => {
+        requested.push(String(input));
+        return json({ success: true, data: { ...song, id: 'g1', downloadUrl: [{ quality: '320kbps', url: 'https://cdn.example/gaana.mp4' }] } });
+      }
+    }),
+    fetchImpl: async (input, init) => {
+      requested.push(`cdn:${String(input)}:${new Headers(init?.headers).get('range')}`);
+      return new Response('audio', { status: 206, headers: { 'content-range': 'bytes 0-4/20', 'content-type': 'audio/mp4' } });
+    }
+  });
+  const response = fakeResponse();
+  await resolver.pipe('gaana:g1', 'bytes=0-4', response);
+  assert.equal(response.statusCode, 206);
+  assert.ok(requested.some((url) => url === 'https://gaana.example/api/songs/g1'));
+  assert.ok(requested.includes('cdn:https://cdn.example/gaana.mp4:bytes=0-4'));
+  assert.equal(requested.some((url) => url === 'https://saavn.example/api/songs/g1'), false);
 });

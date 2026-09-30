@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Keyboard,
   Pressable,
   RefreshControl,
@@ -62,6 +63,9 @@ import { Song, UnifiedSong } from '../types/song';
 import { Toast } from '../components/Toast';
 import { isDoubleTap, pillBarTop, PILL_STACK_GAP } from '../navigation/tabs';
 import { CLASSIC_MINI_PLAYER_HEIGHT } from '../constants/layout';
+import { useAccount } from '../services/account/AccountProvider';
+import { getRecommendations, toPlayableAllegraSong } from '../services/account/allegraApi';
+import { onPlayReported } from '../services/sync/LibrarySync';
 
 const HEADER_HEIGHT = 52;
 
@@ -90,6 +94,8 @@ const StreamScreen: React.FC = () => {
   const currentSongId = usePlayerStore(s => s.currentSongId);
   const currentSong = usePlayerStore(s => s.currentSong);
   const addToDownloads = useDownloadQueueStore(s => s.addToQueue);
+  const account = useAccount();
+  const isFocused = useIsFocused();
 
   const [feed, setFeed] = useState<HomeFeed | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,6 +105,8 @@ const StreamScreen: React.FC = () => {
   const [results, setResults] = useState<UnifiedSong[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [accountPicks, setAccountPicks] = useState<UnifiedSong[]>([]);
+  const accountPicksRequest = useRef(0);
   const [mood, setMood] = useState<string | null>(null);
   const searchSeq = useRef(0);
 
@@ -199,6 +207,28 @@ const StreamScreen: React.FC = () => {
     setFeed(next);
   }, [preferred]);
 
+  const loadAccountPicks = useCallback(async () => {
+    const request = ++accountPicksRequest.current;
+    const token = account.signedIn ? account.token : null;
+    if (!token) {
+      setAccountPicks([]);
+      return;
+    }
+    const songs = await getRecommendations(token);
+    if (request !== accountPicksRequest.current) return;
+    setAccountPicks(songs.map(toPlayableAllegraSong).filter((song): song is UnifiedSong => song !== null));
+  }, [account.signedIn, account.token]);
+
+  useEffect(() => {
+    const requestCounter = accountPicksRequest;
+    if (isFocused) loadAccountPicks().catch(() => undefined);
+    return () => { requestCounter.current++; };
+  }, [isFocused, loadAccountPicks]);
+
+  useEffect(() => onPlayReported(() => {
+    if (isFocused) loadAccountPicks().catch(() => undefined);
+  }), [isFocused, loadAccountPicks]);
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -208,9 +238,9 @@ const StreamScreen: React.FC = () => {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadFeed();
+    await Promise.all([loadFeed(), loadAccountPicks()]);
     setRefreshing(false);
-  }, [loadFeed]);
+  }, [loadFeed, loadAccountPicks]);
 
   const runSearch = useCallback(async (text?: string, moodLabel: string | null = null) => {
     const q = (text ?? query).trim();
@@ -291,7 +321,6 @@ const StreamScreen: React.FC = () => {
     }
   }, [clearSearch, runSearch, ytChips, loadMoodMix]);
 
-  const isFocused = useIsFocused();
   // Clear the tab bar pill plus the mini player pill stacked above it.
   const bottomClearance = pillBarTop(insets.bottom) + PILL_STACK_GAP + CLASSIC_MINI_PLAYER_HEIGHT + Space.lg;
   const isPlaying = usePlayerStore(s => s.isPlaying);
@@ -300,6 +329,7 @@ const StreamScreen: React.FC = () => {
   // The shader takes its colours from whatever is playing (or the top pick).
   const washArt = currentSong?.coverImageUri ?? feed?.keepListening[0]?.highResArt ?? feed?.quickPicks[0]?.highResArt;
   const palette = useArtworkPalette(washArt);
+  const searchActive = results !== null || searching;
 
   const track = (s: UnifiedSong): TrackItem => ({
     key: streamIdFor(s),
@@ -309,6 +339,22 @@ const StreamScreen: React.FC = () => {
     isCurrent: currentSongId === streamIdFor(s),
     download: s,
   });
+  const accountPicksSection = !searchActive && accountPicks.length > 0 ? (
+    <>
+      <SectionHeading
+        title="Quick picks for you"
+        subtitle="From your Allegra account"
+        action="Play all"
+        onAction={() => play(accountPicks, 0)}
+      />
+      <QuickPicks
+        items={accountPicks.map(track)}
+        onPress={i => play(accountPicks, i)}
+        onLongPress={i => queueNext(accountPicks[i])}
+        onSave={i => save(accountPicks[i])}
+      />
+    </>
+  ) : null;
   const localTrack = (s: Song): TrackItem => ({
     key: s.id,
     title: s.title,
@@ -316,8 +362,6 @@ const StreamScreen: React.FC = () => {
     artwork: s.coverImageUri,
     isCurrent: currentSongId === s.id,
   });
-
-  const searchActive = results !== null || searching;
 
   const followedShelf: Shelf | null = followed.length > 0
     ? { title: 'Your artists', items: followed.map(a => ({ kind: 'artist' as const, browseId: a.browseId, title: a.name, thumbnail: a.thumbnail })) }
@@ -391,29 +435,36 @@ const StreamScreen: React.FC = () => {
     );
   } else if (loading && !feed) {
     body = (
-      <View style={styles.skeleton}>
-        <View style={styles.skeletonGrid}>
-          {[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="48%" height={56} radius={6} />)}
+      <>
+        {accountPicksSection}
+        <View style={styles.skeleton}>
+          <View style={styles.skeletonGrid}>
+            {[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="48%" height={56} radius={6} />)}
+          </View>
+          <ShimmerBlock width={140} height={22} radius={6} />
+          {[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="100%" height={52} radius={6} />)}
         </View>
-        <ShimmerBlock width={140} height={22} radius={6} />
-        {[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="100%" height={52} radius={6} />)}
-      </View>
+      </>
     );
   } else if ((!feed || (feed.quickPicks.length === 0 && feed.keepListening.length === 0)) && ytShelves.length > 0) {
     body = (
       <RiseIn>
+        {accountPicksSection}
         {followedShelf ? <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} /> : null}
         {ytShelves}
       </RiseIn>
     );
   } else if (!feed || (feed.quickPicks.length === 0 && feed.keepListening.length === 0)) {
     body = (
-      <View style={styles.emptyCard}>
-        <Ionicons name="cloud-offline-outline" size={28} color={Signal.inkMuted} />
-        <Text style={styles.emptyTitle}>Can't reach the catalog</Text>
-        <Text style={styles.emptyBody}>Check your connection and pull down to try again. Your downloads still play offline.</Text>
-        <PrimaryButton label="Open downloads" icon="download-outline" onPress={openDownloads} />
-      </View>
+      <>
+        {accountPicksSection}
+        <View style={styles.emptyCard}>
+          <Ionicons name="cloud-offline-outline" size={28} color={Signal.inkMuted} />
+          <Text style={styles.emptyTitle}>Can't reach the catalog</Text>
+          <Text style={styles.emptyBody}>Check your connection and pull down to try again. Your downloads still play offline.</Text>
+          <PrimaryButton label="Open downloads" icon="download-outline" onPress={openDownloads} />
+        </View>
+      </>
     );
   } else {
     // An even count so the two-column grid never ends on a hole.
@@ -421,6 +472,7 @@ const StreamScreen: React.FC = () => {
     const discover = feed.dailyDiscover.map(d => d.recommendation);
     body = (
       <RiseIn>
+        {accountPicksSection}
         {listenAgain.length >= 2 ? (
           <View style={styles.firstSection}>
             <ShortcutGrid
@@ -496,7 +548,7 @@ const StreamScreen: React.FC = () => {
             accessibilityLabel="About LuvLyrics"
             style={styles.aboutBtn}
           >
-            <Ionicons name="sparkles-outline" size={18} color={Signal.ink} />
+            <Image source={require('../../assets/luvlyrics-logo-white-mark.png')} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityIgnoresInvertColors />
           </Tactile>
         </View>
 

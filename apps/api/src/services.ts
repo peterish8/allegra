@@ -25,6 +25,8 @@ import { MusicBrainzReleaseAuthority, type ReleaseAuthority } from './providers/
 import { SaavnProvider } from './providers/saavn.js';
 import { MemoryUserStore, type UserStore } from './user/store.js';
 import { ConvexLibraryStore } from './db/convexLibrary.js';
+import { snapshotOf } from './user/libraryOps.js';
+import type { SongSnapshot } from './shared/songRef.js';
 
 /**
  * Provider settings exactly as config.ts loads them (documented there). Each is optional here so a
@@ -119,12 +121,20 @@ export function createServices(options: ServiceOptions): AppServices {
     ?? (options.convexSiteUrl ? new ConvexTokenVerifier({ siteUrl: options.convexSiteUrl }) : undefined);
 
   const fetchImpl = options.fetchImpl ? { fetchImpl: options.fetchImpl } : {};
-  const stream = new StreamResolver({ saavn, cache, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
+  const stream = new StreamResolver({ saavn, gaana, cache, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
   const auth = new AuthService({
     store: userStore,
     guest: guestVerifier,
     verifier: new FirstMatchVerifier(guestVerifier, convexVerifier),
     ...(convexStore ? { directory: convexStore } : {}),
+    songSnapshots: async (ids) => {
+      const snapshots = new Map<string, SongSnapshot>();
+      for (const song of await catalog.getSongs([...ids])) {
+        const snapshot = snapshotOf(song);
+        if (snapshot) snapshots.set(song.id, snapshot);
+      }
+      return snapshots;
+    },
     // Likes and playlists live in Convex rows beside the profile; in memory otherwise.
     ...(convexStore && convex ? { library: new ConvexLibraryStore(convex) } : {})
   });

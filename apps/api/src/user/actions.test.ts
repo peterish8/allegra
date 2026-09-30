@@ -52,6 +52,17 @@ test('liking twice teaches taste once', async () => {
   assert.equal((await ctx.user()).taste?.artists[0]?.score, once);
 });
 
+test('retrying the same offline play timestamp does not teach taste twice', async () => {
+  const ctx = await listener();
+  const playedAt = '2026-09-30T08:15:00.000Z';
+  await ctx.actions.recordPlay(await ctx.user(), 's1', 0, playedAt);
+  const firstTaste = (await ctx.user()).taste;
+  await ctx.actions.recordPlay(await ctx.user(), 's1', 0, playedAt);
+
+  assert.deepEqual((await ctx.user()).taste, firstTaste);
+  assert.deepEqual((await ctx.user()).recentlyPlayed, [{ songId: 's1', playDuration: 0, playedAt }]);
+});
+
 test('with the catalog down, a like still lands, only without details or taste', async () => {
   const ctx = await listener(catalogDown);
   await ctx.actions.like(await ctx.user(), 's1');

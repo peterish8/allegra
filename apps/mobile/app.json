@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "LyricFlow",
+    "name": "LuvLyrics",
     "slug": "lyricflow",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/luvlyrics-icon-white.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "jsEngine": "hermes",
@@ -29,7 +29,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/luvlyrics-adaptive-white.png",
         "backgroundColor": "#020A16"
       },
       "edgeToEdgeEnabled": true,
@@ -37,6 +37,7 @@
       "scheme": "lyricflow",
       "permissions": [
         "android.permission.INTERNET",
+        "android.permission.REQUEST_INSTALL_PACKAGES",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",

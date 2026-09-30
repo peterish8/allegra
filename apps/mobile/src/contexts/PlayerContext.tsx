@@ -72,7 +72,9 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     playerControls.play = () => setTimeout(() => player.play(), 0);
     playerControls.pause = () => setTimeout(() => player.pause(), 0);
-    playerControls.seekTo = (pos: number) => setTimeout(() => player.seekTo(pos), 0);
+    playerControls.seekTo = pos => new Promise(resolve => setTimeout(() => { player.seekTo(pos); resolve(); }, 0));
+    playerControls.setVolume = volume => NativeAudioPlayer.setVolume(volume);
+    playerControls.getVolume = () => NativeAudioPlayer.getVolume() ?? 1;
   }, [player]);
 
   // Media3 is the source of truth here — see requestPlayback.
@@ -118,7 +120,7 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (didJustFinish && !!activeSongId && endHandledForSongIdRef.current !== activeSongId) {
         endHandledForSongIdRef.current = activeSongId;
         store.setIsPlaying(true);
-        store.nextInPlaylist().catch(() => {});
+        store.nextInPlaylist(true).catch(() => {});
         return;
       }
 
@@ -198,10 +200,12 @@ const IosPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     if (!player) return;
     playerControls.play = () => setTimeout(() => player.play(), 0);
     playerControls.pause = () => setTimeout(() => player.pause(), 0);
-    playerControls.seekTo = (pos: number) => {
+    playerControls.seekTo = pos => new Promise((resolve, reject) => {
       lastSeekAtRef.current = Date.now();
-      setTimeout(() => player.seekTo(pos), 0);
-    };
+      setTimeout(() => { Promise.resolve(player.seekTo(pos)).then(resolve, reject); }, 0);
+    });
+    playerControls.setVolume = volume => { player.volume = Math.max(0, Math.min(1, volume)); };
+    playerControls.getVolume = () => player.volume;
   }, [player]);
 
   useEffect(() => {
@@ -276,7 +280,7 @@ const IosPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     if (shouldAdvance) {
       endHandledForSongIdRef.current = activeSongId;
       store.setIsPlaying(true);
-      store.nextInPlaylist().catch(() => {});
+      store.nextInPlaylist(true).catch(() => {});
       return;
     }
 

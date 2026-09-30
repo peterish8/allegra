@@ -21,3 +21,6 @@ apps/web/public/models/*.onnx
 apps/web/public/models/*.ort
 
 apps/web/public/models/roformer/
+
+.vercel
+.env*

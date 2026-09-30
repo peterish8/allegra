@@ -19,7 +19,17 @@ const library = v.object({
 const recent = v.object({
   songId: v.string(),
   playDuration: v.number(),
-  playedAt: v.string()
+  playedAt: v.string(),
+  songRef: v.optional(v.string()),
+  listenSignalApplied: v.optional(v.boolean()),
+  song: v.optional(v.object({
+    ref: v.string(),
+    title: v.string(),
+    artist: v.string(),
+    album: v.optional(v.string()),
+    artwork: v.string(),
+    duration: v.number()
+  }))
 });
 
 /** Recent listens kept per profile; must match RECENTLY_PLAYED_LIMIT in apps/api/src/user/store.ts. */

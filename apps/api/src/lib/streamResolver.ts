@@ -8,12 +8,15 @@ import { fetchUntilHeaders, isAbortError } from './fetchWithTimeout.js';
 import { parsePublicHttpsUrl } from './publicUrl.js';
 import { BROWSER_HEADERS } from '../providers/saavn.js';
 import type { SaavnProvider } from '../providers/saavn.js';
+import type { GaanaProvider } from '../providers/gaana.js';
+import { parseSongRef } from '../shared/songRef.js';
 
 const STREAM_HEADER_TIMEOUT_MS = 25_000;
 const PASSTHROUGH_STATUSES = new Set([200, 206, 416]);
 
 export interface StreamResolverOptions {
   readonly saavn: SaavnProvider;
+  readonly gaana?: GaanaProvider;
   readonly cache: CacheStore;
   readonly fetchImpl?: typeof fetch;
   readonly timeoutMs?: number;
@@ -21,12 +24,14 @@ export interface StreamResolverOptions {
 
 export class StreamResolver {
   private readonly saavn: SaavnProvider;
+  private readonly gaana: Pick<SaavnProvider, 'getSong'>;
   private readonly cache: CacheStore;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
 
   public constructor(options: StreamResolverOptions) {
     this.saavn = options.saavn;
+    this.gaana = options.gaana ?? options.saavn;
     this.cache = options.cache;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? STREAM_HEADER_TIMEOUT_MS;
@@ -114,7 +119,10 @@ export class StreamResolver {
       }
     }
 
-    const result = await this.saavn.getSong(songId);
+    const ref = parseSongRef(songId);
+    const provider = ref?.source === 'gaana' ? this.gaana : this.saavn;
+    const providerId = ref?.id ?? songId;
+    const result = await provider.getSong(providerId);
     const downloads = result.data?.downloadUrl ?? [];
     const url = downloads.find((asset) => asset.quality === '320kbps')?.url ?? downloads.at(-1)?.url;
     if (!result.ok || !url) {

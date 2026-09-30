@@ -1,7 +1,14 @@
 # Allegra Connect + Library Sync: implementation plan
 
-Status: planned, not started. Branch base: `chore/import-luvlyrics-mobile` (LuvLyrics copied into
-`apps/mobile`, commit `52d50eb`). Written 2026-09-29.
+Status: implemented in source; Connect and sync functions pushed to development Convex on 2026-09-30.
+The signed-in web + physical Android acceptance run is still pending because no Android device is
+attached to this workstation. Active branch: `feat/connect-and-sync`; changes remain uncommitted.
+Written 2026-09-29; implementation status updated 2026-09-30.
+
+The end-to-end feature paths are wired: authenticated Convex Connect, web and mobile player ports,
+API-backed library sync, offline phone outbox, account recent-play/taste signals, and account
+recommendations on both clients. See [`HANDOFF.md`](./HANDOFF.md) for deployed target, gate results,
+known verification limits, and the decision trail in [`DECISIONS.tsv`](./DECISIONS.tsv).
 
 **The goal in one line:** play on the laptop, pick up the phone, and control or move that music
 either way, like Spotify Connect. Likes, playlists, the queue, recently played and recommendations
@@ -330,15 +337,12 @@ PR (squash, conventional commit, no AI footer, per `CLAUDE.md`).
 
 **Verify:** unit tests on both sides. Download a streamed song and confirm the row has `origin_id = 'saavn:…'`.
 
-### Phase 2 — Google sign-in on the phone (h 1.5 d / CC 2 h) — code done, device check pending
-Done: `convex/authRedirect.ts` (+ `tests/convex/`), `apps/mobile/src/services/account/`
+### Phase 2 — Google sign-in on the phone (implemented; device check pending)
+Implemented: `convex/authRedirect.ts` (+ `tests/convex/`), `apps/mobile/src/services/account/`
 (`AccountProvider`, `signInFlow`, `secureStorage`, `allegraApi`, `config`), Settings → Allegra account,
 the three native modules added to the checked-in `ExpoModulesPackageList.kt`, and the secure-store
-backup-exclusion rules added to the checked-in manifest (the `android/` folder is committed, so config
-plugins never run). Found on the way: the live site uses Convex **`neighborly-ocelot-786`** (prod) while
-this checkout and LuvLyrics' bug reports use **`charming-jaguar-140`** (dev), so the app defaults to prod.
-**Not done, needs the owner:** deploy `convex/auth.ts` (dev for a dev-build test, then prod), then the
-device check below.
+backup-exclusion rules added to the checked-in manifest. The dev deployment now includes the auth and
+Connect functions. Production was not changed in this task.
 1. Server: add `callbacks.redirect` in `convex/auth.ts` with an allow-list test (`lyricflow://auth`
    yes, `https://evil.com` no). Add the mobile redirect to the docs.
 2. Mobile: add deps `convex`, `@convex-dev/auth`, `expo-secure-store`, `expo-web-browser` and
@@ -393,7 +397,8 @@ device check below.
 2. `ConvexTransport` built on the **existing** `ConvexReactClient` from `ConvexSignInProvider`. Expose
    the client through context; the player still never imports a Convex hook directly.
 3. `useConnect()` mounted in the layout next to the audio element (it must not remount
-   `<audio>`). Device id: `localStorage['allegra-device-id']`. Name: from `navigator.userAgentData` / UA.
+   `<audio>`). Browser device IDs are stored per Convex Auth subject; the dev harness adds a per-tab
+   suffix. Name: from `navigator.userAgentData` / UA.
 4. UI:
    - a device button in `PlayerPanel`, opening a picker sheet (devices, this device first, active marked)
    - remote mode: `PlayerPanel` and `LyricsPanel` read from `session.view()`, and controls call `session.control`
@@ -552,17 +557,18 @@ other pauses. This is Connect with no phone and no build.
 | **Overall** | **7/10** | Time to "it works" in the two-tab harness is under 5 min |
 
 ## Implementation Tasks
-- [ ] **T1 (P1)** — Phase 0: move the repo, move CI, aliases, merge the import branch
-- [ ] **T2 (P1)** — Phase 1: `songRef` + `origin_id`
-- [ ] **T3 (P1)** — Phase 2: phone Google sign-in
-- [ ] **T4 (P1)** — Phase 3: Convex Connect backend + contract doc
-- [ ] **T5 (P1)** — Phase 4: `packages/connect` + behaviour tests
-- [ ] **T6 (P1)** — Phase 5: web integration + two-tab harness
-- [ ] **T7 (P1)** — Phase 6: phone integration
-- [ ] **T8 (P1)** — Phase 7: `LibraryStore` + migration + ops/changes routes
-- [ ] **T9 (P1)** — Phase 8: like ≠ download, phone sync engine, first-sign-in sheet, plays and Quick picks
-- [ ] **T10 (P2)** — Phase 9: copy, limits, telemetry, docs, rollout
-- [ ] **T11 (P3)** — v2: FCM push to wake a closed phone; device rename; iOS pass; root `check:all`
+- [x] **T1 (P1)** — Phase 0: repo move, CI, aliases, imported mobile app
+- [x] **T2 (P1)** — Phase 1: `songRef` + `origin_id`
+- [x] **T3 (P1)** — Phase 2: phone Google sign-in implementation
+- [x] **T4 (P1)** — Phase 3: Convex Connect backend + contract doc
+- [x] **T5 (P1)** — Phase 4: `packages/connect` + behaviour tests
+- [x] **T6 (P1)** — Phase 5: web integration + two-tab harness
+- [x] **T7 (P1)** — Phase 6: phone integration
+- [x] **T8 (P1)** — Phase 7: `LibraryStore` + ops/changes routes
+- [x] **T9 (P1)** — Phase 8: like ≠ download, phone sync engine, first-sync choices, plays and Quick picks
+- [x] **T10a (P2)** — Phase 9: failure copy, rate limits, documentation, dev deployment
+- [ ] **T10b (P2)** — Add cross-platform outcome counters after the mobile app has an analytics opt-out and shared sink; current web analytics consent does not cover mobile.
+- [ ] **T11 (P3)** — v2: push wake for a closed phone; device rename; iOS release; root `check:all`
 
 ## GSTACK REVIEW REPORT
 

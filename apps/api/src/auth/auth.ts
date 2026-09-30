@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { PersistenceError } from '../lib/errors.js';
 import { MemoryLibraryStore, type LibraryStore } from '../user/library.js';
 import { opsForGuestMerge } from '../user/libraryOps.js';
+import type { SongSnapshot } from '../shared/songRef.js';
 import { MemoryUserStore, type ProfileChange, type UserData, type UserStore } from '../user/store.js';
 import { mergeTaste } from '../user/taste.js';
 import type { GuestTokenVerifier, TokenVerifier, VerifiedCaller } from './verifier.js';
@@ -36,6 +37,8 @@ export interface AuthServiceOptions {
   readonly directory?: IdentityDirectory;
   /** Where likes and playlists change. Defaults to an in-memory one beside a MemoryUserStore. */
   readonly library?: LibraryStore;
+  /** Best-effort catalog details for guest library rows copied to an account. */
+  readonly songSnapshots?: (songIds: readonly string[]) => Promise<ReadonlyMap<string, SongSnapshot>>;
 }
 
 /**
@@ -50,6 +53,7 @@ export class AuthService {
   private readonly verifier: TokenVerifier;
   private readonly directory: IdentityDirectory | undefined;
   private readonly libraryStore: LibraryStore | undefined;
+  private readonly songSnapshots: AuthServiceOptions['songSnapshots'];
 
   public constructor(options: AuthServiceOptions) {
     this.store = options.store;
@@ -57,6 +61,7 @@ export class AuthService {
     this.verifier = options.verifier;
     this.directory = options.directory;
     this.libraryStore = options.library ?? (options.store instanceof MemoryUserStore ? new MemoryLibraryStore(options.store) : undefined);
+    this.songSnapshots = options.songSnapshots;
   }
 
   public async createGuest(): Promise<Session> {
@@ -96,7 +101,14 @@ export class AuthService {
     if (!guest?.isGuest || !account || !hasContent(guest)) return;
     await this.updateProfile(accountUserId, (current) => mergeGuestInto(current, guest));
     // Likes and playlists move as library operations, like every other library change.
-    const ops = opsForGuestMerge(account, guest, Date.now());
+    const ids = guestSongIdsToCopy(account, guest);
+    let snapshots: ReadonlyMap<string, SongSnapshot> = new Map();
+    try {
+      snapshots = (await this.songSnapshots?.(ids)) ?? snapshots;
+    } catch {
+      // The merge still succeeds if a catalog provider is unavailable.
+    }
+    const ops = opsForGuestMerge(account, guest, Date.now(), snapshots);
     if (ops.length > 0) await this.library.apply(accountUserId, ops);
   }
 
@@ -146,6 +158,18 @@ function emptyProfile(userId: string, isGuest: boolean): UserData {
     recentlyPlayed: [],
     settings: {}
   };
+}
+
+function guestSongIdsToCopy(account: UserData, guest: UserData): string[] {
+  const ids = new Set<string>();
+  const accountLikes = new Set(account.likedSongIds);
+  for (const id of guest.likedSongIds) if (!accountLikes.has(id)) ids.add(id);
+
+  const accountPlaylists = new Set(account.libraries.map((library) => library.id));
+  for (const library of guest.libraries) {
+    if (!accountPlaylists.has(library.id)) for (const id of library.songIds) ids.add(id);
+  }
+  return [...ids];
 }
 
 function hasContent(user: UserData): boolean {

@@ -4,7 +4,8 @@
  * this reads that release and hands back where to download it.
  */
 const RELEASE_API = 'https://api.github.com/repos/peterish8/allegra/releases/tags/apk-latest';
-/** Always the newest APK, whatever it is called inside the release. */
+/** Canonical release channel in the owner fork. */
+export const RELEASES_URL = 'https://github.com/peterish8/allegra/releases/tag/apk-latest';
 export const LATEST_APK_URL = 'https://github.com/peterish8/allegra/releases/download/apk-latest/LuvLyrics.apk';
 
 export interface LatestBuild {
@@ -36,7 +37,12 @@ export const releasedAgo = (when: Date, now: Date = new Date()): string => {
 };
 
 export const fetchLatestBuild = async (): Promise<LatestBuild | null> => {
-  const res = await fetch(RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
-  if (!res.ok) return null;
-  return parseRelease((await res.json()) as ReleaseJson);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(RELEASE_API, { signal: controller.signal, headers: { Accept: 'application/vnd.github+json' } });
+    if (!res.ok) return null;
+    return parseRelease((await res.json()) as ReleaseJson);
+  } catch { return null; }
+  finally { clearTimeout(timeout); }
 };

@@ -3,7 +3,7 @@
 import { ConvexAuthProvider, useAuthActions, useAuthToken } from '@convex-dev/auth/react';
 import { ConvexReactClient, useQuery } from 'convex/react';
 import { makeFunctionReference } from 'convex/server';
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { SignInContext, type SignInApi } from '../src/auth/SignInContext';
 import { linkGuestSession, setAccountToken } from '../src/lib/api';
@@ -14,6 +14,12 @@ const libraryRevision = makeFunctionReference<'query', Record<string, never>, nu
 // One client per tab. Built at module scope so a re-render never reconnects.
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 const client = convexUrl ? new ConvexReactClient(convexUrl) : null;
+const ConvexClientContext = createContext<ConvexReactClient | null>(null);
+
+/** The stable app client is shared with realtime features; callers never create a second socket. */
+export function useConvexAppClient(): ConvexReactClient | null {
+  return useContext(ConvexClientContext);
+}
 
 /**
  * Wires Convex Auth into the app when a deployment is configured, and gets out of
@@ -23,9 +29,11 @@ const client = convexUrl ? new ConvexReactClient(convexUrl) : null;
 export function ConvexSignInProvider({ children }: { readonly children: ReactNode }) {
   if (!client) return <>{children}</>;
   return (
-    <ConvexAuthProvider client={client}>
-      <SignInBridge>{children}</SignInBridge>
-    </ConvexAuthProvider>
+    <ConvexClientContext.Provider value={client}>
+      <ConvexAuthProvider client={client}>
+        <SignInBridge>{children}</SignInBridge>
+      </ConvexAuthProvider>
+    </ConvexClientContext.Provider>
   );
 }
 

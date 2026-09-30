@@ -14,10 +14,17 @@ export interface LibraryRecord {
 /** Recent listens kept per listener. Older ones are dropped on every write, not archived. */
 export const RECENTLY_PLAYED_LIMIT = 25;
 
+import type { SongRef, SongSnapshot } from '../shared/songRef.js';
+
 export interface RecentRecord {
   readonly songId: string;
   readonly playDuration: number;
   readonly playedAt: string;
+  /** Provider identity and display data keep Gaana plays distinct from colliding Saavn ids. */
+  readonly songRef?: SongRef;
+  readonly song?: SongSnapshot;
+  /** An idempotency marker for the post-play duration signal sent by offline clients. */
+  readonly listenSignalApplied?: boolean;
 }
 
 export interface TasteEntry {

@@ -9,6 +9,7 @@ import type { ProviderResult, SaavnAsset, SaavnProvider, SaavnSong } from '../pr
 import { decodeHtml, repairMojibake } from '../lib/decodeHtml.js';
 import { inLanguages, languagesKey } from '../lib/languages.js';
 import type { ArtistProfile, ArtistSummary, HomePayload, UnifiedSong } from '../types.js';
+import { parseSongRef } from '../shared/songRef.js';
 
 export interface CatalogSearch {
   readonly results: UnifiedSong[];
@@ -70,7 +71,7 @@ export class CatalogService {
   public async search(query: string, limit: number, page: number, options: SearchOptions = {}): Promise<CatalogSearch> {
     // v4: edits rank below originals, and the top row's album and cover are corrected
     // against the release authority when the provider only has it on a playlist.
-    const key = cacheKey('search', 'v4', query, String(limit), String(page));
+    const key = cacheKey('search', 'v5', query, String(limit), String(page));
     const cached = await this.cache.get<CatalogSearch>(key);
     if (cached) {
       return cached;
@@ -138,20 +139,25 @@ export class CatalogService {
   }
 
   public async getSong(id: string): Promise<UnifiedSong> {
-    const key = cacheKey('song', id);
+    const ref = parseSongRef(id);
+    const source = ref?.source === 'gaana' ? 'Gaana' : 'Saavn';
+    const providerId = ref?.id ?? id;
+    const key = cacheKey('song', source, providerId);
     const cached = await this.cache.get<UnifiedSong>(key);
     if (cached) {
       return cached;
     }
 
-    const result = await this.call(this.saavnBreaker, () => this.saavn.getSong(id));
+    const provider = source === 'Gaana' ? this.gaana : this.saavn;
+    const breaker = source === 'Gaana' ? this.gaanaBreaker : this.saavnBreaker;
+    const result = await this.call(breaker, () => provider.getSong(providerId));
     if (!result.ok) {
       throw result.reason === 'timeout' ? new TimeoutError() : new NotFoundError();
     }
     if (!result.data) {
       throw new NotFoundError();
     }
-    const song = normalizeSong(result.data, 'Saavn');
+    const song = normalizeSong(result.data, source);
     if (!song) {
       throw new NotFoundError();
     }
@@ -214,11 +220,16 @@ export class CatalogService {
     }
 
     const fetchLimit = Math.min(Math.max(limit * 3, limit), 50);
-    const result = await this.call(this.saavnBreaker, () => this.saavn.getSuggestions(id, fetchLimit));
+    const ref = parseSongRef(id);
+    const source = ref?.source === 'gaana' ? 'Gaana' : 'Saavn';
+    const providerId = ref?.id ?? id;
+    const provider = source === 'Gaana' ? this.gaana : this.saavn;
+    const breaker = source === 'Gaana' ? this.gaanaBreaker : this.saavnBreaker;
+    const result = await this.call(breaker, () => provider.getSuggestions(providerId, fetchLimit));
     if (!result.ok) {
       throw unavailable(result.reason);
     }
-    const songs = collapseRecordings(normalizeMany(result.data, 'Saavn')).slice(0, limit);
+    const songs = collapseRecordings(normalizeMany(result.data, source)).slice(0, limit);
     await this.cache.set(key, songs, 86_400);
     return songs;
   }

@@ -22,6 +22,7 @@ export type PlayerMenuAction =
   | 'radio' | 'add' | 'share'
   | 'cast' | 'ambient' | 'lyrics' | 'shuffle' | 'download' | 'like' | 'repeat' | 'refetch'
   | 'artist' | 'ringtone' | 'together'
+  | 'connect'
   | 'details' | 'equalizer' | 'advanced';
 
 interface PlayerMenuProps {
@@ -101,6 +102,7 @@ export const PlayerMenu: React.FC<PlayerMenuProps> = ({ song, liked, showLyrics,
 
       <View style={styles.group}>
         <Row icon="account-multiple-outline" title="Listen together" hint={together} on={!!room} onPress={act('together')} />
+        <Row icon="devices" title="Connect devices" hint="Move playback to your other devices" onPress={act('connect')} />
       </View>
 
       <View style={styles.group}>

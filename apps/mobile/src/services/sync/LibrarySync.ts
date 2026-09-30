@@ -28,6 +28,7 @@ import {
   buildLocalIndex,
   opsForFirstSync,
   planInbound,
+  planPhonePlaylistReplacement,
   refForLocalSong,
   snapshotOfLocal,
   type AccountLibrary,
@@ -35,6 +36,7 @@ import {
   type LocalAction,
   type PhoneLibrary,
 } from './plan';
+import { nextPlayOutboxAction, parsePendingPlay } from './playOutbox';
 
 const libraryRevision = makeFunctionReference<'query', Record<string, never>, number | null>('library:myRev');
 const OPS_PER_BATCH = 100;
@@ -53,6 +55,7 @@ let rerun = false;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let unwatch: (() => void) | null = null;
 let appState: NativeEventSubscription | null = null;
+const playReportedListeners = new Set<() => void>();
 
 const revKey = (userId: string) => `rev:${userId}`;
 const log = (...args: unknown[]) => {
@@ -75,7 +78,16 @@ export async function attach(next: Session, convex: ConvexReactClient): Promise<
       const hasLibrary = phone.likes.length > 0 || phone.playlists.length > 0;
       if (hasLibrary) {
         // A phone with its own library meets an account for the first time: ask.
-        useSyncStore.getState().set({ question: { phoneLikes: phone.likes.length, phonePlaylists: phone.playlists.length } });
+        const token = next.getToken();
+        const account = token ? await readAccountLibrary(token) : null;
+        useSyncStore.getState().set({
+          question: {
+            phoneLikes: phone.likes.length,
+            phonePlaylists: phone.playlists.length,
+            accountLikes: account?.library.likedRefs.size ?? null,
+            accountPlaylists: account?.library.playlists.size ?? null,
+          },
+        });
       } else {
         await bind(next.userId);
       }
@@ -144,14 +156,41 @@ export async function refFor(song: { id: string; title: string; artist?: string;
   return found;
 }
 
-/** A play of a catalog song: Recently played on every device, and taste for Quick picks. */
-export function recordPlay(ref: SongRef, seconds: number): void {
-  if (!active) return;
+/** Publish a valid play to shared history after five seconds of real playback. */
+export function recordPlayStarted(ref: SongRef, song: SongSnapshot, playedAt: string): Promise<void> {
+  if (!session || song.ref !== ref) return Promise.resolve();
+  return db.enqueueOutbox('play', {
+    songRef: ref,
+    song,
+    songId: toAllegraId(ref) ?? undefined,
+    seconds: 0,
+    playedAt,
+    recentOnly: true,
+  })
+    .then(() => syncSoon(FLUSH_DELAY_MS))
+    .catch(error => log('play start record failed', error));
+}
+
+/** A completed listen: update shared history and teach Quick picks the final heard duration. */
+export function recordPlay(ref: SongRef, seconds: number, song: SongSnapshot, playedAt = new Date().toISOString()): void {
+  if (!session) return;
   const songId = toAllegraId(ref);
-  if (!songId || seconds < 5) return;
-  db.enqueueOutbox('play', { songId, seconds: Math.round(seconds), playedAt: new Date().toISOString() })
+  if (song.ref !== ref || seconds < 5) return;
+  db.enqueueOutbox('play', {
+    songRef: ref,
+    song,
+    ...(songId ? { songId } : {}),
+    seconds: Math.round(seconds),
+    playedAt,
+  })
     .then(() => syncSoon(FLUSH_DELAY_MS))
     .catch(error => log('play record failed', error));
+}
+
+/** Subscribe to a play whose recent and taste writes both reached the account. */
+export function onPlayReported(listener: () => void): () => void {
+  playReportedListeners.add(listener);
+  return () => playReportedListeners.delete(listener);
 }
 
 // ── First sign-in choice ────────────────────────────────────────────────────
@@ -168,7 +207,7 @@ export async function choose(choice: FirstSyncChoice): Promise<boolean> {
     const phone = await readPhoneLibrary();
     const ops = opsForFirstSync(choice, phone, account.library, Date.now());
     if (choice === 'account') await dropPhoneOnlyItems(account.library);
-    await db.clearOutbox(); // anything queued before the choice is covered by it
+    await db.clearOutbox('op'); // the chosen library covers old library ops, but not recent listens
     for (const op of ops) await db.enqueueOutbox('op', op);
     await bind(current.userId);
     syncSoon(0);
@@ -201,12 +240,13 @@ async function runOnce(): Promise<void> {
     do {
       rerun = false;
       const current = session;
-      if (!current || !active) break;
+      if (!current) break;
       useSyncStore.getState().set({ syncing: true });
       try {
-        const sent = await flush(current);
-        const pulled = await pull(current);
-        if (sent && pulled) useSyncStore.getState().set({ lastSyncedAt: Date.now() });
+        const includeLibrary = active;
+        const sent = await flush(current, includeLibrary);
+        const pulled = includeLibrary ? await pull(current) : true;
+        if (includeLibrary && sent && pulled) useSyncStore.getState().set({ lastSyncedAt: Date.now() });
       } catch (error) {
         log('sync failed', error);
       } finally {
@@ -222,8 +262,8 @@ async function runOnce(): Promise<void> {
 }
 
 /** Sends the outbox. False when offline (the rest waits for the next run). */
-async function flush(current: Session): Promise<boolean> {
-  for (;;) {
+async function flush(current: Session, includeLibrary: boolean): Promise<boolean> {
+  if (includeLibrary) for (;;) {
     const token = current.getToken();
     if (!token) return false;
     const batch = await db.peekOutbox('op', OPS_PER_BATCH);
@@ -254,13 +294,44 @@ async function flush(current: Session): Promise<boolean> {
     const plays = await db.peekOutbox('play', 20);
     if (plays.length === 0) break;
     for (const entry of plays) {
-      const play = parsePlay(entry.body);
-      if (play) {
-        const reply = await api.postPlay(token, { songId: play.songId, playDuration: play.seconds, playedAt: play.playedAt });
-        if (reply.outcome === 'offline') return false;
-        await api.postListenSignal(token, play.songId, play.seconds);
+      const play = parsePendingPlay(entry.body);
+      if (!play || (!play.recentOnly && play.seconds < 5)) {
+        await db.removeOutbox([entry.id]);
+        continue;
       }
+      if (nextPlayOutboxAction(play) === 'recent') {
+        const recent = await api.postPlay(token, {
+          ...(play.songId ? { songId: play.songId } : {}),
+          songRef: play.songRef,
+          ...(play.song ? { song: play.song } : {}),
+          playDuration: play.seconds,
+          playedAt: play.playedAt,
+        });
+        if (recent.outcome === 'offline') return false;
+        if (recent.outcome === 'refused') {
+          log('play refused', play.songId);
+          await db.removeOutbox([entry.id]);
+          continue;
+        }
+        // Save the completed side effect before attempting taste; a failed taste
+        // request will resume at that stage on the next online sync.
+        await db.updateOutboxBody(entry.id, { ...play, recentPosted: true });
+      }
+      if (play.recentOnly) {
+        await db.removeOutbox([entry.id]);
+        continue;
+      }
+      const taste = await api.postListenSignal(token, {
+        ...(play.songId ? { songId: play.songId } : {}),
+        songRef: play.songRef,
+        ...(play.song ? { song: play.song } : {}),
+        seconds: play.seconds,
+        playedAt: play.playedAt,
+      });
+      if (taste.outcome === 'offline') return false;
+      if (taste.outcome === 'refused') log('taste signal refused', play.songId);
       await db.removeOutbox([entry.id]);
+      if (taste.outcome === 'sent') for (const listener of [...playReportedListeners]) listener();
     }
   }
   useSyncStore.getState().set({ pending: 0 });
@@ -360,15 +431,14 @@ async function detailsFor(actions: readonly LocalAction[], token: string): Promi
   const missing = new Set<string>();
   for (const action of actions) {
     if ((action.kind === 'online_like' || (action.kind === 'playlist_online' && action.present)) && !action.song) {
-      const id = toAllegraId(action.ref);
-      if (id) missing.add(id);
+      missing.add(action.ref);
     }
   }
   const found = new Map<string, SongSnapshot>();
   let complete = true;
-  const ids = [...missing];
-  for (let i = 0; i < ids.length; i += 50) {
-    const songs = await api.getAllegraSongs(token, ids.slice(i, i + 50));
+  const refs = [...missing];
+  for (let i = 0; i < refs.length; i += 50) {
+    const songs = await api.getAllegraSongs(token, refs.slice(i, i + 50));
     if (!songs) {
       complete = false;
       continue;
@@ -424,12 +494,25 @@ async function readPhoneLibrary(): Promise<PhoneLibrary> {
         id: list.id,
         name: list.name,
         ...(list.description ? { description: list.description } : {}),
-        items: [...items, ...online.flatMap(row => (parseSongRef(row.ref) ? [{ ref: row.ref as SongRef }] : []))],
+        items: [
+          ...items,
+          ...online.flatMap(row => {
+            const ref = parseSongRef(row.ref) ? row.ref as SongRef : null;
+            return ref ? [{ ref, song: snapshotOfOnlineRow(row, ref) }] : [];
+          }),
+        ],
       });
     }
   }
-  for (const row of onlineLikes) if (parseSongRef(row.ref)) likes.push({ ref: row.ref as SongRef });
-  return { likes, playlists: lists };
+  for (const row of onlineLikes) {
+    if (!parseSongRef(row.ref)) continue;
+    const ref = row.ref as SongRef;
+    likes.push({ ref, song: snapshotOfOnlineRow(row, ref) });
+  }
+  return {
+    likes: [...new Map(likes.map(like => [like.ref, like])).values()],
+    playlists: lists,
+  };
 }
 
 async function readAccountLibrary(token: string): Promise<{ library: AccountLibrary } | null> {
@@ -444,9 +527,11 @@ async function readAccountLibrary(token: string): Promise<{ library: AccountLibr
         if (change.liked) likedRefs.add(change.ref);
         else likedRefs.delete(change.ref);
       } else if (change.kind === 'playlist') {
+        if (change.playlistId === LIKED_PLAYLIST_ID) continue;
         if (change.deleted) playlists.delete(change.playlistId);
         else if (!playlists.has(change.playlistId)) playlists.set(change.playlistId, new Set());
       } else {
+        if (change.playlistId === LIKED_PLAYLIST_ID) continue;
         const list = playlists.get(change.playlistId);
         if (list) {
           if (change.deleted) list.delete(change.ref);
@@ -460,15 +545,43 @@ async function readAccountLibrary(token: string): Promise<{ library: AccountLibr
   return { library: { likedRefs, playlists } };
 }
 
+function snapshotOfOnlineRow(row: db.OnlineSongRow, ref: SongRef): SongSnapshot {
+  return {
+    ref,
+    title: row.title,
+    artist: row.artist ?? '',
+    ...(row.album ? { album: row.album } : {}),
+    artwork: row.artwork ?? '',
+    duration: Math.max(0, row.duration),
+  };
+}
+
 /** "Use my account's library": the phone's likes and playlists the account lacks go. Downloads stay. */
 async function dropPhoneOnlyItems(account: AccountLibrary): Promise<void> {
   const [songs, playlists, onlineLikes] = await Promise.all([db.getLocalSongs(), db.getLocalPlaylists(), db.getOnlineLikes()]);
   const byId = new Map(songs.map(song => [song.id, song]));
+  const onlineRows = await Promise.all(playlists
+    .filter(list => !list.isDefault && account.playlists.has(list.id))
+    .map(async list => [list.id, await db.getOnlinePlaylistSongs(list.id)] as const));
+  const onlineByPlaylist = new Map(onlineRows);
+  const replacement = planPhonePlaylistReplacement(
+    playlists.map(list => ({
+      id: list.id,
+      isDefault: list.isDefault,
+      songIds: list.songIds,
+      onlineRefs: onlineByPlaylist.get(list.id)?.map(row => row.ref) ?? [],
+    })),
+    new Map(songs.map(song => [song.id, refForLocalSong(song)])),
+    account.playlists,
+  );
+  for (const playlistId of replacement.deletePlaylistIds) await db.deletePlaylistRaw(playlistId);
+  for (const item of replacement.removeMemberships) {
+    await db.setPlaylistMembership(item.playlistId, item.songId, false);
+  }
+  for (const item of replacement.removeOnlineItems) {
+    await db.removeOnlinePlaylistSong(item.playlistId, item.ref);
+  }
   for (const list of playlists) {
-    if (!list.isDefault && !account.playlists.has(list.id)) {
-      await db.deletePlaylistRaw(list.id);
-      continue;
-    }
     if (!list.isDefault) continue;
     for (const songId of list.songIds) {
       const song = byId.get(songId);
@@ -496,15 +609,4 @@ async function findInCatalog(title: string, artist: string): Promise<SongRef | n
     // Offline or provider down: the song simply stays on the phone for now.
   }
   return null;
-}
-
-function parsePlay(body: string): { songId: string; seconds: number; playedAt: string } | null {
-  try {
-    const value = JSON.parse(body) as { songId?: unknown; seconds?: unknown; playedAt?: unknown };
-    return typeof value.songId === 'string' && typeof value.seconds === 'number' && typeof value.playedAt === 'string'
-      ? { songId: value.songId, seconds: value.seconds, playedAt: value.playedAt }
-      : null;
-  } catch {
-    return null;
-  }
 }

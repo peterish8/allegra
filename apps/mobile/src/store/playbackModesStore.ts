@@ -6,6 +6,7 @@
  */
 import { create } from 'zustand';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
+import type { RepeatMode } from '../../../../packages/connect/src/types';
 
 /** Echo's tempo/pitch steps. */
 export const TEMPO_STEPS = [0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
@@ -13,20 +14,31 @@ export const PITCH_STEPS = [0.75, 0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.25] as 
 
 interface PlaybackModesState {
   repeatOne: boolean;
+  repeatMode: RepeatMode;
+  shuffle: boolean;
   tempo: number;
   pitch: number;
   setRepeatOne: (on: boolean) => void;
+  setRepeatMode: (mode: RepeatMode) => void;
+  setShuffle: (on: boolean) => void;
   setTempoPitch: (tempo: number, pitch: number) => void;
 }
 
 export const usePlaybackModesStore = create<PlaybackModesState>(set => ({
   repeatOne: false,
+  repeatMode: 'all',
+  shuffle: false,
   tempo: 1,
   pitch: 1,
   setRepeatOne: on => {
     NativeAudioPlayer.setRepeatOne(on);
-    set({ repeatOne: on });
+    set({ repeatOne: on, repeatMode: on ? 'one' : 'all' });
   },
+  setRepeatMode: mode => {
+    NativeAudioPlayer.setRepeatOne(mode === 'one');
+    set({ repeatOne: mode === 'one', repeatMode: mode });
+  },
+  setShuffle: on => set({ shuffle: on }),
   setTempoPitch: (tempo, pitch) => {
     NativeAudioPlayer.setPlaybackParameters(tempo, pitch);
     set({ tempo, pitch });

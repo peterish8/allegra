@@ -18,7 +18,17 @@ const library = v.object({
 const recent = v.object({
   songId: v.string(),
   playDuration: v.number(),
-  playedAt: v.string()
+    playedAt: v.string(),
+    songRef: v.optional(v.string()),
+    listenSignalApplied: v.optional(v.boolean()),
+  song: v.optional(v.object({
+    ref: v.string(),
+    title: v.string(),
+    artist: v.string(),
+    album: v.optional(v.string()),
+    artwork: v.string(),
+    duration: v.number()
+  }))
 });
 
 const tasteEntry = v.object({ name: v.string(), score: v.number() });
@@ -50,6 +60,56 @@ export const songSnapshot = v.object({
   artwork: v.string(),
   duration: v.number()
 });
+
+export const repeatMode = v.union(v.literal('off'), v.literal('all'), v.literal('one'));
+export const connectCommandKind = v.union(
+  v.literal('play'),
+  v.literal('pause'),
+  v.literal('seek'),
+  v.literal('next'),
+  v.literal('prev'),
+  v.literal('volume'),
+  v.literal('shuffle'),
+  v.literal('repeat'),
+  v.literal('play_song'),
+  v.literal('queue_add'),
+  v.literal('take_over')
+);
+
+/** A snapshot sent as the complete payload of a Connect command. */
+export const playerStateSnapshot = v.object({
+  song: v.optional(songSnapshot),
+  queue: v.array(songSnapshot),
+  isPlaying: v.boolean(),
+  positionSec: v.number(),
+  positionAt: v.number(),
+  volume: v.number(),
+  shuffle: v.boolean(),
+  repeat: repeatMode,
+  rev: v.number()
+});
+
+/** Client-owned playback fields accepted when a device claims the player. */
+export const playerSnapshot = v.object({
+  song: v.optional(songSnapshot),
+  queue: v.array(songSnapshot),
+  isPlaying: v.boolean(),
+  positionSec: v.number(),
+  volume: v.number(),
+  shuffle: v.boolean(),
+  repeat: repeatMode
+});
+
+/** Arguments are validated individually, then checked against the command kind in connect.ts. */
+export const connectCommandArgs = v.union(
+  v.object({ sec: v.number() }),
+  v.object({ v: v.number() }),
+  v.object({ on: v.boolean() }),
+  v.object({ mode: repeatMode }),
+  v.object({ song: songSnapshot, queue: v.optional(v.array(songSnapshot)) }),
+  v.object({ song: songSnapshot }),
+  v.object({ state: playerStateSnapshot })
+);
 
 /** A catalog row as stored inside a song relation: enough to rank and show it without a lookup. */
 export const relatedSong = v.object({
@@ -172,6 +232,55 @@ export default defineSchema({
     userId: v.string(),
     rev: v.number()
   }).index('by_userId', ['userId']),
+
+  // ── Connect: cross-device player ownership and command queue ───────────────
+  // Online status and heartbeat expiry live in @convex-dev/presence. The
+  // retention marker below is only advanced by registration and stale-device
+  // cleanup; it is not used as an online-status source.
+  devices: defineTable({
+    userId: v.string(),
+    deviceId: v.string(),
+    name: v.string(),
+    kind: v.union(v.literal('web'), v.literal('android'), v.literal('ios')),
+    appVersion: v.string(),
+    canPlay: v.boolean(),
+    createdAt: v.number(),
+    retentionCheckedAt: v.number()
+  })
+    .index('by_userId_and_createdAt', ['userId', 'createdAt'])
+    .index('by_deviceId', ['deviceId'])
+    .index('by_retentionCheckedAt', ['retentionCheckedAt']),
+
+  playerState: defineTable({
+    userId: v.string(),
+    activeDeviceId: v.optional(v.string()),
+    song: v.optional(songSnapshot),
+    queue: v.array(songSnapshot),
+    isPlaying: v.boolean(),
+    positionSec: v.number(),
+    positionAt: v.number(),
+    volume: v.number(),
+    shuffle: v.boolean(),
+    repeat: repeatMode,
+    rev: v.number()
+  }).index('by_userId', ['userId']),
+
+  connectCommands: defineTable({
+    userId: v.string(),
+    targetDeviceId: v.string(),
+    /** The registered device that originated the command. */
+    sourceDeviceId: v.string(),
+    /** The authenticated account that requested the command. */
+    issuedBy: v.string(),
+    kind: connectCommandKind,
+    args: v.optional(connectCommandArgs),
+    createdAt: v.number(),
+    status: v.union(v.literal('pending'), v.literal('done'), v.literal('failed')),
+    error: v.optional(v.string())
+  })
+    .index('by_targetDeviceId_and_status', ['targetDeviceId', 'status'])
+    .index('by_sourceDeviceId_and_createdAt', ['sourceDeviceId', 'createdAt'])
+    .index('by_createdAt', ['createdAt']),
 
   /** Spent OAuth codes and refresh tokens (MCP connect), kept only until they expire. */
   oauthGrants: defineTable({

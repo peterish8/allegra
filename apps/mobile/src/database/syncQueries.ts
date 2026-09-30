@@ -202,9 +202,16 @@ export const removeOutbox = (ids: readonly number[]): Promise<void> =>
     for (const id of ids) await db.runAsync('DELETE FROM sync_outbox WHERE id = ?', [id]);
   });
 
-export const clearOutbox = (): Promise<void> =>
+/** Persist progress for a retried event without resending a side effect that already succeeded. */
+export const updateOutboxBody = (id: number, body: unknown): Promise<void> =>
   withDbWrite(async db => {
-    await db.runAsync('DELETE FROM sync_outbox');
+    await db.runAsync('UPDATE sync_outbox SET body = ? WHERE id = ?', [JSON.stringify(body), id]);
+  });
+
+export const clearOutbox = (kind?: OutboxKind): Promise<void> =>
+  withDbWrite(async db => {
+    if (kind) await db.runAsync('DELETE FROM sync_outbox WHERE kind = ?', [kind]);
+    else await db.runAsync('DELETE FROM sync_outbox');
   });
 
 export const getMeta = (key: string): Promise<string | null> =>

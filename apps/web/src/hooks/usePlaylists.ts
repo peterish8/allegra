@@ -1,18 +1,33 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 
+import type { LibraryChange, LibraryOp } from '@shared/library';
+import { fromAllegraSong, toAllegraId, type SongRef, type SongSnapshot } from '@shared/songRef';
 import type { UnifiedSong } from '@shared/types';
 
-import { addSongToLibrary, createLibrary, deleteLibrary, fetchLibraries, fetchSongsByIds, removeSongFromLibrary, uploadLibraryCover } from '../lib/api';
+import {
+  applyLibraryOps,
+  createLibrary,
+  deleteLibrary,
+  fetchLibraries,
+  fetchLibraryChanges,
+  fetchLikedSongs,
+  fetchSongsByIds,
+  uploadLibraryCover
+} from '../lib/api';
 import type { LibraryRecord } from '../lib/api';
+import { createLibrarySong, foldLibraryRows, type LibrarySong } from '../lib/libraryRows';
 
 export interface PlaylistsApi {
   readonly playlists: readonly LibraryRecord[];
-  /** Every song we have seen for a playlist, keyed by id. */
-  readonly songs: ReadonlyMap<string, UnifiedSong>;
+  /** Current songs keyed by their visible Allegra id, including snapshot-backed phone songs. */
+  readonly songs: ReadonlyMap<string, LibrarySong>;
+  readonly playlistRefs: ReadonlyMap<string, readonly SongRef[]>;
+  readonly likedSongs: readonly LibrarySong[];
   readonly loading: boolean;
   readonly error: string | null;
   readonly actionError: string | null;
-  readonly reload: () => Promise<void>;
+  readonly reload: () => Promise<readonly LibrarySong[]>;
+  readonly contains: (libraryId: string, song: UnifiedSong) => boolean;
   readonly create: (name: string) => Promise<LibraryRecord | null>;
   readonly remove: (libraryId: string) => Promise<void>;
   /** Adds the song if it is absent from the playlist, removes it otherwise. */
@@ -32,48 +47,183 @@ function messageOf(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function visibleId(ref: SongRef): string {
+  return toAllegraId(ref) ?? `library:${ref}`;
+}
+
+function snapshotOf(song: UnifiedSong, ref: SongRef): SongSnapshot {
+  const librarySong = song as LibrarySong;
+  return librarySong.librarySnapshot ?? {
+    ref,
+    title: song.title,
+    artist: song.artist,
+    ...(song.album ? { album: song.album } : {}),
+    artwork: song.artwork,
+    duration: song.duration
+  };
+}
+
+function refOf(song: UnifiedSong): SongRef | null {
+  const librarySong = song as LibrarySong;
+  return librarySong.libraryRef ?? fromAllegraSong(song);
+}
+
+function latestByRef(changes: readonly LibraryChange[], kind: 'like' | 'playlist_item'): Map<SongRef, Extract<LibraryChange, { kind: 'like' | 'playlist_item' }>> {
+  const latest = new Map<SongRef, Extract<LibraryChange, { kind: 'like' | 'playlist_item' }>>();
+  for (const change of changes) {
+    if (change.kind !== kind) continue;
+    const prior = latest.get(change.ref);
+    if (!prior || prior.rev < change.rev) latest.set(change.ref, change);
+  }
+  return latest;
+}
+
 export function usePlaylists(): PlaylistsApi {
   const [playlists, setPlaylists] = useState<LibraryRecord[]>([]);
-  const [songs, setSongs] = useState<ReadonlyMap<string, UnifiedSong>>(new Map());
+  const [songs, setSongs] = useState<ReadonlyMap<string, LibrarySong>>(new Map());
+  const [playlistRefs, setPlaylistRefs] = useState<ReadonlyMap<string, readonly SongRef[]>>(new Map());
+  const [likedSongs, setLikedSongs] = useState<readonly LibrarySong[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const playlistsRef = useRef<LibraryRecord[]>([]);
-  const songsRef = useRef<ReadonlyMap<string, UnifiedSong>>(new Map());
+  const songsRef = useRef<ReadonlyMap<string, LibrarySong>>(new Map());
+  const playlistRefsRef = useRef<ReadonlyMap<string, readonly SongRef[]>>(new Map());
+  const likedSongsRef = useRef<readonly LibrarySong[]>([]);
 
   const commit = useCallback((next: LibraryRecord[]): void => {
     playlistsRef.current = next;
     setPlaylists(next);
   }, []);
 
-  const remember = useCallback((incoming: readonly UnifiedSong[]): void => {
-    if (incoming.length === 0) return;
-    const next = new Map(songsRef.current);
-    for (const song of incoming) next.set(song.id, song);
+  const commitSongs = useCallback((next: ReadonlyMap<string, LibrarySong>): void => {
     songsRef.current = next;
     setSongs(next);
   }, []);
 
-  const hydrate = useCallback(async (libraries: readonly LibraryRecord[]): Promise<void> => {
-    const missing = [...new Set(libraries.flatMap((library) => library.songIds))].filter((id) => !songsRef.current.has(id));
-    if (missing.length === 0) return;
-    remember(await fetchSongsByIds(missing));
-  }, [remember]);
+  const commitRefs = useCallback((next: ReadonlyMap<string, readonly SongRef[]>): void => {
+    playlistRefsRef.current = next;
+    setPlaylistRefs(next);
+  }, []);
 
-  const reload = useCallback(async (): Promise<void> => {
+  const commitLikes = useCallback((next: readonly LibrarySong[]): void => {
+    likedSongsRef.current = next;
+    setLikedSongs(next);
+  }, []);
+
+  const reload = useCallback(async (): Promise<readonly LibrarySong[]> => {
     setLoading(true);
     setError(null);
     try {
-      const libraries = await fetchLibraries();
-      commit(libraries);
-      // A playlist is still useful while its artwork loads, so a hydrate failure is not fatal.
-      await hydrate(libraries).catch(() => undefined);
+      const [legacyPlaylists, changes, legacyLikes] = await Promise.all([
+        fetchLibraries(),
+        fetchLibraryChanges(),
+        fetchLikedSongs()
+      ]);
+      const rows = foldLibraryRows(changes);
+      const playlistState = new Map<string, Extract<LibraryChange, { kind: 'playlist' }>>();
+      for (const change of changes) {
+        if (change.kind !== 'playlist') continue;
+        const prior = playlistState.get(change.playlistId);
+        if (!prior || prior.rev < change.rev) playlistState.set(change.playlistId, change);
+      }
+      const snapshots = new Map<SongRef, SongSnapshot>();
+      for (const row of rows.likes) if (row.song) snapshots.set(row.ref, row.song);
+      for (const list of rows.itemsByPlaylist.values()) {
+        for (const row of list) if (row.song) snapshots.set(row.ref, row.song);
+      }
+
+      const legacyByRef = new Map<SongRef, UnifiedSong>();
+      for (const song of legacyLikes) {
+        const ref = fromAllegraSong(song);
+        if (!ref) continue;
+        legacyByRef.set(ref, song);
+        if (!snapshots.has(ref)) snapshots.set(ref, snapshotOf(song, ref));
+      }
+      const refs = [...new Set([
+        ...rows.likes.map((row) => row.ref),
+        ...[...rows.itemsByPlaylist.values()].flatMap((items) => items.map((item) => item.ref)),
+        ...legacyByRef.keys()
+      ])];
+      const missingSaavn = refs
+        .filter((ref) => !legacyByRef.has(ref) && !snapshots.has(ref) && ref.startsWith('saavn:'))
+        .map((ref) => ref.slice('saavn:'.length));
+      const hydrated = missingSaavn.length > 0 ? await fetchSongsByIds(missingSaavn) : [];
+      const hydratedByRef = new Map<SongRef, UnifiedSong>();
+      for (const song of hydrated) {
+        const ref = fromAllegraSong(song);
+        if (ref) {
+          hydratedByRef.set(ref, song);
+          if (!snapshots.has(ref)) snapshots.set(ref, snapshotOf(song, ref));
+        }
+      }
+
+      const songMap = new Map<string, LibrarySong>();
+      for (const ref of refs) {
+        const row = createLibrarySong(ref, snapshots.get(ref), legacyByRef.get(ref) ?? hydratedByRef.get(ref));
+        if (row) songMap.set(visibleId(ref), row);
+      }
+      commitSongs(songMap);
+
+      const refMap = new Map<string, readonly SongRef[]>();
+      const legacyMetadata = new Map(legacyPlaylists.map((playlist) => [playlist.id, playlist]));
+      const playlistRows = rows.playlists.map((row): LibraryRecord => {
+        const legacy = legacyMetadata.get(row.playlistId);
+        const itemRefs = (rows.itemsByPlaylist.get(row.playlistId) ?? []).map((item) => item.ref);
+        refMap.set(row.playlistId, itemRefs);
+        return {
+          id: row.playlistId,
+          name: row.name,
+          ...(row.description ? { description: row.description } : {}),
+          isPublic: row.isPublic,
+          songIds: itemRefs.map(visibleId),
+          createdAt: new Date(row.createdAt).toISOString(),
+          ...(row.coverUrl ? { coverUrl: row.coverUrl } : legacy?.coverUrl ? { coverUrl: legacy.coverUrl } : {}),
+          ...(legacy?.coverKey ? { coverKey: legacy.coverKey } : {})
+        };
+      });
+      // Keep a profile row while an older account is being lazily migrated.
+      for (const legacy of legacyPlaylists) {
+        if (playlistState.get(legacy.id)?.deleted) continue;
+        if (refMap.has(legacy.id)) continue;
+        const legacyRefs = legacy.songIds.flatMap((id) => {
+          const ref = fromAllegraSong({ id, source: 'Saavn' });
+          return ref ? [ref] : [];
+        });
+        refMap.set(legacy.id, legacyRefs);
+        playlistRows.push(legacy);
+      }
+      commitRefs(refMap);
+      commit(playlistRows);
+
+      const likeState = latestByRef(changes, 'like') as Map<SongRef, Extract<LibraryChange, { kind: 'like' }>>;
+      const likedRefs = new Set<SongRef>([...legacyByRef.keys()]);
+      for (const [ref, row] of likeState) {
+        if (row.liked) likedRefs.add(ref);
+        else likedRefs.delete(ref);
+      }
+      const nextLikes = [...likedRefs]
+        .map((ref) => songMap.get(visibleId(ref)))
+        .filter((song): song is LibrarySong => song !== undefined)
+        .sort((a, b) => {
+          const at = likeState.get(a.libraryRef)?.likedAt ?? 0;
+          const bt = likeState.get(b.libraryRef)?.likedAt ?? 0;
+          return bt - at;
+        });
+      commitLikes(nextLikes);
+      return nextLikes;
     } catch (caught) {
       setError(messageOf(caught, 'Your playlists could not be loaded.'));
+      return likedSongsRef.current;
     } finally {
       setLoading(false);
     }
-  }, [commit, hydrate]);
+  }, [commit, commitLikes, commitRefs, commitSongs]);
+
+  const contains = useCallback((libraryId: string, song: UnifiedSong): boolean => {
+    const ref = refOf(song);
+    return ref ? (playlistRefsRef.current.get(libraryId) ?? []).includes(ref) : false;
+  }, []);
 
   const create = useCallback(async (name: string): Promise<LibraryRecord | null> => {
     const trimmed = name.trim();
@@ -81,13 +231,15 @@ export function usePlaylists(): PlaylistsApi {
     setActionError(null);
     try {
       const library = await createLibrary(trimmed);
-      commit([...playlistsRef.current, library]);
+      const next = [...playlistsRef.current, library];
+      commit(next);
+      commitRefs(new Map(playlistRefsRef.current).set(library.id, []));
       return library;
     } catch (caught) {
       setActionError(messageOf(caught, 'That playlist could not be created.'));
       return null;
     }
-  }, [commit]);
+  }, [commit, commitRefs]);
 
   const remove = useCallback(async (libraryId: string): Promise<void> => {
     const before = playlistsRef.current;
@@ -95,36 +247,48 @@ export function usePlaylists(): PlaylistsApi {
     commit(before.filter((library) => library.id !== libraryId));
     try {
       await deleteLibrary(libraryId);
+      const nextRefs = new Map(playlistRefsRef.current);
+      nextRefs.delete(libraryId);
+      commitRefs(nextRefs);
     } catch (caught) {
       commit(before);
       setActionError(messageOf(caught, 'That playlist could not be deleted.'));
     }
-  }, [commit]);
+  }, [commit, commitRefs]);
 
   const toggleSong = useCallback(async (libraryId: string, song: UnifiedSong): Promise<void> => {
     const before = playlistsRef.current;
     const current = before.find((library) => library.id === libraryId);
-    if (!current) return;
-    const has = current.songIds.includes(song.id);
+    const ref = refOf(song);
+    if (!current || !ref) return;
+    const currentRefs = playlistRefsRef.current.get(libraryId) ?? [];
+    const has = currentRefs.includes(ref);
+    const at = Date.now();
+    const op: LibraryOp = has
+      ? { op: 'playlist_remove', playlistId: libraryId, ref, at }
+      : { op: 'playlist_add', playlistId: libraryId, ref, song: snapshotOf(song, ref), at };
     setActionError(null);
-    remember([song]);
-    commit(before.map((library) => library.id === libraryId
-      ? { ...library, songIds: has ? library.songIds.filter((id) => id !== song.id) : [...library.songIds, song.id] }
-      : library));
+    const nextRefs = has ? currentRefs.filter((item) => item !== ref) : [...currentRefs, ref];
+    const ids = nextRefs.map(visibleId);
+    commit(before.map((library) => library.id === libraryId ? { ...library, songIds: ids } : library));
+    commitRefs(new Map(playlistRefsRef.current).set(libraryId, nextRefs));
+    const storedSong = { ...song, libraryRef: ref, librarySnapshot: snapshotOf(song, ref) } as LibrarySong;
+    commitSongs(new Map(songsRef.current).set(visibleId(ref), storedSong));
     try {
-      const saved = has ? await removeSongFromLibrary(libraryId, song.id) : await addSongToLibrary(libraryId, song.id);
-      commit(playlistsRef.current.map((library) => library.id === saved.id ? saved : library));
+      const result = await applyLibraryOps([op]);
+      if (result.rejected.length > 0) throw new Error('That change could not be synced. Try again.');
     } catch (caught) {
-      commit(playlistsRef.current.map((library) => library.id === libraryId ? current : library));
+      commit(before);
+      commitRefs(new Map(playlistRefsRef.current).set(libraryId, currentRefs));
       setActionError(messageOf(caught, 'That change could not be saved.'));
     }
-  }, [commit, remember]);
+  }, [commit, commitRefs, commitSongs]);
 
   const setCover = useCallback(async (libraryId: string, file: File, onProgress?: (ratio: number) => void): Promise<LibraryRecord | null> => {
     setActionError(null);
     try {
       const saved = await uploadLibraryCover(libraryId, file, onProgress);
-      commit(playlistsRef.current.map((library) => (library.id === saved.id ? saved : library)));
+      commit(playlistsRef.current.map((library) => (library.id === saved.id ? { ...library, ...saved } : library)));
       return saved;
     } catch (caught) {
       setActionError(messageOf(caught, 'That cover could not be saved.'));
@@ -132,5 +296,5 @@ export function usePlaylists(): PlaylistsApi {
     }
   }, [commit]);
 
-  return { playlists, songs, loading, error, actionError, reload, create, remove, toggleSong, setCover };
+  return { playlists, songs, playlistRefs, likedSongs, loading, error, actionError, reload, contains, create, remove, toggleSong, setCover };
 }

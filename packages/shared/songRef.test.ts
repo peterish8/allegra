@@ -29,6 +29,12 @@ test('Gaana refs cross devices but do not hydrate by id on Allegra', () => {
   assert.equal(fromMobileId('stream:gaana:991'), ref);
 });
 
+test('provider-qualified API ids keep their ref when passed through the shared song converter', () => {
+  assert.equal(fromAllegraSong({ id: 'gaana:991', source: 'Gaana' }), 'gaana:991');
+  assert.equal(fromAllegraSong({ id: 'saavn:Ab12_x', source: 'Saavn' }), 'saavn:Ab12_x');
+  assert.equal(fromAllegraSong({ id: 'gaana:991', source: 'Saavn' }), null);
+});
+
 test('ids that cannot cross devices have no ref', () => {
   assert.equal(songRef('Local', 'x'), null);
   assert.equal(songRef('saavn', ''), null);

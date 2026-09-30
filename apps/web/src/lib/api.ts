@@ -1,4 +1,6 @@
 import type { AccountProfile, ApiResponse, ArtistProfile, ArtistSummary, HomePayload, LyricLine, LyricsPayload, MotionArtwork, SharedPlaylist, TasteSummary, UnifiedSong } from '@shared/types';
+import type { LibraryChange, LibraryOp } from '@shared/library';
+import { fromAllegraSong, type SongRef, type SongSnapshot } from '@shared/songRef';
 
 export interface LibraryRecord {
   readonly id: string;
@@ -262,11 +264,30 @@ export async function fetchSuggestions(songId: string, signal?: AbortSignal, lim
   return request(`/api/songs/${encodeURIComponent(songId)}/suggestions?limit=${Math.min(30, Math.max(1, limit))}`, { signal });
 }
 
-export async function recordRecentlyPlayed(songId: string, playDuration: number): Promise<void> {
+function snapshotForAccount(song: UnifiedSong): { readonly ref: SongRef; readonly snapshot: SongSnapshot } | null {
+  const synced = song as UnifiedSong & { readonly libraryRef?: SongRef; readonly librarySnapshot?: SongSnapshot };
+  const ref = synced.libraryRef ?? fromAllegraSong(song);
+  if (!ref) return null;
+  return {
+    ref,
+    snapshot: synced.librarySnapshot ?? {
+      ref,
+      title: song.title,
+      artist: song.artist,
+      ...(song.album ? { album: song.album } : {}),
+      artwork: song.artwork,
+      duration: song.duration
+    }
+  };
+}
+
+export async function recordRecentlyPlayed(song: UnifiedSong, playDuration: number): Promise<void> {
+  const playback = snapshotForAccount(song);
+  if (!playback) return;
   await request('/api/me/recently-played', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ songId, playDuration })
+    body: JSON.stringify({ songRef: playback.ref, song: playback.snapshot, playDuration })
   });
 }
 
@@ -284,6 +305,31 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
 export async function fetchLibraries(signal?: AbortSignal): Promise<LibraryRecord[]> {
   return request('/api/libraries', { signal });
+}
+
+/** All current library rows, including phone-only refs absent from the Saavn profile projection. */
+export async function fetchLibraryChanges(signal?: AbortSignal): Promise<LibraryChange[]> {
+  const changes: LibraryChange[] = [];
+  let since = 0;
+  for (;;) {
+    const page = await request<{ rev: number; changes: LibraryChange[]; more: boolean }>(
+      `/api/me/library/changes?since=${since}&limit=500`,
+      { signal }
+    );
+    changes.push(...page.changes);
+    if (!page.more) return changes;
+    if (page.rev <= since) throw new ApiError('Your library could not be loaded. Try again shortly.', 502);
+    since = page.rev;
+  }
+}
+
+/** Apply one or more cross-device library operations without reducing refs to bare Saavn ids. */
+export async function applyLibraryOps(ops: readonly LibraryOp[]): Promise<{ rev: number; rejected: { index: number; reason: string }[] }> {
+  return request('/api/me/library/ops', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ ops })
+  });
 }
 
 export async function createLibrary(name: string): Promise<LibraryRecord> {
@@ -473,8 +519,14 @@ export async function seedTaste(artists: readonly string[], languages: readonly 
 }
 
 /** How long a song was really listened to; the server counts it for or against the song's artist. */
-export async function sendListenSignal(songId: string, seconds: number): Promise<void> {
-  await requestWithoutBody('/api/me/taste/signal', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ songId, seconds: Math.round(seconds) }) });
+export async function sendListenSignal(song: UnifiedSong, seconds: number): Promise<void> {
+  const playback = snapshotForAccount(song);
+  if (!playback) return;
+  await requestWithoutBody('/api/me/taste/signal', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ songRef: playback.ref, song: playback.snapshot, seconds: Math.round(seconds) })
+  });
 }
 
 export async function shareLibrary(libraryId: string): Promise<{ code: string; path: string }> {

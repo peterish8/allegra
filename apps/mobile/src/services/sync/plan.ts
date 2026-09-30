@@ -38,7 +38,10 @@ export function buildLocalIndex(songs: readonly LocalSong[]): LocalIndex {
   const byOrigin = new Map<string, string>();
   const byKey = new Map<string, string>();
   for (const song of songs) {
-    if (song.originId) byOrigin.set(song.originId, song.id);
+    if (song.originId) {
+      byOrigin.set(song.originId, song.id);
+      continue;
+    }
     const key = matchKey(song.title, song.artist);
     if (!byKey.has(key)) byKey.set(key, song.id);
   }
@@ -185,6 +188,48 @@ export interface PhoneLibrary {
 export interface AccountLibrary {
   readonly likedRefs: ReadonlySet<SongRef>;
   readonly playlists: ReadonlyMap<string, ReadonlySet<SongRef>>;
+}
+
+export interface PhonePlaylistRows {
+  readonly id: string;
+  readonly isDefault: boolean;
+  readonly songIds: readonly string[];
+  readonly onlineRefs?: readonly string[];
+}
+
+export interface PhonePlaylistReplacement {
+  readonly deletePlaylistIds: readonly string[];
+  readonly removeMemberships: readonly { readonly playlistId: string; readonly songId: string }[];
+  readonly removeOnlineItems: readonly { readonly playlistId: string; readonly ref: string }[];
+}
+
+/** Local rows that must be removed before the phone adopts the account's playlists. */
+export function planPhonePlaylistReplacement(
+  phonePlaylists: readonly PhonePlaylistRows[],
+  refsBySongId: ReadonlyMap<string, SongRef | null>,
+  accountPlaylists: ReadonlyMap<string, ReadonlySet<SongRef>>,
+): PhonePlaylistReplacement {
+  const deletePlaylistIds: string[] = [];
+  const removeMemberships: { playlistId: string; songId: string }[] = [];
+  const removeOnlineItems: { playlistId: string; ref: string }[] = [];
+  for (const playlist of phonePlaylists) {
+    if (playlist.isDefault) continue;
+    const accountRefs = accountPlaylists.get(playlist.id);
+    if (!accountRefs) {
+      deletePlaylistIds.push(playlist.id);
+      continue;
+    }
+    for (const songId of playlist.songIds) {
+      const ref = refsBySongId.get(songId);
+      if (!ref || !accountRefs.has(ref)) removeMemberships.push({ playlistId: playlist.id, songId });
+    }
+    for (const ref of playlist.onlineRefs ?? []) {
+      const parsed = parseSongRef(ref);
+      const canonical = parsed ? `${parsed.source}:${parsed.id}` as SongRef : null;
+      if (!canonical || !accountRefs.has(canonical)) removeOnlineItems.push({ playlistId: playlist.id, ref });
+    }
+  }
+  return { deletePlaylistIds, removeMemberships, removeOnlineItems };
 }
 
 /**

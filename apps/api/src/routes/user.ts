@@ -5,8 +5,9 @@ import type { CatalogService } from '../catalog/catalog.js';
 import { parseLanguages } from '../lib/languages.js';
 import { MAX_COVER_BYTES, isCoverContentType, looksLikeStorageId, type CoverStorage } from '../lib/covers.js';
 import { parseLibraryOps, type PlaylistCover } from '../shared/library.js';
+import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { ListenerActions } from '../user/actions.js';
-import { RECENTLY_PLAYED_LIMIT, type UserData } from '../user/store.js';
+import type { UserData } from '../user/store.js';
 import { applySeeds, tasteSummary } from '../user/taste.js';
 import { getUserId, sendUnauthorized } from './auth.js';
 import { asRecord, positiveInt, sendFailure, sendSuccess, sanitizeSettings, songId } from './common.js';
@@ -198,7 +199,7 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
     const user = await authenticatedUser(auth, request, response);
     if (!user) return;
     try {
-      sendSuccess(response, await catalog.getSongs(user.recentlyPlayed.slice(0, RECENTLY_PLAYED_LIMIT).map((item) => item.songId)));
+      sendSuccess(response, await actions.recentlyPlayed(user));
     } catch (error) {
       sendFailure(response, error);
     }
@@ -208,15 +209,15 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
     const user = await authenticatedUser(auth, request, response);
     if (!user) return;
     const body = asRecord(request.body);
-    const id = songId(body.songId);
+    const playback = playbackFrom(body);
     const playDuration = typeof body.playDuration === 'number' && Number.isFinite(body.playDuration) && body.playDuration >= 0 ? body.playDuration : 0;
-    if (!id) {
+    if (!playback) {
       response.status(400).json({ success: false, data: null, error: MISSING });
       return;
     }
     try {
       // A phone that played offline sends when it happened; anything else is "now".
-      sendSuccess(response, await actions.recordPlay(user, id, playDuration, playedAtFrom(body.playedAt) ?? new Date().toISOString()), 201);
+      sendSuccess(response, await actions.recordPlay(user, playback.id, playDuration, playedAtFrom(body.playedAt) ?? new Date().toISOString(), playback.ref, playback.song), 201);
     } catch (error) {
       sendFailure(response, error);
     }
@@ -276,14 +277,15 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
     const user = await authenticatedUser(auth, request, response);
     if (!user) return;
     const body = asRecord(request.body);
-    const id = songId(body.songId);
+    const playback = playbackFrom(body);
     const seconds = typeof body.seconds === 'number' && Number.isFinite(body.seconds) && body.seconds >= 0 ? Math.min(body.seconds, 3600) : null;
-    if (!id || seconds === null) {
+    const playedAt = body.playedAt === undefined ? undefined : playedAtFrom(body.playedAt) ?? null;
+    if (!playback || seconds === null || playedAt === null) {
       response.status(400).json({ success: false, data: null, error: MISSING });
       return;
     }
     try {
-      await actions.listened(user, id, seconds);
+      await actions.listened(user, playback.id, seconds, playback.song, playback.ref, playedAt);
       response.status(204).end();
     } catch (error) {
       sendFailure(response, error);
@@ -324,4 +326,30 @@ function playedAtFrom(value: unknown): string | null {
   const now = Date.now();
   if (!Number.isFinite(time) || time > now + 60_000 || time < now - 7 * 24 * 3600_000) return null;
   return new Date(Math.min(time, now)).toISOString();
+}
+
+function playbackFrom(body: Record<string, unknown>): { id: string; ref?: SongRef; song?: SongSnapshot } | null {
+  const rawRef = typeof body.songRef === 'string' ? body.songRef : null;
+  if (!rawRef) {
+    const id = songId(body.songId);
+    return id ? { id } : null;
+  }
+  const parsed = parseSongRef(rawRef);
+  if (!parsed) return null;
+  const ref = `${parsed.source}:${parsed.id}` as SongRef;
+  let song: SongSnapshot | undefined;
+  if (body.song !== undefined) {
+    if (typeof body.song !== 'object' || body.song === null || Array.isArray(body.song)) return null;
+    const candidate = body.song as Record<string, unknown>;
+    const title = typeof candidate.title === 'string' ? candidate.title.trim().slice(0, 300) : '';
+    const artist = typeof candidate.artist === 'string' ? candidate.artist.trim().slice(0, 300) : '';
+    if (!title || candidate.ref !== ref) return null;
+    const artwork = typeof candidate.artwork === 'string' && /^https:\/\//i.test(candidate.artwork) ? candidate.artwork.slice(0, 1000) : '';
+    const duration = typeof candidate.duration === 'number' && Number.isFinite(candidate.duration) && candidate.duration >= 0 ? Math.min(candidate.duration, 86_400) : null;
+    if (duration === null) return null;
+    const album = typeof candidate.album === 'string' && candidate.album.trim() ? candidate.album.trim().slice(0, 300) : undefined;
+    song = { ref, title, artist, ...(album ? { album } : {}), artwork, duration };
+  }
+  const id = parsed.source === 'gaana' ? `gaana:${parsed.id}` : parsed.id;
+  return { id, ref, ...(song ? { song } : {}) };
 }

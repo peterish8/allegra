@@ -80,6 +80,25 @@ test('search caches results and does not leak provider fields', async () => {
   assert.deepEqual(first, second);
 });
 
+test('Gaana catalog rows use a provider-qualified stream URL and ref lookup stays on Gaana', async () => {
+  const urls: string[] = [];
+  const service = catalog(async (input) => {
+    const url = String(input);
+    urls.push(url);
+    if (url.includes('gaana.example')) {
+      return json({ success: true, data: url.includes('/songs/g1') ? gaanaSong : { results: [gaanaSong] } });
+    }
+    return json({ success: true, data: { results: [] } });
+  });
+  const search = await service.search('rare Gaana', 20, 0);
+  assert.equal(search.results[0]?.streamUrl, '/api/stream/gaana%3Ag1');
+  const song = await service.getSong('gaana:g1');
+  assert.equal(song.source, 'Gaana');
+  assert.equal(song.id, 'g1');
+  assert.equal(urls.some((url) => url === 'https://gaana.example/api/songs/g1'), true);
+  assert.equal(urls.some((url) => url === 'https://saavn.example/api/songs/g1'), false);
+});
+
 test('circuit breaker skips Saavn after consecutive failures', async () => {
   let calls = 0;
   const service = catalog(async () => {
