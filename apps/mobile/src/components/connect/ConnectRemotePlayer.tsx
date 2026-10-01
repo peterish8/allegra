@@ -1,43 +1,181 @@
-import React, { useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import Slider from '@react-native-community/slider';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect } from '@react-navigation/native';
+/**
+ * Now Playing while another device plays over Connect. It is the same player as the local one:
+ * the sheet that grows out of the pill and follows the finger down (the pill hands over to it
+ * through `playerSheetProgress`), the cover's colours, the cover and lyrics stage and the
+ * standard controls. What differs is where actions go: every control is a Connect command, the
+ * volume is the playing device's, and a chip under the grabber says which device that is.
+ */
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Dimensions, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import * as GestureHandler from 'react-native-gesture-handler';
+import Animated, {
+  Easing,
+  Extrapolation,
+  cancelAnimation,
+  interpolate,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useDerivedValue,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { SongSnapshot } from '@shared/songRef';
 import type { RootStackScreenProps } from '../../types/navigation';
 import { useConnect } from '../../services/connect/ConnectProvider';
 import { useConnectPositionStore } from '../../services/connect/remotePositionStore';
-import { usePlayerStore } from '../../store/playerStore';
+import { toggleOnlineLike } from '../../services/sync/onlineLike';
 import { lyricaService } from '../../services/LyricaService';
-import SynchronizedLyrics from '../SynchronizedLyrics';
-import { formatTime } from '../../utils/formatters';
+import { extractAlbumColors } from '../../services/NativePalette';
+import { usePlayerStore } from '../../store/playerStore';
+import { usePlaylistStore } from '../../store/playlistStore';
+import { useSongsStore } from '../../store/songsStore';
+import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
+import { useSettingsStore } from '../../store/settingsStore';
+import { libraryLookup, matchKey } from '../../utils/downloadState';
+import { isSeeking } from '../../playback/positionBus';
+import { safeGoBack } from '../../utils/navigationService';
+import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../../navigation/playerSheet';
+import { playerSheetRest } from '../../navigation/tabs';
+import { playerSheetProgress } from '../../navigation/sheetProgress';
+import { Signal } from '../../constants/allegraTheme';
+import * as Haptics from '../../utils/haptics';
+import NowPlayingBackground from '../NowPlayingBackground';
+import NowPlayingHeader from '../NowPlayingHeader';
+import NowPlayingLyricsArea, { CONTROLS_CLEARANCE, HEADER_CLEARANCE, LYRICS_MORPH_MS } from '../NowPlayingLyricsArea';
+import NowPlayingControls from '../NowPlayingControls';
+import type { SynchronizedLyricsRef } from '../SynchronizedLyrics';
+import { PlayerSheet, SheetScrollView } from '../player/PlayerSheet';
+import Artwork from '../allegra/Artwork';
+
+const { Gesture, GestureDetector } = GestureHandler;
 
 type Props = RootStackScreenProps<'NowPlaying'>;
+
+// The local player's sheet physics (screens/NowPlayingScreen.tsx), so both feel the same.
+const criticallyDamped = (stiffness: number) => ({ stiffness, damping: 2 * Math.sqrt(stiffness), mass: 1, overshootClamping: true }) as const;
+const SOFT_SPRING = criticallyDamped(400);
+const FLING_SPRING = criticallyDamped(1500);
+const CLOSE_REST = { restDisplacementThreshold: 0.5, restSpeedThreshold: 8 } as const;
+const FLICK = 800;
+const PAGE_DIM = 0.5;
+const SHEET_CORNER = 22;
+const projectMomentum = (velocity: number): number => {
+  'worklet';
+  return (velocity / 1000) * (0.99 / (1 - 0.99));
+};
+const rubberBand = (overshoot: number, dimension: number): number => {
+  'worklet';
+  const a = Math.abs(overshoot);
+  return Math.sign(overshoot) * ((a * dimension * 0.55) / (dimension + 0.55 * a));
+};
+/** The remote position arrives once a second; the scrubber and lyrics glide between reports. */
+const TICK_MS = 1000;
+const FALLBACK_COLORS = ['#1b1a22', '#2a2833', '#08090d'];
+
+/** Liked here: a library copy that is liked, or the song liked online (synced with the account). */
+function useRemoteLike(song: SongSnapshot | undefined): { liked: boolean; toggle: () => void } {
+  const key = song ? matchKey(song.title, song.artist) : null;
+  const copyId = useSongsStore(state => (key ? libraryLookup(state.songs).get(key)?.id : undefined));
+  const copyLiked = usePlaylistStore(state => (copyId ? state.likedSongIds.has(copyId) : false));
+  const onlineLiked = useOnlineLibraryStore(state => (song ? state.likedRefs.has(song.ref) : false));
+  const toggle = useCallback(() => {
+    if (!song) return;
+    const done = copyId ? useSongsStore.getState().toggleLike(copyId) : toggleOnlineLike(song);
+    done.catch(() => undefined);
+  }, [song, copyId]);
+  return { liked: copyLiked || onlineLiked, toggle };
+}
 
 export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
   const connect = useConnect();
   const view = connect.view;
-  const remotePosition = useConnectPositionStore(state => state.positionSec);
   const song = view?.song;
+  const playing = view?.isPlaying ?? false;
+  const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
+  const { width: windowW, height: windowH } = useWindowDimensions();
+  const screenH = Math.max(windowH, Dimensions.get('screen').height);
+  const pillNav = useSettingsStore(s => s.navBarStyle) === 'modern-pill';
+  const setMiniPlayerHiddenSource = usePlayerStore(state => state.setMiniPlayerHiddenSource);
+
+  // ── Sheet: grow out of the pill, follow the finger, shrink back ──────────
+  const { y: restY } = playerSheetRest(windowW, screenH, insets.bottom, pillNav);
+  const sheetY = useSharedValue(restY);
+  const progress = useDerivedValue(() => Math.min(1, Math.max(0, 1 - sheetY.value / restY)));
+  useAnimatedReaction(() => progress.value, p => { playerSheetProgress.value = p; });
+  useEffect(() => () => { playerSheetProgress.value = 0; }, []);
+  const [holdRoute, setHoldRoute] = useState(true);
+  const closing = useSharedValue(false);
+
+  useEffect(() => {
+    const velocity = takeOpenVelocity();
+    sheetY.value = reduceMotion
+      ? withTiming(0, { duration: 200 })
+      : withSpring(0, { ...(velocity > FLICK ? FLING_SPRING : SOFT_SPRING), velocity: -velocity });
+  // Mount only: the sheet opens once.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const finishClose = useCallback(() => setHoldRoute(false), []);
+  useEffect(() => {
+    if (!holdRoute) safeGoBack(navigation);
+  }, [holdRoute, navigation]);
+  const revealPill = useCallback(() => setMiniPlayerHiddenSource('NowPlaying', false), [setMiniPlayerHiddenSource]);
+  const animateClose = useCallback((velocity = 0) => {
+    'worklet';
+    if (closing.value) return;
+    closing.value = true;
+    runOnJS(revealPill)();
+    const done = (finished?: boolean) => {
+      'worklet';
+      if (finished) runOnJS(finishClose)();
+    };
+    sheetY.value = reduceMotion
+      ? withTiming(restY, { duration: 200, easing: Easing.out(Easing.quad) }, done)
+      : withSpring(restY, { ...(velocity > FLICK ? FLING_SPRING : SOFT_SPRING), ...CLOSE_REST, velocity: Math.max(0, velocity) }, done);
+  }, [restY, reduceMotion, finishClose, revealPill, closing, sheetY]);
+
+  useFocusEffect(useCallback(() => {
+    setMiniPlayerHiddenSource('NowPlaying', true);
+    return () => setMiniPlayerHiddenSource('NowPlaying', false);
+  }, [setMiniPlayerHiddenSource]));
+
+  const [queueOpen, setQueueOpen] = useState(false);
+  const queueRef = useRef(queueOpen);
+  queueRef.current = queueOpen;
+  usePreventRemove(holdRoute, () => {
+    if (queueRef.current) setQueueOpen(false);
+    else animateClose(0);
+  });
+
+  // ── Lyrics and the cover ↔ lyrics morph ─────────────────────────────────
+  const [showLyrics, setShowLyrics] = useState(false);
+  const showLyricsSV = useSharedValue(false);
+  const lyricsP = useSharedValue(0);
+  const dockX = useSharedValue(0);
+  const dockY = useSharedValue(0);
+  useEffect(() => {
+    showLyricsSV.value = showLyrics;
+    lyricsP.value = reduceMotion
+      ? (showLyrics ? 1 : 0)
+      : withTiming(showLyrics ? 1 : 0, { duration: LYRICS_MORPH_MS, easing: Easing.bezier(0.32, 0.72, 0, 1) });
+  }, [showLyrics, reduceMotion, lyricsP, showLyricsSV]);
+  const lyricsOffset = useSharedValue(0);
+  const flatListRef = useRef<SynchronizedLyricsRef>(null);
+  const isUserScrolling = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [lyrics, setLyrics] = useState<{ timestamp: number; text: string }[]>([]);
   const songRef = song?.ref;
   const songTitle = song?.title;
   const songArtist = song?.artist;
   const songDuration = song?.duration;
-  const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
-  const [lyrics, setLyrics] = useState<ReturnType<typeof lyricaService.parseLrc>>([]);
-  const [showLyrics, setShowLyrics] = useState(false);
-  const [showQueue, setShowQueue] = useState(false);
-  const [scrubValue, setScrubValue] = useState<number | null>(null);
-  const [volumeValue, setVolumeValue] = useState<number | null>(null);
-
-  useFocusEffect(React.useCallback(() => {
-    usePlayerStore.getState().setMiniPlayerHiddenSource('NowPlaying', true);
-    return () => usePlayerStore.getState().setMiniPlayerHiddenSource('NowPlaying', false);
-  }, []));
-
   useEffect(() => {
     let current = true;
     setLyrics([]);
@@ -50,224 +188,245 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
     return () => { current = false; };
   }, [songRef, songTitle, songArtist, songDuration]);
 
-  const seconds = scrubValue ?? remotePosition;
-  const volume = volumeValue ?? view?.volume ?? 1;
-  const duration = Math.max(1, song?.duration ?? 1);
-  const close = (): void => {
-    if (navigation.canGoBack()) navigation.goBack();
-    else navigation.navigate('Main');
-  };
-  const seek = (positionSec: number): void => {
-    setScrubValue(null);
-    connect.control({ kind: 'seek', sec: Math.max(0, Math.min(duration, positionSec)) });
-  };
+  // ── The cover's colours ─────────────────────────────────────────────────
+  const [colors, setColors] = useState<string[]>(FALLBACK_COLORS);
+  const artwork = song?.artwork;
+  useEffect(() => {
+    let current = true;
+    if (!artwork) { setColors(FALLBACK_COLORS); return () => { current = false; }; }
+    extractAlbumColors(artwork).then(swatches => {
+      if (!current || !swatches) return;
+      setColors([
+        swatches.darkVibrant?.color ?? swatches.dominant?.color ?? '#111',
+        swatches.vibrant?.color ?? swatches.dominant?.color ?? '#333',
+        swatches.darkMuted?.color ?? '#000',
+      ]);
+    }).catch(() => undefined);
+    return () => { current = false; };
+  }, [artwork]);
 
-  if (!song || !view) {
-    return (
-      <View style={[styles.root, styles.center, { paddingTop: insets.top }]}>
-        <Pressable onPress={close} style={styles.close} accessibilityRole="button" accessibilityLabel="Close player">
-          <Ionicons name="chevron-down" size={26} color="#fff" />
-        </Pressable>
-        <Text style={styles.notice}>Connect is waiting for playback information.</Text>
-        <Pressable style={styles.devicesButton} onPress={connect.openDevices}>
-          <Ionicons name="phone-portrait-outline" size={19} color="#fff" />
-          <Text style={styles.devicesLabel}>Connect devices</Text>
-        </Pressable>
-      </View>
-    );
-  }
+  // ── Position: glide between the once-a-second reports ───────────────────
+  const remotePosition = useConnectPositionStore(state => state.positionSec);
+  const livePos = useSharedValue(remotePosition);
+  const liveDur = useSharedValue(Math.max(0, songDuration ?? 0));
+  useEffect(() => { liveDur.value = Math.max(0, songDuration ?? 0); }, [songDuration, liveDur]);
+  useEffect(() => {
+    if (isSeeking.value) return;
+    cancelAnimation(livePos);
+    livePos.value = remotePosition;
+    const end = liveDur.value;
+    if (playing && !reduceMotion && end > 0) {
+      livePos.value = withTiming(Math.min(end, remotePosition + TICK_MS / 1000), { duration: TICK_MS, easing: Easing.linear });
+    }
+  }, [remotePosition, playing, reduceMotion, livePos, liveDur]);
 
-  const artworkSize = Math.min(width - 52, height * (showLyrics ? 0.3 : 0.47));
-  const playingOn = view.activeDevice?.name ?? 'a device';
+  // ── Volume of the device that plays ─────────────────────────────────────
+  const remoteVolume = view?.volume ?? 1;
+  const volumeLevel = useSharedValue(remoteVolume);
+  useEffect(() => { volumeLevel.value = remoteVolume; }, [remoteVolume, volumeLevel]);
+
+  const control = connect.control;
+  const seek = useCallback((seconds: number) => {
+    const end = Math.max(1, liveDur.value);
+    control({ kind: 'seek', sec: Math.max(0, Math.min(end, seconds)) });
+  }, [control, liveDur]);
+  const like = useRemoteLike(song);
+
+  // ── Drag down to close (the lyrics list keeps a drag that starts on it) ─
+  const grabY = useSharedValue(0);
+  const frameH = useSharedValue(screenH);
+  const lyricsTop = insets.top + HEADER_CLEARANCE;
+  const dismissGesture = Gesture.Pan()
+    .enabled(!queueOpen)
+    .activeOffsetY(12)
+    .failOffsetY(-10)
+    .failOffsetX([-24, 24])
+    .onTouchesDown((e, state) => {
+      'worklet';
+      if (closing.value) { state.fail(); return; }
+      const y = e.allTouches[0] ? e.allTouches[0].y : 0;
+      if (showLyricsSV.value && lyricsOffset.value > 2 && y > lyricsTop && y < frameH.value - CONTROLS_CLEARANCE) state.fail();
+    })
+    .onStart(() => {
+      'worklet';
+      grabY.value = sheetY.value;
+    })
+    .onUpdate(e => {
+      'worklet';
+      const y = grabY.value + e.translationY;
+      sheetY.value = y >= 0 ? Math.min(y, restY) : rubberBand(y, 120);
+    })
+    .onEnd(e => {
+      'worklet';
+      const landing = sheetY.value + projectMomentum(e.velocityY);
+      if ((landing > screenH * DISMISS_DISTANCE && e.velocityY > -200) || e.velocityY > DISMISS_VELOCITY) {
+        animateClose(e.velocityY);
+      } else {
+        sheetY.value = withSpring(0, { ...(Math.abs(e.velocityY) > FLICK ? FLING_SPRING : SOFT_SPRING), velocity: e.velocityY });
+      }
+    });
+
+  const sheetStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    const corner = SHEET_CORNER * (1 - interpolate(p, [0.9, 1], [0, 1], Extrapolation.CLAMP));
+    return {
+      opacity: reduceMotion ? p : 1,
+      borderTopLeftRadius: corner,
+      borderTopRightRadius: corner,
+      transform: [{ translateY: sheetY.value }] as const,
+    };
+  });
+  const playerFadeStyle = useAnimatedStyle(() => ({
+    opacity: reduceMotion ? 1 : interpolate(progress.value, [0.15, 0.4], [0, 1], Extrapolation.CLAMP),
+  }));
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: PAGE_DIM * Math.min(1, 1.4 * Math.sqrt(Math.max(0, progress.value - 0.1))),
+  }));
+
+  const playingOn = view?.activeDevice ? { name: view.activeDevice.name, kind: view.activeDevice.kind } : null;
+
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 4, paddingBottom: insets.bottom + 10 }]}>
-      <LinearGradient colors={['#24202d', '#100f15', '#08090d']} style={StyleSheet.absoluteFill} />
-      {song.artwork ? <Image source={{ uri: song.artwork }} blurRadius={48} style={styles.backdropArt} /> : null}
-      <LinearGradient colors={['rgba(8,9,13,0.35)', 'rgba(8,9,13,0.84)', '#08090d']} style={StyleSheet.absoluteFill} />
-      <View style={styles.header}>
-        <Pressable onPress={close} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Close player">
-          <Ionicons name="chevron-down" size={25} color="#fff" />
-        </Pressable>
-        <View style={styles.headerCopy}>
-          <Text style={styles.kicker}>CONNECT</Text>
-          <Text style={styles.deviceName} numberOfLines={1}>Playing on {playingOn}</Text>
-        </View>
-        <Pressable onPress={connect.openDevices} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Choose playback device">
-          <Ionicons name="phone-portrait-outline" size={22} color="#fff" />
-        </Pressable>
-      </View>
-
-      {showQueue ? (
-        <ScrollView style={styles.queue} contentContainerStyle={styles.queueContent}>
-          <Text style={styles.queueTitle}>Up next</Text>
-          {view.queue.length ? view.queue.map((queued, index) => (
-            <Pressable
-              key={`${queued.ref}-${index}`}
-              style={({ pressed }) => [styles.queueRow, pressed && styles.queuePressed]}
-              onPress={() => {
-                connect.control({ kind: 'play_song', song: queued, queue: view.queue.slice(index + 1) });
-                setShowQueue(false);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Play ${queued.title} next`}
-            >
-              {queued.artwork ? <Image source={{ uri: queued.artwork }} style={styles.queueArt} /> : <View style={[styles.queueArt, styles.noArt]}><Ionicons name="musical-notes" size={18} color="#aaa" /></View>}
-              <View style={styles.queueCopy}>
-                <Text style={styles.queueSong} numberOfLines={1}>{queued.title}</Text>
-                <Text style={styles.queueArtist} numberOfLines={1}>{queued.artist}</Text>
-              </View>
-              <Ionicons name="play" size={18} color="#fff" />
-            </Pressable>
-          )) : <Text style={styles.notice}>There are no songs queued.</Text>}
-        </ScrollView>
-      ) : showLyrics ? (
-        <View style={styles.lyrics}>
-          {lyrics.length ? (
-            <SynchronizedLyrics
-              lyrics={lyrics}
-              currentTime={remotePosition}
-              onLyricPress={seek}
-              songTitle={song.title}
+    <View style={styles.root}>
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
+      <GestureDetector gesture={dismissGesture}>
+        <Animated.View style={[styles.container, sheetStyle]} onLayout={e => { frameH.value = e.nativeEvent.layout.height; }}>
+          <Animated.View style={[styles.playerLayer, playerFadeStyle]}>
+            <NowPlayingBackground coverImageUri={artwork} gradientColors={colors} showLyrics={showLyrics} playing={playing} />
+            <NowPlayingHeader
+              animatedStyle={undefined}
+              controlsVisible
+              onGoBack={() => animateClose(0)}
+              playingOn={playingOn}
+              onPlayingOnPress={connect.openDevices}
             />
-          ) : (
-            <View style={styles.center}><Text style={styles.notice}>Lyrics are not available for this song.</Text></View>
-          )}
-        </View>
-      ) : (
-        <View style={styles.coverStage}>
-          <View style={[styles.cover, { width: artworkSize, height: artworkSize }]}>
-            {song.artwork ? <Image source={{ uri: song.artwork }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : (
-              <View style={[StyleSheet.absoluteFill, styles.noArt]}><Ionicons name="musical-notes" size={54} color="rgba(255,255,255,0.65)" /></View>
+
+            {song && view ? (
+              <>
+                <View style={styles.contentArea}>
+                  <NowPlayingLyricsArea
+                    showLyrics={showLyrics}
+                    processedLyrics={lyrics}
+                    currentTime={livePos}
+                    onLyricPress={seek}
+                    songTitle={song.title}
+                    isUserScrollingRef={isUserScrolling}
+                    scrollTimeoutRef={scrollTimeoutRef}
+                    flatListRef={flatListRef}
+                    coverImageUri={artwork}
+                    songArtist={song.artist}
+                    scrollOffset={lyricsOffset}
+                    lyricsP={lyricsP}
+                    dockX={dockX}
+                    dockY={dockY}
+                  />
+                </View>
+                <NowPlayingControls
+                  animatedStyle={undefined}
+                  controlsVisible
+                  storePlaying={playing}
+                  currentSongTitle={song.title}
+                  currentSongArtist={song.artist}
+                  isCurrentSongLiked={like.liked}
+                  onTogglePlay={() => control({ kind: playing ? 'pause' : 'play' })}
+                  onSkipForward={() => control({ kind: 'next' })}
+                  onSkipBackward={() => control({ kind: 'prev' })}
+                  onToggleLike={like.toggle}
+                  onToggleLyrics={() => setShowLyrics(value => !value)}
+                  positionSV={livePos}
+                  durationSV={liveDur}
+                  onSeek={seek}
+                  showLyrics={showLyrics}
+                  compact={showLyrics}
+                  coverImageUri={artwork}
+                  lyricsP={lyricsP}
+                  dockX={dockX}
+                  dockY={dockY}
+                  onOpenQueue={() => setQueueOpen(true)}
+                  remoteVolume={{ level: volumeLevel, onCommit: v => control({ kind: 'volume', v: Math.max(0, Math.min(1, v)) }) }}
+                  onOutputPress={connect.openDevices}
+                  outputActive
+                />
+                <PlayerSheet visible={queueOpen} title="Up next" tall onClose={() => setQueueOpen(false)}>
+                  <View style={styles.modes}>
+                    <Pressable
+                      onPress={() => { Haptics.selectionAsync().catch(() => undefined); control({ kind: 'shuffle', on: !view.shuffle }); }}
+                      style={[styles.mode, view.shuffle && styles.modeOn]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: view.shuffle }}
+                      accessibilityLabel={view.shuffle ? 'Turn shuffle off' : 'Turn shuffle on'}
+                    >
+                      <Ionicons name="shuffle" size={18} color={view.shuffle ? Signal.waveInk : '#fff'} />
+                      <Text style={[styles.modeText, view.shuffle && styles.modeTextOn]}>Shuffle</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => { Haptics.selectionAsync().catch(() => undefined); control({ kind: 'repeat', mode: view.repeat === 'off' ? 'all' : view.repeat === 'all' ? 'one' : 'off' }); }}
+                      style={[styles.mode, view.repeat !== 'off' && styles.modeOn]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Repeat ${view.repeat}`}
+                    >
+                      <MaterialCommunityIcons name={view.repeat === 'one' ? 'repeat-once' : 'repeat'} size={18} color={view.repeat !== 'off' ? Signal.waveInk : '#fff'} />
+                      <Text style={[styles.modeText, view.repeat !== 'off' && styles.modeTextOn]}>{view.repeat === 'one' ? 'Repeat one' : view.repeat === 'all' ? 'Repeat all' : 'Repeat'}</Text>
+                    </Pressable>
+                  </View>
+                  <SheetScrollView showsVerticalScrollIndicator={false}>
+                    {view.queue.length ? view.queue.map((queued, index) => (
+                      <Pressable
+                        key={`${queued.ref}-${index}`}
+                        style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                        onPress={() => {
+                          control({ kind: 'play_song', song: queued, queue: view.queue.slice(index + 1) });
+                          setQueueOpen(false);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Play ${queued.title}`}
+                      >
+                        <Artwork uri={queued.artwork} title={queued.title} artist={queued.artist} size={48} style={styles.rowArt} />
+                        <View style={styles.rowCopy}>
+                          <Text style={styles.rowTitle} numberOfLines={1}>{queued.title}</Text>
+                          <Text style={styles.rowArtist} numberOfLines={1}>{queued.artist}</Text>
+                        </View>
+                      </Pressable>
+                    )) : <Text style={styles.notice}>Nothing is queued after this song.</Text>}
+                  </SheetScrollView>
+                </PlayerSheet>
+              </>
+            ) : (
+              <View style={styles.waiting}>
+                <Text style={styles.notice}>Waiting for the playing device…</Text>
+                <Pressable style={styles.waitingAction} onPress={connect.openDevices} accessibilityRole="button">
+                  <MaterialCommunityIcons name="devices" size={19} color={Signal.waveInk} />
+                  <Text style={styles.waitingActionText}>Choose a device</Text>
+                </Pressable>
+              </View>
             )}
-          </View>
-          <Text style={styles.title} numberOfLines={2}>{song.title}</Text>
-          <Text style={styles.artist} numberOfLines={1}>{song.artist}</Text>
-        </View>
-      )}
-
-      <View style={styles.transport}>
-        <View style={styles.seekRow}>
-          <Slider
-            style={styles.slider}
-            minimumValue={0}
-            maximumValue={duration}
-            value={Math.min(duration, seconds)}
-            minimumTrackTintColor="#fff"
-            maximumTrackTintColor="rgba(255,255,255,0.24)"
-            thumbTintColor="#fff"
-            onSlidingStart={() => setScrubValue(seconds)}
-            onValueChange={setScrubValue}
-            onSlidingComplete={seek}
-            accessibilityLabel="Playback position"
-          />
-        </View>
-        <View style={styles.timeRow}>
-          <Text style={styles.time}>{formatTime(seconds)}</Text>
-          <Text style={styles.time}>−{formatTime(Math.max(0, duration - seconds))}</Text>
-        </View>
-
-        <View style={styles.volumeRow}>
-          <Ionicons name="volume-low" size={18} color="rgba(255,255,255,0.72)" />
-          <Slider
-            style={styles.volumeSlider}
-            minimumValue={0}
-            maximumValue={1}
-            value={volume}
-            minimumTrackTintColor="rgba(255,255,255,0.8)"
-            maximumTrackTintColor="rgba(255,255,255,0.2)"
-            thumbTintColor="#fff"
-            onValueChange={setVolumeValue}
-            onSlidingComplete={value => {
-              setVolumeValue(value);
-              connect.control({ kind: 'volume', v: value });
-            }}
-            accessibilityLabel="Playback volume"
-          />
-          <Ionicons name="volume-high" size={18} color="rgba(255,255,255,0.72)" />
-        </View>
-
-        <View style={styles.controls}>
-          <Pressable onPress={() => connect.control({ kind: 'prev' })} style={styles.skip} accessibilityRole="button" accessibilityLabel="Previous">
-            <Ionicons name="play-skip-back" size={28} color="#fff" />
-          </Pressable>
-          <Pressable onPress={() => connect.control({ kind: view.isPlaying ? 'pause' : 'play' })} style={styles.play} accessibilityRole="button" accessibilityLabel={view.isPlaying ? 'Pause' : 'Play'}>
-            <Ionicons name={view.isPlaying ? 'pause' : 'play'} size={30} color="#111" />
-          </Pressable>
-          <Pressable onPress={() => connect.control({ kind: 'next' })} style={styles.skip} accessibilityRole="button" accessibilityLabel="Next">
-            <Ionicons name="play-skip-forward" size={28} color="#fff" />
-          </Pressable>
-        </View>
-        <View style={styles.footer}>
-          <Pressable onPress={() => connect.control({ kind: 'shuffle', on: !view.shuffle })} style={styles.footerAction} accessibilityRole="button" accessibilityLabel={view.shuffle ? 'Turn shuffle off' : 'Turn shuffle on'}>
-            <Ionicons name="shuffle" size={22} color={view.shuffle ? '#d9e66a' : '#fff'} />
-            <Text style={[styles.footerLabel, view.shuffle && styles.activeLabel]}>Shuffle</Text>
-          </Pressable>
-          <Pressable onPress={() => setShowLyrics(value => !value)} style={styles.footerAction} accessibilityRole="button" accessibilityLabel={showLyrics ? 'Hide lyrics' : 'Show lyrics'}>
-            <Ionicons name="chatbox-ellipses-outline" size={22} color={showLyrics ? '#d9e66a' : '#fff'} />
-            <Text style={styles.footerLabel}>{showLyrics ? 'Cover' : 'Lyrics'}</Text>
-          </Pressable>
-          <Pressable onPress={() => connect.control({ kind: 'repeat', mode: view.repeat === 'off' ? 'all' : view.repeat === 'all' ? 'one' : 'off' })} style={styles.footerAction} accessibilityRole="button" accessibilityLabel={`Repeat ${view.repeat}`}>
-            <Ionicons name={view.repeat === 'one' ? 'repeat' : 'repeat'} size={22} color={view.repeat === 'off' ? '#fff' : '#d9e66a'} />
-            <Text style={[styles.footerLabel, view.repeat !== 'off' && styles.activeLabel]}>{view.repeat === 'off' ? 'Repeat' : view.repeat === 'one' ? 'Repeat one' : 'Repeat all'}</Text>
-          </Pressable>
-          <Pressable onPress={() => connect.openDevices()} style={styles.footerAction} accessibilityRole="button" accessibilityLabel="Connect devices">
-            <Ionicons name="phone-portrait-outline" size={22} color="#fff" />
-            <Text style={styles.footerLabel}>Devices</Text>
-          </Pressable>
-        </View>
-        <Pressable onPress={() => setShowQueue(value => !value)} style={styles.queueButton} accessibilityRole="button" accessibilityLabel={`Show queue, ${view.queue.length} songs up next`}>
-          <Ionicons name={showQueue ? 'chevron-down' : 'list'} size={19} color="#fff" />
-          <Text style={styles.queueButtonText}>{showQueue ? 'Back to player' : `Up next · ${view.queue.length}`}</Text>
-        </Pressable>
-      </View>
+          </Animated.View>
+        </Animated.View>
+      </GestureDetector>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#08090d', overflow: 'hidden' },
-  backdropArt: { position: 'absolute', left: -40, right: -40, top: -40, width: '120%', height: '72%', opacity: 0.42 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, minHeight: 52, zIndex: 1 },
-  headerButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.09)' },
-  headerCopy: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
-  kicker: { color: 'rgba(255,255,255,0.56)', fontSize: 11, fontWeight: '700' },
-  deviceName: { color: '#fff', fontSize: 13, fontWeight: '600', marginTop: 3 },
-  coverStage: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-  cover: { borderRadius: 18, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 28 },
-  noArt: { alignItems: 'center', justifyContent: 'center' },
-  title: { width: '100%', color: '#fff', fontSize: 25, lineHeight: 31, fontWeight: '700', textAlign: 'center' },
-  artist: { color: 'rgba(255,255,255,0.67)', fontSize: 16, marginTop: 8, textAlign: 'center' },
-  lyrics: { flex: 1, minHeight: 0, paddingHorizontal: 20, paddingTop: 18 },
-  queue: { flex: 1, minHeight: 0, paddingHorizontal: 20, paddingTop: 24 },
-  queueContent: { gap: 8, paddingBottom: 18 },
-  queueTitle: { color: '#fff', fontSize: 22, fontWeight: '700', paddingHorizontal: 4, paddingBottom: 8 },
-  queueRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 8, paddingVertical: 9, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.06)' },
-  queuePressed: { backgroundColor: 'rgba(255,255,255,0.14)' },
-  queueArt: { width: 44, height: 44, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)' },
-  queueCopy: { flex: 1 },
-  queueSong: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  queueArtist: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 3 },
-  transport: { paddingHorizontal: 22, paddingBottom: 10 },
-  seekRow: { height: 34, justifyContent: 'center' },
-  slider: { width: '100%', height: 34 },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -2 },
-  time: { color: 'rgba(255,255,255,0.62)', fontSize: 12 },
-  volumeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 },
-  volumeSlider: { flex: 1, height: 30 },
-  controls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 42, marginTop: 25 },
-  skip: { width: 54, height: 54, alignItems: 'center', justifyContent: 'center' },
-  play: { width: 66, height: 66, borderRadius: 33, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  footer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 18, paddingHorizontal: 4 },
-  footerAction: { minWidth: 58, alignItems: 'center', gap: 5 },
-  footerLabel: { color: 'rgba(255,255,255,0.76)', fontSize: 12 },
-  activeLabel: { color: '#d9e66a' },
-  queueButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 42 },
-  queueButtonText: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  close: { position: 'absolute', top: 12, left: 16, zIndex: 2, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)' },
-  devicesButton: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14 },
-  devicesLabel: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  notice: { color: 'rgba(255,255,255,0.67)', fontSize: 14, textAlign: 'center', padding: 18 },
+  root: { flex: 1 },
+  backdrop: { backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: '#0b0b0f', overflow: 'hidden' },
+  playerLayer: { ...StyleSheet.absoluteFillObject },
+  contentArea: { flex: 1 },
+  modes: { flexDirection: 'row', gap: 8, paddingBottom: 12 },
+  mode: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)' },
+  modeOn: { backgroundColor: Signal.wave },
+  modeText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  modeTextOn: { color: Signal.waveInk },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, paddingHorizontal: 4, borderRadius: 12 },
+  rowPressed: { backgroundColor: 'rgba(255,255,255,0.08)' },
+  rowArt: { width: 48, height: 48, borderRadius: 8, overflow: 'hidden' },
+  rowCopy: { flex: 1 },
+  rowTitle: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  rowArtist: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 2 },
+  notice: { color: 'rgba(255,255,255,0.67)', fontSize: 14, lineHeight: 20, textAlign: 'center', padding: 18 },
+  waiting: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6 },
+  waitingAction: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, paddingHorizontal: 18, borderRadius: 22, backgroundColor: Signal.wave },
+  waitingActionText: { color: Signal.waveInk, fontSize: 15, fontWeight: '700' },
 });
 
 export default ConnectRemotePlayer;

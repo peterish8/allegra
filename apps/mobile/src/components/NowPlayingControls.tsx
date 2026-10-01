@@ -41,7 +41,7 @@ import { MorphIcon, NudgeIcon, Tactile } from './allegra/motion';
 import { SwapMarquee } from './allegra/Marquee';
 import Artwork from './allegra/Artwork';
 import { DOCK_GAP, DOCK_THUMB, LYRICS_MORPH_MS } from './player/lyricsMorph';
-import { PlayerType } from '../constants/allegraTheme';
+import { PlayerType, Signal } from '../constants/allegraTheme';
 import { formatTimeSV, isSeeking } from '../playback/positionBus';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { useSettingsStore } from '../store/settingsStore';
@@ -68,7 +68,8 @@ interface NowPlayingControlsProps {
   /** Opens the player menu; receives the press event for menu anchoring. */
   onMorePress?: (event: GestureResponderEvent) => void;
   onOpenQueue: () => void;
-  onOpenTimer: () => void;
+  /** Leave out to drop the sleep timer (it pauses this phone, not a remote player). */
+  onOpenTimer?: () => void;
   /** Time left on the sleep timer ("12 min"), or null when it is off. */
   sleepLabel?: string | null;
   onArtistPress?: () => void;
@@ -86,6 +87,12 @@ interface NowPlayingControlsProps {
   /** Written here: the thumbnail's centre in the player, so the cover knows where to fly. */
   dockX?: SharedValue<number>;
   dockY?: SharedValue<number>;
+  /** Connect: the playing device's volume instead of this phone's. */
+  remoteVolume?: { readonly level: SharedValue<number>; readonly onCommit: (volume: number) => void };
+  /** Replaces the speaker (Android's output switcher) with Connect's device picker. */
+  onOutputPress?: () => void;
+  /** Playback is on another device: the output button lights up. */
+  outputActive?: boolean;
 }
 
 /** Lyrics open or close: the controls glide to their new place instead of jumping when the volume row goes. */
@@ -157,6 +164,18 @@ const VolumeRow: React.FC = () => {
   );
 };
 
+/** Connect: the volume of the device that plays, sent when the finger lifts. */
+const RemoteVolumeRow: React.FC<{ level: SharedValue<number>; onCommit: (volume: number) => void }> = ({ level, onCommit }) => {
+  const follow = useCallback((v: number) => { level.value = v; }, [level]);
+  return (
+    <View style={styles.volumeRow}>
+      <Ionicons name="volume-low" size={18} color={INK_SOFT} />
+      <AppleSlider progress={level} onChange={follow} onCommit={onCommit} height={6} accessibilityLabel="Volume on the playing device" style={styles.volumeSlider} />
+      <Ionicons name="volume-high" size={20} color={INK_SOFT} />
+    </View>
+  );
+};
+
 /** The heart breathes while a streamed song saves into Liked songs. */
 const SavingPulse: React.FC<{ saving: boolean; children: React.ReactNode }> = ({ saving, children }) => {
   const reduce = useReducedMotion();
@@ -204,6 +223,9 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   lyricsP,
   dockX,
   dockY,
+  remoteVolume,
+  onOutputPress,
+  outputActive = false,
 }) => {
   const insets = useSafeAreaInsets();
   // Where the transport's bottom edge sits in the player, so Up next can lift
@@ -309,16 +331,18 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             </View>
           </AnimatedPressable>
 
-          <Tactile
-            onPress={e => { tick('light'); (onMorePress ?? onToggleLyrics)(e); }}
-            hitSlop={8}
-            pressScale={0.88}
-            accessibilityRole="button"
-            accessibilityLabel="Song options"
-            style={styles.roundGlass}
-          >
-            <Ionicons name="ellipsis-vertical" size={18} color={INK} />
-          </Tactile>
+          {onMorePress ? (
+            <Tactile
+              onPress={e => { tick('light'); onMorePress(e); }}
+              hitSlop={8}
+              pressScale={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Song options"
+              style={styles.roundGlass}
+            >
+              <Ionicons name="ellipsis-vertical" size={18} color={INK} />
+            </Tactile>
+          ) : null}
           <Tactile
             onPress={() => { tick(isCurrentSongLiked ? 'light' : 'success'); onToggleLike(); }}
             hitSlop={8}
@@ -379,7 +403,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
         <Animated.View style={lowerStyle} pointerEvents={upNextOpen ? 'none' : 'box-none'}>
         {compact || hideVolume ? null : (
           <Animated.View entering={FadeIn.duration(260)} exiting={FadeOut.duration(160)}>
-            <VolumeRow />
+            {remoteVolume ? <RemoteVolumeRow level={remoteVolume.level} onCommit={remoteVolume.onCommit} /> : <VolumeRow />}
           </Animated.View>
         )}
 
@@ -389,14 +413,25 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
           </Pressable>
 
           <View style={styles.segment}>
-            <Pressable onPress={output} style={({ pressed }) => [styles.segmentHalf, pressed && styles.segmentPressed]} accessibilityRole="button" accessibilityLabel="Play on another device">
-              <MaterialCommunityIcons name="speaker" size={22} color={INK_SOFT} />
+            <Pressable
+              onPress={onOutputPress ? () => { tick('light'); onOutputPress(); } : output}
+              style={({ pressed }) => [styles.segmentHalf, pressed && styles.segmentPressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Play on another device"
+            >
+              {onOutputPress
+                ? <MaterialCommunityIcons name="devices" size={21} color={outputActive ? Signal.wave : INK_SOFT} />
+                : <MaterialCommunityIcons name="speaker" size={22} color={INK_SOFT} />}
             </Pressable>
-            <View style={styles.segmentDivider} />
-            <Pressable onPress={() => { tick('light'); onOpenTimer(); }} style={({ pressed }) => [styles.segmentHalf, pressed && styles.segmentPressed]} accessibilityRole="button" accessibilityLabel="Sleep timer">
-              <MaterialCommunityIcons name="timer-outline" size={21} color={sleepLabel ? INK : INK_SOFT} />
-              {sleepLabel ? <Text style={styles.sleepText}>{sleepLabel}</Text> : null}
-            </Pressable>
+            {onOpenTimer ? (
+              <>
+                <View style={styles.segmentDivider} />
+                <Pressable onPress={() => { tick('light'); onOpenTimer(); }} style={({ pressed }) => [styles.segmentHalf, pressed && styles.segmentPressed]} accessibilityRole="button" accessibilityLabel="Sleep timer">
+                  <MaterialCommunityIcons name="timer-outline" size={21} color={sleepLabel ? INK : INK_SOFT} />
+                  {sleepLabel ? <Text style={styles.sleepText}>{sleepLabel}</Text> : null}
+                </Pressable>
+              </>
+            ) : null}
           </View>
 
           <Pressable

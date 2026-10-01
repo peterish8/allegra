@@ -292,28 +292,10 @@ export const useSongsStore = create<SongsState>()((set, get) => ({
              if (saved) return get().toggleLike(saved.id);
              const ref = fromMobileId(songId);
              if (!ref) return 'error';
-             const at = Date.now();
              // Imported late, like StreamService above: songsStore's own import graph stays small.
-             const { useOnlineLibraryStore } = await import('./onlineLibraryStore');
-             const { removeOnlineLike, upsertOnlineLike } = await import('../database/syncQueries');
-             const { record } = await import('../services/sync/LibrarySync');
-             const { likeOp } = await import('../services/sync/plan');
-             try {
-                 if (useOnlineLibraryStore.getState().likedRefs.has(ref)) {
-                     await removeOnlineLike(ref);
-                     record(likeOp(ref, false, at));
-                     await useOnlineLibraryStore.getState().load();
-                     return 'unliked';
-                 }
-                 const artwork = [meta.highResArt, meta.thumbnail].find(url => url && /^https:\/\//.test(url)) ?? '';
-                 const song = { ref, title: meta.title, artist: meta.artist, artwork, duration: meta.duration ?? 0 };
-                 await upsertOnlineLike({ ...song, at });
-                 record(likeOp(ref, true, at, song));
-                 await useOnlineLibraryStore.getState().load();
-                 return 'liked';
-             } catch {
-                 return 'error';
-             }
+             const { toggleOnlineLike } = await import('../services/sync/onlineLike');
+             const artwork = [meta.highResArt, meta.thumbnail].find(url => url && /^https:\/\//.test(url)) ?? '';
+             return toggleOnlineLike({ ref, title: meta.title, artist: meta.artist, artwork, duration: meta.duration ?? 0 });
          }
          try {
              const { usePlaylistStore } = await import('./playlistStore');
