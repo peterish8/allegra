@@ -339,7 +339,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, the
                               onClick={() => choose(item)}
                             >
                               {isActive ? <motion.span layoutId="cmdk-highlight" className="cmdk-highlight" transition={reduced ? { duration: 0 } : spring.tactile} /> : null}
-                              <span className="cmdk-row-icon">{item.art ? <img src={item.art} alt="" loading="lazy" /> : item.icon}</span>
+                              <span className="cmdk-row-icon">{item.art ? <img src={item.art} alt="" width={40} height={40} loading="lazy" /> : item.icon}</span>
                               <span className="cmdk-row-copy"><strong>{item.title}</strong>{item.hint ? <small>{item.hint}</small> : null}</span>
                               {isActive ? <kbd>↵</kbd> : null}
                             </button>

@@ -123,13 +123,16 @@ export function FloatingField({ label, className = '', ref, ...props }: Floating
   );
 }
 
+/** Intrinsic size hints so the layout holds its place before the image arrives; CSS sets the drawn size. */
+const ARTWORK_PX = { small: 56, medium: 160, large: 320 } as const;
+
 export function Artwork({ song, size = 'medium', layoutId }: { readonly song: UnifiedSong; readonly size?: 'small' | 'medium' | 'large'; readonly layoutId?: string }) {
   return (
     <div className={`artwork artwork-${size}`} style={{ backgroundColor: titleAccent(song.title) }}>
       {layoutId ? (
-        <motion.img layoutId={layoutId} src={song.artwork} alt={`${song.title} artwork`} loading="lazy" crossOrigin="anonymous" onError={(event) => { event.currentTarget.style.display = 'none'; }} transition={{ duration: motionTokens.duration.cinematic, ease: motionTokens.ease.emphasis }} />
+        <motion.img layoutId={layoutId} src={song.artwork} alt={`${song.title} artwork`} width={ARTWORK_PX[size]} height={ARTWORK_PX[size]} loading="lazy" crossOrigin="anonymous" onError={(event) => { event.currentTarget.style.display = 'none'; }} transition={{ duration: motionTokens.duration.cinematic, ease: motionTokens.ease.emphasis }} />
       ) : (
-        <img src={song.artwork} alt={`${song.title} artwork`} loading="lazy" crossOrigin="anonymous" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+        <img src={song.artwork} alt={`${song.title} artwork`} width={ARTWORK_PX[size]} height={ARTWORK_PX[size]} loading="lazy" crossOrigin="anonymous" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
       )}
       <span className="artwork-fallback" aria-hidden="true">{song.title.slice(0, 1).toUpperCase()}</span>
     </div>

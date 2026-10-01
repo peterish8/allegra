@@ -287,7 +287,7 @@ export function ArtistPage({
                   <div className="media-card" key={album.key}>
                     <button type="button" className="media-card-open" onClick={() => onOpenAlbum(album.name, album.seed)} aria-label={`Open album ${album.name}`}>
                       <span className="media-card-art">
-                        {album.image ? <img src={album.image} alt="" loading="lazy" crossOrigin="anonymous" /> : album.seed ? <Artwork song={album.seed} size="large" /> : null}
+                        {album.image ? <img src={album.image} alt="" width={320} height={320} loading="lazy" crossOrigin="anonymous" /> : album.seed ? <Artwork song={album.seed} size="large" /> : null}
                       </span>
                       <span className="media-card-title">{album.name}</span>
                       <span className="media-card-sub">{[album.year, album.trackCount > 0 ? `${album.trackCount} ${album.trackCount === 1 ? 'song' : 'songs'}` : ''].filter(Boolean).join(' · ') || 'Album'}</span>
@@ -318,7 +318,7 @@ export function ArtistPage({
               <div className="media-card media-card--round" key={artist.name}>
                 <button type="button" className="media-card-open" onClick={() => onOpenArtist(artist.name)} aria-label={`Open ${artist.name}`}>
                   <span className="media-card-art">
-                    {artist.image ? <img src={artist.image} alt="" loading="lazy" crossOrigin="anonymous" /> : artist.song ? <Artwork song={artist.song} size="large" /> : null}
+                    {artist.image ? <img src={artist.image} alt="" width={240} height={240} loading="lazy" crossOrigin="anonymous" /> : artist.song ? <Artwork song={artist.song} size="large" /> : null}
                   </span>
                   <span className="media-card-title">{artist.name}</span>
                   <span className="media-card-sub">Artist</span>

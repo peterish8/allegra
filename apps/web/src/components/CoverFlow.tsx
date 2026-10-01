@@ -201,7 +201,7 @@ export function CoverFlow({ songs, currentSongId, isPlaying, label, onPlay, onTo
               <span className="coverflow-art" style={{ backgroundColor: titleAccent(song.title) }}>
                 <span className="coverflow-initial" aria-hidden="true">{song.title.slice(0, 1).toUpperCase()}</span>
                 {song.artwork ? (
-                  <img src={song.artwork} alt="" loading="lazy" draggable={false} crossOrigin="anonymous" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+                  <img src={song.artwork} alt="" width={320} height={320} loading="lazy" draggable={false} crossOrigin="anonymous" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
                 ) : null}
                 <span className="coverflow-badge" aria-hidden="true">
                   {isCurrent && isPlaying ? <Pause size={20} fill="currentColor" strokeWidth={0} /> : <Play size={20} fill="currentColor" strokeWidth={0} />}

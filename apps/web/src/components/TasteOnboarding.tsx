@@ -1,9 +1,10 @@
 import { Check, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { fetchArtistFaces } from '../lib/api';
 import type { Palette } from '../lib/palette';
 import { motionTokens, spring } from '../motion';
@@ -73,6 +74,28 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
   const [faces, setFaces] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  // The takeover is modal: focus moves into it (to the dialog itself, so its title is announced),
+  // Tab stays inside, and the page behind cannot be reached by keyboard or screen reader.
+  useEffect(() => {
+    if (!open) return undefined;
+    const frame = window.requestAnimationFrame(() => shellRef.current?.focus({ preventScroll: true }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [open]);
+  useFocusTrap(open, overlayRef);
+  useEffect(() => {
+    if (!open) return undefined;
+    const overlay = overlayRef.current;
+    const hidden: Element[] = [];
+    for (const element of Array.from(document.body.children)) {
+      if (element === overlay || element.tagName === 'SCRIPT' || element.hasAttribute('inert')) continue;
+      element.setAttribute('inert', '');
+      hidden.push(element);
+    }
+    return () => { for (const element of hidden) element.removeAttribute('inert'); };
+  }, [open]);
 
   // Only worth fetching once the takeover is actually shown.
   useEffect(() => {
@@ -122,12 +145,13 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onSkip]);
 
-  const toggle = (list: string[], value: string, set: (next: string[]) => void): void => {
-    set(list.includes(value) ? list.filter((item) => item !== value) : [...list, value]);
+  // Functional updates: two taps in one frame must both count, not overwrite each other.
+  const toggle = (value: string, set: (update: (current: string[]) => string[]) => void): void => {
+    set((current) => (current.includes(value) ? current.filter((item) => item !== value) : [...current, value]));
   };
 
   const toggleGenre = (id: string, accent: string, palette: Palette): void => {
-    toggle(genres, id, setGenres);
+    toggle(id, setGenres);
     setLastAccent(accent);
     setShaderPalette(palette);
   };
@@ -154,7 +178,7 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
   return createPortal(
     <AnimatePresence>
       {open ? (
-        <div className="taste-overlay" key="taste-overlay">
+        <div className="taste-overlay" key="taste-overlay" ref={overlayRef}>
           <div className="taste-overlay-backdrop" style={{ '--preview-tint': lastAccent } as CSSProperties} aria-hidden="true">
             <MusicFlowShader energy={0.58} mood="different" palette={shaderPalette} />
             <div className="taste-overlay-backdrop-wash" />
@@ -162,7 +186,7 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
           </div>
           <button type="button" className="taste-overlay-close" onClick={onSkip} aria-label="Skip for now"><X size={16} aria-hidden="true" /></button>
 
-          <motion.div className="taste-shell" role="dialog" aria-modal="true" aria-labelledby="taste-title" initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 14, scale: 0.98 }} transition={enter}>
+          <motion.div ref={shellRef} tabIndex={-1} className="taste-shell" role="dialog" aria-modal="true" aria-labelledby="taste-title" initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 14, scale: 0.98 }} transition={enter}>
             <section className="taste-card taste-panel">
               <header className="taste-head">
                 <div>
@@ -208,8 +232,8 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
                       const active = artists.includes(name);
                       const photo = faces[name.toLocaleLowerCase()];
                       return (
-                        <motion.button key={name} type="button" className={`taste-chip taste-chip--artist ${active ? 'is-active' : ''}`} aria-pressed={active} whileTap={reduced ? undefined : { scale: 0.96 }} onClick={() => toggle(artists, name, setArtists)}>
-                          <span className="taste-chip-photo">{photo ? <img src={photo} alt="" loading="lazy" /> : <span aria-hidden="true">{name.slice(0, 1)}</span>}</span>
+                        <motion.button key={name} type="button" className={`taste-chip taste-chip--artist ${active ? 'is-active' : ''}`} aria-pressed={active} whileTap={reduced ? undefined : { scale: 0.96 }} onClick={() => toggle(name, setArtists)}>
+                          <span className="taste-chip-photo">{photo ? <img src={photo} alt="" width={64} height={64} loading="lazy" /> : <span aria-hidden="true">{name.slice(0, 1)}</span>}</span>
                           <span className="taste-chip-name">{name}</span>
                           <AnimatePresence>{active ? <motion.span className="taste-chip-check" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={spring.tactile}><Check size={12} strokeWidth={3} aria-hidden="true" /></motion.span> : null}</AnimatePresence>
                         </motion.button>
@@ -221,7 +245,7 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
                     {LANGUAGES.map((name) => {
                       const active = languages.includes(name);
                       return (
-                        <motion.button key={name} type="button" className={`taste-chip ${active ? 'is-active' : ''}`} aria-pressed={active} whileTap={reduced ? undefined : { scale: 0.96 }} onClick={() => toggle(languages, name, setLanguages)}>
+                        <motion.button key={name} type="button" className={`taste-chip ${active ? 'is-active' : ''}`} aria-pressed={active} whileTap={reduced ? undefined : { scale: 0.96 }} onClick={() => toggle(name, setLanguages)}>
                           <AnimatePresence>{active ? <motion.span className="taste-chip-check" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={spring.tactile}><Check size={12} strokeWidth={3} aria-hidden="true" /></motion.span> : null}</AnimatePresence>
                           <span className="taste-chip-name">{name}</span>
                         </motion.button>
@@ -250,7 +274,7 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
               </footer>
             </section>
 
-            <TastePreview step={step} artists={artists} languages={languages} faces={faces} accent={lastAccent} reduced={Boolean(reduced)} />
+            <TastePreview step={step} genres={GENRES.filter((genre) => genres.includes(genre.id)).map((genre) => genre.label)} artists={artists} languages={languages} faces={faces} accent={lastAccent} reduced={Boolean(reduced)} />
           </motion.div>
         </div>
       ) : null}
@@ -261,6 +285,7 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
 
 interface TastePreviewProps {
   readonly step: 1 | 2 | 3;
+  readonly genres: readonly string[];
   readonly artists: readonly string[];
   readonly languages: readonly string[];
   readonly faces: Readonly<Record<string, string>>;
@@ -269,10 +294,13 @@ interface TastePreviewProps {
 }
 
 /** The payoff, shown live: this is what "Home tunes itself to you" actually looks like while you are still picking. */
-function TastePreview({ step, artists, languages, faces, accent, reduced }: TastePreviewProps) {
+function TastePreview({ step, genres, artists, languages, faces, accent, reduced }: TastePreviewProps) {
   const shown = artists.slice(0, 6);
+  const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`;
   const heading = step === 1
-    ? 'Pick what you love'
+    ? genres.length > 0
+      ? `Starting with ${genres.slice(0, 2).join(' & ')}${genres.length > 2 ? ` +${genres.length - 2}` : ''}`
+      : 'Pick what you love'
     : artists.length > 0
       ? `For fans of ${artists.slice(0, 2).join(' & ')}${artists.length > 2 ? ` +${artists.length - 2}` : ''}`
       : 'Your Home will look like this';
@@ -289,14 +317,18 @@ function TastePreview({ step, artists, languages, faces, accent, reduced }: Tast
               const photo = faces[name.toLocaleLowerCase()];
               return (
                 <span key={name} className="taste-preview-avatar" title={name}>
-                  {photo ? <img src={photo} alt="" loading="lazy" /> : <span>{name.slice(0, 1)}</span>}
+                  {photo ? <img src={photo} alt="" width={64} height={64} loading="lazy" /> : <span>{name.slice(0, 1)}</span>}
                 </span>
               );
             })}
           </div>
         ) : null}
         <p className="taste-preview-stat">
-          {artists.length} artist{artists.length === 1 ? '' : 's'} · {languages.length} language{languages.length === 1 ? '' : 's'} picked
+          {step === 1
+            ? `${plural(genres.length, 'genre')} picked`
+            : step === 2
+              ? `${plural(artists.length, 'artist')} picked`
+              : `${plural(artists.length, 'artist')} · ${plural(languages.length, 'language')} picked`}
         </p>
       </div>
     </aside>

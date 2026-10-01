@@ -88,7 +88,7 @@ export function ArtistPreviewCard({ name, image = null, photoPending = false, cu
   // and for artists with no photo at all, the cover just stayed there pretending.
   // An initial holds the slot instead, and only a real photo replaces it.
   const faceContent = photo ? (
-    <img src={photo} alt="" loading="lazy" crossOrigin="anonymous" />
+    <img src={photo} alt="" width={96} height={96} loading="lazy" crossOrigin="anonymous" />
   ) : (
     <span className={`artist-card-initial${photoPending ? ' is-pending' : ''}`} aria-hidden="true">
       {name.trim().slice(0, 1).toLocaleUpperCase()}

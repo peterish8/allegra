@@ -34,7 +34,7 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
   const changed = useRef(onSessionChange);
   changed.current = onSessionChange;
 
-  const refresh = useCallback(async (): Promise<AccountProfile | null> => {
+  const load = useCallback(async (): Promise<AccountProfile | null> => {
     try {
       await ensureSession();
       const [nextProfile, nextTaste] = await Promise.all([fetchProfile(), fetchTaste()]);
@@ -48,6 +48,25 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
       setReady(true);
     }
   }, []);
+
+  // Mount, a sign-in event and the sign-in poll can all ask at once. One load runs; everyone who asks
+  // while it does shares a single follow-up, which starts after it ends so it sees any change that
+  // prompted the request (a guest linked to an account, say).
+  const running = useRef<Promise<AccountProfile | null> | null>(null);
+  const followUp = useRef<Promise<AccountProfile | null> | null>(null);
+  const refresh = useCallback((): Promise<AccountProfile | null> => {
+    const start = (): Promise<AccountProfile | null> => {
+      const run = load().finally(() => { if (running.current === run) running.current = null; });
+      running.current = run;
+      return run;
+    };
+    if (!running.current) return start();
+    followUp.current ??= running.current.then(() => {
+      followUp.current = null;
+      return start();
+    });
+    return followUp.current;
+  }, [load]);
 
   useEffect(() => {
     void refresh();

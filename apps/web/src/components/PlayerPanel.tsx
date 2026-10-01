@@ -461,7 +461,7 @@ export function PlayerPanel({
                     aria-label={lyricsFull ? 'Show cover' : 'Hide cover and focus the lyrics'}
                     title={lyricsFull ? 'Show cover' : 'Focus the lyrics'}
                   >
-                    {song.artwork ? <img src={song.artwork} alt="" /> : null}
+                    {song.artwork ? <img src={song.artwork} alt="" width={320} height={320} /> : null}
                   </button>
                 ) : null}
                 <motion.div

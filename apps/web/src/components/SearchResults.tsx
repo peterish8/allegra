@@ -184,7 +184,7 @@ export function SearchResults({
           >
             <span className="artist-spotlight-photo">
               {photo ? (
-                <img src={photo} alt="" loading="lazy" crossOrigin="anonymous" />
+                <img src={photo} alt="" width={96} height={96} loading="lazy" crossOrigin="anonymous" />
               ) : (
                 <span className="artist-card-initial" aria-hidden="true">
                   {feature.name.trim().slice(0, 1).toLocaleUpperCase()}
@@ -253,7 +253,7 @@ export function SearchResults({
             >
               <span className="media-card-art">
                 {playlist.coverUrl ? (
-                  <img src={playlist.coverUrl} alt="" loading="lazy" crossOrigin="anonymous" />
+                  <img src={playlist.coverUrl} alt="" width={160} height={160} loading="lazy" crossOrigin="anonymous" />
                 ) : (
                   <span className="media-card-glyph" aria-hidden="true"><ListMusic size={26} /></span>
                 )}

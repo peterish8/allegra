@@ -94,7 +94,15 @@ const DEFAULT_TIMEOUT_MS = 15000;
  */
 const TIMEOUT_REASON = Symbol('allegra-api-timeout');
 
+/** Calls that only make sense for a listener (a guest counts). Everything else is public. */
+function needsSession(path: string): boolean {
+  return path.startsWith('/api/me/') || path.startsWith('/api/libraries') || path === '/api/auth/me';
+}
+
 async function send(path: string, init?: RequestInit, canRenew = true): Promise<Response> {
+  // A browser with no token yet used to send a dozen of these, take a dozen 401s, and retry them
+  // all. Start the guest session first (one shared request) and they go out signed once.
+  if (canRenew && needsSession(path) && !currentToken()) await ensureSession().catch(() => undefined);
   let response: Response;
   // Every call gets its own AbortController so a stalled connection cannot hang
   // the caller forever, even when the caller never passed a signal of its own
