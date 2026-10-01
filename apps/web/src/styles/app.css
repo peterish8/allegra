@@ -2686,7 +2686,8 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   .am-transport .am-btn--skip:first-of-type,
   .am-volume,
   .am-btn--mute { display: none; }
-  .am-btn--lyrics { display: inline-grid; }
+  .am-btn--lyrics,
+  .am-btn--devices { display: inline-grid; }
   .am-btn--lyrics[aria-pressed='true'] { color: var(--wave); }
   .am-btn--queue { display: inline-grid; }
   .am-scrub time { display: none; }
@@ -6957,58 +6958,146 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .listening-world__atmosphere { transition: opacity var(--d-slow) var(--ease-standard); }
 .listening-world.is-black .listening-world__atmosphere { opacity: 0; }
 
-/* Connect follows the current player cascade, outside the legacy layer. */
+/* Connect: "Listen on" (components/ConnectPicker.tsx). The panel is portalled to <body>, so it
+   carries its own dark glass rather than inheriting the player's. Only transform and opacity animate. */
 .connect-control-wrap { position: relative; display: inline-flex; align-items: center; }
-.connect-device-picker {
-  position: absolute;
-  z-index: 80;
-  right: 0;
-  bottom: calc(100% + 12px);
-  width: min(330px, calc(100vw - 32px));
-  max-height: min(480px, calc(100dvh - 48px));
+.listening-world .np-actions .tactile-icon-control.connect-control--remote { color: var(--wave); border-color: color-mix(in srgb, var(--wave) 45%, transparent); }
+.listening-world .connect-control--remote > svg { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--wave) 55%, transparent)); }
+.am-btn--devices.is-on { color: var(--wave); }
+
+.connect-picker {
+  position: fixed;
+  z-index: 120;
+  display: grid;
+  gap: 12px;
+  max-height: min(560px, calc(100dvh - 96px));
   overflow: auto;
-  padding: 14px;
-  border: 1px solid rgba(255, 255, 255, .16);
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.03)), rgba(16,16,20,.72);
-  color: #f7f7f4;
-  box-shadow: 0 18px 50px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.14);
-  -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(180%);
-  backdrop-filter: blur(var(--blur-lg)) saturate(180%);
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-panel);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)), rgba(14, 16, 19, 0.86);
+  color: var(--ink);
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(160%);
+  backdrop-filter: blur(var(--blur-lg)) saturate(160%);
   text-align: left;
+  transform-origin: bottom right;
+  overscroll-behavior: contain;
 }
-.connect-device-picker__heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: 10px; font-size: 14px; }
-.connect-device-picker__heading button { display: grid; place-items: center; flex: 0 0 auto; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .08); color: inherit; font-size: 22px; line-height: 1; cursor: pointer; }
-.connect-device-picker ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
-.connect-device-picker li > button { display: flex; width: 100%; min-height: 60px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid transparent; border-radius: 12px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.connect-device-picker li > button:hover, .connect-device-picker li > button[aria-current="true"] { border-color: rgba(217, 230, 106, .34); background: rgba(217, 230, 106, .1); }
-.connect-device-picker li > button:disabled { cursor: not-allowed; opacity: .48; }
-.connect-device-picker .connect-device-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
-.connect-device-picker .connect-device-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.connect-device-picker li strong { font-size: 13px; font-weight: 600; }
-.connect-device-picker li small { color: rgba(255, 255, 255, .64); font-size: 11px; }
-.connect-device-active { color: var(--wave, #d9e66a); font-size: 11px; }
-.connect-device-controls { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 11px; border-top: 1px solid rgba(255, 255, 255, .12); }
-.connect-device-controls label { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; color: rgba(255, 255, 255, .76); font-size: 11px; }
-.connect-device-controls input[type="range"] { min-width: 48px; width: 100%; accent-color: var(--wave, #d9e66a); }
-.connect-device-controls .tactile-icon-control { flex: 0 0 auto; }
-.connect-device-picker__signin p, .connect-device-error { margin: 8px 0; color: rgba(255, 255, 255, .76); font-size: 12px; line-height: 1.5; }
-.connect-device-picker__signin button, .connect-device-resume { width: 100%; margin-top: 7px; padding: 10px 12px; border: 0; border-radius: 11px; background: var(--wave, #d9e66a); color: #171a12; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
-.connect-device-error { color: #ffb7ad; }
+.connect-picker.is-sheet {
+  inset: auto 0 0;
+  max-height: min(78dvh, calc(100dvh - 32px));
+  padding: 18px 16px max(18px, env(safe-area-inset-bottom));
+  border-width: 1px 0 0;
+  border-radius: 28px 28px 0 0;
+  transform-origin: bottom center;
+}
 
+.connect-picker__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.connect-picker__head h2 { margin: 0; font-size: 16px; font-weight: 650; }
+.connect-picker__close {
+  display: grid; flex: 0 0 auto; width: 36px; height: 36px; place-items: center; padding: 0;
+  border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.08); color: var(--ink-soft); cursor: pointer;
+  transition: background-color var(--d-fast) var(--ease-standard), color var(--d-fast) var(--ease-standard);
+}
+.connect-picker__close:hover { background: rgba(255, 255, 255, 0.14); color: var(--ink); }
 
-.connect-device-picker li > button > svg { flex: 0 0 auto; filter: none; }
-.listening-world .np-actions .tactile-icon-control.connect-control--remote { color: #65df9a; }
-.listening-world .connect-control--remote > svg { filter: drop-shadow(0 0 6px rgba(101, 223, 154, .65)); }
-.connect-device-picker:focus-visible { outline: 2px solid var(--wave); outline-offset: 4px; }
-@media (max-width: 900px) {
-  .connect-device-picker {
-    position: fixed;
-    inset: auto 0 0;
-    width: auto;
-    height: 50dvh;
-    max-height: calc(100dvh - 32px);
-    padding: 16px 16px max(16px, env(safe-area-inset-bottom));
-    border-radius: 28px 28px 0 0;
-  }
+/* What is playing, and where. */
+.connect-picker__now {
+  display: flex; align-items: center; gap: 12px; padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--wave) 26%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--wave) 9%, transparent);
+}
+.connect-picker__now-icon {
+  position: relative; display: grid; flex: 0 0 auto; width: 40px; height: 40px; place-items: center;
+  border-radius: 12px; background: var(--wave); color: var(--wave-ink);
+}
+.connect-picker__now-icon.is-playing::after {
+  position: absolute; inset: -4px; border: 2px solid color-mix(in srgb, var(--wave) 60%, transparent); border-radius: 15px;
+  content: ''; animation: connect-pulse var(--d-shimmer) var(--ease-decelerate) infinite;
+}
+@keyframes connect-pulse { from { opacity: 0.9; transform: scale(0.94); } to { opacity: 0; transform: scale(1.12); } }
+.connect-picker__now-copy { display: grid; min-width: 0; gap: 2px; }
+.connect-picker__now-copy small { color: var(--wave); font-size: 11px; font-weight: 600; }
+.connect-picker__now-copy strong { overflow: hidden; font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.connect-picker__now-copy span { overflow: hidden; color: var(--ink-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+.connect-picker__label { margin: 4px 2px -4px; color: var(--ink-muted); font-size: 12px; font-weight: 600; }
+.connect-picker__hint { margin: 0 2px; color: var(--ink-muted); font-size: 12px; line-height: 1.5; }
+
+.connect-picker__list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.connect-picker__device {
+  display: flex; width: 100%; min-height: 56px; align-items: center; gap: 12px; padding: 8px 10px;
+  border: 0; border-radius: 14px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  transition: background-color var(--d-fast) var(--ease-standard);
+}
+.connect-picker__device:hover:not(:disabled) { background: rgba(255, 255, 255, 0.07); }
+.connect-picker__device:focus-visible { outline: 2px solid var(--wave); outline-offset: 2px; }
+.connect-picker__device:disabled { cursor: default; opacity: 0.5; }
+.connect-picker__device.is-active { opacity: 1; }
+.connect-picker__device-icon {
+  display: grid; flex: 0 0 auto; width: 36px; height: 36px; place-items: center;
+  border-radius: 50%; background: rgba(255, 255, 255, 0.08); color: var(--ink-soft);
+}
+.connect-picker__device.is-active .connect-picker__device-icon { background: color-mix(in srgb, var(--wave) 18%, transparent); color: var(--wave); }
+.connect-picker__device-copy { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.connect-picker__device-copy strong { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.connect-picker__device.is-active .connect-picker__device-copy strong { color: var(--wave); }
+.connect-picker__device-copy small { color: var(--ink-muted); font-size: 12px; }
+.connect-picker__check { flex: 0 0 auto; color: var(--wave); }
+
+/* Volume of the playing device: the mini player's slim bar, with a knob that is always there. */
+.connect-picker__volume {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) 3.5ch; align-items: center; gap: 10px;
+  padding: 10px 6px 2px; border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.connect-picker__mute {
+  display: grid; width: 36px; height: 36px; place-items: center; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--ink-soft); cursor: pointer;
+  transition: background-color var(--d-fast) var(--ease-standard), color var(--d-fast) var(--ease-standard);
+}
+.connect-picker__mute:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+.connect-picker__percent { color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.connect-picker__range {
+  width: 100%; height: 24px; margin: 0; padding: 0; background: transparent; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+}
+.connect-picker__range:focus-visible { outline: none; }
+.connect-picker__range::-webkit-slider-runnable-track {
+  height: 5px; border-radius: 999px;
+  background: linear-gradient(90deg, var(--wave) var(--fill, 0%), rgba(255, 255, 255, 0.16) var(--fill, 0%));
+}
+.connect-picker__range::-moz-range-track { height: 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
+.connect-picker__range::-moz-range-progress { height: 5px; border-radius: 999px; background: var(--wave); }
+.connect-picker__range::-webkit-slider-thumb {
+  width: 15px; height: 15px; margin-top: -5px; border: 0; border-radius: 50%;
+  background: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  -webkit-appearance: none; appearance: none;
+  transition: transform var(--d-fast) var(--ease-standard);
+}
+.connect-picker__range::-moz-range-thumb {
+  width: 15px; height: 15px; border: 0; border-radius: 50%;
+  background: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  transition: transform var(--d-fast) var(--ease-standard);
+}
+.connect-picker__range:hover::-webkit-slider-thumb,
+.connect-picker__range:active::-webkit-slider-thumb { transform: scale(1.15); }
+.connect-picker__range:hover::-moz-range-thumb,
+.connect-picker__range:active::-moz-range-thumb { transform: scale(1.15); }
+.connect-picker__range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--wave) 55%, transparent); }
+.connect-picker__range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--wave) 55%, transparent); }
+
+.connect-picker__signin { display: grid; gap: 10px; }
+.connect-picker__signin p { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.5; }
+.connect-picker__primary {
+  width: 100%; min-height: 44px; padding: 10px 14px; border: 0; border-radius: 999px;
+  background: var(--wave); color: var(--wave-ink); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
+  transition: transform var(--d-fast) var(--ease-standard);
+}
+.connect-picker__primary:active { transform: scale(0.98); }
+.connect-picker__error { margin: 0 2px; color: var(--accent-bright); font-size: 12px; line-height: 1.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .connect-picker__now-icon.is-playing::after { animation: none; opacity: 0.6; }
 }

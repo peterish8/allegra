@@ -180,7 +180,8 @@ export interface WebConnectState {
   readonly tabStatus: 'starting' | 'leader' | 'other-tab' | null;
   readonly livePosition: number;
   readonly control: (command: RemoteCommand) => void;
-  readonly transferTo: (deviceId: string) => Promise<boolean>;
+  /** `error` is listener copy for a failed move. */
+  readonly transferTo: (deviceId: string) => Promise<{ readonly ok: boolean; readonly error?: string }>;
   readonly playRemote: (song: UnifiedSong, queue: readonly UnifiedSong[]) => boolean;
 }
 
@@ -189,7 +190,7 @@ type ConnectTabMessage =
   | { readonly type: 'position'; readonly deviceId: string; readonly positionSec: number }
   | { readonly type: 'control'; readonly command: RemoteCommand }
   | { readonly type: 'transfer'; readonly requestId: string; readonly targetDeviceId: string }
-  | { readonly type: 'transfer-result'; readonly requestId: string; readonly ok: boolean };
+  | { readonly type: 'transfer-result'; readonly requestId: string; readonly ok: boolean; readonly error?: string };
 
 function isRemoteCommand(value: unknown): value is RemoteCommand {
   if (!value || typeof value !== 'object') return false;
@@ -230,7 +231,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
   const [documentVisible, setDocumentVisible] = useState(false);
   const channelRef = useRef<BroadcastChannel | null>(null);
   const tabStatusRef = useRef<WebConnectState['tabStatus']>(null);
-  const pendingTransfersRef = useRef(new Map<string, { resolve: (success: boolean) => void; timer: number }>());
+  const pendingTransfersRef = useRef(new Map<string, { resolve: (result: { readonly ok: boolean; readonly error?: string }) => void; timer: number }>());
 
   const snapshotRef = useRef<() => PlayerSnapshot>(() => audioSnapshot(audioRef.current));
   snapshotRef.current = () => {
@@ -408,7 +409,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
           const pending = pendingTransfersRef.current.get(message.requestId);
           if (pending) {
             window.clearTimeout(pending.timer);
-            pending.resolve(message.ok);
+            pending.resolve({ ok: message.ok, ...(typeof message.error === 'string' ? { error: message.error } : {}) });
             pendingTransfersRef.current.delete(message.requestId);
           }
         }
@@ -417,7 +418,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
       if (message.type === 'control' && isRemoteCommand(message.command)) created.control(message.command);
       else if (message.type === 'transfer' && typeof message.targetDeviceId === 'string') {
         void created.transferTo(message.targetDeviceId).then(result => {
-          channel?.postMessage({ type: 'transfer-result', requestId: message.requestId, ok: result.ok } satisfies ConnectTabMessage);
+          channel?.postMessage({ type: 'transfer-result', requestId: message.requestId, ok: result.ok, ...(!result.ok && result.error ? { error: result.error } : {}) } satisfies ConnectTabMessage);
         }).catch(() => channel?.postMessage({ type: 'transfer-result', requestId: message.requestId, ok: false } satisfies ConnectTabMessage));
       }
     };
@@ -450,7 +451,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
       if (channelRef.current === channel) channelRef.current = null;
       for (const pending of pendingTransfersRef.current.values()) {
         window.clearTimeout(pending.timer);
-        pending.resolve(false);
+        pending.resolve({ ok: false });
       }
       pendingTransfersRef.current.clear();
       if (!leaderStarted) {
@@ -488,16 +489,19 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
     else if (tabStatusRef.current === 'other-tab') channelRef.current?.postMessage({ type: 'control', command } satisfies ConnectTabMessage);
   }, []);
 
-  const transferTo = useCallback(async (targetDeviceId: string): Promise<boolean> => {
+  const transferTo = useCallback(async (targetDeviceId: string): Promise<{ readonly ok: boolean; readonly error?: string }> => {
     const current = sessionRef.current;
-    if (current) return (await current.transferTo(targetDeviceId)).ok;
-    if (tabStatusRef.current !== 'other-tab' || !channelRef.current) return false;
+    if (current) {
+      const result = await current.transferTo(targetDeviceId);
+      return result.ok ? { ok: true } : { ok: false, ...(result.error ? { error: result.error } : {}) };
+    }
+    if (tabStatusRef.current !== 'other-tab' || !channelRef.current) return { ok: false };
     const requestId = crypto.randomUUID();
     return new Promise(resolve => {
       const timer = window.setTimeout(() => {
         pendingTransfersRef.current.delete(requestId);
-        resolve(false);
-      }, 15_000);
+        resolve({ ok: false });
+      }, 65_000);
       pendingTransfersRef.current.set(requestId, { resolve, timer });
       channelRef.current?.postMessage({ type: 'transfer', requestId, targetDeviceId } satisfies ConnectTabMessage);
     });

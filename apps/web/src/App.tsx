@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ChevronRight, House, Heart as HeartIcon, Moon, Sun, Disc3, Pause, Play, SkipBack, SkipForward, Sparkles, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, MonitorSmartphone, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, ChevronRight, House, Heart as HeartIcon, Moon, Sun, Disc3, Pause, Play, SkipBack, SkipForward, Sparkles, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -24,6 +24,7 @@ import { AuthDialog } from './components/AuthDialog';
 import { useSignIn } from './auth/SignInContext';
 import { CommandPalette } from './components/CommandPalette';
 import { HomePage } from './components/HomePage';
+import { ConnectPicker, type ConnectPickerState } from './components/ConnectPicker';
 import { PlayerPanel } from './components/PlayerPanel';
 import { SettingsPage } from './components/SettingsPage';
 import { MusicFlowShader } from './components/shader/MusicFlowShader';
@@ -1139,6 +1140,31 @@ export default function App() {
     '--art-tertiary': shellPalette.tertiary
   } as CSSProperties;
 
+  // "Listen on": one state for the mini player's devices button and the full player's.
+  const playingElsewhere = Boolean(connectView?.activeDeviceId && connectView.activeDeviceId !== connect.deviceId);
+  const pickerSong = playingElsewhere ? connectView?.song : audio.currentSong ?? undefined;
+  const connectPicker: ConnectPickerState = {
+    connected: connect.connected,
+    otherTab: connect.tabStatus === 'other-tab',
+    deviceId: connect.deviceId,
+    devices: connectView?.devices ?? [],
+    ...(connectView?.activeDeviceId ? { activeDeviceId: connectView.activeDeviceId } : {}),
+    ...(connectView?.activeDevice ? { activeDeviceName: connectView.activeDevice.name } : {}),
+    isPlaying: playingElsewhere && connectView ? connectView.isPlaying : audio.isPlaying,
+    ...(pickerSong ? { songTitle: pickerSong.title, songArtist: pickerSong.artist } : {}),
+    autoplayBlocked: connectView?.autoplayBlocked ?? false,
+    ...(connectView?.lastError ? { lastError: connectView.lastError } : {}),
+    volume: playerVolume,
+    onTransfer: connect.transferTo,
+    onSignIn: () => setAuthOpen(true),
+    onResume: () => {
+      if (remotePlayback && connect.deviceId) void connect.transferTo(connect.deviceId);
+      else if (connectView) connect.control({ kind: 'play' });
+      else void audio.requestPlayback(true);
+    },
+    onVolume: changePlayerVolume
+  };
+
   return (
     <PlaylistsContext.Provider value={playlists}>
     <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme={theme} data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
@@ -1420,7 +1446,7 @@ export default function App() {
               style={{ '--fill': `${playerVolume * 100}%` } as CSSProperties}
               onChange={(event) => changePlayerVolume(Number(event.target.value))}
             />
-            <button type="button" className="am-btn am-btn--lyrics" aria-label="Playback devices" title="Playback devices" onClick={() => setPlayerMode('immersive')}><MonitorSmartphone size={17} aria-hidden="true" /></button>
+            <ConnectPicker connect={connectPicker} variant="bar" />
             <button type="button" className="am-btn am-btn--lyrics" aria-label="Lyrics" title="Lyrics" onClick={() => setPlayerMode('workspace')}><Waves size={17} aria-hidden="true" /></button>
             <button
               ref={queueToggleRef}
@@ -1570,40 +1596,7 @@ export default function App() {
         onSeek={seekPlayer}
         onLike={() => { if (playerSong) toggleLike(playerSong); }}
         onPlayQueueSong={(song) => void playSong(song, playerQueue.length > 0 ? playerQueue : displaySongs)}
-        connect={connectView ? {
-          connected: connect.connected,
-          otherTab: connect.tabStatus === 'other-tab',
-          deviceId: connect.deviceId,
-          devices: connectView.devices,
-          activeDeviceId: connectView.activeDeviceId,
-          activeDeviceName: connectView.activeDevice?.name,
-          autoplayBlocked: connectView.autoplayBlocked,
-          ...(connectView.lastError ? { lastError: connectView.lastError } : {}),
-          volume: playerVolume,
-          shuffle: playerShuffle,
-          repeat: playerRepeat,
-          onTransfer: connect.transferTo,
-          onSignIn: () => setAuthOpen(true),
-          onResume: () => { if (remotePlayback && connect.deviceId) void connect.transferTo(connect.deviceId); else connect.control({ kind: 'play' }); },
-          onVolume: changePlayerVolume,
-          onShuffle: togglePlayerShuffle,
-          onRepeat: cyclePlayerRepeat
-        } : {
-          connected: connect.connected,
-          otherTab: connect.tabStatus === 'other-tab',
-          deviceId: connect.deviceId,
-          devices: [],
-          autoplayBlocked: false,
-          volume: audio.volume,
-          shuffle: audio.shuffle,
-          repeat: audio.repeat,
-          onTransfer: connect.transferTo,
-          onSignIn: () => setAuthOpen(true),
-          onResume: () => void audio.requestPlayback(true),
-          onVolume: audio.setVolume,
-          onShuffle: audio.toggleShuffle,
-          onRepeat: audio.cycleRepeat
-        }}
+        connect={connectPicker}
         onOpenAlbum={openAlbumFromPlayer}
         onOpenArtist={openArtistFromPlayer}
       />
