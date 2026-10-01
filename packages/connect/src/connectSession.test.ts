@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createConnectSession } from './connectSession.ts';
+import { connectError } from './errors.ts';
 import { MemoryTransport } from './memoryTransport.ts';
 import { FakePlayerPort } from './testing.ts';
 import type { Clock, ConnectPlayerState, DeviceRegistration, PlayerPort } from './types.ts';
@@ -717,4 +718,68 @@ test('pulling playback from an owner that stopped listening fails in seconds, no
   assert.equal(playerB.getSnapshot().isPlaying, false);
   assert.equal(sessionB.view().activeDeviceId, 'web-a');
   sessionB.dispose();
+});
+
+class CountingTransport extends MemoryTransport {
+  registers = 0;
+  heartbeats = 0;
+  refuseNextHeartbeat = false;
+
+  override async register(...args: Parameters<MemoryTransport['register']>): ReturnType<MemoryTransport['register']> {
+    this.registers++;
+    return super.register(...args);
+  }
+
+  override async heartbeat(...args: Parameters<MemoryTransport['heartbeat']>): ReturnType<MemoryTransport['heartbeat']> {
+    this.heartbeats++;
+    if (this.refuseNextHeartbeat) {
+      this.refuseNextHeartbeat = false;
+      throw connectError('unauthenticated');
+    }
+    return super.heartbeat(...args);
+  }
+}
+
+test('a heartbeat refused as signed out registers again at once', async () => {
+  // 2026-10-01 18:30: a tab woke up and its first heartbeat arrived before its sign-in did.
+  const clock = new TestClock();
+  const transport = new CountingTransport(() => clock.now());
+  const session = createConnectSession({ transport, player: new FakePlayerPort(), device: device('web-a', 'Laptop'), clock });
+  session.setVisible(true);
+  await settle();
+  assert.equal(transport.registers, 1);
+
+  transport.refuseNextHeartbeat = true;
+  clock.advance(60_000);
+  await settle();
+
+  assert.equal(transport.registers, 2);
+  assert.notEqual(session.view().lastError, 'Sign in to use Connect.');
+  assert.equal(session.view().devices.some((entry) => entry.deviceId === 'web-a' && entry.isOnline), true);
+  session.dispose();
+});
+
+test('coming back to the foreground heartbeats at once', async () => {
+  const clock = new TestClock();
+  const transport = new CountingTransport(() => clock.now());
+  // Playing keeps the session listening while hidden.
+  const player = new FakePlayerPort({ song, queue: [], isPlaying: true, positionSec: 10, volume: 1 });
+  const session = createConnectSession({ transport, player, device: device('web-a', 'Laptop'), clock });
+  session.setVisible(true);
+  await settle();
+  session.setVisible(false);
+  clock.advance(45_000);
+  await settle();
+  const before = transport.heartbeats;
+
+  session.setVisible(true);
+  await settle();
+  assert.equal(transport.heartbeats, before + 1);
+
+  // A quick switch away and back does not add one.
+  session.setVisible(false);
+  session.setVisible(true);
+  await settle();
+  assert.equal(transport.heartbeats, before + 1);
+  session.dispose();
 });

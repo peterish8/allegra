@@ -76,6 +76,8 @@ export function createConnectSession({ transport, player, device, clock, trace }
   let heartbeatTimer: unknown;
   let listenRetryTimer: unknown;
   let listenRetryCount = 0;
+  /** When the server last confirmed this device online (register or heartbeat). */
+  let lastBeatAt = 0;
   let local = player.getSnapshot();
   let previousLocal = local;
   let snapshot: Parameters<Parameters<typeof transport.watch>[1]>[0] | undefined;
@@ -241,33 +243,52 @@ export function createConnectSession({ transport, player, device, clock, trace }
     if (registering || listening || !shouldListen()) return;
     registering = true;
     try {
-      const result = await sample('register', () => transport.register({ ...device, protocolVersion: 2 }));
+      await sample('register', () => transport.register({ ...device, protocolVersion: 2 }));
       if (disposed || !shouldListen()) return;
+      lastBeatAt = clock.now();
       listening = true;
       watchStop = transport.watch(device.deviceId, onSnapshot);
-      heartbeatTimer = clock.setInterval(() => {
-        void sample('heartbeat', () => transport.heartbeat(device.deviceId)).catch((error: unknown) => {
-          setError(error, 'Connect is offline.');
-          // The registration is gone (the sweep removes long-idle devices): register again rather
-          // than heartbeating a device the server no longer knows.
-          if (errorCode(error) === 'device_not_registered' && !disposed) {
-            stopListening();
-            void registerAndListen();
-          }
-        });
-      }, HEARTBEAT_MS);
+      heartbeatTimer = clock.setInterval(() => { void beat(); }, HEARTBEAT_MS);
       if (listenRetryTimer !== undefined) clearTimer(listenRetryTimer);
       listenRetryTimer = undefined;
       listenRetryCount = 0;
       emit({ event: 'adapter.ready', operation: 'watch', outcome: 'ok', count: 1 });
     } catch (error) {
-      setError(error, 'Connect is unavailable right now. Trying again shortly.');
+      if (errorCode(error) === 'unauthenticated') showReconnecting();
+      else setError(error, 'Connect is unavailable right now. Trying again shortly.');
       if (listenRetryTimer === undefined && shouldListen()) {
         const delay = Math.min(LISTEN_RETRY_MAX_MS, 1_000 * 2 ** listenRetryCount);
         listenRetryCount++;
         listenRetryTimer = schedule(() => { listenRetryTimer = undefined; void registerAndListen(); }, delay, 'listen_retry');
       }
     } finally { registering = false; }
+  }
+
+  /** Keeps this device online in Presence. */
+  async function beat(): Promise<void> {
+    try {
+      await sample('heartbeat', () => transport.heartbeat(device.deviceId));
+      lastBeatAt = clock.now();
+    } catch (error) {
+      const code = errorCode(error);
+      // Refused as signed out (a tab or app waking before its sign-in is restored) or as
+      // unknown (the sweep removed a long-idle device): register again now, with backoff,
+      // rather than wait a minute and drop out of the other devices' lists. A real sign-out
+      // disposes this session.
+      if ((code === 'unauthenticated' || code === 'device_not_registered') && !disposed) {
+        showReconnecting();
+        stopListening();
+        void registerAndListen();
+        return;
+      }
+      setError(error, 'Connect is offline.');
+    }
+  }
+
+  function showReconnecting(): void {
+    lastError = 'Reconnecting to Allegra…';
+    lastErrorCode = 'offline';
+    notify();
   }
 
   function stopListening(): void {
@@ -884,7 +905,13 @@ export function createConnectSession({ transport, player, device, clock, trace }
     control,
     transferTo,
     subscribe(listener) { subscribers.add(listener); listener(view()); return () => subscribers.delete(listener); },
-    setVisible(value) { visible = value; reconcileListening(); },
+    setVisible(value) {
+      visible = value;
+      reconcileListening();
+      // Back in front after a while (a throttled tab, a suspended phone app): say so now, not at
+      // the next interval, so the other devices list this one again straight away.
+      if (value && listening && clock.now() - lastBeatAt >= HEARTBEAT_MS / 2) void beat();
+    },
     dispose() {
       if (disposed) return;
       disposed = true; stopListening(); playerStop();
