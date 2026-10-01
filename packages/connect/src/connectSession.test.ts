@@ -188,6 +188,13 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
+/** A tab that crashed or a phone that lost its network: it stops without telling the server. */
+function silently(transport: MemoryTransport, leave: () => void): void {
+  transport.online = false;
+  leave();
+  transport.online = true;
+}
+
 async function sessionPair(options: {
   readonly bRejectsAutoplay?: boolean;
   readonly bLoadResult?: 'ok' | 'not_found' | 'needs_gesture';
@@ -559,8 +566,8 @@ test('an uncertain reservation failure retries the inbox without dropping the co
 });
 
 test('an unresponsive target times out without pausing the source', async () => {
-  const { clock, playerA, sessionA, sessionB } = await sessionPair();
-  sessionB.setVisible(false);
+  const { clock, transport, playerA, sessionA, sessionB } = await sessionPair();
+  silently(transport, () => sessionB.setVisible(false));
 
   const transfer = sessionA.transferTo('phone-b');
   await settle();
@@ -683,8 +690,8 @@ test('a transfer the target has begun keeps waiting past the input timeout and s
 });
 
 test('a transfer nobody picks up still fails at the pick-up window', async () => {
-  const { clock, sessionA, sessionB } = await sessionPair();
-  sessionB.dispose();
+  const { clock, transport, sessionA, sessionB } = await sessionPair();
+  silently(transport, () => sessionB.dispose());
 
   const transfer = sessionA.transferTo('phone-b');
   await settle();
@@ -699,8 +706,8 @@ test('a transfer nobody picks up still fails at the pick-up window', async () =>
 test('pulling playback from an owner that stopped listening fails in seconds, not at the deadline', async () => {
   // 2026-10-01: Chrome owned playback but had left Connect (a lock bug), so the phone's
   // "play here" waited the full 60 s for a release that could not come.
-  const { clock, playerB, sessionA, sessionB } = await sessionPair();
-  sessionA.dispose();
+  const { clock, transport, playerB, sessionA, sessionB } = await sessionPair();
+  silently(transport, () => sessionA.dispose());
 
   const transfer = sessionB.transferTo('phone-b');
   await settle();
@@ -782,4 +789,160 @@ test('coming back to the foreground heartbeats at once', async () => {
   await settle();
   assert.equal(transport.heartbeats, before + 1);
   session.dispose();
+});
+
+const thirdSong: SongSnapshot = {
+  ref: 'saavn:track-3',
+  title: 'Paper Boats',
+  artist: 'Meera',
+  artwork: 'https://images.example/paper-boats.jpg',
+  duration: 240
+};
+
+test('queue edits from a controller change the playing device and show at once', async () => {
+  const { transport, playerA, sessionA, sessionB } = await sessionPair();
+  playerA.update({ queue: [nextSong, thirdSong] });
+  await settle();
+  assert.deepEqual(sessionB.view().queue.map((item) => item.ref), [nextSong.ref, thirdSong.ref]);
+
+  // Shown on the controller before the other device has answered.
+  transport.delayNext('begin', 20);
+  sessionB.control({ kind: 'queue_move', from: 1, to: 0, ref: thirdSong.ref });
+  await Promise.resolve();
+  assert.deepEqual(sessionB.view().queue.map((item) => item.ref), [thirdSong.ref, nextSong.ref]);
+  await new Promise<void>((resolve) => setTimeout(resolve, 30));
+  await settle();
+  assert.deepEqual(playerA.getSnapshot().queue.map((item) => item.ref), [thirdSong.ref, nextSong.ref]);
+
+  sessionB.control({ kind: 'queue_remove', index: 0, ref: thirdSong.ref });
+  await settle();
+  assert.deepEqual(sessionA.view().queue.map((item) => item.ref), [nextSong.ref]);
+
+  sessionB.control({ kind: 'queue_add', song: thirdSong, next: true });
+  await settle();
+  assert.deepEqual(sessionB.view().queue.map((item) => item.ref), [thirdSong.ref, nextSong.ref]);
+
+  sessionB.control({ kind: 'queue_clear' });
+  await settle();
+  assert.deepEqual(playerA.getSnapshot().queue, []);
+  assert.deepEqual(sessionB.view().queue, []);
+  // The song that was playing never reloaded.
+  assert.equal(playerA.calls.some((call) => call.method === 'load'), false);
+  assert.equal(sessionB.view().lastError, undefined);
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('a queue edit follows its song when the queue has moved on, and says so when it has gone', async () => {
+  const { playerA, sessionA, sessionB } = await sessionPair();
+  playerA.update({ queue: [nextSong, thirdSong] });
+  await settle();
+
+  // The controller saw Paper Boats second; a song has finished since, so it is first now.
+  playerA.update({ queue: [thirdSong] });
+  sessionB.control({ kind: 'queue_remove', index: 1, ref: thirdSong.ref });
+  await settle();
+  assert.deepEqual(playerA.getSnapshot().queue, []);
+  assert.equal(sessionB.view().lastError, undefined);
+
+  sessionB.control({ kind: 'queue_remove', index: 0, ref: thirdSong.ref });
+  await settle();
+  assert.equal(sessionB.view().lastError, 'That song is no longer in the queue.');
+  assert.equal(sessionB.view().lastErrorCode, 'not_found');
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('an older app is not sent queue edits it would drop, but still gets a play-next as an add', async () => {
+  const { transport, playerA, sessionA, sessionB } = await sessionPair();
+  transport.setProtocolVersion('web-a', 2);
+  await settle();
+  assert.equal(sessionB.view().queueEditable, false);
+
+  sessionB.control({ kind: 'queue_clear' });
+  await settle();
+  assert.equal(sessionB.view().lastErrorCode, 'update_required');
+  assert.deepEqual(playerA.getSnapshot().queue.map((item) => item.ref), [nextSong.ref]);
+
+  sessionB.control({ kind: 'queue_add', song: thirdSong, next: true });
+  await settle();
+  assert.equal(playerA.getSnapshot().queue.some((item) => item.ref === thirdSong.ref), true);
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('a remote play_song can start part-way through', async () => {
+  const { playerA, sessionA, sessionB } = await sessionPair();
+
+  sessionB.control({ kind: 'play_song', song: thirdSong, queue: [nextSong], positionSec: 42 });
+  await settle();
+
+  const load = [...playerA.calls].reverse().find((call) => call.method === 'load');
+  assert.ok(load);
+  assert.deepEqual(load.args[2], { positionSec: 42, play: true });
+  assert.equal(Math.round(sessionB.view().livePosition), 42);
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('a device that leaves says so: it is offline at once and its playback reads as paused', async () => {
+  const { clock, sessionA, sessionB } = await sessionPair();
+  clock.advance(10_000);
+
+  sessionA.dispose();
+  await settle();
+
+  const view = sessionB.view();
+  assert.equal(view.devices.find((entry) => entry.deviceId === 'web-a')?.isOnline, false);
+  assert.equal(view.activeDeviceOnline, false);
+  assert.equal(view.isPlaying, false);
+  assert.equal(Math.round(view.livePosition), 47);
+  sessionB.dispose();
+});
+
+test('a hidden idle device leaves the list, so a transfer to it is refused without a wait', async () => {
+  const { sessionA, sessionB } = await sessionPair();
+
+  sessionB.setVisible(false);
+  await settle();
+  const result = await sessionA.transferTo('phone-b');
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.reason, 'offline');
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('playback is pulled from an owner that has gone offline, at the position it would have reached', async () => {
+  // A closed laptop lid: the owner never pauses or releases. Once Presence gives up on it, "play
+  // here" must work, with the song and queue it had rather than whatever is loaded locally.
+  const { clock, transport, playerB, sessionA, sessionB } = await sessionPair();
+  silently(transport, () => sessionA.dispose());
+  clock.advance(20_000);
+  transport.setDeviceOffline('web-a');
+  await settle();
+  assert.equal(sessionB.view().activeDeviceOnline, false);
+
+  const result = await sessionB.transferTo('phone-b');
+  await settle();
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(sessionB.view().isThisDeviceActive, true);
+  assert.equal(playerB.getSnapshot().song?.ref, song.ref);
+  assert.deepEqual(playerB.getSnapshot().queue.map((item) => item.ref), [nextSong.ref]);
+  assert.equal(playerB.getSnapshot().isPlaying, true);
+  assert.equal(Math.round(playerB.getSnapshot().positionSec), 57);
+  sessionB.dispose();
+});
+
+test('renaming a device registers the new name for the others', async () => {
+  const { sessionA, sessionB } = await sessionPair();
+
+  sessionA.rename('  Studio laptop  ');
+  await settle();
+
+  assert.equal(sessionB.view().devices.find((entry) => entry.deviceId === 'web-a')?.name, 'Studio laptop');
+  assert.equal(sessionB.view().activeDevice?.name, 'Studio laptop');
+  sessionA.dispose();
+  sessionB.dispose();
 });

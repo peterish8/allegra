@@ -114,6 +114,54 @@ from current local slice evidence below.
 - The in-app updater compares `apk-latest` with the build commit/time CI stamps into each APK and
   never offers an older build (all builds are versionCode 1).
 
+## Queue editing, leaving, and dead owners (2026-10-01, night)
+
+Branch `feat/connect-queue-and-takeover`, from `main` at `d8253ed`. Not committed, not deployed.
+It closes the gaps a checklist review of Connect against Spotify Connect's behaviour found.
+
+- **Protocol 3 (additive).** New commands `queue_remove`, `queue_move`, `queue_clear`; `queue_add`
+  takes `next` (play next) and `more` (the rest of an album in one command); `play_song` takes
+  `positionSec`. A protocol 2 device is never sent the three new kinds (`update_required`), and
+  reads the extended `queue_add` as a plain add. `ConnectView.queueEditable` tells a UI when to
+  hide the edit controls.
+- **Leaving.** New `connect:disconnect`. A session calls it when it stops listening, on a closing
+  web tab (`pagehide`) and before sign-out on both clients (`signOutHooks`), so a device is offline
+  at once instead of 150 s later; a playing owner that leaves is stored as paused where it was.
+- **Dead owner (contract change, see `docs/connect-contract.md`).** `prepareV2` no longer waits for
+  a playing owner that Presence counts offline: the destination takes over where the song would
+  have reached. The remaining wait is the 150 s Presence needs to notice a device that died
+  without saying goodbye; inside that window "play here" still fails `owner_unreachable` after
+  15 s. Taking over from an owner that is online but silent was left as it was.
+- **One queue path on both clients.** `packages/connect/src/queueStager.ts` hands a player its
+  queue: known songs move at once, new ones join when their lookup lands, and songs past the 50
+  other devices are shown are kept. The web reported every other song in the list as "queued"
+  (songs before the current one included); it now reports what plays after it, as the phone does.
+  The phone keeps the ref a song was matched for (`aliases`), so a download with no recorded
+  origin no longer drops out of the shared state.
+- **Phone.** `StreamService.playNext` and `append` go to the device that is playing (they used to
+  replace its song, or edit the phone's own queue silently). The remote player's queue sheet has
+  play-next, remove and clear. The device sheet can rename the phone and says when the device
+  that was playing has gone offline.
+- **Web.** The song sheet has Play next and Add to queue; the Playing Next panel has play-next,
+  remove and Clear; they work signed out too. The bar's seek slider acts on release (one seek per
+  drag) and a remote volume is sent on release. The picker can rename the browser. The first tap
+  in a tab with no song loaded plays half a second of silence so Safari will later start a
+  transferred song without a tap.
+- **Verified here:** `npm run typecheck`, `npm run lint`, `npm test` (shared 65, Convex 14, web
+  61, API 190), `npx tsc --noEmit -p convex`, and the phone's `tsc`, `eslint` and `jest` (69
+  suites, 545 tests). In a browser on :5173, signed out: play next, add to queue, remove, move,
+  clear, and one `seeking` event per slider drag with playback carrying on.
+- **Not verified:** nothing signed-in. No two-device run, no Android device, no Safari (the audio
+  unlock is untested where it matters), no `npm run e2e`, no `convex dev` push. The web adapter's
+  Connect path (`load`, `setQueue`, the goodbye on `pagehide`) is covered only through the shared
+  unit tests.
+- **Deploy order:** Convex first (`scripts/vercel-build.mjs` already does this for production).
+  A new client against the old backend cannot send the new kinds: the validator rejects them and
+  the client retries for a minute. An old client against the new backend is unaffected.
+- **Still open from the checklist:** per-action restrictions beyond `canPlay` and `queueEditable`,
+  a stored album/playlist context, push to wake a closed phone app, and drag-to-reorder in the
+  remote queue (move-to-next is the only reorder).
+
 ## Important files
 
 - Contract: [`../../docs/connect-contract.md`](../../docs/connect-contract.md)

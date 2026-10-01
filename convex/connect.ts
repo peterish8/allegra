@@ -32,12 +32,16 @@ const rateLimiter = new RateLimiter(components.rateLimiter, {
   connectClaim: { kind: 'token bucket', rate: 12, period: MINUTE, capacity: 6 },
   connectReport: { kind: 'token bucket', rate: 60, period: MINUTE, capacity: 20 },
   connectRegister: { kind: 'token bucket', rate: 10, period: MINUTE, capacity: 5 },
-  connectHeartbeat: { kind: 'token bucket', rate: 4, period: MINUTE, capacity: 3 }
+  connectHeartbeat: { kind: 'token bucket', rate: 4, period: MINUTE, capacity: 3 },
+  connectDisconnect: { kind: 'token bucket', rate: 10, period: MINUTE, capacity: 5 }
 });
-type DeviceLimit = 'connectClaim' | 'connectReport' | 'connectRegister' | 'connectHeartbeat';
+type DeviceLimit = 'connectClaim' | 'connectReport' | 'connectRegister' | 'connectHeartbeat' | 'connectDisconnect';
 
 /** Devices that send this or more use the V2 functions. A device with no version is legacy (1). */
 const PROTOCOL_V2 = 2;
+/** Devices that send this or more run `queue_remove`, `queue_move` and `queue_clear`; older apps drop them unread. */
+const PROTOCOL_QUEUE_EDIT = 3;
+const QUEUE_LIMIT = 50;
 const HEARTBEAT_INTERVAL_MS = 60_000;
 /** How long a command may wait before it must not run: controls, then anything that loads a song. */
 const CONTROL_DEADLINE_MS = 15_000;
@@ -261,7 +265,7 @@ async function isDeviceOnline(ctx: QueryCtx | MutationCtx, userId: string, devic
 const rejectInvalid = (): never => fail('invalid_command');
 
 function assertQueue(queue: readonly ConnectSongSnapshot[]): void {
-  if (queue.length > 50) fail('invalid_command');
+  if (queue.length > QUEUE_LIMIT) fail('invalid_command');
   for (const song of queue) assertSongSnapshot(song, rejectInvalid);
 }
 
@@ -287,6 +291,13 @@ function assertStatePatch(patch: ConnectStatePatch): void {
     fail('invalid_command');
   }
 }
+
+const isQueueIndex = (value: unknown): boolean =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < QUEUE_LIMIT;
+const isSongRef = (value: unknown): boolean =>
+  typeof value === 'string' && value.trim().length > 0 && value.length <= 512;
+const isQueueEdit = (kind: ConnectCommandKind): boolean =>
+  kind === 'queue_remove' || kind === 'queue_move' || kind === 'queue_clear';
 
 function assertCommandPair(kind: ConnectCommandKind, args: unknown): void {
   if (kind === 'take_over') fail('invalid_command');
@@ -318,12 +329,33 @@ function assertCommandPair(kind: ConnectCommandKind, args: unknown): void {
   if (kind === 'play_song' || kind === 'queue_add') {
     if (!args || typeof args !== 'object' || !('song' in args)) fail('invalid_command');
     assertSongSnapshot((args as { song: ConnectSongSnapshot }).song, rejectInvalid);
-    const queue = (args as { queue?: unknown }).queue;
-    if (kind === 'queue_add' && queue !== undefined) fail('invalid_command');
+    const { queue, positionSec, next, more } = args as { queue?: unknown; positionSec?: unknown; next?: unknown; more?: unknown };
+    if (kind === 'queue_add' && (queue !== undefined || positionSec !== undefined)) fail('invalid_command');
+    if (kind === 'play_song' && (next !== undefined || more !== undefined)) fail('invalid_command');
+    if (more !== undefined) {
+      // With `song` itself, one command carries a whole queue at most.
+      if (!Array.isArray(more) || more.length >= QUEUE_LIMIT) fail('invalid_command');
+      assertQueue(more as ConnectSongSnapshot[]);
+    }
     if (queue !== undefined) {
       if (!Array.isArray(queue)) fail('invalid_command');
       assertQueue(queue as ConnectSongSnapshot[]);
     }
+    if (positionSec !== undefined && (typeof positionSec !== 'number' || !Number.isFinite(positionSec) || positionSec < 0)) {
+      fail('invalid_command');
+    }
+    return;
+  }
+  if (kind === 'queue_remove') {
+    if (!args || typeof args !== 'object' || !('index' in args) || !('ref' in args)) fail('invalid_command');
+    const { index, ref } = args as { index: unknown; ref: unknown };
+    if (!isQueueIndex(index) || !isSongRef(ref)) fail('invalid_command');
+    return;
+  }
+  if (kind === 'queue_move') {
+    if (!args || typeof args !== 'object' || !('from' in args) || !('to' in args) || !('ref' in args)) fail('invalid_command');
+    const { from, to, ref } = args as { from: unknown; to: unknown; ref: unknown };
+    if (!isQueueIndex(from) || !isQueueIndex(to) || !isSongRef(ref)) fail('invalid_command');
     return;
   }
   if (args !== undefined) fail('invalid_command');
@@ -389,6 +421,7 @@ const deadlineOf = (command: Command): number => command.executeBefore ?? comman
 /** A transfer whose ownership has already moved to its target. Past that point it is not expired or superseded. */
 const isActivated = (command: Command): boolean => command.kind === 'take_over' && command.release !== undefined;
 
+/** Removing, moving and clearing need no catalog lookup, so they keep the short deadline. */
 const deadlineFor = (kind: ConnectCommandKind): number =>
   kind === 'play_song' || kind === 'queue_add' || kind === 'take_over' ? LOADING_DEADLINE_MS : CONTROL_DEADLINE_MS;
 
@@ -662,6 +695,32 @@ export const heartbeat = mutation({
     await limitDevice(ctx, 'connectHeartbeat', userId, deviceId);
     const now = Date.now();
     await presence.heartbeat(ctx, roomOf(userId), deviceId, deviceId, HEARTBEAT_INTERVAL_MS);
+    return { serverNow: now };
+  }
+});
+
+/**
+ * A device says it is leaving (signed out, tab closed, app in the background with nothing
+ * playing): it goes offline now instead of 2.5 heartbeats later. If it was the one playing, its
+ * sound has stopped, so the state is paused where the song had reached. The others then stop
+ * showing a clock that runs on, and can pick the song up from there.
+ */
+export const disconnect = mutation({
+  args: { deviceId: v.string() },
+  returns: v.object({ serverNow: v.number() }),
+  handler: async (ctx, { deviceId }) => {
+    const userId = await requireUser(ctx);
+    await requireOwnedDevice(ctx, userId, deviceId);
+    await limitDevice(ctx, 'connectDisconnect', userId, deviceId);
+    const now = Date.now();
+    // Presence only hands a session's token out from a heartbeat.
+    const { sessionToken } = await presence.heartbeat(ctx, roomOf(userId), deviceId, deviceId, HEARTBEAT_INTERVAL_MS);
+    await presence.disconnect(ctx, sessionToken);
+    const player = await findPlayerState(ctx, userId);
+    if (player?.isPlaying) {
+      const own = await readOwnership(ctx, userId, player);
+      if (own.activeDeviceId === deviceId) await applyPatch(ctx, player, { isPlaying: false }, now);
+    }
     return { serverNow: now };
   }
 });
@@ -943,6 +1002,7 @@ export const sendV2 = mutation({
     if (own.activeDeviceId !== targetDeviceId) fail('target_not_active', ownershipDetails(own));
     if (own.epoch !== expectedOwnershipEpoch) fail('stale_ownership', ownershipDetails(own));
     requireV2Target(target);
+    if (isQueueEdit(kind) && (target.protocolVersion ?? 1) < PROTOCOL_QUEUE_EDIT) fail('update_required');
     const queued = await enqueue(ctx, userId, targetDeviceId, fromDeviceId, kind, args, { requestId, expectedOwnershipEpoch });
     return { ...queued, ownershipEpoch: own.epoch };
   }
@@ -1071,10 +1131,12 @@ export const beginV2 = mutation({
  * The destination of a transfer has the song loaded, paused. Either ownership moves to it now, or
  * it must wait for the current owner to pause first.
  *
- * It moves now when there is nobody else playing: no owner, the owner is this device, or the
- * stored state is paused. Any different playing owner must confirm its pause through releaseV2,
- * including offline and legacy owners; their absence is a failed transfer, never permission to
- * start a second audio source.
+ * It moves now when there is nobody to wait for: no owner, the owner is this device, the stored
+ * state is paused, or Presence has given the owner up as offline. That last owner cannot confirm
+ * anything (a closed laptop, a killed app), so the destination starts where the song would have
+ * reached; if the owner is in fact still playing it stops as soon as it reconnects and sees the
+ * new epoch. An owner that Presence still counts online, legacy ones included, must confirm its
+ * pause through releaseV2, and its silence is a failed transfer.
  */
 export const prepareV2 = mutation({
   args: { deviceId: v.string(), commandId: v.id('connectCommands'), reservationToken: v.string() },
@@ -1112,11 +1174,8 @@ export const prepareV2 = mutation({
     }
 
     const ownerId = own.activeDeviceId;
-    let waitForOwner = false;
-    let positionSec = player.positionSec;
-    if (ownerId !== undefined && ownerId !== deviceId && player.isPlaying) {
-      waitForOwner = true;
-    }
+    const waitForOwner =
+      ownerId !== undefined && ownerId !== deviceId && player.isPlaying && (await isDeviceOnline(ctx, userId, ownerId));
 
     if (waitForOwner) {
       if (own.handoff?.commandId !== command._id) {
@@ -1132,7 +1191,8 @@ export const prepareV2 = mutation({
       return { status: 'awaiting_release' as const, serverNow: now };
     }
 
-    positionSec = clampPosition(positionSec, player.song);
+    // Paused: the stored position. Playing (an owner that went offline): where it has got to since.
+    const positionSec = positionAtNow(player, now);
     const resume = player.isPlaying;
     const ownershipEpoch = await moveOwnership(ctx, userId, own, deviceId, command._id);
     const rev = player.rev + 1;

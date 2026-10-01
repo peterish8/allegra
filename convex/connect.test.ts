@@ -60,7 +60,8 @@ async function registerDevice(
 async function registerV2Device(
   client: ReturnType<typeof asUser>,
   deviceId: string,
-  canPlay = true
+  canPlay = true,
+  protocolVersion = 2
 ) {
   return await client.mutation(api.connect.register, {
     deviceId,
@@ -68,7 +69,7 @@ async function registerV2Device(
     kind: 'web',
     appVersion: 'test-v2',
     canPlay,
-    protocolVersion: 2
+    protocolVersion
   });
 }
 
@@ -377,6 +378,105 @@ describe('Connect backend', () => {
     expect(await client.query(api.connect.outcomesFor, { deviceId: 'laptop' })).toMatchObject([
       { commandId: sent.commandId, status: 'pending', began: true }
     ]);
+  });
+
+  it('takes playback from a playing owner that has gone offline, where the song would have reached', async () => {
+    const t = backend();
+    const client = asUser(t, 'users:v2-dead-owner');
+    await registerV2Device(client, 'closed-laptop');
+    await registerV2Device(client, 'phone');
+    const claim = await client.mutation(api.connect.claim, {
+      deviceId: 'closed-laptop', snapshot: { ...playerSnapshot, positionSec: 30 }
+    });
+    // The laptop's heartbeats ran out: Presence counts it offline, the stored state still says playing.
+    await t.run(async (ctx) => {
+      const { sessionToken } = await presence.heartbeat(ctx, 'connect:users:v2-dead-owner', 'closed-laptop', 'closed-laptop', 60_000);
+      await presence.disconnect(ctx, sessionToken);
+    });
+    expect(await client.query(api.connect.devices, {})).toContainEqual(
+      expect.objectContaining({ deviceId: 'closed-laptop', isOnline: false, isActive: true })
+    );
+
+    const sent = await client.mutation(api.connect.transferV2, {
+      fromDeviceId: 'phone', toDeviceId: 'phone', requestId: 'dead-owner-pull-1',
+      expectedOwnershipEpoch: claim.ownershipEpoch
+    });
+    const begun = await client.mutation(api.connect.beginV2, { deviceId: 'phone', commandId: sent.commandId });
+    const prepared = await client.mutation(api.connect.prepareV2, {
+      deviceId: 'phone', commandId: sent.commandId, reservationToken: begun.reservationToken
+    });
+
+    expect(prepared).toMatchObject({ status: 'activated', resume: true, ownershipEpoch: claim.ownershipEpoch + 1 });
+    if (prepared.status !== 'activated') throw new Error('the transfer waited for an owner that cannot answer');
+    expect(prepared.positionSec).toBeGreaterThanOrEqual(30);
+    expect(await client.query(api.connect.state, {})).toMatchObject({
+      activeDeviceId: 'phone', isPlaying: false, ownershipEpoch: claim.ownershipEpoch + 1
+    });
+    // The laptop wakes up later: its report is refused, which is what stops its audio.
+    await expectCode(client.mutation(api.connect.report, {
+      deviceId: 'closed-laptop', patch: { positionSec: 99 }, rev: claim.rev, expectedOwnershipEpoch: claim.ownershipEpoch
+    }), 'device_not_active');
+  });
+
+  it('takes a leaving device offline at once and pauses the playback it owned', async () => {
+    const t = backend();
+    const client = asUser(t, 'users:leaving');
+    await registerV2Device(client, 'laptop');
+    await registerV2Device(client, 'phone');
+    await client.mutation(api.connect.claim, { deviceId: 'laptop', snapshot: { ...playerSnapshot, positionSec: 12 } });
+
+    await client.mutation(api.connect.disconnect, { deviceId: 'phone' });
+    expect((await client.query(api.connect.devices, {})).map(({ deviceId }) => deviceId)).toEqual(['laptop']);
+    expect(await client.query(api.connect.state, {})).toMatchObject({ isPlaying: true, rev: 1 });
+
+    await client.mutation(api.connect.disconnect, { deviceId: 'laptop' });
+    expect(await client.query(api.connect.devices, {})).toMatchObject([
+      { deviceId: 'laptop', isOnline: false, isActive: true }
+    ]);
+    const paused = await client.query(api.connect.state, {});
+    expect(paused).toMatchObject({ activeDeviceId: 'laptop', isPlaying: false, rev: 2 });
+    expect(paused?.positionSec).toBeGreaterThanOrEqual(12);
+
+    // Coming back is an ordinary register.
+    await registerV2Device(client, 'phone');
+    expect((await client.query(api.connect.devices, {})).map(({ deviceId }) => deviceId).sort()).toEqual(['laptop', 'phone']);
+    await expectCode(asUser(t, 'users:someone-else').mutation(api.connect.disconnect, { deviceId: 'laptop' }), 'device_owned_by_another_account');
+  });
+
+  it('queues queue edits for a device that understands them and refuses them for an older app', async () => {
+    const t = backend();
+    const client = asUser(t, 'users:queue-edits');
+    await registerV2Device(client, 'player', true, 3);
+    await registerV2Device(client, 'old-player', true, 2);
+    await registerV2Device(client, 'remote', true, 3);
+    const claim = await client.mutation(api.connect.claim, { deviceId: 'player', snapshot: playerSnapshot });
+    const base = { fromDeviceId: 'remote', targetDeviceId: 'player', expectedOwnershipEpoch: claim.ownershipEpoch };
+
+    await client.mutation(api.connect.sendV2, { ...base, requestId: 'queue-edit-01', kind: 'queue_add', args: { song, next: true } });
+    await client.mutation(api.connect.sendV2, { ...base, requestId: 'queue-edit-02', kind: 'queue_remove', args: { index: 0, ref: song.ref } });
+    await client.mutation(api.connect.sendV2, { ...base, requestId: 'queue-edit-03', kind: 'queue_move', args: { from: 2, to: 0, ref: song.ref } });
+    await client.mutation(api.connect.sendV2, { ...base, requestId: 'queue-edit-04', kind: 'queue_clear' });
+    await client.mutation(api.connect.sendV2, { ...base, requestId: 'queue-edit-05', kind: 'play_song', args: { song, positionSec: 42 } });
+    const inbox = await client.query(api.connect.inboxFor, { deviceId: 'player' });
+    expect(inbox.map(({ kind }) => kind)).toEqual(['queue_add', 'queue_remove', 'queue_move', 'queue_clear', 'play_song']);
+    expect(inbox.map(({ args }) => args)).toEqual([
+      { song, next: true },
+      { index: 0, ref: song.ref },
+      { from: 2, to: 0, ref: song.ref },
+      undefined,
+      { song, positionSec: 42 }
+    ]);
+
+    await expectCode(client.mutation(api.connect.sendV2, { ...base, requestId: 'queue-edit-06', kind: 'queue_remove', args: { index: -1, ref: song.ref } }), 'invalid_command');
+    await expectCode(client.mutation(api.connect.sendV2, { ...base, requestId: 'queue-edit-07', kind: 'queue_move', args: { from: 0, to: 50, ref: song.ref } }), 'invalid_command');
+    await expectCode(client.mutation(api.connect.sendV2, { ...base, requestId: 'queue-edit-08', kind: 'queue_clear', args: { index: 0, ref: song.ref } }), 'invalid_command');
+    await expectCode(client.mutation(api.connect.sendV2, { ...base, requestId: 'queue-edit-09', kind: 'play_song', args: { song, positionSec: -1 } }), 'invalid_command');
+
+    const oldClaim = await client.mutation(api.connect.claim, { deviceId: 'old-player', snapshot: playerSnapshot });
+    const old = { fromDeviceId: 'remote', targetDeviceId: 'old-player', expectedOwnershipEpoch: oldClaim.ownershipEpoch };
+    await expectCode(client.mutation(api.connect.sendV2, { ...old, requestId: 'queue-edit-10', kind: 'queue_clear' }), 'update_required');
+    // It reads a play-next as a plain add, so that one still goes through.
+    await client.mutation(api.connect.sendV2, { ...old, requestId: 'queue-edit-11', kind: 'queue_add', args: { song, next: true } });
   });
 
   it('sweeps stale offline devices while retaining current registrations', async () => {

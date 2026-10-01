@@ -91,6 +91,9 @@ export const connectCommandKind = v.union(
   v.literal('repeat'),
   v.literal('play_song'),
   v.literal('queue_add'),
+  v.literal('queue_remove'),
+  v.literal('queue_move'),
+  v.literal('queue_clear'),
   v.literal('take_over')
 );
 
@@ -130,8 +133,10 @@ export const connectCommandArgs = v.union(
   v.object({ v: v.number() }),
   v.object({ on: v.boolean() }),
   v.object({ mode: repeatMode }),
-  v.object({ song: songSnapshot, queue: v.optional(v.array(songSnapshot)) }),
-  v.object({ song: songSnapshot }),
+  v.object({ song: songSnapshot, queue: v.optional(v.array(songSnapshot)), positionSec: v.optional(v.number()) }),
+  v.object({ song: songSnapshot, more: v.optional(v.array(songSnapshot)), next: v.optional(v.boolean()) }),
+  v.object({ index: v.number(), ref: v.string() }),
+  v.object({ from: v.number(), to: v.number(), ref: v.string() }),
   v.object({ state: playerStateSnapshot })
 );
 

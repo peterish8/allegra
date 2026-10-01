@@ -6,6 +6,10 @@ export { systemClock } from './clock.ts';
 export { MemoryTransport } from './memoryTransport.ts';
 export { connectError, errorCode, errorData, isUncertainFailure, isFailureCode } from './errors.ts';
 export { FakePlayerPort } from './testing.ts';
+export { applyQueueEdit, isQueueEdit, QUEUE_LIMIT } from './queueEdit.ts';
+export { createQueueStager, reportable, upcomingOf, withUpcoming } from './queueStager.ts';
+export type { QueuePlayer, QueueSong, QueueStager, QueueStagerOptions } from './queueStager.ts';
+export { CONNECT_PROTOCOL_VERSION, QUEUE_EDIT_PROTOCOL_VERSION } from './types.ts';
 export type {
   Clock,
   CommandOutcome,
@@ -35,6 +39,7 @@ export type {
   PlayerPort,
   PlayerSnapshot,
   PlayerStatePatch,
+  QueueEditCommand,
   RemoteCommand,
   RepeatMode,
   SendReceipt,

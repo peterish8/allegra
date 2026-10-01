@@ -22,6 +22,7 @@ const LEGACY_COMMAND_TTL_MS = 2 * 60_000;
 const CONTROL_DEADLINE_MS = 15_000;
 const LOAD_DEADLINE_MS = 60_000;
 const V2 = 2;
+const QUEUE_EDIT_VERSION = 3;
 const FAILURE_TEXT: Record<NonNullable<CommandOutcome['errorCode']>, string> = {
   needs_gesture: 'Tap play on that device to start playback.',
   not_found: 'That song could not be loaded.',
@@ -42,7 +43,7 @@ interface StoredCommand extends Omit<InboxCommand, 'release' | 'reservationToken
   release?: { readonly positionSec: number; readonly resume: boolean };
 }
 
-export type MemoryOperation = 'register' | 'heartbeat' | 'report' | 'claim' | 'send' | 'transfer' | 'begin' | 'prepare' | 'release' | 'complete';
+export type MemoryOperation = 'register' | 'heartbeat' | 'disconnect' | 'report' | 'claim' | 'send' | 'transfer' | 'begin' | 'prepare' | 'release' | 'complete';
 
 interface RateLimit {
   readonly burst: number;
@@ -95,6 +96,8 @@ export class MemoryTransport implements ConnectTransport {
   setDeviceOffline(deviceId: string, offline = true): void {
     if (offline) this.forcedOffline.add(deviceId);
     else this.forcedOffline.delete(deviceId);
+    const device = this.devices.get(deviceId);
+    if (device) this.devices.set(deviceId, { ...device, isOnline: !offline });
     this.publish();
   }
 
@@ -143,6 +146,20 @@ export class MemoryTransport implements ConnectTransport {
       if (device) this.devices.set(deviceId, { ...device, isOnline: !this.forcedOffline.has(deviceId) });
       this.publish();
       return { serverNow };
+    });
+  }
+
+  async disconnect(deviceId: string): Promise<void> {
+    return this.invoke('disconnect', () => {
+      const device = this.requireDevice(deviceId);
+      this.devices.set(deviceId, { ...device, isOnline: false });
+      // A device that leaves while it plays has stopped: the others see it paused where it was.
+      const state = this.state;
+      if (state?.activeDeviceId === deviceId && state.isPlaying) {
+        const now = this.now();
+        this.state = { ...state, isPlaying: false, positionSec: this.positionAt(state, now), positionAt: now, rev: state.rev + 1 };
+      }
+      this.publish();
     });
   }
 
@@ -240,8 +257,12 @@ export class MemoryTransport implements ConnectTransport {
       const target = this.requireDevice(input.targetDeviceId);
       this.assertV2Target(target);
       this.assertActiveTarget(input.targetDeviceId, input.expectedOwnershipEpoch);
-      this.limitCommands();
       this.assertCommand(input.command);
+      const kind = input.command.kind;
+      if ((kind === 'queue_remove' || kind === 'queue_move' || kind === 'queue_clear') && target.protocolVersion < QUEUE_EDIT_VERSION) {
+        throw connectError('update_required');
+      }
+      this.limitCommands();
       const now = this.now();
       const row = this.enqueue(input.fromDeviceId, input.targetDeviceId, input.requestId, input.expectedOwnershipEpoch, input.command, now);
       this.publish();
@@ -310,7 +331,9 @@ export class MemoryTransport implements ConnectTransport {
       };
 
       const ownerId = state.activeDeviceId;
-      if (ownerId !== undefined && ownerId !== deviceId && state.isPlaying) {
+      // An owner Presence has given up on cannot confirm a pause: the transfer goes ahead without it.
+      const ownerOnline = ownerId !== undefined && this.devices.get(ownerId)?.isOnline === true;
+      if (ownerId !== undefined && ownerId !== deviceId && state.isPlaying && ownerOnline) {
         const current = state.handoff;
         if (current && current.commandId !== row.id) {
           const replaced = this.commands.get(current.commandId);
@@ -585,7 +608,17 @@ export class MemoryTransport implements ConnectTransport {
     if (command.kind === 'seek' && (!Number.isFinite(command.sec) || command.sec < 0)) throw connectError('invalid_command');
     if (command.kind === 'volume' && (!Number.isFinite(command.v) || command.v < 0 || command.v > 1)) throw connectError('invalid_command');
     if (command.kind === 'play_song' || command.kind === 'queue_add') this.assertSong(command.song);
-    if (command.kind === 'play_song') for (const item of command.queue ?? []) this.assertSong(item);
+    if (command.kind === 'queue_add') {
+      if ((command.more?.length ?? 0) >= 50) throw connectError('invalid_command');
+      for (const item of command.more ?? []) this.assertSong(item);
+    }
+    if (command.kind === 'play_song') {
+      for (const item of command.queue ?? []) this.assertSong(item);
+      if (command.positionSec !== undefined && (!Number.isFinite(command.positionSec) || command.positionSec < 0)) throw connectError('invalid_command');
+    }
+    const index = (value: number): boolean => Number.isInteger(value) && value >= 0 && value < 50;
+    if (command.kind === 'queue_remove' && (!index(command.index) || !command.ref)) throw connectError('invalid_command');
+    if (command.kind === 'queue_move' && (!index(command.from) || !index(command.to) || !command.ref)) throw connectError('invalid_command');
   }
 
   private assertSong(song: SongSnapshot): void {

@@ -105,8 +105,18 @@ uses its own catalog, stream URL, or downloaded file. Transfer loads the current
 queue on the destination before it takes the active-player lease. The web adapter keeps the one
 layout-owned `<audio>` element and sends play/pause through `requestPlayback`.
 
+The queue belongs to the session, not to a device: any controller can add a song (next, or at the
+end), remove one, move one, or clear what is coming up, and the device that plays applies the
+edit to its own queue and reports the result. Both players hand their queue over through the same
+`queueStager` in `packages/connect`, so a song the device has not met is looked up while the songs
+it already holds move at once.
+
 Convex Presence owns online status. A heartbeat runs only while the app is visible or playing, and
 the five-minute internal sweep removes expired commands and checks long-stale device registrations.
+A device that leaves (sign-out, a closed tab, a backgrounded idle app) says so, and is offline at
+once; one that dies without saying so is offline when its heartbeats run out, 150 seconds later.
+Playback can be taken from an owner that is offline, at the position its song would have reached;
+an owner that is online must confirm its pause first (`docs/connect-contract.md`).
 The command mutation checks account ownership for both source and target and enforces the shared
 rate cap. A recipient acknowledges only after its player adapter applies the command; the sender
 subscribes to the final status and rolls back an unacknowledged optimistic control.

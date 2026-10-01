@@ -85,6 +85,11 @@ export class FakePlayerPort implements PlayerPort {
     this.update({ queue: [...this.snapshot.queue, song] });
   }
 
+  async setQueue(queue: readonly SongSnapshot[]): Promise<void> {
+    this.calls.push({ method: 'setQueue', args: [[...queue]] });
+    this.update({ queue: [...queue] });
+  }
+
   /** Test-only direct mutation for simulating a device-originated playback event. */
   update(patch: Partial<PlayerSnapshot>): void {
     this.snapshot = { ...this.snapshot, ...patch, queue: [...(patch.queue ?? this.snapshot.queue)] };

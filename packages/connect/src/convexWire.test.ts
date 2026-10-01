@@ -103,3 +103,30 @@ test('a transfer decodes in the shape the server sends, with or without its epoc
   assert.deepEqual(withoutEpoch?.command, { kind: 'take_over', state });
   assert.equal(withoutEpoch?.expectedOwnershipEpoch, 3);
 });
+
+test('queue edits and a timed play_song decode, and a malformed one is dropped', () => {
+  const song = { ref: 'saavn:abc123', title: 'Kesariya', artist: 'Arijit Singh', artwork: 'https://c.example/a.jpg', duration: 268 };
+  const row = (id: string, kind: string, args?: unknown) => ({ commandId: id, sourceDeviceId: 'web', kind, ...(args === undefined ? {} : { args }), createdAt: 10 });
+
+  const inbox = decodeInbox([
+    row('c:1', 'queue_add', { song, next: true }),
+    row('c:2', 'queue_remove', { index: 2, ref: song.ref }),
+    row('c:3', 'queue_move', { from: 3, to: 0, ref: song.ref }),
+    row('c:4', 'queue_clear'),
+    row('c:5', 'play_song', { song, positionSec: 42 }),
+    row('c:6', 'queue_remove', { index: -1, ref: song.ref }),
+    row('c:7', 'queue_move', { from: 1.5, to: 0, ref: song.ref }),
+    row('c:8', 'queue_remove', { index: 1 })
+  ]);
+
+  assert.deepEqual(inbox?.map((item) => item.command), [
+    { kind: 'queue_add', song, next: true },
+    { kind: 'queue_remove', index: 2, ref: song.ref },
+    { kind: 'queue_move', from: 3, to: 0, ref: song.ref },
+    { kind: 'queue_clear' },
+    { kind: 'play_song', song, positionSec: 42 }
+  ]);
+  assert.deepEqual(decodeOutcomes([
+    { commandId: 'c:4', targetDeviceId: 'phone', kind: 'queue_clear', createdAt: 3, status: 'done' }
+  ])?.map((item) => item.kind), ['queue_clear']);
+});

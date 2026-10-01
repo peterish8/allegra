@@ -22,6 +22,12 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const text = (value: unknown): value is string => typeof value === 'string';
 const repeat = (value: unknown): value is RepeatMode => value === 'off' || value === 'all' || value === 'one';
+const queueIndex = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
+const COMMAND_KINDS: readonly string[] = [
+  'play', 'pause', 'seek', 'next', 'prev', 'volume', 'shuffle', 'repeat', 'play_song',
+  'queue_add', 'queue_remove', 'queue_move', 'queue_clear', 'take_over'
+] satisfies readonly RemoteCommand['kind'][];
+const commandKind = (value: unknown): value is RemoteCommand['kind'] => text(value) && COMMAND_KINDS.includes(value);
 
 function requiredNumber(value: unknown): number {
   if (!finite(value)) throw connectError('offline');
@@ -117,12 +123,24 @@ function command(kind: unknown, args: unknown): RemoteCommand | undefined {
       if (!selected || (queueValue !== undefined && (!Array.isArray(queueValue) || queueValue.length > 50))) return undefined;
       const queue = queueValue === undefined ? undefined : (queueValue as unknown[]).map(song);
       if (queue?.some((item) => item === undefined)) return undefined;
-      return { kind, song: selected, ...(queue ? { queue: queue as SongSnapshot[] } : {}) };
+      const startAt = finite(value.positionSec) && value.positionSec > 0 ? value.positionSec : undefined;
+      return { kind, song: selected, ...(queue ? { queue: queue as SongSnapshot[] } : {}), ...(startAt === undefined ? {} : { positionSec: startAt }) };
     }
     case 'queue_add': {
       const selected = song(value.song);
-      return selected ? { kind, song: selected } : undefined;
+      const moreValue = value.more;
+      if (!selected || (moreValue !== undefined && (!Array.isArray(moreValue) || moreValue.length >= 50))) return undefined;
+      const more = moreValue === undefined ? undefined : (moreValue as unknown[]).map(song);
+      if (more?.some((item) => item === undefined)) return undefined;
+      return { kind, song: selected, ...(more?.length ? { more: more as SongSnapshot[] } : {}), ...(value.next === true ? { next: true } : {}) };
     }
+    case 'queue_remove':
+      return queueIndex(value.index) && text(value.ref) ? { kind, index: value.index, ref: value.ref as SongSnapshot['ref'] } : undefined;
+    case 'queue_move':
+      return queueIndex(value.from) && queueIndex(value.to) && text(value.ref)
+        ? { kind, from: value.from, to: value.to, ref: value.ref as SongSnapshot['ref'] }
+        : undefined;
+    case 'queue_clear': return { kind };
     case 'take_over': {
       const state = transferState(value.state);
       return state ? { kind, state } : undefined;
@@ -175,8 +193,7 @@ function outcomes(value: unknown): readonly CommandOutcome[] | undefined {
     if (!record(row) || !text(row.commandId) || !text(row.targetDeviceId) || !finite(row.createdAt) ||
         (row.status !== 'pending' && row.status !== 'done' && row.status !== 'failed')) continue;
     const kind = row.kind;
-    if (kind !== 'play' && kind !== 'pause' && kind !== 'seek' && kind !== 'next' && kind !== 'prev' && kind !== 'volume' &&
-        kind !== 'shuffle' && kind !== 'repeat' && kind !== 'play_song' && kind !== 'queue_add' && kind !== 'take_over') continue;
+    if (!commandKind(kind)) continue;
     const errorCode = isFailureCode(row.errorCode) ? row.errorCode : undefined;
     const error = text(row.error) ? row.error.slice(0, 240) : undefined;
     decoded.push({
@@ -215,6 +232,9 @@ export function createConvexTransport(client: ConvexWireClient, options: { reado
       const result = await mutate('heartbeat', { deviceId });
       if (!record(result)) throw connectError('offline');
       return { serverNow: requiredNumber(result.serverNow) };
+    },
+    async disconnect(deviceId) {
+      await mutate('disconnect', { deviceId });
     },
     watch(deviceId, listener) {
       let deviceRows: readonly ConnectDevice[] | undefined;

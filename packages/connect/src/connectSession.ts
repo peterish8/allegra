@@ -2,11 +2,13 @@ import type { SongSnapshot } from '../../shared/songRef.ts';
 import { connectError, errorCode, errorData, isUncertainFailure } from './errors.ts';
 import { createIntentQueue, type QueuedIntent } from './intentQueue.ts';
 import { applyConfirmedPatch, confirmedFromSnapshot, confirmedFromState, expectedPosition, planPatch, type ConfirmedState } from './playbackDiff.ts';
+import { applyQueueEdit, isQueueEdit } from './queueEdit.ts';
 import { createServerClock } from './serverClock.ts';
+import { CONNECT_PROTOCOL_VERSION, QUEUE_EDIT_PROTOCOL_VERSION } from './types.ts';
 import type {
   CommandOutcomeInput, ConnectDevice, ConnectFailureCode, ConnectSession, ConnectSessionOptions, ConnectTransport,
   ConnectTraceEvent, ConnectTraceOperation, ConnectView, InboxCommand, PlayerSnapshot,
-  PlayerStatePatch, RemoteCommand, TransferResult
+  PlayerStatePatch, RemoteCommand, SessionDevice, TransferResult
 } from './types.ts';
 
 const HEARTBEAT_MS = 60_000;
@@ -67,7 +69,9 @@ function failureResult(error: unknown): TransferResult {
   return { ok: false, reason, ...(code ? { code } : {}), error: failureText(error, 'Playback could not be transferred.') };
 }
 
-export function createConnectSession({ transport, player, device, clock, trace }: ConnectSessionOptions): ConnectSession {
+export function createConnectSession({ transport, player, device: initialDevice, clock, trace }: ConnectSessionOptions): ConnectSession {
+  /** Replaced only by `rename`: the id never changes. */
+  let device: SessionDevice = initialDevice;
   let disposed = false;
   let visible = false;
   let listening = false;
@@ -210,6 +214,7 @@ export function createConnectSession({ transport, player, device, clock, trace }
       else if (shown.kind === 'volume') volume = shown.v;
       else if (shown.kind === 'shuffle') shuffle = shown.on;
       else if (shown.kind === 'repeat') repeat = shown.mode;
+      else if (isQueueEdit(shown)) queueItems = applyQueueEdit(queueItems, shown) ?? queueItems;
     }
     const selectedDevice = activeDevice();
     return {
@@ -221,6 +226,7 @@ export function createConnectSession({ transport, player, device, clock, trace }
       ownershipEpoch: stateEpoch(),
       ...(song ? { song } : {}),
       queue: queueItems,
+      queueEditable: isActive() || (activeOnline() && (selectedDevice?.protocolVersion ?? 1) >= QUEUE_EDIT_PROTOCOL_VERSION),
       isPlaying,
       livePosition: livePosition(),
       volume,
@@ -243,8 +249,12 @@ export function createConnectSession({ transport, player, device, clock, trace }
     if (registering || listening || !shouldListen()) return;
     registering = true;
     try {
-      await sample('register', () => transport.register({ ...device, protocolVersion: 2 }));
-      if (disposed || !shouldListen()) return;
+      await sample('register', () => transport.register({ ...device, protocolVersion: CONNECT_PROTOCOL_VERSION }));
+      if (disposed || !shouldListen()) {
+        // Registering put the device on the others' lists, and it left while that was in flight.
+        void transport.disconnect(device.deviceId).catch(() => undefined);
+        return;
+      }
       lastBeatAt = clock.now();
       listening = true;
       watchStop = transport.watch(device.deviceId, onSnapshot);
@@ -277,7 +287,7 @@ export function createConnectSession({ transport, player, device, clock, trace }
       // disposes this session.
       if ((code === 'unauthenticated' || code === 'device_not_registered') && !disposed) {
         showReconnecting();
-        stopListening();
+        void stopListening();
         void registerAndListen();
         return;
       }
@@ -291,11 +301,19 @@ export function createConnectSession({ transport, player, device, clock, trace }
     notify();
   }
 
-  function stopListening(): void {
+  /**
+   * `announce` tells the server this device has left, so the others stop offering it now rather
+   * than when its heartbeats run out. Best effort: an unsent goodbye only means the old wait.
+   */
+  function stopListening(announce = false): Promise<void> {
+    const wasListening = listening;
     watchStop?.(); watchStop = undefined;
     if (heartbeatTimer !== undefined) clock.clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
     listening = false;
+    if (!announce || !wasListening) return Promise.resolve();
+    emit({ event: 'mutation.started', operation: 'disconnect', count: 1 });
+    return transport.disconnect(device.deviceId).catch(() => undefined);
   }
 
   function setError(error: unknown, fallback: string): void {
@@ -371,7 +389,7 @@ export function createConnectSession({ transport, player, device, clock, trace }
 
   function reconcileListening(): void {
     if (shouldListen()) void registerAndListen();
-    else stopListening();
+    else void stopListening(true);
   }
 
   function makeIntent(command: RemoteCommand, targetDeviceId: string, transfer = false, resolveTransfer?: (result: TransferResult) => void): Intent {
@@ -451,7 +469,11 @@ export function createConnectSession({ transport, player, device, clock, trace }
       intent.resolveTransfer?.(failureResult(error));
       pump(); return;
     }
-    if (target.protocolVersion < 2) {
+    // An older app drops a command it does not know, which would read as an unreachable device.
+    const needsNewer = isQueueEdit(intent.command) && intent.command.kind !== 'queue_add'
+      ? target.protocolVersion < QUEUE_EDIT_PROTOCOL_VERSION
+      : target.protocolVersion < 2;
+    if (needsNewer) {
       const error = connectError('update_required'); setError(error, 'Update the other device to use Connect.');
       intent.resolveTransfer?.(failureResult(error)); pump(); return;
     }
@@ -517,7 +539,7 @@ export function createConnectSession({ transport, player, device, clock, trace }
     try {
       if (command.kind === 'play_song') {
         const queueItems = command.queue ?? [];
-        const result = await player.load(command.song, queueItems, { positionSec: 0, play: true });
+        const result = await player.load(command.song, queueItems, { positionSec: command.positionSec ?? 0, play: true });
         if (result === 'not_found') throw connectError('invalid_command', { message: 'This song is not available on this device.' });
         if (result === 'needs_gesture') {
           autoplayBlocked = true;
@@ -566,10 +588,12 @@ export function createConnectSession({ transport, player, device, clock, trace }
         case 'next': if (player.next) await player.next(); break;
         case 'prev': if (player.previous) await player.previous(); break;
         case 'play_song': {
-          const result = await player.load(command.song, command.queue ?? [], { positionSec: 0, play: true });
+          const result = await player.load(command.song, command.queue ?? [], { positionSec: command.positionSec ?? 0, play: true });
           if (result !== 'ok') throw new Error(result === 'not_found' ? 'Song not found.' : 'Tap play to start audio.'); break;
         }
-        case 'queue_add': if (player.addToQueue) await player.addToQueue(command.song); break;
+        // An edit naming a song that has already left the queue changes nothing.
+        case 'queue_add': case 'queue_remove': case 'queue_move': case 'queue_clear':
+          await executePlayerCommand(command); break;
       }
       local = player.getSnapshot();
       notify();
@@ -711,7 +735,8 @@ export function createConnectSession({ transport, player, device, clock, trace }
       const result = await executePlayerCommand(item.command);
       if (result !== 'ok') {
         if (result === 'needs_gesture') autoplayBlocked = true;
-        await complete(item, begin.reservationToken, { ok: false, code: result });
+        const gone = result === 'not_found' && (item.command.kind === 'queue_remove' || item.command.kind === 'queue_move');
+        await complete(item, begin.reservationToken, { ok: false, code: result, ...(gone ? { error: 'That song is no longer in the queue.' } : {}) });
         notify();
         return;
       }
@@ -741,14 +766,23 @@ export function createConnectSession({ transport, player, device, clock, trace }
         return player.load(nextSong, current.queue.slice(1), { positionSec: 0, play: current.isPlaying });
       }
       case 'prev': if (player.previous) { await player.previous(); return 'ok'; } return 'command_failed';
-      case 'play_song': return player.load(command.song, command.queue ?? [], { positionSec: 0, play: true });
-      case 'queue_add': {
-        if (player.addToQueue) { await player.addToQueue(command.song); return 'ok'; }
-        const current = player.getSnapshot();
-        if (!current.song) return 'not_found';
-        return player.load(current.song, [...current.queue, command.song], { positionSec: current.positionSec, play: current.isPlaying });
-      }
+      case 'play_song': return player.load(command.song, command.queue ?? [], { positionSec: command.positionSec ?? 0, play: true });
+      case 'queue_add':
+        if (!command.next && !command.more?.length && player.addToQueue) { await player.addToQueue(command.song); return 'ok'; }
+        return replaceQueue(applyQueueEdit(player.getSnapshot().queue, command));
+      case 'queue_remove': case 'queue_move': case 'queue_clear':
+        return replaceQueue(applyQueueEdit(player.getSnapshot().queue, command));
     }
+  }
+
+  /** `next` is the queue after an edit, or undefined when the song it named has gone. */
+  async function replaceQueue(next: readonly SongSnapshot[] | undefined): Promise<'ok' | 'not_found' | 'needs_gesture'> {
+    if (!next) return 'not_found';
+    if (player.setQueue) { await player.setQueue(next); return 'ok'; }
+    // A player that cannot swap its queue in place reloads the current song around it.
+    const current = player.getSnapshot();
+    if (!current.song) return 'not_found';
+    return player.load(current.song, next, { positionSec: current.positionSec, play: current.isPlaying });
   }
 
   async function executeTakeover(item: InboxCommand, token: string, deadline: number): Promise<void> {
@@ -905,6 +939,14 @@ export function createConnectSession({ transport, player, device, clock, trace }
     control,
     transferTo,
     subscribe(listener) { subscribers.add(listener); listener(view()); return () => subscribers.delete(listener); },
+    rename(name) {
+      const next = name.trim().slice(0, 80);
+      if (disposed || !next || next === device.name) return;
+      device = { ...device, name: next };
+      // Registering again is how a name reaches the server; a device not listening sends it when it next does.
+      if (listening) void sample('register', () => transport.register({ ...device, protocolVersion: CONNECT_PROTOCOL_VERSION }))
+        .catch((error: unknown) => setError(error, 'Could not rename this device.'));
+    },
     setVisible(value) {
       visible = value;
       reconcileListening();
@@ -912,19 +954,25 @@ export function createConnectSession({ transport, player, device, clock, trace }
       // the next interval, so the other devices list this one again straight away.
       if (value && listening && clock.now() - lastBeatAt >= HEARTBEAT_MS / 2) void beat();
     },
-    dispose() {
-      if (disposed) return;
-      disposed = true; stopListening(); playerStop();
-      for (const handle of [...timers]) clearTimer(handle);
-      subscribers.clear();
-      for (const wake of [...snapshotWaiters]) wake();
-      queue.removeWhere(() => true);
-      if (pending) {
-        emit({ event: 'input.failed', operation: pending.transfer ? 'transfer' : 'control', outcome: 'disposed', requestId: pending.requestId, count: 1 });
-        pending.resolveTransfer?.({ ok: false, reason: 'offline', code: 'offline', error: 'Connect session ended.' });
-      }
-      pending = undefined; pendingCommandId = undefined; optimistic = undefined;
-      player.dispose?.();
-    }
+    dispose() { void end(); },
+    leave() { return end(); }
   };
+
+  function end(): Promise<void> {
+    if (disposed) return Promise.resolve();
+    disposed = true;
+    const goodbye = stopListening(true);
+    playerStop();
+    for (const handle of [...timers]) clearTimer(handle);
+    subscribers.clear();
+    for (const wake of [...snapshotWaiters]) wake();
+    queue.removeWhere(() => true);
+    if (pending) {
+      emit({ event: 'input.failed', operation: pending.transfer ? 'transfer' : 'control', outcome: 'disposed', requestId: pending.requestId, count: 1 });
+      pending.resolveTransfer?.({ ok: false, reason: 'offline', code: 'offline', error: 'Connect session ended.' });
+    }
+    pending = undefined; pendingCommandId = undefined; optimistic = undefined;
+    player.dispose?.();
+    return goodbye;
+  }
 }

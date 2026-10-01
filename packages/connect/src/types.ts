@@ -1,7 +1,9 @@
 import type { SongSnapshot } from '../../shared/songRef.ts';
 
 /** Wire protocol this build speaks. A device that registers without one is legacy (1). */
-export const CONNECT_PROTOCOL_VERSION = 2;
+export const CONNECT_PROTOCOL_VERSION = 3;
+/** The first protocol whose devices run `queue_remove`, `queue_move` and `queue_clear`. */
+export const QUEUE_EDIT_PROTOCOL_VERSION = 3;
 
 export type DeviceKind = 'web' | 'android' | 'ios';
 export type RepeatMode = 'off' | 'all' | 'one';
@@ -92,9 +94,21 @@ export type RemoteCommand =
   | { readonly kind: 'volume'; readonly v: number }
   | { readonly kind: 'shuffle'; readonly on: boolean }
   | { readonly kind: 'repeat'; readonly mode: RepeatMode }
-  | { readonly kind: 'play_song'; readonly song: SongSnapshot; readonly queue?: readonly SongSnapshot[] }
-  | { readonly kind: 'queue_add'; readonly song: SongSnapshot }
+  /** `positionSec` starts the song there; a protocol 2 device ignores it and starts at 0. */
+  | { readonly kind: 'play_song'; readonly song: SongSnapshot; readonly queue?: readonly SongSnapshot[]; readonly positionSec?: number }
+  /**
+   * `next` puts the songs straight after the current one. `more` follows `song`, in order: the
+   * rest of an album. A protocol 2 device adds `song` alone, at the end.
+   */
+  | { readonly kind: 'queue_add'; readonly song: SongSnapshot; readonly more?: readonly SongSnapshot[]; readonly next?: boolean }
+  /** `index` is where the sender saw the song in the upcoming queue; `ref` is what must be there. */
+  | { readonly kind: 'queue_remove'; readonly index: number; readonly ref: SongSnapshot['ref'] }
+  | { readonly kind: 'queue_move'; readonly from: number; readonly to: number; readonly ref: SongSnapshot['ref'] }
+  | { readonly kind: 'queue_clear' }
   | { readonly kind: 'take_over'; readonly state: TransferState };
+
+/** The commands that change the upcoming queue without touching the current song. */
+export type QueueEditCommand = Extract<RemoteCommand, { kind: 'queue_add' | 'queue_remove' | 'queue_move' | 'queue_clear' }>;
 
 /** A pending command addressed to this device. Legacy commands carry no deadline or epoch. */
 export interface InboxCommand {
@@ -167,6 +181,8 @@ export type CompleteResult =
 export interface ConnectTransport {
   register(device: DeviceRegistration): Promise<{ readonly serverNow: number }>;
   heartbeat(deviceId: string): Promise<{ readonly serverNow: number }>;
+  /** Marks the device offline now instead of when its heartbeats run out. Best effort. */
+  disconnect(deviceId: string): Promise<void>;
   /** The listener is first called once all three queries have delivered a server result. */
   watch(deviceId: string, listener: (snapshot: ConnectSnapshot) => void): () => void;
   report(
@@ -236,6 +252,11 @@ export interface PlayerPort {
   setShuffle?(on: boolean): Promise<void>;
   setRepeat?(mode: RepeatMode): Promise<void>;
   addToQueue?(song: SongSnapshot): Promise<void>;
+  /**
+   * Replaces the songs after the current one, which keeps playing untouched. Like `load`,
+   * `getSnapshot().queue` must return the new queue at once, while songs still resolve.
+   */
+  setQueue?(queue: readonly SongSnapshot[]): Promise<void>;
   /** Cancels adapter-owned async work when this account/session is disposed. */
   dispose?(): void;
 }
@@ -277,6 +298,7 @@ export type ConnectTraceOperation =
   | 'receiver'
   | 'register'
   | 'heartbeat'
+  | 'disconnect'
   | 'send'
   | 'report'
   | 'claim'
@@ -376,6 +398,8 @@ export interface ConnectView {
   readonly ownershipEpoch: number;
   readonly song?: SongSnapshot;
   readonly queue: readonly SongSnapshot[];
+  /** False when the device that plays runs an app too old to remove, move or clear queued songs. */
+  readonly queueEditable: boolean;
   readonly isPlaying: boolean;
   /** The position when this view was built. Tick from `session.livePosition()` instead. */
   readonly livePosition: number;
@@ -409,8 +433,15 @@ export interface ConnectSession {
   livePosition(): number;
   control(command: RemoteCommand): void;
   transferTo(deviceId: string): Promise<TransferResult>;
+  /** The name other devices show for this one. The adapter keeps it for the next launch. */
+  rename(name: string): void;
   setVisible(visible: boolean): void;
   dispose(): void;
+  /**
+   * `dispose`, resolving once the server has been told this device left (or could not be). For a
+   * sign-out, which must wait for it: a signed-out client can no longer say goodbye.
+   */
+  leave(): Promise<void>;
 }
 
 export interface ConnectSessionOptions {
