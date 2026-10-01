@@ -38,9 +38,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 22: the sync tests open a real SQLite database through node:sqlite, which Node 20 lacks.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
 
