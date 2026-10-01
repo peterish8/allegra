@@ -104,7 +104,13 @@ export const playerStateSnapshot = v.object({
   volume: v.number(),
   shuffle: v.boolean(),
   repeat: repeatMode,
-  rev: v.number()
+  rev: v.number(),
+  /**
+   * The ownership epoch the transfer was queued under. The receiver does not need it (the
+   * command's `expectedOwnershipEpoch` is the fence), but Android builds from a8577af refuse a
+   * `take_over` whose state lacks it, so the server always sends it. Missing on older rows.
+   */
+  ownershipEpoch: v.optional(v.number())
 });
 
 /** Client-owned playback fields accepted when a device claims the player. */

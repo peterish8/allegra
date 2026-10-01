@@ -10,7 +10,16 @@ import type {
 } from './types.ts';
 
 const HEARTBEAT_MS = 60_000;
+/** Registration retries back off from 1 s to this, so a server that keeps refusing is not polled every second. */
+const LISTEN_RETRY_MAX_MS = 30_000;
+/**
+ * How long the target has to pick a command up. Once it has (the outcome shows `began`), the
+ * sender waits for the command's own server deadline instead: a transfer or a song load needs a
+ * catalog lookup, buffering and, for a transfer, the old owner's pause, which often takes longer.
+ */
 const INPUT_FEEDBACK_MS = 4_000;
+/** Past the server deadline, how long to wait for the failure the deadline job writes. */
+const DEADLINE_GRACE_MS = 2_000;
 const REPORT_DRIFT_MS = 5_000;
 const QUEUE_CAPACITY = 32;
 const EMPTY_PLAYER: PlayerSnapshot = { queue: [], isPlaying: false, positionSec: 0, volume: 1, shuffle: false, repeat: 'off' };
@@ -21,6 +30,8 @@ interface Intent extends QueuedIntent {
   readonly startedAt: number;
   readonly startedMono?: number;
   feedbackTimedOut?: boolean;
+  /** Local time the server's deadline for this command passes, from the send receipt. */
+  deadlineAt?: number;
   readonly resolveTransfer?: (result: TransferResult) => void;
   command: RemoteCommand;
 }
@@ -38,9 +49,14 @@ function clamp(position: number, duration: number): number {
   return duration > 0 ? Math.min(duration, safe) : safe;
 }
 
+/**
+ * Display text for a failed call. Only coded errors carry listener copy; anything else (a network
+ * failure, or a server error such as Convex's "[CONVEX M(connect:register)] … Server Error") gets
+ * the caller's fallback, never its raw message.
+ */
 function failureText(error: unknown, fallback: string): string {
   const data = errorData(error);
-  return typeof data?.message === 'string' ? data.message : error instanceof Error ? error.message : fallback;
+  return typeof data?.message === 'string' ? data.message : fallback;
 }
 
 function failureResult(error: unknown): TransferResult {
@@ -57,6 +73,7 @@ export function createConnectSession({ transport, player, device, clock, trace }
   let watchStop: (() => void) | undefined;
   let heartbeatTimer: unknown;
   let listenRetryTimer: unknown;
+  let listenRetryCount = 0;
   let local = player.getSnapshot();
   let previousLocal = local;
   let snapshot: Parameters<Parameters<typeof transport.watch>[1]>[0] | undefined;
@@ -227,14 +244,27 @@ export function createConnectSession({ transport, player, device, clock, trace }
       listening = true;
       watchStop = transport.watch(device.deviceId, onSnapshot);
       heartbeatTimer = clock.setInterval(() => {
-        void sample('heartbeat', () => transport.heartbeat(device.deviceId)).catch((error: unknown) => setError(error, 'Connect is offline.'));
+        void sample('heartbeat', () => transport.heartbeat(device.deviceId)).catch((error: unknown) => {
+          setError(error, 'Connect is offline.');
+          // The registration is gone (the sweep removes long-idle devices): register again rather
+          // than heartbeating a device the server no longer knows.
+          if (errorCode(error) === 'device_not_registered' && !disposed) {
+            stopListening();
+            void registerAndListen();
+          }
+        });
       }, HEARTBEAT_MS);
       if (listenRetryTimer !== undefined) clearTimer(listenRetryTimer);
       listenRetryTimer = undefined;
+      listenRetryCount = 0;
       emit({ event: 'adapter.ready', operation: 'watch', outcome: 'ok', count: 1 });
     } catch (error) {
-      setError(error, 'Connect is offline.');
-      if (listenRetryTimer === undefined && shouldListen()) listenRetryTimer = schedule(() => { listenRetryTimer = undefined; void registerAndListen(); }, 1_000, 'listen_retry');
+      setError(error, 'Connect is unavailable right now. Trying again shortly.');
+      if (listenRetryTimer === undefined && shouldListen()) {
+        const delay = Math.min(LISTEN_RETRY_MAX_MS, 1_000 * 2 ** listenRetryCount);
+        listenRetryCount++;
+        listenRetryTimer = schedule(() => { listenRetryTimer = undefined; void registerAndListen(); }, delay, 'listen_retry');
+      }
     } finally { registering = false; }
   }
 
@@ -349,6 +379,16 @@ export function createConnectSession({ transport, player, device, clock, trace }
       ? ended - intent.startedMono
       : undefined;
     if (!outcome) {
+      const progress = pendingCommandId ? snapshot?.outcomes.find((row) => row.id === pendingCommandId) : undefined;
+      const now = clock.now();
+      if (progress?.began && intent.deadlineAt !== undefined && now < intent.deadlineAt + DEADLINE_GRACE_MS) {
+        // Reached and running: keep the spinner (and any optimistic view) until it finishes or its deadline passes.
+        if (optimistic?.intent === intent) optimistic = { intent, expiresAt: intent.deadlineAt };
+        feedbackTimer = schedule(() => { feedbackTimer = undefined; finishFeedback(intent); },
+          intent.deadlineAt + DEADLINE_GRACE_MS - now, 'command_timeout');
+        notify();
+        return;
+      }
       intent.feedbackTimedOut = true;
       const waitingFor = intent.transfer
         ? snapshot?.devices.find((row) => row.deviceId === intent.targetDeviceId)?.name
@@ -408,6 +448,7 @@ export function createConnectSession({ transport, player, device, clock, trace }
         ? transport.transfer({ fromDeviceId: device.deviceId, toDeviceId: intent.targetDeviceId, requestId: intent.requestId, expectedOwnershipEpoch: intent.epoch })
         : transport.send({ fromDeviceId: device.deviceId, targetDeviceId: intent.targetDeviceId, requestId: intent.requestId, expectedOwnershipEpoch: intent.epoch, command: intent.command }));
       pendingCommandId = receipt.commandId;
+      intent.deadlineAt = clock.now() + Math.max(0, receipt.executeBefore - receipt.serverNow);
       retryCount = 0;
       notify();
       observeOutcome();

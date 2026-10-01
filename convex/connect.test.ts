@@ -350,6 +350,35 @@ describe('Connect backend', () => {
     ]);
   });
 
+  it('sends a V2 transfer with the epoch it was queued under', async () => {
+    // Android builds from a8577af drop a take_over whose state has no ownershipEpoch, so the
+    // transfer never starts and expires 60 s later. Keep sending it.
+    const t = backend();
+    const client = asUser(t, 'users:v2-epoch');
+    await registerV2Device(client, 'laptop');
+    await registerV2Device(client, 'phone');
+    const claim = await client.mutation(api.connect.claim, { deviceId: 'laptop', snapshot: playerSnapshot });
+    const sent = await client.mutation(api.connect.transferV2, {
+      fromDeviceId: 'laptop', toDeviceId: 'phone', requestId: 'epoch-transfer-1',
+      expectedOwnershipEpoch: claim.ownershipEpoch
+    });
+    expect(await client.query(api.connect.inboxFor, { deviceId: 'phone' })).toMatchObject([
+      {
+        commandId: sent.commandId,
+        kind: 'take_over',
+        expectedOwnershipEpoch: claim.ownershipEpoch,
+        args: { state: { song, rev: claim.rev, ownershipEpoch: claim.ownershipEpoch } }
+      }
+    ]);
+
+    // The sender learns the target picked it up, so it waits for the deadline instead of 4 s.
+    expect((await client.query(api.connect.outcomesFor, { deviceId: 'laptop' }))[0]).not.toHaveProperty('began');
+    await client.mutation(api.connect.beginV2, { deviceId: 'phone', commandId: sent.commandId });
+    expect(await client.query(api.connect.outcomesFor, { deviceId: 'laptop' })).toMatchObject([
+      { commandId: sent.commandId, status: 'pending', began: true }
+    ]);
+  });
+
   it('sweeps stale offline devices while retaining current registrations', async () => {
     const t = backend();
     const client = asUser(t, 'users:listener');

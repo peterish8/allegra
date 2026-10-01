@@ -38,6 +38,7 @@ export type {
   RemoteCommand,
   RepeatMode,
   SendReceipt,
+  TransferState,
   SessionDevice,
   TransferResult
 } from './types.ts';

@@ -46,7 +46,7 @@ clock; online status comes from Presence.
 | `devices()` | Return at most 100 owned devices that Presence marks online, plus the active device even if it has gone offline. Each row includes `isOnline`, `isActive`, `canPlay`, and `protocolVersion` (default 1). |
 | `state()` | Return this account's player state or `null`, augmented with the authoritative `ownershipEpoch` and any pending handoff `{commandId,toDeviceId}`. |
 | `inboxFor({deviceId})` | V2 client query; return at most 50 pending rows addressed to the owned device, oldest first. Rows include `commandId`, source, command kind/args, request ID, deadline, expected epoch, reservation token, and transfer release data when present. |
-| `outcomesFor({deviceId})` | V2 client query; return the 20 most recent commands sent by the owned device, oldest first. Outcomes include status and error fields but never repeat command args. |
+| `outcomesFor({deviceId})` | V2 client query; return the 20 most recent commands sent by the owned device, oldest first. Outcomes include status and error fields but never repeat command args. A pending row carries `began: true` once the target has reserved it (`beginV2`): the sender then waits for the command's deadline instead of the 4-second pick-up window, so a slow song load or transfer is not reported as unreachable. |
 | `commandsFor({deviceId})` | Require an owned registered device; return up to 50 pending commands addressed to it and up to 50 most recent commands it sent, including `pending` / `done` / `failed` status and optional error. Results are deduplicated and sorted oldest first. |
 | `report({deviceId,patch,rev,expectedOwnershipEpoch?})` | Only the active device may report. V2 callers require the current ownership epoch as well as the current `rev`. Merge only supplied fields. `positionAt` changes only with `positionSec`; a play/pause change without a position first advances the stored position to now. Other fields leave the position anchor unchanged. |
 | `claim({deviceId,snapshot,expectedOwnershipEpoch?})` | Require an owned registered device. V2 callers include the observed epoch. A changed owner increments the epoch, clears a handoff, and fails pending V2 commands from the old epoch as `superseded`. A claim by the existing owner at the matching epoch is an idempotent state write. |
@@ -82,7 +82,10 @@ The `kind` and `args` pair is validated together before enqueueing:
 | `take_over` | `{state:PlayerStateSnapshot}`; created only by `transfer` |
 
 `PlayerStateSnapshot` contains `song?`, `queue`, `isPlaying`, `positionSec`,
-`positionAt`, `volume`, `shuffle`, `repeat`, and `rev`. Clients acknowledge a
+`positionAt`, `volume`, `shuffle`, `repeat`, `rev`, and `ownershipEpoch?` (the epoch the
+transfer was queued under; always sent by the server since 2026-10-01, missing on older rows).
+Receivers must not require `ownershipEpoch`: the command's `expectedOwnershipEpoch` is the fence.
+Android builds from `a8577af` do require it, which is why the server keeps sending it. Clients acknowledge a
 command only after applying it through their player adapter. Failed application
 uses `ok:false` and a short displayable error.
 

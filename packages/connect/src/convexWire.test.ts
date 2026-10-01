@@ -82,3 +82,24 @@ test('malformed inbox and outcome rows are dropped without casting opaque argume
     id: 'commands:done', targetDeviceId: 'phone', kind: 'pause', createdAt: 3, status: 'done'
   }]);
 });
+
+test('a transfer decodes in the shape the server sends, with or without its epoch', () => {
+  // convex/connect.ts transferState: a PlayerStateSnapshot, never an active device or handoff.
+  const song = { ref: 'saavn:abc123', title: 'Kesariya', artist: 'Arijit Singh', artwork: 'https://c.example/a.jpg', duration: 268 };
+  const state = { song, queue: [], isPlaying: true, positionSec: 42, positionAt: 9_000, volume: 0.7, shuffle: false, repeat: 'off', rev: 5 };
+  const row = (id: string, args: unknown) => ({
+    commandId: id, sourceDeviceId: 'web', kind: 'take_over', args, createdAt: 10,
+    requestId: `request-${id}`, executeBefore: 70_000, expectedOwnershipEpoch: 3
+  });
+
+  const inbox = decodeInbox([
+    row('commands:no-epoch', { state }),
+    row('commands:epoch', { state: { ...state, ownershipEpoch: 3 } }),
+    row('commands:bad-epoch', { state: { ...state, ownershipEpoch: 'three' } })
+  ]);
+
+  assert.deepEqual(inbox?.map(item => item.id), ['commands:epoch', 'commands:no-epoch']);
+  const withoutEpoch = inbox?.find(item => item.id === 'commands:no-epoch');
+  assert.deepEqual(withoutEpoch?.command, { kind: 'take_over', state });
+  assert.equal(withoutEpoch?.expectedOwnershipEpoch, 3);
+});

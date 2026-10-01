@@ -629,3 +629,68 @@ test('player reports leave the server-owned position anchor out of the patch', a
   sessionA.dispose();
   sessionB.dispose();
 });
+
+class SlowLoadPlayer extends FakePlayerPort {
+  private beginLoad!: () => void;
+  private releaseLoad!: () => void;
+  readonly loadStarted = new Promise<void>((resolve) => { this.beginLoad = resolve; });
+  private readonly heldLoad = new Promise<void>((resolve) => { this.releaseLoad = resolve; });
+
+  finishLoad(): void { this.releaseLoad(); }
+
+  override async load(...args: Parameters<FakePlayerPort['load']>): ReturnType<FakePlayerPort['load']> {
+    this.beginLoad();
+    await this.heldLoad;
+    return super.load(...args);
+  }
+}
+
+test('a transfer the target has begun keeps waiting past the input timeout and succeeds', async () => {
+  // The catalog lookup and buffering on the target routinely take longer than the 4 s pick-up
+  // window. The sender used to report "not reachable" while the music then moved anyway.
+  const clock = new TestClock();
+  const transport = new MemoryTransport(() => clock.now());
+  transport.seedState(state(clock));
+  const playerA = new FakePlayerPort({ song, queue: [nextSong], isPlaying: true, positionSec: 37, volume: 0.8 });
+  const playerB = new SlowLoadPlayer();
+  const sessionA = createConnectSession({ transport, player: playerA, device: device('web-a', 'Laptop'), clock });
+  const sessionB = createConnectSession({ transport, player: playerB, device: device('phone-b', 'Pixel 8'), clock });
+  sessionA.setVisible(true);
+  sessionB.setVisible(true);
+  await settle();
+
+  const transfer = sessionA.transferTo('phone-b');
+  let settled = false;
+  let early: unknown;
+  void transfer.then((value) => { settled = true; early = value; });
+  await playerB.loadStarted;
+  await settle();
+  clock.advance(6_000);
+  await settle();
+  assert.equal(settled, false, JSON.stringify(early));
+  assert.equal(sessionA.view().lastError, undefined);
+  assert.equal(playerA.getSnapshot().isPlaying, true);
+
+  playerB.finishLoad();
+  assert.deepEqual(await transfer, { ok: true });
+  await settle();
+  assert.equal(sessionB.view().activeDeviceId, 'phone-b');
+  assert.equal(playerB.getSnapshot().isPlaying, true);
+  assert.equal(playerA.getSnapshot().isPlaying, false);
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('a transfer nobody picks up still fails at the pick-up window', async () => {
+  const { clock, sessionA, sessionB } = await sessionPair();
+  sessionB.dispose();
+
+  const transfer = sessionA.transferTo('phone-b');
+  await settle();
+  clock.advance(4_000);
+  const result = await transfer;
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.reason, 'timeout');
+  sessionA.dispose();
+});

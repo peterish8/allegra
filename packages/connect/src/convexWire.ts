@@ -5,7 +5,7 @@ import { isFailureCode } from './errors.ts';
 import type {
   CommandOutcome, ConnectDevice, ConnectPlayerState, ConnectSnapshot, ConnectTraceWriter,
   ConnectTransport, DeviceRegistration, InboxCommand, PlayerSnapshot, PlayerStatePatch,
-  PrepareResult, RemoteCommand, RepeatMode
+  PrepareResult, RemoteCommand, RepeatMode, TransferState
 } from './types.ts';
 
 /** Small Convex surface injected by web and mobile, keeping Convex out of the shared package. */
@@ -84,6 +84,25 @@ function playerState(value: unknown): ConnectPlayerState | undefined {
   };
 }
 
+/**
+ * A `take_over` payload (the contract's PlayerStateSnapshot). Unlike the live state it need not
+ * carry an epoch: requiring one dropped every transfer the server sent without it, and the
+ * command then expired unseen on the target.
+ */
+function transferState(value: unknown): TransferState | undefined {
+  if (!record(value) || !finite(value.positionAt) || !Number.isInteger(value.rev) || !finite(value.rev)) return undefined;
+  const base = playerSnapshot(value);
+  if (!base) return undefined;
+  const epoch = value.ownershipEpoch;
+  if (epoch !== undefined && (!Number.isInteger(epoch) || !finite(epoch))) return undefined;
+  return {
+    ...base,
+    positionAt: value.positionAt,
+    rev: value.rev,
+    ...(epoch === undefined ? {} : { ownershipEpoch: epoch as number })
+  };
+}
+
 function command(kind: unknown, args: unknown): RemoteCommand | undefined {
   const value = record(args) ? args : {};
   switch (kind) {
@@ -105,7 +124,7 @@ function command(kind: unknown, args: unknown): RemoteCommand | undefined {
       return selected ? { kind, song: selected } : undefined;
     }
     case 'take_over': {
-      const state = playerState(value.state);
+      const state = transferState(value.state);
       return state ? { kind, state } : undefined;
     }
     default: return undefined;
@@ -164,6 +183,7 @@ function outcomes(value: unknown): readonly CommandOutcome[] | undefined {
       id: row.commandId, targetDeviceId: row.targetDeviceId, kind, createdAt: row.createdAt,
       status: row.status,
       ...(text(row.requestId) ? { requestId: row.requestId } : {}),
+      ...(row.status === 'pending' && row.began === true ? { began: true } : {}),
       ...(errorCode ? { errorCode } : {}),
       ...(error ? { error } : {})
     });

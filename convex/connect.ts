@@ -114,6 +114,7 @@ const outcomeRow = v.object({
   kind: commandKind,
   createdAt: v.number(),
   status: commandStatus,
+  began: v.optional(v.boolean()),
   error: v.optional(v.string()),
   errorCode: v.optional(v.string())
 });
@@ -798,6 +799,8 @@ export const outcomesFor = query({
         kind: row.kind,
         createdAt: row.createdAt,
         status: row.status,
+        // The target has reserved it (beginV2) and is working: the sender keeps waiting to the deadline.
+        ...(row.status === 'pending' && row.beganAt !== undefined ? { began: true } : {}),
         ...(row.error ? { error: row.error } : {}),
         ...(row.errorCode ? { errorCode: row.errorCode } : {})
       }));
@@ -969,7 +972,7 @@ export const ack = mutation({
   }
 });
 
-function transferState(player: Player): NonNullable<Command['args']> {
+function transferState(player: Player, ownershipEpoch: number): NonNullable<Command['args']> {
   return {
     state: {
       ...(player.song ? { song: player.song } : {}),
@@ -980,7 +983,8 @@ function transferState(player: Player): NonNullable<Command['args']> {
       volume: player.volume,
       shuffle: player.shuffle,
       repeat: player.repeat,
-      rev: player.rev
+      rev: player.rev,
+      ownershipEpoch
     }
   };
 }
@@ -995,7 +999,8 @@ export const transfer = mutation({
     await requireOwnedDevice(ctx, userId, toDeviceId);
     const player = await findPlayerState(ctx, userId);
     if (!player) fail('player_state_missing');
-    const { commandId, serverNow } = await enqueue(ctx, userId, toDeviceId, fromDeviceId, 'take_over', transferState(player));
+    const own = await readOwnership(ctx, userId, player);
+    const { commandId, serverNow } = await enqueue(ctx, userId, toDeviceId, fromDeviceId, 'take_over', transferState(player, own.epoch));
     return { commandId, serverNow };
   }
 });
@@ -1030,7 +1035,7 @@ export const transferV2 = mutation({
     if (!player?.song) fail('player_state_missing');
     const own = await readOwnership(ctx, userId, player);
     if (own.epoch !== expectedOwnershipEpoch) fail('stale_ownership', ownershipDetails(own));
-    const queued = await enqueue(ctx, userId, toDeviceId, fromDeviceId, 'take_over', transferState(player), {
+    const queued = await enqueue(ctx, userId, toDeviceId, fromDeviceId, 'take_over', transferState(player, own.epoch), {
       requestId,
       expectedOwnershipEpoch
     });

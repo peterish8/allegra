@@ -13,7 +13,8 @@ import type {
   PlayerStatePatch,
   PrepareResult,
   RemoteCommand,
-  SendReceipt
+  SendReceipt,
+  TransferState
 } from './types.ts';
 import type { SongSnapshot } from '../../shared/songRef.ts';
 
@@ -267,7 +268,13 @@ export class MemoryTransport implements ConnectTransport {
       if (!state?.song) throw connectError('player_state_missing');
       this.limitCommands();
       const now = this.now();
-      const takeover: ConnectPlayerState = { ...state, queue: [...state.queue] };
+      // Exactly what convex/connect.ts transferState sends: no active device, no handoff.
+      const takeover: TransferState = {
+        ...(state.song ? { song: state.song } : {}),
+        queue: [...state.queue], isPlaying: state.isPlaying, positionSec: state.positionSec,
+        positionAt: state.positionAt, volume: state.volume, shuffle: state.shuffle, repeat: state.repeat,
+        rev: state.rev, ownershipEpoch: state.ownershipEpoch
+      };
       const row = this.enqueue(input.fromDeviceId, input.toDeviceId, input.requestId, input.expectedOwnershipEpoch, { kind: 'take_over', state: takeover }, now);
       this.publish();
       return this.receipt(row);
@@ -279,8 +286,11 @@ export class MemoryTransport implements ConnectTransport {
       const row = this.requireTargeted(deviceId, commandId);
       const now = this.now();
       this.assertRunnable(row, deviceId, now);
+      const first = row.beganAt === undefined;
       row.reservationToken ??= `memory-reservation-${++this.reservationSequence}`;
       row.beganAt ??= now;
+      // Convex re-runs the sender's outcomesFor on this write; it now shows `began`.
+      if (first) this.publish();
       return { reservationToken: row.reservationToken, serverNow: now, executeBefore: this.deadline(row) };
     });
   }
@@ -631,6 +641,7 @@ export class MemoryTransport implements ConnectTransport {
         id: row.id, targetDeviceId: row.targetDeviceId, kind: row.command.kind, createdAt: row.createdAt,
         status: row.status,
         ...(row.requestId ? { requestId: row.requestId } : {}),
+        ...(row.status === 'pending' && row.beganAt !== undefined ? { began: true } : {}),
         ...(row.errorCode ? { errorCode: row.errorCode } : {}),
         ...(row.error ? { error: row.error } : {})
       }));

@@ -61,6 +61,17 @@ export interface ConnectPlayerState extends PlayerSnapshot {
   readonly handoff?: { readonly commandId: string; readonly toDeviceId: string };
 }
 
+/**
+ * What a `take_over` carries: the contract's PlayerStateSnapshot, which has no active device or
+ * handoff. `ownershipEpoch` is optional; the command's own `expectedOwnershipEpoch` is the fence.
+ */
+export interface TransferState extends PlayerSnapshot {
+  /** Position anchor in server milliseconds. */
+  readonly positionAt: number;
+  readonly rev: number;
+  readonly ownershipEpoch?: number;
+}
+
 /** A partial state write: an omitted field is unchanged, `song: null` clears the track. */
 export interface PlayerStatePatch {
   readonly song?: SongSnapshot | null;
@@ -83,7 +94,7 @@ export type RemoteCommand =
   | { readonly kind: 'repeat'; readonly mode: RepeatMode }
   | { readonly kind: 'play_song'; readonly song: SongSnapshot; readonly queue?: readonly SongSnapshot[] }
   | { readonly kind: 'queue_add'; readonly song: SongSnapshot }
-  | { readonly kind: 'take_over'; readonly state: ConnectPlayerState };
+  | { readonly kind: 'take_over'; readonly state: TransferState };
 
 /** A pending command addressed to this device. Legacy commands carry no deadline or epoch. */
 export interface InboxCommand {
@@ -108,6 +119,8 @@ export interface CommandOutcome {
   readonly kind: RemoteCommand['kind'];
   readonly createdAt: number;
   readonly status: 'pending' | 'done' | 'failed';
+  /** Pending and reserved by the target: it received the command and is running it. */
+  readonly began?: boolean;
   readonly errorCode?: ConnectFailureCode;
   readonly error?: string;
 }
