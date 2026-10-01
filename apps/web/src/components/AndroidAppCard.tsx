@@ -1,4 +1,4 @@
-import { Download, MonitorSmartphone, Heart, Mic2 } from 'lucide-react';
+import { ArrowRight, Download, Heart, MonitorSmartphone, Mic2, Pause, SkipBack, SkipForward } from 'lucide-react';
 
 /** The newest phone build. CI replaces this release's file on every push to main. */
 const ANDROID_APK_URL = 'https://github.com/peterish8/allegra/releases/download/apk-latest/LuvLyrics.apk';
@@ -17,8 +17,8 @@ const STEPS = [
 ] as const;
 
 /**
- * The Android download, shown as a small poster: the app's own icon on a phone, what it adds,
- * and the three steps to install an APK. The app installs as "LuvLyrics".
+ * The Android download, shown as a small poster: a phone playing the app, the app's own icon,
+ * what it adds, and the three steps to install an APK. The app installs as "LuvLyrics".
  */
 export function AndroidAppCard() {
   return (
@@ -26,10 +26,40 @@ export function AndroidAppCard() {
       <div className="apk-card__stage" aria-hidden="true">
         <span className="apk-card__ring apk-card__ring--a" />
         <span className="apk-card__ring apk-card__ring--b" />
-        <span className="apk-card__phone">
-          <span className="apk-card__speaker" />
-          <img className="apk-card__icon" src="/luvlyrics-app-icon.png" alt="" width={192} height={192} decoding="async" />
-          <span className="apk-card__app-name">LuvLyrics</span>
+
+        <div className="apk-card__device">
+          <span className="apk-card__side apk-card__side--power" />
+          <span className="apk-card__side apk-card__side--volume" />
+          <div className="apk-card__screen">
+            <span className="apk-card__camera" />
+            <div className="apk-card__status">
+              <span>12:30</span>
+              <span className="apk-card__status-icons"><i /><i /><i /></span>
+            </div>
+            <p className="apk-card__np-label">Playing on this phone</p>
+            <img className="apk-card__cover" src="/luvlyrics-app-icon.png" alt="" width={192} height={192} decoding="async" />
+            <div className="apk-card__lyrics">
+              <i style={{ width: '62%' }} />
+              <i className="is-on" style={{ width: '88%' }} />
+              <i style={{ width: '70%' }} />
+              <i style={{ width: '44%' }} />
+            </div>
+            <div className="apk-card__progress"><span /></div>
+            <div className="apk-card__controls">
+              <SkipBack size={15} fill="currentColor" strokeWidth={0} />
+              <span className="apk-card__play"><Pause size={15} fill="currentColor" strokeWidth={0} /></span>
+              <SkipForward size={15} fill="currentColor" strokeWidth={0} />
+            </div>
+            <span className="apk-card__gesture" />
+          </div>
+        </div>
+
+        <span className="apk-card__tile">
+          <img src="/luvlyrics-app-icon.png" alt="" width={192} height={192} decoding="async" />
+        </span>
+        <span className="apk-card__chip">
+          <span className="apk-card__eq"><i /><i /><i /><i /></span>
+          Chrome <ArrowRight size={12} strokeWidth={2.4} /> this phone
         </span>
         <span className="apk-card__badge">Android</span>
       </div>

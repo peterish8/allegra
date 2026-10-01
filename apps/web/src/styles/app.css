@@ -6648,63 +6648,142 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .settings-link:hover { color: var(--ink); }
 .settings-link:focus-visible { outline: 2px solid var(--wave); outline-offset: 3px; border-radius: 6px; }
 
-/* Android download: the app icon on a phone beside what it adds and how to install it.
- * The rings pulse with transform and opacity only, and rest still under reduced motion. */
+/* Android download: a tall phone playing the app, with the app icon and a Connect chip floating
+ * around it. Everything that moves uses transform and opacity from the motion tokens, and rests
+ * still under reduced motion. */
 .apk-card {
   display: grid;
-  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.6fr);
+  grid-template-columns: minmax(250px, 0.9fr) minmax(0, 1.4fr);
   align-items: center;
-  gap: clamp(20px, 4vw, 40px);
+  gap: clamp(20px, 3vw, 32px);
   padding: 20px 0 6px;
   border-top: 1px solid var(--border);
 }
 .apk-card__stage {
   position: relative;
   display: grid;
-  min-height: 300px;
+  min-height: 440px;
   place-items: center;
   border-radius: 28px;
   background:
-    radial-gradient(120% 90% at 18% 8%, rgba(238, 107, 95, 0.34), transparent 55%),
-    radial-gradient(110% 90% at 92% 96%, rgba(123, 175, 212, 0.32), transparent 58%),
-    radial-gradient(90% 70% at 62% 40%, rgba(217, 230, 106, 0.2), transparent 60%),
+    radial-gradient(120% 80% at 12% 6%, rgba(238, 107, 95, 0.36), transparent 55%),
+    radial-gradient(110% 80% at 96% 98%, rgba(123, 175, 212, 0.34), transparent 58%),
+    radial-gradient(80% 60% at 60% 42%, rgba(217, 230, 106, 0.2), transparent 60%),
     color-mix(in srgb, var(--ink) 5%, transparent);
   box-shadow: inset 0 0 0 1px var(--border);
   overflow: hidden;
 }
 .apk-card__ring {
   position: absolute;
-  width: 168px;
-  height: 168px;
+  width: 200px;
+  height: 200px;
   border: 1.5px solid color-mix(in srgb, var(--wave) 70%, transparent);
   border-radius: 50%;
   opacity: 0;
-  animation: apk-ring var(--d-shimmer) var(--ease-decelerate) infinite;
+  animation: apk-ring calc(var(--d-shimmer) * 2) var(--ease-decelerate) infinite;
 }
-.apk-card__ring--b { animation-delay: calc(var(--d-shimmer) / -2); }
+.apk-card__ring--b { animation-delay: calc(var(--d-shimmer) * -1); }
 @keyframes apk-ring {
-  from { opacity: 0.55; transform: scale(0.8); }
-  to { opacity: 0; transform: scale(1.7); }
+  from { opacity: 0.5; transform: scale(0.7); }
+  to { opacity: 0; transform: scale(2); }
 }
-.apk-card__phone {
+
+/* The phone: tall and slim, a dark body with a screen inset and buttons on the right edge. */
+.apk-card__device {
+  position: relative;
+  width: 172px;
+  height: 352px;
+  padding: 7px;
+  border-radius: 34px;
+  background: linear-gradient(150deg, #2a2f38, #0c0e12 55%, #1b1f26);
+  box-shadow:
+    0 34px 60px -26px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(255, 255, 255, 0.14),
+    inset 0 0 0 2px rgba(0, 0, 0, 0.55);
+  transform: rotate(-5deg);
+  transition: transform var(--d-panel) var(--ease-decelerate);
+  animation: apk-float calc(var(--d-atmosphere) * 3) ease-in-out infinite alternate;
+}
+.apk-card:hover .apk-card__device { transform: rotate(-1deg); }
+@keyframes apk-float {
+  from { translate: 0 -5px; }
+  to { translate: 0 5px; }
+}
+.apk-card__side { position: absolute; right: -3px; width: 3px; border-radius: 0 3px 3px 0; background: #343a45; }
+.apk-card__side--power { top: 88px; height: 34px; }
+.apk-card__side--volume { top: 134px; height: 54px; }
+.apk-card__screen {
   position: relative;
   display: flex;
-  width: 148px;
+  height: 100%;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 26px 14px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 30px;
-  background: linear-gradient(160deg, #11151c, #05070b);
-  box-shadow: 0 26px 50px -22px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  transform: rotate(-6deg);
-  transition: transform var(--d-panel) var(--ease-decelerate);
+  gap: 9px;
+  padding: 10px 12px 12px;
+  border-radius: 28px;
+  background:
+    radial-gradient(130% 55% at 50% 0%, rgba(123, 175, 212, 0.4), transparent 70%),
+    radial-gradient(90% 40% at 90% 100%, rgba(238, 107, 95, 0.3), transparent 70%),
+    #05070b;
+  overflow: hidden;
 }
-.apk-card:hover .apk-card__phone { transform: rotate(-2deg) translateY(-4px); }
-.apk-card__speaker { position: absolute; top: 9px; width: 34px; height: 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
-.apk-card__icon { display: block; width: 100%; height: auto; border-radius: 26%; box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.1); }
-.apk-card__app-name { color: rgba(255, 255, 255, 0.82); font-size: 12px; font-weight: 600; }
+.apk-card__camera { position: absolute; top: 9px; left: 50%; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: #000; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.12); }
+.apk-card__status { display: flex; width: 100%; align-items: center; justify-content: space-between; padding: 0 4px; color: rgba(255, 255, 255, 0.85); font-size: 8.5px; font-weight: 600; line-height: 12px; }
+.apk-card__status-icons { display: inline-flex; align-items: flex-end; gap: 2px; }
+.apk-card__status-icons i { display: block; width: 3px; border-radius: 1px; background: rgba(255, 255, 255, 0.8); }
+.apk-card__status-icons i:nth-child(1) { height: 4px; }
+.apk-card__status-icons i:nth-child(2) { height: 6px; }
+.apk-card__status-icons i:nth-child(3) { height: 8px; }
+.apk-card__np-label { margin: 6px 0 0; color: rgba(255, 255, 255, 0.6); font-size: 8.5px; font-weight: 600; letter-spacing: 0.04em; }
+.apk-card__cover { display: block; width: 104px; height: 104px; border-radius: 16px; box-shadow: 0 16px 28px -14px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(255, 255, 255, 0.1); }
+.apk-card__lyrics { display: grid; width: 100%; gap: 7px; margin-top: 4px; }
+.apk-card__lyrics i { display: block; height: 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.2); }
+.apk-card__lyrics i.is-on { background: var(--wave); box-shadow: 0 0 12px color-mix(in srgb, var(--wave) 60%, transparent); }
+.apk-card__progress { width: 100%; height: 3px; margin-top: auto; border-radius: 999px; background: rgba(255, 255, 255, 0.18); }
+.apk-card__progress span { display: block; width: 100%; height: 100%; border-radius: inherit; background: #fff; transform: scaleX(0.38); transform-origin: left; }
+.apk-card__controls { display: flex; width: 100%; align-items: center; justify-content: space-between; padding: 2px 14px 0; color: #fff; }
+.apk-card__play { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: #fff; color: #05070b; }
+.apk-card__gesture { width: 52px; height: 4px; margin-top: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.45); }
+
+/* Floating pieces: the app icon as an app tile, and the Connect hand-off. */
+.apk-card__tile {
+  position: absolute;
+  bottom: 38px;
+  left: 14px;
+  display: block;
+  width: 78px;
+  height: 78px;
+  border-radius: 24px;
+  box-shadow: 0 22px 34px -14px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.16), 0 0 34px -6px color-mix(in srgb, var(--wave) 55%, transparent);
+  transform: rotate(9deg);
+  transition: transform var(--d-panel) var(--ease-spring);
+  overflow: hidden;
+}
+.apk-card:hover .apk-card__tile { transform: rotate(0deg) translateY(-6px) scale(1.06); }
+.apk-card__tile img { display: block; width: 100%; height: 100%; }
+.apk-card__chip {
+  position: absolute;
+  top: 26px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px 7px 9px;
+  border-radius: 999px;
+  background: rgba(14, 17, 22, 0.78);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16), 0 14px 26px -14px rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.apk-card__eq { display: inline-flex; height: 12px; align-items: flex-end; gap: 2px; }
+.apk-card__eq i { display: block; width: 2.5px; height: 100%; border-radius: 1px; background: var(--wave); transform: scaleY(0.4); transform-origin: bottom; animation: apk-eq var(--d-shimmer) ease-in-out infinite alternate; }
+.apk-card__eq i:nth-child(2) { animation-delay: calc(var(--d-shimmer) * -0.3); }
+.apk-card__eq i:nth-child(3) { animation-delay: calc(var(--d-shimmer) * -0.6); }
+.apk-card__eq i:nth-child(4) { animation-delay: calc(var(--d-shimmer) * -0.9); }
+@keyframes apk-eq { to { transform: scaleY(1); } }
 .apk-card__badge {
   position: absolute;
   right: 14px;
@@ -6766,13 +6845,17 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 @media (max-width: 720px) {
   .apk-card { grid-template-columns: minmax(0, 1fr); }
-  .apk-card__stage { min-height: 250px; }
   .apk-card__download { width: 100%; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .apk-card__ring { animation: none; opacity: 0.25; transform: scale(1.15); }
-  .apk-card__ring--b { opacity: 0.12; transform: scale(1.5); }
-  .apk-card__phone, .apk-card:hover .apk-card__phone { transition: none; transform: rotate(-4deg); }
+  .apk-card__ring { animation: none; opacity: 0.22; transform: scale(1.3); }
+  .apk-card__ring--b { opacity: 0.1; transform: scale(1.8); }
+  .apk-card__device { animation: none; }
+  .apk-card__device, .apk-card:hover .apk-card__device,
+  .apk-card__tile, .apk-card:hover .apk-card__tile { transition: none; }
+  .apk-card:hover .apk-card__device { transform: rotate(-5deg); }
+  .apk-card:hover .apk-card__tile { transform: rotate(9deg); }
+  .apk-card__eq i { animation: none; transform: scaleY(0.7); }
 }
 
 /* Switch: the thumb slides with transform only. */
