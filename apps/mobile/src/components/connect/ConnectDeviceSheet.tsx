@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { PlayerSheet, SheetScrollView } from '../player/PlayerSheet';
@@ -28,6 +28,12 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
   const account = useAccount();
   const [busyDevice, setBusyDevice] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+
+  const saveName = (): void => {
+    if (renaming?.trim()) connect.rename(renaming);
+    setRenaming(null);
+  };
 
   const signIn = async (): Promise<void> => {
     setMessage(null);
@@ -64,6 +70,9 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
   };
 
   const view = connect.view;
+  // The device that was playing dropped off: its song can be picked up here, not controlled there.
+  const activeGone = Boolean(view?.activeDevice && !view.isThisDeviceActive && !view.activeDeviceOnline);
+  const thisPhone = view?.devices.find(device => device.deviceId === connect.deviceId);
   return (
       <View style={styles.content}>
         <Text style={styles.intro}>Move playback between your phone and Allegra on the web.</Text>
@@ -81,9 +90,12 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
             {view.activeDevice ? (
               <View style={styles.active}>
                 <Ionicons name="musical-notes" size={19} color="#d9e66a" />
-                <Text style={styles.activeText} numberOfLines={1}>Playing on {view.activeDevice.name}</Text>
+                <Text style={styles.activeText} numberOfLines={1}>{activeGone ? 'Last played on' : 'Playing on'} {view.activeDevice.name}</Text>
               </View>
             ) : <Text style={styles.empty}>Start playback on a signed-in device to connect it.</Text>}
+            {activeGone && view.activeDevice && view.song ? (
+              <Text style={styles.empty}>{view.activeDevice.name} went offline. Choose this phone to carry on from where it stopped.</Text>
+            ) : null}
             {[...view.devices].sort((a, b) => Number(b.deviceId === connect.deviceId) - Number(a.deviceId === connect.deviceId)).map(device => {
               const isActive = view.activeDeviceId === device.deviceId;
               const isThisPhone = device.deviceId === connect.deviceId;
@@ -93,8 +105,10 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
               const trackUnavailableLabel = view.activeDeviceId === connect.deviceId
                 ? 'This song is only on your phone'
                 : 'This song is only on the playing device';
-              const status = isActive
+              const status = isActive && (isThisPhone || device.isOnline)
                 ? 'Playing here'
+                : isActive
+                  ? 'Offline'
                 : trackUnavailable
                   ? trackUnavailableLabel
                   : !device.isOnline
@@ -121,6 +135,30 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
               );
             })}
             {view.devices.length === 0 ? <Text style={styles.empty}>No other signed-in devices yet.</Text> : null}
+            {thisPhone ? (
+              renaming !== null ? (
+                <View style={styles.rename}>
+                  <TextInput
+                    style={styles.renameInput}
+                    value={renaming}
+                    onChangeText={setRenaming}
+                    onSubmitEditing={saveName}
+                    maxLength={40}
+                    autoFocus
+                    returnKeyType="done"
+                    selectionColor="#d9e66a"
+                    accessibilityLabel="Name for this phone"
+                  />
+                  <Pressable accessibilityRole="button" onPress={saveName} hitSlop={8}>
+                    <Text style={styles.renameAction}>Save</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable accessibilityRole="button" onPress={() => setRenaming(thisPhone.name)} hitSlop={8} style={styles.renameLink}>
+                  <Text style={styles.renameAction}>Rename this phone</Text>
+                </Pressable>
+              )
+            ) : null}
           </>
         ) : (
           <View style={styles.loading}><ActivityIndicator color="#fff" /><Text style={styles.rowHint}>Connecting to Allegra…</Text></View>
@@ -156,6 +194,10 @@ const styles = StyleSheet.create({
   message: { color: '#ff9a91', fontSize: 13, lineHeight: 19, paddingHorizontal: 6, paddingTop: 4 },
   pressed: { backgroundColor: 'rgba(255,255,255,0.14)' },
   unavailable: { opacity: 0.58 },
+  rename: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 6, paddingTop: 4 },
+  renameInput: { flex: 1, height: 44, paddingHorizontal: 16, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 15 },
+  renameLink: { alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 8 },
+  renameAction: { color: '#d9e66a', fontSize: 14, fontWeight: '600' },
 });
 
 export default ConnectDeviceSheet;

@@ -16,6 +16,7 @@ import { getAccountProfile, type AccountProfile } from './allegraApi';
 import { ALLEGRA_CONVEX_URL } from './config';
 import { secureStorage } from './secureStorage';
 import { runGoogleSignIn, type SignInOutcome } from './signInFlow';
+import { runBeforeSignOut } from './signOutHooks';
 import { attach, detach } from '../sync/LibrarySync';
 import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
 
@@ -99,6 +100,7 @@ const AccountBridge: React.FC<{ children: ReactNode }> = ({ children }) => {
 
   const handleSignOut = useCallback(async () => {
     try {
+      await runBeforeSignOut();
       await signOut();
     } finally {
       setProfile(null);

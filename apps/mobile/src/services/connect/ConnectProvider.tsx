@@ -12,6 +12,9 @@ import { positionSV } from '../../playback/positionBus';
 import { useAccount, allegraConvex } from '../account/AccountProvider';
 import { recordPlay, recordPlayStarted, refFor } from '../sync/LibrarySync';
 import { createListenTracker, type HeardSong } from '../sync/listenTracker';
+import { setStreamQueueRouter } from '../stream/StreamService';
+import { toStreamSong } from '../stream/streamSong';
+import { onBeforeSignOut } from '../account/signOutHooks';
 import { createMobilePlayerPort, snapshotOfSong } from './mobilePlayerPort';
 import { createMobileConnectTransport } from './convexTransport';
 import { setConnectPosition } from './remotePositionStore';
@@ -26,6 +29,8 @@ interface ConnectContextValue {
   readonly closeDevices: () => void;
   readonly control: (command: RemoteCommand) => void;
   readonly transferTo: (deviceId: string) => Promise<TransferResult>;
+  /** Name this phone for the other devices' lists. Kept on this phone. */
+  readonly rename: (name: string) => void;
 }
 
 const EMPTY_VIEW: ConnectContextValue = {
@@ -38,10 +43,12 @@ const EMPTY_VIEW: ConnectContextValue = {
   closeDevices: () => undefined,
   control: () => undefined,
   transferTo: async () => ({ ok: false, reason: 'offline' }),
+  rename: () => undefined,
 };
 
 const ConnectContext = createContext<ConnectContextValue>(EMPTY_VIEW);
 const deviceKey = (userId: string) => `allegra-connect-device:${userId}`;
+const DEVICE_NAME_KEY = 'allegra-connect-device-name';
 const deviceIdRequests = new Map<string, Promise<string>>();
 
 async function deviceIdFor(userId: string): Promise<string> {
@@ -88,6 +95,8 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
     let stopView: (() => void) | undefined;
     let current: ConnectSession | undefined;
     let stopSelectionRouter: (() => void) | undefined;
+    let stopQueueRouter: (() => void) | undefined;
+    let stopSignOutHook: (() => void) | undefined;
     let trace: DevelopmentTraceBuffer | undefined;
     const userId = account.profile?.userId;
     if (!account.signedIn || !userId) {
@@ -99,7 +108,7 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
       return undefined;
     }
 
-    deviceIdFor(userId).then(id => {
+    Promise.all([deviceIdFor(userId), AsyncStorage.getItem(DEVICE_NAME_KEY).catch(() => null)]).then(([id, chosenName]) => {
       if (disposed) return;
       const kind = Platform.OS === 'ios' ? 'ios' : 'android';
       trace = __DEV__ ? createDevelopmentTrace({
@@ -114,7 +123,7 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
         player: createMobilePlayerPort(() => tokenRef.current, trace),
         device: {
           deviceId: id,
-          name: mobileDeviceName(),
+          name: chosenName?.trim().slice(0, 80) || mobileDeviceName(),
           kind,
           appVersion: Constants.expoConfig?.version ?? '1.0.0',
           // A room owns playback while joined. The phone stays visible, but
@@ -145,6 +154,17 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
         current.control({ kind: 'play_song', song, queue });
         return true;
       });
+      // Play next, and the rest of an album arriving behind its first song, go where the music is.
+      stopQueueRouter = setStreamQueueRouter((songs, next) => {
+        if (roomActive) return false;
+        const active = current?.view();
+        if (!current || !active?.activeDeviceId || active.isThisDeviceActive || !active.activeDeviceOnline) return false;
+        const [song, ...more] = songs.flatMap(item => snapshotOfSong(toStreamSong(item)) ?? []).slice(0, 50);
+        if (song) current.control({ kind: 'queue_add', song, ...(more.length ? { more } : {}), ...(next ? { next: true } : {}) });
+        return true;
+      });
+      // Signing out ends the session that could say this phone is leaving: the goodbye goes first.
+      stopSignOutHook = onBeforeSignOut(() => current?.leave() ?? Promise.resolve());
       setDeviceId(id);
       setSession(current);
       stopView = current.subscribe(nextView => {
@@ -162,6 +182,8 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
     return () => {
       disposed = true;
       stopSelectionRouter?.();
+      stopQueueRouter?.();
+      stopSignOutHook?.();
       stopView?.();
       current?.dispose();
       trace?.dispose();
@@ -258,6 +280,12 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
   const closeDevices = useCallback(() => setDevicesVisible(false), []);
   const control = useCallback((command: RemoteCommand) => sessionRef.current?.control(command), []);
   const transferTo = useCallback((target: string) => sessionRef.current?.transferTo(target) ?? Promise.resolve({ ok: false as const, reason: 'offline' as const }), []);
+  const rename = useCallback((name: string) => {
+    const next = name.trim().slice(0, 80);
+    if (!next) return;
+    AsyncStorage.setItem(DEVICE_NAME_KEY, next).catch(() => undefined);
+    sessionRef.current?.rename(next);
+  }, []);
   const remotePlayback = Boolean(view?.activeDeviceId && view.activeDeviceId !== deviceId && view.activeDeviceOnline && view.song);
 
   const value = useMemo<ConnectContextValue>(() => ({
@@ -270,7 +298,8 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
     closeDevices,
     control,
     transferTo,
-  }), [account.signedIn, deviceId, view, remotePlayback, devicesVisible, openDevices, closeDevices, control, transferTo]);
+    rename,
+  }), [account.signedIn, deviceId, view, remotePlayback, devicesVisible, openDevices, closeDevices, control, transferTo, rename]);
 
   return <ConnectContext.Provider value={value}>{children}</ConnectContext.Provider>;
 };

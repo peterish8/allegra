@@ -367,25 +367,60 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
                       <MaterialCommunityIcons name={view.repeat === 'one' ? 'repeat-once' : 'repeat'} size={18} color={view.repeat !== 'off' ? Signal.waveInk : '#fff'} />
                       <Text style={[styles.modeText, view.repeat !== 'off' && styles.modeTextOn]}>{view.repeat === 'one' ? 'Repeat one' : view.repeat === 'all' ? 'Repeat all' : 'Repeat'}</Text>
                     </Pressable>
+                    {view.queueEditable && view.queue.length > 0 ? (
+                      <Pressable
+                        onPress={() => { Haptics.selectionAsync().catch(() => undefined); control({ kind: 'queue_clear' }); }}
+                        style={[styles.mode, styles.modeEnd]}
+                        accessibilityRole="button"
+                        accessibilityLabel="Clear the queue"
+                      >
+                        <Text style={styles.modeText}>Clear</Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                   <SheetScrollView showsVerticalScrollIndicator={false}>
                     {view.queue.length ? view.queue.map((queued, index) => (
-                      <Pressable
-                        key={`${queued.ref}-${index}`}
-                        style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                        onPress={() => {
-                          control({ kind: 'play_song', song: queued, queue: view.queue.slice(index + 1) });
-                          setQueueOpen(false);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Play ${queued.title}`}
-                      >
-                        <Artwork uri={queued.artwork} title={queued.title} artist={queued.artist} size={48} style={styles.rowArt} />
-                        <View style={styles.rowCopy}>
-                          <Text style={styles.rowTitle} numberOfLines={1}>{queued.title}</Text>
-                          <Text style={styles.rowArtist} numberOfLines={1}>{queued.artist}</Text>
-                        </View>
-                      </Pressable>
+                      <View key={`${queued.ref}-${index}`} style={styles.queued}>
+                        <Pressable
+                          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                          onPress={() => {
+                            control({ kind: 'play_song', song: queued, queue: view.queue.slice(index + 1) });
+                            setQueueOpen(false);
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Play ${queued.title}`}
+                        >
+                          <Artwork uri={queued.artwork} title={queued.title} artist={queued.artist} size={48} style={styles.rowArt} />
+                          <View style={styles.rowCopy}>
+                            <Text style={styles.rowTitle} numberOfLines={1}>{queued.title}</Text>
+                            <Text style={styles.rowArtist} numberOfLines={1}>{queued.artist}</Text>
+                          </View>
+                        </Pressable>
+                        {view.queueEditable ? (
+                          <>
+                            {index > 0 ? (
+                              <Pressable
+                                style={({ pressed }) => [styles.rowAction, pressed && styles.rowPressed]}
+                                onPress={() => { Haptics.selectionAsync().catch(() => undefined); control({ kind: 'queue_move', from: index, to: 0, ref: queued.ref }); }}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Play ${queued.title} next`}
+                                hitSlop={4}
+                              >
+                                <MaterialCommunityIcons name="arrow-collapse-up" size={20} color="rgba(255,255,255,0.7)" />
+                              </Pressable>
+                            ) : null}
+                            <Pressable
+                              style={({ pressed }) => [styles.rowAction, pressed && styles.rowPressed]}
+                              onPress={() => { Haptics.selectionAsync().catch(() => undefined); control({ kind: 'queue_remove', index, ref: queued.ref }); }}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Remove ${queued.title} from the queue`}
+                              hitSlop={4}
+                            >
+                              <Ionicons name="close" size={20} color="rgba(255,255,255,0.7)" />
+                            </Pressable>
+                          </>
+                        ) : null}
+                      </View>
                     )) : <Text style={styles.notice}>Nothing is queued after this song.</Text>}
                   </SheetScrollView>
                 </PlayerSheet>
@@ -417,7 +452,10 @@ const styles = StyleSheet.create({
   modeOn: { backgroundColor: Signal.wave },
   modeText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   modeTextOn: { color: Signal.waveInk },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, paddingHorizontal: 4, borderRadius: 12 },
+  modeEnd: { marginLeft: 'auto' },
+  queued: { flexDirection: 'row', alignItems: 'center' },
+  row: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, paddingHorizontal: 4, borderRadius: 12 },
+  rowAction: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20 },
   rowPressed: { backgroundColor: 'rgba(255,255,255,0.08)' },
   rowArt: { width: 48, height: 48, borderRadius: 8, overflow: 'hidden' },
   rowCopy: { flex: 1 },

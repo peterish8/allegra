@@ -1,4 +1,4 @@
-import { getAllegraSongById, matchConnectSong, matchQueue } from './songMatcher';
+import { getAllegraSongById, matchConnectSong, matchEach } from './songMatcher';
 import type { Song } from '../../types/song';
 import type { SongSnapshot } from '@shared/songRef';
 
@@ -95,16 +95,32 @@ describe('Connect song matching', () => {
     expect(result).toBeNull();
   });
 
-  it('preserves matched queue order while dropping songs unavailable here', async () => {
+  it('answers each queued song in its place, with a gap for one unavailable here', async () => {
+    const missing: SongSnapshot = { ...snapshot, ref: 'saavn:missing', title: 'Not in any catalog' };
     const second: SongSnapshot = { ...snapshot, ref: 'saavn:second', title: 'Second song' };
-    const matched = await matchQueue([snapshot, second], {
+    const matched = await matchEach([snapshot, missing, second], {
       localSongs: () => [local()],
       getCatalogSong: async ref => ref === 'saavn:second' ? { ...catalog, id: 'second', streamUrl: '/api/stream/second', title: 'Second song' } : null,
       searchCatalog: async () => [],
       token: () => 'token',
     });
 
-    expect(matched.map(song => song.id)).toEqual(['download-1', 'stream:saavn:second']);
+    expect(matched.map(match => match?.kind ?? null)).toEqual(['local', null, 'catalog']);
+    expect(matched[0]?.song.id).toBe('download-1');
+    expect(matched[2]?.song.id).toBe('second');
+  });
+
+  it('stops looking songs up once a newer queue has replaced this one', async () => {
+    let lookups = 0;
+    const matched = await matchEach([snapshot, { ...snapshot, ref: 'saavn:second', title: 'Second song' }], {
+      localSongs: () => [],
+      getCatalogSong: async () => { lookups += 1; return null; },
+      searchCatalog: async () => [],
+      token: () => 'token',
+    }, 1, () => lookups === 0);
+
+    expect(lookups).toBe(1);
+    expect(matched).toEqual([null, null]);
   });
 });
 

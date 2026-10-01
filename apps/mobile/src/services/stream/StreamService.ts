@@ -27,6 +27,27 @@ const remember = (songs: UnifiedSong[]) => {
   for (const s of songs) catalog.set(toStreamSong(s).id, s);
 };
 
+type QueueRouter = (songs: UnifiedSong[], next: boolean) => boolean;
+let queueRouter: QueueRouter | null = null;
+
+/**
+ * Lets Connect send "play next" and queue additions to the device that is playing. The router
+ * answers true when it took them; this phone's own queue is then left alone.
+ */
+export function setStreamQueueRouter(router: QueueRouter | null): () => void {
+  queueRouter = router;
+  return () => { if (queueRouter === router) queueRouter = null; };
+}
+
+function routed(songs: UnifiedSong[], next: boolean): boolean {
+  try {
+    return queueRouter?.(songs, next) ?? false;
+  } catch {
+    // Keep the phone's own queue working if Connect cannot build the command.
+    return false;
+  }
+}
+
 export const StreamService = {
   /** Replace the queue with `songs` and start playing at `index`. */
   play(songs: UnifiedSong[], index = 0): void {
@@ -41,6 +62,7 @@ export const StreamService = {
 
   /** Adds songs right after the current one (or starts playback when idle). */
   playNext(song: UnifiedSong): void {
+    if (routed([song], true)) return;
     const state = usePlayerStore.getState();
     if (!state.playlistQueue || state.currentPlaylistId !== STREAM_QUEUE_ID) {
       StreamService.play([song], 0);
@@ -58,6 +80,7 @@ export const StreamService = {
 
   /** Adds songs to the end of the stream queue (a list still resolving in the background). */
   append(songs: UnifiedSong[]): void {
+    if (songs.length > 0 && routed(songs, false)) return;
     const state = usePlayerStore.getState();
     if (!state.playlistQueue || state.currentPlaylistId !== STREAM_QUEUE_ID) return;
     const queued = state.playlistQueue.flatMap(s => [s.id, `${s.title.trim().toLowerCase()}|${(s.artist ?? '').trim().toLowerCase()}`]);

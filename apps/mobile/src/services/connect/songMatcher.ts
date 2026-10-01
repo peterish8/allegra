@@ -54,29 +54,33 @@ export const getAllegraSongById = async (ref: string, token: string): Promise<Al
   return (await getAllegraSongs(token, [ref]))?.find(song => song.id === parsed.id && song.source.toLowerCase() === parsed.source) ?? null;
 };
 
-export async function matchQueue(
+/**
+ * One result per snapshot, in order; null where nothing matched or the lookup failed.
+ * `isCurrent` going false stops the lookups that have not started (a newer queue replaced this one).
+ */
+export async function matchEach(
   snapshots: readonly SongSnapshot[],
   deps: SongMatcherDeps = defaults,
   parallel = 2,
-): Promise<Song[]> {
-  const songs: (Song | null)[] = new Array(snapshots.length).fill(null);
+  isCurrent: () => boolean = () => true,
+): Promise<(MatchedSong | null)[]> {
+  const matches: (MatchedSong | null)[] = new Array(snapshots.length).fill(null);
   const lookups = new Map<string, Promise<MatchedSong | null>>();
   let cursor = 0;
   const worker = async (): Promise<void> => {
-    while (cursor < snapshots.length) {
+    while (cursor < snapshots.length && isCurrent()) {
       const index = cursor++;
       const snapshot = snapshots[index];
       let lookup = lookups.get(snapshot.ref);
       if (!lookup) {
-        lookup = matchConnectSong(snapshot, deps);
+        lookup = matchConnectSong(snapshot, deps).catch(() => null);
         lookups.set(snapshot.ref, lookup);
       }
-      const match = await lookup;
-      if (match) songs[index] = match.kind === 'local' ? match.song : toMobileSong(match.song);
+      matches[index] = await lookup;
     }
   };
   await Promise.all(Array.from({ length: Math.min(Math.max(1, parallel), snapshots.length) }, worker));
-  return songs.filter((song): song is Song => song !== null);
+  return matches;
 }
 
 export function toMobileSong(song: UnifiedSong): Song {

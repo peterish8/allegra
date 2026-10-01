@@ -1,5 +1,8 @@
 import { fromMobileId, parseSongRef, type SongRef, type SongSnapshot } from '@shared/songRef';
-import { traceCatalogLookup, type DevelopmentTraceBuffer, type PlayerPort, type PlayerSnapshot, type RepeatMode } from '../../../../../packages/connect/src/index';
+import {
+  createQueueStager, QUEUE_LIMIT, reportable, traceCatalogLookup, upcomingOf, withUpcoming,
+  type DevelopmentTraceBuffer, type PlayerPort, type PlayerSnapshot, type RepeatMode,
+} from '../../../../../packages/connect/src/index';
 
 import { playerControls, prepareNextInQueue, usePlayerStore } from '../../store/playerStore';
 import { usePlaybackModesStore } from '../../store/playbackModesStore';
@@ -7,10 +10,11 @@ import { usePositionStore } from '../../store/positionStore';
 import { useSongsStore } from '../../store/songsStore';
 import { positionSV } from '../../playback/positionBus';
 import type { Song } from '../../types/song';
-import { getAllegraSongById, matchConnectSong, matchQueue, toMobileSong, type SongMatcherDeps } from './songMatcher';
+import { getAllegraSongById, matchConnectSong, matchEach, toMobileSong, type MatchedSong, type SongMatcherDeps } from './songMatcher';
 import { shuffleUpcoming } from '../player/playerMenuActions';
 
 const clampPosition = (value: number): number => Number.isFinite(value) ? Math.max(0, value) : 0;
+const notFound = (): Error => Object.assign(new Error('That song could not be loaded.'), { data: { code: 'not_found' } });
 
 export function snapshotOfSong(song: Song | null | undefined): SongSnapshot | undefined {
   if (!song) return undefined;
@@ -54,7 +58,25 @@ export function createMobilePlayerPort(getToken: () => string | null, trace?: De
   let volume = clampPosition(playerControls.getVolume());
   let originalOrder: Song[] | null = null;
   let loadGeneration = 0;
-  let reportedQueue: { readonly currentRef: SongRef; readonly queue: readonly SongSnapshot[] } | null = null;
+  const listeners = new Set<(snapshot: PlayerSnapshot) => void>();
+  /**
+   * A song matched for another device keeps the ref it was asked for. A download made before
+   * origins were recorded has no ref of its own, and would otherwise drop out of the shared state.
+   */
+  const aliases = new Map<string, SongSnapshot>();
+  const shared = (song: Song | null | undefined): SongSnapshot | undefined =>
+    song ? aliases.get(song.id) ?? snapshotOfSong(song) : undefined;
+  const adopt = (snapshot: SongSnapshot, matched: MatchedSong): Song => {
+    const song = matched.kind === 'local' ? matched.song : toMobileSong(matched.song);
+    if (snapshotOfSong(song)?.ref !== snapshot.ref) {
+      if (aliases.size >= 400) {
+        const queued = new Set((usePlayerStore.getState().playlistQueue ?? []).map(item => item.id));
+        for (const id of aliases.keys()) if (!queued.has(id)) aliases.delete(id);
+      }
+      aliases.set(song.id, snapshot);
+    }
+    return song;
+  };
   const matcher: SongMatcherDeps = {
     localSongs: () => useSongsStore.getState().songs,
     getCatalogSong: (ref, token) => traceCatalogLookup(trace, () => getAllegraSongById(ref, token)),
@@ -65,27 +87,33 @@ export function createMobilePlayerPort(getToken: () => string | null, trace?: De
     token: getToken,
   };
 
+  /** The player's queue as the stager reads it: the store, which is written and read at once. */
+  const queuePlayer = () => {
+    const store = usePlayerStore.getState();
+    const queue = store.playlistQueue ?? (store.currentSong ? [store.currentSong] : []);
+    return {
+      currentSong: queue.find(song => song.id === store.currentSongId) ?? store.currentSong,
+      queue,
+      replaceUpcoming(songs: readonly Song[]): void {
+        const latest = usePlayerStore.getState();
+        if (!latest.currentSong) return;
+        const list = latest.playlistQueue ?? [latest.currentSong];
+        const current = list.find(song => song.id === latest.currentSongId) ?? latest.currentSong;
+        latest.updateQueue(withUpcoming(list, current, songs));
+        // Media3 may already have staged the old "next" for gapless advance.
+        prepareNextInQueue();
+      },
+    };
+  };
+
   const getSnapshot = (): PlayerSnapshot => {
     const player = usePlayerStore.getState();
-    const stateQueue = player.playlistQueue ?? [];
-    const currentIndex = stateQueue.findIndex(song => song.id === player.currentSongId);
-    const upcoming = currentIndex >= 0 ? stateQueue.slice(currentIndex + 1) : stateQueue.filter(song => song.id !== player.currentSongId);
-    const currentSong = snapshotOfSong(player.currentSong);
+    const currentSong = shared(player.currentSong);
     const livePosition = positionSV.value;
-    let queueSnapshots = upcoming.slice(0, 50).flatMap(song => {
-      const snapshot = snapshotOfSong(song);
-      return snapshot ? [snapshot] : [];
-    });
-    if (reportedQueue && currentSong) {
-      if (currentSong.ref === reportedQueue.currentRef) queueSnapshots = [...reportedQueue.queue];
-      else {
-        const currentIndexInIntent = reportedQueue.queue.findIndex(snapshot => snapshot.ref === currentSong.ref);
-        if (currentIndexInIntent >= 0) queueSnapshots = reportedQueue.queue.slice(currentIndexInIntent + 1);
-      }
-    }
+    const upcoming = reportable(upcomingOf(queuePlayer()), song => shared(song) ?? null);
     return {
       ...(currentSong ? { song: currentSong } : {}),
-      queue: queueSnapshots,
+      queue: stager.report(currentSong, upcoming),
       isPlaying: player.isPlaying,
       positionSec: clampPosition(Number.isFinite(livePosition) ? livePosition : usePositionStore.getState().position),
       volume: clampPosition(Number.isFinite(playerControls.getVolume()) ? playerControls.getVolume() : volume),
@@ -96,14 +124,30 @@ export function createMobilePlayerPort(getToken: () => string | null, trace?: De
 
   const waitForAudio = async (songId: string): Promise<boolean> => waitForLoadedSong(songId, 15_000);
 
+  // Queue edits, transfers and play-next all hand the player its queue through this: songs it
+  // holds move at once, a new one joins when its lookup lands (packages/connect queueStager).
+  const stager = createQueueStager<Song>({
+    player: queuePlayer,
+    snapshotOf: song => shared(song) ?? null,
+    lookup: async (missing, isCurrent) => {
+      const matches = await matchEach(missing, matcher, 2, isCurrent);
+      return matches.flatMap((matched, index) => matched ? [adopt(missing[index], matched)] : []);
+    },
+    onChange: () => {
+      const snapshot = getSnapshot();
+      for (const listener of [...listeners]) listener(snapshot);
+    },
+  });
+
   return {
     getSnapshot,
     onChange(listener) {
       const emit = (): void => listener(getSnapshot());
+      listeners.add(listener);
       const stopPlayer = usePlayerStore.subscribe(emit);
       const stopPosition = usePositionStore.subscribe(emit);
       const stopModes = usePlaybackModesStore.subscribe(emit);
-      return () => { stopPlayer(); stopPosition(); stopModes(); };
+      return () => { listeners.delete(listener); stopPlayer(); stopPosition(); stopModes(); };
     },
     async play() {
       usePlayerStore.getState().requestPlayback(true);
@@ -139,13 +183,16 @@ export function createMobilePlayerPort(getToken: () => string | null, trace?: De
     },
     async load(snapshot, queue, options) {
       const generation = ++loadGeneration;
-      const queueSnapshots = queue.slice(0, 50);
-      reportedQueue = { currentRef: snapshot.ref, queue: queueSnapshots };
+      const queueSnapshots = queue.slice(0, QUEUE_LIMIT);
+      stager.expect(snapshot.ref, queueSnapshots);
       const matched = await matchConnectSong(snapshot, matcher);
       if (generation !== loadGeneration) return 'not_found';
-      if (!matched) return 'not_found';
-      const current = matched.kind === 'local' ? matched.song : toMobileSong(matched.song);
-      if (!current.audioUri) return 'not_found';
+      const current = matched ? adopt(snapshot, matched) : null;
+      if (!current?.audioUri) {
+        // The song that was playing stays: the queue asked for with the new one does not apply to it.
+        stager.reset();
+        return 'not_found';
+      }
       const store = usePlayerStore.getState();
       const alreadyLoaded = store.currentSongId === current.id && store.loadedAudioId === current.id;
       store.setPlaylistQueue('connect', [current], 0, false);
@@ -154,11 +201,7 @@ export function createMobilePlayerPort(getToken: () => string | null, trace?: De
       if (generation !== loadGeneration) return 'not_found';
       await this.seek(options.positionSec);
       usePlayerStore.getState().requestPlayback(options.play);
-      matchQueue(queueSnapshots, matcher, 2).then(rest => {
-        if (generation !== loadGeneration || usePlayerStore.getState().currentSongId !== current.id) return;
-        usePlayerStore.getState().updateQueue([current, ...rest].slice(0, 51));
-        prepareNextInQueue();
-      }).catch(() => undefined);
+      stager.stage(queueSnapshots).catch(() => undefined);
       return 'ok';
     },
     async next() {
@@ -196,22 +239,20 @@ export function createMobilePlayerPort(getToken: () => string | null, trace?: De
       prepareNextInQueue();
     },
     async addToQueue(snapshot) {
-      loadGeneration += 1;
-      if (reportedQueue) reportedQueue = { ...reportedQueue, queue: [...reportedQueue.queue, snapshot].slice(0, 50) };
-      const matched = await matchConnectSong(snapshot, matcher);
-      if (!matched) return;
-      const song = matched.kind === 'local' ? matched.song : toMobileSong(matched.song);
-      const latest = usePlayerStore.getState();
-      if (!latest.currentSong) return;
-      const queue = latest.playlistQueue ?? [latest.currentSong];
-      const index = Math.max(0, queue.findIndex(item => item.id === latest.currentSongId));
-      latest.updateQueue([...queue.slice(0, index + 1), ...queue.slice(index + 1), song]);
-      prepareNextInQueue();
+      const before = getSnapshot();
+      if (!before.song) throw notFound();
+      const lost = await stager.stage([...before.queue, snapshot]);
+      if (lost.includes(snapshot.ref)) throw notFound();
+    },
+    async setQueue(queue) {
+      stager.stage(queue).catch(() => undefined);
     },
     dispose() {
       loadGeneration += 1;
-      reportedQueue = null;
+      stager.reset();
+      listeners.clear();
       originalOrder = null;
+      aliases.clear();
     },
   };
 }
