@@ -99,8 +99,20 @@ from current local slice evidence below.
 - Deployed to production Convex: the epoch and `began` changes. Not yet shipped: the web picker
   redesign (`ConnectPicker.tsx`, also opened from the mini player), the phone's round Connect
   button, and the client-side decoder/session fixes — they need a Vercel deploy and a new APK.
-- Not verified here: a signed-in two-device transfer after the fix (no transfer had been tried on
-  production when this was written).
+- First live two-device run (17:46–18:02 IST): controls and a web → phone transfer worked. Two
+  phone "play here" pulls expired because Chrome, the owner, had left Connect: the web's leader
+  lock was requested with `ifAvailable`, so an effect re-run (token refresh) lost the lock to its
+  own previous run and the tab demoted itself to "another tab" for good while its audio played.
+  The lock request now waits in line (aborted on cleanup). Production logs show it as one
+  `connect:state` execution where two subscribers were expected.
+- A phone → web transfer then failed `not_found` after 16 s. The web's Connect load checked the
+  audio element before the render switched its source, so it could seek the previous track; it
+  now waits for the new source (`loadstart`) and restarts a failed element. Exact cause of that
+  run not reproduced.
+- A destination now waits at most 15 s for the owner's release, then fails `owner_unreachable`
+  and the phone names the device that did not answer.
+- The in-app updater compares `apk-latest` with the build commit/time CI stamps into each APK and
+  never offers an older build (all builds are versionCode 1).
 
 ## Important files
 
