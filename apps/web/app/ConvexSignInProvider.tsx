@@ -7,6 +7,7 @@ import { Component, createContext, useCallback, useContext, useEffect, useMemo, 
 
 import { SignInContext, type SignInApi } from '../src/auth/SignInContext';
 import { linkGuestSession, setAccountToken } from '../src/lib/api';
+import { runBeforeSignOut } from '../src/lib/signOutHooks';
 
 /** convex/library.ts myRev: the signed-in listener's newest library revision (null signed out). */
 const libraryRevision = makeFunctionReference<'query', Record<string, never>, number | null>('library:myRev');
@@ -67,6 +68,7 @@ function SignInBridge({ children }: { readonly children: ReactNode }) {
   }, [signIn]);
 
   const handleSignOut = useCallback(async () => {
+    await runBeforeSignOut();
     await signOut();
     setAccountToken(null);
     setLinked(false);

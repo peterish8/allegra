@@ -1249,6 +1249,9 @@ body::after,
 .playlist-card-head { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 14px; }
 .playlist-card-actions { display: flex; gap: 4px; }
 
+.playlist-queue-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.playlist-queue-actions > button { flex: 1 1 140px; justify-content: center; }
+
 .playlist-new,
 .playlist-new-inline { display: flex; align-items: center; gap: 8px; }
 .playlist-new input,
@@ -2516,6 +2519,29 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 }
 
 .am-queue-empty svg { flex: 0 0 auto; margin-top: 1px; opacity: 0.7; }
+
+/* Queue editing: the row plays, the two small buttons beside it move it to next or remove it.
+ * They rest hidden under a pointer and show on hover or focus; a touch screen always shows them. */
+.am-queue-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.am-queue-clear {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.am-queue-clear:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.am-queue-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.am-queue-edit { display: flex; gap: 0; padding-right: 2px; opacity: 0; transition: opacity var(--d-fast) var(--ease-standard); }
+.am-queue-edit .am-btn { width: 30px; height: 30px; }
+.am-queue-item:hover .am-queue-edit,
+.am-queue-item:focus-within .am-queue-edit { opacity: 1; }
+@media (hover: none) { .am-queue-edit { opacity: 1; } }
 
 /* ---------- Queue refinement: quiet editorial glass ----------
  * The active song is a state, not a second card. Let the cover palette own a
@@ -7096,6 +7122,18 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   transition: transform var(--d-fast) var(--ease-standard);
 }
 .connect-picker__primary:active { transform: scale(0.98); }
+.connect-picker__link {
+  justify-self: start; min-height: 32px; padding: 0 2px; border: 0; background: transparent;
+  color: var(--ink-soft); font: inherit; font-size: 12px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+.connect-picker__link:hover { color: var(--ink); }
+.connect-picker__link:focus-visible { outline: 2px solid var(--wave); outline-offset: 2px; border-radius: 6px; }
+.connect-picker__rename { display: flex; align-items: center; gap: 10px; }
+.connect-picker__rename input {
+  min-width: 0; flex: 1; height: 36px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06); color: var(--ink); font: inherit; font-size: 13px;
+}
+.connect-picker__rename input:focus { border-color: var(--wave); outline: 0; }
 .connect-picker__error { margin: 0 2px; color: var(--accent-bright); font-size: 12px; line-height: 1.5; }
 
 @media (prefers-reduced-motion: reduce) {

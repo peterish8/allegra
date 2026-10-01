@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ChevronRight, House, Heart as HeartIcon, Moon, Sun, Disc3, Pause, Play, SkipBack, SkipForward, Sparkles, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpToLine, ChevronRight, House, Heart as HeartIcon, Moon, Sun, Disc3, Pause, Play, SkipBack, SkipForward, Sparkles, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -39,6 +39,7 @@ import { useMediaSession } from './hooks/useMediaSession';
 import { useNarrowViewport } from './hooks/useNarrowViewport';
 import { useSettings } from './hooks/useSettings';
 import { PlaylistsContext, usePlaylists } from './hooks/usePlaylists';
+import { QueueActionsContext, type QueueActions } from './hooks/useQueueActions';
 import { collectAlbumTracks } from './lib/album';
 import { tapHaptic } from './lib/haptics';
 import { lockScroll } from './lib/scrollLock';
@@ -243,6 +244,25 @@ export default function App() {
   const changePlayerVolume = (volume: number): void => {
     if (remotePlayback) connect.control({ kind: 'volume', v: volume });
     else audio.setVolume(volume);
+  };
+  // The bar's sliders follow the finger and act on release. Seeking on every step restarted the
+  // stream a hundred times in a drag, and on another device each step is a command whose echo
+  // pulled the thumb back. Volume on this device still changes as it is dragged, to be heard.
+  const [barScrub, setBarScrub] = useState<number | null>(null);
+  const [barVolume, setBarVolume] = useState<number | null>(null);
+  const commitBarScrub = (): void => {
+    if (barScrub === null) return;
+    setBarScrub(null);
+    seekPlayer(barScrub);
+  };
+  const dragBarVolume = (volume: number): void => {
+    if (remotePlayback) setBarVolume(volume);
+    else changePlayerVolume(volume);
+  };
+  const commitBarVolume = (): void => {
+    if (barVolume === null) return;
+    setBarVolume(null);
+    changePlayerVolume(barVolume);
   };
   const togglePlayerShuffle = (): void => {
     if (remotePlayback) connect.control({ kind: 'shuffle', on: !playerShuffle });
@@ -714,6 +734,29 @@ export default function App() {
     () => playingNext.reduce((total, song) => total + song.duration, 0),
     [playingNext]
   );
+  const barTime = barScrub ?? playerTime;
+  // Queue edits happen on the device that plays. On another device a row is named by its place
+  // and its ref, so an edit made while the queue moved still lands on the right song.
+  const queueEditable = remotePlayback ? connectView?.queueEditable ?? false : true;
+  const removeQueued = (index: number): void => {
+    if (!remotePlayback) { audio.replaceUpcoming(playingNext.filter((_, at) => at !== index)); return; }
+    const queued = connectView?.queue[index];
+    if (queued) connect.control({ kind: 'queue_remove', index, ref: queued.ref });
+  };
+  const moveQueuedToNext = (index: number): void => {
+    if (index <= 0) return;
+    if (remotePlayback) {
+      const queued = connectView?.queue[index];
+      if (queued) connect.control({ kind: 'queue_move', from: index, to: 0, ref: queued.ref });
+      return;
+    }
+    const song = playingNext[index];
+    if (song) audio.replaceUpcoming([song, ...playingNext.filter((_, at) => at !== index)]);
+  };
+  const clearQueued = (): void => {
+    if (remotePlayback) connect.control({ kind: 'queue_clear' });
+    else audio.replaceUpcoming([]);
+  };
   // Popular artists: one avatar per lead artist, taken from what is already on screen.
   const knownSongs = useMemo(
     () => [...displaySongs, ...(home?.trending ?? []), ...(home?.madeForYou ?? []), ...(home?.recommended ?? []), ...likedSongs, ...recentlyPlayed],
@@ -965,6 +1008,39 @@ export default function App() {
     if (radio) void fillRadioQueue(catalogSongId(playable));
   };
 
+  // Play next / Add to queue, on whichever device is playing. With nothing playing, the song starts.
+  const queueSong = async (song: UnifiedSong, next: boolean): Promise<void> => {
+    const sent = connect.queueRemote(song, next);
+    if (sent === 'unsupported') {
+      setPersonalActionError('That song can’t be queued on the device that is playing.');
+      return;
+    }
+    tapHaptic();
+    if (sent === 'sent') return;
+    if (!audio.currentSong) {
+      await playSong(song, [song]);
+      return;
+    }
+    let playable = song;
+    if (!playable.streamUrl) {
+      const snapshot = snapshotForSong(playable);
+      const matched = snapshot ? await resolveSnapshotForPlayback(snapshot).catch(() => null) : null;
+      if (!matched) {
+        setPersonalActionError('Couldn’t find this song online, so it can’t play on this device.');
+        return;
+      }
+      playable = matched;
+    }
+    const player = transportRef.current;
+    const at = player.queue.findIndex((item) => item.id === player.currentSong?.id);
+    const rest = (at >= 0 ? player.queue.slice(at + 1) : []).filter((item) => item.id !== playable.id);
+    player.replaceUpcoming(next ? [playable, ...rest] : [...rest, playable]);
+  };
+  // One stable object: every song row reads this context, and the player re-renders several times a second.
+  const queueSongRef = useRef(queueSong);
+  queueSongRef.current = queueSong;
+  const queueActions = useMemo<QueueActions>(() => ({ add: (song, next) => { void queueSongRef.current(song, next); } }), []);
+
   // Keep radio topped up so end-of-track advance always has a distinct next.
   useEffect(() => {
     const song = audio.currentSong;
@@ -1150,6 +1226,7 @@ export default function App() {
     devices: connectView?.devices ?? [],
     ...(connectView?.activeDeviceId ? { activeDeviceId: connectView.activeDeviceId } : {}),
     ...(connectView?.activeDevice ? { activeDeviceName: connectView.activeDevice.name } : {}),
+    activeDeviceOnline: connectView?.activeDeviceOnline ?? true,
     isPlaying: playingElsewhere && connectView ? connectView.isPlaying : audio.isPlaying,
     ...(pickerSong ? { songTitle: pickerSong.title, songArtist: pickerSong.artist } : {}),
     autoplayBlocked: connectView?.autoplayBlocked ?? false,
@@ -1162,11 +1239,13 @@ export default function App() {
       else if (connectView) connect.control({ kind: 'play' });
       else void audio.requestPlayback(true);
     },
-    onVolume: changePlayerVolume
+    onVolume: changePlayerVolume,
+    onRename: connect.rename
   };
 
   return (
     <PlaylistsContext.Provider value={playlists}>
+    <QueueActionsContext.Provider value={queueActions}>
     <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme={theme} data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
       {immersiveOpen ? null : (
         <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={shaderPalette} light={theme === 'light'} />
@@ -1415,7 +1494,7 @@ export default function App() {
                 <span>{[playerSong.artist, playerSong.album].filter(Boolean).join(' \u2014 ')}</span>
               </button>
               <div className="am-scrub">
-                <time>{formatTime(playerTime)}</time>
+                <time>{formatTime(barTime)}</time>
                 <input
                   type="range"
                   className="am-range"
@@ -1423,11 +1502,15 @@ export default function App() {
                   min={0}
                   max={Math.max(playerDuration, 1)}
                   step={0.1}
-                  value={Math.min(playerTime, Math.max(playerDuration, 1))}
-                  style={{ '--fill': `${playerDuration > 0 ? (playerTime / playerDuration) * 100 : 0}%` } as CSSProperties}
-                  onChange={(event) => seekPlayer(Number(event.target.value))}
+                  value={Math.min(barTime, Math.max(playerDuration, 1))}
+                  style={{ '--fill': `${playerDuration > 0 ? (barTime / playerDuration) * 100 : 0}%` } as CSSProperties}
+                  onChange={(event) => setBarScrub(Number(event.target.value))}
+                  onPointerUp={commitBarScrub}
+                  onPointerCancel={() => setBarScrub(null)}
+                  onKeyUp={commitBarScrub}
+                  onBlur={commitBarScrub}
                 />
-                <time>-{formatTime(Math.max(0, playerDuration - playerTime))}</time>
+                <time>-{formatTime(Math.max(0, playerDuration - barTime))}</time>
               </div>
             </div>
             <IconButton icon={HeartIcon} label={likedIds.has(likedKey(playerSong)) ? 'Remove from likes' : 'Add to likes'} active={likedIds.has(likedKey(playerSong))} onClick={() => toggleLike(playerSong)} />
@@ -1442,9 +1525,13 @@ export default function App() {
               min={0}
               max={1}
               step={0.01}
-              value={playerVolume}
-              style={{ '--fill': `${playerVolume * 100}%` } as CSSProperties}
-              onChange={(event) => changePlayerVolume(Number(event.target.value))}
+              value={barVolume ?? playerVolume}
+              style={{ '--fill': `${(barVolume ?? playerVolume) * 100}%` } as CSSProperties}
+              onChange={(event) => dragBarVolume(Number(event.target.value))}
+              onPointerUp={commitBarVolume}
+              onPointerCancel={() => setBarVolume(null)}
+              onKeyUp={commitBarVolume}
+              onBlur={commitBarVolume}
             />
             <ConnectPicker connect={connectPicker} variant="bar" />
             <button type="button" className="am-btn am-btn--lyrics" aria-label="Lyrics" title="Lyrics" onClick={() => setPlayerMode('workspace')}><Waves size={17} aria-hidden="true" /></button>
@@ -1488,9 +1575,14 @@ export default function App() {
                         : `${playingNext.length} ${playingNext.length === 1 ? 'song' : 'songs'} · ${formatTime(playingNextDuration)}`}
                     </span>
                   </div>
-                  <button type="button" className="am-btn am-queue-close" aria-label="Close playing next" onClick={() => setQueueOpen(false)}>
-                    <X size={16} aria-hidden="true" />
-                  </button>
+                  <div className="am-queue-tools">
+                    {queueEditable && playingNext.length > 0 ? (
+                      <button type="button" className="am-queue-clear" onClick={clearQueued}>Clear</button>
+                    ) : null}
+                    <button type="button" className="am-btn am-queue-close" aria-label="Close playing next" onClick={() => setQueueOpen(false)}>
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
 
                 {playerSong ? (
@@ -1517,24 +1609,37 @@ export default function App() {
                       </div>
                     ) : (
                       playingNext.slice(0, 16).map((song, index) => (
-                        <button
-                          key={`${song.id}-${index}`}
-                          type="button"
-                          className="am-queue-row"
-                          aria-label={`Play ${song.title} by ${song.artist}`}
-                          onClick={() => {
-                            void playSong(song, playerQueue);
-                            setQueueOpen(false);
-                          }}
-                        >
-                          <span className="am-queue-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
-                          <Artwork song={song} size="small" />
-                          <span className="am-queue-copy">
-                            <strong>{song.title}</strong>
-                            <small>{song.artist}</small>
-                          </span>
-                          <span className="am-queue-time">{formatTime(song.duration)}</span>
-                        </button>
+                        <div key={`${song.id}-${index}`} className="am-queue-item">
+                          <button
+                            type="button"
+                            className="am-queue-row"
+                            aria-label={`Play ${song.title} by ${song.artist}`}
+                            onClick={() => {
+                              void playSong(song, playerQueue);
+                              setQueueOpen(false);
+                            }}
+                          >
+                            <span className="am-queue-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                            <Artwork song={song} size="small" />
+                            <span className="am-queue-copy">
+                              <strong>{song.title}</strong>
+                              <small>{song.artist}</small>
+                            </span>
+                            <span className="am-queue-time">{formatTime(song.duration)}</span>
+                          </button>
+                          {queueEditable ? (
+                            <span className="am-queue-edit">
+                              {index > 0 ? (
+                                <button type="button" className="am-btn" aria-label={`Play ${song.title} next`} title="Play next" onClick={() => moveQueuedToNext(index)}>
+                                  <ArrowUpToLine size={15} aria-hidden="true" />
+                                </button>
+                              ) : null}
+                              <button type="button" className="am-btn" aria-label={`Remove ${song.title} from the queue`} title="Remove" onClick={() => removeQueued(index)}>
+                                <X size={15} aria-hidden="true" />
+                              </button>
+                            </span>
+                          ) : null}
+                        </div>
                       ))
                     )}
                   </div>
@@ -1602,6 +1707,7 @@ export default function App() {
       />
       <OfflineToast visible={offline} />
     </div>
+    </QueueActionsContext.Provider>
     </PlaylistsContext.Provider>
   );
 }

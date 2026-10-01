@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UnifiedSong } from '@shared/types';
 
 import { resolveApiUrl } from '../lib/api';
+import { withUpcoming } from '../../../../packages/connect/src/index';
 import { songIdentity, uniqueByIdentity } from '../lib/songIdentity';
 import { clamp } from '../lib/utils';
 
@@ -27,6 +28,8 @@ export interface AudioPlayerState {
   readonly loadForConnect: (song: UnifiedSong, queue: UnifiedSong[], play: boolean) => void;
   /** Append similar/radio tracks without interrupting the current song. */
   readonly appendQueue: (songs: readonly UnifiedSong[]) => number;
+  /** Replace what plays after the current song (remove, reorder, play next). The song playing is untouched. */
+  readonly replaceUpcoming: (songs: readonly UnifiedSong[]) => void;
   readonly togglePlayback: () => void;
   readonly requestPlayback: (playing: boolean) => Promise<void>;
   readonly stop: () => void;
@@ -162,6 +165,14 @@ export function useAudioPlayer(): AudioPlayerState {
     queueRef.current = next;
     setQueue(next);
     return added.length;
+  }, []);
+
+  const replaceUpcoming = useCallback((songs: readonly UnifiedSong[]): void => {
+    const current = currentSongRef.current;
+    if (!current) return;
+    const next = withUpcoming(queueRef.current, current, songs);
+    queueRef.current = next;
+    setQueue(next);
   }, []);
 
   const advanceToNext = useCallback((): void => {
@@ -456,6 +467,7 @@ export function useAudioPlayer(): AudioPlayerState {
     selectSong,
     loadForConnect,
     appendQueue,
+    replaceUpcoming,
     togglePlayback: () => void requestPlayback(!isPlayingRef.current),
     requestPlayback,
     stop,

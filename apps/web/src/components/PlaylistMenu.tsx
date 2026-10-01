@@ -1,4 +1,4 @@
-import { Check, ListPlus, Plus, X } from 'lucide-react';
+import { Check, ListEnd, ListPlus, ListStart, Plus, X } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
@@ -6,17 +6,20 @@ import type { UnifiedSong } from '@shared/types';
 
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { usePlaylistsContext } from '../hooks/usePlaylists';
+import { useQueueActions } from '../hooks/useQueueActions';
 import { IconButton, TactileButton } from './ui';
 
 /**
- * A button that opens a small sheet for saving one song into playlists. It is a
- * centred sheet rather than a popover so no list row or scroll container can clip it.
+ * A button that opens a small sheet for one song: queue it (next, or at the end) on the device
+ * that is playing, or save it into playlists. It is a centred sheet rather than a popover so no
+ * list row or scroll container can clip it.
  */
 export function PlaylistMenu({ song }: { readonly song: UnifiedSong }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const { playlists, actionError, contains, create, toggleSong } = usePlaylistsContext();
+  const queue = useQueueActions();
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -52,17 +55,23 @@ export function PlaylistMenu({ song }: { readonly song: UnifiedSong }) {
 
   return (
     <>
-      <IconButton icon={ListPlus} label={`Save ${song.title} to a playlist`} onClick={() => setOpen(true)} />
+      <IconButton icon={ListPlus} label={queue ? `Add ${song.title} to the queue or a playlist` : `Save ${song.title} to a playlist`} onClick={() => setOpen(true)} />
       {open ? (
         <div className="sheet-backdrop" onClick={() => setOpen(false)}>
           <div ref={sheetRef} className="playlist-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(event) => event.stopPropagation()}>
             <div className="playlist-sheet-head">
               <div>
-                <h2 id={titleId}>Save to playlist</h2>
+                <h2 id={titleId}>{queue ? 'Add to queue or playlist' : 'Save to playlist'}</h2>
                 <p title={song.title}>{song.title}</p>
               </div>
               <button ref={closeRef} type="button" className="icon-button" aria-label="Close" onClick={() => setOpen(false)}><X size={18} aria-hidden="true" /></button>
             </div>
+            {queue ? (
+              <div className="playlist-queue-actions">
+                <TactileButton icon={ListStart} onClick={() => { queue.add(song, true); setOpen(false); }}>Play next</TactileButton>
+                <TactileButton icon={ListEnd} onClick={() => { queue.add(song, false); setOpen(false); }}>Add to queue</TactileButton>
+              </div>
+            ) : null}
             {playlists.length > 0 ? (
               <ul className="playlist-choices">
                 {playlists.map((playlist) => {

@@ -25,6 +25,8 @@ export interface ConnectPickerState {
   readonly devices: readonly ConnectDeviceRow[];
   readonly activeDeviceId?: string;
   readonly activeDeviceName?: string;
+  /** False when the device that was playing has dropped off: it can be picked up from, not controlled. */
+  readonly activeDeviceOnline: boolean;
   readonly isPlaying: boolean;
   readonly songTitle?: string;
   readonly songArtist?: string;
@@ -35,6 +37,7 @@ export interface ConnectPickerState {
   readonly onSignIn: () => void;
   readonly onResume: () => void;
   readonly onVolume: (volume: number) => void;
+  readonly onRename: (name: string) => void;
 }
 
 interface ConnectPickerProps {
@@ -69,6 +72,8 @@ export function ConnectPicker({ connect, variant }: ConnectPickerProps) {
   const [anchor, setAnchor] = useState<CSSProperties>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [dragVolume, setDragVolume] = useState<number | null>(null);
   const triggerRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const lastVolumeRef = useRef(connect.volume > 0 ? connect.volume : 1);
@@ -130,13 +135,24 @@ export function ConnectPicker({ connect, variant }: ConnectPickerProps) {
   const devices = [...connect.devices].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   const registered = !local || connect.devices.some((device) => device.deviceId === local);
   const active = connect.devices.find((device) => device.deviceId === connect.activeDeviceId);
-  const volumePercent = Math.round(connect.volume * 100);
-  const VolumeGlyph = connect.volume <= 0 ? VolumeX : connect.volume < 0.5 ? Volume1 : Volume2;
+  // The device that was playing dropped off. Its song can be picked up here, but not controlled there.
+  const activeGone = Boolean(active && active.deviceId !== local && !connect.activeDeviceOnline);
+  const localDevice = connect.devices.find((device) => device.deviceId === local);
+  const shownVolume = dragVolume ?? connect.volume;
+  const volumePercent = Math.round(shownVolume * 100);
+  const VolumeGlyph = shownVolume <= 0 ? VolumeX : shownVolume < 0.5 ? Volume1 : Volume2;
   const shownError = error ?? connect.lastError;
+  // Another device's volume moves once, on release: each step is a command, and its echo pulled
+  // the thumb back mid-drag. This browser's own volume follows the drag so it can be heard.
+  const commitVolume = (): void => {
+    if (dragVolume === null) return;
+    setDragVolume(null);
+    if (remote) connect.onVolume(dragVolume);
+  };
 
   const status = (device: ConnectDeviceRow): string => {
     const isLocal = device.deviceId === local;
-    if (device.deviceId === connect.activeDeviceId) return `${connect.isPlaying ? 'Playing' : 'Paused'}${isLocal ? ' · this browser' : ''}`;
+    if (device.deviceId === connect.activeDeviceId && (isLocal || device.isOnline)) return `${connect.isPlaying ? 'Playing' : 'Paused'}${isLocal ? ' · this browser' : ''}`;
     if (!device.isOnline) return 'Offline';
     if (!device.canPlay) return 'In a Listen Together room';
     return isLocal ? 'This browser' : 'Ready';
@@ -210,7 +226,7 @@ export function ConnectPicker({ connect, variant }: ConnectPickerProps) {
                         <DeviceGlyph kind={active.kind} size={20} />
                       </span>
                       <span className="connect-picker__now-copy">
-                        <small>{connect.isPlaying ? 'Playing on' : 'Paused on'}</small>
+                        <small>{activeGone ? 'Last played on' : connect.isPlaying ? 'Playing on' : 'Paused on'}</small>
                         <strong>{active.deviceId === local ? 'This browser' : active.name}</strong>
                         {connect.songTitle ? <span>{connect.songTitle}{connect.songArtist ? ` · ${connect.songArtist}` : ''}</span> : null}
                       </span>
@@ -219,6 +235,9 @@ export function ConnectPicker({ connect, variant }: ConnectPickerProps) {
                     <p className="connect-picker__hint">Play a song on any signed-in device and it shows up here.</p>
                   )}
 
+                  {activeGone && active ? (
+                    <p className="connect-picker__hint" role="status">{active.name} went offline. Choose this browser to carry on from where it stopped.</p>
+                  ) : null}
                   {connect.otherTab ? <p className="connect-picker__hint" role="status">Allegra is open in another tab. Switch to it to play here.</p> : null}
 
                   <p className="connect-picker__label" id="connect-picker-devices">Devices</p>
@@ -261,13 +280,34 @@ export function ConnectPicker({ connect, variant }: ConnectPickerProps) {
                     <p className="connect-picker__hint">Open Allegra on your phone with the same Google account to see it here.</p>
                   ) : null}
 
-                  {active ? (
+                  {localDevice ? (
+                    renaming ? (
+                      <form
+                        className="connect-picker__rename"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const name = new FormData(event.currentTarget).get('name');
+                          if (typeof name === 'string' && name.trim()) connect.onRename(name);
+                          setRenaming(false);
+                        }}
+                      >
+                        <label className="sr-only" htmlFor="connect-picker-name">Name for this browser</label>
+                        <input id="connect-picker-name" name="name" defaultValue={localDevice.name} maxLength={40} autoComplete="off" autoFocus />
+                        <button type="submit" className="connect-picker__link">Save</button>
+                        <button type="button" className="connect-picker__link" onClick={() => setRenaming(false)}>Cancel</button>
+                      </form>
+                    ) : (
+                      <button type="button" className="connect-picker__link" onClick={() => setRenaming(true)}>Rename this browser</button>
+                    )
+                  ) : null}
+
+                  {active && !activeGone ? (
                     <div className="connect-picker__volume">
                       <button
                         type="button"
                         className="connect-picker__mute"
-                        aria-label={connect.volume <= 0 ? 'Unmute' : 'Mute'}
-                        onClick={() => connect.onVolume(connect.volume <= 0 ? lastVolumeRef.current : 0)}
+                        aria-label={shownVolume <= 0 ? 'Unmute' : 'Mute'}
+                        onClick={() => connect.onVolume(shownVolume <= 0 ? lastVolumeRef.current : 0)}
                       >
                         <VolumeGlyph size={18} aria-hidden="true" />
                       </button>
@@ -278,9 +318,17 @@ export function ConnectPicker({ connect, variant }: ConnectPickerProps) {
                         min={0}
                         max={1}
                         step={0.01}
-                        value={connect.volume}
+                        value={shownVolume}
                         style={{ '--fill': `${volumePercent}%` } as CSSProperties}
-                        onChange={(event) => connect.onVolume(Number(event.currentTarget.value))}
+                        onChange={(event) => {
+                          const next = Number(event.currentTarget.value);
+                          if (remote) setDragVolume(next);
+                          else connect.onVolume(next);
+                        }}
+                        onPointerUp={commitVolume}
+                        onPointerCancel={() => setDragVolume(null)}
+                        onKeyUp={commitVolume}
+                        onBlur={commitVolume}
                       />
                       <output className="connect-picker__percent" aria-hidden="true">{volumePercent}%</output>
                     </div>
