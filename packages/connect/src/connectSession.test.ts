@@ -694,3 +694,27 @@ test('a transfer nobody picks up still fails at the pick-up window', async () =>
   if (!result.ok) assert.equal(result.reason, 'timeout');
   sessionA.dispose();
 });
+
+test('pulling playback from an owner that stopped listening fails in seconds, not at the deadline', async () => {
+  // 2026-10-01: Chrome owned playback but had left Connect (a lock bug), so the phone's
+  // "play here" waited the full 60 s for a release that could not come.
+  const { clock, playerB, sessionA, sessionB } = await sessionPair();
+  sessionA.dispose();
+
+  const transfer = sessionB.transferTo('phone-b');
+  await settle();
+  clock.advance(5_000);
+  await settle();
+  let settled = false;
+  void transfer.then(() => { settled = true; });
+  await settle();
+  assert.equal(settled, false);
+
+  clock.advance(11_000);
+  const result = await transfer;
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.code, 'owner_unreachable');
+  assert.equal(playerB.getSnapshot().isPlaying, false);
+  assert.equal(sessionB.view().activeDeviceId, 'web-a');
+  sessionB.dispose();
+});

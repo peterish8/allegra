@@ -4,16 +4,22 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { PlayerSheet, SheetScrollView } from '../player/PlayerSheet';
 import { useConnect } from '../../services/connect/ConnectProvider';
+import type { TransferResult } from '../../../../../packages/connect/src/index';
 import { useAccount } from '../../services/account/AccountProvider';
 import { signInMessage } from '../../services/account/signInFlow';
 import * as Haptics from '../../utils/haptics';
 
-const transferError = (reason: string | undefined, targetName: string): string => {
-  switch (reason) {
+type TransferFailure = Partial<Pick<Extract<TransferResult, { ok: false }>, 'reason' | 'code' | 'error'>>;
+
+const transferError = (result: TransferFailure, targetName: string, ownerName: string | undefined): string => {
+  if (result.code === 'owner_unreachable') {
+    return `${ownerName ?? 'The device that was playing'} didn't respond. Open Allegra on it and try again.`;
+  }
+  switch (result.reason) {
     case 'not_found': return `Couldn't find this song online, so it can't play on ${targetName}.`;
     case 'timeout': return `${targetName} isn't reachable. Open Allegra on it and try again.`;
     case 'offline': return 'Allegra could not be reached. Check your connection and try again.';
-    default: return 'Playback could not be moved. Try again in a moment.';
+    default: return result.error ?? 'Playback could not be moved. Try again in a moment.';
   }
 };
 
@@ -34,20 +40,24 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
   };
 
   const transfer = async (targetDeviceId: string): Promise<void> => {
-    if (!connect.view || busyDevice) return;
-    if (targetDeviceId === connect.view.activeDeviceId) {
+    const current = connect.view;
+    if (!current || busyDevice) return;
+    if (targetDeviceId === current.activeDeviceId) {
       onClose();
       return;
     }
     Haptics.selectionAsync().catch(() => undefined);
     setBusyDevice(targetDeviceId);
     setMessage(null);
+    const targetName = current.devices.find(device => device.deviceId === targetDeviceId)?.name ?? 'that device';
+    // Who was playing when the move started: the one that did not answer, if it fails.
+    const ownerName = current.activeDevice?.name;
     try {
       const result = await connect.transferTo(targetDeviceId);
       if (result.ok) onClose();
-      else setMessage(transferError('reason' in result ? result.reason : undefined, view.devices.find(device => device.deviceId === targetDeviceId)?.name ?? 'that device'));
+      else setMessage(transferError('reason' in result ? result : {}, targetName, ownerName));
     } catch {
-      setMessage(transferError(undefined, view.devices.find(device => device.deviceId === targetDeviceId)?.name ?? 'that device'));
+      setMessage(transferError({ reason: 'failed' }, targetName, ownerName));
     } finally {
       setBusyDevice(null);
     }

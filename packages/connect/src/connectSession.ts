@@ -20,6 +20,8 @@ const LISTEN_RETRY_MAX_MS = 30_000;
 const INPUT_FEEDBACK_MS = 4_000;
 /** Past the server deadline, how long to wait for the failure the deadline job writes. */
 const DEADLINE_GRACE_MS = 2_000;
+/** How long a transfer's destination waits for the playing device to pause and release. */
+const RELEASE_WAIT_MS = 15_000;
 const REPORT_DRIFT_MS = 5_000;
 const QUEUE_CAPACITY = 32;
 const EMPTY_PLAYER: PlayerSnapshot = { queue: [], isPlaying: false, positionSec: 0, volume: 1, shuffle: false, repeat: 'off' };
@@ -736,7 +738,9 @@ export function createConnectSession({ transport, player, device, clock, trace }
     if (loaded !== 'ok') { await complete(item, token, { ok: false, code: loaded }); return; }
     const prepared = await sample('prepare', () => transport.prepare(device.deviceId, item.id, token));
     if (prepared.status === 'awaiting_release') {
-      const released = await waitForRelease(item.id, deadline);
+      // A listening owner pauses and releases within a few seconds. One that has not by now is not
+      // listening, and the listener should hear that, not wait out the whole load deadline.
+      const released = await waitForRelease(item.id, Math.min(deadline, sampledClock.now() + RELEASE_WAIT_MS));
       if (!released) { await complete(item, token, { ok: false, code: 'owner_unreachable' }); return; }
       await activateTransfer(item, token, released.positionSec, released.resume);
       return;
