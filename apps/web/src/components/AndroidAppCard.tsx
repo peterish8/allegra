@@ -1,4 +1,7 @@
 import { ArrowRight, Download, Heart, MonitorSmartphone, Mic2, Pause, SkipBack, SkipForward } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
+import { detectBrowserName } from '../lib/browserName';
 
 /** The newest phone build. CI replaces this release's file on every push to main. */
 const ANDROID_APK_URL = 'https://github.com/peterish8/allegra/releases/download/apk-latest/LuvLyrics.apk';
@@ -21,6 +24,15 @@ const STEPS = [
  * what it adds, and the three steps to install an APK. The app installs as "LuvLyrics".
  */
 export function AndroidAppCard() {
+  // The server cannot know the visitor's browser, so the first paint is neutral and the name
+  // is filled in once this runs in the browser.
+  const [browser, setBrowser] = useState('Your browser');
+  useEffect(() => {
+    let current = true;
+    void detectBrowserName().then((name) => { if (current) setBrowser(name); });
+    return () => { current = false; };
+  }, []);
+
   return (
     <div className="apk-card">
       <div className="apk-card__stage" aria-hidden="true">
@@ -59,7 +71,7 @@ export function AndroidAppCard() {
         </span>
         <span className="apk-card__chip">
           <span className="apk-card__eq"><i /><i /><i /><i /></span>
-          Chrome <ArrowRight size={12} strokeWidth={2.4} /> this phone
+          {browser} <ArrowRight size={12} strokeWidth={2.4} /> this phone
         </span>
         <span className="apk-card__badge">Android</span>
       </div>

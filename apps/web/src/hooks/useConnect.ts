@@ -34,6 +34,7 @@ import type { AudioPlayerState } from './useAudioPlayer';
 import { exactSaavnMatch, type LibrarySong } from '../lib/libraryRows';
 import { fetchSongsByIds, resolveApiUrl, searchSongs } from '../lib/api';
 import { accountIdFromToken, deviceIdForAccount } from '../lib/connectDeviceId';
+import { browserNameFrom } from '../lib/browserName';
 import { onBeforeSignOut } from '../lib/signOutHooks';
 
 function createWebConnectTransport(client: ConvexReactClient, trace?: DevelopmentTraceBuffer): ConnectTransport {
@@ -123,8 +124,7 @@ function browserDeviceName(): string {
   } catch { /* storage unavailable: the made-up name will do */ }
   const ua = navigator.userAgent;
   const os = /Windows/i.test(ua) ? 'Windows' : /Mac OS/i.test(ua) ? 'Mac' : /Android/i.test(ua) ? 'Android' : /iPhone|iPad/i.test(ua) ? 'iPhone' : 'Device';
-  const browser = /Edg\//i.test(ua) ? 'Edge' : /Chrome\//i.test(ua) ? 'Chrome' : /Firefox\//i.test(ua) ? 'Firefox' : /Safari\//i.test(ua) ? 'Safari' : 'Browser';
-  return `${browser} on ${os}`;
+  return `${browserNameFrom(ua)} on ${os}`;
 }
 
 /** Half a second of silence as a WAV: something for the first tap to play (see the unlock effect). */
