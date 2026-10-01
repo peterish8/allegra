@@ -11,10 +11,44 @@ export const LATEST_APK_URL = 'https://github.com/peterish8/allegra/releases/dow
 export interface LatestBuild {
   publishedAt: Date;
   downloadUrl: string;
+  /** The commit CI built it from (the release targets it). Null on older releases. */
+  commit: string | null;
 }
+
+/** The APK on this phone. CI stamps both (mobile-apk.yml); a local build has neither. */
+export interface InstalledBuild {
+  readonly commit: string | null;
+  readonly builtAt: Date | null;
+}
+
+const asDate = (value: string | undefined): Date | null => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const INSTALLED_BUILD: InstalledBuild = {
+  commit: process.env.EXPO_PUBLIC_BUILD_COMMIT || null,
+  builtAt: asDate(process.env.EXPO_PUBLIC_BUILD_TIME),
+};
+
+/**
+ * Pure: what the latest release is to this phone. Every build is versionCode 1, so Android
+ * installs an older build over a newer one without a word; this is the only guard.
+ * - `current`: the release is the build already installed.
+ * - `older`: it was published before this APK was built (a feature-branch build, say), so it
+ *   cannot be newer. CI publishes a main build minutes after building it.
+ * - `update`: newer, or nothing is known about this build (a local build).
+ */
+export const standingOf = (release: LatestBuild, installed: InstalledBuild): 'current' | 'older' | 'update' => {
+  if (release.commit && installed.commit && release.commit === installed.commit) return 'current';
+  if (installed.builtAt && release.publishedAt.getTime() <= installed.builtAt.getTime()) return 'older';
+  return 'update';
+};
 
 interface ReleaseJson {
   published_at?: string;
+  target_commitish?: string;
   assets?: { name?: string; browser_download_url?: string }[];
 }
 
@@ -24,7 +58,8 @@ export const parseRelease = (json: ReleaseJson | null | undefined): LatestBuild 
   const publishedAt = new Date(json.published_at);
   if (Number.isNaN(publishedAt.getTime())) return null;
   const apk = json.assets?.find(a => a.name?.toLowerCase().endsWith('.apk') && a.browser_download_url);
-  return { publishedAt, downloadUrl: apk?.browser_download_url ?? LATEST_APK_URL };
+  const commit = json.target_commitish && /^[0-9a-f]{40}$/i.test(json.target_commitish) ? json.target_commitish.toLowerCase() : null;
+  return { publishedAt, downloadUrl: apk?.browser_download_url ?? LATEST_APK_URL, commit };
 };
 
 /** "today", "yesterday", "3 days ago", or the date. */

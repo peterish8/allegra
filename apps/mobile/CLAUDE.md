@@ -12,6 +12,10 @@
   native `AppUpdaterModule` and `AppUpdateWorker` persist downloads in WorkManager, validate the
   app package/signing key, and open Android's installer through the scoped update FileProvider.
   Android requires the listener's install permission and confirmation. The updater never opens Chrome.
+  Every build is versionCode 1, so Android installs an older APK over a newer one silently: CI stamps
+  `EXPO_PUBLIC_BUILD_COMMIT`/`EXPO_PUBLIC_BUILD_TIME`, and `standingOf` offers the `apk-latest`
+  release only when it is newer (never this build again, never an older main build over a feature build).
+  Feature-branch APKs are downloaded by hand from the Actions run; only `main` publishes `apk-latest`.
 - Connect and library sync with Allegra web: `../../.planning/connect-and-sync/PLAN.md`.
 
 ## Commit style

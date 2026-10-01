@@ -86,10 +86,15 @@ jobs:
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
           EXPO_PUBLIC_GENIUS_ACCESS_TOKEN: ${{ secrets.EXPO_PUBLIC_GENIUS_ACCESS_TOKEN }}
+          # The in-app updater (services/appUpdate.ts) compares these with the apk-latest
+          # release, so it never offers this build again or an older one. Every build is
+          # versionCode 1, and Android would install an older APK over a newer one.
+          EXPO_PUBLIC_BUILD_COMMIT: ${{ github.sha }}
         # gradlew was committed without the executable bit. gradle.properties caps
         # the JVM at 2 GB, which leaves R8 thrashing; runners have 16 GB. arm64
         # only: the 32-bit copy of every native library added 23.5 MB.
         run: |
+          export EXPO_PUBLIC_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon \
             -PreactNativeArchitectures=arm64-v8a \

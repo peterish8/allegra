@@ -3,7 +3,7 @@ import { ActivityIndicator, AppState, Linking, StyleSheet, Text } from 'react-na
 import { Ionicons } from '@expo/vector-icons';
 import { Tactile } from '../allegra/motion';
 import { Radius, Signal } from '../../constants/allegraTheme';
-import { fetchLatestBuild, LatestBuild, LATEST_APK_URL, releasedAgo, RELEASES_URL } from '../../services/appUpdate';
+import { fetchLatestBuild, INSTALLED_BUILD, LatestBuild, LATEST_APK_URL, releasedAgo, RELEASES_URL, standingOf } from '../../services/appUpdate';
 import { canInstallUpdate, downloadUpdate, DownloadStatus, installUpdate, supportsAppUpdates, updateDownloadStatus } from '../../services/appUpdateDownload';
 import appConfig from '../../../app.json';
 
@@ -93,26 +93,33 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
     } finally { downloadBusy.current = false; }
   };
   const ready = status.kind === 'ready';
+  // Never offer the release when it is this build or older than it: every build is versionCode 1,
+  // so Android would install an older one over this without a word.
+  const standing = build ? standingOf(build, INSTALLED_BUILD) : null;
+  const canDownload = status.kind === 'error' || (checked && (standing === null || standing === 'update'));
+  const installedLabel = `${appConfig.expo.version}${INSTALLED_BUILD.commit ? ` (build ${INSTALLED_BUILD.commit.slice(0, 7)})` : ''}`;
   const text = downloading ? `Downloading update · ${status.progress}%`
-    : ready ? 'Install update' : checked || status.kind === 'error' ? 'Download update' : 'Check for updates';
+    : ready ? 'Install update' : canDownload ? 'Download update' : checked ? 'Check again' : 'Check for updates';
 
   return <>
     <Text style={styles.title}>Updates</Text>
     <Text style={styles.body}>
       {downloading ? 'Your update is downloading here. You can keep listening or leave the app.'
         : ready ? 'The update is ready. Android will ask you to confirm installation. Your library stays.'
-          : build ? `The latest build came out ${releasedAgo(build.publishedAt)}. Download it here and we will open the installer when it is ready.`
-            : checked ? 'Could not check the release. You can retry or download from the latest build link.'
-              : `You are on ${appConfig.expo.version}. Check for the latest LuvLyrics build.`}
+          : build && standing === 'current' ? `You're on the latest build, ${installedLabel}.`
+            : build && standing === 'older' ? `This phone has a newer build (${installedLabel}) than the latest release, which came out ${releasedAgo(build.publishedAt)}. Nothing to download.`
+              : build ? `The latest build came out ${releasedAgo(build.publishedAt)}. Download it here and we will open the installer when it is ready.`
+                : checked ? 'Could not check the release. You can retry or download from the latest build link.'
+                  : `You are on ${installedLabel}. Check for the latest LuvLyrics build.`}
     </Text>
     {notice || status.kind === 'error' ? <Text style={styles.notice} accessibilityLiveRegion="polite">{notice || status.message}</Text> : null}
     {supportsAppUpdates ? <Tactile
-      onPress={ready ? install : checked || status.kind === 'error' ? download : check}
+      onPress={ready ? install : canDownload ? download : check}
       disabled={checking || downloading || installing}
       accessibilityRole="button" accessibilityLabel={checking ? 'Checking for updates' : text}
       style={[styles.button, (checking || downloading || installing) && styles.dim]} pressScale={0.95}
     >
-      {checking || downloading || installing ? <ActivityIndicator size="small" color={Signal.waveInk} /> : <Ionicons name={ready ? 'phone-portrait-outline' : checked ? 'arrow-down' : 'refresh'} size={16} color={Signal.waveInk} />}
+      {checking || downloading || installing ? <ActivityIndicator size="small" color={Signal.waveInk} /> : <Ionicons name={ready ? 'phone-portrait-outline' : canDownload ? 'arrow-down' : 'refresh'} size={16} color={Signal.waveInk} />}
       <Text style={styles.buttonText}>{checking ? 'Checking' : text}</Text>
     </Tactile> : <Text style={styles.body}>Installable updates are available in the Android app.</Text>}
     <Text style={styles.link} accessibilityRole="link" onPress={() => { Linking.openURL(RELEASES_URL).catch(() => setNotice('Could not open the release notes.')); }}>Latest release notes ↗</Text>
