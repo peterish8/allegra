@@ -126,6 +126,8 @@ jobs:
       - name: Publish to the apk-latest release
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job has no checkout, so gh cannot read the repository from git.
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release delete apk-latest --yes --cleanup-tag || true
           gh release create apk-latest LuvLyrics.apk \
