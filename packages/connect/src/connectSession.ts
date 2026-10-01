@@ -32,6 +32,8 @@ interface Intent extends QueuedIntent {
   readonly requestId: string;
   readonly transfer: boolean;
   readonly startedAt: number;
+  /** When it was transmitted. The pick-up window runs from here: an input can wait its turn for longer. */
+  sentAt?: number;
   readonly startedMono?: number;
   feedbackTimedOut?: boolean;
   /** Local time the server's deadline for this command passes, from the send receipt. */
@@ -190,11 +192,21 @@ export function createConnectSession({ transport, player, device: initialDevice,
 
   function livePosition(): number {
     if (isActive()) return localPosition();
-    if (optimistic && clock.now() < optimistic.expiresAt) {
-      const command = optimistic.intent.command;
-      if (command.kind === 'seek') return clamp(command.sec, view().song?.duration ?? 0);
-    }
+    // Where you last scrubbed to, until the playing device says where it really is. That covers
+    // the seek being sent and any behind it, so the scrubber does not snap back while they wait.
+    const scrubbed = lastSeekInput();
+    if (scrubbed) return clamp(scrubbed.sec, snapshot?.state?.song?.duration ?? 0);
     return remotePosition();
+  }
+
+  /** The newest seek this device has sent or is about to, while it is still outstanding. */
+  function lastSeekInput(): Extract<RemoteCommand, { kind: 'seek' }> | undefined {
+    const waiting = [...(pending ? [pending] : []), ...queue.items()];
+    for (let index = waiting.length - 1; index >= 0; index--) {
+      const command = waiting[index]?.command;
+      if (command?.kind === 'seek') return command;
+    }
+    return undefined;
   }
 
   function view(): ConnectView {
@@ -240,7 +252,13 @@ export function createConnectSession({ transport, player, device: initialDevice,
     };
   }
 
-  function notify(): void { if (!disposed) for (const listener of [...subscribers]) listener(view()); }
+  // A subscriber that throws must not stop what called notify: that is often a command about to be sent.
+  function notify(): void {
+    if (disposed) return;
+    for (const listener of [...subscribers]) {
+      try { listener(view()); } catch { /* a screen's bug is not a playback failure */ }
+    }
+  }
   function wakeSnapshotWaiters(): void { for (const wake of [...snapshotWaiters]) wake(); snapshotWaiters.clear(); }
 
   function shouldListen(): boolean { return !disposed && (visible || local.isPlaying || isActive()); }
@@ -484,9 +502,10 @@ export function createConnectSession({ transport, player, device: initialDevice,
     pending = intent;
     pendingCommandId = undefined;
     retryCount = 0;
-    optimistic = intent.transfer ? undefined : { intent, expiresAt: intent.startedAt + INPUT_FEEDBACK_MS };
+    intent.sentAt = clock.now();
+    optimistic = intent.transfer ? undefined : { intent, expiresAt: intent.sentAt + INPUT_FEEDBACK_MS };
     emit({ event: 'input.started', operation: intent.transfer ? 'transfer' : 'control', requestId: intent.requestId, kind: intent.command.kind, count: 1 });
-    feedbackTimer = schedule(() => { feedbackTimer = undefined; finishFeedback(intent); }, Math.max(0, intent.startedAt + INPUT_FEEDBACK_MS - clock.now()), 'command_timeout');
+    feedbackTimer = schedule(() => { feedbackTimer = undefined; finishFeedback(intent); }, INPUT_FEEDBACK_MS, 'command_timeout');
     notify();
     transmit(intent);
   }
@@ -509,7 +528,7 @@ export function createConnectSession({ transport, player, device: initialDevice,
         pending = undefined; pendingCommandId = undefined; optimistic = undefined; clearTimer(feedbackTimer); feedbackTimer = undefined;
         setError(error, 'Playback moved to another device.'); intent.resolveTransfer?.(failureResult(error)); pump(); return;
       }
-      if (isUncertainFailure(error) && clock.now() - intent.startedAt < 60_000) {
+      if (isUncertainFailure(error) && clock.now() - (intent.sentAt ?? intent.startedAt) < 60_000) {
         retryCount++;
         const delay = Math.min(4_000, 250 * (2 ** Math.min(retryCount, 4)));
         retryTimer = schedule(() => { retryTimer = undefined; void transmit(intent); }, delay, 'send_retry');

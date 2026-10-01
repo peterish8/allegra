@@ -946,3 +946,66 @@ test('renaming a device registers the new name for the others', async () => {
   sessionA.dispose();
   sessionB.dispose();
 });
+
+test('scrubbing on a slow link: a queued seek is not blamed for the wait, and the view keeps where you scrubbed', async () => {
+  // 2026-10-01: dragging the laptop's slider while the phone played ended in "Couldn't send that
+  // to SM-M315F". The 4 s window ran from when a seek was made, so one queued behind a slow
+  // predecessor was already out of time when it was first sent.
+  const { clock, transport, playerA, sessionA, sessionB } = await sessionPair();
+  const errors: string[] = [];
+  sessionB.subscribe((view) => { if (view.lastError) errors.push(view.lastError); });
+
+  transport.delayNext('begin', 60); // the phone is slow to pick the first seek up
+  sessionB.control({ kind: 'seek', sec: 60 });
+  await settle();
+  sessionB.control({ kind: 'seek', sec: 120 });
+  clock.advance(4_500);
+  await settle();
+
+  // The first seek honestly timed out; the second has not been sent, so nothing is said about it
+  // and the scrubber stays where it was dragged.
+  assert.equal(errors.some((text) => /Couldn't send/.test(text)), false);
+  assert.equal(Math.round(sessionB.view().livePosition), 120);
+
+  await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  await settle();
+  assert.equal(errors.some((text) => /Couldn't send/.test(text)), false);
+  assert.equal(Math.round(playerA.getSnapshot().positionSec), 120);
+  assert.equal(sessionB.view().lastError, undefined);
+  assert.equal(sessionB.view().pendingCommand, undefined);
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('a seek made on another device moves the playing device and is shown at once', async () => {
+  // No test covered this: the optimistic position called view(), which called it back, and the
+  // seek was never sent.
+  const { playerA, sessionA, sessionB } = await sessionPair();
+  const shown: number[] = [];
+  sessionB.subscribe((view) => shown.push(Math.round(view.livePosition)));
+
+  sessionB.control({ kind: 'seek', sec: 150 });
+  assert.equal(Math.round(sessionB.view().livePosition), 150);
+  await settle();
+
+  assert.equal(Math.round(playerA.getSnapshot().positionSec), 150);
+  assert.equal(sessionB.view().lastError, undefined);
+  assert.equal(sessionB.view().pendingCommand, undefined);
+  assert.equal(shown.includes(150), true);
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('a subscriber that throws cannot stop a command from being sent', async () => {
+  const { playerA, sessionA, sessionB } = await sessionPair();
+  let calls = 0;
+  // subscribe() calls once at once; the screen breaks on every update after that.
+  sessionB.subscribe(() => { if (++calls > 1) throw new Error('a screen bug'); });
+
+  sessionB.control({ kind: 'seek', sec: 90 });
+  await settle();
+
+  assert.equal(Math.round(playerA.getSnapshot().positionSec), 90);
+  sessionA.dispose();
+  sessionB.dispose();
+});
