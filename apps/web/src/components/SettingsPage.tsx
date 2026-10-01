@@ -1,4 +1,5 @@
 import {
+  Download,
   Guitar,
   Info,
   Keyboard,
@@ -8,6 +9,7 @@ import {
   RotateCcw,
   Settings as SettingsIcon,
   ShieldCheck,
+  Smartphone,
   Trash2,
   Type,
   UserRound
@@ -22,6 +24,10 @@ import { DEFAULT_KARAOKE_MIX, type KaraokeMix } from '../lib/karaokeMix';
 import { clearRoformerCache, detectLiveKaraokeCapabilities, roformerCacheBytes, type LiveKaraokeBackend } from '../lib/liveKaraoke';
 import { resetSettings, type KaraokeMode, type LyricsSize, type ThemePreference } from '../lib/settings';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
+
+/** The newest phone build. CI replaces this release's file on every push to main. */
+const ANDROID_APK_URL = 'https://github.com/peterish8/allegra/releases/download/apk-latest/LuvLyrics.apk';
+const ANDROID_RELEASES_URL = 'https://github.com/peterish8/allegra/releases/tag/apk-latest';
 
 interface SettingsPageProps {
   /** Null while the account is still loading. */
@@ -213,6 +219,7 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
           ['settings-karaoke', 'Karaoke'],
           ['settings-appearance', 'Appearance'],
           ['settings-account', 'Account & privacy'],
+          ['settings-android', 'Android app'],
           ['settings-about', 'About']
         ].map(([id, label]) => (
           <a key={id} href={`#${id}`} className="settings-jump__link" onClick={(event) => {
@@ -351,6 +358,26 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
           onChange={(analytics) => update({ analytics })}
         />
         <Row label="Where settings live" hint="Everything on this page is saved in this browser only. Clearing site data resets it." />
+      </Section>
+
+      <Section id="settings-android" icon={<Smartphone size={18} />} title="Android app" lead="Allegra on your phone, with the same account.">
+        <Row
+          label="Download for Android (APK)"
+          hint="This is an APK, an installer for Android phones only. It does not run on iPhone or on this computer. Open this page on your phone, tap Download, then open the file to install. Android may ask you to allow installs from your browser first. Sign in with the same Google account to use Connect and your library."
+        >
+          <a
+            className="tactile-control btn-primary inline-flex items-center justify-center gap-2 min-h-11 px-4 rounded-pill font-medium text-sm whitespace-nowrap no-underline"
+            href={ANDROID_APK_URL}
+            download="LuvLyrics.apk"
+            rel="noopener"
+          >
+            <Download size={16} strokeWidth={1.8} aria-hidden="true" />
+            <span>Download APK</span>
+          </a>
+        </Row>
+        <Row label="Other versions" hint="Older builds and release notes are on GitHub.">
+          <a className="settings-link" href={ANDROID_RELEASES_URL} target="_blank" rel="noopener noreferrer">View releases</a>
+        </Row>
       </Section>
 
       <Section id="settings-about" icon={<Info size={18} />} title="About" lead="Version, shortcuts and credits.">

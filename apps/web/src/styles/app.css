@@ -6644,6 +6644,9 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .settings-row__label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-size: 14px; font-weight: 600; }
 .settings-row__hint { max-width: 58ch; color: var(--ink-muted); font-size: 12.5px; line-height: 1.45; }
 .settings-row__control { display: flex; flex: none; align-items: center; }
+.settings-link { color: var(--ink-soft); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.settings-link:hover { color: var(--ink); }
+.settings-link:focus-visible { outline: 2px solid var(--wave); outline-offset: 3px; border-radius: 6px; }
 
 /* Switch: the thumb slides with transform only. */
 .settings-switch {
