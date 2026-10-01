@@ -37,6 +37,7 @@ import DynamicAura from '../components/allegra/DynamicAura';
 import { AuraMood } from '../components/allegra/MusicFlowField';
 import { RiseIn, Tactile } from '../components/allegra/motion';
 import AboutSheet from '../components/about/AboutSheet';
+import { ConnectDropdown } from '../components/connect/ConnectDropdown';
 import { PrimaryButton, SectionHeading } from '../components/allegra/home';
 import { CoverShelf, GUTTER, MoodChips, QuickPicks, ShortcutGrid, SongRow, TrackItem } from '../components/stream/StreamHome';
 import { ShimmerBlock } from '../components/stream/StreamItems';
@@ -540,6 +541,8 @@ const StreamScreen: React.FC = () => {
       >
         <View style={styles.header}>
           <Text style={styles.title} accessibilityRole="header">Stream</Text>
+          <View style={styles.headerActions}>
+          <ConnectDropdown />
           <Tactile
             onPress={() => { Haptics.selectionAsync().catch(() => {}); setAboutOpen(true); }}
             hitSlop={8}
@@ -550,6 +553,7 @@ const StreamScreen: React.FC = () => {
           >
             <Image source={require('../../assets/luvlyrics-logo-white-mark.png')} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityIgnoresInvertColors />
           </Tactile>
+          </View>
         </View>
 
         <View style={styles.search}>
@@ -595,6 +599,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bg },
   content: {},
   header: { height: HEADER_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: GUTTER },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   aboutBtn: {
     width: 40,
     height: 40,

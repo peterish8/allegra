@@ -79,16 +79,35 @@ export class AuthService {
     if (!caller) return null;
     if (caller.source === 'guest') return caller;
 
-    const existing = await this.getUser(caller.userId);
-    if (!existing) {
-      const identity = (await this.directory?.identity(caller.userId).catch(() => null)) ?? null;
-      await this.persist({
-        ...emptyProfile(caller.userId, false),
-        ...(identity?.email ? { email: identity.email } : {}),
-        ...(identity?.displayName ? { displayName: identity.displayName.slice(0, 60) } : {})
-      });
-    }
+    if (!(await this.getUser(caller.userId))) await this.createAccountProfile(caller.userId);
     return caller;
+  }
+
+  /**
+   * The caller's profile from their bearer token, in one profile read: what every route that
+   * needs the listener's data asks for. Creates the profile the first time a Google account
+   * signs in, exactly as `resolveCaller` does. Null when the token is not ours, or a guest
+   * token's profile is gone.
+   *
+   * Hand the result to `updateProfile` as its `base` and a request that writes reads once too.
+   */
+  public async resolveUser(token: string): Promise<UserData | null> {
+    const caller = await this.verifier.verify(token);
+    if (!caller) return null;
+    const existing = await this.getUser(caller.userId);
+    if (existing || caller.source === 'guest') return existing;
+    return this.createAccountProfile(caller.userId);
+  }
+
+  private async createAccountProfile(userId: string): Promise<UserData> {
+    const identity = (await this.directory?.identity(userId).catch(() => null)) ?? null;
+    const profile: UserData = {
+      ...emptyProfile(userId, false),
+      ...(identity?.email ? { email: identity.email } : {}),
+      ...(identity?.displayName ? { displayName: identity.displayName.slice(0, 60) } : {})
+    };
+    await this.persist(profile);
+    return profile;
   }
 
   /**
@@ -124,10 +143,13 @@ export class AuthService {
    * Changes a profile atomically (UserStore.update): `change` gets the newest copy and may run
    * more than once, so look things up before calling this. Resolves to the saved profile, or
    * null when there is none.
+   *
+   * `base` is the profile this request already read (`resolveUser`, `getUser`): the change starts
+   * from it instead of reading again, and is re-applied to a fresh read if it was out of date.
    */
-  public async updateProfile(userId: string, change: ProfileChange): Promise<UserData | null> {
+  public async updateProfile(userId: string, change: ProfileChange, base?: UserData): Promise<UserData | null> {
     try {
-      return await this.store.update(userId, change);
+      return await this.store.update(userId, change, base);
     } catch {
       throw new PersistenceError();
     }

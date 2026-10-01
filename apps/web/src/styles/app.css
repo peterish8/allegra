@@ -4885,7 +4885,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   background: rgba(255, 255, 255, 0.07);
 }
 .listening-world .np-actions .tactile-icon-control,
-.listening-world .np-actions button {
+.listening-world .np-actions > button {
   width: 44px;
   height: 44px;
   border: 0;
@@ -4894,7 +4894,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   color: #fff;
 }
 .listening-world .np-actions .tactile-icon-control:hover,
-.listening-world .np-actions button:hover { background: rgba(255, 255, 255, 0.16); }
+.listening-world .np-actions > button:hover { background: rgba(255, 255, 255, 0.16); }
 .listening-world .np-actions .tactile-icon-control.text-accent-deep { color: var(--wave, #d9e66a); }
 .listening-world .np-actions svg { width: 20px; height: 20px; filter: none; }
 
@@ -4933,7 +4933,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 .listening-world .np-actions svg { filter: var(--np-lift); }
 .listening-world .np-actions .tactile-icon-control,
-.listening-world .np-actions button { width: 44px; height: 44px; }
+.listening-world .np-actions > button { width: 44px; height: 44px; }
 
 /* Player icons (the skips and the actions beside them) hover as light, not as a disc: the glyph
  * brightens and lifts, and a halo in its own shape and colour rises around it. The halo is the
@@ -6956,3 +6956,59 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .listening-world { background-color: #000; }
 .listening-world__atmosphere { transition: opacity var(--d-slow) var(--ease-standard); }
 .listening-world.is-black .listening-world__atmosphere { opacity: 0; }
+
+/* Connect follows the current player cascade, outside the legacy layer. */
+.connect-control-wrap { position: relative; display: inline-flex; align-items: center; }
+.connect-device-picker {
+  position: absolute;
+  z-index: 80;
+  right: 0;
+  bottom: calc(100% + 12px);
+  width: min(330px, calc(100vw - 32px));
+  max-height: min(480px, calc(100dvh - 48px));
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.03)), rgba(16,16,20,.72);
+  color: #f7f7f4;
+  box-shadow: 0 18px 50px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.14);
+  -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(180%);
+  backdrop-filter: blur(var(--blur-lg)) saturate(180%);
+  text-align: left;
+}
+.connect-device-picker__heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-bottom: 10px; font-size: 14px; }
+.connect-device-picker__heading button { display: grid; place-items: center; flex: 0 0 auto; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .08); color: inherit; font-size: 22px; line-height: 1; cursor: pointer; }
+.connect-device-picker ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.connect-device-picker li > button { display: flex; width: 100%; min-height: 60px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid transparent; border-radius: 12px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.connect-device-picker li > button:hover, .connect-device-picker li > button[aria-current="true"] { border-color: rgba(217, 230, 106, .34); background: rgba(217, 230, 106, .1); }
+.connect-device-picker li > button:disabled { cursor: not-allowed; opacity: .48; }
+.connect-device-picker .connect-device-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.connect-device-picker .connect-device-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connect-device-picker li strong { font-size: 13px; font-weight: 600; }
+.connect-device-picker li small { color: rgba(255, 255, 255, .64); font-size: 11px; }
+.connect-device-active { color: var(--wave, #d9e66a); font-size: 11px; }
+.connect-device-controls { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 11px; border-top: 1px solid rgba(255, 255, 255, .12); }
+.connect-device-controls label { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; color: rgba(255, 255, 255, .76); font-size: 11px; }
+.connect-device-controls input[type="range"] { min-width: 48px; width: 100%; accent-color: var(--wave, #d9e66a); }
+.connect-device-controls .tactile-icon-control { flex: 0 0 auto; }
+.connect-device-picker__signin p, .connect-device-error { margin: 8px 0; color: rgba(255, 255, 255, .76); font-size: 12px; line-height: 1.5; }
+.connect-device-picker__signin button, .connect-device-resume { width: 100%; margin-top: 7px; padding: 10px 12px; border: 0; border-radius: 11px; background: var(--wave, #d9e66a); color: #171a12; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.connect-device-error { color: #ffb7ad; }
+
+
+.connect-device-picker li > button > svg { flex: 0 0 auto; filter: none; }
+.listening-world .np-actions .tactile-icon-control.connect-control--remote { color: #65df9a; }
+.listening-world .connect-control--remote > svg { filter: drop-shadow(0 0 6px rgba(101, 223, 154, .65)); }
+.connect-device-picker:focus-visible { outline: 2px solid var(--wave); outline-offset: 4px; }
+@media (max-width: 900px) {
+  .connect-device-picker {
+    position: fixed;
+    inset: auto 0 0;
+    width: auto;
+    height: 50dvh;
+    max-height: calc(100dvh - 32px);
+    padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+    border-radius: 28px 28px 0 0;
+  }
+}

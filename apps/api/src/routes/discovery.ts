@@ -6,7 +6,7 @@ import { buildRecommendationInput } from '../services/recommendationContext.js';
 import type { RecommendationService } from '../services/recommendations.js';
 import type { TranslationService } from '../services/translation.js';
 import type { LyricLine } from '../types.js';
-import { getUserId, sendUnauthorized } from './auth.js';
+import { callerProfile, sendUnauthorized } from './auth.js';
 import { asRecord, sendFailure, sendSuccess, songId } from './common.js';
 
 const MAX_LINES = 400;
@@ -44,13 +44,8 @@ export function discoveryRouter(translation: TranslationService, recommendations
   };
 
   const recommend = async (request: Request, response: Response): Promise<void> => {
-    const userId = await getUserId(auth, request);
-    if (!userId) {
-      sendUnauthorized(response);
-      return;
-    }
     try {
-      const user = await auth.getUser(userId);
+      const user = await callerProfile(auth, request);
       if (!user) {
         sendUnauthorized(response);
         return;

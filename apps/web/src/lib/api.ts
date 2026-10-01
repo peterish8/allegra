@@ -308,28 +308,39 @@ export async function fetchLibraries(signal?: AbortSignal): Promise<LibraryRecor
 }
 
 /** All current library rows, including phone-only refs absent from the Saavn profile projection. */
-export async function fetchLibraryChanges(signal?: AbortSignal): Promise<LibraryChange[]> {
+export async function fetchLibraryChanges(since = 0, signal?: AbortSignal): Promise<{ rev: number; changes: LibraryChange[] }> {
   const changes: LibraryChange[] = [];
-  let since = 0;
+  let cursor = Math.max(0, Math.floor(since));
   for (;;) {
     const page = await request<{ rev: number; changes: LibraryChange[]; more: boolean }>(
-      `/api/me/library/changes?since=${since}&limit=500`,
+      `/api/me/library/changes?since=${cursor}&limit=500`,
       { signal }
     );
     changes.push(...page.changes);
-    if (!page.more) return changes;
-    if (page.rev <= since) throw new ApiError('Your library could not be loaded. Try again shortly.', 502);
-    since = page.rev;
+    if (!page.more) return { rev: page.rev, changes };
+    if (page.rev <= cursor) throw new ApiError('Your library could not be loaded. Try again shortly.', 502);
+    cursor = page.rev;
   }
 }
 
 /** Apply one or more cross-device library operations without reducing refs to bare Saavn ids. */
-export async function applyLibraryOps(ops: readonly LibraryOp[]): Promise<{ rev: number; rejected: { index: number; reason: string }[] }> {
-  return request('/api/me/library/ops', {
+export interface LibraryApplyReply {
+  readonly rev: number;
+  readonly rejected: { readonly index: number; readonly reason: string }[];
+  readonly superseded: readonly number[];
+  readonly applied: number;
+}
+
+export async function applyLibraryOps(ops: readonly LibraryOp[]): Promise<LibraryApplyReply> {
+  const result = await request<LibraryApplyReply>('/api/me/library/ops', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ ops })
+    body: JSON.stringify({ ops, sentAt: Date.now() })
   });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('allegra:library-own-write', { detail: { ...result, opCount: ops.length } }));
+  }
+  return result;
 }
 
 export async function createLibrary(name: string): Promise<LibraryRecord> {

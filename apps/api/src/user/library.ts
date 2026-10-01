@@ -12,6 +12,7 @@
  */
 import {
   applyLibraryOps,
+  isTombstone,
   itemKey,
   pageOfChanges,
   seedFromProfile,
@@ -29,6 +30,10 @@ import type { LibraryRecord, MemoryUserStore } from './store.js';
 export interface LibraryApplyResult {
   readonly rev: number;
   readonly rejected: readonly { readonly index: number; readonly reason: RejectReason }[];
+  /** Indexes of valid operations that lost to a newer change already stored. */
+  readonly superseded: readonly number[];
+  /** How many operations changed something; each took one revision. */
+  readonly applied: number;
   /** Playlist covers nothing uses any more; the caller deletes the images. */
   readonly removedCoverKeys: readonly string[];
 }
@@ -43,6 +48,10 @@ export interface LibraryPage {
 export interface LibraryStore {
   /** Throws when the listener has no profile. */
   apply(userId: string, ops: readonly LibraryOp[]): Promise<LibraryApplyResult>;
+  /**
+   * Everything after revision `since`. From 0 the caller has nothing, so it gets what is in the
+   * library now and no remembered deletes; `rev` and `more` page through it as usual.
+   */
   changes(userId: string, since: number, limit: number): Promise<LibraryPage>;
 }
 
@@ -78,14 +87,16 @@ export class MemoryLibraryStore implements LibraryStore {
     rows.rev = write.rev;
     const copy = toProfileLibrary([...rows.likes.values()], [...rows.playlists.values()], [...rows.items.values()]);
     this.users.writeLibraryCopy(userId, { likedSongIds: copy.likedSongIds, libraries: copy.libraries as LibraryRecord[] });
-    return { rev: write.rev, rejected: write.rejected, removedCoverKeys: write.removedCoverKeys };
+    return { rev: write.rev, rejected: write.rejected, superseded: write.superseded, applied: write.applied, removedCoverKeys: write.removedCoverKeys };
   }
 
   public async changes(userId: string, since: number, limit: number): Promise<LibraryPage> {
     const rows = await this.rowsFor(userId);
     const after = <T extends { rev: number }>(list: Iterable<T>) => [...list].filter((row) => row.rev > since).sort((a, b) => a.rev - b.rev).slice(0, limit);
     const page = pageOfChanges([after(rows.likes.values()), after(rows.playlists.values()), after(rows.items.values())], limit, rows.rev);
-    return { rev: page.next, changes: page.changes, more: page.more };
+    // The cursor moves past the deletes it leaves out, so the next page starts after them.
+    const changes = since === 0 ? page.changes.filter((change) => !isTombstone(change)) : page.changes;
+    return { rev: page.next, changes, more: page.more };
   }
 
   /** A listener's rows, seeded from their profile the first time (as Convex does). */

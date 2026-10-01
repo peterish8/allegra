@@ -81,8 +81,13 @@ export interface UserStore {
    * in between; otherwise re-reads and applies it again. Two devices changing taste, plays or
    * settings at once therefore both land. Resolves to the saved profile (the unchanged one when
    * `change` returns null), or null when there is no such profile.
+   *
+   * `base` is this profile as the caller read it earlier in the same request (from `get`, or what
+   * a previous `update` resolved to). A store may start from it instead of reading again; the
+   * save still fails when someone else wrote since, and then it re-reads as usual. So a request
+   * costs one profile read however many times it writes.
    */
-  update(userId: string, change: ProfileChange): Promise<UserData | null>;
+  update(userId: string, change: ProfileChange, base?: UserData): Promise<UserData | null>;
   getShare(code: string): Promise<ShareRecord | null>;
   findShare(ownerId: string, libraryId: string): Promise<ShareRecord | null>;
   saveShare(share: ShareRecord): Promise<void>;

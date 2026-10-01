@@ -23,6 +23,8 @@ import { searchMusic } from '../MultiSourceSearchService';
 import * as api from '../account/allegraApi';
 import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
 import { useSyncStore } from '../../store/syncStore';
+import { postLibraryOps } from './opsApi';
+import { setStuckSince } from './syncHealth';
 import {
   LIKED_PLAYLIST_ID,
   buildLocalIndex,
@@ -55,6 +57,7 @@ let rerun = false;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let unwatch: (() => void) | null = null;
 let appState: NativeEventSubscription | null = null;
+let observedLibraryRevision: number | undefined;
 const playReportedListeners = new Set<() => void>();
 
 const revKey = (userId: string) => `rev:${userId}`;
@@ -69,6 +72,8 @@ export async function attach(next: Session, convex: ConvexReactClient): Promise<
   if (session?.userId === next.userId) return;
   detach();
   session = next;
+  observedLibraryRevision = undefined;
+  db.getOutboxStuckSince().then(setStuckSince).catch(() => setStuckSince(null));
   try {
     const bound = await db.getMeta('account');
     if (bound === next.userId) {
@@ -100,7 +105,11 @@ export async function attach(next: Session, convex: ConvexReactClient): Promise<
     const watch = convex.watchQuery(libraryRevision, {});
     unwatch = watch.onUpdate(() => {
       try {
-        if (typeof watch.localQueryResult() === 'number') syncSoon(0);
+        const rev = watch.localQueryResult();
+        if (typeof rev === 'number') {
+          observedLibraryRevision = rev;
+          syncSoon(0);
+        }
       } catch {
         // The function may not be deployed yet: sync still runs on the other triggers.
       }
@@ -123,6 +132,8 @@ export function detach(): void {
   if (flushTimer) clearTimeout(flushTimer);
   flushTimer = null;
   session = null;
+  observedLibraryRevision = undefined;
+  setStuckSince(null);
   active = false;
   useSyncStore.getState().set({ question: null, syncing: false });
 }
@@ -242,14 +253,20 @@ async function runOnce(): Promise<void> {
       const current = session;
       if (!current) break;
       useSyncStore.getState().set({ syncing: true });
+      let failed = false;
+      const includeLibrary = active;
       try {
-        const includeLibrary = active;
         const sent = await flush(current, includeLibrary);
-        const pulled = includeLibrary ? await pull(current) : true;
-        if (includeLibrary && sent && pulled) useSyncStore.getState().set({ lastSyncedAt: Date.now() });
+        const pulled = includeLibrary ? sent.skippedPull || await pull(current) : true;
+        failed = includeLibrary && (!sent.ok || !pulled);
+        if (includeLibrary && sent.ok && pulled) useSyncStore.getState().set({ lastSyncedAt: Date.now() });
       } catch (error) {
+        failed = includeLibrary;
         log('sync failed', error);
       } finally {
+        if (includeLibrary && session?.userId === current.userId) {
+          await updateSyncHealth(failed).catch(error => log('sync health update failed', error));
+        }
         useSyncStore.getState().set({ syncing: false });
       }
     } while (rerun);
@@ -261,11 +278,25 @@ async function runOnce(): Promise<void> {
   }
 }
 
-/** Sends the outbox. False when offline (the rest waits for the next run). */
-async function flush(current: Session, includeLibrary: boolean): Promise<boolean> {
+async function updateSyncHealth(failed: boolean): Promise<void> {
+  const [ops, plays] = await Promise.all([db.peekOutbox('op', 1), db.peekOutbox('play', 1)]);
+  if (ops.length === 0 && plays.length === 0) {
+    await db.clearOutboxStuck();
+    setStuckSince(null);
+    return;
+  }
+  const stuckSince = failed ? await db.markOutboxStuck(Date.now()) : await db.getOutboxStuckSince();
+  setStuckSince(stuckSince);
+}
+
+/** Sends the outbox. A known contiguous write may advance the cursor without a redundant pull. */
+async function flush(current: Session, includeLibrary: boolean): Promise<{ readonly ok: boolean; readonly skippedPull: boolean }> {
+  let cursor = includeLibrary ? Number((await db.getMeta(revKey(current.userId))) ?? '0') || 0 : 0;
+  let canSkipPull = includeLibrary;
+  let advancedCursor = false;
   if (includeLibrary) for (;;) {
     const token = current.getToken();
-    if (!token) return false;
+    if (!token) return { ok: false, skippedPull: false };
     const batch = await db.peekOutbox('op', OPS_PER_BATCH);
     if (batch.length === 0) break;
     const ops = batch.flatMap(entry => {
@@ -275,13 +306,27 @@ async function flush(current: Session, includeLibrary: boolean): Promise<boolean
         return [];
       }
     });
-    let reply = ops.length > 0 ? await api.postLibraryOps(token, ops) : { outcome: 'refused' as const };
-    if (reply.outcome === 'offline') return false;
+    let reply = ops.length > 0 ? await postLibraryOps(token, ops, Date.now()) : { outcome: 'refused' as const };
+    if (reply.outcome === 'offline') return { ok: false, skippedPull: false };
+    const considerFastForward = async (result: typeof reply): Promise<void> => {
+      if (result.outcome !== 'sent') { canSkipPull = false; return; }
+      const data = result.data;
+      if (data.applied === undefined || data.superseded === undefined || data.superseded.length > 0 || data.rejected.length > 0 ||
+          data.rev - data.applied !== cursor || observedLibraryRevision !== data.rev) {
+        canSkipPull = false;
+        return;
+      }
+      cursor = data.rev;
+      advancedCursor = true;
+      await db.setMeta(revKey(current.userId), String(cursor));
+    };
+    if (ops.length > 0) await considerFastForward(reply);
     if (reply.outcome === 'refused' && ops.length > 1) {
       // One bad operation must not cost the good ones: send them singly, drop only what is still refused.
       for (const op of ops) {
-        reply = await api.postLibraryOps(token, [op]);
-        if (reply.outcome === 'offline') return false;
+        reply = await postLibraryOps(token, [op], Date.now());
+        if (reply.outcome === 'offline') return { ok: false, skippedPull: false };
+        await considerFastForward(reply);
       }
     }
     // Sent, or refused for good (malformed): either way these entries are done.
@@ -290,7 +335,7 @@ async function flush(current: Session, includeLibrary: boolean): Promise<boolean
   }
   for (;;) {
     const token = current.getToken();
-    if (!token) return false;
+    if (!token) return { ok: false, skippedPull: false };
     const plays = await db.peekOutbox('play', 20);
     if (plays.length === 0) break;
     for (const entry of plays) {
@@ -307,7 +352,7 @@ async function flush(current: Session, includeLibrary: boolean): Promise<boolean
           playDuration: play.seconds,
           playedAt: play.playedAt,
         });
-        if (recent.outcome === 'offline') return false;
+        if (recent.outcome === 'offline') return { ok: false, skippedPull: false };
         if (recent.outcome === 'refused') {
           log('play refused', play.songId);
           await db.removeOutbox([entry.id]);
@@ -328,14 +373,14 @@ async function flush(current: Session, includeLibrary: boolean): Promise<boolean
         seconds: play.seconds,
         playedAt: play.playedAt,
       });
-      if (taste.outcome === 'offline') return false;
+      if (taste.outcome === 'offline') return { ok: false, skippedPull: false };
       if (taste.outcome === 'refused') log('taste signal refused', play.songId);
       await db.removeOutbox([entry.id]);
       if (taste.outcome === 'sent') for (const listener of [...playReportedListeners]) listener();
     }
   }
   useSyncStore.getState().set({ pending: 0 });
-  return true;
+  return { ok: true, skippedPull: canSkipPull && advancedCursor };
 }
 
 /** Applies every change after the stored revision. False when offline. */

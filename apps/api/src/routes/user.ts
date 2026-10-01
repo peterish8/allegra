@@ -4,12 +4,12 @@ import type { AuthService } from '../auth/auth.js';
 import type { CatalogService } from '../catalog/catalog.js';
 import { parseLanguages } from '../lib/languages.js';
 import { MAX_COVER_BYTES, isCoverContentType, looksLikeStorageId, type CoverStorage } from '../lib/covers.js';
-import { parseLibraryOps, type PlaylistCover } from '../shared/library.js';
+import { parseLibraryOps, parseSentAt, type PlaylistCover } from '../shared/library.js';
 import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { ListenerActions } from '../user/actions.js';
 import type { UserData } from '../user/store.js';
 import { applySeeds, tasteSummary } from '../user/taste.js';
-import { getUserId, sendUnauthorized } from './auth.js';
+import { callerProfile, sendUnauthorized } from './auth.js';
 import { asRecord, positiveInt, sendFailure, sendSuccess, sanitizeSettings, songId } from './common.js';
 
 const MISSING = "Something's missing from that request.";
@@ -168,15 +168,20 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
 
   // Library sync for the listener's other devices (the phone). Operations in, changes out.
   router.post('/me/library/ops', async (request, response) => {
+    // Taken before anything waits on the database: this is the moment the device's clock is compared with.
+    const receivedAt = Date.now();
     const user = await authenticatedUser(auth, request, response);
     if (!user) return;
-    const ops = parseLibraryOps(asRecord(request.body).ops);
+    const body = asRecord(request.body);
+    const ops = parseLibraryOps(body.ops);
     if (!ops) {
       response.status(400).json({ success: false, data: null, error: MISSING });
       return;
     }
+    // A `sentAt` that makes no sense is left out rather than refusing the batch: the operations are still good.
+    const sentAt = parseSentAt(body.sentAt, receivedAt);
     try {
-      sendSuccess(response, await actions.applyFromDevice(user, ops));
+      sendSuccess(response, await actions.applyFromDevice(user, ops, { receivedAt, ...(sentAt !== undefined ? { sentAt } : {}) }));
     } catch (error) {
       sendFailure(response, error);
     }
@@ -238,7 +243,7 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
     // An empty list means every language.
     if ('languages' in body) changed.languages = parseLanguages(body.languages).join(',');
     try {
-      const saved = await auth.updateProfile(user.userId, (current) => ({ ...current, settings: { ...sanitizeSettings(current.settings), ...changed } }));
+      const saved = await auth.updateProfile(user.userId, (current) => ({ ...current, settings: { ...sanitizeSettings(current.settings), ...changed } }), user);
       sendSuccess(response, sanitizeSettings(saved?.settings ?? {}));
     } catch (error) {
       sendFailure(response, error);
@@ -265,7 +270,7 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
         ...current,
         taste: applySeeds(current.taste, artists, languages),
         settings: picked.length > 0 ? { ...current.settings, languages: picked.join(',') } : current.settings
-      }));
+      }), user);
       sendSuccess(response, tasteSummary(saved?.taste));
     } catch (error) {
       sendFailure(response, error);
@@ -300,18 +305,11 @@ function stringList(value: unknown, max: number): string[] {
   return [...new Set(value.filter((item): item is string => typeof item === 'string').map((item) => item.trim().slice(0, 80)).filter(Boolean))].slice(0, max);
 }
 
-async function authenticatedUser(auth: AuthService, request: Parameters<typeof getUserId>[1], response: Parameters<typeof sendUnauthorized>[0]): Promise<UserData | null> {
-  const userId = await getUserId(auth, request);
-  if (!userId) {
-    sendUnauthorized(response);
-    return null;
-  }
+/** The caller's profile, read once; each handler passes it on as the base of whatever it writes. */
+async function authenticatedUser(auth: AuthService, request: Parameters<typeof callerProfile>[1], response: Parameters<typeof sendUnauthorized>[0]): Promise<UserData | null> {
   try {
-    const user = await auth.getUser(userId);
-    if (!user) {
-      sendUnauthorized(response);
-      return null;
-    }
+    const user = await callerProfile(auth, request);
+    if (!user) sendUnauthorized(response);
     return user;
   } catch (error) {
     sendFailure(response, error);

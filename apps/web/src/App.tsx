@@ -212,13 +212,14 @@ export default function App() {
   const audio = useAudioPlayer();
   const connect = useConnect(audio);
   const connectView = connect.view;
-  const remotePlayback = Boolean(connectView?.activeDeviceId && connectView.activeDeviceId !== connect.deviceId);
+  const remotePlayback = Boolean(connectView?.activeDeviceId && connectView.activeDeviceOnline
+    && (connectView.activeDeviceId !== connect.deviceId || connect.tabStatus === 'other-tab'));
   const remoteSong = remotePlayback && connectView?.song ? snapshotToDisplaySong(connectView.song) : null;
   const playerSong = remotePlayback ? remoteSong : audio.currentSong;
   const playerQueue = remotePlayback && connectView
     ? [...(remoteSong ? [remoteSong] : []), ...connectView.queue.map(snapshotToDisplaySong)]
     : audio.queue;
-  const playerTime = remotePlayback && connectView ? connectView.livePosition : audio.currentTime;
+  const playerTime = remotePlayback ? connect.livePosition : audio.currentTime;
   const playerDuration = remotePlayback ? (remoteSong?.duration ?? 0) : audio.duration;
   const playerIsPlaying = remotePlayback && connectView ? connectView.isPlaying : audio.isPlaying;
   const playerIsBuffering = remotePlayback ? false : audio.isBuffering;
@@ -227,27 +228,27 @@ export default function App() {
   const playerShuffle = remotePlayback && connectView ? connectView.shuffle : audio.shuffle;
   const playerRepeat = remotePlayback && connectView ? connectView.repeat : audio.repeat;
   const togglePlayer = (): void => {
-    if (remotePlayback) connect.session?.control({ kind: playerIsPlaying ? 'pause' : 'play' });
+    if (remotePlayback) connect.control({ kind: playerIsPlaying ? 'pause' : 'play' });
     else audio.togglePlayback();
   };
   const seekPlayer = (seconds: number): void => {
-    if (remotePlayback) connect.session?.control({ kind: 'seek', sec: seconds });
+    if (remotePlayback) connect.control({ kind: 'seek', sec: seconds });
     else void audio.seek(seconds);
   };
   const previousPlayer = (): void => {
-    if (remotePlayback) connect.session?.control({ kind: 'prev' });
+    if (remotePlayback) connect.control({ kind: 'prev' });
     else audio.skipPrevious();
   };
   const changePlayerVolume = (volume: number): void => {
-    if (remotePlayback) connect.session?.control({ kind: 'volume', v: volume });
+    if (remotePlayback) connect.control({ kind: 'volume', v: volume });
     else audio.setVolume(volume);
   };
   const togglePlayerShuffle = (): void => {
-    if (remotePlayback) connect.session?.control({ kind: 'shuffle', on: !playerShuffle });
+    if (remotePlayback) connect.control({ kind: 'shuffle', on: !playerShuffle });
     else audio.toggleShuffle();
   };
   const cyclePlayerRepeat = (): void => {
-    if (remotePlayback) connect.session?.control({ kind: 'repeat', mode: playerRepeat === 'off' ? 'all' : playerRepeat === 'all' ? 'one' : 'off' });
+    if (remotePlayback) connect.control({ kind: 'repeat', mode: playerRepeat === 'off' ? 'all' : playerRepeat === 'all' ? 'one' : 'off' });
     else audio.cycleRepeat();
   };
   // A foreign active device owns the sound. Pause any stale browser stream while
@@ -287,7 +288,7 @@ export default function App() {
 
   const skipNextSmart = useCallback((): void => {
     if (remotePlayback) {
-      connect.session?.control({ kind: 'next' });
+      connect.control({ kind: 'next' });
       return;
     }
     const player = transportRef.current;
@@ -305,7 +306,7 @@ export default function App() {
     const index = live.findIndex((item) => item.id === next.id);
     const remaining = index >= 0 ? live.length - index - 1 : 0;
     if (remaining < 3) void fillRadioQueue(catalogSongId(next));
-  }, [connect.session, fillRadioQueue, remotePlayback]);
+  }, [connect.control, fillRadioQueue, remotePlayback]);
 
   useMediaSession({
     song: playerSong,
@@ -313,13 +314,13 @@ export default function App() {
     currentTime: playerTime,
     duration: playerDuration,
     requestPlayback: async (playing) => {
-      if (remotePlayback) connect.session?.control({ kind: playing ? 'play' : 'pause' });
+      if (remotePlayback) connect.control({ kind: playing ? 'play' : 'pause' });
       else await audio.requestPlayback(playing);
     },
     seek: async (seconds) => seekPlayer(seconds),
     skipNext: skipNextSmart,
     skipPrevious: previousPlayer,
-    stop: () => { if (remotePlayback) connect.session?.control({ kind: 'pause' }); else audio.stop(); }
+    stop: () => { if (remotePlayback) connect.control({ kind: 'pause' }); else audio.stop(); }
   });
   const collapsePlayer = useCallback(() => {
     setPlayerMode('mini');
@@ -456,16 +457,13 @@ export default function App() {
   });
   useListenTracker(audio.currentSong ?? null, audio.currentTime, account.refresh);
 
-  // A phone reports a completed listen to the shared account. Refresh recent
-  // history while it owns playback so this screen follows that write without
-  // ever starting a second audio stream on the laptop.
+  // A remote track change can write recent history on the phone. Give that
+  // write a moment to land, then refresh once for this track instead of polling.
   useEffect(() => {
     if (!remotePlayback) return undefined;
     const controller = new AbortController();
-    let requestInFlight = false;
-    const refreshRecent = async (): Promise<void> => {
-      if (requestInFlight || controller.signal.aborted) return;
-      requestInFlight = true;
+    const timer = window.setTimeout(() => {
+      void (async () => {
       try {
         await ensureSession();
         const recent = await fetchRecentlyPlayed(controller.signal);
@@ -477,17 +475,14 @@ export default function App() {
         }
       } catch {
         // Keep the last known library visible while the API is unavailable.
-      } finally {
-        requestInFlight = false;
       }
-    };
-    void refreshRecent();
-    const timer = playerIsPlaying ? window.setInterval(() => void refreshRecent(), 5_000) : null;
+      })();
+    }, 3_000);
     return () => {
-      if (timer !== null) window.clearInterval(timer);
+      window.clearTimeout(timer);
       controller.abort();
     };
-  }, [playerIsPlaying, playerSong?.id, remotePlayback]);
+  }, [playerSong?.id, playerSong?.source, remotePlayback]);
 
   /** Home/search mood chips: server-built prompts when taste is ready, else calm guest defaults. */
   const moodPrompts = useMemo(() => {
@@ -927,8 +922,8 @@ export default function App() {
   // Always requests play, so tapping a line on a paused track starts it.
   const activateLyricLine = (time: number): void => {
     if (remotePlayback) {
-      connect.session?.control({ kind: 'seek', sec: time });
-      if (!playerIsPlaying) connect.session?.control({ kind: 'play' });
+      connect.control({ kind: 'seek', sec: time });
+      if (!playerIsPlaying) connect.control({ kind: 'play' });
       return;
     }
     void (async () => {
@@ -1577,6 +1572,7 @@ export default function App() {
         onPlayQueueSong={(song) => void playSong(song, playerQueue.length > 0 ? playerQueue : displaySongs)}
         connect={connectView ? {
           connected: connect.connected,
+          otherTab: connect.tabStatus === 'other-tab',
           deviceId: connect.deviceId,
           devices: connectView.devices,
           activeDeviceId: connectView.activeDeviceId,
@@ -1588,12 +1584,13 @@ export default function App() {
           repeat: playerRepeat,
           onTransfer: connect.transferTo,
           onSignIn: () => setAuthOpen(true),
-          onResume: () => { if (remotePlayback && connect.deviceId) void connect.transferTo(connect.deviceId); else connect.session?.control({ kind: 'play' }); },
+          onResume: () => { if (remotePlayback && connect.deviceId) void connect.transferTo(connect.deviceId); else connect.control({ kind: 'play' }); },
           onVolume: changePlayerVolume,
           onShuffle: togglePlayerShuffle,
           onRepeat: cyclePlayerRepeat
         } : {
           connected: connect.connected,
+          otherTab: connect.tabStatus === 'other-tab',
           deviceId: connect.deviceId,
           devices: [],
           autoplayBlocked: false,

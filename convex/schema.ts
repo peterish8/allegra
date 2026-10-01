@@ -1,6 +1,6 @@
 import { authTables } from '@convex-dev/auth/server';
 import { defineSchema, defineTable } from 'convex/server';
-import { v } from 'convex/values';
+import { v, type Infer } from 'convex/values';
 
 const library = v.object({
   id: v.string(),
@@ -60,6 +60,24 @@ export const songSnapshot = v.object({
   artwork: v.string(),
   duration: v.number()
 });
+
+/**
+ * The one rule for a song snapshot crossing the device boundary, used by Connect and by library
+ * sync. An empty artist is allowed (the phone produces it for untagged files); ref and title are
+ * required. `reject` throws the caller's own error.
+ */
+export function assertSongSnapshot(song: Infer<typeof songSnapshot>, reject: () => never): void {
+  if (
+    song.ref.trim().length < 1 || song.ref.length > 512 ||
+    song.title.trim().length < 1 || song.title.length > 300 ||
+    song.artist.length > 300 ||
+    (song.album !== undefined && song.album.length > 300) ||
+    song.artwork.length > 2048 ||
+    !Number.isFinite(song.duration) || song.duration < 0
+  ) {
+    reject();
+  }
+}
 
 export const repeatMode = v.union(v.literal('off'), v.literal('all'), v.literal('one'));
 export const connectCommandKind = v.union(
@@ -230,7 +248,19 @@ export default defineSchema({
   /** One per listener once their library moved to rows: the newest revision. Its presence means "rows are the truth". */
   libraryState: defineTable({
     userId: v.string(),
-    rev: v.number()
+    rev: v.number(),
+    /**
+     * How many current rows the listener has (liked / not deleted), true as of revision
+     * `counts.rev`. While `counts.rev` equals `rev` the profile copy is complete, so a change can
+     * be applied to it from the rows it touched. Missing or behind (written by older code, or a
+     * library past the copy's limits): the next change rebuilds the copy in full.
+     */
+    counts: v.optional(v.object({
+      likes: v.number(),
+      playlists: v.number(),
+      items: v.number(),
+      rev: v.number()
+    }))
   }).index('by_userId', ['userId']),
 
   // ── Connect: cross-device player ownership and command queue ───────────────
@@ -244,6 +274,8 @@ export default defineSchema({
     kind: v.union(v.literal('web'), v.literal('android'), v.literal('ios')),
     appVersion: v.string(),
     canPlay: v.boolean(),
+    /** The Connect protocol the registered client speaks. Missing means legacy (1). */
+    protocolVersion: v.optional(v.number()),
     createdAt: v.number(),
     retentionCheckedAt: v.number()
   })
@@ -251,8 +283,26 @@ export default defineSchema({
     .index('by_deviceId', ['deviceId'])
     .index('by_retentionCheckedAt', ['retentionCheckedAt']),
 
+  /**
+   * Who plays for this account, one row per account. Kept apart from `playerState` so the device
+   * list does not depend on a document that changes with every position report. `epoch` moves on
+   * each time the active device changes; commands and reports are bound to the epoch they saw.
+   * `handoff` is a transfer whose destination is loaded and waiting for the owner to pause.
+   */
+  connectOwnership: defineTable({
+    userId: v.string(),
+    activeDeviceId: v.optional(v.string()),
+    epoch: v.number(),
+    handoff: v.optional(v.object({
+      commandId: v.id('connectCommands'),
+      toDeviceId: v.string(),
+      executeBefore: v.number()
+    }))
+  }).index('by_userId', ['userId']),
+
   playerState: defineTable({
     userId: v.string(),
+    /** Kept equal to connectOwnership.activeDeviceId on every claim, for code that predates that table. */
     activeDeviceId: v.optional(v.string()),
     song: v.optional(songSnapshot),
     queue: v.array(songSnapshot),
@@ -276,11 +326,31 @@ export default defineSchema({
     args: v.optional(connectCommandArgs),
     createdAt: v.number(),
     status: v.union(v.literal('pending'), v.literal('done'), v.literal('failed')),
-    error: v.optional(v.string())
+    error: v.optional(v.string()),
+    // ── V2 (sendV2 / transferV2). All missing on a legacy command. ──
+    /** The sender's id for this action; a retry with the same id returns the same command. */
+    requestId: v.optional(v.string()),
+    /** Server time after which the command must not run. */
+    executeBefore: v.optional(v.number()),
+    /** The ownership epoch the sender saw. A command from an older epoch never runs. */
+    expectedOwnershipEpoch: v.optional(v.number()),
+    /** Given to the target by beginV2; prepareV2 and completeV2 must present it. */
+    reservationToken: v.optional(v.string()),
+    beganAt: v.optional(v.number()),
+    /** Why a failed command failed: a stable code, where `error` is display text. */
+    errorCode: v.optional(v.string()),
+    /** take_over only: ownership has moved to the target; where to start and whether to play. */
+    release: v.optional(v.object({ positionSec: v.number(), resume: v.boolean() }))
   })
     .index('by_targetDeviceId_and_status', ['targetDeviceId', 'status'])
     .index('by_sourceDeviceId_and_createdAt', ['sourceDeviceId', 'createdAt'])
-    .index('by_createdAt', ['createdAt']),
+    .index('by_createdAt', ['createdAt'])
+    // sendV2 / transferV2 dedupe.
+    .index('by_userId_and_sourceDeviceId_and_requestId', ['userId', 'sourceDeviceId', 'requestId'])
+    // A claim fails this account's pending commands from the epoch it ends.
+    .index('by_userId_and_status', ['userId', 'status'])
+    // The sweep: pending V2 commands past their deadline, and legacy rows (no executeBefore) by age.
+    .index('by_status_and_executeBefore_and_createdAt', ['status', 'executeBefore', 'createdAt']),
 
   /** Spent OAuth codes and refresh tokens (MCP connect), kept only until they expire. */
   oauthGrants: defineTable({

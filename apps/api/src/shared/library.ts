@@ -12,6 +12,9 @@
  *   stale "add" cannot bring the item back.
  * - A time from the future is clamped to now, so a phone with a fast clock cannot
  *   win every conflict forever.
+ * - A device says what its own clock read when it sent the batch (`sentAt`); the server
+ *   measures how far that clock is from its own and moves the batch's times by the
+ *   difference (alignOpTimes), so a slow or fast phone clock does not decide who wins.
  * - Every row a change touches gets the next revision number; a device asks for
  *   "everything after revision N" to catch up.
  *
@@ -103,6 +106,18 @@ export interface LibraryWrite {
   readonly items: PlaylistItemRow[];
   /** Operations that could not apply, by index into the batch. Older-than-current is NOT a rejection. */
   readonly rejected: { readonly index: number; readonly reason: RejectReason }[];
+  /**
+   * Valid operations that lost to a newer change already stored, by index into the batch. The
+   * sender's copy of that item is out of date: it should ask for the changes it has not seen.
+   */
+  readonly superseded: number[];
+  /**
+   * How many operations changed something. Each one took exactly one revision, so a device whose
+   * cursor was `rev - applied` before the batch has missed nothing made anywhere else. (An
+   * operation that is neither counted here nor listed above asked for what was already so:
+   * deleting a playlist that is gone.)
+   */
+  readonly applied: number;
   /** Covers no playlist uses any more; the caller deletes the stored images. */
   readonly removedCoverKeys: string[];
   /** The newest revision after this batch. */
@@ -120,13 +135,19 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
   const playlists = new Map<string, PlaylistRow>();
   const items = new Map<string, PlaylistItemRow>();
   const rejected: { index: number; reason: RejectReason }[] = [];
+  const superseded: number[] = [];
   const removedCoverKeys: string[] = [];
   let rev = clock.rev;
 
   const likeOf = (ref: SongRef) => likes.get(ref) ?? view.like(ref);
   const playlistOf = (id: string) => playlists.get(id) ?? view.playlist(id);
   const itemOf = (id: string, ref: SongRef) => items.get(itemKey(id, ref)) ?? view.item(id, ref);
-  const newer = (at: number, row: { updatedAt: number } | undefined) => !row || at >= row.updatedAt;
+  /** False, and noted as superseded, when what is stored for this item is newer than the operation. */
+  const wins = (index: number, at: number, row: { updatedAt: number } | undefined): boolean => {
+    if (!row || at >= row.updatedAt) return true;
+    superseded.push(index);
+    return false;
+  };
 
   ops.forEach((op, index) => {
     if (!Number.isFinite(op.at) || op.at < 0) {
@@ -139,7 +160,7 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
       case 'like':
       case 'unlike': {
         const row = likeOf(op.ref);
-        if (!newer(at, row)) return;
+        if (!wins(index, at, row)) return;
         const liked = op.op === 'like';
         const song = op.op === 'like' ? (op.song ?? row?.song) : row?.song;
         likes.set(op.ref, {
@@ -159,7 +180,7 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
           rejected.push({ index, reason: 'missing_name' });
           return;
         }
-        if (!newer(at, row)) return;
+        if (!wins(index, at, row)) return;
         const base = creating ? undefined : row;
         const description = op.description === null ? undefined : (op.description ?? base?.description);
         let coverKey = base?.coverKey;
@@ -185,7 +206,8 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
       }
       case 'playlist_delete': {
         const row = playlistOf(op.playlistId);
-        if (!row || row.deleted || !newer(at, row)) return;
+        // Already gone: nothing to do, and nothing the sender needs to hear about.
+        if (!row || row.deleted || !wins(index, at, row)) return;
         if (row.coverKey) removedCoverKeys.push(row.coverKey);
         // The cover goes with it (freed above); the rest stays, so a later recreate can be compared.
         playlists.set(op.playlistId, {
@@ -207,7 +229,7 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
           return;
         }
         const row = itemOf(op.playlistId, op.ref);
-        if (!newer(at, row)) return;
+        if (!wins(index, at, row)) return;
         const song = op.song ?? row?.song;
         items.set(itemKey(op.playlistId, op.ref), {
           playlistId: op.playlistId,
@@ -222,7 +244,7 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
       }
       case 'playlist_remove': {
         const row = itemOf(op.playlistId, op.ref);
-        if (!newer(at, row)) return;
+        if (!wins(index, at, row)) return;
         // A tombstone even when there was no row: an older "add" arriving later must not win.
         items.set(itemKey(op.playlistId, op.ref), {
           playlistId: op.playlistId,
@@ -238,7 +260,55 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
     }
   });
 
-  return { likes: [...likes.values()], playlists: [...playlists.values()], items: [...items.values()], rejected, removedCoverKeys, rev };
+  return {
+    likes: [...likes.values()],
+    playlists: [...playlists.values()],
+    items: [...items.values()],
+    rejected,
+    superseded,
+    applied: rev - clock.rev,
+    removedCoverKeys,
+    rev
+  };
+}
+
+// ── Whose clock is right ─────────────────────────────────────────────────────
+
+/** A device clock this close to the server's is left alone: the gap is mostly the request's travel time. */
+export const LIBRARY_CLOCK_TOLERANCE_MS = 2000;
+
+/**
+ * A device whose clock is further than this from the server's could not have reached it (its
+ * TLS handshake would have failed), so a `sentAt` this far out is a bug (seconds for
+ * milliseconds, a monotonic timer) and is ignored.
+ */
+export const LIBRARY_SENT_AT_MAX_SKEW_MS = 366 * 24 * 60 * 60 * 1000;
+
+/**
+ * `sentAt` from a device (untrusted): what its wall clock read, in ms, when it sent the batch.
+ * Undefined when missing or implausible, and the batch is then applied as the device stamped it.
+ */
+export function parseSentAt(value: unknown, receivedAt: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
+  return Math.abs(receivedAt - value) <= LIBRARY_SENT_AT_MAX_SKEW_MS ? value : undefined;
+}
+
+/**
+ * Restates a batch's times on the server's clock. `sentAt` and each `at` were read from the same
+ * device clock, so `sentAt - at` (how long before sending the listener did it) is right even when
+ * that clock is not: the operation happened that long before the server received the batch.
+ *
+ * What a device gains by lying about `sentAt`: nothing it could not already claim through `at`.
+ * The result is never later than `receivedAt`, so the most any operation can be is "made just
+ * now", and a change made after it still wins. It is never before 0 either.
+ *
+ * No `sentAt` (an older app), or a clock within the tolerance: the batch is returned untouched.
+ */
+export function alignOpTimes(ops: readonly LibraryOp[], sentAt: number | undefined, receivedAt: number): readonly LibraryOp[] {
+  if (sentAt === undefined) return ops;
+  const offset = Math.round(receivedAt - sentAt);
+  if (Math.abs(offset) <= LIBRARY_CLOCK_TOLERANCE_MS) return ops;
+  return ops.map((op) => ({ ...op, at: Math.max(0, Math.min(op.at + offset, receivedAt)) }));
 }
 
 // ── The shape Allegra's profile already stores (read by the web, recommendations, sharing, MCP) ──
@@ -381,6 +451,11 @@ export type LibraryChange =
       readonly deleted: boolean;
       readonly addedAt: number;
     };
+
+/** A remembered delete: an unlike, a deleted playlist, a song taken out of a playlist. */
+export function isTombstone(change: LibraryChange): boolean {
+  return change.kind === 'like' ? !change.liked : change.deleted;
+}
 
 export function toChange(row: LikeRow | PlaylistRow | PlaylistItemRow): LibraryChange {
   if ('liked' in row) {

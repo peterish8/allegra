@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useAuthToken } from '@convex-dev/auth/react';
 
 import type { LibraryChange, LibraryOp } from '@shared/library';
 import { fromAllegraSong, toAllegraId, type SongRef, type SongSnapshot } from '@shared/songRef';
@@ -16,6 +17,7 @@ import {
 } from '../lib/api';
 import type { LibraryRecord } from '../lib/api';
 import { createLibrarySong, foldLibraryRows, type LibrarySong } from '../lib/libraryRows';
+import { accountIdFromToken } from '../lib/connectDeviceId';
 
 export interface PlaylistsApi {
   readonly playlists: readonly LibraryRecord[];
@@ -79,6 +81,8 @@ function latestByRef(changes: readonly LibraryChange[], kind: 'like' | 'playlist
 }
 
 export function usePlaylists(): PlaylistsApi {
+  const authToken = useAuthToken();
+  const accountId = accountIdFromToken(authToken) ?? 'guest';
   const [playlists, setPlaylists] = useState<LibraryRecord[]>([]);
   const [songs, setSongs] = useState<ReadonlyMap<string, LibrarySong>>(new Map());
   const [playlistRefs, setPlaylistRefs] = useState<ReadonlyMap<string, readonly SongRef[]>>(new Map());
@@ -90,6 +94,44 @@ export function usePlaylists(): PlaylistsApi {
   const songsRef = useRef<ReadonlyMap<string, LibrarySong>>(new Map());
   const playlistRefsRef = useRef<ReadonlyMap<string, readonly SongRef[]>>(new Map());
   const likedSongsRef = useRef<readonly LibrarySong[]>([]);
+  const libraryCursorRef = useRef(0);
+  const libraryChangesRef = useRef(new Map<string, LibraryChange>());
+  const legacyPlaylistsRef = useRef<LibraryRecord[]>([]);
+  const legacyLikesRef = useRef<UnifiedSong[]>([]);
+  const libraryLoadedRef = useRef(false);
+  const accountIdRef = useRef(accountId);
+
+  useEffect(() => {
+    if (accountIdRef.current === accountId) return;
+    accountIdRef.current = accountId;
+    libraryCursorRef.current = 0;
+    libraryChangesRef.current.clear();
+    legacyPlaylistsRef.current = [];
+    legacyLikesRef.current = [];
+    libraryLoadedRef.current = false;
+    playlistsRef.current = [];
+    songsRef.current = new Map();
+    playlistRefsRef.current = new Map();
+    likedSongsRef.current = [];
+    setPlaylists([]);
+    setSongs(new Map());
+    setPlaylistRefs(new Map());
+    setLikedSongs([]);
+  }, [accountId]);
+
+  useEffect(() => {
+    const onOwnWrite = (event: Event): void => {
+      const detail = (event as CustomEvent<{ rev?: unknown; applied?: unknown; opCount?: unknown; rejected?: unknown; superseded?: unknown }>).detail;
+      if (!detail || typeof detail.rev !== 'number' || typeof detail.applied !== 'number' || typeof detail.opCount !== 'number'
+          || !Array.isArray(detail.rejected) || detail.rejected.length > 0
+          || !Array.isArray(detail.superseded) || detail.superseded.length > 0
+          || detail.applied !== detail.opCount
+          || detail.rev - detail.applied !== libraryCursorRef.current) return;
+      libraryCursorRef.current = detail.rev;
+    };
+    window.addEventListener('allegra:library-own-write', onOwnWrite);
+    return () => window.removeEventListener('allegra:library-own-write', onOwnWrite);
+  }, []);
 
   const commit = useCallback((next: LibraryRecord[]): void => {
     playlistsRef.current = next;
@@ -115,11 +157,24 @@ export function usePlaylists(): PlaylistsApi {
     setLoading(true);
     setError(null);
     try {
-      const [legacyPlaylists, changes, legacyLikes] = await Promise.all([
-        fetchLibraries(),
-        fetchLibraryChanges(),
-        fetchLikedSongs()
+      const initial = !libraryLoadedRef.current;
+      const [legacyPlaylists, page, legacyLikes] = await Promise.all([
+        initial ? fetchLibraries() : Promise.resolve(legacyPlaylistsRef.current),
+        fetchLibraryChanges(initial ? 0 : libraryCursorRef.current),
+        initial ? fetchLikedSongs() : Promise.resolve(legacyLikesRef.current)
       ]);
+      if (initial) {
+        legacyPlaylistsRef.current = legacyPlaylists;
+        legacyLikesRef.current = legacyLikes;
+      }
+      for (const change of page.changes) {
+        const key = change.kind === 'like' ? `like:${change.ref}`
+          : change.kind === 'playlist' ? `playlist:${change.playlistId}`
+            : `playlist_item:${change.playlistId}:${change.ref}`;
+        const prior = libraryChangesRef.current.get(key);
+        if (!prior || prior.rev < change.rev) libraryChangesRef.current.set(key, change);
+      }
+      const changes = [...libraryChangesRef.current.values()].sort((a, b) => a.rev - b.rev);
       const rows = foldLibraryRows(changes);
       const playlistState = new Map<string, Extract<LibraryChange, { kind: 'playlist' }>>();
       for (const change of changes) {
@@ -211,6 +266,8 @@ export function usePlaylists(): PlaylistsApi {
           return bt - at;
         });
       commitLikes(nextLikes);
+      libraryCursorRef.current = page.rev;
+      libraryLoadedRef.current = true;
       return nextLikes;
     } catch (caught) {
       setError(messageOf(caught, 'Your playlists could not be loaded.'));

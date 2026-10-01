@@ -23,6 +23,7 @@ import {
   beginAudioLoad,
   endAudioLoad,
   setNativeOwnsPlaybackState,
+  setPlaylistSelectionRouter,
 } from './playerStore';
 import { isStalePlayingEcho, clearPlaybackIntent } from '../playback/playbackIntent';
 import type { Song } from '../types/song';
@@ -122,6 +123,32 @@ describe('audio load ownership', () => {
     // a late release from the abandoned load must not free the new claim
     endAudioLoad('song-a');
     expect(beginAudioLoad('song-b')).toBe(false);
+  });
+});
+
+describe('Connect song selection routing', () => {
+  afterEach(() => setPlaylistSelectionRouter(null));
+
+  it('routes a user song pick before the local player starts', () => {
+    const selected = { id: 'remote-song', title: 'Remote', artist: 'Artist', audioUri: 'https://example.test/song' } as Song;
+    const route = jest.fn(() => true);
+    const stop = setPlaylistSelectionRouter(route);
+
+    usePlayerStore.getState().setPlaylistQueue('search', [selected], 0, true);
+
+    expect(route).toHaveBeenCalledWith({ playlistId: 'search', songs: [selected], startIndex: 0 });
+    expect(usePlayerStore.getState().currentSongId).not.toBe('remote-song');
+    stop();
+  });
+
+  it('keeps Connect-owned loads and paused restores out of the router', () => {
+    const selected = { id: 'local-song', title: 'Local', artist: 'Artist', audioUri: 'file:///song' } as Song;
+    const route = jest.fn(() => true);
+    setPlaylistSelectionRouter(route);
+
+    usePlayerStore.getState().setPlaylistQueue('connect', [selected], 0, false);
+    usePlayerStore.getState().setPlaylistQueue('search', [selected], 0, false);
+    expect(route).not.toHaveBeenCalled();
   });
 });
 

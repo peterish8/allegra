@@ -2,7 +2,7 @@ import { Router } from 'express';
 
 import type { AuthService } from '../auth/auth.js';
 import { MAX_COVER_BYTES, isCoverContentType, type CoverStorage } from '../lib/covers.js';
-import { getUserId, sendUnauthorized } from './auth.js';
+import { callerProfile, sendUnauthorized } from './auth.js';
 import { asRecord, sendFailure, sendSuccess } from './common.js';
 
 /**
@@ -14,8 +14,8 @@ export function uploadsRouter(auth: AuthService, covers?: CoverStorage): Router 
   const router = Router();
 
   router.post('/uploads/sign', async (request, response) => {
-    const userId = await getUserId(auth, request);
-    if (!userId) {
+    const user = await callerProfile(auth, request);
+    if (!user) {
       sendUnauthorized(response);
       return;
     }
@@ -43,11 +43,6 @@ export function uploadsRouter(auth: AuthService, covers?: CoverStorage): Router 
     }
 
     try {
-      const user = await auth.getUser(userId);
-      if (!user) {
-        sendUnauthorized(response);
-        return;
-      }
       if (!user.libraries.some((item) => item.id === libraryId)) {
         response.status(404).json({ success: false, data: null, error: "We couldn't find that." });
         return;

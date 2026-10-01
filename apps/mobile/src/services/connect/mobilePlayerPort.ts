@@ -1,5 +1,5 @@
 import { fromMobileId, parseSongRef, type SongRef, type SongSnapshot } from '@shared/songRef';
-import type { PlayerPort, PlayerSnapshot, RepeatMode } from '../../../../../packages/connect/src/index';
+import { traceCatalogLookup, type DevelopmentTraceBuffer, type PlayerPort, type PlayerSnapshot, type RepeatMode } from '../../../../../packages/connect/src/index';
 
 import { playerControls, prepareNextInQueue, usePlayerStore } from '../../store/playerStore';
 import { usePlaybackModesStore } from '../../store/playbackModesStore';
@@ -50,15 +50,17 @@ function waitForLoadedSong(songId: string, timeoutMs: number): Promise<boolean> 
   });
 }
 
-export function createMobilePlayerPort(getToken: () => string | null): PlayerPort {
+export function createMobilePlayerPort(getToken: () => string | null, trace?: DevelopmentTraceBuffer): PlayerPort {
   let volume = clampPosition(playerControls.getVolume());
   let originalOrder: Song[] | null = null;
+  let loadGeneration = 0;
+  let reportedQueue: { readonly currentRef: SongRef; readonly queue: readonly SongSnapshot[] } | null = null;
   const matcher: SongMatcherDeps = {
     localSongs: () => useSongsStore.getState().songs,
-    getCatalogSong: getAllegraSongById,
+    getCatalogSong: (ref, token) => traceCatalogLookup(trace, () => getAllegraSongById(ref, token)),
     searchCatalog: async query => {
       const { searchOfficial } = await import('../stream/officialSearch');
-      return searchOfficial(query, 12);
+      return traceCatalogLookup(trace, () => searchOfficial(query, 12));
     },
     token: getToken,
   };
@@ -70,12 +72,20 @@ export function createMobilePlayerPort(getToken: () => string | null): PlayerPor
     const upcoming = currentIndex >= 0 ? stateQueue.slice(currentIndex + 1) : stateQueue.filter(song => song.id !== player.currentSongId);
     const currentSong = snapshotOfSong(player.currentSong);
     const livePosition = positionSV.value;
+    let queueSnapshots = upcoming.slice(0, 50).flatMap(song => {
+      const snapshot = snapshotOfSong(song);
+      return snapshot ? [snapshot] : [];
+    });
+    if (reportedQueue && currentSong) {
+      if (currentSong.ref === reportedQueue.currentRef) queueSnapshots = [...reportedQueue.queue];
+      else {
+        const currentIndexInIntent = reportedQueue.queue.findIndex(snapshot => snapshot.ref === currentSong.ref);
+        if (currentIndexInIntent >= 0) queueSnapshots = reportedQueue.queue.slice(currentIndexInIntent + 1);
+      }
+    }
     return {
       ...(currentSong ? { song: currentSong } : {}),
-      queue: upcoming.flatMap(song => {
-        const snapshot = snapshotOfSong(song);
-        return snapshot ? [snapshot] : [];
-      }).slice(0, 50),
+      queue: queueSnapshots,
       isPlaying: player.isPlaying,
       positionSec: clampPosition(Number.isFinite(livePosition) ? livePosition : usePositionStore.getState().position),
       volume: clampPosition(Number.isFinite(playerControls.getVolume()) ? playerControls.getVolume() : volume),
@@ -101,6 +111,22 @@ export function createMobilePlayerPort(getToken: () => string | null): PlayerPor
     },
     async pause() {
       usePlayerStore.getState().requestPlayback(false);
+      const paused = (): boolean => !usePlayerStore.getState().isPlaying;
+      if (paused()) return;
+      await new Promise<void>(resolve => {
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout>;
+        const finish = (): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          unsubscribe();
+          resolve();
+        };
+        const unsubscribe = usePlayerStore.subscribe(() => { if (paused()) finish(); });
+        timer = setTimeout(finish, 1500);
+        if (paused()) finish();
+      });
     },
     async seek(sec) {
       const wasPlaying = usePlayerStore.getState().isPlaying;
@@ -112,18 +138,27 @@ export function createMobilePlayerPort(getToken: () => string | null): PlayerPor
       playerControls.setVolume(volume);
     },
     async load(snapshot, queue, options) {
+      const generation = ++loadGeneration;
+      const queueSnapshots = queue.slice(0, 50);
+      reportedQueue = { currentRef: snapshot.ref, queue: queueSnapshots };
       const matched = await matchConnectSong(snapshot, matcher);
+      if (generation !== loadGeneration) return 'not_found';
       if (!matched) return 'not_found';
       const current = matched.kind === 'local' ? matched.song : toMobileSong(matched.song);
       if (!current.audioUri) return 'not_found';
-      const rest = await matchQueue(queue, matcher);
       const store = usePlayerStore.getState();
       const alreadyLoaded = store.currentSongId === current.id && store.loadedAudioId === current.id;
-      store.setPlaylistQueue('connect', [current, ...rest], 0, options.play);
+      store.setPlaylistQueue('connect', [current], 0, false);
       prepareNextInQueue();
       if (!alreadyLoaded && !(await waitForAudio(current.id))) return 'not_found';
+      if (generation !== loadGeneration) return 'not_found';
       await this.seek(options.positionSec);
       usePlayerStore.getState().requestPlayback(options.play);
+      matchQueue(queueSnapshots, matcher, 2).then(rest => {
+        if (generation !== loadGeneration || usePlayerStore.getState().currentSongId !== current.id) return;
+        usePlayerStore.getState().updateQueue([current, ...rest].slice(0, 51));
+        prepareNextInQueue();
+      }).catch(() => undefined);
       return 'ok';
     },
     async next() {
@@ -161,6 +196,8 @@ export function createMobilePlayerPort(getToken: () => string | null): PlayerPor
       prepareNextInQueue();
     },
     async addToQueue(snapshot) {
+      loadGeneration += 1;
+      if (reportedQueue) reportedQueue = { ...reportedQueue, queue: [...reportedQueue.queue, snapshot].slice(0, 50) };
       const matched = await matchConnectSong(snapshot, matcher);
       if (!matched) return;
       const song = matched.kind === 'local' ? matched.song : toMobileSong(matched.song);
@@ -170,6 +207,11 @@ export function createMobilePlayerPort(getToken: () => string | null): PlayerPor
       const index = Math.max(0, queue.findIndex(item => item.id === latest.currentSongId));
       latest.updateQueue([...queue.slice(0, index + 1), ...queue.slice(index + 1), song]);
       prepareNextInQueue();
+    },
+    dispose() {
+      loadGeneration += 1;
+      reportedQueue = null;
+      originalOrder = null;
     },
   };
 }

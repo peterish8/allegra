@@ -69,8 +69,7 @@ export function authRouter(auth: AuthService): Router {
 
   router.get('/auth/me', async (request, response) => {
     try {
-      const userId = await getUserId(auth, request);
-      const user = userId ? await auth.getUser(userId) : null;
+      const user = await callerProfile(auth, request);
       if (!user) {
         sendUnauthorized(response);
         return;
@@ -83,8 +82,7 @@ export function authRouter(auth: AuthService): Router {
 
   router.patch('/me/profile', async (request, response) => {
     try {
-      const userId = await getUserId(auth, request);
-      const user = userId ? await auth.getUser(userId) : null;
+      const user = await callerProfile(auth, request);
       if (!user) {
         sendUnauthorized(response);
         return;
@@ -96,7 +94,7 @@ export function authRouter(auth: AuthService): Router {
         delete rest.displayName;
         const next: UserData = { ...rest, ...(displayName ? { displayName } : {}) };
         return next;
-      });
+      }, user);
       if (!updated) {
         sendUnauthorized(response);
         return;
@@ -110,10 +108,20 @@ export function authRouter(auth: AuthService): Router {
   return router;
 }
 
+/** Who is calling, for a route that needs only the id. A route that reads the profile uses `callerProfile`. */
 export async function getUserId(auth: AuthService, request: Request): Promise<string | null> {
   const token = bearerToken(request.header('authorization'));
   if (!token) return null;
   return (await auth.resolveCaller(token))?.userId ?? null;
+}
+
+/**
+ * The caller's profile, read once for the whole request (AuthService.resolveUser). Null when
+ * there is no valid session. Pass it on as the `base` of any profile write the request makes.
+ */
+export async function callerProfile(auth: AuthService, request: Request): Promise<UserData | null> {
+  const token = bearerToken(request.header('authorization'));
+  return token ? auth.resolveUser(token) : null;
 }
 
 export function sendUnauthorized(response: Response): void {

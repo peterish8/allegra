@@ -7,14 +7,15 @@
  * bring the two libraries together (services/sync/LibrarySync `choose`). Nothing
  * syncs until that is answered.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { LayoutChangeEvent } from 'react-native';
 
 import { useAccount } from '../../services/account/AccountProvider';
 import { useConnect } from '../../services/connect/ConnectProvider';
 import { signInMessage } from '../../services/account/signInFlow';
-import { choose } from '../../services/sync/LibrarySync';
+import { choose, syncSoon } from '../../services/sync/LibrarySync';
 import type { FirstSyncChoice } from '../../services/sync/plan';
+import { isSyncPaused, useSyncHealthStore } from '../../services/sync/syncHealth';
 import { useSyncStore } from '../../store/syncStore';
 import * as Haptics from '../../utils/haptics';
 import { ModernDeleteModal } from '../ModernDeleteModal';
@@ -31,8 +32,15 @@ export const AllegraAccountSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent
   const question = useSyncStore(state => state.question);
   const syncing = useSyncStore(state => state.syncing);
   const lastSyncedAt = useSyncStore(state => state.lastSyncedAt);
+  const stuckSince = useSyncHealthStore(state => state.stuckSince);
+  const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [confirmPhone, setConfirmPhone] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const signIn = async () => {
     if (busy) return;
@@ -99,6 +107,17 @@ export const AllegraAccountSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent
           ) : (
             <Row label="Library sync" hint={syncHint} />
           )}
+          {isSyncPaused(stuckSince, now) ? (
+            <Action
+              label="Sync paused: tap to retry"
+              hint="Your pending changes have not reached Allegra. Tap to try again now."
+              onPress={() => {
+                Haptics.selectionAsync();
+                syncSoon(0);
+                onNotice('Retrying library sync');
+              }}
+            />
+          ) : null}
           <Action label="Connect devices" hint="Choose where playback runs and control it from this phone." onPress={connect.openDevices} />
           <Action label="Sign out" destructive onPress={signOut} />
         </>

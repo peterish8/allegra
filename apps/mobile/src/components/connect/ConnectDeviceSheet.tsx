@@ -17,7 +17,7 @@ const transferError = (reason: string | undefined, targetName: string): string =
   }
 };
 
-export const ConnectDeviceSheet: React.FC = () => {
+export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const connect = useConnect();
   const account = useAccount();
   const [busyDevice, setBusyDevice] = useState<string | null>(null);
@@ -36,7 +36,7 @@ export const ConnectDeviceSheet: React.FC = () => {
   const transfer = async (targetDeviceId: string): Promise<void> => {
     if (!connect.view || busyDevice) return;
     if (targetDeviceId === connect.view.activeDeviceId) {
-      connect.closeDevices();
+      onClose();
       return;
     }
     Haptics.selectionAsync().catch(() => undefined);
@@ -44,7 +44,7 @@ export const ConnectDeviceSheet: React.FC = () => {
     setMessage(null);
     try {
       const result = await connect.transferTo(targetDeviceId);
-      if (result.ok) connect.closeDevices();
+      if (result.ok) onClose();
       else setMessage(transferError('reason' in result ? result.reason : undefined, view.devices.find(device => device.deviceId === targetDeviceId)?.name ?? 'that device'));
     } catch {
       setMessage(transferError(undefined, view.devices.find(device => device.deviceId === targetDeviceId)?.name ?? 'that device'));
@@ -55,8 +55,7 @@ export const ConnectDeviceSheet: React.FC = () => {
 
   const view = connect.view;
   return (
-    <PlayerSheet visible={connect.devicesVisible} title="Connect devices" tall onClose={connect.closeDevices}>
-      <SheetScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.content}>
         <Text style={styles.intro}>Move playback between your phone and Allegra on the web.</Text>
         {!account.signedIn ? (
           <Pressable accessibilityRole="button" style={styles.action} onPress={signIn}>
@@ -117,6 +116,16 @@ export const ConnectDeviceSheet: React.FC = () => {
           <View style={styles.loading}><ActivityIndicator color="#fff" /><Text style={styles.rowHint}>Connecting to Allegra…</Text></View>
         )}
         {message ? <Text accessibilityRole="alert" style={styles.message}>{message}</Text> : null}
+      </View>
+  );
+};
+
+export const ConnectDeviceSheet: React.FC = () => {
+  const connect = useConnect();
+  return (
+    <PlayerSheet visible={connect.devicesVisible} title="Connect devices" tall onClose={connect.closeDevices}>
+      <SheetScrollView showsVerticalScrollIndicator={false}>
+        <ConnectDeviceList onClose={connect.closeDevices} />
       </SheetScrollView>
     </PlayerSheet>
   );

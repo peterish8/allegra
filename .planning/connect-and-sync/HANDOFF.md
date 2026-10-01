@@ -1,6 +1,7 @@
 # Handoff — Connect + library sync
 
-Updated 2026-09-30 after implementation, dev deployment, and regression review.
+Updated 2026-10-01 for the reliability follow-up. Historical verification is separated
+from current local slice evidence below.
 
 ## Current state
 
@@ -8,7 +9,9 @@ Updated 2026-09-30 after implementation, dev deployment, and regression review.
   below passed; production release progress is recorded separately from local verification.
 - Convex Connect and library functions were pushed to **dev** `charming-jaguar-140`
   (`cosmicgenius01/luvlyricsweb`) at `https://charming-jaguar-140.convex.cloud`. The live production
-  deployment was not changed.
+  deployment was subsequently updated to `neighborly-ocelot-786` from source commit `5abdde0`;
+  the Vercel deployment from that commit was Ready. These are previous shipping evidence,
+  not verification of the current reliability changes. The stable APK was not replaced.
 - Connect works through authenticated Convex presence/state/commands. Web and Android provide player
   adapters for remote play, pause, seek, skip, volume, shuffle, repeat, and queue changes; transfer
   carries the current song, position, queue (up to 50), and playback settings. Failed/autoplay-blocked
@@ -54,12 +57,37 @@ Updated 2026-09-30 after implementation, dev deployment, and regression review.
 - Cross-platform outcome counters from PLAN T10 need a mobile analytics opt-out and shared sink; the
   existing web analytics preference alone is not consent for phone telemetry.
 
+## Reliability follow-up: local scope (2026-10-01)
+
+- Base commit `5abdde0`, branch `feat/connect-and-sync`. The current source includes the approved
+  additive V2 command contract across shared session logic, Convex, memory transport, web and
+  mobile. It adds request-id deduplication, server deadlines, ownership epochs and execution
+  reservations. Transfers prepare the destination paused and activate it only after the old owner
+  confirms pause. Legacy endpoints remain supported; fenced controls do not silently downgrade.
+- Explicitly opted-in development traces remain local, bounded and payload-free. They are not
+  production telemetry. Callback counts and JSON byte estimates do not measure backend query
+  executions, transport framing, billed usage or battery.
+- Latest local gates passed: `npm.cmd run typecheck`, `npm.cmd run lint`, `npm.cmd test`,
+  `npm.cmd run mobile:check` (68 suites, 536 tests), `npx.cmd tsc --noEmit -p convex`,
+  `npm.cmd run build`, focused mobile ESLint and `git diff --check`. The mobile lint reports one
+  existing warning in `src/database/scanQueueQueries.test.ts`; the two warnings in edited files
+  were removed. `npm.cmd run e2e` was not rerun for this slice.
+- Local API health and `/discover` returned HTTP 200. The in-app browser still held a stale
+  connection-error document, and browser policy blocked reopening it; this is not visual UI proof.
+  No Android device is attached, and signed-in web-to-phone acceptance, transfer testing, and
+  physical/background timing remain open. The synthetic sender-delay fixtures are not latency
+  measurements. Do not mark all P0 or the full plan complete.
+- No production deployment, merge, APK release or live backend mutation was performed. The
+  unrelated `.mcp.json`, `mobile allegra.png`, Android crash logs and `output/` directory remain
+  excluded from this feature change.
+
 ## Important files
 
 - Contract: [`../../docs/connect-contract.md`](../../docs/connect-contract.md)
 - API seam: [`../../docs/api-contract.md`](../../docs/api-contract.md)
 - End-to-end architecture: [`../../docs/architecture.md`](../../docs/architecture.md)
 - Implementation plan and task state: [`PLAN.md`](./PLAN.md)
+- Proposed reliability/performance follow-up: [`IMPROVEMENT-PLAN.md`](./IMPROVEMENT-PLAN.md)
 - Decisions and verification checkpoints: [`DECISIONS.tsv`](./DECISIONS.tsv)
 
 Keep `.mcp.json` and `mobile allegra.png` untouched; they are intentional untracked files in this

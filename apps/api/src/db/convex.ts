@@ -16,10 +16,24 @@ function versionOf(raw: unknown): number {
 
 /** Profiles and shares in Convex (convex/profiles.ts, convex/shares.ts). */
 export class ConvexUserStore implements UserStore {
+  /**
+   * The version each profile this store handed out was read at, so `update` can start from a
+   * copy the request already holds. Keyed by the object itself: nothing to clear, and a copy
+   * built anywhere else is simply unknown and read again.
+   */
+  private readonly versions = new WeakMap<UserData, number>();
+
   public constructor(private readonly convex: ConvexGateway) {}
 
   public async get(userId: string): Promise<UserData | null> {
-    return parseUserData(await this.convex.query('profiles:get', { userId }));
+    return this.read(userId);
+  }
+
+  private async read(userId: string): Promise<UserData | null> {
+    const raw = await this.convex.query('profiles:get', { userId });
+    const user = parseUserData(raw);
+    if (user) this.versions.set(user, versionOf(raw));
+    return user;
   }
 
   public async findByEmail(email: string): Promise<UserData | null> {
@@ -30,16 +44,23 @@ export class ConvexUserStore implements UserStore {
     await this.convex.mutation('profiles:save', { user });
   }
 
-  public async update(userId: string, change: ProfileChange): Promise<UserData | null> {
+  public async update(userId: string, change: ProfileChange, base?: UserData): Promise<UserData | null> {
+    // A copy this store handed out earlier in the request is as good as a fresh read for the first
+    // try: the compare-and-set below refuses it if anyone wrote since.
+    let current: UserData | null = base && base.userId === userId && this.versions.has(base) ? base : null;
     for (let attempt = 0; attempt < UPDATE_ATTEMPTS; attempt++) {
-      const raw = await this.convex.query('profiles:get', { userId });
-      const current = parseUserData(raw);
+      current ??= await this.read(userId);
       if (!current) return null;
       const next = change(current);
       if (!next) return current;
       const user = { ...next, userId };
+      const expectedVersion = this.versions.get(current) ?? 0;
+      if ((await this.convex.mutation('profiles:update', { user, expectedVersion })) === true) {
+        this.versions.set(user, expectedVersion + 1);
+        return user;
+      }
       // False: someone wrote in between. Read their write and apply the change on top of it.
-      if ((await this.convex.mutation('profiles:update', { user, expectedVersion: versionOf(raw) })) === true) return user;
+      current = null;
     }
     throw new PersistenceError();
   }

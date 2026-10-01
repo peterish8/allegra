@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { RootStackScreenProps } from '../../types/navigation';
 import { useConnect } from '../../services/connect/ConnectProvider';
+import { useConnectPositionStore } from '../../services/connect/remotePositionStore';
 import { usePlayerStore } from '../../store/playerStore';
 import { lyricaService } from '../../services/LyricaService';
 import SynchronizedLyrics from '../SynchronizedLyrics';
@@ -18,6 +19,7 @@ type Props = RootStackScreenProps<'NowPlaying'>;
 export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
   const connect = useConnect();
   const view = connect.view;
+  const remotePosition = useConnectPositionStore(state => state.positionSec);
   const song = view?.song;
   const songRef = song?.ref;
   const songTitle = song?.title;
@@ -48,7 +50,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
     return () => { current = false; };
   }, [songRef, songTitle, songArtist, songDuration]);
 
-  const seconds = scrubValue ?? view?.livePosition ?? 0;
+  const seconds = scrubValue ?? remotePosition;
   const volume = volumeValue ?? view?.volume ?? 1;
   const duration = Math.max(1, song?.duration ?? 1);
   const close = (): void => {
@@ -123,7 +125,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
           {lyrics.length ? (
             <SynchronizedLyrics
               lyrics={lyrics}
-              currentTime={view.livePosition}
+              currentTime={remotePosition}
               onLyricPress={seek}
               songTitle={song.title}
             />

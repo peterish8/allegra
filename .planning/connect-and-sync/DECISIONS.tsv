@@ -6,3 +6,5 @@ date_utc	checkpoint	decision_or_finding	evidence
 2026-09-30	browser_e2e	The search suggestion navigates to results; playback begins only after the result Play action	`npm run e2e` passed all 14 tests, including search-to-play and player controls
 2026-09-30	live_acceptance	Do not claim a real two-device sign-in/playback run without a physical Android device and signed-in session	adb devices returned no attached devices; full authenticated web+phone flow remains unverified
 2026-09-30	analytics_scope	Defer Connect/sync outcome counters until the mobile client has an analytics opt-out and shared sink	Current analytics preference is web-only; documented in PLAN T10b
+2026-10-01	P0_scope	Local reliability implementation only; preserve dirty changes; dev target charming-jaguar-140; no physical Android attached	git status; .env.local CONVEX_DEPLOYMENT; adb devices empty
+2026-10-01	V2_policy_approved	Owner approved additive V2 fencing/capability gate and transfers requiring confirmed old-owner pause; unreachable owner fails rather than starting a second player	Owner approval in current conversation; RELIABILITY-CONTRACT-PROPOSAL.md (policy approved, not implemented)

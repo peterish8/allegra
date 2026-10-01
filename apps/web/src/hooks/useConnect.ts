@@ -10,20 +10,17 @@ import { fromAllegraSong, parseSongRef, toAllegraId } from '@shared/songRef';
 import type { UnifiedSong } from '@shared/types';
 import {
   createConnectSession,
+  createConvexTransport,
+  createDevelopmentTrace,
+  traceCatalogLookup,
   systemClock,
-  type ConnectCommand,
-  type ConnectDevice,
-  type ConnectPlayerState,
   type ConnectSession,
-  type ConnectSnapshot,
-  type ConnectTransport,
-  type DeviceRegistration,
-  type MutationResult,
+  type ConnectView,
+  type DevelopmentTraceBuffer,
+  type ConvexWireClient,
   type PlayerPort,
   type PlayerSnapshot,
-  type PlayerStatePatch,
-  type RemoteCommand,
-  type RepeatMode
+  type RemoteCommand
 } from '../../../../packages/connect/src/index';
 import { useConvexAppClient } from '../../app/ConvexSignInProvider';
 import { useSignIn } from '../auth/SignInContext';
@@ -32,155 +29,22 @@ import { exactSaavnMatch, type LibrarySong } from '../lib/libraryRows';
 import { fetchSongsByIds, searchSongs } from '../lib/api';
 import { accountIdFromToken, deviceIdForAccount } from '../lib/connectDeviceId';
 
-interface DeviceRow {
-  readonly deviceId: string;
-  readonly name: string;
-  readonly kind: 'web' | 'android' | 'ios';
-  readonly appVersion: string;
-  readonly canPlay: boolean;
-  readonly isOnline: boolean;
-  readonly isActive: boolean;
-}
-
-interface CommandRow {
-  readonly commandId: string;
-  readonly sourceDeviceId: string;
-  readonly targetDeviceId: string;
-  readonly kind: RemoteCommand['kind'];
-  readonly args?: Record<string, unknown>;
-  readonly createdAt: number;
-  readonly status: 'pending' | 'done' | 'failed';
-  readonly error?: string;
-}
-
-const registerRef = makeFunctionReference<'mutation', { deviceId: string; name: string; kind: 'web' | 'android' | 'ios'; appVersion: string; canPlay: boolean }, MutationResult>('connect:register');
-const heartbeatRef = makeFunctionReference<'mutation', { deviceId: string }, MutationResult>('connect:heartbeat');
-const devicesRef = makeFunctionReference<'query', Record<string, never>, DeviceRow[]>('connect:devices');
-const stateRef = makeFunctionReference<'query', Record<string, never>, ConnectPlayerState | null>('connect:state');
-const commandsRef = makeFunctionReference<'query', { deviceId: string }, CommandRow[]>('connect:commandsFor');
-const reportRef = makeFunctionReference<'mutation', { deviceId: string; patch: PlayerStatePatch; rev: number }, MutationResult>('connect:report');
-const claimRef = makeFunctionReference<'mutation', { deviceId: string; snapshot: PlayerSnapshot }, MutationResult>('connect:claim');
-const sendRef = makeFunctionReference<'mutation', { fromDeviceId: string; targetDeviceId: string; kind: RemoteCommand['kind']; args?: Record<string, unknown> }, { commandId: string; serverNow: number }>('connect:send');
-const ackRef = makeFunctionReference<'mutation', { deviceId: string; commandId: string; ok: boolean; error?: string }, MutationResult>('connect:ack');
-const transferRef = makeFunctionReference<'mutation', { fromDeviceId: string; toDeviceId: string }, { commandId: string; serverNow: number }>('connect:transfer');
-
-function remoteCommand(row: CommandRow): RemoteCommand {
-  const args = row.args ?? {};
-  switch (row.kind) {
-    case 'play':
-    case 'pause':
-    case 'next':
-    case 'prev':
-      return { kind: row.kind };
-    case 'seek':
-      return { kind: 'seek', sec: Number(args.sec) };
-    case 'volume':
-      return { kind: 'volume', v: Number(args.v) };
-    case 'shuffle':
-      return { kind: 'shuffle', on: Boolean(args.on) };
-    case 'repeat':
-      return { kind: 'repeat', mode: args.mode as RepeatMode };
-    case 'play_song':
-      return { kind: 'play_song', song: args.song as SongSnapshot, ...(Array.isArray(args.queue) ? { queue: args.queue as SongSnapshot[] } : {}) };
-    case 'queue_add':
-      return { kind: 'queue_add', song: args.song as SongSnapshot };
-    case 'take_over':
-      return { kind: 'take_over', state: args.state as ConnectPlayerState };
-  }
-}
-
-class ConvexConnectTransport implements ConnectTransport {
-  public constructor(private readonly client: ConvexReactClient) {}
-
-  public register(device: DeviceRegistration): Promise<MutationResult> {
-    return this.client.mutation(registerRef, device);
-  }
-
-  public heartbeat(deviceId: string): Promise<MutationResult> {
-    return this.client.mutation(heartbeatRef, { deviceId });
-  }
-
-  public watch(deviceId: string, listener: (snapshot: ConnectSnapshot) => void): () => void {
-    let devices: DeviceRow[] = [];
-    let state: ConnectPlayerState | null = null;
-    let commands: CommandRow[] = [];
-    const publish = (): void => {
-      const connectDevices: ConnectDevice[] = devices.map((device) => ({
-        deviceId: device.deviceId,
-        name: device.name,
-        kind: device.kind,
-        appVersion: device.appVersion,
-        canPlay: device.canPlay,
-        isOnline: device.isOnline,
-        lastSeenAt: device.isOnline ? Date.now() : 0
-      }));
-      const connectCommands: ConnectCommand[] = commands.map((row) => ({
-        id: row.commandId,
-        userDeviceId: row.sourceDeviceId,
-        targetDeviceId: row.targetDeviceId,
-        command: remoteCommand(row),
-        createdAt: row.createdAt,
-        status: row.status,
-        ...(row.error ? { error: row.error } : {})
-      }));
-      listener({
-        serverNow: Date.now(),
-        devices: connectDevices,
-        ...(state ? { state } : {}),
-        commands: connectCommands
-      });
-    };
-    const deviceWatch = this.client.watchQuery(devicesRef, {});
-    const stateWatch = this.client.watchQuery(stateRef, {});
-    const commandWatch = this.client.watchQuery(commandsRef, { deviceId });
-    const stopDevices = deviceWatch.onUpdate(() => {
-      try { devices = deviceWatch.localQueryResult() ?? []; publish(); } catch { /* the signed-in query will retry */ }
-    });
-    const stopState = stateWatch.onUpdate(() => {
-      try { state = stateWatch.localQueryResult() ?? null; publish(); } catch { /* the signed-in query will retry */ }
-    });
-    const stopCommands = commandWatch.onUpdate(() => {
-      try { commands = commandWatch.localQueryResult() ?? []; publish(); } catch { /* the signed-in query will retry */ }
-    });
-    // Subscribe before reading cached results so a change cannot land in the gap between the two.
-    // The listeners above handle the first server result when nothing is cached yet.
-    try { devices = deviceWatch.localQueryResult() ?? []; } catch { /* the first server result is pending */ }
-    try { state = stateWatch.localQueryResult() ?? null; } catch { /* the first server result is pending */ }
-    try { commands = commandWatch.localQueryResult() ?? []; } catch { /* the first server result is pending */ }
-    publish();
-    return () => {
-      stopDevices();
-      stopState();
-      stopCommands();
-    };
-  }
-
-  public report(deviceId: string, patch: PlayerStatePatch, rev: number): Promise<MutationResult> {
-    return this.client.mutation(reportRef, { deviceId, patch, rev });
-  }
-
-  public claim(deviceId: string, snapshot: PlayerSnapshot): Promise<MutationResult> {
-    if (!snapshot.song) return Promise.reject(new Error('There is no song to claim.'));
-    return this.client.mutation(claimRef, { deviceId, snapshot });
-  }
-
-  public async send(fromDeviceId: string, targetDeviceId: string, command: RemoteCommand): Promise<{ commandId: string; serverNow: number }> {
-    const { kind, ...args } = command;
-    return this.client.mutation(sendRef, {
-      fromDeviceId,
-      targetDeviceId,
-      kind,
-      ...(Object.keys(args).length ? { args } : {})
-    });
-  }
-
-  public ack(deviceId: string, commandId: string, result: { readonly ok: boolean; readonly error?: string }): Promise<MutationResult> {
-    return this.client.mutation(ackRef, { deviceId, commandId, ...result });
-  }
-
-  public transfer(fromDeviceId: string, toDeviceId: string): Promise<{ commandId: string; serverNow: number }> {
-    return this.client.mutation(transferRef, { fromDeviceId, toDeviceId });
-  }
+function createWebConnectTransport(client: ConvexReactClient, trace?: DevelopmentTraceBuffer) {
+  const binding: ConvexWireClient = {
+    mutation(name, args) {
+      const reference = makeFunctionReference<'mutation', Record<string, unknown>, unknown>(name);
+      return client.mutation(reference, args);
+    },
+    watchQuery(name, args) {
+      const reference = makeFunctionReference<'query', Record<string, unknown>, unknown>(name);
+      const watch = client.watchQuery(reference, args);
+      return {
+        onUpdate: callback => watch.onUpdate(callback),
+        current: () => watch.localQueryResult()
+      };
+    }
+  };
+  return createConvexTransport(binding, trace ? { trace } : undefined);
 }
 
 function snapshotFromSong(song: UnifiedSong): SongSnapshot | null {
@@ -215,16 +79,16 @@ function songFromSnapshot(snapshot: SongSnapshot): LibrarySong {
   };
 }
 
-async function resolvePlayable(snapshot: SongSnapshot): Promise<LibrarySong | null> {
+async function resolvePlayable(snapshot: SongSnapshot, trace?: DevelopmentTraceBuffer): Promise<LibrarySong | null> {
   const parsed = parseSongRef(snapshot.ref);
   const id = toAllegraId(snapshot.ref);
   if (id || parsed?.source === 'gaana') {
     const catalogId = parsed?.source === 'gaana' ? snapshot.ref : id;
-    const songs = await fetchSongsByIds(catalogId ? [catalogId] : []);
+    const songs = await traceCatalogLookup(trace, () => fetchSongsByIds(catalogId ? [catalogId] : []));
     const exact = songs.find((song) => fromAllegraSong(song) === snapshot.ref);
     if (exact) return { ...exact, libraryRef: snapshot.ref, librarySnapshot: snapshot };
   }
-  const { results } = await searchSongs(`${snapshot.title} ${snapshot.artist}`);
+  const { results } = await traceCatalogLookup(trace, () => searchSongs(`${snapshot.title} ${snapshot.artist}`));
   const match = exactSaavnMatch(snapshot, results);
   return match ? { ...match, libraryRef: snapshot.ref, librarySnapshot: snapshot } : null;
 }
@@ -284,13 +148,64 @@ function waitForMetadata(audio: HTMLAudioElement): Promise<boolean> {
   });
 }
 
+async function resolveQueueInOrder(
+  queue: readonly SongSnapshot[],
+  trace: DevelopmentTraceBuffer | undefined,
+  isCurrent: () => boolean
+): Promise<LibrarySong[]> {
+  const results: (LibrarySong | null)[] = new Array(queue.length).fill(null);
+  const lookups = new Map<string, Promise<LibrarySong | null>>();
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < queue.length && isCurrent()) {
+      const index = cursor++;
+      const snapshot = queue[index];
+      let lookup = lookups.get(snapshot.ref);
+      if (!lookup) {
+        lookup = resolvePlayable(snapshot, trace).catch(() => null);
+        lookups.set(snapshot.ref, lookup);
+      }
+      results[index] = await lookup;
+    }
+  };
+  await Promise.all([worker(), worker()]);
+  return results.filter((song): song is LibrarySong => Boolean(song?.streamUrl));
+}
+
 export interface WebConnectState {
   readonly session: ConnectSession | null;
-  readonly view: ReturnType<ConnectSession['view']> | null;
+  readonly view: ConnectView | null;
   readonly deviceId: string | null;
   readonly connected: boolean;
+  readonly tabStatus: 'starting' | 'leader' | 'other-tab' | null;
+  readonly livePosition: number;
+  readonly control: (command: RemoteCommand) => void;
   readonly transferTo: (deviceId: string) => Promise<boolean>;
   readonly playRemote: (song: UnifiedSong, queue: readonly UnifiedSong[]) => boolean;
+}
+
+type ConnectTabMessage =
+  | { readonly type: 'view'; readonly deviceId: string; readonly view: ConnectView }
+  | { readonly type: 'position'; readonly deviceId: string; readonly positionSec: number }
+  | { readonly type: 'control'; readonly command: RemoteCommand }
+  | { readonly type: 'transfer'; readonly requestId: string; readonly targetDeviceId: string }
+  | { readonly type: 'transfer-result'; readonly requestId: string; readonly ok: boolean };
+
+function isRemoteCommand(value: unknown): value is RemoteCommand {
+  if (!value || typeof value !== 'object') return false;
+  const command = value as Record<string, unknown>;
+  switch (command.kind) {
+    case 'play': case 'pause': case 'next': case 'prev':
+      return true;
+    case 'seek': return typeof command.sec === 'number' && Number.isFinite(command.sec);
+    case 'volume': return typeof command.v === 'number' && Number.isFinite(command.v);
+    case 'shuffle': return typeof command.on === 'boolean';
+    case 'repeat': return command.mode === 'off' || command.mode === 'all' || command.mode === 'one';
+    case 'play_song': return Boolean(command.song && typeof command.song === 'object') && (command.queue === undefined || Array.isArray(command.queue));
+    case 'queue_add': return Boolean(command.song && typeof command.song === 'object');
+    case 'take_over': return Boolean(command.state && typeof command.state === 'object');
+    default: return false;
+  }
 }
 
 export function useConnect(audio: AudioPlayerState): WebConnectState {
@@ -304,15 +219,34 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
   audioRef.current = audio;
   const listenersRef = useRef(new Set<(snapshot: PlayerSnapshot) => void>());
   const sessionRef = useRef<ConnectSession | null>(null);
+  const traceRef = useRef<DevelopmentTraceBuffer | undefined>(undefined);
+  const loadGenerationRef = useRef(0);
+  const reportedQueueRef = useRef<{ readonly currentRef: string; readonly queue: readonly SongSnapshot[] } | null>(null);
   const [session, setSession] = useState<ConnectSession | null>(null);
-  const [view, setView] = useState<ReturnType<ConnectSession['view']> | null>(null);
+  const [view, setView] = useState<ConnectView | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [tabStatus, setTabStatus] = useState<WebConnectState['tabStatus']>(null);
+  const [livePosition, setLivePosition] = useState(0);
+  const [documentVisible, setDocumentVisible] = useState(false);
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const tabStatusRef = useRef<WebConnectState['tabStatus']>(null);
+  const pendingTransfersRef = useRef(new Map<string, { resolve: (success: boolean) => void; timer: number }>());
+
+  const snapshotRef = useRef<() => PlayerSnapshot>(() => audioSnapshot(audioRef.current));
+  snapshotRef.current = () => {
+    const snapshot = audioSnapshot(audioRef.current);
+    const intent = reportedQueueRef.current;
+    if (!intent || !snapshot.song) return snapshot;
+    if (snapshot.song.ref === intent.currentRef) return { ...snapshot, queue: [...intent.queue] };
+    const index = intent.queue.findIndex(item => item.ref === snapshot.song?.ref);
+    return index >= 0 ? { ...snapshot, queue: intent.queue.slice(index + 1) } : snapshot;
+  };
 
   const player = useMemo<PlayerPort>(() => ({
-    getSnapshot: () => audioSnapshot(audioRef.current),
+    getSnapshot: () => snapshotRef.current(),
     onChange(listener) {
       listenersRef.current.add(listener);
-      listener(audioSnapshot(audioRef.current));
+      listener(snapshotRef.current());
       return () => listenersRef.current.delete(listener);
     },
     async play() {
@@ -323,16 +257,26 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
     async seek(sec) { await audioRef.current.seek(sec); },
     async setVolume(volume) { audioRef.current.setVolume(volume); },
     async load(song, queue, options) {
+      const generation = ++loadGenerationRef.current;
+      const queueSnapshots = queue.slice(0, 50);
+      reportedQueueRef.current = { currentRef: song.ref, queue: queueSnapshots };
       let current: LibrarySong | null;
-      try { current = await resolvePlayable(song); } catch { return 'not_found'; }
+      try { current = await resolvePlayable(song, traceRef.current); } catch { return 'not_found'; }
+      if (generation !== loadGenerationRef.current) return 'not_found';
       if (!current?.streamUrl) return 'not_found';
-      const resolvedQueue = await Promise.all(queue.slice(0, 49).map((item) => resolvePlayable(item).catch(() => null)));
-      const nextQueue = [current, ...resolvedQueue.filter((item): item is LibrarySong => Boolean(item?.streamUrl))];
       const target = audioRef.current;
-      target.loadForConnect(current, nextQueue, false);
+      target.loadForConnect(current, [current], false);
       const element = target.audioRef.current;
       if (!element || !(await waitForMetadata(element))) return 'not_found';
+      if (generation !== loadGenerationRef.current) return 'not_found';
       await target.seek(options.positionSec);
+      void resolveQueueInOrder(queueSnapshots, traceRef.current, () => generation === loadGenerationRef.current)
+        .then(resolved => {
+          if (generation !== loadGenerationRef.current) return;
+          const currentRef = snapshotFromSong(audioRef.current.currentSong ?? current);
+          if (currentRef?.ref !== song.ref) return;
+          audioRef.current.appendQueue(resolved);
+        });
       if (!options.play) {
         await target.requestPlayback(false);
         return 'ok';
@@ -349,13 +293,22 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
       for (let count = 0; count < 3 && audioRef.current.repeat !== mode; count += 1) audioRef.current.cycleRepeat();
     },
     async addToQueue(song) {
-      const playable = await resolvePlayable(song);
+      loadGenerationRef.current += 1;
+      if (reportedQueueRef.current) reportedQueueRef.current = {
+        ...reportedQueueRef.current,
+        queue: [...reportedQueueRef.current.queue, song].slice(0, 50)
+      };
+      const playable = await resolvePlayable(song, traceRef.current);
       if (playable) audioRef.current.appendQueue([playable]);
-    }
+    },
+    dispose() {
+      loadGenerationRef.current += 1;
+      reportedQueueRef.current = null;
+    },
   }), []);
 
   useEffect(() => {
-    const next = audioSnapshot(audio);
+    const next = snapshotRef.current();
     for (const listener of listenersRef.current) listener(next);
   }, [audio.currentSong, audio.queue, audio.isPlaying, audio.currentTime, audio.volume, audio.shuffle, audio.repeat]);
 
@@ -364,53 +317,213 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
       setSession(null);
       setView(null);
       setDeviceId(null);
+      setTabStatus(null);
+      tabStatusRef.current = null;
+      setLivePosition(0);
       return undefined;
     }
     const localDeviceId = browserDeviceId(accountId);
-    const transport = new ConvexConnectTransport(convex);
-    const created = createConnectSession({
-      transport,
-      player,
-      device: { deviceId: localDeviceId, name: browserDeviceName(), kind: 'web', appVersion: 'web-connect-1', canPlay: true },
-      clock: systemClock
-    });
-    sessionRef.current = created;
     setDeviceId(localDeviceId);
-    setSession(created);
-    const stopView = created.subscribe(setView);
-    const updateVisibility = (): void => created.setVisible(document.visibilityState === 'visible');
-    updateVisibility();
-    document.addEventListener('visibilitychange', updateVisibility);
-    return () => {
+    const harness = process.env.NODE_ENV === 'development' && new URLSearchParams(window.location.search).has('connectDevice');
+    const canElect = !harness && 'locks' in navigator && typeof navigator.locks?.request === 'function';
+    const channel = canElect && typeof BroadcastChannel !== 'undefined'
+      ? new BroadcastChannel(`allegra-connect:${encodeURIComponent(accountId)}`)
+      : null;
+    channelRef.current = channel;
+    let disposed = false;
+    let stopView: (() => void) | undefined;
+    let created: ConnectSession | null = null;
+    let trace: DevelopmentTraceBuffer | undefined;
+    let leaderStarted = false;
+    let releaseHold: (() => void) | undefined;
+    const hold = new Promise<void>(resolve => { releaseHold = resolve; });
+    const releaseSession = (): void => releaseHold?.();
+    const setStatus = (next: WebConnectState['tabStatus']): void => {
+      tabStatusRef.current = next;
+      setTabStatus(next);
+    };
+    const updateView = (next: ConnectView): void => {
+      setView(next);
+      setLivePosition(next.livePosition);
+      channel?.postMessage({ type: 'view', deviceId: localDeviceId, view: next } satisfies ConnectTabMessage);
+    };
+    const startLeader = async (): Promise<void> => {
+      if (disposed || leaderStarted) return;
+      leaderStarted = true;
+      trace = process.env.NODE_ENV === 'development'
+        ? createDevelopmentTrace({
+            development: true,
+            enabled: new URLSearchParams(window.location.search).get('connectTrace') === '1',
+            monotonicNow: () => performance.now()
+          })
+        : undefined;
+      traceRef.current = trace;
+      if (trace) (window as Window & { allegraConnectTrace?: DevelopmentTraceBuffer }).allegraConnectTrace = trace;
+      created = createConnectSession({
+        transport: createWebConnectTransport(convex, trace),
+        player,
+        device: { deviceId: localDeviceId, name: browserDeviceName(), kind: 'web', appVersion: 'web-connect-1', canPlay: true },
+        clock: systemClock,
+        ...(trace ? { trace } : {})
+      });
+      sessionRef.current = created;
+      setStatus('leader');
+      setSession(created);
+      stopView = created.subscribe(updateView);
+      const updateVisibility = (): void => {
+        const visible = document.visibilityState === 'visible';
+        setDocumentVisible(visible);
+        created?.setVisible(visible);
+      };
+      updateVisibility();
+      document.addEventListener('visibilitychange', updateVisibility);
+      await hold;
       document.removeEventListener('visibilitychange', updateVisibility);
-      stopView();
+      stopView?.();
       created.dispose();
+      trace?.dispose();
+      if (traceRef.current === trace) traceRef.current = undefined;
+      const debugWindow = window as Window & { allegraConnectTrace?: DevelopmentTraceBuffer };
+      if (debugWindow.allegraConnectTrace === trace) delete debugWindow.allegraConnectTrace;
       if (sessionRef.current === created) sessionRef.current = null;
       setSession(null);
       setView(null);
+      setLivePosition(0);
+    };
+
+    const onMessage = (event: MessageEvent<ConnectTabMessage>): void => {
+      const message = event.data;
+      if (!message || typeof message !== 'object') return;
+      if (message.type === 'view' && message.deviceId === localDeviceId && !leaderStarted) {
+        setView(message.view);
+        setLivePosition(message.view.livePosition);
+        return;
+      }
+      if (message.type === 'position' && message.deviceId === localDeviceId && !leaderStarted && Number.isFinite(message.positionSec)) {
+        setLivePosition(message.positionSec);
+        return;
+      }
+      if (!leaderStarted || !created) {
+        if (message.type === 'transfer-result') {
+          const pending = pendingTransfersRef.current.get(message.requestId);
+          if (pending) {
+            window.clearTimeout(pending.timer);
+            pending.resolve(message.ok);
+            pendingTransfersRef.current.delete(message.requestId);
+          }
+        }
+        return;
+      }
+      if (message.type === 'control' && isRemoteCommand(message.command)) created.control(message.command);
+      else if (message.type === 'transfer' && typeof message.targetDeviceId === 'string') {
+        void created.transferTo(message.targetDeviceId).then(result => {
+          channel?.postMessage({ type: 'transfer-result', requestId: message.requestId, ok: result.ok } satisfies ConnectTabMessage);
+        }).catch(() => channel?.postMessage({ type: 'transfer-result', requestId: message.requestId, ok: false } satisfies ConnectTabMessage));
+      }
+    };
+    channel?.addEventListener('message', onMessage);
+    if (canElect) {
+      setStatus('starting');
+      const lockName = `allegra-connect:${encodeURIComponent(accountId)}`;
+      void navigator.locks.request(lockName, { mode: 'exclusive', ifAvailable: true }, async lock => {
+        if (!lock) {
+          setStatus('other-tab');
+          setSession(null);
+          return;
+        }
+        await startLeader();
+      }).catch(() => {
+        if (!disposed && !leaderStarted) {
+          setStatus('leader');
+          void startLeader();
+        }
+      });
+    } else {
+      setStatus('leader');
+      void startLeader();
+    }
+    return () => {
+      disposed = true;
+      releaseSession?.();
+      channel?.removeEventListener('message', onMessage);
+      channel?.close();
+      if (channelRef.current === channel) channelRef.current = null;
+      for (const pending of pendingTransfersRef.current.values()) {
+        window.clearTimeout(pending.timer);
+        pending.resolve(false);
+      }
+      pendingTransfersRef.current.clear();
+      if (!leaderStarted) {
+        stopView?.();
+        created?.dispose();
+        trace?.dispose();
+        if (sessionRef.current === created) sessionRef.current = null;
+      }
+      setStatus(null);
+      setSession(null);
+      setView(null);
+      setLivePosition(0);
     };
   }, [accountId, convex, player, signIn.available, signIn.signedIn]);
 
+  useEffect(() => {
+    const current = sessionRef.current;
+    if (!current || !documentVisible || !view?.isPlaying) return undefined;
+    const isRemote = !view.isThisDeviceActive && view.activeDeviceOnline;
+    const shouldBroadcastForTab = tabStatus === 'leader' && channelRef.current !== null;
+    if (!isRemote && !shouldBroadcastForTab) return undefined;
+    const timer = window.setInterval(() => {
+      const positionSec = current.livePosition();
+      setLivePosition(positionSec);
+      if (shouldBroadcastForTab) {
+        channelRef.current?.postMessage({ type: 'position', deviceId: deviceId ?? '', positionSec } satisfies ConnectTabMessage);
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [deviceId, documentVisible, session, tabStatus, view?.activeDeviceOnline, view?.isPlaying, view?.isThisDeviceActive]);
+
+  const control = useCallback((command: RemoteCommand): void => {
+    const current = sessionRef.current;
+    if (current) current.control(command);
+    else if (tabStatusRef.current === 'other-tab') channelRef.current?.postMessage({ type: 'control', command } satisfies ConnectTabMessage);
+  }, []);
+
   const transferTo = useCallback(async (targetDeviceId: string): Promise<boolean> => {
-    const result = await sessionRef.current?.transferTo(targetDeviceId);
-    return result?.ok ?? false;
+    const current = sessionRef.current;
+    if (current) return (await current.transferTo(targetDeviceId)).ok;
+    if (tabStatusRef.current !== 'other-tab' || !channelRef.current) return false;
+    const requestId = crypto.randomUUID();
+    return new Promise(resolve => {
+      const timer = window.setTimeout(() => {
+        pendingTransfersRef.current.delete(requestId);
+        resolve(false);
+      }, 15_000);
+      pendingTransfersRef.current.set(requestId, { resolve, timer });
+      channelRef.current?.postMessage({ type: 'transfer', requestId, targetDeviceId } satisfies ConnectTabMessage);
+    });
   }, []);
 
   const playRemote = useCallback((song: UnifiedSong, queue: readonly UnifiedSong[]): boolean => {
     const current = sessionRef.current;
-    const currentView = current?.view();
+    const currentView = current?.view() ?? view;
     const snapshot = snapshotFromSong(song);
-    if (!current || !currentView?.activeDeviceId || currentView.isThisDeviceActive || !snapshot) return false;
+    if (!snapshot) return false;
     const queueSnapshots = queue
       .filter((item) => item.id !== song.id)
       .map(snapshotFromSong)
       .filter((item): item is SongSnapshot => item !== null)
       .slice(0, 50);
-    current.control({ kind: 'play_song', song: snapshot, queue: queueSnapshots });
+    if (current) {
+      if (!currentView?.activeDeviceId || currentView.isThisDeviceActive || !currentView.activeDeviceOnline) return false;
+      current.control({ kind: 'play_song', song: snapshot, queue: queueSnapshots });
+      return true;
+    }
+    if (tabStatusRef.current !== 'other-tab' || !channelRef.current) return false;
+    control({ kind: 'play_song', song: snapshot, queue: queueSnapshots });
     return true;
-  }, []);
+  }, [control, view]);
 
-  return { session, view, deviceId, connected: Boolean(convex && signIn.signedIn), transferTo, playRemote };
+  return { session, view, deviceId, connected: Boolean(convex && signIn.signedIn), tabStatus, livePosition, control, transferTo, playRemote };
 }
 
 export function snapshotToDisplaySong(snapshot: SongSnapshot): LibrarySong {

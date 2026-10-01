@@ -3,8 +3,7 @@ import { Router } from 'express';
 import type { AuthService } from '../auth/auth.js';
 import type { CatalogService } from '../catalog/catalog.js';
 import type { ListenerActions } from '../user/actions.js';
-import type { UserData } from '../user/store.js';
-import { getUserId, sendUnauthorized } from './auth.js';
+import { callerProfile, sendUnauthorized } from './auth.js';
 import { sendFailure, sendSuccess } from './common.js';
 
 const LINK_OFF = "We couldn't find that. The link may have been turned off.";
@@ -18,7 +17,7 @@ export function sharedRouter(auth: AuthService, catalog: CatalogService, actions
   const router = Router();
 
   router.post('/libraries/:id/share', async (request, response) => {
-    const user = await currentUser(auth, request);
+    const user = await callerProfile(auth, request);
     if (!user) {
       sendUnauthorized(response);
       return;
@@ -32,7 +31,7 @@ export function sharedRouter(auth: AuthService, catalog: CatalogService, actions
   });
 
   router.delete('/libraries/:id/share', async (request, response) => {
-    const user = await currentUser(auth, request);
+    const user = await callerProfile(auth, request);
     if (!user) {
       sendUnauthorized(response);
       return;
@@ -71,7 +70,7 @@ export function sharedRouter(auth: AuthService, catalog: CatalogService, actions
 
   // Save a copy into the caller's own account, so they can edit it without touching the original.
   router.post('/shared/:code/save', async (request, response) => {
-    const user = await currentUser(auth, request);
+    const user = await callerProfile(auth, request);
     if (!user) {
       sendUnauthorized(response);
       return;
@@ -89,9 +88,4 @@ export function sharedRouter(auth: AuthService, catalog: CatalogService, actions
   });
 
   return router;
-}
-
-async function currentUser(auth: AuthService, request: Parameters<typeof getUserId>[1]): Promise<UserData | null> {
-  const userId = await getUserId(auth, request);
-  return userId ? auth.getUser(userId).catch(() => null) : null;
 }

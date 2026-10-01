@@ -40,6 +40,36 @@ without downloading it; toggle a like and edit a playlist while offline, reconne
 outbox catches up. Listen to a few tracks, then confirm **Quick picks for you** uses that account's
 listening history. Confirm downloads remain available offline and are not removed by library sync.
 
+### Local Connect traces (development opt-in)
+
+In a development web build, open `http://localhost:5173/?connectTrace=1` before signing in.
+For a second sender tab, use `?connectDevice=b&connectTrace=1`. On a development mobile build,
+set `EXPO_PUBLIC_CONNECT_TRACE=1` in the local mobile environment and restart Metro after that
+environment change. Release mobile builds ignore this flag; production web builds ignore the
+query parameter. Neither enables production telemetry.
+
+The local debugger can inspect `allegraConnectTrace.snapshot()` and clear it with
+`allegraConnectTrace.clear()`. It exists only for an opted-in signed-in session. Account change,
+sign-out or session cleanup erases and disposes that buffer. At most 250 entries are retained
+by default (hard limit 500); export each short scenario before it rotates out.
+
+Record sender `input.confirmed.durationMs` on the sender's monotonic clock separately from
+receiver `receiver.completed.durationMs` and player-port `adapter.ready` events. Player-port
+completion is intent/readiness confirmation, not a measurement of first audible samples.
+Catalog events count actual adapter lookup calls and their overlap. Mobile renderer events count
+the existing remote-view interval callbacks. Do not infer browser/native paint or battery cost.
+
+`query.delivered` for `devices_query`, `state_query`, and `commands_query` counts client watcher
+callbacks. `watch` is the assembled session snapshot and can repeat cached data from the other
+queries; do not sum its bytes with per-query bytes as network traffic. Byte values estimate UTF-8
+JSON application payloads, excluding Convex framing/compression. Backend executions/reads require
+separate development backend evidence; these counters are not billed usage.
+
+For every comparable baseline/final capture record sample count, p50/p95 method, queue length,
+network, visibility, device state and cache state. Warm controls, warm transfers and cold transfers
+are separate scenarios. Never subtract uncalibrated sender/receiver wall clocks. Physical Android
+audible/native/background acceptance remains required even when deterministic traces pass.
+
 | Want | Add to `apps/api/.env` |
 |---|---|
 | Durable user data + Google sign-in | `CONVEX_URL`, `CONVEX_SERVER_SECRET` (+ `NEXT_PUBLIC_CONVEX_URL` in `apps/web/.env.local`) — see [auth-convex-google.md](./auth-convex-google.md) |

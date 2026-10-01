@@ -2,8 +2,14 @@
 
 Status: implemented in source; Connect and sync functions pushed to development Convex on 2026-09-30.
 The signed-in web + physical Android acceptance run is still pending because no Android device is
-attached to this workstation. Active branch: `feat/connect-and-sync`; changes remain uncommitted.
+attached to this workstation. Active branch: `feat/connect-and-sync`; implementation baseline is
+committed at `5abdde0`, with reliability follow-up edits currently local and uncommitted.
 Written 2026-09-29; implementation status updated 2026-09-30.
+
+Architecture/performance follow-up: [IMPROVEMENT-PLAN.md](./IMPROVEMENT-PLAN.md) records the proposed
+command reliability, timing, playback readiness, Convex replication and account-sync optimization
+slices. P0 is in progress, and the V2/confirmed-pause policy has owner approval; follow-up tasks
+are verified separately and preserve this plan's existing completion history.
 
 The end-to-end feature paths are wired: authenticated Convex Connect, web and mobile player ports,
 API-backed library sync, offline phone outbox, account recent-play/taste signals, and account

@@ -57,6 +57,21 @@ async function registerDevice(
   });
 }
 
+async function registerV2Device(
+  client: ReturnType<typeof asUser>,
+  deviceId: string,
+  canPlay = true
+) {
+  return await client.mutation(api.connect.register, {
+    deviceId,
+    name: deviceId,
+    kind: 'web',
+    appVersion: 'test-v2',
+    canPlay,
+    protocolVersion: 2
+  });
+}
+
 async function expectCode(promise: Promise<unknown>, code: string) {
   await expect(promise).rejects.toMatchObject({
     data: expect.objectContaining({ code })
@@ -110,14 +125,14 @@ describe('Connect backend', () => {
     );
   });
 
-  it('uses Presence for online status and retains an offline active player', async () => {
+  it('marks a registered device online immediately through Presence', async () => {
     const t = backend();
     const client = asUser(t, 'users:listener');
     await registerDevice(client, 'browser');
     await client.mutation(api.connect.claim, { deviceId: 'browser', snapshot: playerSnapshot });
 
     expect(await client.query(api.connect.devices, {})).toMatchObject([
-      { deviceId: 'browser', isOnline: false, isActive: true }
+      { deviceId: 'browser', isOnline: true, isActive: true }
     ]);
     await client.mutation(api.connect.heartbeat, { deviceId: 'browser' });
     expect(await client.query(api.connect.devices, {})).toMatchObject([
@@ -226,36 +241,140 @@ describe('Connect backend', () => {
     ]);
   });
 
-  it('sweeps expired commands and stale offline devices while retaining online devices', async () => {
+  it('deduplicates V2 requests, rejects changed retries, and refuses a legacy active target', async () => {
+    const t = backend();
+    const client = asUser(t, 'users:v2-listener');
+    await registerV2Device(client, 'browser-v2');
+    await registerV2Device(client, 'phone-v2');
+    await registerDevice(client, 'legacy-device');
+    const claim = await client.mutation(api.connect.claim, { deviceId: 'browser-v2', snapshot: playerSnapshot });
+    expect(claim.ownershipEpoch).toBe(1);
+
+    const input = {
+      fromDeviceId: 'phone-v2',
+      targetDeviceId: 'browser-v2',
+      requestId: 'stable-request-01',
+      expectedOwnershipEpoch: claim.ownershipEpoch,
+      kind: 'pause' as const
+    };
+    const first = await client.mutation(api.connect.sendV2, input);
+    const retry = await client.mutation(api.connect.sendV2, input);
+    expect(retry.commandId).toBe(first.commandId);
+    expect(await client.query(api.connect.inboxFor, { deviceId: 'browser-v2' })).toMatchObject([
+      { commandId: first.commandId, requestId: input.requestId, expectedOwnershipEpoch: 1 }
+    ]);
+    await expectCode(client.mutation(api.connect.sendV2, { ...input, kind: 'play' }), 'request_conflict');
+
+    const legacyClaim = await client.mutation(api.connect.claim, {
+      deviceId: 'legacy-device', snapshot: playerSnapshot, expectedOwnershipEpoch: 1
+    });
+    await expectCode(client.mutation(api.connect.sendV2, {
+      ...input,
+      requestId: 'another-request-02',
+      targetDeviceId: 'legacy-device',
+      expectedOwnershipEpoch: legacyClaim.ownershipEpoch
+    }), 'update_required');
+  });
+
+  it('reserves commands, leaves conflicts pending, and applies only the rebased completion', async () => {
+    const t = backend();
+    const client = asUser(t, 'users:v2-completion');
+    await registerV2Device(client, 'active');
+    await registerV2Device(client, 'remote');
+    const claim = await client.mutation(api.connect.claim, { deviceId: 'active', snapshot: playerSnapshot });
+    const sent = await client.mutation(api.connect.sendV2, {
+      fromDeviceId: 'remote', targetDeviceId: 'active', requestId: 'completion-req-1',
+      expectedOwnershipEpoch: claim.ownershipEpoch, kind: 'pause'
+    });
+    const firstBegin = await client.mutation(api.connect.beginV2, { deviceId: 'active', commandId: sent.commandId });
+    const retryBegin = await client.mutation(api.connect.beginV2, { deviceId: 'active', commandId: sent.commandId });
+    expect(retryBegin.reservationToken).toBe(firstBegin.reservationToken);
+
+    const current = await client.query(api.connect.state, {});
+    if (!current) throw new Error('claimed player state was missing');
+    const report = await client.mutation(api.connect.report, {
+      deviceId: 'active', patch: { volume: 0.5 }, rev: current.rev,
+      expectedOwnershipEpoch: current.ownershipEpoch
+    });
+    expect(await client.mutation(api.connect.completeV2, {
+      deviceId: 'active', commandId: sent.commandId, reservationToken: firstBegin.reservationToken,
+      outcome: { ok: true }, patch: { isPlaying: false, positionSec: 12 }, rev: current.rev
+    })).toMatchObject({ status: 'conflict', currentRev: report.rev });
+    expect(await client.query(api.connect.inboxFor, { deviceId: 'active' })).toMatchObject([
+      { commandId: sent.commandId, reservationToken: firstBegin.reservationToken }
+    ]);
+
+    const completed = await client.mutation(api.connect.completeV2, {
+      deviceId: 'active', commandId: sent.commandId, reservationToken: firstBegin.reservationToken,
+      outcome: { ok: true }, patch: { isPlaying: false, positionSec: 12 }, rev: report.rev
+    });
+    expect(completed).toMatchObject({ status: 'completed', rev: report.rev + 1 });
+    if (completed.status !== 'completed') throw new Error('completion unexpectedly conflicted');
+    expect(await client.mutation(api.connect.completeV2, {
+      deviceId: 'active', commandId: sent.commandId, reservationToken: firstBegin.reservationToken,
+      outcome: { ok: true }, patch: { positionSec: 99 }, rev: report.rev
+    })).toMatchObject({ status: 'completed', rev: completed.rev });
+    const outcomes = await client.query(api.connect.outcomesFor, { deviceId: 'remote' });
+    expect(outcomes).toMatchObject([{ commandId: sent.commandId, status: 'done', requestId: 'completion-req-1' }]);
+    expect(outcomes[0]).not.toHaveProperty('args');
+  });
+
+  it('waits for a legacy playing owner to confirm pause and never activates an unreachable source', async () => {
+    const t = backend();
+    const client = asUser(t, 'users:v2-transfer');
+    await registerDevice(client, 'legacy-owner');
+    await registerV2Device(client, 'v2-destination');
+    const claim = await client.mutation(api.connect.claim, { deviceId: 'legacy-owner', snapshot: playerSnapshot });
+    const sent = await client.mutation(api.connect.transferV2, {
+      fromDeviceId: 'legacy-owner', toDeviceId: 'v2-destination', requestId: 'transfer-req-01',
+      expectedOwnershipEpoch: claim.ownershipEpoch
+    });
+    const begun = await client.mutation(api.connect.beginV2, { deviceId: 'v2-destination', commandId: sent.commandId });
+    expect(await client.mutation(api.connect.prepareV2, {
+      deviceId: 'v2-destination', commandId: sent.commandId, reservationToken: begun.reservationToken
+    })).toMatchObject({ status: 'awaiting_release' });
+    expect(await client.query(api.connect.state, {})).toMatchObject({
+      activeDeviceId: 'legacy-owner', isPlaying: true, ownershipEpoch: claim.ownershipEpoch,
+      handoff: { commandId: sent.commandId, toDeviceId: 'v2-destination' }
+    });
+
+    await client.mutation(api.connect.completeV2, {
+      deviceId: 'v2-destination', commandId: sent.commandId, reservationToken: begun.reservationToken,
+      outcome: { ok: false, code: 'owner_unreachable' }
+    });
+    expect(await client.query(api.connect.state, {})).toMatchObject({
+      activeDeviceId: 'legacy-owner', isPlaying: true, ownershipEpoch: claim.ownershipEpoch
+    });
+    expect(await client.query(api.connect.outcomesFor, { deviceId: 'legacy-owner' })).toMatchObject([
+      { commandId: sent.commandId, status: 'failed', errorCode: 'owner_unreachable' }
+    ]);
+  });
+
+  it('sweeps stale offline devices while retaining current registrations', async () => {
     const t = backend();
     const client = asUser(t, 'users:listener');
-    await registerDevice(client, 'stale-device');
     await registerDevice(client, 'online-device');
-    await registerDevice(client, 'recently-offline-device');
+    await registerDevice(client, 'recently-registered-device');
     await client.mutation(api.connect.heartbeat, { deviceId: 'online-device' });
-    const recentSession = await t.run(async (ctx) =>
-      await presence.heartbeat(ctx, 'connect:users:listener', 'recently-offline-device', 'recently-offline-device', 60_000)
-    );
-    await t.run(async (ctx) => await presence.disconnect(ctx, recentSession.sessionToken));
 
     const thirtyOneDaysAgo = Date.now() - 31 * 24 * 60 * 60 * 1000;
     await t.run(async (ctx) => {
-      const stale = await ctx.db
-        .query('devices')
-        .withIndex('by_deviceId', (q) => q.eq('deviceId', 'stale-device'))
-        .unique();
       const online = await ctx.db
         .query('devices')
         .withIndex('by_deviceId', (q) => q.eq('deviceId', 'online-device'))
         .unique();
-      const recentlyOffline = await ctx.db
-        .query('devices')
-        .withIndex('by_deviceId', (q) => q.eq('deviceId', 'recently-offline-device'))
-        .unique();
-      if (!stale || !online || !recentlyOffline) throw new Error('test devices were not registered');
-      await ctx.db.patch(stale._id, { retentionCheckedAt: thirtyOneDaysAgo });
+      if (!online) throw new Error('online test device was not registered');
+      await ctx.db.insert('devices', {
+        userId: 'users:listener',
+        deviceId: 'stale-device',
+        name: 'stale-device',
+        kind: 'web',
+        appVersion: 'test',
+        canPlay: true,
+        createdAt: thirtyOneDaysAgo,
+        retentionCheckedAt: thirtyOneDaysAgo
+      });
       await ctx.db.patch(online._id, { retentionCheckedAt: thirtyOneDaysAgo });
-      await ctx.db.patch(recentlyOffline._id, { retentionCheckedAt: thirtyOneDaysAgo });
       await ctx.db.insert('connectCommands', {
         userId: 'users:listener',
         sourceDeviceId: 'stale-device',
@@ -269,12 +388,10 @@ describe('Connect backend', () => {
     });
 
     const result = await t.mutation(internal.connect.sweep, {});
-    expect(result).toMatchObject({ commandsRemoved: 1, devicesRemoved: 1, devicesChecked: 3 });
+    expect(result).toMatchObject({ commandsRemoved: 1, devicesRemoved: 1, devicesChecked: 2 });
     const remaining = await t.run(async (ctx) =>
       await ctx.db.query('devices').withIndex('by_userId_and_createdAt', (q) => q.eq('userId', 'users:listener')).collect()
     );
-    expect(remaining.map(({ deviceId }) => deviceId).sort()).toEqual(['online-device', 'recently-offline-device']);
-    const offlineRecord = remaining.find(({ deviceId }) => deviceId === 'recently-offline-device');
-    expect(offlineRecord?.retentionCheckedAt).toBeGreaterThan(thirtyOneDaysAgo);
+    expect(remaining.map(({ deviceId }) => deviceId).sort()).toEqual(['online-device', 'recently-registered-device']);
   });
 });

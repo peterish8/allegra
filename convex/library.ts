@@ -17,17 +17,20 @@ import { v, type Infer } from 'convex/values';
 
 import {
   applyLibraryOps,
+  isTombstone,
   itemKey,
   pageOfChanges,
   seedFromProfile,
   toProfileLibrary,
   type LibraryOp,
   type LibraryRowsView,
+  type LibraryWrite,
   type LikeRow,
+  type ProfileLibrary,
   type PlaylistItemRow,
   type PlaylistRow
 } from '../packages/shared/library';
-import type { SongRef, SongSnapshot } from '../packages/shared/songRef';
+import { parseSongRef, type SongRef, type SongSnapshot } from '../packages/shared/songRef';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server';
 import { requireSecret } from './profiles';
@@ -43,6 +46,13 @@ const MAX_LIKES = 4000;
 const MAX_PLAYLISTS = 300;
 const MAX_ITEMS = 8000;
 const MAX_PAGE = 500;
+
+const rejectReason = v.union(v.literal('bad_time'), v.literal('no_playlist'), v.literal('missing_name'));
+const libraryChange = v.union(
+  v.object({ kind: v.literal('like'), rev: v.number(), ref: v.string(), song: v.optional(songSnapshot), liked: v.boolean(), likedAt: v.number() }),
+  v.object({ kind: v.literal('playlist'), rev: v.number(), playlistId: v.string(), name: v.string(), description: v.optional(v.string()), isPublic: v.boolean(), coverUrl: v.optional(v.string()), deleted: v.boolean(), createdAt: v.number() }),
+  v.object({ kind: v.literal('playlist_item'), rev: v.number(), playlistId: v.string(), ref: v.string(), song: v.optional(songSnapshot), deleted: v.boolean(), addedAt: v.number() })
+);
 
 const at = v.number();
 const libraryOp = v.union(
@@ -122,11 +132,85 @@ async function rebuildProfileCopy(ctx: MutationCtx, userId: string, profileId: D
       .take(MAX_ITEMS)
   ]);
   const copy = toProfileLibrary(likes.map(likeRow), playlists.map(playlistRow), items.map(itemRow));
-  await ctx.db.patch(profileId, copy);
+  await ctx.db.patch('profiles', profileId, copy);
+}
+
+function saavnId(ref: SongRef): string | null {
+  const parsed = parseSongRef(ref);
+  return parsed?.source === 'saavn' ? parsed.id : null;
+}
+
+/** Keep the compatibility copy in sync from the touched rows, without reading the whole library. */
+async function updateProfileCopy(ctx: MutationCtx, profile: Doc<'profiles'>, write: LibraryWrite): Promise<void> {
+  const likedSongIds = [...profile.likedSongIds];
+  for (const row of write.likes) {
+    const id = saavnId(row.ref);
+    if (!id) continue;
+    const index = likedSongIds.indexOf(id);
+    if (row.liked && index < 0) likedSongIds.push(id);
+    else if (!row.liked && index >= 0) likedSongIds.splice(index, 1);
+  }
+
+  const libraries = new Map<string, ProfileLibrary>(profile.libraries.map((library) => [
+    library.id,
+    { ...library, songIds: [...library.songIds] }
+  ]));
+  for (const row of write.playlists) {
+    if (row.deleted) {
+      libraries.delete(row.playlistId);
+      continue;
+    }
+    const previous = libraries.get(row.playlistId);
+    libraries.set(row.playlistId, {
+      id: row.playlistId,
+      name: row.name,
+      ...(row.description ? { description: row.description } : {}),
+      isPublic: row.isPublic,
+      songIds: previous?.songIds ?? [],
+      createdAt: new Date(row.createdAt).toISOString(),
+      ...(row.coverKey ? { coverKey: row.coverKey } : {}),
+      ...(row.coverUrl ? { coverUrl: row.coverUrl } : {})
+    });
+  }
+  for (const row of write.items) {
+    const id = saavnId(row.ref);
+    const library = libraries.get(row.playlistId);
+    if (!id || !library) continue;
+    const songIds = [...library.songIds];
+    const index = songIds.indexOf(id);
+    if (row.deleted && index >= 0) songIds.splice(index, 1);
+    else if (!row.deleted && index < 0) songIds.push(id);
+    libraries.set(row.playlistId, { ...library, songIds });
+  }
+
+  if (likedSongIds.length > MAX_LIKES || libraries.size > MAX_PLAYLISTS) {
+    await rebuildProfileCopy(ctx, profile.userId, profile._id);
+    return;
+  }
+  const nextLibraries = [...libraries.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  if (
+    likedSongIds.length !== profile.likedSongIds.length || likedSongIds.some((id, index) => id !== profile.likedSongIds[index]) ||
+    nextLibraries.length !== profile.libraries.length || nextLibraries.some((library, index) => {
+      const previous = profile.libraries[index];
+      return !previous || library.id !== previous.id || library.name !== previous.name || library.description !== previous.description ||
+        library.isPublic !== previous.isPublic || library.createdAt !== previous.createdAt || library.coverKey !== previous.coverKey ||
+        library.coverUrl !== previous.coverUrl || library.songIds.length !== previous.songIds.length ||
+        library.songIds.some((id, songIndex) => id !== previous.songIds[songIndex]);
+    })
+  ) {
+    await ctx.db.patch('profiles', profile._id, { likedSongIds, libraries: nextLibraries });
+  }
 }
 
 export const apply = mutation({
   args: { secret: v.string(), userId: v.string(), ops: v.array(libraryOp) },
+  returns: v.object({
+    rev: v.number(),
+    rejected: v.array(v.object({ index: v.number(), reason: rejectReason })),
+    superseded: v.array(v.number()),
+    applied: v.number(),
+    removedCoverKeys: v.array(v.string())
+  }),
   handler: async (ctx, args) => {
     requireSecret(args.secret);
     const profile = await profileOf(ctx, args.userId);
@@ -134,6 +218,7 @@ export const apply = mutation({
 
     // First change for this listener: their profile's library becomes rows.
     let state = await stateOf(ctx, args.userId);
+    const wasSeeded = !state;
     let changed = false;
     if (!state) {
       const seed = seedFromProfile(profile);
@@ -141,7 +226,7 @@ export const apply = mutation({
       for (const row of seed.playlists) await ctx.db.insert('libraryPlaylists', { userId: args.userId, ...row });
       for (const row of seed.items) await ctx.db.insert('libraryItems', { userId: args.userId, ...row });
       const stateId = await ctx.db.insert('libraryState', { userId: args.userId, rev: seed.rev });
-      state = await ctx.db.get(stateId);
+      state = await ctx.db.get('libraryState', stateId);
       if (!state) throw new Error('Library state missing');
       changed = true;
     }
@@ -199,32 +284,42 @@ export const apply = mutation({
 
     for (const row of write.likes) {
       const doc = likeDocs.get(row.ref);
-      if (doc) await ctx.db.replace(doc._id, { userId: args.userId, ...row });
+      if (doc) await ctx.db.replace('libraryLikes', doc._id, { userId: args.userId, ...row });
       else await ctx.db.insert('libraryLikes', { userId: args.userId, ...row });
     }
     for (const row of write.playlists) {
       const doc = playlistDocs.get(row.playlistId);
-      if (doc) await ctx.db.replace(doc._id, { userId: args.userId, ...row });
+      if (doc) await ctx.db.replace('libraryPlaylists', doc._id, { userId: args.userId, ...row });
       else await ctx.db.insert('libraryPlaylists', { userId: args.userId, ...row });
     }
     for (const row of write.items) {
       const doc = itemDocs.get(itemKey(row.playlistId, row.ref));
-      if (doc) await ctx.db.replace(doc._id, { userId: args.userId, ...row });
+      if (doc) await ctx.db.replace('libraryItems', doc._id, { userId: args.userId, ...row });
       else await ctx.db.insert('libraryItems', { userId: args.userId, ...row });
     }
     if (write.rev !== state.rev) {
-      await ctx.db.patch(state._id, { rev: write.rev });
+      await ctx.db.patch('libraryState', state._id, { rev: write.rev });
       changed = true;
     }
-    if (changed) await rebuildProfileCopy(ctx, args.userId, profile._id);
+    if (changed) {
+      if (wasSeeded) await rebuildProfileCopy(ctx, args.userId, profile._id);
+      else await updateProfileCopy(ctx, profile, write);
+    }
 
-    return { rev: write.rev, rejected: write.rejected, removedCoverKeys: write.removedCoverKeys };
+    return {
+      rev: write.rev,
+      rejected: write.rejected,
+      superseded: write.superseded,
+      applied: write.applied,
+      removedCoverKeys: write.removedCoverKeys
+    };
   }
 });
 
 /** Everything after revision `since`, a page at a time. `seeded: false` means the library still lives only in the profile. */
 export const changes = query({
   args: { secret: v.string(), userId: v.string(), since: v.number(), limit: v.number() },
+  returns: v.object({ seeded: v.boolean(), rev: v.number(), changes: v.array(libraryChange), more: v.boolean() }),
   handler: async (ctx, args) => {
     requireSecret(args.secret);
     const state = await stateOf(ctx, args.userId);
@@ -237,7 +332,12 @@ export const changes = query({
       ctx.db.query('libraryItems').withIndex('by_userId_and_rev', (q) => q.eq('userId', args.userId).gt('rev', since)).take(limit)
     ]);
     const page = pageOfChanges([likes.map(likeRow), playlists.map(playlistRow), items.map(itemRow)], limit, state.rev);
-    return { seeded: true, rev: page.next, changes: page.changes, more: page.more };
+    return {
+      seeded: true,
+      rev: page.next,
+      changes: since === 0 ? page.changes.filter((change) => !isTombstone(change)) : page.changes,
+      more: page.more
+    };
   }
 });
 
@@ -247,6 +347,7 @@ export const changes = query({
  */
 export const myRev = query({
   args: {},
+  returns: v.union(v.null(), v.number()),
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return null;

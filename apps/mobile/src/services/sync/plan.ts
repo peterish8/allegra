@@ -16,6 +16,8 @@
 import type { LibraryChange, LibraryOp } from '@shared/library';
 import { fromMobileId, matchKey, parseSongRef, type SongRef, type SongSnapshot } from '@shared/songRef';
 
+import type { InboundWrite, LibraryChangeSummary, OnlineSongRow } from '../../database/syncQueries';
+
 /** The phone's Liked songs playlist (seeded in database/db.ts); likes are its membership. */
 export const LIKED_PLAYLIST_ID = 'default_liked';
 
@@ -84,13 +86,45 @@ export type LocalAction =
   | { readonly kind: 'playlist_local'; readonly playlistId: string; readonly songId: string; readonly ref: SongRef; readonly present: boolean; readonly addedAt: number }
   | { readonly kind: 'playlist_online'; readonly playlistId: string; readonly ref: SongRef; readonly song?: SongSnapshot; readonly present: boolean; readonly addedAt: number };
 
+export interface InboundPlan {
+  readonly actions: LocalAction[];
+  /**
+   * Playlist songs whose playlist is not on the phone and was not among these changes. The
+   * account lists a playlist under its newest revision, so a renamed playlist arrives after
+   * the songs that were added before the rename; the caller keeps these for the next page.
+   */
+  readonly orphans: LibraryChange[];
+  /** The playlists on the phone once the actions have been applied. */
+  readonly playlistIds: ReadonlySet<string>;
+}
+
 /**
  * Changes (in revision order) → phone actions. `playlistIds` are the playlists on the phone
- * now; items for a playlist that is neither there nor created in this batch are skipped.
+ * now. Playlists are created and deleted first, whatever their place in the order, so a song
+ * is never added to a playlist that does not exist yet; everything else keeps its order.
  */
-export function planInbound(changes: readonly LibraryChange[], index: LocalIndex, playlistIds: ReadonlySet<string>): LocalAction[] {
+export function planInboundPage(changes: readonly LibraryChange[], index: LocalIndex, playlistIds: ReadonlySet<string>): InboundPlan {
   const actions: LocalAction[] = [];
+  const orphans: LibraryChange[] = [];
   const known = new Set(playlistIds);
+  const deleted = new Set<string>();
+  for (const change of changes) {
+    if (change.kind !== 'playlist' || change.playlistId === LIKED_PLAYLIST_ID) continue;
+    if (change.deleted) {
+      deleted.add(change.playlistId);
+      if (known.delete(change.playlistId)) actions.push({ kind: 'playlist_delete', playlistId: change.playlistId });
+    } else {
+      deleted.delete(change.playlistId);
+      known.add(change.playlistId);
+      actions.push({
+        kind: 'playlist_upsert',
+        playlistId: change.playlistId,
+        name: change.name,
+        ...(change.description ? { description: change.description } : {}),
+        createdAt: change.createdAt,
+      });
+    }
+  }
   for (const change of changes) {
     switch (change.kind) {
       case 'like': {
@@ -109,24 +143,14 @@ export function planInbound(changes: readonly LibraryChange[], index: LocalIndex
         }
         break;
       }
-      case 'playlist': {
-        if (change.playlistId === LIKED_PLAYLIST_ID) break;
-        if (change.deleted) {
-          if (known.delete(change.playlistId)) actions.push({ kind: 'playlist_delete', playlistId: change.playlistId });
-        } else {
-          known.add(change.playlistId);
-          actions.push({
-            kind: 'playlist_upsert',
-            playlistId: change.playlistId,
-            name: change.name,
-            ...(change.description ? { description: change.description } : {}),
-            createdAt: change.createdAt,
-          });
-        }
+      case 'playlist':
         break;
-      }
       case 'playlist_item': {
-        if (!known.has(change.playlistId)) break;
+        if (change.playlistId === LIKED_PLAYLIST_ID) break;
+        if (!known.has(change.playlistId)) {
+          if (!deleted.has(change.playlistId)) orphans.push(change);
+          break;
+        }
         const present = !change.deleted;
         const songId = index.songFor(change.ref, change.song);
         if (songId) {
@@ -146,7 +170,188 @@ export function planInbound(changes: readonly LibraryChange[], index: LocalIndex
       }
     }
   }
-  return actions;
+  return { actions, orphans, playlistIds: known };
+}
+
+/** The actions alone, for one set of changes that stands by itself. */
+export function planInbound(changes: readonly LibraryChange[], index: LocalIndex, playlistIds: ReadonlySet<string>): LocalAction[] {
+  return planInboundPage(changes, index, playlistIds).actions;
+}
+
+const onlineRowOf = (song: SongSnapshot, at: number): OnlineSongRow => ({
+  ref: song.ref,
+  title: song.title,
+  ...(song.artist ? { artist: song.artist } : {}),
+  ...(song.album ? { album: song.album } : {}),
+  ...(song.artwork ? { artwork: song.artwork } : {}),
+  duration: song.duration,
+  at,
+});
+
+/**
+ * Actions → the rows SQLite writes. `details` holds songs a change named without describing;
+ * an online song nobody could describe cannot be shown, so it is left out.
+ */
+export function writesFor(actions: readonly LocalAction[], details: ReadonlyMap<string, SongSnapshot>): InboundWrite[] {
+  const writes: InboundWrite[] = [];
+  for (const action of actions) {
+    switch (action.kind) {
+      case 'like_local':
+        writes.push({ kind: 'like_local', playlistId: LIKED_PLAYLIST_ID, songId: action.songId, ref: action.ref, liked: action.liked });
+        break;
+      case 'online_like': {
+        const song = action.song ?? details.get(action.ref);
+        if (song) writes.push({ kind: 'online_like', row: onlineRowOf(song, action.likedAt) });
+        break;
+      }
+      case 'online_unlike':
+        writes.push({ kind: 'online_unlike', ref: action.ref });
+        break;
+      case 'playlist_upsert':
+        writes.push({
+          kind: 'playlist_upsert',
+          playlistId: action.playlistId,
+          name: action.name,
+          ...(action.description ? { description: action.description } : {}),
+          createdAt: action.createdAt,
+        });
+        break;
+      case 'playlist_delete':
+        writes.push({ kind: 'playlist_delete', playlistId: action.playlistId });
+        break;
+      case 'playlist_local':
+        writes.push({ kind: 'playlist_local', playlistId: action.playlistId, songId: action.songId, ref: action.ref, present: action.present });
+        break;
+      case 'playlist_online': {
+        if (!action.present) {
+          writes.push({ kind: 'playlist_online_remove', playlistId: action.playlistId, ref: action.ref });
+          break;
+        }
+        const song = action.song ?? details.get(action.ref);
+        if (song) writes.push({ kind: 'playlist_online', playlistId: action.playlistId, row: onlineRowOf(song, action.addedAt) });
+        break;
+      }
+    }
+  }
+  return writes;
+}
+
+// ── What a commit means for the screens ─────────────────────────────────────
+
+/** The in-memory copies that no longer match SQLite. */
+export interface ViewRefresh {
+  /** The online-only likes (hearts on streamed songs, the online rows of Liked songs). */
+  readonly onlineLikes: boolean;
+  /** The playlist list: names, song counts, and which downloaded songs are liked. */
+  readonly playlists: boolean;
+  /** The downloaded songs themselves. */
+  readonly songs: boolean;
+  /** Playlists whose open screen shows stale songs or a stale name; 'all' after a wholesale change. */
+  readonly openPlaylists: readonly string[] | 'all';
+}
+
+export const NO_REFRESH: ViewRefresh = { onlineLikes: false, playlists: false, songs: false, openPlaylists: [] };
+export const FULL_REFRESH: ViewRefresh = { onlineLikes: true, playlists: true, songs: true, openPlaylists: 'all' };
+
+export const isNoRefresh = (refresh: ViewRefresh): boolean =>
+  !refresh.onlineLikes && !refresh.playlists && !refresh.songs && refresh.openPlaylists !== 'all' && refresh.openPlaylists.length === 0;
+
+/** Only what the committed rows touch: a like reloads no playlist but Liked songs, an unchanged pull reloads nothing. */
+export function refreshFor(summary: LibraryChangeSummary): ViewRefresh {
+  const likes = summary.likedOnlineRefs.length > 0 || summary.likedLocalRefs.length > 0;
+  return {
+    onlineLikes: summary.likedOnlineRefs.length > 0,
+    playlists: summary.likedLocalRefs.length > 0 || summary.playlistMetaIds.length > 0 || summary.playlistLocalItemIds.length > 0,
+    songs: summary.songIds.length > 0,
+    openPlaylists: [...new Set([
+      ...summary.playlistMetaIds,
+      ...summary.playlistLocalItemIds,
+      ...summary.playlistOnlineItemIds,
+      ...(likes ? [LIKED_PLAYLIST_ID] : []),
+    ])],
+  };
+}
+
+export function mergeRefresh(a: ViewRefresh, b: ViewRefresh): ViewRefresh {
+  return {
+    onlineLikes: a.onlineLikes || b.onlineLikes,
+    playlists: a.playlists || b.playlists,
+    songs: a.songs || b.songs,
+    openPlaylists: a.openPlaylists === 'all' || b.openPlaylists === 'all' ? 'all' : [...new Set([...a.openPlaylists, ...b.openPlaylists])],
+  };
+}
+
+// ── Operations that lost on the account ─────────────────────────────────────
+//
+// The account answers a batch with the operations that lost to something newer. For each, the
+// phone's copy of that one item is wrong until it has the account's row. The item is named by
+// a key and remembered until a pull has delivered that row.
+
+/** The item an operation is about. A deleted playlist takes its songs with it, so it is named apart. */
+export function targetOfOp(op: LibraryOp): string {
+  switch (op.op) {
+    case 'like':
+    case 'unlike':
+      return `like:${op.ref}`;
+    case 'playlist_upsert':
+      return `playlist:${op.playlistId}`;
+    case 'playlist_delete':
+      return `list:${op.playlistId}`;
+    case 'playlist_add':
+    case 'playlist_remove':
+      return `item:${op.playlistId}:${op.ref}`;
+  }
+}
+
+/** The items a row from "everything after N" puts right by being applied. */
+export function targetsMetBy(change: LibraryChange): string[] {
+  switch (change.kind) {
+    case 'like':
+      return [`like:${change.ref}`];
+    case 'playlist':
+      // A playlist deleted here that still exists on the account lost its songs here too: its row alone does not bring them back.
+      return change.deleted ? [`playlist:${change.playlistId}`, `list:${change.playlistId}`] : [`playlist:${change.playlistId}`];
+    case 'playlist_item':
+      return [`item:${change.playlistId}:${change.ref}`];
+  }
+}
+
+/**
+ * The items a row of the account's whole library answers for, or none when nobody asked about
+ * it. A playlist asked about with its songs (`list:`) is answered by its row and by each song.
+ */
+export function targetsAnsweredBy(change: LibraryChange, targets: ReadonlySet<string>): string[] {
+  switch (change.kind) {
+    case 'like':
+      return targets.has(`like:${change.ref}`) ? [`like:${change.ref}`] : [];
+    case 'playlist':
+      return [`playlist:${change.playlistId}`, `list:${change.playlistId}`].filter(key => targets.has(key));
+    case 'playlist_item': {
+      const own = `item:${change.playlistId}:${change.ref}`;
+      return targets.has(own) || targets.has(`list:${change.playlistId}`) ? [own] : [];
+    }
+  }
+}
+
+/** The row for an item the account's library no longer lists: it is gone there. */
+export function goneChange(target: string): LibraryChange | null {
+  const sep = target.indexOf(':');
+  const kind = target.slice(0, sep);
+  const rest = target.slice(sep + 1);
+  if (kind === 'like') {
+    return parseSongRef(rest) ? { kind: 'like', rev: 0, ref: rest as SongRef, liked: false, likedAt: 0 } : null;
+  }
+  if (kind === 'playlist' || kind === 'list') {
+    return rest ? { kind: 'playlist', rev: 0, playlistId: rest, name: '', isPublic: false, deleted: true, createdAt: 0 } : null;
+  }
+  if (kind === 'item') {
+    const split = rest.indexOf(':');
+    const ref = rest.slice(split + 1);
+    return split > 0 && parseSongRef(ref)
+      ? { kind: 'playlist_item', rev: 0, playlistId: rest.slice(0, split), ref: ref as SongRef, deleted: true, addedAt: 0 }
+      : null;
+  }
+  return null;
 }
 
 // ── Outgoing: what a tap on the phone becomes ────────────────────────────────

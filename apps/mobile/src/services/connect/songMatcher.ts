@@ -57,14 +57,21 @@ export const getAllegraSongById = async (ref: string, token: string): Promise<Al
 export async function matchQueue(
   snapshots: readonly SongSnapshot[],
   deps: SongMatcherDeps = defaults,
-  parallel = 4,
+  parallel = 2,
 ): Promise<Song[]> {
   const songs: (Song | null)[] = new Array(snapshots.length).fill(null);
+  const lookups = new Map<string, Promise<MatchedSong | null>>();
   let cursor = 0;
   const worker = async (): Promise<void> => {
     while (cursor < snapshots.length) {
       const index = cursor++;
-      const match = await matchConnectSong(snapshots[index], deps);
+      const snapshot = snapshots[index];
+      let lookup = lookups.get(snapshot.ref);
+      if (!lookup) {
+        lookup = matchConnectSong(snapshot, deps);
+        lookups.set(snapshot.ref, lookup);
+      }
+      const match = await lookup;
       if (match) songs[index] = match.kind === 'local' ? match.song : toMobileSong(match.song);
     }
   };

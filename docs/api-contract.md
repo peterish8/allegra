@@ -204,8 +204,8 @@ writes through library **operations** (`packages/shared/library.ts`), stored per
 
 | Endpoint | Auth | Body → response |
 |---|---|---|
-| `POST /api/me/library/ops` | Bearer | `{ ops: LibraryOp[] }` (1–100) → `{ rev, rejected: { index, reason }[] }`. A malformed batch is refused whole (`400`). `reason` is `no_playlist`, `missing_name` or `bad_time`. An op older than the current state is not a rejection; it simply loses. |
-| `GET /api/me/library/changes?since=<rev>&limit=<n>` | Bearer | → `{ rev, changes: LibraryChange[], more }`. `limit` ≤ 500, default 200. Pass `rev` back as `since` and repeat while `more`. `since=0` returns the whole library, including everything made before sync existed. |
+| `POST /api/me/library/ops` | Bearer | `{ ops: LibraryOp[], sentAt?: number }` (1–100) → `{ rev, rejected: { index, reason }[], superseded: number[], applied: number }`. `sentAt` is the device wall-clock time when it sent the batch; when it differs from server receive time by more than 2 s, each op timestamp is shifted by that clock offset while preserving its age within the batch. A malformed batch is refused whole (`400`). `reason` is `no_playlist`, `missing_name` or `bad_time`. An op older than the current state is reported by its index in `superseded`; clients should pull changes when this list is non-empty. |
+| `GET /api/me/library/changes?since=<rev>&limit=<n>` | Bearer | → `{ rev, changes: LibraryChange[], more }`. `limit` ≤ 500, default 200. Pass `rev` back as `since` and repeat while `more`. `since=0` returns current rows only; no tombstones are needed for a first sync. |
 
 ```
 SongRef       'saavn:<id>' | 'gaana:<id>'

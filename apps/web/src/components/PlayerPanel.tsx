@@ -10,6 +10,9 @@ import {
   Repeat,
   Repeat1,
   Shuffle,
+  Smartphone,
+  Check,
+  X,
   SkipBack,
   SkipForward,
   SlidersHorizontal,
@@ -48,6 +51,7 @@ type ListeningTab = 'lyrics' | 'queue' | 'related';
 
 interface ConnectPanelState {
   readonly connected: boolean;
+  readonly otherTab: boolean;
   readonly deviceId: string | null;
   readonly devices: readonly { readonly deviceId: string; readonly name: string; readonly kind: 'web' | 'android' | 'ios'; readonly canPlay: boolean; readonly isOnline: boolean }[];
   readonly activeDeviceId?: string;
@@ -198,8 +202,30 @@ export function PlayerPanel({
   // The top bar's right-hand slot: the lyrics panel renders its ⋯ actions there on wide screens.
   const [topActionsSlot, setTopActionsSlot] = useState<HTMLDivElement | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
+  const connectWrapRef = useRef<HTMLDivElement | null>(null);
+  const connectPickerRef = useRef<HTMLElement | null>(null);
   const [transferBusy, setTransferBusy] = useState<string | null>(null);
   const [transferError, setTransferError] = useState<string | null>(null);
+  useFocusTrap(connectOpen, connectPickerRef);
+  useEffect(() => {
+    if (!connectOpen) return undefined;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (!connectWrapRef.current?.contains(event.target as Node)) setConnectOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setConnectOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [connectOpen]);
+  useEffect(() => { setConnectOpen(false); }, [song?.id, connect?.connected]);
   const desktopSolo = !isNarrowViewport && lyricsHidden && tab === 'lyrics';
   const desktopLyricsVisible = tab === 'lyrics' && !lyricsHidden;
   // Desktop: double-clicking the cover puts it away and lets the lyrics take the whole stage,
@@ -543,7 +569,6 @@ export function PlayerPanel({
                         ))
                       : song.artist}
               </p>
-              {connect?.activeDeviceName ? <p className="connect-playing-on">Playing on {connect.activeDeviceName}</p> : null}
                 </motion.div>
                 <div className="np-controls">
                   <Scrubber currentTime={currentTime} duration={duration} progress={audioProgress} onSeek={onSeek} />
@@ -594,33 +619,36 @@ export function PlayerPanel({
                     />
                     <PlaylistMenu song={song} />
                     {connect ? (
-                      <div className="connect-control-wrap np-action--tool">
+                      <div ref={connectWrapRef} className="connect-control-wrap np-action--tool">
                         <IconButton
                           icon={MonitorSmartphone}
                           label={connect.connected ? `Listen on a device${connect.activeDeviceName ? ` · ${connect.activeDeviceName}` : ''}` : 'Sign in to connect devices'}
-                          active={Boolean(connect.activeDeviceId)}
+                          active={Boolean(connect.otherTab || (connect.activeDeviceId && connect.activeDeviceId !== connect.deviceId))}
+                          className={connect.otherTab || (connect.activeDeviceId && connect.activeDeviceId !== connect.deviceId) ? 'connect-control--remote' : undefined}
                           aria-expanded={connectOpen}
+                          aria-haspopup="dialog"
                           onClick={() => {
-                            if (!connect.connected) { connect.onSignIn(); return; }
                             setTransferError(null);
                             setConnectOpen((open) => !open);
                           }}
                         />
                         {connectOpen ? (
-                          <section className="connect-device-picker" role="dialog" aria-label="Playback devices">
-                            <div className="connect-device-picker__heading"><strong>Listen on</strong><button type="button" onClick={() => setConnectOpen(false)} aria-label="Close device picker">×</button></div>
+                          <section ref={connectPickerRef} className="connect-device-picker" role="dialog" aria-label="Playback devices">
+                            <div className="connect-device-picker__heading"><strong>Listen on</strong><button type="button" onClick={() => setConnectOpen(false)} aria-label="Close device picker"><X size={18} aria-hidden="true" /></button></div>
                             {!connect.connected ? (
                               <div className="connect-device-picker__signin"><p>Sign in with Google to play on your other devices.</p><button type="button" onClick={connect.onSignIn}>Sign in</button></div>
                             ) : (
                               <>
+                                {connect.otherTab ? <p className="connect-device-other-tab" role="status">Allegra is playing in another tab.</p> : null}
                                 <ul>
                                   {connect.devices.map((device) => {
                                     const active = device.deviceId === connect.activeDeviceId;
                                     const local = device.deviceId === connect.deviceId;
                                     return <li key={device.deviceId}>
                                       <button type="button" disabled={!device.canPlay || !device.isOnline || transferBusy !== null} aria-current={active ? 'true' : undefined} onClick={() => void chooseDevice(device.deviceId)}>
-                                        <span><strong>{device.name}{local ? ' · This device' : ''}</strong><small>{active ? 'Playing now' : device.isOnline ? device.kind : 'Offline'}</small></span>
-                                        {transferBusy === device.deviceId ? <LoaderCircle size={15} className="spin" aria-label="Connecting" /> : active ? <span className="connect-device-active">Playing</span> : null}
+                                        {device.kind === 'web' ? <MonitorSmartphone size={20} aria-hidden="true" /> : <Smartphone size={20} aria-hidden="true" />}
+                                        <span className="connect-device-copy"><strong>{device.name}</strong><small>{active ? (isPlaying ? 'Playing' : 'Paused') : !device.isOnline ? 'Offline' : !device.canPlay ? 'Unavailable' : local ? 'This device' : 'Ready'}</small></span>
+                                        {transferBusy === device.deviceId ? <LoaderCircle size={17} className="spin" aria-label="Connecting" /> : active ? <Check size={18} className="connect-device-active" aria-label="Selected device" /> : null}
                                       </button>
                                     </li>;
                                   })}

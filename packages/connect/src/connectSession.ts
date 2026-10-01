@@ -1,752 +1,853 @@
 import type { SongSnapshot } from '../../shared/songRef.ts';
+import { connectError, errorCode, errorData, isUncertainFailure } from './errors.ts';
+import { createIntentQueue, type QueuedIntent } from './intentQueue.ts';
+import { applyConfirmedPatch, confirmedFromSnapshot, confirmedFromState, expectedPosition, planPatch, type ConfirmedState } from './playbackDiff.ts';
+import { createServerClock } from './serverClock.ts';
 import type {
-  Clock,
-  ConnectCommand,
-  ConnectPlayerState,
-  ConnectSession,
-  ConnectSessionOptions,
-  ConnectSnapshot,
-  ConnectView,
-  PendingCommandView,
-  PlayerSnapshot,
-  PlayerStatePatch,
-  RemoteCommand,
-  TransferResult
+  CommandOutcomeInput, ConnectDevice, ConnectFailureCode, ConnectSession, ConnectSessionOptions, ConnectTransport,
+  ConnectTraceEvent, ConnectTraceOperation, ConnectView, InboxCommand, PlayerSnapshot,
+  PlayerStatePatch, RemoteCommand, TransferResult
 } from './types.ts';
 
 const HEARTBEAT_MS = 60_000;
-const COMMAND_TIMEOUT_MS = 4_000;
-const LISTEN_RETRY_MS = 5_000;
-const ACK_RETRY_MS = 1_000;
-const POSITION_REPORT_MS = 30_000;
-const MAX_SEEN_COMMANDS = 500;
+const INPUT_FEEDBACK_MS = 4_000;
+const REPORT_DRIFT_MS = 5_000;
+const QUEUE_CAPACITY = 32;
+const EMPTY_PLAYER: PlayerSnapshot = { queue: [], isPlaying: false, positionSec: 0, volume: 1, shuffle: false, repeat: 'off' };
 
-interface ProcessedCommand {
-  readonly ok: boolean;
-  readonly error?: string;
-  acknowledged: boolean;
-}
-
-interface LocalPending {
-  readonly targetDeviceId: string;
-  readonly command: RemoteCommand;
+interface Intent extends QueuedIntent {
+  readonly requestId: string;
+  readonly transfer: boolean;
   readonly startedAt: number;
-  readonly kind: 'control' | 'transfer';
-  commandId?: string;
-  timeout?: unknown;
+  readonly startedMono?: number;
+  feedbackTimedOut?: boolean;
+  readonly resolveTransfer?: (result: TransferResult) => void;
+  command: RemoteCommand;
 }
 
-interface OptimisticState {
-  readonly snapshot: PlayerSnapshot;
-  readonly positionAt: number;
+interface PendingCompletion {
+  readonly item: InboxCommand;
+  readonly reservationToken: string;
+  outcome: CommandOutcomeInput;
+  patch?: PlayerStatePatch;
+  rev?: number;
 }
 
-/**
- * Playback-agnostic Connect orchestration. Platform adapters own audio; this
- * module owns device claims, command delivery, state reporting and recovery.
- */
-export function createConnectSession({ transport, player, device, clock }: ConnectSessionOptions): ConnectSession {
+function clamp(position: number, duration: number): number {
+  const safe = Number.isFinite(position) ? Math.max(0, position) : 0;
+  return duration > 0 ? Math.min(duration, safe) : safe;
+}
+
+function failureText(error: unknown, fallback: string): string {
+  const data = errorData(error);
+  return typeof data?.message === 'string' ? data.message : error instanceof Error ? error.message : fallback;
+}
+
+function failureResult(error: unknown): TransferResult {
+  const code = errorCode(error);
+  const reason = code === 'offline' ? 'offline' : code === 'command_expired' ? 'timeout' : 'failed';
+  return { ok: false, reason, ...(code ? { code } : {}), error: failureText(error, 'Playback could not be transferred.') };
+}
+
+export function createConnectSession({ transport, player, device, clock, trace }: ConnectSessionOptions): ConnectSession {
   let disposed = false;
   let visible = false;
+  let listening = false;
   let registering = false;
   let watchStop: (() => void) | undefined;
   let heartbeatTimer: unknown;
   let listenRetryTimer: unknown;
-  let ackRetryTimer: unknown;
-  let playerStop: (() => void) | undefined;
-  let snapshot: ConnectSnapshot = { serverNow: clock.now(), devices: [], commands: [] };
   let local = player.getSnapshot();
-  let clockOffset = 0;
-  let suppressPlayerEvents = 0;
-  let restoringLastSession = false;
+  let previousLocal = local;
+  let snapshot: Parameters<Parameters<typeof transport.watch>[1]>[0] | undefined;
   let didRestore = false;
-  let autoplayBlocked = false;
+  let restoring = false;
   let lastError: string | undefined;
-  let optimistic: OptimisticState | undefined;
-  let pending: LocalPending | undefined;
-  let lastReportedKey = '';
-  let lastReportedAt = 0;
+  let lastErrorCode: ConnectView['lastErrorCode'];
+  let autoplayBlocked = false;
+  let optimistic: { readonly intent: Intent; readonly expiresAt: number } | undefined;
+  let pending: Intent | undefined;
+  let pendingCommandId: string | undefined;
+  let feedbackTimer: unknown;
+  let retryTimer: unknown;
+  let retryCount = 0;
+  let requestSequence = 0;
+  let claimInFlight = false;
+  let reportInFlight = false;
+  let reportQueued = false;
+  let reportQueuedSeek = false;
+  let lastPositionReportAt = 0;
+  let lastPosition: number | undefined;
+  let confirmed: ConfirmedState | undefined;
+  let serverRev: number | undefined;
+  let inboxWorker = false;
+  let inboxRetryCount = 0;
+  let handoffInFlight = false;
+  let handoffCommandId: string | undefined;
+  const processed = new Set<string>();
+  const processing = new Set<string>();
+  const completions = new Map<string, PendingCompletion>();
   const subscribers = new Set<(view: ConnectView) => void>();
-  const processedCommands = new Map<string, ProcessedCommand>();
-  const processingCommands = new Set<string>();
-  const acknowledgingCommands = new Set<string>();
-  const transferWaiters = new Map<string, (result: TransferResult) => void>();
+  const snapshotWaiters = new Set<() => void>();
+  const timers = new Set<unknown>();
+  const timerOperations = new Map<unknown, ConnectTraceOperation>();
+  const queue = createIntentQueue<Intent>(QUEUE_CAPACITY);
+  const sampledClock = createServerClock(clock, () => {
+    emit({ event: 'mutation.conflict', operation: 'register', outcome: 'rejected', count: 1 });
+    if (!disposed) void registerAndListen();
+  });
 
-  const toServerNow = () => clock.now() + clockOffset;
-  const state = () => snapshot.state;
-  const activeId = () => state()?.activeDeviceId;
-  const isActive = () => activeId() === device.deviceId;
-
-  function notify(): void {
-    if (disposed) return;
-    const value = view();
-    for (const listener of [...subscribers]) listener(value);
+  function emit(event: ConnectTraceEvent): void {
+    try { trace?.record(event); } catch { /* Diagnostics must not change playback. */ }
   }
 
-  function displayedSnapshot(): PlayerSnapshot {
-    return optimistic?.snapshot ?? state() ?? local;
+  function requestId(): string {
+    requestSequence++;
+    const random = Math.floor(Math.random() * 0x1fffffffffffff).toString(36);
+    return `${device.deviceId.slice(-18)}-${clock.now().toString(36)}-${requestSequence.toString(36)}-${random}`.slice(-64);
   }
 
-  function displayedAnchor(): number {
-    return optimistic?.positionAt ?? state()?.positionAt ?? toServerNow();
+  function schedule(callback: () => void, delayMs: number, operation: ConnectTraceOperation = 'listen_retry'): unknown {
+    emit({ event: 'timer.scheduled', operation, count: 1, delayMs: Math.max(0, delayMs) });
+    const handle = clock.setTimeout(() => {
+      timers.delete(handle);
+      timerOperations.delete(handle);
+      emit({ event: 'timer.fired', operation, count: 1 });
+      callback();
+    }, Math.max(0, delayMs));
+    timers.add(handle);
+    timerOperations.set(handle, operation);
+    return handle;
+  }
+
+  function clearTimer(handle: unknown): void {
+    if (handle === undefined) return;
+    clock.clearTimeout(handle);
+    timers.delete(handle);
+    const operation = timerOperations.get(handle);
+    timerOperations.delete(handle);
+    if (operation) emit({ event: 'timer.cleared', operation, count: 1 });
+  }
+
+  function sample<T extends { readonly serverNow: number }>(operation: ConnectTraceOperation, run: () => Promise<T>): Promise<T> {
+    const finish = sampledClock.begin();
+    const started = clock.monotonicNow?.();
+    emit({ event: 'mutation.started', operation, count: 1 });
+    return run().then((result) => {
+      finish(result.serverNow);
+      const ended = clock.monotonicNow?.();
+      emit({ event: 'mutation.completed', operation, outcome: 'ok', count: 1,
+        ...(started !== undefined && ended !== undefined && ended >= started ? { durationMs: ended - started } : {}) });
+      return result;
+    }, (error: unknown) => {
+      emit({ event: errorCode(error) === 'stale_revision' || errorCode(error) === 'stale_ownership' ? 'mutation.conflict' : 'mutation.failed',
+        operation, outcome: errorCode(error) === 'offline' ? 'offline' : 'failed', count: 1 });
+      throw error;
+    });
+  }
+
+  function activeId(): string | undefined { return snapshot?.state?.activeDeviceId; }
+  function isActive(): boolean { return activeId() === device.deviceId; }
+  function stateEpoch(): number { return snapshot?.state?.ownershipEpoch ?? 0; }
+  function activeDevice(): ConnectDevice | undefined { return snapshot?.devices.find((row) => row.deviceId === activeId()); }
+  function activeOnline(): boolean { return isActive() || activeDevice()?.isOnline === true; }
+  function localPosition(): number {
+    const live = player.getSnapshot();
+    return clamp(live.positionSec, live.song?.duration ?? 0);
+  }
+
+  function remotePosition(): number {
+    const state = snapshot?.state;
+    if (!state) return 0;
+    const now = sampledClock.now();
+    return clamp(state.positionSec + (state.isPlaying ? Math.max(0, now - state.positionAt) / 1000 : 0), state.song?.duration ?? 0);
   }
 
   function livePosition(): number {
-    const current = displayedSnapshot();
-    const elapsed = current.isPlaying ? Math.max(0, (toServerNow() - displayedAnchor()) / 1000) : 0;
-    return Math.max(0, current.positionSec + elapsed);
+    if (isActive()) return localPosition();
+    if (optimistic && clock.now() < optimistic.expiresAt) {
+      const command = optimistic.intent.command;
+      if (command.kind === 'seek') return clamp(command.sec, view().song?.duration ?? 0);
+    }
+    return remotePosition();
   }
 
   function view(): ConnectView {
-    const current = displayedSnapshot();
-    const activeDeviceId = activeId();
-    const activeDevice = snapshot.devices.find((entry) => entry.deviceId === activeDeviceId);
-    const pendingView: PendingCommandView | undefined = pending
-      ? {
-          ...(pending.commandId ? { commandId: pending.commandId } : {}),
-          targetDeviceId: pending.targetDeviceId,
-          command: pending.command,
-          startedAt: pending.startedAt
-        }
-      : undefined;
+    const state = snapshot?.state;
+    const shown = optimistic && clock.now() < optimistic.expiresAt ? optimistic.intent.command : undefined;
+    let song = state?.song;
+    let queueItems = state?.queue ?? EMPTY_PLAYER.queue;
+    let isPlaying = state?.isPlaying ?? false;
+    let volume = state?.volume ?? EMPTY_PLAYER.volume;
+    let shuffle = state?.shuffle ?? false;
+    let repeat = state?.repeat ?? 'off';
+    if (shown) {
+      if (shown.kind === 'play') isPlaying = true;
+      else if (shown.kind === 'pause') isPlaying = false;
+      else if (shown.kind === 'play_song') { song = shown.song; queueItems = shown.queue ?? []; isPlaying = true; }
+      else if (shown.kind === 'seek') { /* livePosition owns the optimistic position. */ }
+      else if (shown.kind === 'volume') volume = shown.v;
+      else if (shown.kind === 'shuffle') shuffle = shown.on;
+      else if (shown.kind === 'repeat') repeat = shown.mode;
+    }
+    const selectedDevice = activeDevice();
     return {
-      devices: snapshot.devices,
-      ...(activeDevice ? { activeDevice } : {}),
-      ...(activeDeviceId ? { activeDeviceId } : {}),
+      devices: snapshot?.devices ?? [],
+      ...(selectedDevice ? { activeDevice: selectedDevice } : {}),
+      ...(state?.activeDeviceId ? { activeDeviceId: state.activeDeviceId } : {}),
       isThisDeviceActive: isActive(),
-      ...(current.song ? { song: current.song } : {}),
-      queue: current.queue,
-      isPlaying: current.isPlaying,
+      activeDeviceOnline: activeOnline(),
+      ownershipEpoch: stateEpoch(),
+      ...(song ? { song } : {}),
+      queue: queueItems,
+      isPlaying,
       livePosition: livePosition(),
-      volume: current.volume,
-      shuffle: current.shuffle,
-      repeat: current.repeat,
-      ...(pendingView ? { pendingCommand: pendingView } : {}),
+      volume,
+      shuffle,
+      repeat,
+      ...(pending ? { pendingCommand: { ...(pendingCommandId ? { commandId: pendingCommandId } : {}), targetDeviceId: pending.targetDeviceId, command: pending.command, startedAt: pending.startedAt } } : {}),
+      queuedCommands: queue.size,
       autoplayBlocked,
-      ...(lastError ? { lastError } : {})
+      ...(lastError ? { lastError } : {}),
+      ...(lastErrorCode ? { lastErrorCode } : {})
     };
   }
 
-  function updateClock(serverNow: number): void {
-    clockOffset = serverNow - clock.now();
-  }
+  function notify(): void { if (!disposed) for (const listener of [...subscribers]) listener(view()); }
+  function wakeSnapshotWaiters(): void { for (const wake of [...snapshotWaiters]) wake(); snapshotWaiters.clear(); }
 
-  function shouldListen(): boolean {
-    return visible || local.isPlaying || isActive();
-  }
+  function shouldListen(): boolean { return !disposed && (visible || local.isPlaying || isActive()); }
 
-  function reconcileListening(): void {
-    if (disposed) return;
-    if (shouldListen()) void startListening();
-    else stopListening();
-  }
-
-  function scheduleListenRetry(): void {
-    if (disposed || listenRetryTimer !== undefined || !shouldListen()) return;
-    listenRetryTimer = clock.setTimeout(() => {
-      listenRetryTimer = undefined;
-      void startListening();
-    }, LISTEN_RETRY_MS);
-  }
-
-  async function startListening(): Promise<void> {
-    if (disposed || watchStop || registering) return;
+  async function registerAndListen(): Promise<void> {
+    if (registering || listening || !shouldListen()) return;
     registering = true;
     try {
-      const result = await transport.register(device);
-      updateClock(result.serverNow);
+      const result = await sample('register', () => transport.register({ ...device, protocolVersion: 2 }));
       if (disposed || !shouldListen()) return;
-      watchStop = transport.watch(device.deviceId, onTransportSnapshot);
+      listening = true;
+      watchStop = transport.watch(device.deviceId, onSnapshot);
       heartbeatTimer = clock.setInterval(() => {
-        void transport.heartbeat(device.deviceId).then((reply) => updateClock(reply.serverNow)).catch(() => {
-          lastError = 'Connect is offline';
-          notify();
-        });
+        void sample('heartbeat', () => transport.heartbeat(device.deviceId)).catch((error: unknown) => setError(error, 'Connect is offline.'));
       }, HEARTBEAT_MS);
-      if (listenRetryTimer !== undefined) clock.clearTimeout(listenRetryTimer);
+      if (listenRetryTimer !== undefined) clearTimer(listenRetryTimer);
       listenRetryTimer = undefined;
+      emit({ event: 'adapter.ready', operation: 'watch', outcome: 'ok', count: 1 });
     } catch (error) {
-      lastError = errorMessage(error, 'Connect is offline');
-      notify();
-      scheduleListenRetry();
-    } finally {
-      registering = false;
-    }
+      setError(error, 'Connect is offline.');
+      if (listenRetryTimer === undefined && shouldListen()) listenRetryTimer = schedule(() => { listenRetryTimer = undefined; void registerAndListen(); }, 1_000, 'listen_retry');
+    } finally { registering = false; }
   }
 
   function stopListening(): void {
-    watchStop?.();
-    watchStop = undefined;
+    watchStop?.(); watchStop = undefined;
     if (heartbeatTimer !== undefined) clock.clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
-    if (listenRetryTimer !== undefined) clock.clearTimeout(listenRetryTimer);
-    listenRetryTimer = undefined;
-    // A registration is durable. The transport watch and heartbeat are the cost-bearing parts.
+    listening = false;
   }
 
-  function onTransportSnapshot(next: ConnectSnapshot): void {
+  function setError(error: unknown, fallback: string): void {
+    lastErrorCode = errorCode(error) ?? (errorCode(error) === 'offline' ? 'offline' : undefined);
+    lastError = failureText(error, fallback);
+    notify();
+  }
+
+  function onSnapshot(next: Parameters<Parameters<typeof transport.watch>[1]>[0]): void {
     if (disposed) return;
+    emit({ event: 'query.delivered', operation: 'watch', count: 1 });
     const wasActive = isActive();
     snapshot = next;
-    updateClock(next.serverNow);
+    if (next.state) {
+      confirmed = confirmedFromState(next.state);
+      if (serverRev === undefined || next.state.rev > serverRev) serverRev = next.state.rev;
+    }
+    else if (!confirmed) confirmed = undefined;
     lastError = undefined;
+    lastErrorCode = undefined;
+    observeOutcome();
+    wakeSnapshotWaiters();
 
     if (!didRestore) {
       didRestore = true;
-      const hasTakeover = next.commands.some((command) => command.status === 'pending' && command.targetDeviceId === device.deviceId && command.command.kind === 'take_over');
-      const stored = next.state;
-      if (!hasTakeover && stored?.song && !local.song) {
-        restoringLastSession = true;
-        void player.load(stored.song, stored.queue, { positionSec: positionAt(stored, toServerNow()), play: false })
-          .then(() => {
-            local = player.getSnapshot();
-            notify();
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            restoringLastSession = false;
-          });
+      const restored = next.state;
+      if (restored?.song && !local.song) {
+        restoring = true;
+        const position = clamp(restored.positionSec + (restored.isPlaying ? Math.max(0, sampledClock.now() - restored.positionAt) / 1000 : 0), restored.song.duration);
+        void player.load(restored.song, restored.queue, { positionSec: position, play: false }).then(() => {
+          local = player.getSnapshot(); previousLocal = local; notify();
+        }).catch(() => undefined).finally(() => { restoring = false; });
       }
     }
 
-    if (wasActive && !isActive() && local.isPlaying) {
-      void runPlayerAction(() => player.pause());
+    if (wasActive && !isActive() && local.isPlaying) void pauseAfterOwnershipLoss();
+    if (next.state?.handoff && next.state.activeDeviceId === device.deviceId && next.state.handoff.toDeviceId !== device.deviceId) {
+      void answerHandoff(next.state.handoff.commandId, stateEpoch());
     }
-    reconcilePending(next.commands);
-    processInbox(next.commands);
     notify();
+    void drainInbox();
     reconcileListening();
+    pump();
   }
 
-  function reconcilePending(commands: readonly ConnectCommand[]): void {
-    if (!pending?.commandId) return;
-    const command = commands.find((entry) => entry.id === pending?.commandId);
-    if (!command || command.status === 'pending') return;
-    finishPending(command.status === 'done'
-      ? { ok: true }
-      : transferFailure(command.error ?? 'Command failed'));
+  async function pauseAfterOwnershipLoss(): Promise<void> {
+    handoffInFlight = true;
+    try { await player.pause(); }
+    catch { /* ownership already moved; never claim it back on a position tick */ }
+    finally { handoffInFlight = false; local = player.getSnapshot(); notify(); }
   }
 
-  function processInbox(commands: readonly ConnectCommand[]): void {
-    for (const command of commands) {
-      if (command.targetDeviceId !== device.deviceId || command.status !== 'pending') continue;
-      if (processingCommands.has(command.id)) continue;
-      const processed = processedCommands.get(command.id);
-      if (processed) {
-        if (!processed.acknowledged) void acknowledge(command.id, processed);
-        continue;
-      }
-      processingCommands.add(command.id);
-      void applyIncoming(command).finally(() => processingCommands.delete(command.id));
-    }
-  }
-
-  async function applyIncoming(envelope: ConnectCommand): Promise<void> {
-    let ok = true;
-    let error: string | undefined;
+  async function answerHandoff(commandId: string, epoch: number): Promise<void> {
+    if (handoffInFlight || !snapshot?.state || snapshot.state.handoff?.commandId !== commandId || !isActive()) return;
+    handoffInFlight = true;
+    const resume = local.isPlaying;
     try {
-      const result = await applyCommand(envelope.command);
-      if (result === 'not_found') {
-        ok = false;
-        error = 'not_found';
-      } else if (result === 'needs_gesture') {
-        ok = false;
-        error = 'needs_gesture';
+      if (resume) await player.pause();
+      const exact = player.getSnapshot();
+      await sample('release', () => transport.release({
+        deviceId: device.deviceId, commandId, expectedOwnershipEpoch: epoch,
+        positionSec: clamp(exact.positionSec, exact.song?.duration ?? 0), resume
+      }));
+      local = player.getSnapshot();
+    } catch (error) {
+      // If the destination timed out after this pause, keep the former owner audible.
+      if (resume) {
+        const result = await player.play().catch(() => 'needs_gesture' as const);
+        if (result !== 'ok') setError(error, 'The other device could not confirm the transfer.');
       }
-    } catch (cause) {
-      ok = false;
-      error = errorMessage(cause, 'command_failed');
-    }
-    const processed: ProcessedCommand = { ok, ...(error ? { error } : {}), acknowledged: false };
-    processedCommands.set(envelope.id, processed);
-    if (processedCommands.size > MAX_SEEN_COMMANDS) {
-      const first = processedCommands.values().next().value;
-      if (first) {
-        const firstId = processedCommands.keys().next().value as string | undefined;
-        if (firstId) processedCommands.delete(firstId);
-      }
-    }
-    if (ok && isActive()) await reportLocal(true);
-    await acknowledge(envelope.id, processed);
+    } finally { handoffInFlight = false; notify(); }
   }
 
-  async function acknowledge(commandId: string, processed: ProcessedCommand): Promise<void> {
-    if (processed.acknowledged || acknowledgingCommands.has(commandId)) return;
-    acknowledgingCommands.add(commandId);
+  function reconcileListening(): void {
+    if (shouldListen()) void registerAndListen();
+    else stopListening();
+  }
+
+  function makeIntent(command: RemoteCommand, targetDeviceId: string, transfer = false, resolveTransfer?: (result: TransferResult) => void): Intent {
+    const startedAt = clock.now();
+    return {
+      command, targetDeviceId, epoch: stateEpoch(), barrier: transfer || (command.kind !== 'seek' && command.kind !== 'volume'),
+      requestId: requestId(), transfer, startedAt,
+      ...(clock.monotonicNow ? { startedMono: clock.monotonicNow() } : {}),
+      ...(resolveTransfer ? { resolveTransfer } : {})
+    };
+  }
+
+  function offer(intent: Intent): void {
+    const result = queue.offer(intent);
+    if (result.status === 'overflow') {
+      const error = connectError('rate_limited'); setError(error, 'Connect command queue is full.');
+      intent.resolveTransfer?.({ ok: false, reason: 'failed', code: 'rate_limited', error: 'Connect command queue is full.' });
+      return;
+    }
+    notify(); pump();
+  }
+
+  function finishFeedback(intent: Intent, outcome?: CommandOutcomeInput): void {
+    if (intent !== pending) return;
+    clearTimer(feedbackTimer); feedbackTimer = undefined;
+    const ended = clock.monotonicNow?.();
+    const durationMs = intent.startedMono !== undefined && ended !== undefined && ended >= intent.startedMono
+      ? ended - intent.startedMono
+      : undefined;
+    if (!outcome) {
+      intent.feedbackTimedOut = true;
+      const waitingFor = intent.transfer
+        ? snapshot?.devices.find((row) => row.deviceId === intent.targetDeviceId)?.name
+        : activeDevice()?.name;
+      lastError = `Couldn't reach ${waitingFor ?? 'the other device'}.`;
+      lastErrorCode = 'offline';
+      if (optimistic?.intent === intent) optimistic = undefined;
+      intent.resolveTransfer?.({ ok: false, reason: 'timeout', code: 'offline', error: lastError });
+      emit({ event: 'input.timed_out', operation: intent.transfer ? 'transfer' : 'control', outcome: 'timeout', count: 1, ...(durationMs !== undefined ? { durationMs } : {}) });
+    } else if (outcome.ok === false) {
+      lastError = outcome.error ?? 'The device could not complete that action.';
+      lastErrorCode = outcome.code;
+      if (optimistic?.intent === intent) optimistic = undefined;
+      intent.resolveTransfer?.({ ok: false, reason: outcome.code === 'not_found' ? 'not_found' : 'failed', code: outcome.code, error: lastError });
+      emit({ event: 'input.failed', operation: intent.transfer ? 'transfer' : 'control', outcome: outcome.code, count: 1, ...(durationMs !== undefined ? { durationMs } : {}) });
+    } else {
+      optimistic = undefined; lastError = undefined; lastErrorCode = undefined;
+      intent.resolveTransfer?.({ ok: true });
+      emit({ event: 'input.confirmed', operation: intent.transfer ? 'transfer' : 'control', outcome: 'ok', count: 1, ...(durationMs !== undefined ? { durationMs } : {}) });
+    }
+    notify();
+  }
+
+  function pump(): void {
+    if (disposed || pending || !snapshot || queue.size === 0) return;
+    const intent = queue.shift();
+    if (!intent) return;
+    const target = snapshot.devices.find((row) => row.deviceId === intent.targetDeviceId);
+    if (!target?.isOnline || !target.canPlay || (!intent.transfer && intent.targetDeviceId !== activeId())) {
+      const error = !target?.isOnline ? connectError('offline') : !target.canPlay ? connectError('target_cannot_play') : connectError('target_not_active');
+      setError(error, 'That device is unavailable.');
+      intent.resolveTransfer?.(failureResult(error));
+      pump(); return;
+    }
+    if (target.protocolVersion < 2) {
+      const error = connectError('update_required'); setError(error, 'Update the other device to use Connect.');
+      intent.resolveTransfer?.(failureResult(error)); pump(); return;
+    }
+    if (intent.epoch !== stateEpoch()) {
+      const error = connectError('stale_ownership'); setError(error, 'Playback moved to another device.');
+      intent.resolveTransfer?.(failureResult(error)); pump(); return;
+    }
+    pending = intent;
+    pendingCommandId = undefined;
+    retryCount = 0;
+    optimistic = intent.transfer ? undefined : { intent, expiresAt: intent.startedAt + INPUT_FEEDBACK_MS };
+    emit({ event: 'input.started', operation: intent.transfer ? 'transfer' : 'control', requestId: intent.requestId, kind: intent.command.kind, count: 1 });
+    feedbackTimer = schedule(() => { feedbackTimer = undefined; finishFeedback(intent); }, Math.max(0, intent.startedAt + INPUT_FEEDBACK_MS - clock.now()), 'command_timeout');
+    notify();
+    transmit(intent);
+  }
+
+  async function transmit(intent: Intent): Promise<void> {
+    if (disposed || pending !== intent || pendingCommandId) return;
     try {
-      const result = await transport.ack(device.deviceId, commandId, {
-        ok: processed.ok,
-        ...(processed.error ? { error: processed.error } : {})
-      });
-      if (result.accepted !== false) {
-        processed.acknowledged = true;
-        lastError = undefined;
-        const hasUnacknowledgedPending = snapshot.commands.some((command) =>
-          command.targetDeviceId === device.deviceId &&
-          command.status === 'pending' &&
-          !processedCommands.get(command.id)?.acknowledged
-        );
-        if (!hasUnacknowledgedPending && ackRetryTimer !== undefined) {
-          clock.clearTimeout(ackRetryTimer);
-          ackRetryTimer = undefined;
+      const receipt = await sample(intent.transfer ? 'transfer' : 'send', () => intent.transfer
+        ? transport.transfer({ fromDeviceId: device.deviceId, toDeviceId: intent.targetDeviceId, requestId: intent.requestId, expectedOwnershipEpoch: intent.epoch })
+        : transport.send({ fromDeviceId: device.deviceId, targetDeviceId: intent.targetDeviceId, requestId: intent.requestId, expectedOwnershipEpoch: intent.epoch, command: intent.command }));
+      pendingCommandId = receipt.commandId;
+      retryCount = 0;
+      notify();
+      observeOutcome();
+    } catch (error) {
+      const code = errorCode(error);
+      if (code === 'stale_ownership') {
+        queue.removeWhere((queued) => queued.epoch === intent.epoch);
+        pending = undefined; pendingCommandId = undefined; optimistic = undefined; clearTimer(feedbackTimer); feedbackTimer = undefined;
+        setError(error, 'Playback moved to another device.'); intent.resolveTransfer?.(failureResult(error)); pump(); return;
+      }
+      if (isUncertainFailure(error) && clock.now() - intent.startedAt < 60_000) {
+        retryCount++;
+        const delay = Math.min(4_000, 250 * (2 ** Math.min(retryCount, 4)));
+        retryTimer = schedule(() => { retryTimer = undefined; void transmit(intent); }, delay, 'send_retry');
+        return;
+      }
+      pending = undefined; pendingCommandId = undefined; optimistic = undefined;
+      clearTimer(feedbackTimer); feedbackTimer = undefined;
+      setError(error, 'Could not send the Connect command.'); intent.resolveTransfer?.(failureResult(error));
+      pump();
+    }
+  }
+
+  function observeOutcome(): void {
+    if (!pending || !pendingCommandId || !snapshot) return;
+    const result = snapshot.outcomes.find((row) => row.id === pendingCommandId);
+    if (!result || result.status === 'pending') return;
+    const intent = pending;
+    finishFeedback(intent, result.status === 'done' ? { ok: true } : {
+      ok: false, code: result.errorCode ?? 'command_failed', ...(result.error ? { error: result.error } : {})
+    });
+    pending = undefined; pendingCommandId = undefined;
+    clearTimer(retryTimer); retryTimer = undefined;
+    pump();
+  }
+
+  async function playLocally(command: Extract<RemoteCommand, { kind: 'play' | 'play_song' }>): Promise<void> {
+    try {
+      if (command.kind === 'play_song') {
+        const queueItems = command.queue ?? [];
+        const result = await player.load(command.song, queueItems, { positionSec: 0, play: true });
+        if (result === 'not_found') throw connectError('invalid_command', { message: 'This song is not available on this device.' });
+        if (result === 'needs_gesture') {
+          autoplayBlocked = true;
+          throw Object.assign(new Error('Tap play to start audio.'), { data: { code: 'needs_gesture', message: 'Tap play to start audio.' } });
         }
       } else {
-        lastError = 'Could not acknowledge command';
-        scheduleAckRetry();
-      }
-    } catch (cause) {
-      lastError = errorMessage(cause, 'Could not acknowledge command');
-      scheduleAckRetry();
-    } finally {
-      acknowledgingCommands.delete(commandId);
-      notify();
-    }
-  }
-
-  function scheduleAckRetry(): void {
-    if (disposed || ackRetryTimer !== undefined) return;
-    ackRetryTimer = clock.setTimeout(() => {
-      ackRetryTimer = undefined;
-      processInbox(snapshot.commands);
-    }, ACK_RETRY_MS);
-  }
-
-  async function applyCommand(command: RemoteCommand): Promise<'ok' | 'not_found' | 'needs_gesture'> {
-    switch (command.kind) {
-      case 'take_over': {
-        const song = command.state.song;
-        if (!song) return 'not_found';
-        const result = await loadSnapshot(song, command.state, positionAt(command.state, toServerNow()));
-        if (result === 'not_found') return 'not_found';
-        autoplayBlocked = result === 'needs_gesture';
-        local = player.getSnapshot();
-        if (result === 'needs_gesture') throw new Error('needs_gesture');
-        try {
-          const claim = await transport.claim(device.deviceId, local);
-          if (claim.accepted === false) throw new Error('Could not claim playback');
-          updateClock(claim.serverNow);
-        } catch (error) {
-          if (player.getSnapshot().isPlaying) await runPlayerAction(() => player.pause()).catch(() => undefined);
-          throw error;
+        const result = await player.play();
+        if (result === 'needs_gesture') {
+          autoplayBlocked = true;
+          throw Object.assign(new Error('Tap play to start audio.'), { data: { code: 'needs_gesture', message: 'Tap play to start audio.' } });
         }
-        lastReportedKey = reportKey(local);
-        lastReportedAt = clock.now();
-        return 'ok';
       }
-      case 'play_song': {
-        const result = await runPlayerAction(() => player.load(command.song, command.queue ?? [], { positionSec: 0, play: true }));
-        if (result === 'not_found') return 'not_found';
-        autoplayBlocked = result === 'needs_gesture';
-        if (result === 'needs_gesture') return 'needs_gesture';
-        local = player.getSnapshot();
-        if (local.isPlaying && !isActive()) {
-          const claim = await transport.claim(device.deviceId, local);
-          updateClock(claim.serverNow);
-        }
-        return 'ok';
-      }
-      case 'queue_add':
-        if (player.addToQueue) await runPlayerAction(() => player.addToQueue?.(command.song) ?? Promise.resolve());
-        else if (local.song) {
-          const result = await runPlayerAction(() => player.load(local.song as SongSnapshot, [...local.queue, command.song], { positionSec: livePosition(), play: local.isPlaying }));
-          if (result === 'not_found') return 'not_found';
-          autoplayBlocked = result === 'needs_gesture';
-          if (result === 'needs_gesture') return 'needs_gesture';
-        } else return 'not_found';
-        local = player.getSnapshot();
-        return 'ok';
-      default:
-        return executeBasicCommand(command);
-    }
-  }
-
-  async function executeBasicCommand(command: Exclude<RemoteCommand, { kind: 'take_over' | 'play_song' | 'queue_add' }>): Promise<'ok' | 'not_found' | 'needs_gesture'> {
-    switch (command.kind) {
-      case 'play': {
-        const result = await runPlayerAction(() => player.play());
-        autoplayBlocked = result === 'needs_gesture';
-        if (result === 'needs_gesture') return 'needs_gesture';
-        break;
-      }
-      case 'pause':
-        await runPlayerAction(() => player.pause());
-        autoplayBlocked = false;
-        break;
-      case 'seek':
-        await runPlayerAction(() => player.seek(command.sec));
-        break;
-      case 'volume':
-        await runPlayerAction(() => player.setVolume(command.v));
-        break;
-      case 'shuffle':
-        if (player.setShuffle) await runPlayerAction(() => player.setShuffle?.(command.on) ?? Promise.resolve());
-        break;
-      case 'repeat':
-        if (player.setRepeat) await runPlayerAction(() => player.setRepeat?.(command.mode) ?? Promise.resolve());
-        break;
-      case 'next':
-        if (player.next) await runPlayerAction(() => player.next?.() ?? Promise.resolve());
-        else if (local.queue[0]) {
-          const [next, ...queue] = local.queue;
-          const result = await runPlayerAction(() => player.load(next as SongSnapshot, queue, { positionSec: 0, play: local.isPlaying }));
-          if (result === 'not_found') return 'not_found';
-          autoplayBlocked = result === 'needs_gesture';
-          if (result === 'needs_gesture') return 'needs_gesture';
-        }
-        break;
-      case 'prev':
-        if (player.previous) await runPlayerAction(() => player.previous?.() ?? Promise.resolve());
-        else await runPlayerAction(() => player.seek(local.positionSec > 3 ? 0 : local.positionSec));
-        break;
-    }
-    local = player.getSnapshot();
-    if (local.isPlaying && !isActive()) {
-      const claim = await transport.claim(device.deviceId, local);
-      updateClock(claim.serverNow);
-    }
-    return 'ok';
-  }
-
-  async function runPlayerAction<T>(action: () => Promise<T>): Promise<T> {
-    suppressPlayerEvents++;
-    try {
-      return await action();
-    } finally {
-      suppressPlayerEvents--;
-      local = player.getSnapshot();
-    }
-  }
-
-  async function loadSnapshot(song: SongSnapshot, source: PlayerSnapshot, positionSec: number): Promise<'ok' | 'not_found' | 'needs_gesture'> {
-    let loaded = false;
-    try {
-      // Start playback in the initiating action before awaiting settings writes;
-      // browsers can lose user activation across an awaited settings update.
-      const result = await runPlayerAction(() => player.load(song, source.queue, {
-        positionSec,
-        play: source.isPlaying
-      }));
-      if (result === 'not_found') return result;
-      loaded = true;
-      await runPlayerAction(() => player.setVolume(source.volume));
-      if (player.setShuffle) await runPlayerAction(() => player.setShuffle?.(source.shuffle) ?? Promise.resolve());
-      if (player.setRepeat) await runPlayerAction(() => player.setRepeat?.(source.repeat) ?? Promise.resolve());
-      local = player.getSnapshot();
-      return result;
-    } catch (error) {
-      if (loaded && player.getSnapshot().isPlaying) await runPlayerAction(() => player.pause()).catch(() => undefined);
-      throw error;
-    }
-  }
-
-  async function reportLocal(force: boolean): Promise<void> {
-    if (!isActive() || !snapshot.state || disposed) return;
-    local = player.getSnapshot();
-    const key = reportKey(local);
-    const dueForDrift = clock.now() - lastReportedAt >= POSITION_REPORT_MS;
-    if (!force && key === lastReportedKey && !dueForDrift) return;
-    const patch: PlayerStatePatch = { ...local };
-    try {
-      const result = await transport.report(device.deviceId, patch, snapshot.state.rev);
-      updateClock(result.serverNow);
-      if (result.accepted === false) return;
-      lastReportedKey = key;
-      lastReportedAt = clock.now();
-    } catch (error) {
-      lastError = errorMessage(error, 'Could not sync playback');
-    }
-  }
-
-  async function claimLocal(): Promise<void> {
-    if (disposed || !local.isPlaying) return;
-    try {
-      const result = await transport.claim(device.deviceId, player.getSnapshot());
-      updateClock(result.serverNow);
-      local = player.getSnapshot();
-      lastReportedKey = reportKey(local);
-      lastReportedAt = clock.now();
       autoplayBlocked = false;
-      lastError = undefined;
-      notify();
-    } catch (error) {
-      lastError = errorMessage(error, 'Could not claim playback');
-      notify();
-    }
-  }
-
-  function onPlayerChange(next: PlayerSnapshot): void {
-    local = next;
-    if (suppressPlayerEvents > 0 || restoringLastSession || disposed) return;
-    if (next.isPlaying && !isActive()) {
-      reconcileListening();
-      void startListening().then(() => claimLocal());
-    } else if (isActive()) {
-      void reportLocal(false);
-    }
-    notify();
-    reconcileListening();
+      local = player.getSnapshot(); notify();
+    } catch (error) { setError(error, 'Could not start playback here.'); }
   }
 
   function control(command: RemoteCommand): void {
     if (disposed) return;
-    const active = activeId();
-    if (!active || active === device.deviceId) {
-      if (command.kind === 'take_over') return;
-      void applyCommand(command).then((result) => {
-        if (result === 'not_found') throw new Error('not_found');
-        if (result === 'needs_gesture') throw new Error('needs_gesture');
-        if (isActive()) return reportLocal(true);
-        if (local.isPlaying) return claimLocal();
-        return undefined;
-      }).catch((error) => {
-        lastError = errorMessage(error, 'Playback command failed');
-        notify();
-      });
+    if (command.kind === 'take_over') return;
+    const remote = activeId() !== undefined && activeId() !== device.deviceId;
+    if (remote && !activeOnline()) {
+      if (command.kind === 'play' || command.kind === 'play_song') { void playLocally(command); return; }
+      setError(connectError('offline'), 'The active device is offline.'); return;
+    }
+    if (remote) {
+      if (!activeId()) return;
+      offer(makeIntent(command, activeId() as string));
       return;
     }
-    void sendRemote(active, command);
+    void applyLocalControl(command);
   }
 
-  async function sendRemote(targetDeviceId: string, command: RemoteCommand): Promise<void> {
-    if (pending) return;
-    optimistic = { snapshot: optimisticSnapshot(command), positionAt: toServerNow() };
-    pending = { targetDeviceId, command, startedAt: clock.now(), kind: 'control' };
-    lastError = undefined;
-    notify();
+  async function applyLocalControl(command: Exclude<RemoteCommand, { kind: 'take_over' }>): Promise<void> {
     try {
-      const result = await transport.send(device.deviceId, targetDeviceId, command);
-      if (disposed) return;
-      updateClock(result.serverNow);
-      if (!pending) return;
-      pending.commandId = result.commandId;
-      pending.timeout = clock.setTimeout(() => onPendingTimeout(result.commandId), COMMAND_TIMEOUT_MS);
-      reconcilePending(snapshot.commands);
+      switch (command.kind) {
+        case 'play':
+          if (await player.play() !== 'ok') { autoplayBlocked = true; throw new Error('Tap play to start audio.'); }
+          autoplayBlocked = false;
+          break;
+        case 'pause': await player.pause(); break;
+        case 'seek': await player.seek(command.sec); break;
+        case 'volume': await player.setVolume(command.v); break;
+        case 'shuffle': if (player.setShuffle) await player.setShuffle(command.on); break;
+        case 'repeat': if (player.setRepeat) await player.setRepeat(command.mode); break;
+        case 'next': if (player.next) await player.next(); break;
+        case 'prev': if (player.previous) await player.previous(); break;
+        case 'play_song': {
+          const result = await player.load(command.song, command.queue ?? [], { positionSec: 0, play: true });
+          if (result !== 'ok') throw new Error(result === 'not_found' ? 'Song not found.' : 'Tap play to start audio.'); break;
+        }
+        case 'queue_add': if (player.addToQueue) await player.addToQueue(command.song); break;
+      }
+      local = player.getSnapshot();
+      notify();
+    } catch (error) { setError(error, 'Could not control playback.'); }
+  }
+
+  function onPlayerChange(next: PlayerSnapshot): void {
+    const previous = previousLocal;
+    previousLocal = next;
+    local = next;
+    if (disposed || restoring) return;
+    const started = next.isPlaying && !previous.isPlaying;
+    if (started) autoplayBlocked = false;
+    if (started && !isActive() && !claimInFlight && next.song) void claimLocal();
+    if (isActive() && !handoffInFlight) void reportLocal(next.positionSec !== previous.positionSec);
+    notify();
+    reconcileListening();
+  }
+
+  async function claimLocal(): Promise<void> {
+    if (claimInFlight || disposed || !local.isPlaying || !local.song) return;
+    claimInFlight = true;
+    const expectedEpoch = stateEpoch();
+    try {
+      const result = await sample('claim', () => transport.claim(device.deviceId, player.getSnapshot(), expectedEpoch));
+      confirmed = confirmedFromSnapshot(player.getSnapshot(), result.serverNow);
+      lastPositionReportAt = clock.now();
+      lastError = undefined; lastErrorCode = undefined;
       notify();
     } catch (error) {
-      if (disposed) return;
-      clearPending();
-      optimistic = undefined;
-      lastError = isOffline(error) ? 'Connect is offline' : errorMessage(error, 'Connect is offline');
+      setError(error, 'Could not claim playback.');
+      if (errorCode(error) === 'stale_ownership' && activeId() !== device.deviceId && player.getSnapshot().isPlaying) {
+        await player.pause().catch(() => undefined); local = player.getSnapshot(); previousLocal = local;
+      }
+    } finally { claimInFlight = false; }
+  }
+
+  async function reportLocal(seek: boolean): Promise<void> {
+    if (reportInFlight) { reportQueued = true; reportQueuedSeek ||= seek; return; }
+    const state = snapshot?.state;
+    if (!state || !isActive() || !local.song || handoffInFlight || disposed) return;
+    const now = sampledClock.now();
+    const current = player.getSnapshot();
+    const position = clamp(current.positionSec, current.song?.duration ?? 0);
+    const allowDrift = clock.now() - lastPositionReportAt >= REPORT_DRIFT_MS;
+    const plan = planPatch(current, position, confirmed ?? confirmedFromState(state), now, { seek, allowDrift });
+    if (!plan.patch) return;
+    reportInFlight = true;
+    const rev = serverRev ?? snapshot?.state?.rev ?? state.rev;
+    const epoch = stateEpoch();
+    const before = confirmed ?? confirmedFromState(state);
+    try {
+      const result = await sample('report', () => transport.report(device.deviceId, plan.patch as PlayerStatePatch, { rev, ownershipEpoch: epoch }));
+      serverRev = Math.max(serverRev ?? 0, result.rev);
+      confirmed = applyConfirmedPatch(before, plan.patch, result.serverNow);
+      if (plan.patch.positionSec !== undefined) lastPositionReportAt = clock.now();
+      lastError = undefined; lastErrorCode = undefined;
+    } catch (error) {
+      if (errorCode(error) === 'stale_ownership') {
+        if (player.getSnapshot().isPlaying) await player.pause().catch(() => undefined);
+        local = player.getSnapshot(); previousLocal = local;
+      } else if (errorCode(error) === 'stale_revision') {
+        const currentRev = errorData(error)?.currentRev;
+        if (typeof currentRev === 'number' && Number.isFinite(currentRev)) serverRev = Math.max(serverRev ?? 0, currentRev);
+        reportQueued = true;
+      } else setError(error, 'Could not sync playback.');
+    } finally {
+      reportInFlight = false;
+      if (reportQueued && isActive()) {
+        const trailingSeek = reportQueuedSeek; reportQueued = false; reportQueuedSeek = false;
+        void reportLocal(trailingSeek);
+      }
       notify();
     }
   }
 
-  async function transferTo(targetDeviceId: string): Promise<TransferResult> {
-    if (disposed) return { ok: false, reason: 'offline' };
-    if (targetDeviceId === device.deviceId) return transferToLocalDevice();
-    if (pending) return { ok: false, reason: 'failed', error: 'A command is already in progress' };
-    optimistic = undefined;
-    const target = snapshot.devices.find((entry) => entry.deviceId === targetDeviceId);
-    const command: RemoteCommand = state()
-      ? { kind: 'take_over', state: state() as ConnectPlayerState }
-      : { kind: 'pause' };
-    if (!target?.canPlay || !target.isOnline) return { ok: false, reason: 'failed', error: 'That device is unavailable' };
-    pending = { targetDeviceId, command, startedAt: clock.now(), kind: 'transfer' };
-    lastError = undefined;
-    notify();
-    return new Promise<TransferResult>((resolve) => {
-      let settled = false;
-      transferWaiters.set('__pending_transfer__', (result) => {
-        if (settled) return;
-        settled = true;
-        resolve(result);
-      });
-      void transport.transfer(device.deviceId, targetDeviceId).then((result) => {
-        if (disposed) return;
-        updateClock(result.serverNow);
-        if (!pending) {
-          settleTransferFromCommand(result.commandId, resolve);
-          return;
+  async function drainInbox(): Promise<void> {
+    if (inboxWorker || disposed || !snapshot) return;
+    inboxWorker = true;
+    try {
+      while (!disposed && snapshot) {
+        const next = snapshot.inbox.find((row) => !processed.has(row.id) && !processing.has(row.id));
+        if (!next) break;
+        processing.add(next.id);
+        emit({ event: 'receiver.delivered', operation: 'receiver', commandId: next.id,
+          ...(next.requestId ? { requestId: next.requestId } : {}), kind: next.command.kind, count: 1 });
+        let retry = false;
+        try {
+          const completion = completions.get(next.id);
+          if (completion) await deliverCompletion(completion);
+          else await executeInbox(next);
+          processed.add(next.id);
+          inboxRetryCount = 0;
+        } catch (error) {
+          setError(error, 'Could not run the Connect command.');
+          inboxRetryCount++;
+          retry = true;
+        } finally { processing.delete(next.id); }
+        if (retry) {
+          const delay = Math.min(4_000, 250 * (2 ** Math.min(inboxRetryCount, 4)));
+          schedule(() => { void drainInbox(); }, delay, 'inbox_retry');
+          break;
         }
-        pending.commandId = result.commandId;
-        pending.timeout = clock.setTimeout(() => onPendingTimeout(result.commandId), COMMAND_TIMEOUT_MS);
-        transferWaiters.delete('__pending_transfer__');
-        transferWaiters.set(result.commandId, (value) => {
-          if (settled) return;
-          settled = true;
-          resolve(value);
-        });
-        reconcilePending(snapshot.commands);
+      }
+    } finally { inboxWorker = false; }
+  }
+
+  async function executeInbox(item: InboxCommand): Promise<void> {
+    let begin: Awaited<ReturnType<ConnectTransport['begin']>>;
+    try {
+      begin = await sample('begin', () => transport.begin(device.deviceId, item.id));
+    } catch (error) {
+      const code = errorCode(error);
+      const failure: ConnectFailureCode | undefined = code === 'command_expired' ? 'expired'
+        : code === 'stale_ownership' ? 'superseded'
+          : code === 'target_cannot_play' ? 'cannot_play' : undefined;
+      if (!failure) throw error;
+      await complete(item, '', { ok: false, code: failure, error: failureText(error, 'Command cannot run.') });
+      return;
+    }
+    const deadline = item.executeBefore ?? begin.executeBefore;
+    if (sampledClock.now() >= deadline) {
+      await complete(item, begin.reservationToken, { ok: false, code: 'expired' }); return;
+    }
+    if (!device.canPlay) { await complete(item, begin.reservationToken, { ok: false, code: 'cannot_play' }); return; }
+    if (item.expectedOwnershipEpoch !== undefined && item.expectedOwnershipEpoch !== stateEpoch()) {
+      await complete(item, begin.reservationToken, { ok: false, code: 'superseded' }); return;
+    }
+    if (item.command.kind === 'take_over') {
+      try { await executeTakeover(item, begin.reservationToken, deadline); }
+      catch (error) {
+        const code: ConnectFailureCode = errorData(error)?.code === 'not_found' ? 'not_found' : 'command_failed';
+        await complete(item, begin.reservationToken, { ok: false, code, error: failureText(error, 'Transfer could not complete.') });
+      }
+      return;
+    }
+    const before = player.getSnapshot();
+    try {
+      const result = await executePlayerCommand(item.command);
+      if (result !== 'ok') {
+        if (result === 'needs_gesture') autoplayBlocked = true;
+        await complete(item, begin.reservationToken, { ok: false, code: result });
         notify();
-      }).catch((error) => {
-        if (disposed) return;
-        clearPending();
-        const failure: TransferResult = { ok: false, reason: isOffline(error) ? 'offline' : 'failed', error: errorMessage(error, 'Transfer failed') };
-        lastError = failure.error;
-        transferWaiters.delete('__pending_transfer__');
-        if (!settled) {
-          settled = true;
-          resolve(failure);
-        }
-        notify();
+        return;
+      }
+      if (sampledClock.now() >= deadline) { await complete(item, begin.reservationToken, { ok: false, code: 'expired' }); return; }
+      const after = player.getSnapshot();
+      const patch = statePatchFrom(before, after);
+      await complete(item, begin.reservationToken, { ok: true }, patch);
+    } catch (error) {
+      const code: ConnectFailureCode = errorData(error)?.code === 'needs_gesture' ? 'needs_gesture' : errorData(error)?.code === 'not_found' ? 'not_found' : 'command_failed';
+      await complete(item, begin.reservationToken, { ok: false, code, error: failureText(error, 'Command failed.') });
+    }
+  }
+
+  async function executePlayerCommand(command: Exclude<RemoteCommand, { kind: 'take_over' }>): Promise<'ok' | 'not_found' | 'needs_gesture' | 'command_failed'> {
+    switch (command.kind) {
+      case 'play': return player.play();
+      case 'pause': await player.pause(); return 'ok';
+      case 'seek': await player.seek(command.sec); return 'ok';
+      case 'volume': await player.setVolume(command.v); return 'ok';
+      case 'shuffle': if (player.setShuffle) { await player.setShuffle(command.on); return 'ok'; } return 'command_failed';
+      case 'repeat': if (player.setRepeat) { await player.setRepeat(command.mode); return 'ok'; } return 'command_failed';
+      case 'next': {
+        if (player.next) { await player.next(); return 'ok'; }
+        const current = player.getSnapshot();
+        const nextSong = current.queue[0];
+        if (!nextSong) return 'not_found';
+        return player.load(nextSong, current.queue.slice(1), { positionSec: 0, play: current.isPlaying });
+      }
+      case 'prev': if (player.previous) { await player.previous(); return 'ok'; } return 'command_failed';
+      case 'play_song': return player.load(command.song, command.queue ?? [], { positionSec: 0, play: true });
+      case 'queue_add': {
+        if (player.addToQueue) { await player.addToQueue(command.song); return 'ok'; }
+        const current = player.getSnapshot();
+        if (!current.song) return 'not_found';
+        return player.load(current.song, [...current.queue, command.song], { positionSec: current.positionSec, play: current.isPlaying });
+      }
+    }
+  }
+
+  async function executeTakeover(item: InboxCommand, token: string, deadline: number): Promise<void> {
+    const command = item.command;
+    if (command.kind !== 'take_over') {
+      await complete(item, token, { ok: false, code: 'not_found' }); return;
+    }
+    const state = command.state;
+    const song = state.song;
+    if (!song) { await complete(item, token, { ok: false, code: 'not_found' }); return; }
+    const estimate = clamp(state.positionSec + (state.isPlaying ? Math.max(0, sampledClock.now() - state.positionAt) / 1000 : 0), song.duration);
+    const loaded = await player.load(song, state.queue, { positionSec: estimate, play: false });
+    if (loaded !== 'ok') { await complete(item, token, { ok: false, code: loaded }); return; }
+    const prepared = await sample('prepare', () => transport.prepare(device.deviceId, item.id, token));
+    if (prepared.status === 'awaiting_release') {
+      const released = await waitForRelease(item.id, deadline);
+      if (!released) { await complete(item, token, { ok: false, code: 'owner_unreachable' }); return; }
+      await activateTransfer(item, token, released.positionSec, released.resume);
+      return;
+    }
+    await activateTransfer(item, token, prepared.positionSec, prepared.resume);
+  }
+
+  async function activateTransfer(item: InboxCommand, token: string, positionSec: number, resume: boolean): Promise<void> {
+    await player.seek(positionSec);
+    if (resume) {
+      const played = await player.play();
+      if (played === 'needs_gesture') {
+        autoplayBlocked = true;
+        await complete(item, token, { ok: false, code: 'needs_gesture' }); return;
+      }
+    }
+    autoplayBlocked = false;
+    const current = player.getSnapshot();
+    const state = snapshot?.state;
+    await complete(item, token, { ok: true }, statePatchFrom(state ?? EMPTY_PLAYER, { ...current, positionSec, isPlaying: resume }), state?.rev);
+  }
+
+  async function waitForRelease(commandId: string, deadline: number): Promise<NonNullable<InboxCommand['release']> | undefined> {
+    for (;;) {
+      const command = snapshot?.inbox.find((row) => row.id === commandId);
+      if (command?.release) return command.release;
+      const remaining = deadline - sampledClock.now();
+      if (remaining <= 0 || disposed) return undefined;
+      await new Promise<void>((resolve) => {
+        let done = false;
+        const wake = (): void => { if (done) return; done = true; clearTimer(timer); snapshotWaiters.delete(wake); resolve(); };
+        const timer = schedule(wake, remaining, 'handoff_deadline');
+        snapshotWaiters.add(wake);
       });
+    }
+  }
+
+  async function complete(item: InboxCommand, reservationToken: string, outcome: CommandOutcomeInput, patch?: PlayerStatePatch, knownRev?: number): Promise<void> {
+    const pending = completions.get(item.id) ?? {
+      item,
+      reservationToken,
+      outcome,
+      ...(patch ? { patch } : {}),
+      ...(knownRev !== undefined ? { rev: knownRev } : snapshot?.state ? { rev: snapshot.state.rev } : {})
+    };
+    completions.set(item.id, pending);
+    await deliverCompletion(pending);
+  }
+
+  async function waitBeforeRetry(delayMs: number): Promise<void> {
+    await new Promise<void>((resolve) => {
+      let finished = false;
+      let timer: unknown;
+      const finish = (): void => {
+        if (finished) return;
+        finished = true;
+        clearTimer(timer);
+        snapshotWaiters.delete(finish);
+        resolve();
+      };
+      snapshotWaiters.add(finish);
+      timer = schedule(finish, delayMs, 'write_retry');
+      if (disposed) finish();
     });
   }
 
-  async function transferToLocalDevice(): Promise<TransferResult> {
-    if (isActive()) return { ok: true };
-    if (pending) return { ok: false, reason: 'failed', error: 'A command is already in progress' };
-    if (!device.canPlay) return { ok: false, reason: 'failed', error: 'This device cannot play audio' };
-    const current = state();
-    if (!current?.song) return { ok: false, reason: 'not_found', error: 'There is no song to transfer' };
-
-    const command: RemoteCommand = { kind: 'take_over', state: current };
-    pending = { targetDeviceId: device.deviceId, command, startedAt: clock.now(), kind: 'transfer' };
-    optimistic = undefined;
-    lastError = undefined;
-    notify();
-    try {
-      const result = await loadSnapshot(current.song, current, positionAt(current, toServerNow()));
-      if (disposed) {
-        if (player.getSnapshot().isPlaying) await runPlayerAction(() => player.pause()).catch(() => undefined);
-        return { ok: false, reason: 'offline' };
+  async function deliverCompletion(pending: PendingCompletion): Promise<void> {
+    let attempt = 0;
+    while (!disposed) {
+      try {
+        const result = await sample('complete', () => transport.complete({
+          deviceId: device.deviceId, commandId: pending.item.id, reservationToken: pending.reservationToken,
+          outcome: pending.outcome,
+          ...(pending.patch ? { patch: pending.patch } : {}),
+          ...(pending.patch && pending.rev !== undefined ? { rev: pending.rev } : {})
+        }));
+        if (result.status === 'completed') {
+          emit({
+            event: pending.outcome.ok ? 'receiver.completed' : 'receiver.failed',
+            operation: 'receiver', commandId: pending.item.id,
+            ...(pending.item.requestId ? { requestId: pending.item.requestId } : {}),
+            kind: pending.item.command.kind,
+            outcome: pending.outcome.ok === true ? 'ok' : pending.outcome.code, count: 1
+          });
+          if (completions.get(pending.item.id) === pending) completions.delete(pending.item.id);
+          return;
+        }
+        pending.rev = result.currentRev;
+        attempt = 0;
+      } catch (error) {
+        const code = errorCode(error);
+        if (pending.outcome.ok === true && (code === 'device_not_active' || code === 'stale_ownership')) {
+          pending.outcome = { ok: false, code: 'superseded', error: 'Playback ownership changed before the command was confirmed.' };
+          delete pending.patch;
+          delete pending.rev;
+          attempt = 0;
+        } else if (!isUncertainFailure(error)) {
+          throw error;
+        }
       }
-      if (result === 'not_found') {
-        lastError = 'This song is unavailable on this device';
-        return { ok: false, reason: 'not_found', error: 'not_found' };
-      }
-      if (result === 'needs_gesture') {
-        autoplayBlocked = true;
-        lastError = 'Playback needs a tap on this device';
-        return { ok: false, reason: 'failed', error: 'needs_gesture' };
-      }
-
-      const claim = await transport.claim(device.deviceId, player.getSnapshot());
-      if (disposed) return { ok: false, reason: 'offline' };
-      if (claim.accepted === false) throw new Error('Could not claim playback');
-      updateClock(claim.serverNow);
-      local = player.getSnapshot();
-      lastReportedKey = reportKey(local);
-      lastReportedAt = clock.now();
-      autoplayBlocked = false;
-      lastError = undefined;
-      return { ok: true };
-    } catch (error) {
-      if (player.getSnapshot().isPlaying) await runPlayerAction(() => player.pause()).catch(() => undefined);
-      if (!disposed) lastError = isOffline(error) ? 'Connect is offline' : errorMessage(error, 'Could not transfer playback');
-      return { ok: false, reason: isOffline(error) ? 'offline' : 'failed', error: errorMessage(error, 'Could not transfer playback') };
-    } finally {
-      clearPending();
-      notify();
+      await waitBeforeRetry(Math.min(4_000, 250 * (2 ** Math.min(attempt++, 4))));
     }
   }
 
-  function settleTransferFromCommand(commandId: string, resolve: (result: TransferResult) => void): void {
-    const command = snapshot.commands.find((entry) => entry.id === commandId);
-    if (!command || command.status === 'pending') return;
-    resolve(command.status === 'done' ? { ok: true } : transferFailure(command.error ?? 'Transfer failed'));
+  function statePatchFrom(before: PlayerSnapshot, after: PlayerSnapshot): PlayerStatePatch {
+    const songChanged = before.song?.ref !== after.song?.ref;
+    const queueChanged = before.queue.length !== after.queue.length || before.queue.some((item, index) => item.ref !== after.queue[index]?.ref);
+    const duration = after.song?.duration ?? 0;
+    const position = clamp(after.positionSec, duration);
+    const isPlayingChanged = before.isPlaying !== after.isPlaying;
+    return {
+      ...(songChanged ? { song: after.song ?? null } : {}),
+      ...(queueChanged ? { queue: after.queue } : {}),
+      ...(isPlayingChanged || before.positionSec !== position ? { isPlaying: after.isPlaying, positionSec: position } : {}),
+      ...(before.volume !== after.volume ? { volume: after.volume } : {}),
+      ...(before.shuffle !== after.shuffle ? { shuffle: after.shuffle } : {}),
+      ...(before.repeat !== after.repeat ? { repeat: after.repeat } : {})
+    };
   }
 
-  function onPendingTimeout(commandId: string): void {
-    if (!pending || pending.commandId !== commandId) return;
-    const target = snapshot.devices.find((entry) => entry.deviceId === pending?.targetDeviceId);
-    const message = `Couldn't reach ${target?.name ?? 'device'}`;
-    const waiter = transferWaiters.get(commandId) ?? transferWaiters.get('__pending_transfer__');
-    clearPending();
-    optimistic = undefined;
-    lastError = message;
-    waiter?.({ ok: false, reason: 'timeout', error: message });
-    transferWaiters.delete(commandId);
-    transferWaiters.delete('__pending_transfer__');
-    notify();
+  function transferTo(targetDeviceId: string): Promise<TransferResult> {
+    if (disposed || !snapshot) return Promise.resolve({ ok: false, reason: 'offline' });
+    const target = snapshot.devices.find((row) => row.deviceId === targetDeviceId);
+    if (!target?.isOnline) return Promise.resolve({ ok: false, reason: 'offline', code: 'offline', error: 'That device is offline.' });
+    if (!target.canPlay) return Promise.resolve({ ok: false, reason: 'failed', code: 'target_cannot_play', error: 'That device cannot play right now.' });
+    if (target.protocolVersion < 2) return Promise.resolve({ ok: false, reason: 'failed', code: 'update_required', error: 'Update the other device to use Connect.' });
+    return new Promise((resolve) => offer(makeIntent({ kind: 'pause' }, targetDeviceId, true, resolve)));
   }
 
-  function finishPending(result: TransferResult): void {
-    const commandId = pending?.commandId;
-    const waiter = commandId ? transferWaiters.get(commandId) : transferWaiters.get('__pending_transfer__');
-    const wasTransfer = pending?.kind === 'transfer';
-    clearPending();
-    optimistic = undefined;
-    if ('error' in result) lastError = result.error ?? 'Command failed';
-    if (wasTransfer) waiter?.(result);
-    if (commandId) transferWaiters.delete(commandId);
-    transferWaiters.delete('__pending_transfer__');
-    notify();
-  }
 
-  function clearPending(): void {
-    if (pending?.timeout !== undefined) clock.clearTimeout(pending.timeout);
-    pending = undefined;
-  }
-
-  function optimisticSnapshot(command: RemoteCommand): PlayerSnapshot {
-    const current = displayedSnapshot();
-    switch (command.kind) {
-      case 'play': return { ...current, isPlaying: true };
-      case 'pause': return { ...current, isPlaying: false };
-      case 'seek': return { ...current, positionSec: Math.max(0, command.sec) };
-      case 'volume': return { ...current, volume: Math.max(0, Math.min(1, command.v)) };
-      case 'shuffle': return { ...current, shuffle: command.on };
-      case 'repeat': return { ...current, repeat: command.mode };
-      case 'play_song': return { song: command.song, queue: command.queue ?? [], isPlaying: true, positionSec: 0, volume: current.volume, shuffle: current.shuffle, repeat: current.repeat };
-      case 'queue_add': return { ...current, queue: [...current.queue, command.song] };
-      case 'take_over': return command.state;
-      case 'next': {
-        const [song, ...queue] = current.queue;
-        return song ? { ...current, song, queue, positionSec: 0, isPlaying: true } : current;
-      }
-      case 'prev': return { ...current, positionSec: 0 };
-    }
-  }
-
-  playerStop = player.onChange(onPlayerChange);
+  const playerStop = player.onChange(onPlayerChange);
 
   return {
     view,
-    subscribe(listener) {
-      subscribers.add(listener);
-      listener(view());
-      return () => subscribers.delete(listener);
-    },
+    livePosition,
     control,
     transferTo,
-    setVisible(value) {
-      if (disposed || visible === value) return;
-      visible = value;
-      reconcileListening();
-    },
+    subscribe(listener) { subscribers.add(listener); listener(view()); return () => subscribers.delete(listener); },
+    setVisible(value) { visible = value; reconcileListening(); },
     dispose() {
       if (disposed) return;
-      disposed = true;
-      stopListening();
-      playerStop?.();
-      playerStop = undefined;
-      if (pending?.timeout !== undefined) clock.clearTimeout(pending.timeout);
-      pending = undefined;
-      optimistic = undefined;
-      if (ackRetryTimer !== undefined) clock.clearTimeout(ackRetryTimer);
-      ackRetryTimer = undefined;
-      for (const resolve of transferWaiters.values()) resolve({ ok: false, reason: 'offline' });
-      transferWaiters.clear();
+      disposed = true; stopListening(); playerStop();
+      for (const handle of [...timers]) clearTimer(handle);
       subscribers.clear();
+      for (const wake of [...snapshotWaiters]) wake();
+      queue.removeWhere(() => true);
+      if (pending) {
+        emit({ event: 'input.failed', operation: pending.transfer ? 'transfer' : 'control', outcome: 'disposed', requestId: pending.requestId, count: 1 });
+        pending.resolveTransfer?.({ ok: false, reason: 'offline', code: 'offline', error: 'Connect session ended.' });
+      }
+      pending = undefined; pendingCommandId = undefined; optimistic = undefined;
+      player.dispose?.();
     }
   };
-
-  function positionAt(current: Pick<ConnectPlayerState, 'positionSec' | 'positionAt' | 'isPlaying'>, serverNow: number): number {
-    return current.positionSec + (current.isPlaying ? Math.max(0, (serverNow - current.positionAt) / 1000) : 0);
-  }
-
-  function reportKey(value: PlayerSnapshot): string {
-    return JSON.stringify({
-      song: value.song?.ref ?? null,
-      queue: value.queue.map((song) => song.ref),
-      isPlaying: value.isPlaying,
-      volume: value.volume,
-      shuffle: value.shuffle,
-      repeat: value.repeat
-    });
-  }
-
-  function transferFailure(error: string): TransferResult {
-    if (error === 'not_found') return { ok: false, reason: 'not_found', error };
-    return { ok: false, reason: 'failed', error };
-  }
-
-  function errorMessage(error: unknown, fallback: string): string {
-    return error instanceof Error && error.message ? error.message : fallback;
-  }
-
-  function isOffline(error: unknown): boolean {
-    return error instanceof Error && /offline|network/i.test(error.message);
-  }
 }

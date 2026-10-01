@@ -65,13 +65,23 @@ class DuplicateDeliveryTransport extends MemoryTransport {
   }
 }
 
-class RetryAckTransport extends MemoryTransport {
-  ackAttempts = 0;
+class RetryCompleteTransport extends MemoryTransport {
+  completeAttempts = 0;
 
-  override async ack(...args: Parameters<MemoryTransport['ack']>): Promise<ReturnType<MemoryTransport['ack']> extends Promise<infer T> ? T : never> {
-    this.ackAttempts++;
-    if (this.ackAttempts === 1) throw new Error('network offline');
-    return super.ack(...args);
+  override async complete(...args: Parameters<MemoryTransport['complete']>): ReturnType<MemoryTransport['complete']> {
+    this.completeAttempts++;
+    if (this.completeAttempts === 1) throw new Error('network offline');
+    return super.complete(...args);
+  }
+}
+
+class RetryBeginTransport extends MemoryTransport {
+  beginAttempts = 0;
+
+  override async begin(...args: Parameters<MemoryTransport['begin']>): ReturnType<MemoryTransport['begin']> {
+    this.beginAttempts++;
+    if (this.beginAttempts === 1) throw new Error('temporary connection loss');
+    return super.begin(...args);
   }
 }
 
@@ -84,22 +94,65 @@ class ReportInspectTransport extends MemoryTransport {
   }
 }
 
-class DeferredClaimTransport extends MemoryTransport {
-  deferNextClaim = false;
-  private beginClaim!: () => void;
-  private releaseHeldClaim!: () => void;
-  readonly claimStarted = new Promise<void>((resolve) => { this.beginClaim = resolve; });
-  private readonly heldClaim = new Promise<void>((resolve) => { this.releaseHeldClaim = resolve; });
+class DeferredPausePlayer extends FakePlayerPort {
+  deferNextPause = false;
+  private beginPause!: () => void;
+  private finishPause!: () => void;
+  readonly pauseStarted = new Promise<void>((resolve) => { this.beginPause = resolve; });
+  private readonly heldPause = new Promise<void>((resolve) => { this.finishPause = resolve; });
 
-  releaseClaim(): void { this.releaseHeldClaim(); }
+  releasePause(): void { this.finishPause(); }
 
-  override async claim(...args: Parameters<MemoryTransport['claim']>): ReturnType<MemoryTransport['claim']> {
-    if (this.deferNextClaim) {
-      this.deferNextClaim = false;
-      this.beginClaim();
-      await this.heldClaim;
+  override async pause(): Promise<void> {
+    if (this.deferNextPause) {
+      this.deferNextPause = false;
+      this.beginPause();
+      await this.heldPause;
     }
-    return super.claim(...args);
+    await super.pause();
+  }
+}
+
+class DelayedReportTransport extends MemoryTransport {
+  holdUpdates = false;
+  holdNextReport = false;
+  conflictNextReport = false;
+  maxConcurrentReports = 0;
+  readonly reports: Array<{ rev: number; patch: import('./types.ts').PlayerStatePatch }> = [];
+  private concurrentReports = 0;
+  private beginReport!: () => void;
+  private releaseHeldReport!: () => void;
+  readonly reportStarted = new Promise<void>(resolve => { this.beginReport = resolve; });
+  private readonly heldReport = new Promise<void>(resolve => { this.releaseHeldReport = resolve; });
+
+  releaseReport(): void { this.releaseHeldReport(); }
+
+  override watch(deviceId: string, listener: Parameters<MemoryTransport['watch']>[1]): () => void {
+    return super.watch(deviceId, snapshot => { if (!this.holdUpdates) listener(snapshot); });
+  }
+
+  override async report(...args: Parameters<MemoryTransport['report']>): ReturnType<MemoryTransport['report']> {
+    this.concurrentReports++;
+    this.maxConcurrentReports = Math.max(this.maxConcurrentReports, this.concurrentReports);
+    try {
+      if (this.conflictNextReport) {
+        this.conflictNextReport = false;
+        const otherWrite = await super.report(args[0], { ...args[1], volume: 1 }, args[2]);
+        throw Object.assign(new Error('[CONVEX M(connect:report)] Server Error'), {
+          data: { code: 'stale_revision', currentRev: otherWrite.rev }
+        });
+      }
+      if (this.holdNextReport) {
+        this.holdNextReport = false;
+        this.beginReport();
+        await this.heldReport;
+      }
+      const result = await super.report(...args);
+      this.reports.push({ rev: args[2].rev, patch: args[1] });
+      return result;
+    } finally {
+      this.concurrentReports--;
+    }
   }
 }
 
@@ -123,6 +176,7 @@ function state(clock: TestClock, overrides: Partial<ConnectPlayerState> = {}): C
     shuffle: false,
     repeat: 'off',
     rev: 4,
+    ownershipEpoch: 0,
     ...overrides
   };
 }
@@ -176,6 +230,42 @@ function withoutOptionalActions(player: FakePlayerPort): PlayerPort {
   };
 }
 
+test('playback updates stay ordered when reports and reactive state arrive late', async () => {
+  const pair = await sessionPair({ transportFactory: clock => new DelayedReportTransport(() => clock.now()) });
+  const transport = pair.transport as DelayedReportTransport;
+  transport.holdUpdates = true;
+  transport.holdNextReport = true;
+  pair.sessionA.control({ kind: 'volume', v: 0.25 });
+  await transport.reportStarted;
+  pair.sessionA.control({ kind: 'seek', sec: 90 });
+  await settle();
+  transport.releaseReport();
+  await settle();
+
+  assert.equal(transport.maxConcurrentReports, 1);
+  assert.deepEqual(transport.reports.map(report => report.rev), [4, 5]);
+  assert.equal(transport.reports[1]?.patch.positionSec, 90);
+  assert.equal(transport.reports[1]?.patch.volume, undefined);
+  assert.equal(pair.sessionA.view().lastError, undefined);
+  pair.sessionA.dispose();
+  pair.sessionB.dispose();
+});
+
+test('a stale report retries its final state without waiting for another player event', async () => {
+  const pair = await sessionPair({ transportFactory: clock => new DelayedReportTransport(() => clock.now()) });
+  const transport = pair.transport as DelayedReportTransport;
+  transport.holdUpdates = true;
+  transport.conflictNextReport = true;
+  pair.sessionA.control({ kind: 'volume', v: 0.25 });
+  await settle();
+
+  assert.deepEqual(transport.reports.map(report => report.rev), [5]);
+  assert.equal(transport.reports[0]?.patch.volume, 0.25);
+  assert.equal(pair.sessionA.view().lastError, undefined);
+  pair.sessionA.dispose();
+  pair.sessionB.dispose();
+});
+
 test('a remote pause is applied once and the sender sees its acknowledgement', async () => {
   const { playerA, sessionA, sessionB } = await sessionPair({
     transportFactory: (clock) => new DuplicateDeliveryTransport(() => clock.now())
@@ -203,7 +293,7 @@ test('a remote play blocked by autoplay fails with a stable needs_gesture acknow
   await settle();
 
   assert.equal(sessionA.view().autoplayBlocked, true);
-  assert.equal(sessionB.view().lastError, 'needs_gesture');
+  assert.equal(sessionB.view().lastError, 'Tap play on that device to start playback.');
   assert.equal(sessionB.view().pendingCommand, undefined);
   assert.equal(sessionB.view().isPlaying, false);
   sessionA.dispose();
@@ -218,9 +308,9 @@ test('a remote play_song blocked by autoplay fails with a stable needs_gesture a
   await settle();
 
   assert.equal(sessionA.view().autoplayBlocked, true);
-  assert.equal(sessionB.view().lastError, 'needs_gesture');
+  assert.equal(sessionB.view().lastError, 'Tap play on that device to start playback.');
   assert.equal(sessionB.view().pendingCommand, undefined);
-  assert.equal(sessionB.view().song?.ref, song.ref);
+  assert.equal(sessionB.view().song?.ref, nextSong.ref);
   sessionA.dispose();
   sessionB.dispose();
 });
@@ -233,9 +323,9 @@ test('a next fallback that cannot autoplay is acknowledged as failed', async () 
   await settle();
 
   assert.equal(sessionA.view().autoplayBlocked, true);
-  assert.equal(sessionB.view().lastError, 'needs_gesture');
+  assert.equal(sessionB.view().lastError, 'Tap play on that device to start playback.');
   assert.equal(sessionB.view().pendingCommand, undefined);
-  assert.equal(sessionB.view().song?.ref, song.ref);
+  assert.equal(sessionB.view().song?.ref, nextSong.ref);
   sessionA.dispose();
   sessionB.dispose();
 });
@@ -248,9 +338,9 @@ test('a queue_add fallback that cannot resume playback is acknowledged as failed
   await settle();
 
   assert.equal(sessionA.view().autoplayBlocked, true);
-  assert.equal(sessionB.view().lastError, 'needs_gesture');
+  assert.equal(sessionB.view().lastError, 'Tap play on that device to start playback.');
   assert.equal(sessionB.view().pendingCommand, undefined);
-  assert.deepEqual(sessionB.view().queue, [nextSong]);
+  assert.deepEqual(sessionB.view().queue, [nextSong, nextSong]);
   sessionA.dispose();
   sessionB.dispose();
 });
@@ -280,7 +370,7 @@ test('transfer loads the current position and queue before the new device claims
   assert.ok(load);
   assert.equal((load.args[2] as { positionSec: number }).positionSec, 37);
   assert.deepEqual(load.args[1], [nextSong]);
-  assert.equal((load.args[2] as { play: boolean }).play, true);
+  assert.equal((load.args[2] as { play: boolean }).play, false);
   assert.equal(sessionB.view().activeDeviceId, 'phone-b');
   assert.equal(sessionB.view().isPlaying, true);
   assert.equal(playerA.getSnapshot().isPlaying, false);
@@ -288,22 +378,27 @@ test('transfer loads the current position and queue before the new device claims
   sessionB.dispose();
 });
 
-test('transferring back to this device loads live position, queue, settings, and claims only after load', async () => {
-  const { clock, transport, playerA, playerB, sessionA, sessionB } = await sessionPair({
-    sourceState: { shuffle: true, repeat: 'all' },
-    transportFactory: (clock) => new DeferredClaimTransport(() => clock.now())
-  });
-  const deferredTransport = transport as DeferredClaimTransport;
+test('transferring back waits for the former owner to confirm pause before playback resumes', async () => {
+  const clock = new TestClock();
+  const transport = new MemoryTransport(() => clock.now());
+  transport.seedState(state(clock, { shuffle: true, repeat: 'all' }));
+  const playerA = new FakePlayerPort({ song, queue: [nextSong], isPlaying: true, positionSec: 37, volume: 0.8, shuffle: true, repeat: 'all' });
+  const playerB = new DeferredPausePlayer();
+  const sessionA = createConnectSession({ transport, player: playerA, device: device('web-a', 'Laptop'), clock });
+  const sessionB = createConnectSession({ transport, player: playerB, device: device('phone-b', 'Pixel 8'), clock });
+  sessionA.setVisible(true);
+  sessionB.setVisible(true);
+  await settle();
   assert.deepEqual(await sessionA.transferTo('phone-b'), { ok: true });
   clock.advance(2_500);
-  deferredTransport.deferNextClaim = true;
+  playerB.deferNextPause = true;
 
   const transferBack = sessionA.transferTo('web-a');
-  await deferredTransport.claimStarted;
-  assert.equal(playerA.getSnapshot().isPlaying, true);
+  await playerB.pauseStarted;
+  assert.equal(playerA.getSnapshot().isPlaying, false);
   assert.equal(playerB.getSnapshot().isPlaying, true);
   assert.equal(sessionA.view().activeDeviceId, 'phone-b');
-  deferredTransport.releaseClaim();
+  playerB.releasePause();
   const result = await transferBack;
 
   assert.deepEqual(result, { ok: true });
@@ -311,6 +406,7 @@ test('transferring back to this device loads live position, queue, settings, and
   assert.ok(load);
   assert.equal((load.args[2] as { positionSec: number }).positionSec, 39.5);
   assert.deepEqual(load.args[1], [nextSong]);
+  assert.equal((load.args[2] as { play: boolean }).play, false);
   assert.equal(playerA.getSnapshot().isPlaying, true);
   assert.equal(playerA.getSnapshot().volume, 0.8);
   assert.equal(playerA.getSnapshot().shuffle, true);
@@ -321,38 +417,26 @@ test('transferring back to this device loads live position, queue, settings, and
   sessionB.dispose();
 });
 
-test('a local transfer keeps the remote source active on missing songs or blocked autoplay', async () => {
-  const { transport, playerA, playerB, sessionA, sessionB } = await sessionPair();
+test('a missing local recording preserves the current owner, while autoplay failure follows confirmed pause', async () => {
+  const { playerA, playerB, sessionA, sessionB } = await sessionPair();
   assert.deepEqual(await sessionA.transferTo('phone-b'), { ok: true });
 
   playerA.nextLoadResult = 'not_found';
   const missing = await sessionA.transferTo('web-a');
-  assert.deepEqual(missing, { ok: false, reason: 'not_found', error: 'not_found' });
+  assert.equal(missing.ok, false);
+  if (!missing.ok) assert.equal(missing.code, 'not_found');
   assert.equal(sessionA.view().activeDeviceId, 'phone-b');
   assert.equal(playerB.getSnapshot().isPlaying, true);
 
   playerA.nextLoadResult = 'ok';
   playerA.rejectsAutoplay = true;
   const blocked = await sessionA.transferTo('web-a');
-  assert.deepEqual(blocked, { ok: false, reason: 'failed', error: 'needs_gesture' });
-  assert.equal(sessionA.view().activeDeviceId, 'phone-b');
-  assert.equal(sessionA.view().autoplayBlocked, true);
-  assert.equal(playerB.getSnapshot().isPlaying, true);
-
-  playerA.rejectsAutoplay = false;
-  transport.online = false;
-  assert.deepEqual(await sessionA.transferTo('web-a'), {
-    ok: false,
-    reason: 'offline',
-    error: 'offline'
-  });
-  assert.equal(sessionA.view().activeDeviceId, 'phone-b');
-  assert.equal(playerA.getSnapshot().isPlaying, false);
-  assert.equal(playerB.getSnapshot().isPlaying, true);
-
-  transport.online = true;
-  assert.deepEqual(await sessionA.transferTo('web-a'), { ok: true });
+  assert.equal(blocked.ok, false);
+  if (!blocked.ok) assert.equal(blocked.code, 'needs_gesture');
   assert.equal(sessionA.view().activeDeviceId, 'web-a');
+  assert.equal(sessionA.view().autoplayBlocked, true);
+  assert.equal(playerB.getSnapshot().isPlaying, false);
+  assert.equal(playerA.getSnapshot().isPlaying, false);
   sessionA.dispose();
   sessionB.dispose();
 });
@@ -363,30 +447,30 @@ test('an unavailable recording fails transfer without interrupting the source', 
   const result = await sessionA.transferTo('phone-b');
   await settle();
 
-  assert.deepEqual(result, { ok: false, reason: 'not_found', error: 'not_found' });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.code, 'not_found');
   assert.equal(playerA.getSnapshot().isPlaying, true);
   assert.equal(sessionA.view().activeDeviceId, 'web-a');
   sessionA.dispose();
   sessionB.dispose();
 });
 
-test('an incoming transfer keeps its source active when autoplay is blocked and can be retried', async () => {
+test('autoplay failure after confirmed pause leaves the new owner paused and reports the gesture requirement', async () => {
   const { playerB, sessionA, sessionB } = await sessionPair({ bRejectsAutoplay: true });
 
-  assert.deepEqual(await sessionA.transferTo('phone-b'), {
-    ok: false,
-    reason: 'failed',
-    error: 'needs_gesture'
-  });
+  const blocked = await sessionA.transferTo('phone-b');
+  assert.equal(blocked.ok, false);
+  if (!blocked.ok) assert.equal(blocked.code, 'needs_gesture');
   assert.equal(sessionB.view().autoplayBlocked, true);
-  assert.equal(sessionB.view().isThisDeviceActive, false);
-  assert.equal(sessionB.view().isPlaying, true);
-  assert.equal(sessionA.view().activeDeviceId, 'web-a');
-  assert.equal(sessionA.view().isPlaying, true);
+  assert.equal(sessionB.view().isThisDeviceActive, true);
+  assert.equal(sessionB.view().isPlaying, false);
+  assert.equal(sessionA.view().activeDeviceId, 'phone-b');
+  assert.equal(sessionA.view().isPlaying, false);
   assert.equal(playerB.getSnapshot().isPlaying, false);
 
   playerB.rejectsAutoplay = false;
-  assert.deepEqual(await sessionA.transferTo('phone-b'), { ok: true });
+  sessionB.control({ kind: 'play' });
+  await settle();
   assert.equal(sessionB.view().autoplayBlocked, false);
   assert.equal(sessionB.view().isPlaying, true);
   assert.equal(sessionA.view().activeDeviceId, 'phone-b');
@@ -413,40 +497,64 @@ test('the last session is restored paused at its saved position', async () => {
   session.dispose();
 });
 
-test('an offline remote command rolls back optimism and clears its pending state', async () => {
-  const { transport, sessionB } = await sessionPair();
+test('an offline remote command times out honestly while retaining its unresolved delivery', async () => {
+  const { clock, transport, sessionB } = await sessionPair();
   transport.online = false;
 
   sessionB.control({ kind: 'pause' });
   await settle();
+  clock.advance(4_000);
+  await settle();
 
-  assert.equal(sessionB.view().pendingCommand, undefined);
+  assert.equal(sessionB.view().pendingCommand?.command.kind, 'pause');
   assert.equal(sessionB.view().isPlaying, true);
-  assert.equal(sessionB.view().lastError, 'Connect is offline');
+  assert.equal(sessionB.view().lastError, "Couldn't reach Laptop.");
   sessionB.dispose();
 });
 
-test('a failed acknowledgement retries without applying the command again', async () => {
+test('a lost completion reply retries without applying the command again', async () => {
   const { clock, transport, playerA, sessionA, sessionB } = await sessionPair({
-    transportFactory: (clock) => new RetryAckTransport(() => clock.now())
+    transportFactory: (clock) => new RetryCompleteTransport(() => clock.now())
   });
-  const retryTransport = transport as RetryAckTransport;
+  const retryTransport = transport as RetryCompleteTransport;
 
   sessionB.control({ kind: 'pause' });
   await settle();
   assert.equal(playerA.calls.filter((call) => call.method === 'pause').length, 1);
   assert.equal(sessionB.view().pendingCommand?.command.kind, 'pause');
-  assert.equal(retryTransport.ackAttempts, 1);
+  assert.equal(retryTransport.completeAttempts, 1);
 
   clock.advance(1_000);
   await settle();
 
   assert.equal(playerA.calls.filter((call) => call.method === 'pause').length, 1);
-  assert.equal(retryTransport.ackAttempts, 2);
+  assert.equal(retryTransport.completeAttempts, 2);
   assert.equal(sessionB.view().pendingCommand, undefined);
   assert.equal(sessionB.view().lastError, undefined);
   sessionA.dispose();
   sessionB.dispose();
+});
+
+test('an uncertain reservation failure retries the inbox without dropping the command', async () => {
+  const pair = await sessionPair({
+    transportFactory: clock => new RetryBeginTransport(() => clock.now())
+  });
+  const retryTransport = pair.transport as RetryBeginTransport;
+
+  pair.sessionB.control({ kind: 'pause' });
+  await settle();
+  assert.equal(retryTransport.beginAttempts, 1);
+  assert.equal(pair.playerA.calls.filter(call => call.method === 'pause').length, 0);
+
+  pair.clock.advance(500);
+  await settle();
+
+  assert.equal(retryTransport.beginAttempts, 2);
+  assert.equal(pair.playerA.calls.filter(call => call.method === 'pause').length, 1);
+  assert.equal(pair.sessionB.view().pendingCommand, undefined);
+  assert.equal(pair.sessionB.view().lastError, undefined);
+  pair.sessionA.dispose();
+  pair.sessionB.dispose();
 });
 
 test('an unresponsive target times out without pausing the source', async () => {
@@ -461,7 +569,7 @@ test('an unresponsive target times out without pausing the source', async () => 
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.reason, 'timeout');
   assert.equal(playerA.getSnapshot().isPlaying, true);
-  assert.equal(sessionA.view().pendingCommand, undefined);
+  assert.equal(sessionA.view().pendingCommand?.command.kind, 'pause');
   assert.match(sessionA.view().lastError ?? '', /Couldn't reach Pixel 8/);
   sessionA.dispose();
   sessionB.dispose();
@@ -475,7 +583,7 @@ test('offline registration retries at a bounded interval and recovers', async ()
 
   session.setVisible(true);
   await settle();
-  assert.equal(session.view().lastError, 'offline');
+  assert.equal(session.view().lastError, 'Connect is offline.');
   assert.equal(clock.timerCount, 1);
 
   clock.advance(5_000);
@@ -498,7 +606,8 @@ test('disposing settles in-flight work and clears watches and timers', async () 
 
   sessionA.dispose();
   const result = await transfer;
-  assert.deepEqual(result, { ok: false, reason: 'offline' });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.code, 'offline');
   const updatesAtDispose = updates;
   playerA.update({ isPlaying: false });
   assert.equal(updates, updatesAtDispose);

@@ -46,8 +46,8 @@ describe('planInbound', () => {
       { kind: 'playlist', rev: 2, playlistId: 'p1', name: 'List', isPublic: false, deleted: false, createdAt: 1 },
       { kind: 'playlist_item', rev: 3, playlistId: 'p1', ref: gaanaRef, song: changeSong, deleted: false, addedAt: 3 },
     ], saavnRow, new Set())).toEqual([
-      { kind: 'online_like', ref: gaanaRef, song: changeSong, likedAt: 2 },
       { kind: 'playlist_upsert', playlistId: 'p1', name: 'List', createdAt: 1 },
+      { kind: 'online_like', ref: gaanaRef, song: changeSong, likedAt: 2 },
       { kind: 'playlist_online', playlistId: 'p1', ref: gaanaRef, song: changeSong, present: true, addedAt: 3 },
     ]);
   });

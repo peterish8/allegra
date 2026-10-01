@@ -3,17 +3,18 @@ import Constants from 'expo-constants';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 
-import { createConnectSession, type ConnectSession, type ConnectView, type RemoteCommand, type TransferResult } from '../../../../../packages/connect/src/index';
+import { createConnectSession, createDevelopmentTrace, type DevelopmentTraceBuffer, type ConnectSession, type ConnectView, type RemoteCommand, type TransferResult } from '../../../../../packages/connect/src/index';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
-import { usePlayerStore } from '../../store/playerStore';
+import { setPlaylistSelectionRouter, usePlayerStore } from '../../store/playerStore';
 import { usePositionStore } from '../../store/positionStore';
 import { useListenTogetherStore } from '../../store/listenTogetherStore';
 import { positionSV } from '../../playback/positionBus';
 import { useAccount, allegraConvex } from '../account/AccountProvider';
 import { recordPlay, recordPlayStarted, refFor } from '../sync/LibrarySync';
 import { createListenTracker, type HeardSong } from '../sync/listenTracker';
-import { createMobilePlayerPort } from './mobilePlayerPort';
-import { ConvexConnectTransport } from './convexTransport';
+import { createMobilePlayerPort, snapshotOfSong } from './mobilePlayerPort';
+import { createMobileConnectTransport } from './convexTransport';
+import { setConnectPosition } from './remotePositionStore';
 
 interface ConnectContextValue {
   readonly signedIn: boolean;
@@ -75,15 +76,19 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
   const signedInRef = useRef(account.signedIn);
   signedInRef.current = account.signedIn;
   const sessionRef = useRef<ConnectSession | null>(null);
+  const traceRef = useRef<DevelopmentTraceBuffer | undefined>(undefined);
   const [session, setSession] = useState<ConnectSession | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [view, setView] = useState<ConnectView | null>(null);
   const [devicesVisible, setDevicesVisible] = useState(false);
+  const [appForeground, setAppForeground] = useState(AppState.currentState === 'active');
 
   useEffect(() => {
     let disposed = false;
     let stopView: (() => void) | undefined;
     let current: ConnectSession | undefined;
+    let stopSelectionRouter: (() => void) | undefined;
+    let trace: DevelopmentTraceBuffer | undefined;
     const userId = account.profile?.userId;
     if (!account.signedIn || !userId) {
       setSession(null);
@@ -97,9 +102,16 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
     deviceIdFor(userId).then(id => {
       if (disposed) return;
       const kind = Platform.OS === 'ios' ? 'ios' : 'android';
+      trace = __DEV__ ? createDevelopmentTrace({
+        development: true,
+        enabled: process.env.EXPO_PUBLIC_CONNECT_TRACE === '1',
+        monotonicNow: () => performance.now(),
+      }) : undefined;
+      traceRef.current = trace;
+      if (trace) (globalThis as typeof globalThis & { allegraConnectTrace?: DevelopmentTraceBuffer }).allegraConnectTrace = trace;
       current = createConnectSession({
-        transport: new ConvexConnectTransport(allegraConvex),
-        player: createMobilePlayerPort(() => tokenRef.current),
+        transport: createMobileConnectTransport(allegraConvex, trace),
+        player: createMobilePlayerPort(() => tokenRef.current, trace),
         device: {
           deviceId: id,
           name: mobileDeviceName(),
@@ -111,16 +123,34 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
         },
         clock: {
           now: () => Date.now(),
+          monotonicNow: () => performance.now(),
           setTimeout: (callback, delay) => setTimeout(callback, delay),
           clearTimeout: handle => clearTimeout(handle as ReturnType<typeof setTimeout>),
           setInterval: (callback, delay) => setInterval(callback, delay),
           clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>),
         },
+        ...(trace ? { trace } : {}),
       });
       sessionRef.current = current;
+      stopSelectionRouter = setPlaylistSelectionRouter(({ songs, startIndex }) => {
+        if (roomActive) return false;
+        const active = current?.view();
+        const selected = songs[startIndex];
+        const song = snapshotOfSong(selected);
+        if (!current || !active?.activeDeviceId || active.isThisDeviceActive || !active.activeDeviceOnline || !song) return false;
+        const queue = songs.slice(startIndex + 1).flatMap(item => {
+          const snapshot = snapshotOfSong(item);
+          return snapshot ? [snapshot] : [];
+        }).slice(0, 50);
+        current.control({ kind: 'play_song', song, queue });
+        return true;
+      });
       setDeviceId(id);
       setSession(current);
-      stopView = current.subscribe(setView);
+      stopView = current.subscribe(nextView => {
+        setView(nextView);
+        setConnectPosition(nextView.livePosition);
+      });
       current.setVisible(AppState.currentState === 'active');
     }).catch(() => {
       if (!disposed) {
@@ -131,14 +161,20 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     return () => {
       disposed = true;
+      stopSelectionRouter?.();
       stopView?.();
       current?.dispose();
+      trace?.dispose();
+      if (traceRef.current === trace) traceRef.current = undefined;
+      const debugGlobal = globalThis as typeof globalThis & { allegraConnectTrace?: DevelopmentTraceBuffer };
+      if (debugGlobal.allegraConnectTrace === trace) delete debugGlobal.allegraConnectTrace;
       if (sessionRef.current === current) sessionRef.current = null;
     };
   }, [account.profile?.userId, account.signedIn, roomActive]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
+      setAppForeground(state === 'active');
       sessionRef.current?.setVisible(state === 'active');
     });
     return () => subscription.remove();
@@ -147,10 +183,17 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
   // A remote player's position is anchored on the server. Refresh the view
   // once a second while it plays so the scrubber and lyrics stay in step.
   useEffect(() => {
-    if (!session || !view?.isPlaying || view.isThisDeviceActive) return undefined;
-    const timer = setInterval(() => setView(session.view()), 1000);
+    if (!session || !appForeground || !view?.isPlaying || view.isThisDeviceActive || !view.activeDeviceOnline) return undefined;
+    const timer = setInterval(() => {
+      try {
+        traceRef.current?.record({ event: 'renderer.tick', operation: 'renderer_timer', count: 1 });
+      } catch { /* Diagnostics cannot interrupt the remote view. */ }
+      const positionSec = session.livePosition();
+      setConnectPosition(positionSec);
+      positionSV.value = positionSec;
+    }, 1000);
     return () => clearInterval(timer);
-  }, [session, view?.isPlaying, view?.isThisDeviceActive]);
+  }, [appForeground, session, view?.isPlaying, view?.isThisDeviceActive, view?.activeDeviceOnline]);
 
   // Count heard audio, not wall time: the tracker only accepts plausible
   // forward position ticks, publishes history at five seconds, then teaches taste on finish.
@@ -215,7 +258,7 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
   const closeDevices = useCallback(() => setDevicesVisible(false), []);
   const control = useCallback((command: RemoteCommand) => sessionRef.current?.control(command), []);
   const transferTo = useCallback((target: string) => sessionRef.current?.transferTo(target) ?? Promise.resolve({ ok: false as const, reason: 'offline' as const }), []);
-  const remotePlayback = Boolean(view?.activeDeviceId && view.activeDeviceId !== deviceId && view.song);
+  const remotePlayback = Boolean(view?.activeDeviceId && view.activeDeviceId !== deviceId && view.activeDeviceOnline && view.song);
 
   const value = useMemo<ConnectContextValue>(() => ({
     signedIn: account.signedIn,

@@ -19,6 +19,15 @@ function trackMeta(song: Song) {
 
 let pausedLoadSongId: string | null = null;
 
+type PlaylistSelectionRouter = (input: { readonly playlistId: string; readonly songs: readonly Song[]; readonly startIndex: number }) => boolean;
+let playlistSelectionRouter: PlaylistSelectionRouter | null = null;
+
+/** Lets Connect route a user-selected song to the current online owner before local playback starts. */
+export function setPlaylistSelectionRouter(router: PlaylistSelectionRouter | null): () => void {
+  playlistSelectionRouter = router;
+  return () => { if (playlistSelectionRouter === router) playlistSelectionRouter = null; };
+}
+
 /** A remote handoff may restore a track paused; both audio-load owners read this intent. */
 export function shouldAutoPlayLoadedSong(songId: string): boolean {
   return pausedLoadSongId !== songId;
@@ -288,6 +297,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   // Playlist queue management
   setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number, autoplay = true) => {
+    if (autoplay && playlistId !== 'connect' && playlistId !== 'listen-together') {
+      try {
+        if (playlistSelectionRouter?.({ playlistId, songs, startIndex })) return;
+      } catch { /* Keep local playback available if Connect routing cannot build a command. */ }
+    }
     songDirection = 0;
     const startSongId = songs[startIndex]?.id;
     pausedLoadSongId = startSongId && !autoplay ? startSongId : null;

@@ -4,7 +4,7 @@ import type { AuthService } from '../auth/auth.js';
 import type { CatalogService } from '../catalog/catalog.js';
 import type { CoverStorage } from '../lib/covers.js';
 import { NotFoundError } from '../lib/errors.js';
-import type { LibraryOp, PlaylistCover, RejectReason } from '../shared/library.js';
+import { alignOpTimes, type LibraryOp, type PlaylistCover, type RejectReason } from '../shared/library.js';
 import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { UnifiedSong } from '../types.js';
 import { opsForPlaylistCopy, refForId, snapshotOf, unifiedSongFromSnapshot } from './libraryOps.js';
@@ -43,6 +43,20 @@ export interface SharedPlaylist {
   readonly library: LibraryRecord;
 }
 
+/** When a device's batch arrived (server clock) and, if it said, what its own clock read as it left. */
+export interface DeviceClock {
+  readonly receivedAt: number;
+  readonly sentAt?: number;
+}
+
+/** The reply to a device's batch (docs/api-contract.md, `POST /api/me/library/ops`). */
+export interface DeviceBatchResult {
+  readonly rev: number;
+  readonly rejected: readonly { readonly index: number; readonly reason: RejectReason }[];
+  readonly superseded: readonly number[];
+  readonly applied: number;
+}
+
 /**
  * What a listener does, whoever asks for it: the website's routes, the MCP tools and the phone's
  * sync all come through here, so a like means the same thing from every one of them.
@@ -70,7 +84,7 @@ export class ListenerActions {
     const ref = refOf(songId);
     const song = await this.lookUp(songId);
     await this.apply(user.userId, [{ op: 'like', ref, ...withSnapshot(song), at: this.now() }]);
-    if (song && !user.likedSongIds.includes(songId)) await this.learn(user.userId, song, SIGNAL_WEIGHT.like);
+    if (song && !user.likedSongIds.includes(songId)) await this.learn(user, song, SIGNAL_WEIGHT.like);
   }
 
   public async unlike(user: UserData, songId: string): Promise<void> {
@@ -79,7 +93,7 @@ export class ListenerActions {
     await this.apply(user.userId, [{ op: 'unlike', ref, at: this.now() }]);
     if (!user.likedSongIds.includes(songId)) return;
     const song = await this.lookUp(songId);
-    if (song) await this.learn(user.userId, song, SIGNAL_WEIGHT.unlike);
+    if (song) await this.learn(user, song, SIGNAL_WEIGHT.unlike);
   }
 
   // ── Playlists ─────────────────────────────────────────────────────────────
@@ -128,7 +142,7 @@ export class ListenerActions {
     const ref = refOf(songId);
     const song = await this.lookUp(songId);
     await this.apply(user.userId, [{ op: 'playlist_add', playlistId: library.id, ref, ...withSnapshot(song), at: this.now() }]);
-    if (song && !library.songIds.includes(songId)) await this.learn(user.userId, song, SIGNAL_WEIGHT.playlistAdd);
+    if (song && !library.songIds.includes(songId)) await this.learn(user, song, SIGNAL_WEIGHT.playlistAdd);
     return this.playlistAfter(user.userId, library.id);
   }
 
@@ -189,12 +203,16 @@ export class ListenerActions {
 
   // ── The phone's library sync ──────────────────────────────────────────────
 
-  /** A batch of operations from another device. Taste learns from them as from the website's buttons. */
-  public async applyFromDevice(
-    user: UserData,
-    ops: readonly LibraryOp[]
-  ): Promise<{ readonly rev: number; readonly rejected: readonly { readonly index: number; readonly reason: RejectReason }[] }> {
-    const result = await this.apply(user.userId, ops);
+  /**
+   * A batch of operations from another device. Taste learns from them as from the website's buttons.
+   *
+   * `clock` is when the request arrived and, from a device that sends it, what the device's own
+   * clock read when it left: the batch's times are restated on the server's clock first
+   * (alignOpTimes), so a phone whose clock is wrong neither loses nor wins because of it. The
+   * reply says which operations lost to something newer, so the device knows to pull.
+   */
+  public async applyFromDevice(user: UserData, ops: readonly LibraryOp[], clock?: DeviceClock): Promise<DeviceBatchResult> {
+    const result = await this.apply(user.userId, clock ? alignOpTimes(ops, clock.sentAt, clock.receivedAt) : ops);
     const rejected = new Set(result.rejected.map((item) => item.index));
     const lessons: { song: SongSnapshot; weight: number }[] = [];
     ops.forEach((op, index) => {
@@ -204,9 +222,9 @@ export class ListenerActions {
       if (op.op === 'playlist_add') lessons.push({ song: op.song, weight: SIGNAL_WEIGHT.playlistAdd });
     });
     if (lessons.length > 0) {
-      await this.auth.updateProfile(user.userId, (current) => lessons.reduce((taught, lesson) => teach(taught, lesson.song, lesson.weight), current));
+      await this.auth.updateProfile(user.userId, (current) => lessons.reduce((taught, lesson) => teach(taught, lesson.song, lesson.weight), current), user);
     }
-    return { rev: result.rev, rejected: result.rejected };
+    return { rev: result.rev, rejected: result.rejected, superseded: result.superseded, applied: result.applied };
   }
 
   // ── Listening ─────────────────────────────────────────────────────────────
@@ -237,7 +255,7 @@ export class ListenerActions {
         ? teach(current, song, ref || playDuration <= 0 ? 0.3 : playWeight(playDuration, song.duration))
         : current;
       return { ...taught, recentlyPlayed };
-    });
+    }, user);
     return entry;
   }
 
@@ -267,7 +285,7 @@ export class ListenerActions {
     if (!song) return user;
     const ref = snapshot?.ref ?? songRef;
     const weight = playWeight(seconds, song.duration);
-    if (!ref || !playedAt) return (await this.learn(user.userId, song, weight)) ?? user;
+    if (!ref || !playedAt) return (await this.learn(user, song, weight)) ?? user;
     return (await this.auth.updateProfile(user.userId, (current) => {
       const index = current.recentlyPlayed.findIndex((item) => recentIdentity(item) === (ref.startsWith('gaana:') ? ref : parseSongRef(ref)?.id ?? ref) && item.playedAt === playedAt);
       const prior = index >= 0 ? current.recentlyPlayed[index] : undefined;
@@ -277,12 +295,12 @@ export class ListenerActions {
       const recentlyPlayed = [...current.recentlyPlayed];
       recentlyPlayed[index] = { ...prior, listenSignalApplied: true };
       return { ...taught, recentlyPlayed };
-    })) ?? user;
+    }, user)) ?? user;
   }
 
   public async skipped(user: UserData, songId: string): Promise<void> {
     const song = await this.lookUp(songId);
-    if (song) await this.learn(user.userId, song, SIGNAL_WEIGHT.skip);
+    if (song) await this.learn(user, song, SIGNAL_WEIGHT.skip);
   }
 
   // ── Inside ────────────────────────────────────────────────────────────────
@@ -332,8 +350,9 @@ export class ListenerActions {
     return found;
   }
 
-  private learn(userId: string, song: TasteSong, weight: number): Promise<UserData | null> {
-    return this.auth.updateProfile(userId, (current) => teach(current, song, weight));
+  /** `user` is the profile this request already read: the change starts from it instead of reading again. */
+  private learn(user: UserData, song: TasteSong, weight: number): Promise<UserData | null> {
+    return this.auth.updateProfile(user.userId, (current) => teach(current, song, weight), user);
   }
 }
 

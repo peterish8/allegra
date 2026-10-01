@@ -3,7 +3,7 @@
  * uses fetchWithTimeout: a timeout, and null on any failure, never a throw.
  * Shapes follow docs/api-contract.md: `{ success, data, error? }`.
  */
-import type { LibraryChange, LibraryOp } from '@shared/library';
+import type { LibraryChange } from '@shared/library';
 import { fromAllegraSong, parseSongRef, type SongRef, type SongSnapshot } from '@shared/songRef';
 import type { UnifiedSong } from '../../types/song';
 
@@ -69,14 +69,6 @@ const send = async <T>(method: 'GET' | 'POST', path: string, token: string, body
     clearTimeout(timer);
   }
 };
-
-export interface OpsReply {
-  rev: number;
-  rejected: { index: number; reason: string }[];
-}
-
-export const postLibraryOps = (token: string, ops: readonly LibraryOp[]): Promise<SendOutcome<OpsReply>> =>
-  send<OpsReply>('POST', '/api/me/library/ops', token, { ops });
 
 export interface ChangesReply {
   rev: number;
