@@ -26,7 +26,7 @@ import { useConvexAppClient } from '../../app/ConvexSignInProvider';
 import { useSignIn } from '../auth/SignInContext';
 import type { AudioPlayerState } from './useAudioPlayer';
 import { exactSaavnMatch, type LibrarySong } from '../lib/libraryRows';
-import { fetchSongsByIds, searchSongs } from '../lib/api';
+import { fetchSongsByIds, resolveApiUrl, searchSongs } from '../lib/api';
 import { accountIdFromToken, deviceIdForAccount } from '../lib/connectDeviceId';
 
 function createWebConnectTransport(client: ConvexReactClient, trace?: DevelopmentTraceBuffer) {
@@ -93,6 +93,9 @@ async function resolvePlayable(snapshot: SongSnapshot, trace?: DevelopmentTraceB
   return match ? { ...match, libraryRef: snapshot.ref, librarySnapshot: snapshot } : null;
 }
 
+/** How long a tab waits for the Connect lock before showing that another tab is playing. */
+const OTHER_TAB_GRACE_MS = 400;
+
 function browserDeviceId(accountId: string): string {
   const params = new URLSearchParams(window.location.search);
   const harnessId = process.env.NODE_ENV === 'development' ? params.get('connectDevice') : null;
@@ -128,8 +131,30 @@ function audioSnapshot(audio: AudioPlayerState): PlayerSnapshot {
   };
 }
 
+/**
+ * The player points the element at a new song in an effect, after React renders, so right after
+ * `loadForConnect` the element can still hold the previous song: its metadata would pass for the
+ * new one and a seek would land on the old track. Resolves once `src` is the new stream (the
+ * effect's `load()` fires `loadstart`); an event, not a poll, since hidden tabs throttle timers.
+ */
+function waitForSource(audio: HTMLAudioElement, src: string): Promise<boolean> {
+  if (audio.getAttribute('src') === src) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const done = (ready: boolean): void => {
+      window.clearTimeout(timeout);
+      audio.removeEventListener('loadstart', onStart);
+      resolve(ready);
+    };
+    const onStart = (): void => { if (audio.getAttribute('src') === src) done(true); };
+    const timeout = window.setTimeout(() => done(audio.getAttribute('src') === src), 5_000);
+    audio.addEventListener('loadstart', onStart);
+  });
+}
+
 function waitForMetadata(audio: HTMLAudioElement): Promise<boolean> {
   if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve(true);
+  // A failed or emptied element sends no further events: start the load again.
+  if (audio.error || audio.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) audio.load();
   return new Promise((resolve) => {
     let settled = false;
     const done = (ready: boolean): void => {
@@ -266,9 +291,13 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
       if (generation !== loadGenerationRef.current) return 'not_found';
       if (!current?.streamUrl) return 'not_found';
       const target = audioRef.current;
+      const sameSong = target.currentSong?.id === current.id;
       target.loadForConnect(current, [current], false);
       const element = target.audioRef.current;
-      if (!element || !(await waitForMetadata(element))) return 'not_found';
+      if (!element) return 'not_found';
+      if (!sameSong && !(await waitForSource(element, resolveApiUrl(current.streamUrl)))) return 'not_found';
+      if (generation !== loadGenerationRef.current) return 'not_found';
+      if (!(await waitForMetadata(element))) return 'not_found';
       if (generation !== loadGenerationRef.current) return 'not_found';
       await target.seek(options.positionSec);
       void resolveQueueInOrder(queueSnapshots, traceRef.current, () => generation === loadGenerationRef.current)
@@ -337,6 +366,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
     let trace: DevelopmentTraceBuffer | undefined;
     let leaderStarted = false;
     let releaseHold: (() => void) | undefined;
+    const lockAbort = new AbortController();
     const hold = new Promise<void>(resolve => { releaseHold = resolve; });
     const releaseSession = (): void => releaseHold?.();
     const setStatus = (next: WebConnectState['tabStatus']): void => {
@@ -426,14 +456,23 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
     if (canElect) {
       setStatus('starting');
       const lockName = `allegra-connect:${encodeURIComponent(accountId)}`;
-      void navigator.locks.request(lockName, { mode: 'exclusive', ifAvailable: true }, async lock => {
-        if (!lock) {
+      // Wait in line for the lock rather than asking `ifAvailable`. A re-run of this effect (a token
+      // refresh, Strict Mode) requests it before the previous run has let go; with `ifAvailable`
+      // the tab then took itself for a second tab and left Connect for good while its audio
+      // kept playing, so nothing could control it or take playback from it. Queued, it leads as
+      // soon as the lock frees, and a waiting tab takes over when the leading tab closes.
+      const otherTabTimer = window.setTimeout(() => {
+        if (!disposed && !leaderStarted) {
           setStatus('other-tab');
           setSession(null);
-          return;
         }
+      }, OTHER_TAB_GRACE_MS);
+      void navigator.locks.request(lockName, { mode: 'exclusive', signal: lockAbort.signal }, async () => {
+        window.clearTimeout(otherTabTimer);
         await startLeader();
       }).catch(() => {
+        window.clearTimeout(otherTabTimer);
+        // Aborted by cleanup, or locks unusable here: lead alone rather than not at all.
         if (!disposed && !leaderStarted) {
           setStatus('leader');
           void startLeader();
@@ -445,6 +484,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
     }
     return () => {
       disposed = true;
+      lockAbort.abort();
       releaseSession?.();
       channel?.removeEventListener('message', onMessage);
       channel?.close();
