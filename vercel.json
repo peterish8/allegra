@@ -1,7 +1,7 @@
 {
   "framework": "nextjs",
   "installCommand": "npm install",
-  "buildCommand": "npm --prefix apps/web run build",
+  "buildCommand": "node scripts/vercel-build.mjs",
   "outputDirectory": "apps/web/.next",
   "rewrites": [
     {

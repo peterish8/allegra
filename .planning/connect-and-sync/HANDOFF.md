@@ -81,6 +81,27 @@ from current local slice evidence below.
   unrelated `.mcp.json`, `mobile allegra.png`, Android crash logs and `output/` directory remain
   excluded from this feature change.
 
+## Production incident and fixes (2026-10-01, evening)
+
+- Vercel production ran `a8577af` while production Convex (`neighborly-ocelot-786`) still ran
+  `5abdde0`. `connect:register` rejected `protocolVersion` (ArgumentValidationError, shown to
+  listeners as a raw "Server Error"), so no device registered and the picker stayed empty; clients
+  retried every second. Fixed by deploying Convex; `scripts/vercel-build.mjs` now deploys Convex
+  first in production builds and needs `CONVEX_DEPLOY_KEY` in Vercel's Production environment.
+- Every transfer then expired: the server's `take_over` state had no `ownershipEpoch`, the shared
+  decoder required one and silently dropped the command, so the target never called `beginV2`.
+  The server now sends the epoch (fixes installed `a8577af` APKs) and the decoder no longer
+  requires it. `MemoryTransport` hid this by sending the full live state; it now sends the server's shape.
+- The sender gave up 4 s after a transfer or load even while the target was still loading.
+  `outcomesFor` now marks a reserved command `began`, and the sender then waits to the deadline.
+- Session errors without a coded payload show fallback copy, never a raw Convex message;
+  registration retries back off from 1 s to 30 s.
+- Deployed to production Convex: the epoch and `began` changes. Not yet shipped: the web picker
+  redesign (`ConnectPicker.tsx`, also opened from the mini player), the phone's round Connect
+  button, and the client-side decoder/session fixes — they need a Vercel deploy and a new APK.
+- Not verified here: a signed-in two-device transfer after the fix (no transfer had been tried on
+  production when this was written).
+
 ## Important files
 
 - Contract: [`../../docs/connect-contract.md`](../../docs/connect-contract.md)

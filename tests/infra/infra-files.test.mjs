@@ -15,8 +15,19 @@ async function json(path) {
 test('Vercel builds the Next.js app', async () => {
   const vercel = await json('vercel.json');
   assert.equal(vercel.framework, 'nextjs');
-  assert.match(vercel.buildCommand, /apps\/web/);
+  assert.equal(vercel.buildCommand, 'node scripts/vercel-build.mjs');
   assert.equal(vercel.outputDirectory, 'apps/web/.next');
+  const build = await text('scripts/vercel-build.mjs');
+  assert.match(build, /apps\/web run build/);
+});
+
+test('a production build deploys Convex before the website', async () => {
+  // A website ahead of its Convex functions fails silently: on 2026-10-01 every device was
+  // refused by connect:register and Connect showed no devices.
+  const build = await text('scripts/vercel-build.mjs');
+  assert.match(build, /VERCEL_ENV === 'production'/);
+  assert.match(build, /npx convex deploy --cmd/);
+  assert.match(build, /CONVEX_DEPLOY_KEY/);
 });
 
 test('the /api rewrite still points at the Express function', async () => {

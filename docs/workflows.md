@@ -163,6 +163,13 @@ npx convex deploy        # Convex functions and schema
 node scripts/sync-vercel-env.mjs   # push apps/api/.env to Vercel (prints names only)
 ```
 
+A production Vercel build runs `scripts/vercel-build.mjs`, which deploys Convex first
+(`npx convex deploy --cmd …`) so the website and API never ship ahead of the functions they call.
+It needs `CONVEX_DEPLOY_KEY` (Convex dashboard → Settings → Deploy keys, production) in Vercel's
+**Production** environment and stops the build without it. Preview builds only build the website,
+against whichever Convex deployment their env points at. Convex changes must stay additive: an
+older phone build keeps calling the same functions after the new ones ship.
+
 Smoke the production alias afterwards:
 
 ```bash
