@@ -508,7 +508,7 @@ test('an offline remote command times out honestly while retaining its unresolve
 
   assert.equal(sessionB.view().pendingCommand?.command.kind, 'pause');
   assert.equal(sessionB.view().isPlaying, true);
-  assert.equal(sessionB.view().lastError, "Couldn't reach Laptop.");
+  assert.equal(sessionB.view().lastError, "Couldn't send that to Laptop. Check this device's connection.");
   sessionB.dispose();
 });
 

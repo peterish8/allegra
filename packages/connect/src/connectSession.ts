@@ -395,10 +395,15 @@ export function createConnectSession({ transport, player, device, clock, trace }
       const waitingFor = intent.transfer
         ? snapshot?.devices.find((row) => row.deviceId === intent.targetDeviceId)?.name
         : activeDevice()?.name;
-      lastError = `Couldn't reach ${waitingFor ?? 'the other device'}.`;
+      // Two different failures: the server never acknowledged the send (this device's connection),
+      // or it did and the other device never picked the command up.
+      const sent = pendingCommandId !== undefined;
+      lastError = sent
+        ? `Couldn't reach ${waitingFor ?? 'the other device'}.`
+        : `Couldn't send that to ${waitingFor ?? 'the other device'}. Check this device's connection.`;
       lastErrorCode = 'offline';
       if (optimistic?.intent === intent) optimistic = undefined;
-      intent.resolveTransfer?.({ ok: false, reason: 'timeout', code: 'offline', error: lastError });
+      intent.resolveTransfer?.({ ok: false, reason: sent ? 'timeout' : 'offline', code: 'offline', error: lastError });
       emit({ event: 'input.timed_out', operation: intent.transfer ? 'transfer' : 'control', outcome: 'timeout', count: 1, ...(durationMs !== undefined ? { durationMs } : {}) });
     } else if (outcome.ok === false) {
       lastError = outcome.error ?? 'The device could not complete that action.';
