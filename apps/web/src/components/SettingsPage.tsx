@@ -175,6 +175,14 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
     return () => controller.abort();
   }, []);
 
+  // A link such as /settings#settings-android (the download button in the sidebar) lands on its section.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id.startsWith('settings-')) return undefined;
+    const frame = window.requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'instant', block: 'start' }));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
   const setMix = (patch: Partial<KaraokeMix>): void => update((current) => ({ karaokeMix: { ...current.karaokeMix, ...patch } }));
 
   const deleteModel = async (): Promise<void> => {

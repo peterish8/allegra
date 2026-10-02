@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 
 import { useSignIn } from '../auth/SignInContext';
 import type { AccountApi } from '../hooks/useAccount';
+import { isResolvingAccount } from '../lib/accountState';
 import { motionTokens, spring } from '../motion';
 import { ProfileSheet } from './ProfileSheet';
 
@@ -38,6 +39,21 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
   const signIn = useSignIn();
   const { profile } = account;
   const signedIn = profile !== null && !profile.isGuest;
+
+  // A returning Google session is found a moment after the page loads. Until it is, offering "Continue with
+  // Google" is wrong (they are signed in) and it then swaps for their profile; say "checking" instead.
+  // If it is still unknown after a while (the profile cannot be reached), show the sign-in anyway.
+  const resolvingNow = isResolvingAccount({ loading: signIn.loading, signedIn: signIn.signedIn, ready: account.ready, profile });
+  const [gaveUp, setGaveUp] = useState(false);
+  useEffect(() => {
+    if (!open || !resolvingNow) {
+      setGaveUp(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setGaveUp(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, [open, resolvingNow]);
+  const resolving = resolvingNow && !gaveUp;
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -154,6 +170,11 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
                     }
                   }}
                 />
+              </div>
+            ) : resolving ? (
+              <div className="auth-body" role="status" aria-live="polite">
+                <h2>Checking your account…</h2>
+                <p className="auth-lede">One moment. If you are signed in, your library comes up here.</p>
               </div>
             ) : (
               <div className="auth-body">

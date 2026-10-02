@@ -1,11 +1,9 @@
 import { ArrowRight, Download, Heart, MonitorSmartphone, Mic2, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { ANDROID_APK_FALLBACK_URL, ANDROID_RELEASES_URL, fetchAndroidRelease, formatSize, releasedAgo } from '../lib/androidRelease';
+import type { AndroidRelease } from '../lib/androidRelease';
 import { detectBrowserName } from '../lib/browserName';
-
-/** The newest phone build. CI replaces this release's file on every push to main. */
-const ANDROID_APK_URL = 'https://github.com/peterish8/allegra/releases/download/apk-latest/LuvLyrics.apk';
-const ANDROID_RELEASES_URL = 'https://github.com/peterish8/allegra/releases/tag/apk-latest';
 
 const PERKS = [
   { icon: MonitorSmartphone, title: 'Play anywhere', text: 'Send what is playing between your phone and this browser.' },
@@ -31,6 +29,15 @@ export function AndroidAppCard() {
     let current = true;
     void detectBrowserName().then((name) => { if (current) setBrowser(name); });
     return () => { current = false; };
+  }, []);
+
+  // The newest build: CI replaces the `apk-latest` release on every push to main. Its real size, version
+  // and date replace the fixed wording once they arrive; until then (or without a network) the fixed link works.
+  const [latest, setLatest] = useState<AndroidRelease | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchAndroidRelease(controller.signal).then((release) => { if (!controller.signal.aborted) setLatest(release); });
+    return () => controller.abort();
   }, []);
 
   return (
@@ -93,15 +100,21 @@ export function AndroidAppCard() {
         </ul>
 
         <div className="apk-card__actions">
-          <a className="apk-card__download" href={ANDROID_APK_URL} download="LuvLyrics.apk" rel="noopener">
+          <a className="apk-card__download" href={latest?.url ?? ANDROID_APK_FALLBACK_URL} download="LuvLyrics.apk" rel="noopener">
             <Download size={18} strokeWidth={2} aria-hidden="true" />
             <span className="apk-card__download-copy">
               <strong>Download APK</strong>
-              <small>LuvLyrics.apk · about 32 MB</small>
+              <small>LuvLyrics.apk · {latest?.sizeBytes ? formatSize(latest.sizeBytes) : 'about 32 MB'}</small>
             </span>
           </a>
           <a className="settings-link" href={ANDROID_RELEASES_URL} target="_blank" rel="noopener noreferrer">Release notes and older builds</a>
         </div>
+        {latest ? (
+          <p className="apk-card__latest" aria-live="polite">
+            <i aria-hidden="true" />
+            Latest build{latest.version ? ` ${latest.version}` : ''} · released {releasedAgo(latest.publishedAt)}
+          </p>
+        ) : null}
 
         <ol className="apk-card__steps" aria-label="How to install">
           {STEPS.map((step) => <li key={step}>{step}</li>)}

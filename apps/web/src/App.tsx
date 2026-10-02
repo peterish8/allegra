@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ArrowUpToLine, ChevronRight, House, Heart as HeartIcon, Moon, Sun, Disc3, Pause, Play, SkipBack, SkipForward, Sparkles, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpToLine, ChevronRight, Download, House, Heart as HeartIcon, Moon, Sun, Disc3, Pause, Play, SkipBack, SkipForward, Sparkles, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -33,6 +33,7 @@ import { SearchResults, artistsFromSongs } from './components/SearchResults';
 import { SongCard } from './components/SongCard';
 import { Artwork, EmptyState, IconButton, OfflineToast, SkeletonCard, TactileButton } from './components/ui';
 import { useAccount, useListenTracker } from './hooks/useAccount';
+import { accountDisplayName, isResolvingAccount, recallAccountName, rememberAccountName } from './lib/accountState';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
 import { useLiveKaraoke } from './hooks/useLiveKaraoke';
 import { useMediaSession } from './hooks/useMediaSession';
@@ -477,6 +478,29 @@ export default function App() {
     void loadPersonalSpace();
   });
   useListenTracker(audio.currentSong ?? null, audio.currentTime, account.refresh);
+
+  // Guest, account, or not known yet. Convex hands back a returning Google session some moments after the
+  // page loads, and the profile a moment after that; showing "Guest" for that stretch made a signed-in
+  // listener look signed out and then flip to their name. While it is not known, the chip says nothing
+  // about it, using the name remembered from last time if there is one.
+  const accountResolving = isResolvingAccount({ loading: signIn.loading, signedIn: signIn.signedIn, ready: account.ready, profile: account.profile });
+  const [rememberedName, setRememberedName] = useState<string | null>(null);
+  useEffect(() => {
+    setRememberedName(recallAccountName(window.localStorage));
+  }, []);
+  useEffect(() => {
+    if (accountResolving) return;
+    if (account.profile && !account.profile.isGuest) {
+      const name = accountDisplayName(account.profile);
+      rememberAccountName(window.localStorage, name);
+      setRememberedName(name);
+    } else {
+      rememberAccountName(window.localStorage, null);
+      setRememberedName(null);
+    }
+  }, [accountResolving, account.profile]);
+  const knownAccount = account.profile && !account.profile.isGuest ? account.profile : null;
+  const chipName = knownAccount ? accountDisplayName(knownAccount) : accountResolving ? rememberedName : null;
 
   // A remote track change can write recent history on the phone. Give that
   // write a moment to land, then refresh once for this track instead of polling.
@@ -1264,14 +1288,17 @@ export default function App() {
             <Link className="nav-link" href={paths.library} title="Playlists" onClick={(event) => openLibrarySection(event, 'library-playlists')}><ListMusic size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Playlists</span></Link>
           </nav>
           <div className="header-actions">
-            <button type="button" className="session-chip" onClick={() => setAuthOpen(true)} aria-label={account.profile && !account.profile.isGuest ? 'Open your account' : 'Sign in or create an account'}>
-              <span className="session-avatar" aria-hidden="true">{account.profile && !account.profile.isGuest ? (account.profile.displayName ?? account.profile.email ?? 'A').slice(0, 1).toUpperCase() : 'G'}</span>
+            <button type="button" className={`session-chip${accountResolving && !chipName ? ' is-pending' : ''}`} onClick={() => setAuthOpen(true)} aria-busy={accountResolving || undefined} aria-label={chipName ? 'Open your account' : accountResolving ? 'Checking your account' : 'Sign in or create an account'}>
+              <span className="session-avatar" aria-hidden="true">{chipName ? chipName.slice(0, 1).toUpperCase() : accountResolving ? '' : 'G'}</span>
               <span className="session-copy">
-                <strong>{account.profile && !account.profile.isGuest ? (account.profile.displayName ?? 'Your account') : 'Guest'}</strong>
-                <small>{account.profile && !account.profile.isGuest ? <><i aria-hidden="true" /> Signed in</> : 'Sign in to keep your music'}</small>
+                {chipName
+                  ? <><strong>{chipName}</strong><small>{accountResolving ? 'Checking…' : <><i aria-hidden="true" /> Signed in</>}</small></>
+                  : accountResolving
+                    ? <><span className="session-skeleton" aria-hidden="true" /><span className="session-skeleton is-short" aria-hidden="true" /></>
+                    : <><strong>Guest</strong><small>Sign in to keep your music</small></>}
               </span>
             </button>
-            <div className="header-buttons"><button className="icon-button theme-toggle" type="button" aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} onClick={toggleTheme}>{theme === 'dark' ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}</button><button className="motion-toggle icon-button" type="button" aria-label={motionPaused ? 'Resume background motion' : 'Pause background motion'} title={motionPaused ? 'Resume background motion' : 'Pause background motion'} onClick={() => updateSettings((current) => ({ animatedBackground: !current.animatedBackground }))}>{motionPaused ? <Play size={15} fill="currentColor" aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}</button><Link className={`icon-button settings-link${view === 'settings' ? ' is-active' : ''}`} href={paths.settings} aria-label="Settings" title="Settings" aria-current={view === 'settings' ? 'page' : undefined}><SettingsIcon size={15} aria-hidden="true" /></Link></div>
+            <div className="header-buttons"><button className="icon-button theme-toggle" type="button" aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} onClick={toggleTheme}>{theme === 'dark' ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}</button><Link className="icon-button app-download-link" href={`${paths.settings}#settings-android`} aria-label="Get the Android app" title="Get the Android app"><Download size={15} aria-hidden="true" /></Link><button className="motion-toggle icon-button" type="button" aria-label={motionPaused ? 'Resume background motion' : 'Pause background motion'} title={motionPaused ? 'Resume background motion' : 'Pause background motion'} onClick={() => updateSettings((current) => ({ animatedBackground: !current.animatedBackground }))}>{motionPaused ? <Play size={15} fill="currentColor" aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}</button><Link className={`icon-button settings-link${view === 'settings' ? ' is-active' : ''}`} href={paths.settings} aria-label="Settings" title="Settings" aria-current={view === 'settings' ? 'page' : undefined}><SettingsIcon size={15} aria-hidden="true" /></Link></div>
           </div>
       </header>
 
@@ -1297,7 +1324,7 @@ export default function App() {
         </div>
         {view === 'home' ? (
           <HomePage
-            profile={account.profile}
+            profile={accountResolving ? null : account.profile}
             taste={account.taste}
             recentlyPlayed={recentlyPlayed}
             likedSongs={likedSongs}
@@ -1350,7 +1377,7 @@ export default function App() {
           )
         ) : view === 'settings' ? (
           <SettingsPage
-            account={account.profile ? { isGuest: account.profile.isGuest, name: account.profile.displayName ?? null, email: account.profile.email ?? null } : null}
+            account={account.profile && !accountResolving ? { isGuest: account.profile.isGuest, name: account.profile.displayName ?? null, email: account.profile.email ?? null } : null}
             signInAvailable={signIn.available}
             onOpenAccount={() => setAuthOpen(true)}
             karaokeBackend={liveKaraoke.backend}
