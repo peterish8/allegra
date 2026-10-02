@@ -6,6 +6,7 @@ import { useSettingsStore } from './settingsStore';
 import { usePlaybackModesStore } from './playbackModesStore';
 import { setPlaybackIntent } from '../playback/playbackIntent';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
+import { prefetchCover } from '../components/player/coverImages';
 
 function trackMeta(song: Song) {
   return {
@@ -35,12 +36,14 @@ export function shouldAutoPlayLoadedSong(songId: string): boolean {
 
 /** Stage queue[index+1] in Media3 when Android can take it. No-op elsewhere. */
 export function prepareNextInQueue(): void {
-  if (!NativeAudioPlayer.isAvailable()) return;
   const { playlistQueue, currentQueueIndex, currentSongId } = usePlayerStore.getState();
   if (!playlistQueue || playlistQueue.length < 2) return;
   if (usePlaybackModesStore.getState().repeatMode === 'off' && currentQueueIndex >= playlistQueue.length - 1) return;
   const next = playlistQueue[(currentQueueIndex + 1) % playlistQueue.length];
-  if (!next?.audioUri || next.id === currentSongId) return;
+  if (!next || next.id === currentSongId) return;
+  // Have the next cover downloaded and decoded before the skip, so Now Playing changes it with the title.
+  prefetchCover(next.coverImageUri);
+  if (!NativeAudioPlayer.isAvailable() || !next.audioUri) return;
   NativeAudioPlayer.prepareNext(next.audioUri, trackMeta(next), next.id);
 }
 
@@ -393,16 +396,24 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const nextSong = freshState.playlistQueue[nextIndex];
     pausedLoadSongId = null;
 
+    // The screen answers first, in this same tick. It used to wait for the native player to say whether
+    // the next item was staged, so a skip showed nothing for a beat, and two quick taps both read the
+    // same index (the second skipped from the song the first had left) or the slower reply put an older
+    // song back on screen. `loadedAudioId` is claimed for the song so the mini player does not start a
+    // load of its own while the staged item is tried; the fallback below hands it back.
+    set({
+      currentQueueIndex: nextIndex,
+      currentSong: nextSong,
+      currentSongId: nextSong.id,
+      loadedAudioId: nextSong.id,
+      isPlaying: true,
+    });
+
     // Prefer the staged Media3 item — avoids pause → load → prepare gap on skip.
     const usedNative = await NativeAudioPlayer.seekToNextIfReady(nextSong.id);
+    // Skipped again while waiting: the newer skip owns the screen and the audio from here.
+    if (get().currentSongId !== nextSong.id) return;
     if (usedNative) {
-      set({
-        currentQueueIndex: nextIndex,
-        currentSong: nextSong,
-        currentSongId: nextSong.id,
-        loadedAudioId: nextSong.id,
-        isPlaying: true,
-      });
       if (freshState.currentPlaylistId) {
         useSettingsStore.getState().updatePlaylistHistory(freshState.currentPlaylistId, nextSong.id);
       }
@@ -416,14 +427,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
 
-    set({
-      currentQueueIndex: nextIndex,
-      currentSong: nextSong,
-      currentSongId: nextSong.id,
-      isPlaying: true,
-    });
-
+    // Nothing staged: have the audio loaded (MiniPlayer / NowPlaying see loadedAudioId unset and load it).
+    set({ loadedAudioId: null });
     await get().loadSong(nextSong.id);
+    if (get().currentSongId !== nextSong.id) return;
     setPlaybackIntent(true);
     playerControls.play();
     if (__DEV__) {

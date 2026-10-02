@@ -227,8 +227,13 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
 
   const control = connect.control;
   const seek = useCallback((seconds: number) => {
-    const end = Math.max(1, liveDur.value);
-    control({ kind: 'seek', sec: Math.max(0, Math.min(end, seconds)) });
+    // A scrub is a finger on a slider: whatever Connect makes of it, it must not end the app. A
+    // position that is not a number (an unknown length) is not sent at all.
+    if (!Number.isFinite(seconds)) return;
+    try {
+      const end = Math.max(1, liveDur.value);
+      control({ kind: 'seek', sec: Math.max(0, Math.min(end, seconds)) });
+    } catch { /* the scrubber settles on the next report from the playing device */ }
   }, [control, liveDur]);
   const like = useRemoteLike(song);
 

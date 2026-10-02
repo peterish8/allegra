@@ -7,7 +7,7 @@
  *
  * Transform and opacity only. Reduce Motion collapses to a plain fade.
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Pressable, PressableProps, StyleProp, StyleSheet, TextProps, TextStyle, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
@@ -22,6 +22,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Motion } from '../../constants/allegraTheme';
+import * as Haptics from '../../utils/haptics';
 import { isLowEndDevice } from '../../utils/performanceTier';
 
 const STAGGER_MS = 40;
@@ -63,25 +64,51 @@ interface TactileProps extends Omit<PressableProps, 'style'> {
   style?: StyleProp<ViewStyle>;
   /** Layout for the touch target itself (e.g. flex: 1 so a row fills its line). */
   wrapperStyle?: StyleProp<ViewStyle>;
-  /** How far the control sinks under the finger. */
+  /** How far the control sinks under the finger. Big surfaces (rows, cards) want a gentle 0.98. */
   pressScale?: number;
+  /** A tick under the finger when the tap lands: 'select' for a light tick, 'light' for a small knock. */
+  haptic?: 'select' | 'light';
   children: React.ReactNode;
 }
 
-/** Pressable with Allegra's tactile spring (stiffness 400, damping 30). */
-export const Tactile: React.FC<TactileProps> = ({ style, wrapperStyle, pressScale = Motion.pressScale, children, onPressIn, onPressOut, ...rest }) => {
-  const scale = useSharedValue(1);
-  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+/** A tap shorter than this still shows its press: gone sooner, it reads as nothing having happened. */
+const MIN_PRESS_MS = 70;
+/** How much a pressed control dims, on top of sinking. */
+const PRESS_DIM = 0.14;
+
+/**
+ * Pressable with Allegra's tactile spring (stiffness 700, damping 40): it sinks and dims under the
+ * finger, one shared value driving both, and comes back as fast. A very quick tap is held down for
+ * MIN_PRESS_MS so the press is always seen. With Reduce Motion it dims only, never moves.
+ */
+export const Tactile: React.FC<TactileProps> = ({ style, wrapperStyle, pressScale = Motion.pressScale, haptic, children, onPress, onPressIn, onPressOut, ...rest }) => {
+  const reduce = useReducedMotion();
+  const pressed = useSharedValue(0);
+  const downAt = useRef(0);
+  // A caller's own opacity (a disabled button's dimming) is the starting point, not something to override.
+  const flatOpacity = StyleSheet.flatten(style)?.opacity;
+  const baseOpacity = typeof flatOpacity === 'number' ? flatOpacity : 1;
+  const animated = useAnimatedStyle(() => ({
+    opacity: baseOpacity * (1 - PRESS_DIM * pressed.value),
+    transform: reduce ? [] : [{ scale: 1 + (pressScale - 1) * pressed.value }],
+  }));
   return (
     <Pressable
       {...rest}
       style={wrapperStyle}
+      onPress={e => {
+        if (haptic === 'light') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        else if (haptic === 'select') Haptics.selectionAsync().catch(() => {});
+        onPress?.(e);
+      }}
       onPressIn={e => {
-        scale.value = withSpring(pressScale, Motion.spring.tactile);
+        downAt.current = Date.now();
+        pressed.value = withSpring(1, Motion.spring.tactile);
         onPressIn?.(e);
       }}
       onPressOut={e => {
-        scale.value = withSpring(1, Motion.spring.tactile);
+        const held = Date.now() - downAt.current;
+        pressed.value = withDelay(Math.max(0, MIN_PRESS_MS - held), withSpring(0, Motion.spring.tactile));
         onPressOut?.(e);
       }}
     >

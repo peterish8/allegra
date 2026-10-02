@@ -67,8 +67,17 @@ export function createMobilePlayerPort(getToken: () => string | null, trace?: De
   const shared = (song: Song | null | undefined): SongSnapshot | undefined =>
     song ? aliases.get(song.id) ?? snapshotOfSong(song) : undefined;
   const adopt = (snapshot: SongSnapshot, matched: MatchedSong): Song => {
-    const song = matched.kind === 'local' ? matched.song : toMobileSong(matched.song);
-    if (snapshotOfSong(song)?.ref !== snapshot.ref) {
+    const matchedSong = matched.kind === 'local' ? matched.song : toMobileSong(matched.song);
+    // The cover the other device showed is the one to show: a catalog song found by search can come
+    // back with no usable cover, which left this phone's player blank and published an empty cover
+    // that blanked it on every other device too (Connect shares covers as https links only).
+    const hasWebCover = /^https:\/\//i.test(matchedSong.coverImageUri ?? '');
+    const song = !hasWebCover && matched.kind === 'catalog' && /^https:\/\//i.test(snapshot.artwork)
+      ? { ...matchedSong, coverImageUri: snapshot.artwork }
+      : matchedSong;
+    const published = snapshotOfSong(song);
+    // A downloaded copy keeps its own file cover, which no other device can open: publish the link it was asked for.
+    if (published?.ref !== snapshot.ref || (published.artwork === '' && snapshot.artwork !== '')) {
       if (aliases.size >= 400) {
         const queued = new Set((usePlayerStore.getState().playlistQueue ?? []).map(item => item.id));
         for (const id of aliases.keys()) if (!queued.has(id)) aliases.delete(id);

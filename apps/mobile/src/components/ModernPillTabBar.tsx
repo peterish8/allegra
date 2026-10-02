@@ -6,7 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
-import { View, Text, StyleSheet, Pressable, Platform, ImageBackground, ViewStyle, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, ImageBackground, ViewStyle, useWindowDimensions } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -18,7 +18,7 @@ import { VoiceMicButton } from './VoiceMicButton';
 import { Glass, Motion, Radius } from '../constants/allegraTheme';
 import { PILL_BAR_HEIGHT, PILL_PLAYER_HEIGHT, PILL_STACK_GAP, pillBarBottom, VISIBLE_TABS } from '../navigation/tabs';
 import { HostedMoreMenu, useMoreMenu } from './MoreMenu';
-import { MorphIcon } from './allegra/motion';
+import { MorphIcon, Tactile } from './allegra/motion';
 
 const MORE_KEY = '__more__';
 
@@ -119,13 +119,15 @@ export const ModernPillTabBar: React.FC<BottomTabBarProps> = ({
     };
 
     return (
-      <Pressable
+      <Tactile
         key={route.key}
         onPress={onPress}
+        haptic="select"
+        pressScale={0.9}
         accessibilityRole="tab"
         accessibilityState={{ selected: isFocused }}
         accessibilityLabel={label}
-        style={({ pressed }) => [styles.tabItem, pressed && styles.tabPressed]}
+        style={styles.tabItem}
       >
         <TabIcon focused={isFocused}>
           {options.tabBarIcon?.({
@@ -137,18 +139,20 @@ export const ModernPillTabBar: React.FC<BottomTabBarProps> = ({
         <Text style={[styles.label, { color: isFocused ? activeIconColor : inactiveIconColor }]} numberOfLines={1}>
           {label}
         </Text>
-      </Pressable>
+      </Tactile>
     );
   };
 
   const moreButton = (
-    <Pressable
+    <Tactile
       key={MORE_KEY}
       onPress={more.toggle}
+      haptic="select"
+      pressScale={0.9}
       accessibilityRole="button"
       accessibilityState={{ expanded: more.open, selected: moreActive }}
       accessibilityLabel="More"
-      style={({ pressed }) => [styles.tabItem, pressed && styles.tabPressed]}
+      style={styles.tabItem}
     >
       <MorphIcon
         on={more.open}
@@ -160,7 +164,7 @@ export const ModernPillTabBar: React.FC<BottomTabBarProps> = ({
       <Text style={[styles.label, { color: moreActive ? activeIconColor : inactiveIconColor }]} numberOfLines={1}>
         More
       </Text>
-    </Pressable>
+    </Tactile>
   );
 
   return (
@@ -313,9 +317,6 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10.5,
     fontWeight: '600',
-  },
-  tabPressed: {
-    transform: [{ scale: 0.92 }],
   },
   glassHighlight: {
     position: 'absolute',

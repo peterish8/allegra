@@ -140,7 +140,9 @@ export function createConnectSession({ transport, player, device: initialDevice,
       timers.delete(handle);
       timerOperations.delete(handle);
       emit({ event: 'timer.fired', operation, count: 1 });
-      callback();
+      // A fault inside a timer has nothing above it to catch it: on a phone that is an uncaught error
+      // and the app closes. Connect failing to act is recoverable; the app dying under a scrub is not.
+      try { callback(); } catch { /* the session carries on; the next snapshot or command resyncs it */ }
     }, Math.max(0, delayMs));
     timers.add(handle);
     timerOperations.set(handle, operation);

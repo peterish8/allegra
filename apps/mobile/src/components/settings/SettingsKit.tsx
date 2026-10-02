@@ -13,12 +13,13 @@
  * Only controls that change something go in these — no placeholders.
  */
 import React, { useEffect } from 'react';
-import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
+import { LayoutChangeEvent, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, interpolateColor } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming, interpolateColor } from 'react-native-reanimated';
 import { Motion, Radius, Signal } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
+import { Tactile } from '../allegra/motion';
 import { choiceColumns } from './choiceLayout';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -65,17 +66,22 @@ const THUMB = 20;
 
 export const Switch: React.FC<{ label: string; hint?: string; value: boolean; onChange: (next: boolean) => void }> = ({ label, hint, value, onChange }) => {
   const on = useSharedValue(value ? 1 : 0);
+  // The thumb stretches while a finger is on the switch, as a real one gives under a thumb, then settles.
+  const held = useSharedValue(0);
+  const reduce = useReducedMotion();
   useEffect(() => {
     on.value = withSpring(value ? 1 : 0, Motion.spring.tactile);
   }, [value, on]);
   const track = useAnimatedStyle(() => ({ backgroundColor: interpolateColor(on.value, [0, 1], ['rgba(255,255,255,0.12)', Signal.wave]) }));
-  const thumb = useAnimatedStyle(() => ({
-    transform: [{ translateX: on.value * (TRACK_W - THUMB - 8) }],
+  const thumb = useAnimatedStyle((): ViewStyle => ({
+    transform: [{ translateX: on.value * (TRACK_W - THUMB - 8) }, { scaleX: reduce ? 1 : 1 + 0.22 * held.value }],
     backgroundColor: interpolateColor(on.value, [0, 1], ['#ffffff', Signal.waveInk]),
   }));
   return (
     <Pressable
       onPress={() => { Haptics.selectionAsync().catch(() => {}); onChange(!value); }}
+      onPressIn={() => { held.value = withSpring(1, Motion.spring.tactile); }}
+      onPressOut={() => { held.value = withSpring(0, Motion.spring.tactile); }}
       accessibilityRole="switch"
       accessibilityState={{ checked: value }}
       accessibilityLabel={label}
@@ -116,15 +122,17 @@ export function Choice<T extends string>({ label, hint, value, options, onChange
             {row.map(o => {
               const selected = o.value === value;
               return (
-                <Pressable
+                <Tactile
                   key={o.value}
                   onPress={() => { if (!selected) { Haptics.selectionAsync().catch(() => {}); onChange(o.value); } }}
+                  pressScale={0.95}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
+                  wrapperStyle={styles.choiceCell}
                   style={[styles.choiceOption, !segmented && styles.choiceChip, selected && styles.choiceOptionOn]}
                 >
                   <Text style={[styles.choiceText, selected && styles.choiceTextOn]} numberOfLines={1}>{o.label}</Text>
-                </Pressable>
+                </Tactile>
               );
             })}
             {/* A short last row keeps its cells the same width as the rows above. */}
@@ -137,7 +145,7 @@ export function Choice<T extends string>({ label, hint, value, options, onChange
 }
 
 export const Action: React.FC<{ label: string; hint?: string; value?: string; destructive?: boolean; onPress: () => void }> = ({ label, hint, value, destructive, onPress }) => (
-  <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [pressed && styles.pressed]}>
+  <Tactile onPress={onPress} pressScale={0.985} accessibilityRole="button">
     <View style={styles.row}>
       <View style={[styles.copy, styles.flex]}>
         <Text style={[styles.label, destructive && styles.destructive]}>{label}</Text>
@@ -148,16 +156,16 @@ export const Action: React.FC<{ label: string; hint?: string; value?: string; de
         {destructive ? null : <Ionicons name="chevron-forward" size={16} color={Signal.inkMuted} />}
       </View>
     </View>
-  </Pressable>
+  </Tactile>
 );
 
 /** Allegra's jump links: pill chips that scroll to each section. */
 export const JumpChips: React.FC<{ items: { key: string; label: string }[]; onJump: (key: string) => void }> = ({ items, onJump }) => (
   <View style={styles.jump}>
     {items.map(item => (
-      <Pressable key={item.key} onPress={() => onJump(item.key)} accessibilityRole="button" style={({ pressed }) => [styles.jumpChip, pressed && styles.pressed]}>
+      <Tactile key={item.key} onPress={() => onJump(item.key)} haptic="select" pressScale={0.94} accessibilityRole="button" style={styles.jumpChip}>
         <Text style={styles.jumpText}>{item.label}</Text>
-      </Pressable>
+      </Tactile>
     ))}
   </View>
 );
@@ -216,7 +224,8 @@ const styles = StyleSheet.create({
   // Grid: each option is its own pill.
   choiceGrid: { gap: 8 },
   choiceGridRow: { flexDirection: 'row', gap: 8 },
-  choiceOption: { flex: 1, flexBasis: 0, minHeight: 38, paddingHorizontal: 10, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+  choiceCell: { flex: 1, flexBasis: 0 },
+  choiceOption: { minHeight: 38, paddingHorizontal: 10, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
   choiceChip: { minHeight: 42, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)' },
   choicePad: { flex: 1, flexBasis: 0 },
   choiceOptionOn: { backgroundColor: Signal.wave },

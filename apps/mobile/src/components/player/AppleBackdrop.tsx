@@ -21,12 +21,12 @@ import {
   LinearGradient,
   Rect,
   SkImage,
-  useImage,
   vec,
 } from '@shopify/react-native-skia';
 import { DerivedValue, SharedValue, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Motion } from '../../constants/allegraTheme';
 import { AuraPalette } from '../allegra/palette';
+import { useCoverImage } from './coverImages';
 
 interface AppleBackdropProps {
   uri?: string | null;
@@ -120,17 +120,33 @@ const AppleBackdrop: React.FC<AppleBackdropProps> = ({ uri, palette, showHero, f
   const width = frame?.width ?? win.width;
   const height = frame?.height ?? win.height;
   const heroH = heroHeight(width, height);
-  const image = useImage(uri ?? undefined);
+  const { image, failed } = useCoverImage(uri);
 
   // Keep the previous cover underneath while the new one fades in.
   const [layers, setLayers] = useState<{ prev: SkImage | null; next: SkImage | null }>({ prev: null, next: null });
-  const lastUri = useRef<string | null | undefined>(undefined);
+  // Tracked by image, never by uri: `useCoverImage` answers only for the uri it is given (null while
+  // the cover loads), so the previous cover stays up under the new one until it is ready.
+  const lastImage = useRef<SkImage | null>(null);
+  // Until when the last change is still fading in (JS clock: reading the shared value here would block).
+  const fadingUntil = useRef(0);
   const fade = useSharedValue(1);
   useEffect(() => {
-    if (!image || lastUri.current === uri) return;
-    const first = lastUri.current === undefined;
-    lastUri.current = uri;
-    setLayers(l => ({ prev: l.next, next: image }));
+    if (!uri || failed) {
+      // No cover for this song, or it would not load: the song's own colours, not the last song's cover.
+      if (lastImage.current) {
+        lastImage.current = null;
+        setLayers({ prev: null, next: null });
+      }
+      return;
+    }
+    if (!image) return; // still loading: keep the last cover rather than flash the palette
+    if (image === lastImage.current) return;
+    const first = lastImage.current === null;
+    lastImage.current = image;
+    // A cover arriving while the last one is still fading in replaces it in place and carries the fade on.
+    // Starting over made the half-faded cover snap to solid underneath, a pop on every quick skip.
+    const midFade = !first && Date.now() < fadingUntil.current;
+    setLayers(l => (midFade ? { prev: l.prev, next: image } : { prev: l.next, next: image }));
     // The veil mounts with the canvas, long after the backdrop underneath has
     // shown this cover. Replaying the arrival (palette first, then a 1.2s fade
     // and settle) inside the canvas's cross-dissolve darkened and shifted the
@@ -144,9 +160,10 @@ const AppleBackdrop: React.FC<AppleBackdropProps> = ({ uri, palette, showHero, f
       fade.value = 1;
       return;
     }
-    fade.value = 0;
-    fade.value = withTiming(1, { duration: 1200, easing: Motion.ease.standard });
-  }, [image, uri, fade, veil]);
+    fadingUntil.current = Date.now() + 1200;
+    if (!midFade) fade.value = 0;
+    fade.value = withTiming(1, { duration: midFade ? 700 : 1200, easing: Motion.ease.standard });
+  }, [image, failed, uri, fade, veil]);
 
   const hero = useSharedValue(showHero ? 1 : 0);
   useEffect(() => {

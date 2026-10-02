@@ -284,6 +284,9 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
     positionSV.value = seconds;
     try {
       await onSeek(seconds);
+    } catch {
+      // A seek that fails (the other device unreachable) is shown by the player's own error line;
+      // here it must only let the scrubber go, never escape from a gesture callback.
     } finally {
       setTimeout(() => { isSeeking.value = false; }, 280);
     }
@@ -408,9 +411,9 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
         )}
 
         <View style={styles.footer}>
-          <Pressable onPress={() => { tick('light'); onOpenQueue(); }} hitSlop={10} style={styles.footerBtn} accessibilityRole="button" accessibilityLabel="Up next">
+          <Tactile onPress={() => { tick('light'); onOpenQueue(); }} hitSlop={10} pressScale={0.86} style={styles.footerBtn} accessibilityRole="button" accessibilityLabel="Up next">
             <Ionicons name="list" size={26} color={INK_SOFT} />
-          </Pressable>
+          </Tactile>
 
           <View style={styles.segment}>
             <Pressable
@@ -434,15 +437,16 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             ) : null}
           </View>
 
-          <Pressable
+          <Tactile
             onPress={() => { tick('light'); onToggleLyrics(); }}
             hitSlop={10}
+            pressScale={0.86}
             style={[styles.footerBtn, showLyrics && styles.footerBtnOn]}
             accessibilityRole="button"
             accessibilityLabel={showLyrics ? 'Hide lyrics' : 'Show lyrics'}
           >
             <MaterialCommunityIcons name="comment-quote-outline" size={24} color={showLyrics ? '#15151a' : INK_SOFT} />
-          </Pressable>
+          </Tactile>
         </View>
         </Animated.View>
       </Animated.View>

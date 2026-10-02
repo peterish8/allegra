@@ -56,6 +56,9 @@ const AppleSlider: React.FC<AppleSliderProps> = ({
   const commit = useCallback(async (value: number) => {
     try {
       await onCommit(value);
+    } catch {
+      // The caller reports its own failure; the slider only has to stop waiting. Thrown out of here it
+      // would surface from a gesture callback, where nothing can catch it.
     } finally {
       settling.value = false;
     }
