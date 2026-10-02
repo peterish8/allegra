@@ -3,6 +3,7 @@ import type * as SQLite from 'expo-sqlite';
 
 import { closeDatabase, getDatabase, initDatabase } from './db';
 import * as syncDb from './syncQueries';
+import { getAllPlaylists } from './playlistQueries';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import { buildLocalIndex, LIKED_PLAYLIST_ID, opsForFirstSync, planInbound, planPhonePlaylistReplacement, refForLocalSong, snapshotOfLocal, type AccountLibrary, type PhoneLibrary } from '../services/sync/plan';
 import type { LibraryChange } from '@shared/library';
@@ -14,6 +15,9 @@ jest.mock('expo-sqlite', () => ({
   openDatabaseAsync: (...args: unknown[]) => mockOpenDatabaseAsync(...args),
   deleteDatabaseAsync: jest.fn(),
 }));
+
+// playlistQueries imports queries, which reaches for the file system; nothing here touches a file.
+jest.mock('expo-file-system/legacy', () => ({}));
 
 type SqlValue = string | number | bigint | null | Uint8Array;
 let nativeDb: DatabaseSync;
@@ -108,6 +112,35 @@ describe('sync queries against SQLite', () => {
     await syncDb.updateOutboxBody(queued.id, { ...parsed, recentPosted: true });
     const [retry] = await syncDb.peekOutbox('play', 20);
     expect(JSON.parse(retry.body)).toMatchObject({ songRef: 'gaana:g1', playedAt: pending.playedAt, recentPosted: true });
+  });
+
+  it('counts online-only songs in a playlist beside the downloaded ones, and none twice', async () => {
+    const db = await getDatabase();
+    const now = '2026-09-30T00:00:00.000Z';
+    await db.runAsync(
+      "INSERT INTO playlists (id, name, is_default, sort_order, date_created, date_modified) VALUES ('road', 'Road trip', 0, 0, ?, ?)",
+      [now, now],
+    );
+    await db.runAsync(
+      "INSERT INTO playlists (id, name, is_default, sort_order, date_created, date_modified) VALUES ('web-only', 'Made on the website', 0, 0, ?, ?)",
+      [now, now],
+    );
+    await insertSong('local-1', 'Downloaded', 'saavn:d1');
+    await db.runAsync("INSERT INTO playlist_songs (playlist_id, song_id, added_at) VALUES ('road', 'local-1', ?)", [now]);
+    const online = (ref: SongRef, title: string) => ({ ref, title, artist: 'The Artist', duration: 200, at: 1 });
+    await syncDb.upsertOnlinePlaylistSong('road', online('saavn:o1' as SongRef, 'Streamed'));
+    // The same song as the downloaded one: a copy is on the phone, so it is one song, not two.
+    await syncDb.upsertOnlinePlaylistSong('road', online('saavn:d1' as SongRef, 'Downloaded'));
+    await syncDb.upsertOnlinePlaylistSong('web-only', online('saavn:o2' as SongRef, 'One'));
+    await syncDb.upsertOnlinePlaylistSong('web-only', online('saavn:o3' as SongRef, 'Two'));
+    await syncDb.upsertOnlineLike(online('saavn:o1' as SongRef, 'Streamed'));
+
+    const counts = Object.fromEntries((await getAllPlaylists()).map(playlist => [playlist.id, playlist.songCount]));
+    expect(counts.road).toBe(2);
+    expect(counts['web-only']).toBe(2);
+    // Liked songs: the account's online likes count too.
+    const liked = (await getAllPlaylists()).find(playlist => playlist.isDefault);
+    expect(liked?.songCount).toBe(1);
   });
 
   it('clears first-sync library operations without discarding pending play history', async () => {

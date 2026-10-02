@@ -25,10 +25,21 @@ export const getAllPlaylists = async (): Promise<Playlist[]> => {
         p.sort_order as sortOrder,
         p.date_created as dateCreated,
         p.date_modified as dateModified,
-        COUNT(ps.song_id) as songCount
+        -- Songs on this phone, plus the online-only ones (added on the website or another device, played by
+        -- streaming) that no downloaded copy already stands for. The playlist's own page lists both; counting
+        -- only the first made a synced playlist read "0 songs" outside while its songs were all there inside.
+        (SELECT COUNT(*) FROM playlist_songs ps WHERE ps.playlist_id = p.id)
+        + CASE WHEN p.is_default = 1
+            THEN (SELECT COUNT(*) FROM liked_online_songs o
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM playlist_songs ps2 JOIN songs s ON s.id = ps2.song_id
+                    WHERE ps2.playlist_id = p.id AND s.origin_id = o.ref))
+            ELSE (SELECT COUNT(*) FROM playlist_online_songs o
+                  WHERE o.playlist_id = p.id AND NOT EXISTS (
+                    SELECT 1 FROM playlist_songs ps2 JOIN songs s ON s.id = ps2.song_id
+                    WHERE ps2.playlist_id = p.id AND s.origin_id = o.ref))
+          END as songCount
       FROM playlists p
-      LEFT JOIN playlist_songs ps ON p.id = ps.playlist_id
-      GROUP BY p.id
       ORDER BY p.is_default DESC, p.sort_order ASC, p.date_created DESC
     `);
 

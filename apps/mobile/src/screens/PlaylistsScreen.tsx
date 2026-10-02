@@ -11,6 +11,9 @@ import { useNavigation, useFocusEffect, useIsFocused } from '@react-navigation/n
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { usePlaylistStore } from '../store/playlistStore';
 import { usePlayerStore } from '../store/playerStore';
+import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
+import { getOnlinePlaylistSongs } from '../database/syncQueries';
+import { onlineRowToSong } from '../services/sync/onlineSongs';
 import { CustomMenu } from '../components/CustomMenu';
 import { MosaicCover } from '../components/MosaicCover';
 import DynamicAura from '../components/allegra/DynamicAura';
@@ -34,8 +37,6 @@ export const PlaylistsScreen: React.FC = () => {
   const deletePlaylist = usePlaylistStore(state => state.deletePlaylist);
   const playlists = usePlaylistStore(state => state.playlists);
   const fetchPlaylists = usePlaylistStore(state => state.fetchPlaylists);
-  const setMiniPlayerHidden = usePlayerStore(state => state.setMiniPlayerHidden);
-  
   const [playlistSongs, setPlaylistSongs] = React.useState<Record<string, Song[]>>({});
 
   // Same room as Library: the live shader, tinted by the playing cover.
@@ -48,28 +49,41 @@ export const PlaylistsScreen: React.FC = () => {
   useFocusEffect(
     React.useCallback(() => {
       fetchPlaylists();
-      setMiniPlayerHidden(false);
-    }, [fetchPlaylists, setMiniPlayerHidden])
+    }, [fetchPlaylists])
   );
 
-  // Fetch songs for each playlist to display in mosaic
+  // A sync that lands while this page is open (a playlist built on the website, a like from another device)
+  // changes the counts and covers: read them again, but not on the first render, where the focus effect does it.
+  const onlineVersion = useOnlineLibraryStore(state => state.playlistVersion + state.likes.length);
   React.useEffect(() => {
+    if (onlineVersion > 0) fetchPlaylists();
+  }, [onlineVersion, fetchPlaylists]);
+
+  // Fetch songs for each playlist to display in mosaic: the ones on this phone first, then the online-only
+  // ones (their covers are links), so a playlist built elsewhere has a cover too.
+  React.useEffect(() => {
+    let current = true;
     const fetchAllPlaylistSongs = async () => {
       const { getPlaylistSongs } = await import('../database/playlistQueries');
       const songsMap: Record<string, Song[]> = {};
-      
+
       for (const playlist of playlists) {
-        const songs = await getPlaylistSongs(playlist.id);
-        songsMap[playlist.id] = songs.slice(0, 4); // Only need 4 for mosaic
+        const local = await getPlaylistSongs(playlist.id);
+        const online = local.length >= 4
+          ? []
+          : (playlist.isDefault ? useOnlineLibraryStore.getState().likes : await getOnlinePlaylistSongs(playlist.id)).map(onlineRowToSong);
+        const seen = new Set(local.map(song => song.id));
+        songsMap[playlist.id] = [...local, ...online.filter(song => !seen.has(song.id))].slice(0, 4); // Only need 4 for mosaic
       }
-      
-      setPlaylistSongs(songsMap);
+
+      if (current) setPlaylistSongs(songsMap);
     };
-    
+
     if (playlists.length > 0) {
-      fetchAllPlaylistSongs();
+      fetchAllPlaylistSongs().catch(() => undefined);
     }
-  }, [playlists]);
+    return () => { current = false; };
+  }, [playlists, onlineVersion]);
 
   const handlePlaylistPress = (playlistId: string) => {
     navigation.navigate('PlaylistDetail', { playlistId });
