@@ -170,6 +170,10 @@ const App: React.FC = () => {
             return import('./services/luvsEngine').then(m => m.luvsEngine.prefetch());
           }, 4000);
 
+          // Look for a newer build, unless the listener turned that off or looked recently. It only
+          // marks About; nothing downloads or interrupts. Late, after the music and the feed.
+          runWhenIdle('update check', () => import('./services/updateCheck').then(m => m.checkInBackground()), 6000);
+
           // Playlist migration, likewise after the UI has rendered.
           runWhenIdle('playlist migration', async () => {
             const { migratePlaylistData } = await import('./database/db_migration');

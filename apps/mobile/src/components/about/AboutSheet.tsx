@@ -51,14 +51,14 @@ const Panel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 const LinkRow: React.FC<{ icon: IconName; label: string; value: string; onPress: () => void; last?: boolean }> = ({ icon, label, value, onPress, last }) => (
-  <Pressable onPress={onPress} style={({ pressed }) => [styles.row, !last && styles.rowDivider, pressed && styles.pressed]} accessibilityRole="link" accessibilityLabel={`${label}: ${value}`}>
+  <Tactile onPress={onPress} pressScale={0.985} style={[styles.row, !last && styles.rowDivider]} accessibilityRole="link" accessibilityLabel={`${label}: ${value}`}>
     <View style={styles.rowIcon}><Ionicons name={icon} size={18} color={Signal.wave} /></View>
     <View style={styles.flex}>
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={styles.rowValue} numberOfLines={1}>{value}</Text>
     </View>
     <Ionicons name="arrow-forward" size={16} color={Signal.inkMuted} />
-  </Pressable>
+  </Tactile>
 );
 
 type SendState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'error'; message: string };

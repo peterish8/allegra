@@ -58,6 +58,7 @@ import { streamIdFor } from '../services/stream/streamSong';
 import { useSongsStore } from '../store/songsStore';
 import { usePlayerStore } from '../store/playerStore';
 import { useStreamHistoryStore } from '../store/streamHistoryStore';
+import { useUpdateStore } from '../store/updateStore';
 import { useLuvsPreferencesStore } from '../store/luvsPreferencesStore';
 import { useDownloadQueueStore } from '../store/downloadQueueStore';
 import { Song, UnifiedSong } from '../types/song';
@@ -102,6 +103,8 @@ const StreamScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  // A newer build was found in the background: mark About, where the update is.
+  const updateWaiting = useUpdateStore(s => s.available !== null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UnifiedSong[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -548,10 +551,11 @@ const StreamScreen: React.FC = () => {
             hitSlop={8}
             pressScale={0.9}
             accessibilityRole="button"
-            accessibilityLabel="About LuvLyrics"
+            accessibilityLabel={updateWaiting ? 'About LuvLyrics, update available' : 'About LuvLyrics'}
             style={styles.aboutBtn}
           >
             <Image source={require('../../assets/luvlyrics-logo-white-mark.png')} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityIgnoresInvertColors />
+            {updateWaiting ? <View style={styles.aboutDot} /> : null}
           </Tactile>
           </View>
         </View>
@@ -610,6 +614,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.14)',
   },
+  aboutDot: { position: 'absolute', top: 5, right: 5, width: 10, height: 10, borderRadius: 5, backgroundColor: Signal.wave, borderWidth: 2, borderColor: Signal.bg },
   title: { fontSize: 28, fontWeight: '700', color: Signal.ink },
   search: {
     flexDirection: 'row',
