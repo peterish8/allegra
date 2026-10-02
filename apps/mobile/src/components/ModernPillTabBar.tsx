@@ -16,7 +16,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useThemeColors, useIsDark } from '../contexts/ThemeContext';
 import { VoiceMicButton } from './VoiceMicButton';
 import { Glass, Motion, Radius } from '../constants/allegraTheme';
-import { PILL_BAR_HEIGHT, PILL_PLAYER_HEIGHT, PILL_STACK_GAP, pillBarBottom, VISIBLE_TABS } from '../navigation/tabs';
+import { PILL_BAR_HEIGHT, PILL_PLAYER_HEIGHT, PILL_STACK_GAP, pillBarBottom, tabTapParams, VISIBLE_TABS } from '../navigation/tabs';
 import { HostedMoreMenu, useMoreMenu } from './MoreMenu';
 import { MorphIcon, Tactile } from './allegra/motion';
 
@@ -101,7 +101,7 @@ export const ModernPillTabBar: React.FC<BottomTabBarProps> = ({
       });
 
       if (!isFocused && !event.defaultPrevented) {
-        navigation.navigate(route.name, route.params);
+        navigation.navigate(route.name, tabTapParams(route.params));
 
         if (route.name === 'Luvs') {
           const { feedSongs } = (await import('../store/luvsFeedStore')).useLuvsFeedStore.getState();

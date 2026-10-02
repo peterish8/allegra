@@ -29,6 +29,25 @@ export function setPlaylistSelectionRouter(router: PlaylistSelectionRouter | nul
   return () => { if (playlistSelectionRouter === router) playlistSelectionRouter = null; };
 }
 
+/**
+ * Which "hide the mini player" flags each screen may hold while it is the one in front. A flag still held
+ * once another screen is in front has leaked (a screen that hid the pill and was left without clearing it:
+ * tabs stay mounted, so a mount effect never runs its cleanup), and the pill would stay gone.
+ */
+const MINI_PLAYER_HIDES_ON: Readonly<Record<string, readonly string[]>> = {
+  NowPlaying: ['NowPlaying'],
+  EditLyrics: ['Editor'],
+  YoutubeBrowser: ['manual'],
+  AudioDownloader: ['Downloader'],
+};
+
+/** The flags that are still earned with `routeName` in front. Unknown (`undefined`) leaves them alone. */
+export function liveMiniPlayerHides(sources: ReadonlySet<string>, routeName: string | undefined): Set<string> {
+  if (!routeName) return new Set(sources);
+  const allowed = MINI_PLAYER_HIDES_ON[routeName] ?? [];
+  return new Set([...sources].filter(source => allowed.includes(source)));
+}
+
 /** A remote handoff may restore a track paused; both audio-load owners read this intent. */
 export function shouldAutoPlayLoadedSong(songId: string): boolean {
   return pausedLoadSongId !== songId;
@@ -140,6 +159,8 @@ interface PlayerState {
   toggleShowTransliteration: () => void;
   setMiniPlayerHidden: (hidden: boolean) => void;
   setMiniPlayerHiddenSource: (source: string, hidden: boolean) => void;
+  /** Drops hide flags the screen now in front does not own (see `liveMiniPlayerHides`). */
+  reconcileMiniPlayerHides: (routeName: string | undefined) => void;
   // Playlist queue actions
   setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number, autoplay?: boolean) => void;
   updateQueue: (songs: Song[]) => void;
@@ -275,8 +296,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
       return { 
           miniPlayerHiddenSources: newSources,
-          hideMiniPlayer: newSources.size > 0 
+          hideMiniPlayer: newSources.size > 0
       };
+  }),
+
+  reconcileMiniPlayerHides: (routeName) => set((state) => {
+      const live = liveMiniPlayerHides(state.miniPlayerHiddenSources, routeName);
+      if (live.size === state.miniPlayerHiddenSources.size) return state;
+      return { miniPlayerHiddenSources: live, hideMiniPlayer: live.size > 0 };
   }),
 
   // Silent Queue Update (for sorting/reordering)

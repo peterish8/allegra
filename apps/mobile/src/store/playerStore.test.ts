@@ -24,6 +24,7 @@ import {
   endAudioLoad,
   setNativeOwnsPlaybackState,
   setPlaylistSelectionRouter,
+  liveMiniPlayerHides,
 } from './playerStore';
 import { isStalePlayingEcho, clearPlaybackIntent } from '../playback/playbackIntent';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
@@ -233,6 +234,35 @@ describe('skipping to the next song', () => {
     const s = usePlayerStore.getState();
     expect(s.currentSongId).toBe('b');
     expect(s.loadedAudioId).toBeNull();
+  });
+});
+
+describe('stale mini player hides', () => {
+  const sources = (...names: string[]) => new Set(names);
+
+  it('keeps the flag the screen in front is entitled to', () => {
+    expect([...liveMiniPlayerHides(sources('NowPlaying'), 'NowPlaying')]).toEqual(['NowPlaying']);
+    expect([...liveMiniPlayerHides(sources('Downloader'), 'AudioDownloader')]).toEqual(['Downloader']);
+    expect([...liveMiniPlayerHides(sources('manual'), 'YoutubeBrowser')]).toEqual(['manual']);
+    expect([...liveMiniPlayerHides(sources('Editor'), 'EditLyrics')]).toEqual(['Editor']);
+  });
+
+  // The Downloader is a tab and tabs stay mounted: it once hid the pill for good after the first visit.
+  it('drops a flag left behind by a screen that is no longer in front', () => {
+    expect(liveMiniPlayerHides(sources('Downloader'), 'LibraryHome').size).toBe(0);
+    expect(liveMiniPlayerHides(sources('manual', 'Downloader', 'NowPlaying'), 'Stream').size).toBe(0);
+    expect([...liveMiniPlayerHides(sources('NowPlaying', 'Downloader'), 'NowPlaying')]).toEqual(['NowPlaying']);
+  });
+
+  it('leaves everything alone while the route is not known yet', () => {
+    expect(liveMiniPlayerHides(sources('NowPlaying', 'manual'), undefined).size).toBe(2);
+  });
+
+  it('brings the pill back through the store when the leak is found', () => {
+    usePlayerStore.setState({ miniPlayerHiddenSources: new Set(['Downloader']), hideMiniPlayer: true });
+    usePlayerStore.getState().reconcileMiniPlayerHides('Library');
+    expect(usePlayerStore.getState().hideMiniPlayer).toBe(false);
+    expect(usePlayerStore.getState().miniPlayerHiddenSources.size).toBe(0);
   });
 });
 

@@ -21,7 +21,6 @@ import Slider from '@react-native-community/slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useShallow } from 'zustand/react/shallow';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
 import type { LayoutChangeEvent } from 'react-native';
 import SettingsGlow from '../components/settings/SettingsGlow';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
@@ -71,8 +70,6 @@ const SettingsScreen: React.FC<Props> = () => {
   const [availableAudioFiles, setAvailableAudioFiles] = React.useState<any[]>([]);
   const [selectedFiles, setSelectedFiles] = React.useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = React.useState('');
-  const setMiniPlayerHidden = usePlayerStore(state => state.setMiniPlayerHidden);
-  useFocusEffect(React.useCallback(() => { setMiniPlayerHidden(false); }, [setMiniPlayerHidden]));
   const likedCount = usePlaylistStore(state => state.likedSongIds.size);
   const [hiddenSongsVisible, setHiddenSongsVisible] = React.useState(false);
   const [languagePickerVisible, setLanguagePickerVisible] = React.useState(false);

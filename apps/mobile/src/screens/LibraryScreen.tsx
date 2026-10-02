@@ -24,6 +24,7 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import { LibraryStackParamList, RootStackParamList } from '../types/navigation';
+import { registerLibraryScrollToTop } from '../navigation/libraryRoot';
 import { DownloadQueueModal } from '../components/DownloadQueueModal';
 import { useSongActions } from '../components/library/useSongActions';
 import GlassDeck from '../components/library/GlassDeck';
@@ -163,6 +164,8 @@ const LibraryScreen: React.FC = () => {
 
   // ── Scroll: the sticky play bar and the A–Z rail ────────────────────────
   const listRef = useRef<FlatList<Song>>(null);
+  // A tap on the Library tab while this is already in front scrolls it to the top (navigation/TabNavigator).
+  useEffect(() => registerLibraryScrollToTop(() => listRef.current?.scrollToOffset({ offset: 0, animated: true })), []);
   const headerH = useRef(0);
   const [heroBottom, setHeroBottom] = useState(420);
   const scrollY = useSharedValue(0);

@@ -1,6 +1,19 @@
 jest.mock('react-native', () => ({ Platform: { OS: 'android' } }));
 
-import { DOUBLE_TAP_MS, isDoubleTap, playerSheetRest } from './tabs';
+import { DOUBLE_TAP_MS, isDoubleTap, playerSheetRest, tabTapParams } from './tabs';
+
+describe('tabTapParams', () => {
+  // The ••• menu leaves { screen: 'Playlists' } on the Library tab route; a tap must not replay it.
+  it('drops a nested-screen target left on the tab by an earlier navigation', () => {
+    expect(tabTapParams({ screen: 'Playlists' })).toBeUndefined();
+    expect(tabTapParams({ screen: 'PlaylistDetail', params: { playlistId: 'p1' } })).toBeUndefined();
+  });
+
+  it('keeps ordinary params, and nothing at all', () => {
+    expect(tabTapParams({ voiceQuery: 'tum hi ho' })).toEqual({ voiceQuery: 'tum hi ho' });
+    expect(tabTapParams(undefined)).toBeUndefined();
+  });
+});
 
 describe('isDoubleTap', () => {
   it('counts a second press inside the window', () => {

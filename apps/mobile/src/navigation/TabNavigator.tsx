@@ -1,6 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, type BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { CommonActions, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -22,6 +23,9 @@ import { AudioDownloaderScreen } from '../screens/AudioDownloaderScreen';
 import ArtistScreen from '../screens/ArtistScreen';
 import CollectionScreen from '../screens/CollectionScreen';
 import { SCREEN_BG, stackContentStyle } from './theme';
+import { isDoubleTap } from './tabs';
+import { LIBRARY_ROOT, libraryRootMove, scrollLibraryHomeToTop } from './libraryRoot';
+import * as Haptics from '../utils/haptics';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -32,16 +36,49 @@ const LibraryStack = createNativeStackNavigator<LibraryStackParamList>();
  * Drilling into a playlist keeps the tab bar and mini player, because the detail
  * screen is pushed inside the tab rather than on top of the whole tab navigator.
  */
-const LibraryStackScreen: React.FC = () => (
-  <LibraryStack.Navigator
-    id="LibraryStack"
-    screenOptions={{ headerShown: false, animation: 'slide_from_right', contentStyle: stackContentStyle }}
-  >
-    <LibraryStack.Screen name="LibraryHome" component={LibraryScreen} />
-    <LibraryStack.Screen name="Playlists" component={PlaylistsScreen} />
-    <LibraryStack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} options={{ animation: 'slide_from_bottom' }} />
-  </LibraryStack.Navigator>
-);
+const LibraryStackScreen: React.FC<BottomTabScreenProps<TabParamList, 'Library'>> = ({ navigation }) => {
+  useLibraryTabPress(navigation);
+  return (
+    <LibraryStack.Navigator
+      id="LibraryStack"
+      screenOptions={{ headerShown: false, animation: 'slide_from_right', contentStyle: stackContentStyle }}
+    >
+      <LibraryStack.Screen name="LibraryHome" component={LibraryScreen} />
+      <LibraryStack.Screen name="Playlists" component={PlaylistsScreen} />
+      <LibraryStack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} options={{ animation: 'slide_from_bottom' }} />
+    </LibraryStack.Navigator>
+  );
+};
+
+/**
+ * Tapping the Library tab means "take me to Library": the stack inside it goes back to the Library home,
+ * wherever it was left (the ••• menu and Library's own button push Playlists onto it, and a tab keeps its
+ * stack). Tapping it twice in quick succession opens Playlists, as double-tapping Stream opens search; the
+ * first tap still goes to the Library at once and nothing waits on a timer.
+ */
+function useLibraryTabPress(navigation: BottomTabScreenProps<TabParamList, 'Library'>['navigation']): void {
+  const lastPress = React.useRef(0);
+  React.useEffect(() => navigation.addListener('tabPress', () => {
+    const now = Date.now();
+    const nested = navigation.getState().routes.find(route => route.name === 'Library')?.state;
+    if (isDoubleTap(lastPress.current, now)) {
+      lastPress.current = 0;
+      Haptics.selectionAsync().catch(() => {});
+      // After the tab itself has switched, or the push lands on a screen that is not in front yet.
+      setTimeout(() => navigation.navigate('Library', { screen: 'Playlists' }), 0);
+      return;
+    }
+    lastPress.current = now;
+    const move = libraryRootMove(nested);
+    // Already on the Library home and it is the tab in front: a tap scrolls it to the top.
+    if (move === 'none' && navigation.isFocused()) scrollLibraryHomeToTop();
+    if (move === 'none' || !nested?.key) return;
+    navigation.dispatch({
+      ...(move === 'pop' ? StackActions.popToTop() : CommonActions.reset({ index: 0, routes: [{ name: LIBRARY_ROOT }] })),
+      target: nested.key,
+    });
+  }), [navigation]);
+}
 
 
 const BrowseStack = createNativeStackNavigator<BrowseStackParamList>();

@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VoiceMicButton } from './VoiceMicButton';
 import { useSettingsStore } from '../store/settingsStore';
 import { TAB_BAR_HEIGHT } from '../constants/layout';
-import { VISIBLE_TABS } from '../navigation/tabs';
+import { tabTapParams, VISIBLE_TABS } from '../navigation/tabs';
 import { HostedMoreMenu, useMoreMenu } from './MoreMenu';
 import { MorphIcon } from './allegra/motion';
 
@@ -42,7 +42,7 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
         canPreventDefault: true,
       });
       if (!isFocused && !event.defaultPrevented) {
-        navigation.navigate(route.name, route.params);
+        navigation.navigate(route.name, tabTapParams(route.params));
       }
     };
 

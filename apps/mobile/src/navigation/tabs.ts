@@ -62,6 +62,15 @@ export const playerSheetRest = (
     }
     : { y: screenHeight, scale: 1 };
 
+/**
+ * The params a tab tap should navigate with. A tab route remembers the params it was last navigated with, and
+ * `navigate('Library', { screen: 'Playlists' })` (from the ••• menu) leaves exactly that on the route: handing
+ * it back on the next tap on the bar sent every tap on Library to Playlists. A tap is not a deep link, so a
+ * nested-screen target is dropped; anything else (a voice query for a tab that takes one) is kept.
+ */
+export const tabTapParams = <T>(params: T): T | undefined =>
+  params && typeof params === 'object' && 'screen' in (params as object) ? undefined : params;
+
 /** Two tab presses this close together (ms) are a double tap (Stream → search). */
 export const DOUBLE_TAP_MS = 350;
 export const isDoubleTap = (previous: number, now: number): boolean =>

@@ -3,11 +3,11 @@
  * title and a pill switch between finding songs and watching them arrive.
  * Both tabs stay mounted (a search in progress survives a look at Downloads).
  */
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import DynamicAura from '../components/allegra/DynamicAura';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
 import { Tactile } from '../components/allegra/motion';
@@ -68,19 +68,21 @@ export const AudioDownloaderScreen: React.FC<AudioDownloaderProps> = ({ navigati
     const insets = useSafeAreaInsets();
     const isFocused = useIsFocused();
     const [activeShellTab, setActiveShellTab] = useState<ShellTab>('search');
-    const setMiniPlayerHidden = usePlayerStore(state => state.setMiniPlayerHidden);
+    const setMiniPlayerHiddenSource = usePlayerStore(state => state.setMiniPlayerHiddenSource);
     const isPlaying = usePlayerStore(state => state.isPlaying);
     const cover = usePlayerStore(state => state.currentSong?.coverImageUri);
     const palette = useArtworkPalette(cover);
     const voiceQuery = route.params?.voiceQuery;
     const autoDownload = route.params?.autoDownload;
 
-    useEffect(() => {
-        setMiniPlayerHidden(true);
-        return () => {
-            setMiniPlayerHidden(false);
-        };
-    }, [setMiniPlayerHidden]);
+    // Only while this screen is the one in front. It is a tab, and tabs stay mounted when you leave them: hiding
+    // the pill from a mount effect kept it hidden on every other tab after the first visit here.
+    useFocusEffect(
+        useCallback(() => {
+            setMiniPlayerHiddenSource('Downloader', true);
+            return () => setMiniPlayerHiddenSource('Downloader', false);
+        }, [setMiniPlayerHiddenSource]),
+    );
 
     return (
         <View style={styles.container}>

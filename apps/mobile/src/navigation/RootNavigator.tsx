@@ -9,6 +9,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import { navigationRef } from '../utils/navigationService';
+import { usePlayerStore } from '../store/playerStore';
 import { navTheme, SCREEN_BG, stackContentStyle } from './theme';
 
 // Import navigators and screens
@@ -54,6 +55,8 @@ export const RootNavigator: React.FC = () => {
       onStateChange={() => {
         const route = navigationRef.getCurrentRoute();
         setCurrentRoute(route?.name);
+        // Whatever hid the mini player must still be in front, or the pill comes back by itself.
+        usePlayerStore.getState().reconcileMiniPlayerHides(route?.name);
       }}
     >
       <View style={{ flex: 1, backgroundColor: SCREEN_BG }}>
