@@ -11,7 +11,9 @@ import Animated, {
   cancelAnimation,
   Easing,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
   withSpring,
@@ -23,39 +25,85 @@ import { Glass, Motion, Signal } from '../../constants/allegraTheme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
-// ─── Heart burst ─────────────────────────────────────────────────────────────
-const BURST_ANGLES = [270, 315, 0, 45, 90, 135, 180, 225];
+// ─── The Luv landing ─────────────────────────────────────────────────────────
+/**
+ * A single soft ring that opens from the button and fades. It replaces the ring of small hearts that
+ * burst outwards, which read as confetti: a Luv is a quiet confirmation, not a celebration.
+ */
+const PulseRing: React.FC<{ trigger: number; color: string }> = ({ trigger, color }) => {
+  const reduce = useReducedMotion();
+  const progress = useSharedValue(1);
+  useEffect(() => {
+    if (trigger === 0 || reduce) return;
+    progress.value = 0;
+    progress.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
+  }, [trigger, reduce, progress]);
+  const style = useAnimatedStyle(() => ({
+    opacity: 0.5 * (1 - progress.value),
+    transform: [{ scale: 1 + 0.5 * progress.value }] as const,
+  }));
+  return <Animated.View style={[styles.ring, { borderColor: color }, style]} pointerEvents="none" />;
+};
 
-const HeartParticle: React.FC<{ angle: number; trigger: number }> = ({ angle, trigger }) => {
-  const tx = useSharedValue(0);
-  const ty = useSharedValue(0);
-  const op = useSharedValue(0);
-  const sc = useSharedValue(0);
+/**
+ * The double-tap Luv: one white heart where the finger landed, pressed in on a firm spring, held for a
+ * moment and lifted away as it fades. A soft shadow keeps it readable over any cover. No confetti.
+ * `trigger` counts the taps; `x` and `y` are where, in the card's own coordinates. Transforms and opacity only.
+ */
+const HEART = 92;
+export const DoubleTapHeart: React.FC<{ trigger: number; x: number; y: number }> = ({ trigger, x, y }) => {
+  const reduce = useReducedMotion();
+  const pop = useSharedValue(0);
+  const lift = useSharedValue(0);
+  const fade = useSharedValue(0);
   useEffect(() => {
     if (trigger === 0) return;
-    const rad = (angle * Math.PI) / 180;
-    tx.value = 0; ty.value = 0; op.value = 0; sc.value = 0;
-    tx.value = withTiming(Math.cos(rad) * 58, { duration: 520, easing: Easing.out(Easing.cubic) });
-    ty.value = withTiming(Math.sin(rad) * 58, { duration: 520, easing: Easing.out(Easing.cubic) });
-    op.value = withSequence(withTiming(1, { duration: 80 }), withTiming(0, { duration: 420, easing: Easing.out(Easing.quad) }));
-    sc.value = withSequence(withSpring(1.5, { damping: 8, stiffness: 280 }), withTiming(0.3, { duration: 300 }));
-  }, [trigger, angle, tx, ty, op, sc]);
+    cancelAnimation(pop); cancelAnimation(lift); cancelAnimation(fade);
+    pop.value = reduce ? 1 : 0;
+    lift.value = 0;
+    fade.value = 0;
+    if (!reduce) pop.value = withSpring(1, { stiffness: 520, damping: 15, mass: 0.8 });
+    fade.value = withSequence(
+      withTiming(1, { duration: 80 }),
+      withDelay(360, withTiming(0, { duration: 320, easing: Easing.out(Easing.quad) })),
+    );
+    lift.value = withDelay(360, withTiming(1, { duration: 320, easing: Easing.out(Easing.quad) }));
+  }, [trigger, reduce, pop, lift, fade]);
   const style = useAnimatedStyle(() => ({
-    opacity: op.value,
-    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: sc.value }] as const,
+    opacity: fade.value,
+    transform: [
+      { translateY: -26 * lift.value },
+      { rotate: `${-9 * (1 - pop.value)}deg` },
+      { scale: (0.5 + 0.55 * pop.value) * (1 - 0.06 * lift.value) },
+    ] as const,
   }));
+  if (trigger === 0) return null;
   return (
-    <Animated.View style={[styles.particle, style]} pointerEvents="none">
-      <Ionicons name="heart" size={12} color={Signal.accent} />
+    <Animated.View style={[styles.doubleHeart, { left: x - HEART / 2, top: y - HEART / 2 }, style]} pointerEvents="none">
+      <Ionicons name="heart" size={HEART} color="#ffffff" style={styles.doubleHeartGlyph} />
     </Animated.View>
   );
 };
 
-const HeartBurst: React.FC<{ trigger: number }> = ({ trigger }) => (
-  <View style={styles.burst} pointerEvents="none">
-    {BURST_ANGLES.map(a => <HeartParticle key={a} angle={a} trigger={trigger} />)}
-  </View>
-);
+/** An icon that turns steadily while `spinning`, and settles back upright when it stops. */
+export const SpinningIcon: React.FC<{ name: IconName; size: number; color: string; spinning: boolean }> = ({ name, size, color, spinning }) => {
+  const turn = useSharedValue(0);
+  useEffect(() => {
+    if (spinning) {
+      turn.value = 0;
+      turn.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.linear }), -1, false);
+    } else {
+      cancelAnimation(turn);
+      turn.value = withTiming(0, { duration: 160 });
+    }
+  }, [spinning, turn]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 360}deg` }] as const }));
+  return (
+    <Animated.View style={style}>
+      <Ionicons name={name} size={size} color={color} />
+    </Animated.View>
+  );
+};
 
 // ─── Action button ───────────────────────────────────────────────────────────
 export const LuvAction: React.FC<{
@@ -96,7 +144,7 @@ export const LuvAction: React.FC<{
     >
       <Animated.View style={[styles.circle, circle]}>
         <Animated.View style={[StyleSheet.absoluteFill, styles.fill, { backgroundColor: tint }, fill]} />
-        {burst ? <HeartBurst trigger={burst} /> : null}
+        {burst ? <PulseRing trigger={burst} color={tint} /> : null}
         <Ionicons name={icon} size={24} color={on && tint === Signal.wave ? Signal.waveInk : Signal.ink} />
       </Animated.View>
       <Text style={styles.label} numberOfLines={1}>{label}</Text>
@@ -173,8 +221,9 @@ const styles = StyleSheet.create({
   },
   fill: { borderRadius: 26 },
   label: { color: Signal.inkSoft, fontSize: 12, fontWeight: '600', marginTop: 6 },
-  burst: { position: 'absolute', width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
-  particle: { position: 'absolute', width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
+  ring: { position: 'absolute', top: -1, left: -1, right: -1, bottom: -1, borderRadius: 27, borderWidth: 2 },
+  doubleHeart: { position: 'absolute', width: HEART, height: HEART, alignItems: 'center', justifyContent: 'center' },
+  doubleHeartGlyph: { textShadowColor: 'rgba(238, 107, 95, 0.55)', textShadowOffset: { width: 0, height: 4 }, textShadowRadius: 18 },
   eq: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: EQ_MAX },
   eqBar: { width: 3, height: EQ_MAX, borderRadius: 1.5, backgroundColor: Signal.wave, transformOrigin: 'bottom' },
   scrubber: { height: 46, justifyContent: 'center' },

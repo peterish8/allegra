@@ -12,6 +12,23 @@ describe('laneSpecs', () => {
     expect(lanes[1].subtitle).toBe('More like Anirudh Ravichander');
   });
 
+  it('brings other favourites into the lanes each time it is rotated', () => {
+    const seeds = Array.from({ length: 10 }, (_, i) => s(`${i}`, `T${i}`, `Artist ${i}`));
+    const artistsOf = (rotate: number) => laneSpecs(seeds, rotate).filter(l => l.kind === 'artist').map(l => l.title);
+    expect(artistsOf(0)).toEqual(['Artist 0', 'Artist 1', 'Artist 2', 'Artist 3']);
+    expect(artistsOf(MAX_ARTIST_LANES)).toEqual(['Artist 4', 'Artist 5', 'Artist 6', 'Artist 7']);
+    // Wraps round to the top, and a negative or huge step still lands on someone.
+    expect(artistsOf(MAX_ARTIST_LANES * 2)).toEqual(['Artist 8', 'Artist 9', 'Artist 0', 'Artist 1']);
+    expect(artistsOf(-1)[0]).toBe('Artist 9');
+    expect(artistsOf(10_000)).toHaveLength(MAX_ARTIST_LANES);
+  });
+
+  it('only reorders when there are few favourites, and copes with none', () => {
+    const two = [s('1', 'A', 'Dua Lipa'), s('2', 'B', 'Arijit Singh')];
+    expect(laneSpecs(two, 1).filter(l => l.kind === 'artist').map(l => l.title)).toEqual(['Arijit Singh', 'Dua Lipa']);
+    expect(laneSpecs([], 3).map(l => l.title)).toEqual(['For you', 'Chill', 'Energy']);
+  });
+
   it('caps the artist lanes', () => {
     const seeds = Array.from({ length: 9 }, (_, i) => s(`${i}`, `T${i}`, `Artist ${i}`));
     expect(laneSpecs(seeds).filter(l => l.kind === 'artist')).toHaveLength(MAX_ARTIST_LANES);

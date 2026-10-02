@@ -38,17 +38,24 @@ const lead = (artist: string | undefined): string =>
 const songKey = (s: Pick<UnifiedSong, 'title' | 'artist'>): string =>
   `${s.title.trim().toLowerCase()}|${(s.artist ?? '').trim().toLowerCase()}`;
 
-/** The lanes, in rail order: For you, one per favourite artist, then the moods. */
-export const laneSpecs = (seeds: UnifiedSong[]): LaneSpec[] => {
-  const artists: LaneSpec[] = [];
+/**
+ * The lanes, in rail order: For you, one per favourite artist, then the moods.
+ *
+ * `rotate` shifts which favourites the lanes are made from: 0 is your top few, and each step moves that many
+ * places down your list (wrapping round), so a refresh brings other artists you love into the rail instead of
+ * rebuilding the same four. With only a few favourites it just changes their order.
+ */
+export const laneSpecs = (seeds: UnifiedSong[], rotate = 0): LaneSpec[] => {
+  const all: LaneSpec[] = [];
   const seen = new Set<string>();
   for (const seed of seeds) {
     const name = lead(seed.artist);
     if (!name || /^unknown artist$/i.test(name) || seen.has(name.toLowerCase())) continue;
     seen.add(name.toLowerCase());
-    artists.push({ id: `artist:${name.toLowerCase()}`, kind: 'artist', title: name, subtitle: `More like ${name}`, seed });
-    if (artists.length >= MAX_ARTIST_LANES) break;
+    all.push({ id: `artist:${name.toLowerCase()}`, kind: 'artist', title: name, subtitle: `More like ${name}`, seed });
   }
+  const shift = all.length > 0 ? ((Math.trunc(rotate) % all.length) + all.length) % all.length : 0;
+  const artists = [...all.slice(shift), ...all.slice(0, shift)].slice(0, MAX_ARTIST_LANES);
   const moods = MOODS.map<LaneSpec>(mood => ({ id: `mood:${mood.toLowerCase()}`, kind: 'mood', title: mood, subtitle: `Your ${mood.toLowerCase()} mix`, mood }));
   return [FOR_YOU, ...artists, ...moods];
 };

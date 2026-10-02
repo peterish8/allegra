@@ -46,6 +46,10 @@ interface TasteExplorerProps {
   /** The listener landed somewhere new (called on release, before the spring settles). */
   onCommit: (laneIndex: number, depth: number) => void;
   onTap: () => void;
+  /** Two quick taps on the card, with where (in the card's own coordinates). A single tap waits for it. */
+  onDoubleTap?: (x: number, y: number) => void;
+  /** Drawn over the cards, inside the stage: the double-tap heart lands where the finger did. */
+  overlay?: React.ReactNode;
   /** Fired once, when the first drag gets going (to retire a hint). */
   onFirstMove?: () => void;
   /** The camera's lane position, shared with the lane rail so it slides along. */
@@ -106,10 +110,11 @@ const Card: React.FC<{
       opacity: far ? 0 : opacity,
       zIndex: z < 0 ? 300 : Math.round(200 - side * 50 - z * 20),
       transform: [
-        { perspective: 1100 },
+        // A gentle turn on the neighbours (it was 16 degrees under a tight perspective, which bent the covers).
+        { perspective: 1600 },
         { translateX: rx * (width + GAP) },
         { translateY: ty },
-        { rotateY: `${-rx * 16}deg` },
+        { rotateY: `${-rx * 9}deg` },
         { scale },
       ] as const,
     };
@@ -122,7 +127,7 @@ const Card: React.FC<{
 };
 
 export const TasteExplorer: React.FC<TasteExplorerProps> = ({
-  lanes, laneIndex, depths, width, height, renderCard, onCommit, onTap, onFirstMove, camX: sharedCamX,
+  lanes, laneIndex, depths, width, height, renderCard, onCommit, onTap, onDoubleTap, overlay, onFirstMove, camX: sharedCamX,
 }) => {
   const reduce = useReducedMotion();
   const ownCamX = useSharedValue(laneIndex);
@@ -242,11 +247,16 @@ export const TasteExplorer: React.FC<TasteExplorerProps> = ({
       axis.value = 0;
     });
 
+  // A drag beats a tap; a double tap beats a single one, which waits out the double-tap window before it
+  // pauses (so liking a song never pauses it first).
   const tap = Gesture.Tap().maxDistance(10).onEnd((_e, ok) => { if (ok) runOnJS(onTap)(); });
+  const doubleTap = Gesture.Tap().numberOfTaps(2).maxDistance(24).maxDelay(260).onEnd((e, ok) => {
+    if (ok && onDoubleTap) runOnJS(onDoubleTap)(e.x, e.y);
+  });
 
   const active = lanes[laneIndex]?.songs[depths[laneIndex] ?? 0]?.id;
   return (
-    <GestureDetector gesture={Gesture.Exclusive(pan, tap)}>
+    <GestureDetector gesture={onDoubleTap ? Gesture.Exclusive(pan, doubleTap, tap) : Gesture.Exclusive(pan, tap)}>
       <View style={[styles.stage, { width, height }]} collapsable={false}>
         {placed.map(p => (
           <Card
@@ -262,6 +272,7 @@ export const TasteExplorer: React.FC<TasteExplorerProps> = ({
             {renderCard(p.song, p.lane === laneIndex && p.song.id === active)}
           </Card>
         ))}
+        {overlay}
       </View>
     </GestureDetector>
   );

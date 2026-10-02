@@ -15,7 +15,7 @@
  * player is hidden here (RootNavigator), and the library player yields.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Share, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Platform, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -37,7 +37,7 @@ import { luvsBufferManager } from '../services/LuvsBufferManager';
 import { luvsEngine } from '../services/luvsEngine';
 import { hookOffsetSeconds } from '../services/luvsHook';
 import { tasteSeeds } from '../services/luvsTaste';
-import { FOR_YOU, LaneSources, deepenLane, laneSpecs, loadLane, needsDeepening, warmAround } from '../services/luvsLanes';
+import { FOR_YOU, LaneSources, MAX_ARTIST_LANES, deepenLane, laneSpecs, loadLane, needsDeepening, warmAround } from '../services/luvsLanes';
 import { recommendFor, defaultDeps } from '../services/stream/recommend';
 import { personalMoodMix } from '../services/stream/moodMix';
 import { resolveMany } from '../services/ytmusic/resolver';
@@ -47,8 +47,13 @@ import { streamIdFor } from '../services/stream/streamSong';
 import TasteExplorer from '../components/luvs/TasteExplorer';
 import TasteCard from '../components/luvs/TasteCard';
 import LaneRail from '../components/luvs/LaneRail';
-import { LuvAction, LuvScrubber } from '../components/luvs/LuvControls';
+import { DoubleTapHeart, LuvAction, LuvScrubber, SpinningIcon } from '../components/luvs/LuvControls';
 import { LuvsVaultModal } from '../components/LuvsVaultModal';
+import { PlaylistSelectionModal } from '../components/PlaylistSelectionModal';
+import { Toast } from '../components/Toast';
+import { addOnlineSongToPlaylist } from '../services/sync/onlinePlaylist';
+import { snapshotOfSong } from '../services/connect/mobilePlayerPort';
+import { toStreamSong } from '../services/stream/streamSong';
 import { SwapText, Tactile } from '../components/allegra/motion';
 import { Glass, Signal } from '../constants/allegraTheme';
 import { TAB_BAR_CLEARANCE } from '../navigation/tabs';
@@ -293,6 +298,21 @@ const LuvsScreen: React.FC = () => {
     }
   }, [song, isInVault, addToVault, removeFromVault]);
 
+  // Double-tap the card: Luv it, with a heart where the finger landed. It only ever adds (a second double-tap on a
+  // Luved song shows the heart and nothing else); the Luv button is the way to take one back.
+  const [heart, setHeart] = useState({ n: 0, x: 0, y: 0 });
+  const onCardDoubleTap = useCallback((x: number, y: number) => {
+    if (!song || isPlaceholder(song)) return;
+    setHeart(h => ({ n: h.n + 1, x, y }));
+    if (isInVault(song.id)) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      return;
+    }
+    addToVault(song);
+    setBurst(b => b + 1);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, [song, isInVault, addToVault]);
+
   // The same download state every song row shows: saving, the percentage, saved.
   const download = useDownloadState(song ?? NO_SONG);
   const onSave = useCallback(() => {
@@ -315,20 +335,52 @@ const LuvsScreen: React.FC = () => {
     navigation.navigate('NowPlaying', { songId: streamIdFor(song) });
   }, [song, lane, navigation]);
 
-  const onShare = useCallback(() => {
+  // Save to a playlist: the frosted picker, then the song joins that playlist as an online item (no download).
+  const [showPlaylists, setShowPlaylists] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const onPlaylist = useCallback(() => {
     if (!song || isPlaceholder(song)) return;
-    Share.share({ message: song.artist ? `${song.title} by ${song.artist}` : song.title }).catch(() => {});
+    Haptics.selectionAsync().catch(() => {});
+    setShowPlaylists(true);
+  }, [song]);
+  const onPickPlaylist = useCallback(async (playlistId: string, playlistName: string) => {
+    if (!song || isPlaceholder(song)) return;
+    const snapshot = snapshotOfSong(toStreamSong(song));
+    if (!snapshot) {
+      setToast({ message: 'That song can’t be added to a playlist yet', type: 'error' });
+      return;
+    }
+    const result = await addOnlineSongToPlaylist(playlistId, snapshot);
+    if (result === 'error') {
+      setToast({ message: 'Couldn’t add that one. Try again', type: 'error' });
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setToast({ message: result === 'exists' ? `Already in ${playlistName}` : `Added to ${playlistName}`, type: result === 'exists' ? 'info' : 'success' });
   }, [song]);
 
+  // Refresh: the categories change, not just their songs. Each press moves further down your list of
+  // favourite artists, so other artists you love come into the rail, and the map goes back to For you.
+  const refreshes = useRef(0);
+  const [refreshing, setRefreshing] = useState(false);
   const onReload = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
     Haptics.selectionAsync().catch(() => {});
-    await luvsBufferManager.stopAll();
-    const seeds = tasteSeeds(useStreamHistoryStore.getState().plays, useSongsStore.getState().songs);
-    const store = useLuvsLanesStore.getState();
-    store.setSpecs([]);
-    store.setSpecs(laneSpecs(seeds));
-    await luvsEngine.refresh();
-  }, []);
+    try {
+      await luvsBufferManager.stopAll();
+      refreshes.current += 1;
+      const seeds = tasteSeeds(useStreamHistoryStore.getState().plays, useSongsStore.getState().songs, Date.now(), 16);
+      const store = useLuvsLanesStore.getState();
+      store.setSpecs([]);
+      store.setSpecs(laneSpecs(seeds, refreshes.current * MAX_ARTIST_LANES));
+      store.moveTo(0, 0);
+      await luvsEngine.refresh();
+      setToast({ message: 'Fresh lanes', type: 'info' });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing]);
 
   const renderCard = useCallback((s: UnifiedSong, active: boolean) => {
     if (isPlaceholder(s)) {
@@ -365,8 +417,8 @@ const LuvsScreen: React.FC = () => {
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <Text style={styles.title} accessibilityRole="header">Luvs</Text>
         <View style={styles.headerActions}>
-          <Tactile onPress={onReload} pressScale={0.9} hitSlop={8} accessibilityRole="button" accessibilityLabel="Fresh lanes" style={styles.round}>
-            <Ionicons name="refresh" size={19} color={Signal.ink} />
+          <Tactile onPress={onReload} disabled={refreshing} pressScale={0.9} hitSlop={8} accessibilityRole="button" accessibilityLabel="Fresh lanes" accessibilityState={{ busy: refreshing }} style={styles.round}>
+            <SpinningIcon name="refresh" size={19} color={Signal.ink} spinning={refreshing} />
           </Tactile>
           <Tactile onPress={() => setShowVault(true)} pressScale={0.9} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Your luvs, ${vault.length}`} style={styles.round}>
             <MaterialCommunityIcons name="heart-multiple" size={19} color={Signal.ink} />
@@ -388,6 +440,8 @@ const LuvsScreen: React.FC = () => {
               renderCard={renderCard}
               onCommit={onCommit}
               onTap={togglePlay}
+              onDoubleTap={onCardDoubleTap}
+              overlay={<DoubleTapHeart trigger={heart.n} x={heart.x} y={heart.y} />}
               onFirstMove={retireHint}
               camX={camX}
             />
@@ -400,7 +454,7 @@ const LuvsScreen: React.FC = () => {
             </View>
             {hint ? (
               <Animated.Text entering={FadeIn.duration(400)} exiting={FadeOut.duration(300)} style={styles.hint}>
-                Swipe across for another taste · up to go deeper
+                Swipe across for another taste · up to go deeper · double-tap to Luv
               </Animated.Text>
             ) : (
               <LuvScrubber />
@@ -414,7 +468,7 @@ const LuvsScreen: React.FC = () => {
                 on={download.phase !== 'idle' && download.phase !== 'failed'}
               />
               <LuvAction icon="play" label="Full song" onPress={onFull} on tint={Signal.wave} />
-              <LuvAction icon="share-outline" label="Share" onPress={onShare} />
+              <LuvAction icon="albums-outline" label="Playlist" onPress={onPlaylist} />
             </View>
           </View>
         </>
@@ -423,6 +477,8 @@ const LuvsScreen: React.FC = () => {
       )}
 
       <LuvsVaultModal visible={showVault} onClose={() => setShowVault(false)} />
+      <PlaylistSelectionModal visible={showPlaylists} onClose={() => setShowPlaylists(false)} onSelect={onPickPlaylist} />
+      <Toast visible={toast !== null} message={toast?.message ?? ''} type={toast?.type ?? 'success'} onDismiss={() => setToast(null)} duration={2400} />
     </View>
   );
 };
