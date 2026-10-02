@@ -16,7 +16,7 @@ import React, { useEffect } from 'react';
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming, interpolateColor } from 'react-native-reanimated';
+import Animated, { FadeIn as EnterFade, FadeOut as ExitFade, LinearTransition, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming, interpolateColor } from 'react-native-reanimated';
 import { Motion, Radius, Signal } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
 import { Tactile } from '../allegra/motion';
@@ -24,32 +24,78 @@ import { choiceColumns } from './choiceLayout';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
+/**
+ * The page's open section. A page that provides this makes its Sections an accordion: one open at a time,
+ * each closed one a single row (icon, title, and what it is set to), so the whole page reads at a glance
+ * instead of eight long panels in a scroll. A Section outside it is always open, as before.
+ */
+export interface SettingsAccordionApi {
+  readonly openId: string | null;
+  readonly toggle: (id: string) => void;
+}
+export const SettingsAccordion = React.createContext<SettingsAccordionApi | null>(null);
+
 export const Section: React.FC<{
+  /** Names the section to the accordion; without it (or without an accordion) the section is always open. */
+  id?: string;
   icon: IconName;
   title: string;
   lead: string;
+  /** What the section is set to, shown under the title while it is closed. */
+  summary?: string;
   onLayout?: (e: LayoutChangeEvent) => void;
   children: React.ReactNode;
-}> = ({ icon, title, lead, onLayout, children }) => (
-  <View style={styles.section} onLayout={onLayout}>
-    {/* Light along the top edge, brightest in the middle. */}
-    <LinearGradient
-      colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)', 'rgba(255,255,255,0)']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 0 }}
-      style={styles.sectionHighlight}
-      pointerEvents="none"
-    />
-    <View style={styles.head}>
+}> = ({ id, icon, title, lead, summary, onLayout, children }) => {
+  const accordion = React.useContext(SettingsAccordion);
+  const collapsible = accordion !== null && id !== undefined;
+  const open = !collapsible || accordion.openId === id;
+  const reduce = useReducedMotion();
+  const turn = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    turn.value = reduce ? withTiming(open ? 1 : 0, { duration: 0 }) : withSpring(open ? 1 : 0, Motion.spring.tactile);
+  }, [open, reduce, turn]);
+  const chevron = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 180}deg` }] }));
+
+  const head = (
+    <View style={[styles.head, !open && styles.headClosed]}>
       <View style={styles.headIcon}><Ionicons name={icon} size={18} color={Signal.wave} /></View>
       <View style={styles.flex}>
         <Text style={styles.headTitle} accessibilityRole="header">{title}</Text>
-        <Text style={styles.headLead}>{lead}</Text>
+        <Text style={styles.headLead} numberOfLines={open ? undefined : 1}>{open ? lead : summary ?? lead}</Text>
       </View>
+      {collapsible ? <Animated.View style={chevron}><Ionicons name="chevron-down" size={18} color={Signal.inkMuted} /></Animated.View> : null}
     </View>
-    {children}
-  </View>
-);
+  );
+
+  return (
+    <Animated.View style={styles.section} onLayout={onLayout} layout={reduce ? undefined : LinearTransition.duration(Motion.duration.base)}>
+      {/* Light along the top edge, brightest in the middle. */}
+      <LinearGradient
+        colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)', 'rgba(255,255,255,0)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.sectionHighlight}
+        pointerEvents="none"
+      />
+      {collapsible ? (
+        <Tactile
+          onPress={() => { Haptics.selectionAsync().catch(() => {}); accordion.toggle(id); }}
+          pressScale={0.985}
+          accessibilityRole="button"
+          accessibilityLabel={`${title}, ${open ? 'open' : summary ?? 'closed'}`}
+          accessibilityState={{ expanded: open }}
+        >
+          {head}
+        </Tactile>
+      ) : head}
+      {open ? (
+        <Animated.View entering={reduce ? undefined : EnterFade.duration(Motion.duration.base)} exiting={reduce ? undefined : ExitFade.duration(Motion.duration.instant)}>
+          {children}
+        </Animated.View>
+      ) : null}
+    </Animated.View>
+  );
+};
 
 export const Row: React.FC<{ label: string; hint?: string; stack?: boolean; children?: React.ReactNode }> = ({ label, hint, stack, children }) => (
   <View style={[styles.row, stack && styles.rowStack]}>
@@ -195,6 +241,8 @@ const styles = StyleSheet.create({
   },
   sectionHighlight: { position: 'absolute', top: 0, left: 0, right: 0, height: 1 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingBottom: 14 },
+  // Closed, the panel is just its header row: even padding above and below.
+  headClosed: { paddingBottom: 14 },
   headIcon: {
     width: 38,
     height: 38,

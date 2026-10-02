@@ -58,7 +58,7 @@ export const ListenTogetherSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent
   };
 
   return (
-    <Section icon="people-outline" title="Listen together" lead="Rooms where friends hear the same song, in time." onLayout={onLayout}>
+    <Section id="together" summary={inRoom ? 'In a room now' : 'Not in a room'} icon="people-outline" title="Listen together" lead="Rooms where friends hear the same song, in time." onLayout={onLayout}>
       <Row label="Your name" hint={inRoom ? 'You can change it after you leave the room' : 'What others in a room see'} stack>
         <TextInput
           value={name}

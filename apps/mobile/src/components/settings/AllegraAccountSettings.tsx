@@ -77,6 +77,8 @@ export const AllegraAccountSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent
 
   return (
     <Section
+      id="account"
+      summary={account.loading ? 'Checking your account' : account.signedIn ? (who ? `Signed in as ${who}` : 'Signed in') : 'Not signed in'}
       icon="person-circle-outline"
       title="Allegra account"
       lead="Use this phone and allegravibe.vercel.app as one: same account, and each can play or control the other."

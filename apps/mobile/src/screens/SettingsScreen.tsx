@@ -25,7 +25,7 @@ import type { LayoutChangeEvent } from 'react-native';
 import SettingsGlow from '../components/settings/SettingsGlow';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
 import * as Kit from '../components/settings/SettingsKit';
-import { Action, Choice, JumpChips, Row, Section } from '../components/settings/SettingsKit';
+import { Action, Choice, JumpChips, Row, Section, SettingsAccordion } from '../components/settings/SettingsKit';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Motion, Radius, Signal } from '../constants/allegraTheme';
 import { Tactile } from '../components/allegra/motion';
@@ -212,7 +212,34 @@ const SettingsScreen: React.FC<Props> = () => {
   const scrollRef = React.useRef<ScrollView>(null);
   const sectionY = React.useRef<Record<string, number>>({});
   const at = (key: string) => (e: LayoutChangeEvent) => { sectionY.current[key] = e.nativeEvent.layout.y; };
-  const jump = (key: string) => scrollRef.current?.scrollTo({ y: Math.max(0, (sectionY.current[key] ?? 0) - 64), animated: true });
+  // The page is an accordion: every section is one row showing what it is set to, and one opens at a time.
+  // Opening (or jumping to) a section scrolls it to the top once the layout has settled, because the one
+  // that was open above it has just closed.
+  const [openId, setOpenId] = React.useState<string | null>(null);
+  const scrollToSection = React.useCallback((key: string) => {
+    scrollRef.current?.scrollTo({ y: Math.max(0, (sectionY.current[key] ?? 0) - 64), animated: true });
+  }, []);
+  const toggleSection = React.useCallback((id: string) => {
+    setOpenId(current => (current === id ? null : id));
+    setTimeout(() => scrollToSection(id), 160);
+  }, [scrollToSection]);
+  const jump = (key: string) => { setOpenId(key); setTimeout(() => scrollToSection(key), 160); };
+  const accordion = React.useMemo(() => ({ openId, toggle: toggleSection }), [openId, toggleSection]);
+
+  // What each closed section says it is set to.
+  const BG_NAME: Record<PlayerBackground, string> = { apple: 'Apple Music', blend: 'Apple + glow', youtube: 'YouTube Music', aura: 'Shader wash' };
+  const ALIGN_NAME: Record<LyricsAlign, string> = { left: 'left', center: 'centre', right: 'right' };
+  const timing = Math.round(settings.lyricsDelay * 10) / 10;
+  const summaries = {
+    player: `${BG_NAME[settings.playerBackground]} · canvas ${settings.canvasEnabled ? 'on' : 'off'}`,
+    playback: `${settings.keepScreenOn ? 'Screen stays on' : 'Screen can sleep'} · haptics ${(settings.hapticsEnabled ?? true) ? 'on' : 'off'}`,
+    lyrics: `Size ${settings.lyricsSize} · ${ALIGN_NAME[settings.lyricsAlign]} · ${timing === 0 ? 'in sync' : `${timing > 0 ? '+' : ''}${timing.toFixed(1)}s`}`,
+    nav: `${settings.navBarStyle === 'modern-pill' ? 'Floating pill' : 'Classic bar'} · voice ${(settings.micEnabled ?? true) ? 'on' : 'off'}`,
+    discover: `Languages: ${luvsLanguageSummary.toLowerCase()}`,
+    library: `${songs.length} ${songs.length === 1 ? 'song' : 'songs'}${hiddenSongs.length > 0 ? ` · ${hiddenSongs.length} hidden` : ''}`,
+    desktop: desktopConnectEnabled ? 'On' : 'Off',
+    about: `Version ${APP_VERSION}`,
+  };
 
   const bgHint: Record<PlayerBackground, string> = {
     blend: 'The Apple Music room, blending into a soft glow when lyrics are open.',
@@ -235,6 +262,7 @@ const SettingsScreen: React.FC<Props> = () => {
   return (
     <View style={styles.container}>
       <SettingsGlow palette={hasSong ? palette : null} />
+      <SettingsAccordion.Provider value={accordion}>
       <ScrollView
         ref={scrollRef}
         stickyHeaderIndices={[1]}
@@ -268,7 +296,7 @@ const SettingsScreen: React.FC<Props> = () => {
 
         <AllegraAccountSettings onLayout={at('account')} onNotice={setNotice} />
 
-        <Section icon="play-circle-outline" title="Player" lead="How Now Playing and the mini player look." onLayout={at('player')}>
+        <Section id="player" summary={summaries.player} icon="play-circle-outline" title="Player" lead="How Now Playing and the mini player look." onLayout={at('player')}>
           <Kit.Switch
             label="Apple Music inspired"
             hint="The cover runs full width and melts into its own blur. Off shows a floating artwork card."
@@ -337,7 +365,7 @@ const SettingsScreen: React.FC<Props> = () => {
           ) : null}
         </Section>
 
-        <Section icon="musical-notes-outline" title="Playback" lead="What happens when you press play." onLayout={at('playback')}>
+        <Section id="playback" summary={summaries.playback} icon="musical-notes-outline" title="Playback" lead="What happens when you press play." onLayout={at('playback')}>
           <Kit.Switch
             label="Stay on the list when a song starts"
             hint="Off opens Now Playing every time you pick a song."
@@ -348,7 +376,7 @@ const SettingsScreen: React.FC<Props> = () => {
           <Kit.Switch label="Haptics" hint="Little taps you feel on buttons and swipes." value={settings.hapticsEnabled ?? true} onChange={settings.setHapticsEnabled} />
         </Section>
 
-        <Section icon="text-outline" title="Lyrics" lead="How lyrics look and keep time." onLayout={at('lyrics')}>
+        <Section id="lyrics" summary={summaries.lyrics} icon="text-outline" title="Lyrics" lead="How lyrics look and keep time." onLayout={at('lyrics')}>
           <LyricsSizeRow size={settings.lyricsSize} align={settings.lyricsAlign} onChange={settings.setLyricsSize} />
           <Choice<LyricsAlign>
             label="Alignment"
@@ -366,7 +394,7 @@ const SettingsScreen: React.FC<Props> = () => {
           <TimingRow value={settings.lyricsDelay} onChange={settings.setLyricsDelay} />
         </Section>
 
-        <Section icon="navigate-outline" title="Navigation and voice" lead="The bar at the bottom and the mic in it." onLayout={at('nav')}>
+        <Section id="nav" summary={summaries.nav} icon="navigate-outline" title="Navigation and voice" lead="The bar at the bottom and the mic in it." onLayout={at('nav')}>
           <Choice<'modern-pill' | 'classic'>
             label="Bottom bar"
             value={settings.navBarStyle}
@@ -387,7 +415,7 @@ const SettingsScreen: React.FC<Props> = () => {
           ) : null}
         </Section>
 
-        <Section icon="compass-outline" title="Discover" lead="What Luvs and Stream bring you." onLayout={at('discover')}>
+        <Section id="discover" summary={summaries.discover} icon="compass-outline" title="Discover" lead="What Luvs and Stream bring you." onLayout={at('discover')}>
           <Action label="Song languages" hint="Luvs, mood mixes and new songs lean towards these." value={luvsLanguageSummary} onPress={() => setLanguagePickerVisible(true)} />
           <Kit.Switch label="Luvs clips start at the hook" hint="Jump straight to the best part of each song." value={settings.luvsStartAtHook} onChange={settings.setLuvsStartAtHook} />
           <Kit.Switch label="YouTube video preview" hint="Beta. Shows a song's video in the player; needs your own YouTube Data API key." value={settings.ytVideoPreview} onChange={settings.setYtVideoPreview} />
@@ -408,7 +436,7 @@ const SettingsScreen: React.FC<Props> = () => {
 
         <ListenTogetherSettings onLayout={at('together')} onNotice={setNotice} />
 
-        <Section icon="folder-open-outline" title="Library and data" lead="Your songs, backups and clean-up." onLayout={at('library')}>
+        <Section id="library" summary={summaries.library} icon="folder-open-outline" title="Library and data" lead="Your songs, backups and clean-up." onLayout={at('library')}>
           <Action label="Add songs from this phone" hint="Find music files already on your device." onPress={handleImportLocalAudio} />
           <Action label="Export library" hint="Songs, lyrics and playlists as one file." onPress={handleExport} />
           <Action label="Import a backup" onPress={handleImport} />
@@ -429,13 +457,13 @@ const SettingsScreen: React.FC<Props> = () => {
           />
         </Section>
 
-        <Section icon="desktop-outline" title="Desktop Connect" lead="Send songs between this phone and your computer." onLayout={at('desktop')}>
+        <Section id="desktop" summary={summaries.desktop} icon="desktop-outline" title="Desktop Connect" lead="Send songs between this phone and your computer." onLayout={at('desktop')}>
           <Kit.Switch label="Desktop Connect" hint="Lets a paired computer see and control this phone." value={desktopConnectEnabled} onChange={setDesktopConnectEnabled} />
           <Kit.Switch label="Allow downloads from desktop" value={allowDesktopDownloads} onChange={setAllowDesktopDownloads} />
           <Action label="Pair a computer" onPress={() => setPairingModalVisible(true)} />
         </Section>
 
-        <Section icon="information-circle-outline" title="About" lead="Version, credits and a fresh start." onLayout={at('about')}>
+        <Section id="about" summary={summaries.about} icon="information-circle-outline" title="About" lead="Version, credits and a fresh start." onLayout={at('about')}>
           <Row label="LuvLyrics" hint={`Version ${APP_VERSION}. ${songs.length} songs, ${likedCount} liked.`} />
           <Row
             label="Credits"
@@ -457,6 +485,7 @@ const SettingsScreen: React.FC<Props> = () => {
           />
         </Section>
       </ScrollView>
+      </SettingsAccordion.Provider>
 
       {/* ── Alerts & Utility Modals ──────────────────────────────────────────── */}
 
