@@ -18,6 +18,7 @@ import { oauthRouter } from './oauth/router.js';
 import { OAuthSigner } from './oauth/tokens.js';
 import { MemoryCacheStore } from './lib/cache.js';
 import { songChangeLimiter, type SongChangeLimitConfig } from './lib/songChangeLimiter.js';
+import { accountRouter } from './routes/account.js';
 import { sharedRouter } from './routes/shared.js';
 import { streamRouter } from './routes/stream.js';
 import { uploadsRouter } from './routes/uploads.js';
@@ -108,7 +109,8 @@ export function createApp(options: AppOptions): Express {
   app.use('/api', streamRouter(services.stream));
   app.use('/api', authRouter(services.auth));
   app.use('/api', userRouter(services.auth, services.catalog, services.actions, services.covers));
-  app.use('/api', sharedRouter(services.auth, services.catalog, services.actions));
+  app.use('/api', accountRouter(services.auth, services.users));
+  app.use('/api', sharedRouter(services.auth, services.catalog, services.actions, services.users));
   app.use('/api', uploadsRouter(services.auth, services.covers));
   app.use('/api', discoveryRouter(services.translation, services.recommendations, services.auth, services.catalog));
   const signer = new OAuthSigner(jwtSecret);

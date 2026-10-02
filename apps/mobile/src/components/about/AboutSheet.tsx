@@ -188,11 +188,13 @@ const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visib
             <Panel>
               <Text style={styles.panelTitle}>Privacy</Text>
               <Text style={styles.body}>
-                LuvLyrics is free to use. No ads, no tracking, nothing sold. Your library, likes and lyrics live on this phone;
-                streaming goes straight to where the music is. A bug report you send is kept only until it has been read and fixed, then deleted.
+                LuvLyrics is free to use, with no ads and no sale of personal data. Downloads and local lyrics stay on this phone.
+                When you sign in, your account, likes, playlists and listening preferences sync through Allegra and Convex.
+                Music and artwork providers receive requests needed for playback. Sentry receives crash and performance reports; session replay is off.
+                Bug reports you send are stored so we can investigate and respond.
               </Text>
               <Text style={[styles.body, styles.gap]}>
-                Coming soon: sign in with Google to sync this app with {ALLEGRA} — one account, the same library and the same recommendations on both.
+                Google sign-in connects this app with {ALLEGRA}. Account privacy controls on the website let you stop learning from listening, download your data or delete your account.
               </Text>
             </Panel>
           </ScrollView>

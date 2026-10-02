@@ -12,8 +12,10 @@ import { ConvexReactClient } from 'convex/react';
 import { ConvexAuthProvider, useAuthActions, useAuthToken } from '@convex-dev/auth/react';
 import * as WebBrowser from 'expo-web-browser';
 
-import { getAccountProfile, type AccountProfile } from './allegraApi';
+import { getAccountProfile, recordAccountConsent, type AccountProfile } from './allegraApi';
 import { ALLEGRA_CONVEX_URL } from './config';
+import { POLICY_VERSION } from '@shared/legal';
+import { AccountConsentSheet } from '../../components/settings/AccountConsentSheet';
 import { secureStorage } from './secureStorage';
 import { runGoogleSignIn, type SignInOutcome } from './signInFlow';
 import { runBeforeSignOut } from './signOutHooks';
@@ -58,6 +60,9 @@ export const AccountProvider: React.FC<{ children: ReactNode }> = ({ children })
 const AccountBridge: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { signIn, signOut } = useAuthActions();
   const token = useAuthToken();
+  const [consentOpen, setConsentOpen] = useState(false);
+  const consentAnswer = useRef<((agreed: boolean) => void) | null>(null);
+  const signingIn = useRef(false);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   // The engine asks for the token each time it calls the API: Convex Auth refreshes it.
   const tokenRef = useRef<string | null>(null);
@@ -85,16 +90,39 @@ const AccountBridge: React.FC<{ children: ReactNode }> = ({ children }) => {
       return;
     }
     let current = true;
-    getAccountProfile(token).then(found => {
+    (async () => {
+      let found = await getAccountProfile(token);
+      if (!current) return;
+      if (await secureStorage.getItem('allegra-consent-pending') === POLICY_VERSION) {
+        const recorded = await recordAccountConsent(token);
+        if (recorded.outcome === 'sent') {
+          await secureStorage.removeItem('allegra-consent-pending');
+          found = recorded.data;
+        }
+      }
       if (current) setProfile(found);
-    });
+    })().catch(() => undefined);
     return () => {
       current = false;
     };
   }, [token]);
 
   const signInWithGoogle = useCallback(
-    () => runGoogleSignIn(signIn, (url, returnUrl) => WebBrowser.openAuthSessionAsync(url, returnUrl)),
+    async (): Promise<SignInOutcome> => {
+      if (signingIn.current) return 'cancelled';
+      signingIn.current = true;
+      try {
+        const agreed = await new Promise<boolean>(resolve => {
+          consentAnswer.current = resolve;
+          setConsentOpen(true);
+        });
+        if (!agreed) return 'cancelled';
+        await secureStorage.setItem('allegra-consent-pending', POLICY_VERSION);
+        const outcome = await runGoogleSignIn(signIn, (url, returnUrl) => WebBrowser.openAuthSessionAsync(url, returnUrl));
+        if (outcome !== 'signed-in') await secureStorage.removeItem('allegra-consent-pending');
+        return outcome;
+      } finally { signingIn.current = false; }
+    },
     [signIn],
   );
 
@@ -119,5 +147,12 @@ const AccountBridge: React.FC<{ children: ReactNode }> = ({ children }) => {
     [token, profile, signInWithGoogle, handleSignOut],
   );
 
-  return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
+  return <AccountContext.Provider value={value}>
+    {children}
+    <AccountConsentSheet visible={consentOpen} onAnswer={agreed => {
+      setConsentOpen(false);
+      consentAnswer.current?.(agreed);
+      consentAnswer.current = null;
+    }} />
+  </AccountContext.Provider>;
 };

@@ -1,3 +1,6 @@
+import Link from 'next/link';
+import { LEGAL_PATHS } from '@shared/legal';
+import { SharedPlaylistReport } from './SharedPlaylistReport';
 import { BookmarkPlus, Check, Heart, ListMusic, Pause, Play, Shuffle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
@@ -41,13 +44,14 @@ interface CollectionPageProps {
   readonly onSaveCopy?: () => Promise<void>;
   /** Shared playlist cover from the owner, when present. */
   readonly coverUrl?: string;
+  readonly sharedCode?: string;
 }
 
 /**
  * A playlist or the Liked Songs list. The hero leads with the collection on a cover shelf — the
  * centred song facing you, its neighbours turned away — and the full track list sits under it.
  */
-export function CollectionPage({ kind, title, songs, loading, currentSongId, isPlaying, likedIds, onToggle, onPlayTrack, onPlayAll, onLike, onOpenAlbum, onDiscover, onDelete, share, cover, ownerName, onSaveCopy, coverUrl }: CollectionPageProps) {
+export function CollectionPage({ kind, title, songs, loading, currentSongId, isPlaying, likedIds, onToggle, onPlayTrack, onPlayAll, onLike, onOpenAlbum, onDiscover, onDelete, share, cover, ownerName, onSaveCopy, coverUrl, sharedCode }: CollectionPageProps) {
   const [palette, setPalette] = useState<Palette | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const queue = useMemo(() => [...songs], [songs]);
@@ -131,6 +135,7 @@ export function CollectionPage({ kind, title, songs, loading, currentSongId, isP
                 {saveState === 'saved' ? 'Saved to your library' : saveState === 'saving' ? 'Saving…' : 'Save to my library'}
               </TactileButton>
             ) : null}
+            {kind === 'shared' && sharedCode ? <SharedPlaylistReport code={sharedCode} /> : null}
             <PlaylistControls
               {...(share ? { share } : {})}
               {...(onDelete ? { onDelete } : {})}
@@ -139,6 +144,7 @@ export function CollectionPage({ kind, title, songs, loading, currentSongId, isP
           </div>
         </div>
       </header>
+      {kind === 'shared' ? <nav className="legal-nav collection-policies" aria-label="Policies"><Link href={LEGAL_PATHS.privacy}>Privacy</Link><Link href={LEGAL_PATHS.terms}>Terms</Link><Link href={LEGAL_PATHS.copyright}>Copyright & complaints</Link></nav> : null}
 
       {loading && songs.length === 0 ? (
         <div className="track-list" aria-busy="true"><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>

@@ -132,7 +132,7 @@ async function rebuildProfileCopy(ctx: MutationCtx, userId: string, profileId: D
       .take(MAX_ITEMS)
   ]);
   const copy = toProfileLibrary(likes.map(likeRow), playlists.map(playlistRow), items.map(itemRow));
-  await ctx.db.patch('profiles', profileId, copy);
+  await ctx.db.patch('profiles', profileId, { ...copy, lastActiveAt: Date.now() });
 }
 
 function saavnId(ref: SongRef): string | null {
@@ -198,7 +198,7 @@ async function updateProfileCopy(ctx: MutationCtx, profile: Doc<'profiles'>, wri
         library.songIds.some((id, songIndex) => id !== previous.songIds[songIndex]);
     })
   ) {
-    await ctx.db.patch('profiles', profile._id, { likedSongIds, libraries: nextLibraries });
+    await ctx.db.patch('profiles', profile._id, { likedSongIds, libraries: nextLibraries, lastActiveAt: Date.now() });
   }
 }
 

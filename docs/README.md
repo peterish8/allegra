@@ -13,3 +13,5 @@ not negotiable.
 | [motion-recipes.md](./motion-recipes.md) | Copy-paste motion patterns, then tune |
 | [provider-integration.md](./provider-integration.md) | Adding or repairing a music/lyrics provider |
 | [mcp-contract.md](./mcp-contract.md) | The Allegra MCP connector |
+| [data-breach-plan.md](./data-breach-plan.md) | Incident containment and notification runbook |
+| [grievance-handling.md](./grievance-handling.md) | Report queue, takedown commands and response clocks |

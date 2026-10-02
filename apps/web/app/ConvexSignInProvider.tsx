@@ -6,7 +6,8 @@ import { makeFunctionReference } from 'convex/server';
 import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { SignInContext, type SignInApi } from '../src/auth/SignInContext';
-import { linkGuestSession, setAccountToken } from '../src/lib/api';
+import { linkGuestSession, setAccountToken, recordConsent } from '../src/lib/api';
+import { hasPendingConsent, clearPendingConsent } from '../src/lib/consent';
 import { runBeforeSignOut } from '../src/lib/signOutHooks';
 
 /** convex/library.ts myRev: the signed-in listener's newest library revision (null signed out). */
@@ -58,7 +59,14 @@ function SignInBridge({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     if (!signedIn || linked) return;
     setLinked(true);
-    void linkGuestSession().finally(() => {
+    void linkGuestSession().then(async () => {
+      if (hasPendingConsent()) {
+        await recordConsent();
+        clearPendingConsent();
+      }
+    }).catch(() => {
+      // Preserve the pending agreement: the account panel can retry it.
+    }).finally(() => {
       window.dispatchEvent(new CustomEvent('allegra:account'));
     });
   }, [signedIn, linked]);
@@ -71,6 +79,7 @@ function SignInBridge({ children }: { readonly children: ReactNode }) {
     await runBeforeSignOut();
     await signOut();
     setAccountToken(null);
+    clearPendingConsent();
     setLinked(false);
   }, [signOut]);
 

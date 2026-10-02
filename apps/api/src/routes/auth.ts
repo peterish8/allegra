@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 
 import { bearerToken } from '../auth/auth.js';
 import type { AuthService } from '../auth/auth.js';
+import type { Consent } from '../shared/legal.js';
 import type { UserData } from '../user/store.js';
 import { asRecord, sendFailure, sendSuccess } from './common.js';
 
@@ -12,13 +13,15 @@ export function publicProfile(user: UserData): {
   readonly createdAt: string;
   readonly displayName?: string;
   readonly email?: string;
+  readonly consent?: Consent;
 } {
   return {
     userId: user.userId,
     isGuest: user.isGuest,
     createdAt: user.createdAt,
     ...(user.displayName ? { displayName: user.displayName } : {}),
-    ...(user.email ? { email: user.email } : {})
+    ...(user.email ? { email: user.email } : {}),
+    ...(user.consent ? { consent: user.consent } : {})
   };
 }
 

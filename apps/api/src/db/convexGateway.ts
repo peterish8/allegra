@@ -15,7 +15,8 @@ export const CONVEX_QUERIES = [
   'shares:get',
   'shares:byLibrary',
   'covers:inspect',
-  'library:changes'
+  'library:changes',
+  'account:extras'
 ] as const;
 export const CONVEX_MUTATIONS = [
   'profiles:save',
@@ -25,7 +26,9 @@ export const CONVEX_MUTATIONS = [
   'oauth:consume',
   'covers:generateUploadUrl',
   'covers:remove',
-  'library:apply'
+  'library:apply',
+  'account:erase',
+  'reports:file'
 ] as const;
 
 export type ConvexQuery = (typeof CONVEX_QUERIES)[number];

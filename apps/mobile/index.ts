@@ -3,6 +3,7 @@ import './src/theme/appleTypography';
 import * as Sentry from '@sentry/react-native';
 import { registerRootComponent } from 'expo';
 
+// Session replay stays off: do not add replay integrations without explicit, separate consent.
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
   enabled: !__DEV__,

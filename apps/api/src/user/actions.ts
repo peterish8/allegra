@@ -8,7 +8,7 @@ import { alignOpTimes, type LibraryOp, type PlaylistCover, type RejectReason } f
 import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { UnifiedSong } from '../types.js';
 import { opsForPlaylistCopy, refForId, snapshotOf, unifiedSongFromSnapshot } from './libraryOps.js';
-import { RECENTLY_PLAYED_LIMIT, type LibraryRecord, type RecentRecord, type UserData, type UserStore } from './store.js';
+import { RECENTLY_PLAYED_LIMIT, isPersonalised, type LibraryRecord, type RecentRecord, type UserData, type UserStore } from './store.js';
 import { SIGNAL_WEIGHT, applySignal, playWeight } from './taste.js';
 
 /** Eight url-safe characters (~10^11 codes): long enough not to guess, short enough to read out loud. */
@@ -222,7 +222,8 @@ export class ListenerActions {
       if (op.op === 'playlist_add') lessons.push({ song: op.song, weight: SIGNAL_WEIGHT.playlistAdd });
     });
     if (lessons.length > 0) {
-      await this.auth.updateProfile(user.userId, (current) => lessons.reduce((taught, lesson) => teach(taught, lesson.song, lesson.weight), current), user);
+      await this.auth.updateProfile(user.userId, (current) =>
+        isPersonalised(current) ? lessons.reduce((taught, lesson) => teach(taught, lesson.song, lesson.weight), current) : null, user);
     }
     return { rev: result.rev, rejected: result.rejected, superseded: result.superseded, applied: result.applied };
   }
@@ -240,9 +241,12 @@ export class ListenerActions {
       ...(ref ? { songRef: ref } : {}),
       ...(snapshot ? { song: snapshot } : {})
     };
+    // Personalisation off: the play is not kept and nothing is learned from it.
+    if (!isPersonalised(user)) return entry;
     const song = snapshotSong ?? await this.lookUp(songId);
     const identity = recentIdentity(entry);
     await this.auth.updateProfile(user.userId, (current) => {
+      if (!isPersonalised(current)) return null;
       // Offline clients retry the same play after a lost response. Keep the history write
       // idempotent for that event so its taste signal is not applied twice.
       const priorEvent = current.recentlyPlayed.find((item) => recentIdentity(item) === identity && item.playedAt === playedAt);
@@ -281,12 +285,14 @@ export class ListenerActions {
 
   /** How long a song was actually heard: a few seconds counts against it, most of it for it. */
   public async listened(user: UserData, songId: string, seconds: number, snapshot?: SongSnapshot, songRef?: SongRef, playedAt?: string): Promise<UserData> {
+    if (!isPersonalised(user)) return user;
     const song = (snapshot ? unifiedSongFromSnapshot(snapshot) : null) ?? await this.lookUp(songId);
     if (!song) return user;
     const ref = snapshot?.ref ?? songRef;
     const weight = playWeight(seconds, song.duration);
     if (!ref || !playedAt) return (await this.learn(user, song, weight)) ?? user;
     return (await this.auth.updateProfile(user.userId, (current) => {
+      if (!isPersonalised(current)) return null;
       const index = current.recentlyPlayed.findIndex((item) => recentIdentity(item) === (ref.startsWith('gaana:') ? ref : parseSongRef(ref)?.id ?? ref) && item.playedAt === playedAt);
       const prior = index >= 0 ? current.recentlyPlayed[index] : undefined;
       if (prior?.listenSignalApplied) return null;
@@ -352,7 +358,7 @@ export class ListenerActions {
 
   /** `user` is the profile this request already read: the change starts from it instead of reading again. */
   private learn(user: UserData, song: TasteSong, weight: number): Promise<UserData | null> {
-    return this.auth.updateProfile(user.userId, (current) => teach(current, song, weight), user);
+    return this.auth.updateProfile(user.userId, (current) => (isPersonalised(current) ? teach(current, song, weight) : null), user);
   }
 }
 

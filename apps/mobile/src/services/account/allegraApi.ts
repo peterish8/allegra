@@ -3,6 +3,7 @@
  * uses fetchWithTimeout: a timeout, and null on any failure, never a throw.
  * Shapes follow docs/api-contract.md: `{ success, data, error? }`.
  */
+import { POLICY_VERSION, type Consent } from '@shared/legal';
 import type { LibraryChange } from '@shared/library';
 import { fromAllegraSong, parseSongRef, type SongRef, type SongSnapshot } from '@shared/songRef';
 import type { UnifiedSong } from '../../types/song';
@@ -21,6 +22,7 @@ export interface AccountProfile {
   userId: string;
   isGuest: boolean;
   createdAt: string;
+  consent?: Consent;
   displayName?: string;
   email?: string;
 }
@@ -69,6 +71,9 @@ const send = async <T>(method: 'GET' | 'POST', path: string, token: string, body
     clearTimeout(timer);
   }
 };
+
+export const recordAccountConsent = (token: string): Promise<SendOutcome<AccountProfile>> =>
+  send<AccountProfile>('POST', '/api/me/consent', token, { policyVersion: POLICY_VERSION });
 
 export interface ChangesReply {
   rev: number;

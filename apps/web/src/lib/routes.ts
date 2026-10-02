@@ -2,7 +2,13 @@
  * The app's URL space, in one place. The shell reads the pathname through
  * parseRoute; everything that navigates builds its href through `paths`.
  */
-export type AppView = 'home' | 'discover' | 'library' | 'album' | 'artist' | 'playlist' | 'liked' | 'shared' | 'settings';
+import { LEGAL_PATHS, type LegalDocument } from '@shared/legal';
+
+export type AppView = 'home' | 'discover' | 'library' | 'album' | 'artist' | 'playlist' | 'liked' | 'shared' | 'settings' | LegalDocument;
+
+export function isLegalView(view: AppView): view is LegalDocument {
+  return view === 'privacy' || view === 'terms' || view === 'copyright';
+}
 
 export interface Route {
   readonly view: AppView;
@@ -18,6 +24,7 @@ export const paths = {
   liked: '/liked',
   album: '/album',
   settings: '/settings',
+  ...LEGAL_PATHS,
   artist: (name: string): string => `/artist/${encodeURIComponent(name)}`,
   playlist: (id: string): string => `/playlist/${encodeURIComponent(id)}`,
   shared: (code: string): string => `/shared/${encodeURIComponent(code)}`
@@ -47,6 +54,10 @@ export function parseRoute(pathname: string): Route {
       return { view: 'album', ...NO_PARAMS };
     case 'settings':
       return { view: 'settings', ...NO_PARAMS };
+    case 'privacy':
+    case 'terms':
+    case 'copyright':
+      return { view: first, ...NO_PARAMS };
     case 'artist': {
       const artistName = decode(second);
       return artistName ? { view: 'artist', ...NO_PARAMS, artistName } : { view: 'home', ...NO_PARAMS };

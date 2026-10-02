@@ -243,7 +243,7 @@ its profile and copies the name and email from Convex.
 | Endpoint | Auth | Body → response |
 |---|---|---|
 | `POST /api/auth/link` | account `Bearer` | `{ guestToken }` → the account profile. Folds that guest's likes, playlists, recents and taste **into the account**. Idempotent (merging is a union). `400` without a guest token, `401` if the bearer is not a verified caller. |
-| `GET /api/auth/me` | Bearer | → `{ userId, isGuest, createdAt, displayName?, email? }` |
+| `GET /api/auth/me` | Bearer | → `{ userId, isGuest, createdAt, displayName?, email?, consent? }` (`consent` added 2026-10-02, see below) |
 | `PATCH /api/me/profile` | Bearer | `{ displayName }` → same profile. Empty string clears it. |
 
 **Removed** (no longer routed; they answer `404`): `POST /api/auth/register`, `POST /api/auth/login`.
@@ -278,6 +278,43 @@ Codes are 8 characters from `abcdefghjkmnpqrstuvwxyz23456789`.
 | Endpoint | Auth | Body → response |
 |---|---|---|
 | `POST /api/uploads/sign` | Bearer (owner) | `{ libraryId }` → `{ uploadUrl, coverKey }`. The browser uploads the image to the short-lived Convex upload URL, then `PATCH`es the library with its `coverKey`. `503` if Convex is not configured. |
+
+## Consent, data rights and reports — additive, 2026-10-02
+
+Additive only: no existing shape changed except that the account profile gained an optional
+`consent`. The values the policies promise (policy version, minimum age, retention periods,
+report reasons) live in `packages/shared/legal.ts`.
+
+| Endpoint | Auth | Body → response |
+|---|---|---|
+| `POST /api/me/consent` | Bearer | `{ policyVersion }` → the account profile, now with `consent: { policyVersion, at }` (`at` is the server's time, ISO). `400` when `policyVersion` is not the current `POLICY_VERSION`: the client is showing old terms and should reload. Sent once after sign-in when the listener ticked the box. |
+| `GET /api/me/export` | Bearer | → `AccountExport` (below). Everything held about the caller, guest or account. |
+| `DELETE /api/me` | Bearer | → `204`. Erases the caller's profile, library, playlist covers, share links, devices, player session and (for an account) the sign-in identity. Not reversible; safe to repeat. The client then signs out and starts a guest session. A session token that outlives its erased account answers `401`. |
+| `POST /api/shared/:code/report` | **none** | `{ reason: 'copyright' \| 'illegal' \| 'abuse' \| 'other', details? (<=1000), contact? (<=200) }` → `201 { received: true }`. `404` when the link is unknown or off, `400` for an unknown reason. Counted in the Writes rate bucket. |
+
+```
+AccountExport {
+  exportedAt, policyVersion, complete: boolean,
+  profile: { userId, isGuest, createdAt, displayName?, email?, consent? },
+  settings, taste | null, recentlyPlayed,
+  library: { changes: LibraryChange[] (current rows only), complete: boolean },
+  shares: { code, libraryId, createdAt }[],
+  devices: { name, kind, appVersion, createdAt }[]
+}
+```
+
+`complete` is false if the bounded library scan, 100-share limit or 50-device limit was exceeded.
+The file remains usable, but must not be presented as a complete account export in that case.
+
+**Personalisation switch.** `PATCH /api/me/settings` with `{ personalization: false }` turns
+learning off for the account on every device: taste and recent listens are erased in the same
+write, and from then on `POST /api/me/recently-played`, `POST /api/me/taste/signal`, likes and
+playlist adds still succeed with the same replies but record no history and teach nothing.
+`{ personalization: true }` turns it back on. Missing means on.
+
+**Retention.** Convex erases guest profiles unused for 90 days and accounts unused for 730 days
+(`convex/account.ts`, daily). "Used" is any profile or library write; a signed-in listener who
+only reads is kept active by the API.
 
 ## Errors
 

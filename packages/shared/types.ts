@@ -1,3 +1,5 @@
+import type { Consent } from './legal';
+
 export interface UnifiedSong {
   readonly id: string;
   readonly title: string;
@@ -74,6 +76,8 @@ export interface AccountProfile {
   readonly createdAt: string;
   readonly displayName?: string;
   readonly email?: string;
+  /** When they agreed to the policies, and which version (legal.ts). Missing: never recorded. */
+  readonly consent?: Consent;
 }
 
 /** What the app has learned about a listener, strongest first. */

@@ -11,6 +11,7 @@ import { getSettings } from '../src/lib/settings';
  * Decided once per page load, after mount: the scripts are never injected for someone
  * who opted out, and a change applies from the next load (the Settings copy says so).
  */
+// Session replay stays off. Adding it requires an explicit, separate consent design.
 export function Telemetry() {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {

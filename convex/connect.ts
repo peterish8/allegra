@@ -197,7 +197,7 @@ function fail(code: ConnectErrorCode, details?: Record<string, number | string |
 }
 
 const isFailureCode = (code: string): code is FailureCode => code in failureText;
-const roomOf = (userId: string): string => `connect:${userId}`;
+export const roomOf = (userId: string): string => `connect:${userId}`;
 
 async function requireUser(ctx: QueryCtx | MutationCtx): Promise<string> {
   const authUserId = await getAuthUserId(ctx);

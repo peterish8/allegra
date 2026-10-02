@@ -1,0 +1,263 @@
+/**
+ * A listener's right to leave, and to not be kept: erasing everything held about one profile,
+ * listing what the profile row does not show (for the data export), and the daily sweep that
+ * erases profiles nobody has used for the periods the privacy policy states
+ * (packages/shared/legal.ts).
+ *
+ * `erase` and `extras` are called by the Express API with the shared server secret, like
+ * convex/profiles.ts. The API has already checked who is asking; a userId is never taken from
+ * a browser here.
+ */
+import { Presence } from '@convex-dev/presence';
+import { v } from 'convex/values';
+
+import { ACCOUNT_RETENTION_DAYS, GUEST_RETENTION_DAYS } from '../packages/shared/legal';
+import { components, internal } from './_generated/api';
+import { internalMutation, mutation, query, type MutationCtx } from './_generated/server';
+import { roomOf } from './connect';
+import { requireSecret } from './profiles';
+
+const presence = new Presence(components.presence);
+
+/** Rows removed per table in one transaction. A larger library continues in the next one. */
+const BATCH = 200;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Two profiles at most per transaction keeps large libraries within the write budget. */
+const SWEEP_GUESTS = 1;
+const SWEEP_ACCOUNTS = 1;
+
+/** Deletes an uploaded playlist cover. A key that is not a stored file is skipped. */
+async function deleteCover(ctx: MutationCtx, coverKey: string | undefined): Promise<void> {
+  if (!coverKey) return;
+  const id = ctx.db.system.normalizeId('_storage', coverKey);
+  if (id && (await ctx.db.system.get('_storage', id))) await ctx.storage.delete(id);
+}
+
+/**
+ * Removes up to BATCH rows per table of everything keyed to this listener: the profile, the
+ * library rows and their covers, share links, devices and their presence, the player session,
+ * and for a signed-in account the Convex Auth identity. True when rows may remain.
+ *
+ * The profile and identity go in the first pass, so a still-valid token cannot recreate the
+ * profile while a large library finishes erasing. Credential rows follow in bounded passes.
+ */
+async function eraseSome(ctx: MutationCtx, userId: string): Promise<boolean> {
+  let more = false;
+
+  const profile = await ctx.db
+    .query('profiles')
+    .withIndex('by_userId', (q) => q.eq('userId', userId))
+    .unique();
+  if (profile) {
+    for (const library of profile.libraries) await deleteCover(ctx, library.coverKey);
+    await ctx.db.delete('profiles', profile._id);
+  }
+
+  const authUserId = ctx.db.normalizeId('users', userId);
+  if (authUserId) {
+    // Invalidate identity before scheduling any continuation. Leaving it until the last pass
+    // lets the API recreate the deleted profile from an unexpired JWT in the meantime.
+    if (await ctx.db.get('users', authUserId)) await ctx.db.delete('users', authUserId);
+    const sessions = await ctx.db
+      .query('authSessions')
+      .withIndex('userId', (q) => q.eq('userId', authUserId))
+      .take(BATCH);
+    let tokenBudget = BATCH;
+    for (const session of sessions) {
+      if (tokenBudget === 0) { more = true; break; }
+      const limit = tokenBudget;
+      const tokens = await ctx.db
+        .query('authRefreshTokens')
+        .withIndex('sessionId', (q) => q.eq('sessionId', session._id))
+        .take(limit);
+      for (const token of tokens) await ctx.db.delete('authRefreshTokens', token._id);
+      tokenBudget -= tokens.length;
+      if (tokens.length === limit) more = true;
+      else await ctx.db.delete('authSessions', session._id);
+    }
+    more ||= sessions.length === BATCH;
+  }
+
+  const likes = await ctx.db
+    .query('libraryLikes')
+    .withIndex('by_userId_and_ref', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const row of likes) await ctx.db.delete('libraryLikes', row._id);
+  more ||= likes.length === BATCH;
+
+  const playlists = await ctx.db
+    .query('libraryPlaylists')
+    .withIndex('by_userId_and_playlistId', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const row of playlists) {
+    await deleteCover(ctx, row.coverKey);
+    await ctx.db.delete('libraryPlaylists', row._id);
+  }
+  more ||= playlists.length === BATCH;
+
+  const items = await ctx.db
+    .query('libraryItems')
+    .withIndex('by_userId_and_playlistId_and_ref', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const row of items) await ctx.db.delete('libraryItems', row._id);
+  more ||= items.length === BATCH;
+
+  const state = await ctx.db
+    .query('libraryState')
+    .withIndex('by_userId', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const row of state) await ctx.db.delete('libraryState', row._id);
+
+  const shares = await ctx.db
+    .query('shares')
+    .withIndex('by_owner_library', (q) => q.eq('ownerId', userId))
+    .take(BATCH);
+  for (const row of shares) await ctx.db.delete('shares', row._id);
+  more ||= shares.length === BATCH;
+
+  const devices = await ctx.db
+    .query('devices')
+    .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const device of devices) {
+    await presence.removeRoomUser(ctx, roomOf(userId), device.deviceId);
+    await ctx.db.delete('devices', device._id);
+  }
+  more ||= devices.length === BATCH;
+
+  const ownership = await ctx.db
+    .query('connectOwnership')
+    .withIndex('by_userId', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const row of ownership) await ctx.db.delete('connectOwnership', row._id);
+
+  const players = await ctx.db
+    .query('playerState')
+    .withIndex('by_userId', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const row of players) await ctx.db.delete('playerState', row._id);
+
+  const commands = await ctx.db
+    .query('connectCommands')
+    .withIndex('by_userId_and_status', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const row of commands) await ctx.db.delete('connectCommands', row._id);
+  more ||= commands.length === BATCH;
+
+  // Auth foreign keys remain usable after identity invalidation; clean credentials by that id.
+  if (authUserId) {
+    const accounts = await ctx.db
+      .query('authAccounts')
+      .withIndex('userIdAndProvider', (q) => q.eq('userId', authUserId))
+      .take(BATCH);
+    let codeBudget = BATCH;
+    for (const account of accounts) {
+      if (codeBudget === 0) { more = true; break; }
+      const limit = codeBudget;
+      const codes = await ctx.db
+        .query('authVerificationCodes')
+        .withIndex('accountId', (q) => q.eq('accountId', account._id))
+        .take(limit);
+      for (const code of codes) await ctx.db.delete('authVerificationCodes', code._id);
+      codeBudget -= codes.length;
+      if (codes.length === limit) more = true;
+      else await ctx.db.delete('authAccounts', account._id);
+    }
+    more ||= accounts.length === BATCH;
+  }
+
+  return more;
+}
+
+async function eraseAndContinue(ctx: MutationCtx, userId: string): Promise<void> {
+  if (await eraseSome(ctx, userId)) await ctx.scheduler.runAfter(0, internal.account.eraseRest, { userId });
+}
+
+/** Erases a listener. Safe to repeat: a second call finds nothing left. */
+export const erase = mutation({
+  args: { secret: v.string(), userId: v.string() },
+  handler: async (ctx, args) => {
+    requireSecret(args.secret);
+    await eraseAndContinue(ctx, args.userId);
+    return null;
+  }
+});
+
+/** The next pass of an erase too large for one transaction. */
+export const eraseRest = internalMutation({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    await eraseAndContinue(ctx, args.userId);
+    return null;
+  }
+});
+
+/** What the profile row does not hold, for the data export: live share links and registered devices. */
+export const extras = query({
+  args: { secret: v.string(), userId: v.string() },
+  handler: async (ctx, args) => {
+    requireSecret(args.secret);
+    const [shares, devices] = await Promise.all([
+      ctx.db
+        .query('shares')
+        .withIndex('by_owner_library', (q) => q.eq('ownerId', args.userId))
+        .take(101),
+      ctx.db
+        .query('devices')
+        .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', args.userId))
+        .take(51)
+    ]);
+    return {
+      complete: shares.length <= 100 && devices.length <= 50,
+      shares: shares.slice(0, 100).map((share) => ({ code: share.code, libraryId: share.libraryId, createdAt: share.createdAt })),
+      devices: devices.slice(0, 50).map((device) => ({ name: device.name, kind: device.kind, appVersion: device.appVersion, createdAt: device.createdAt }))
+    };
+  }
+});
+
+/**
+ * The daily retention sweep. Erases guest profiles unused for GUEST_RETENTION_DAYS and accounts
+ * unused for ACCOUNT_RETENTION_DAYS. A profile with no `lastActiveAt` (written before the field
+ * existed) is left alone: run `backfillLastActive` once after deploying.
+ */
+export const sweepInactive = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const inactive = (isGuest: boolean, days: number, limit: number) =>
+      ctx.db
+        .query('profiles')
+        .withIndex('by_isGuest_and_lastActiveAt', (q) => q.eq('isGuest', isGuest).gt('lastActiveAt', 0).lt('lastActiveAt', now - days * DAY_MS))
+        .take(limit);
+    const guests = await inactive(true, GUEST_RETENTION_DAYS, SWEEP_GUESTS);
+    const accounts = await inactive(false, ACCOUNT_RETENTION_DAYS, SWEEP_ACCOUNTS);
+    for (const profile of [...guests, ...accounts]) await eraseAndContinue(ctx, profile.userId);
+    if (guests.length === SWEEP_GUESTS || accounts.length === SWEEP_ACCOUNTS) {
+      await ctx.scheduler.runAfter(0, internal.account.sweepInactive, {});
+    }
+    return { guests: guests.length, accounts: accounts.length };
+  }
+});
+
+/**
+ * One-off, after deploying the retention sweep: gives every profile written before `lastActiveAt`
+ * existed a value from what it already records (its newest play, its taste, or when it was made),
+ * so the sweep can see it. Walks the table in pages, each its own transaction.
+ *
+ *   npx convex run account:backfillLastActive
+ */
+export const backfillLastActive = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query('profiles').paginate({ numItems: 100, cursor: args.cursor ?? null });
+    for (const row of page.page) {
+      if (row.lastActiveAt !== undefined) continue;
+      const times = [row.createdAt, row.taste?.updatedAt, row.recentlyPlayed[0]?.playedAt]
+        .map((value) => (value ? Date.parse(value) : Number.NaN))
+        .filter((time) => Number.isFinite(time) && time > 0);
+      await ctx.db.patch('profiles', row._id, { lastActiveAt: times.length > 0 ? Math.max(...times) : Date.now() });
+    }
+    if (!page.isDone) await ctx.scheduler.runAfter(0, internal.account.backfillLastActive, { cursor: page.continueCursor });
+    return null;
+  }
+});

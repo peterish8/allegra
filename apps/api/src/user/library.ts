@@ -53,6 +53,11 @@ export interface LibraryStore {
    * library now and no remembered deletes; `rev` and `more` page through it as usual.
    */
   changes(userId: string, since: number, limit: number): Promise<LibraryPage>;
+  /**
+   * Drops this listener's rows after their account was erased. Only a store that keeps rows
+   * apart from the profile store needs it: in Convex, erasing the account removes them.
+   */
+  forget?(userId: string): void;
 }
 
 interface Rows {
@@ -97,6 +102,10 @@ export class MemoryLibraryStore implements LibraryStore {
     // The cursor moves past the deletes it leaves out, so the next page starts after them.
     const changes = since === 0 ? page.changes.filter((change) => !isTombstone(change)) : page.changes;
     return { rev: page.next, changes, more: page.more };
+  }
+
+  public forget(userId: string): void {
+    this.rows.delete(userId);
   }
 
   /** A listener's rows, seeded from their profile the first time (as Convex does). */

@@ -1,4 +1,8 @@
 import { lockScroll } from '../lib/scrollLock';
+import Link from 'next/link';
+import { LEGAL_PATHS, MINIMUM_AGE } from '@shared/legal';
+import { rememberConsent, clearPendingConsent } from '../lib/consent';
+import { deleteAccount, recordConsent } from '../lib/api';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useState } from 'react';
@@ -57,6 +61,7 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -82,7 +87,8 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
   }, [open]);
 
   const startGoogle = async (): Promise<void> => {
-    if (busy) return;
+    if (busy || !agreed) return;
+    rememberConsent();
     setBusy(true);
     setError(null);
     // signInWithGoogle() takes no signal, so a blocked popup or a broken redirect
@@ -98,12 +104,14 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
     try {
       await Promise.race([signIn.signInWithGoogle(), timeout]);
       if (timedOut) {
+        clearPendingConsent();
         setError("That's taking a while — try again.");
         setBusy(false);
       }
       // Otherwise the redirect back from Google re-mounts the app, so there is
       // nothing to close here on success; only a failure returns to this dialog.
     } catch {
+      clearPendingConsent();
       setError('Google sign-in did not complete. Try again.');
       setBusy(false);
     }
@@ -146,6 +154,14 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
               <div className="auth-body">
                 <ProfileSheet
                   profile={profile}
+                  onOpenPolicy={onClose}
+                  onAgree={async () => { await recordConsent(); await account.refresh(); }}
+                  onDelete={async () => {
+                    await deleteAccount();
+                    await signIn.signOut().catch(() => undefined);
+                    await account.startGuest();
+                    onClose();
+                  }}
                   busy={busy}
                   error={error}
                   onSaveName={async (displayName) => {
@@ -185,11 +201,15 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
                 </p>
                 {signIn.available ? (
                   <>
+                    <label className="consent-check">
+                      <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} />
+                      <span>I am {MINIMUM_AGE} or older and agree to the <Link href={LEGAL_PATHS.terms} onClick={onClose}>Terms</Link> and <Link href={LEGAL_PATHS.privacy} onClick={onClose}>Privacy policy</Link>.</span>
+                    </label>
                     <button
                       type="button"
                       className="btn-glass tactile-control auth-google"
                       onClick={() => void startGoogle()}
-                      disabled={busy || signIn.loading}
+                      disabled={busy || signIn.loading || !agreed}
                     >
                       <GoogleMark />
                       <span>{busy ? 'Taking you to Google…' : 'Continue with Google'}</span>

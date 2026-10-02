@@ -42,6 +42,9 @@ const taste = v.object({
   updatedAt: v.string()
 });
 
+/** packages/shared/legal.ts Consent. */
+export const consent = v.object({ policyVersion: v.string(), at: v.string() });
+
 /** How much one song has been listened to (apps/api/src/user/plays.ts). Capped at 200 per listener. */
 export const playStat = v.object({
   songId: v.string(),
@@ -178,11 +181,36 @@ export default defineSchema({
     email: v.optional(v.string()),
     taste: v.optional(taste),
     playStats: v.optional(v.array(playStat)),
+    /** When the listener agreed to the policies, and which version (packages/shared/legal.ts). */
+    consent: v.optional(consent),
+    /**
+     * Server time of the last profile or library write. The retention sweep (convex/account.ts)
+     * reads it; a row written before it existed has none and is never swept until it is set.
+     */
+    lastActiveAt: v.optional(v.number()),
     /** Moves on with every profile write; profiles.update compares it so concurrent writes cannot undo each other. */
     version: v.optional(v.number())
   })
     .index('by_userId', ['userId'])
-    .index('by_email', ['email']),
+    .index('by_email', ['email'])
+    .index('by_isGuest_and_lastActiveAt', ['isGuest', 'lastActiveAt']),
+
+  /**
+   * A complaint about a shared playlist (its name, description, cover or songs), for the grievance
+   * officer to read. Filed by anyone with the link; `contact` is only what the reporter chose to give.
+   */
+  reports: defineTable({
+    code: v.string(),
+    ownerId: v.string(),
+    libraryId: v.string(),
+    reason: v.union(v.literal('copyright'), v.literal('illegal'), v.literal('abuse'), v.literal('other')),
+    details: v.optional(v.string()),
+    contact: v.optional(v.string()),
+    createdAt: v.number(),
+    status: v.union(v.literal('open'), v.literal('closed'))
+  })
+    .index('by_code', ['code'])
+    .index('by_status_and_createdAt', ['status', 'createdAt']),
 
   /**
    * "Listeners of this song go on to play…" — YouTube Music's song radio and the catalog's own

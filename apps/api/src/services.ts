@@ -71,6 +71,8 @@ export interface AppServices {
   readonly artwork: ArtworkService;
   readonly lyrics: LyricsService;
   readonly auth: AuthService;
+  /** Profiles, share links and reports: the store the account routes read and erase through. */
+  readonly users: UserStore;
   /** What a listener does (likes, playlists, sharing, plays), for the routes and the MCP tools alike. */
   readonly actions: ListenerActions;
   readonly translation: TranslationService;
@@ -156,6 +158,7 @@ export function createServices(options: ServiceOptions): AppServices {
       ...(options.kugouApiUrl ? { kugou: new KuGouProvider({ baseUrl: options.kugouApiUrl, ...fetchImpl }) } : {})
     }),
     auth,
+    users: userStore,
     actions: new ListenerActions(auth, userStore, catalog, covers),
     translation: new TranslationService(cache, {
       ...(options.translation?.baseUrl ? { baseUrl: options.translation.baseUrl } : {}),

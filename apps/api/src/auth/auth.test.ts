@@ -74,14 +74,22 @@ test('signing in again reuses the profile instead of resetting it', async () => 
   assert.deepEqual((await auth.getUser('user_abc'))?.likedSongIds, ['song-1']);
 });
 
-test('a directory that fails still lets someone sign in', async () => {
+test('an unavailable directory cannot recreate an unconfirmed account', async () => {
   const { auth } = build({
     identity: async () => {
       throw new Error('convex unreachable');
     }
   });
-  assert.equal((await auth.resolveCaller('convex:user_xyz'))?.userId, 'user_xyz');
-  assert.equal((await auth.getUser('user_xyz'))?.isGuest, false);
+  await assert.rejects(auth.resolveCaller('convex:user_xyz'));
+  assert.equal(await auth.getUser('user_xyz'), null);
+});
+
+test('a session that outlived its erased account does not bring an empty profile back', async () => {
+  // The identity provider answers null when it has no such user (ConvexUserStore.identity).
+  const { auth } = build({ identity: async () => null });
+  assert.equal(await auth.resolveCaller('convex:user_gone'), null);
+  assert.equal(await auth.resolveUser('convex:user_gone'), null);
+  assert.equal(await auth.getUser('user_gone'), null);
 });
 
 test('signing in keeps what the browser did as a guest', async () => {
@@ -154,4 +162,18 @@ test('merging never lets guest data overwrite the account identity', () => {
   assert.equal(merged.displayName, 'Asha');
   assert.equal(merged.email, 'asha@example.com');
   assert.deepEqual(merged.likedSongIds.sort(), ['a', 'b']);
+});
+
+
+test('guest linking preserves a withdrawn listening preference', async () => {
+  const { auth } = build();
+  const guest = await auth.createGuest();
+  await auth.updateProfile(guest.userId, current => ({ ...current, likedSongIds: ['song-1'], recentlyPlayed: [{ songId: 'song-1', playedAt: '2026-10-02T00:00:00.000Z', playDuration: 30 }], taste: { artists: [{ name: 'Asha', score: 2 }], languages: [], signals: 1, onboarded: false, updatedAt: '2026-10-02T00:00:00.000Z' } }));
+  await auth.resolveCaller('convex:user_abc');
+  await auth.updateProfile('user_abc', current => ({ ...current, settings: { personalization: false } }));
+  await auth.linkGuest(guest.userId, 'user_abc');
+  const account = await auth.getUser('user_abc');
+  assert.deepEqual(account?.likedSongIds, ['song-1']);
+  assert.deepEqual(account?.recentlyPlayed, []);
+  assert.equal(account?.taste, undefined);
 });

@@ -129,8 +129,7 @@ Small PRs, squash-merge, reviewed by a non-author.
 
 ## What is real vs demo
 
-The **Premium page is a UI demo** — no payments, labelled as such in the UI and the README. Karaoke
-sliders are **real**: they mix two genuinely separated stems locally. Don't ship a control that does
+Allegra is free and has no payments. Karaoke sliders are **real**: they mix two genuinely separated stems locally. Don't ship a control that does
 nothing and present it as a feature.
 
 <!-- convex-ai-start -->
@@ -146,3 +145,9 @@ Convex agent skills for common tasks can be installed by running
 `npx convex ai-files install`.
 
 <!-- convex-ai-end -->
+
+## Privacy instrumentation
+
+Session replay stays off on web and mobile. Do not add replay SDKs or Sentry replay integrations
+unless a separate explicit consent flow and reviewed policy change have been approved. Crash and
+performance reporting do not authorise screen recording.

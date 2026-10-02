@@ -1,4 +1,5 @@
 import type { AccountProfile, ApiResponse, ArtistProfile, ArtistSummary, HomePayload, LyricLine, LyricsPayload, MotionArtwork, SharedPlaylist, TasteSummary, UnifiedSong } from '@shared/types';
+import { POLICY_VERSION, type ReportReason } from '@shared/legal';
 import type { LibraryChange, LibraryOp } from '@shared/library';
 import { fromAllegraSong, type SongRef, type SongSnapshot } from '@shared/songRef';
 
@@ -562,4 +563,36 @@ export async function fetchSharedPlaylist(code: string, signal?: AbortSignal): P
 
 export async function saveSharedPlaylist(code: string): Promise<LibraryRecord> {
   return request(`/api/shared/${encodeURIComponent(code)}/save`, { method: 'POST' });
+}
+
+/** Tells the grievance officer about a shared playlist. Works signed out, like the link itself. */
+export async function reportSharedPlaylist(code: string, report: { readonly reason: ReportReason; readonly details?: string; readonly contact?: string }): Promise<void> {
+  await request(`/api/shared/${encodeURIComponent(code)}/report`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(report) });
+}
+
+/* ---------- Consent and the listener's own data ---------- */
+
+/** Records that the listener agreed to the current policies (the box in the sign-in dialog). */
+export async function recordConsent(): Promise<AccountProfile> {
+  return request('/api/me/consent', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ policyVersion: POLICY_VERSION }) });
+}
+
+/** Everything held about this listener, as one document (docs/api-contract.md AccountExport). */
+export async function exportAccountData(): Promise<unknown> {
+  return request('/api/me/export');
+}
+
+/** Erases this listener's account and everything in it. Not reversible. */
+export async function deleteAccount(): Promise<void> {
+  await requestWithoutBody('/api/me', { method: 'DELETE' });
+}
+
+/** Account-wide settings kept on the server (languages, personalisation), unlike the page's local ones. */
+export async function fetchAccountSettings(signal?: AbortSignal): Promise<Record<string, string | number | boolean>> {
+  return request('/api/me/settings', { signal });
+}
+
+/** Whether the app may learn from this listener's plays. Off erases what was learned, on every device. */
+export async function setPersonalization(on: boolean): Promise<Record<string, string | number | boolean>> {
+  return request('/api/me/settings', { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ personalization: on }) });
 }

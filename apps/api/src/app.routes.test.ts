@@ -208,6 +208,15 @@ test('invalid tokens are rejected and persistence failures stay in the envelope'
     },
     async deleteShare() {
       throw new Error('dynamo down');
+    },
+    async accountExtras() {
+      throw new Error('dynamo down');
+    },
+    async erase() {
+      throw new Error('dynamo down');
+    },
+    async fileReport() {
+      throw new Error('dynamo down');
     }
   };
   const services = createServices({

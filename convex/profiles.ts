@@ -3,7 +3,7 @@ import { v, type Infer } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from './_generated/server';
-import { playStat } from './schema';
+import { consent, playStat } from './schema';
 
 const library = v.object({
   id: v.string(),
@@ -56,7 +56,10 @@ const profileData = v.object({
       updatedAt: v.string()
     })
   ),
-  playStats: v.optional(v.array(playStat))
+  playStats: v.optional(v.array(playStat)),
+  consent: v.optional(consent),
+  /** Accepted so the API can send back what it read; the server sets its own on every write. */
+  lastActiveAt: v.optional(v.number())
 });
 
 /**
@@ -132,7 +135,7 @@ async function writeProfile(ctx: MutationCtx, existing: Doc<'profiles'>, data: P
     .unique();
   const kept = libraryOwned ? { likedSongIds: existing.likedSongIds, libraries: existing.libraries } : {};
   // replace, not patch: a field the API dropped (a cleared display name) must actually go.
-  await ctx.db.replace(existing._id, { ...user, ...kept, version: (existing.version ?? 0) + 1 });
+  await ctx.db.replace(existing._id, { ...user, ...kept, lastActiveAt: Date.now(), version: (existing.version ?? 0) + 1 });
 }
 
 /** Creates a profile (or, from an API that predates `update`, overwrites one). */
@@ -142,7 +145,7 @@ export const save = mutation({
     requireSecret(args.secret);
     const existing = await profileRow(ctx, args.user.userId);
     if (existing) await writeProfile(ctx, existing, args.user);
-    else await ctx.db.insert('profiles', { ...args.user, recentlyPlayed: args.user.recentlyPlayed.slice(0, RECENTLY_PLAYED_LIMIT) });
+    else await ctx.db.insert('profiles', { ...args.user, recentlyPlayed: args.user.recentlyPlayed.slice(0, RECENTLY_PLAYED_LIMIT), lastActiveAt: Date.now() });
     return null;
   }
 });

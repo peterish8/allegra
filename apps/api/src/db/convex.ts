@@ -1,7 +1,8 @@
 import type { CoverStorage, StoredCover } from '../lib/covers.js';
 import { PersistenceError } from '../lib/errors.js';
 import type { GrantLedger } from '../oauth/ledger.js';
-import type { LibraryRecord, ProfileChange, RecentRecord, ShareRecord, TasteEntry, TasteProfile, UserData, UserStore } from '../user/store.js';
+import type { Consent } from '../shared/legal.js';
+import type { AccountExtras, LibraryRecord, ProfileChange, RecentRecord, ReportDraft, ShareRecord, TasteEntry, TasteProfile, UserData, UserStore } from '../user/store.js';
 import type { ConvexGateway } from './convexGateway.js';
 
 /** Writes that lose the race this many times in a row give up rather than spin. */
@@ -81,10 +82,38 @@ export class ConvexUserStore implements UserStore {
     await this.convex.mutation('shares:remove', { code });
   }
 
+  public async accountExtras(userId: string): Promise<AccountExtras> {
+    const raw = await this.convex.query('account:extras', { userId });
+    const record = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+    const rows = (value: unknown): Record<string, unknown>[] =>
+      Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null) : [];
+    return {
+      complete: record.complete === true,
+      shares: rows(record.shares).flatMap((share) =>
+        typeof share.code === 'string' && typeof share.libraryId === 'string' && typeof share.createdAt === 'string'
+          ? [{ code: share.code, libraryId: share.libraryId, createdAt: share.createdAt }]
+          : []
+      ),
+      devices: rows(record.devices).flatMap((device) =>
+        typeof device.name === 'string' && typeof device.kind === 'string' && typeof device.appVersion === 'string' && typeof device.createdAt === 'number'
+          ? [{ name: device.name, kind: device.kind, appVersion: device.appVersion, createdAt: device.createdAt }]
+          : []
+      )
+    };
+  }
+
+  public async erase(userId: string): Promise<void> {
+    await this.convex.mutation('account:erase', { userId });
+  }
+
+  public async fileReport(report: ReportDraft): Promise<boolean> {
+    return (await this.convex.mutation('reports:file', { ...report })) === true;
+  }
+
   /**
    * What Convex Auth knows about a signed-in user, read once when their profile is
-   * first created. Returns null rather than throwing: a missing name or email must
-   * never block someone from signing in.
+   * first created. Null means Convex Auth has no such user (the account was erased); a
+   * user with no name or email is an empty object and still signs in.
    */
   public async identity(userId: string): Promise<{ email?: string; displayName?: string } | null> {
     const raw = await this.convex.query('profiles:identity', { userId });
@@ -125,6 +154,12 @@ function parseTaste(value: unknown): TasteProfile | undefined {
   };
 }
 
+function parseConsent(value: unknown): Consent | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  return typeof record.policyVersion === 'string' && typeof record.at === 'string' ? { policyVersion: record.policyVersion, at: record.at } : undefined;
+}
+
 function parseUserData(value: unknown): UserData | null {
   if (typeof value !== 'object' || value === null) return null;
   const record = value as Record<string, unknown>;
@@ -142,6 +177,7 @@ function parseUserData(value: unknown): UserData | null {
     ? (record.settings as Record<string, unknown>)
     : {};
   const taste = parseTaste(record.taste);
+  const consent = parseConsent(record.consent);
   return {
     userId: record.userId,
     isGuest: record.isGuest,
@@ -152,7 +188,9 @@ function parseUserData(value: unknown): UserData | null {
     settings,
     ...(typeof record.displayName === 'string' ? { displayName: record.displayName } : {}),
     ...(typeof record.email === 'string' ? { email: record.email } : {}),
-    ...(taste ? { taste } : {})
+    ...(taste ? { taste } : {}),
+    ...(consent ? { consent } : {}),
+    ...(typeof record.lastActiveAt === 'number' ? { lastActiveAt: record.lastActiveAt } : {})
   };
 }
 

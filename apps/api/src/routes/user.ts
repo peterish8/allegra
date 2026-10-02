@@ -7,7 +7,7 @@ import { MAX_COVER_BYTES, isCoverContentType, looksLikeStorageId, type CoverStor
 import { parseLibraryOps, parseSentAt, type PlaylistCover } from '../shared/library.js';
 import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { ListenerActions } from '../user/actions.js';
-import type { UserData } from '../user/store.js';
+import { isPersonalised, type UserData } from '../user/store.js';
 import { applySeeds, tasteSummary } from '../user/taste.js';
 import { callerProfile, sendUnauthorized } from './auth.js';
 import { asRecord, positiveInt, sendFailure, sendSuccess, sanitizeSettings, songId } from './common.js';
@@ -243,7 +243,14 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
     // An empty list means every language.
     if ('languages' in body) changed.languages = parseLanguages(body.languages).join(',');
     try {
-      const saved = await auth.updateProfile(user.userId, (current) => ({ ...current, settings: { ...sanitizeSettings(current.settings), ...changed } }), user);
+      const saved = await auth.updateProfile(user.userId, (current) => {
+        const next: UserData = { ...current, settings: { ...sanitizeSettings(current.settings), ...changed } };
+        if (changed.personalization !== false) return next;
+        // Switching personalisation off withdraws the consent it ran on: what was learned goes too.
+        const cleared = { ...next, recentlyPlayed: [] };
+        delete cleared.taste;
+        return cleared;
+      }, user);
       sendSuccess(response, sanitizeSettings(saved?.settings ?? {}));
     } catch (error) {
       sendFailure(response, error);
@@ -268,7 +275,8 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
     try {
       const saved = await auth.updateProfile(user.userId, (current) => ({
         ...current,
-        taste: applySeeds(current.taste, artists, languages),
+        // With personalisation off only the language choice is kept; no taste is built.
+        ...(isPersonalised(current) ? { taste: applySeeds(current.taste, artists, languages) } : {}),
         settings: picked.length > 0 ? { ...current.settings, languages: picked.join(',') } : current.settings
       }), user);
       sendSuccess(response, tasteSummary(saved?.taste));

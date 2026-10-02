@@ -83,7 +83,6 @@ Keyboard: `Space` play/pause, `←` `→` seek 5 s, `⌘/Ctrl K` search, `Esc` c
 | **Google sign-in** | **Real when Convex Auth is configured** — guest data merges into the account on first sign-in. Guest-only otherwise. Setup: [`docs/auth-convex-google.md`](docs/auth-convex-google.md) |
 | **Connect + library sync** | **Real for signed-in web and Android clients** — likes, playlists, play history, account recommendations, remote controls and playback transfer sync through Convex/API. Both devices must be online; a closed phone cannot be woken yet. See [the Connect contract](docs/connect-contract.md). |
 | **Karaoke** | **On-device** — a browser worker uses Mel-Band RoFormer when supported and falls back to mid-side vocal reduction. No track audio, model request, or cloud GPU is sent through the API. |
-| Premium page | **UI demo only** — no payments |
 | AI "set the mood" | **Not built.** The mood pills run a plain search |
 
 ## A note on the providers
@@ -102,3 +101,19 @@ commercial music service and is not pitched as one. The `UnifiedSong` normalisat
 
 Run typecheck, lint, tests, and the production build before shipping. Browser-visible changes also
 need a browser check; a successful build alone does not prove playback, OAuth, or on-device Karaoke.
+## Licence and rights
+
+Allegra is a free music player with source code under [GPL-3.0](./LICENSE).
+See [CREDITS.md](./CREDITS.md) for adapted code and retained upstream terms.
+It is unaffiliated with the music, lyrics and artwork providers it accesses. The code licence does
+not grant rights to recordings, lyrics, artwork or third-party fonts. Music licensing needs a
+separate rights-holder review before a public service is offered.
+
+Policy drafts are available at `/privacy`, `/terms` and `/copyright`. Fill the operator's legal
+name, address, grievance officer and email in `packages/shared/legal.ts` before publishing them.
+Rights holders can report a shared playlist using its Report control; other complaints need the
+published grievance contact.
+
+After deploying Convex, run `npx convex run account:backfillLastActive` once. The retention job
+skips legacy profiles without a last-active marker until backfilled. Policies and licensing need
+a lawyer's review; these engineering controls are not a compliance certification.

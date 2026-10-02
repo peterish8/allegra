@@ -4,9 +4,12 @@ import { PersistenceError } from '../lib/errors.js';
 import { MemoryLibraryStore, type LibraryStore } from '../user/library.js';
 import { opsForGuestMerge } from '../user/libraryOps.js';
 import type { SongSnapshot } from '../shared/songRef.js';
-import { MemoryUserStore, type ProfileChange, type UserData, type UserStore } from '../user/store.js';
+import { MemoryUserStore, RECENTLY_PLAYED_LIMIT, isPersonalised, type ProfileChange, type UserData, type UserStore } from '../user/store.js';
 import { mergeTaste } from '../user/taste.js';
 import type { GuestTokenVerifier, TokenVerifier, VerifiedCaller } from './verifier.js';
+
+/** How stale a profile's last-active time may get before a read-only listener moves it on. */
+const ACTIVE_TOUCH_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface AuthUser {
   readonly userId: string;
@@ -79,7 +82,7 @@ export class AuthService {
     if (!caller) return null;
     if (caller.source === 'guest') return caller;
 
-    if (!(await this.getUser(caller.userId))) await this.createAccountProfile(caller.userId);
+    if (!(await this.getUser(caller.userId)) && !(await this.createAccountProfile(caller.userId))) return null;
     return caller;
   }
 
@@ -95,12 +98,41 @@ export class AuthService {
     const caller = await this.verifier.verify(token);
     if (!caller) return null;
     const existing = await this.getUser(caller.userId);
-    if (existing || caller.source === 'guest') return existing;
+    if (existing) return this.keepActive(existing);
+    if (caller.source === 'guest') return existing;
     return this.createAccountProfile(caller.userId);
   }
 
-  private async createAccountProfile(userId: string): Promise<UserData> {
-    const identity = (await this.directory?.identity(userId).catch(() => null)) ?? null;
+  /**
+   * A listener who only reads (personalisation off, nothing liked lately) writes nothing, and
+   * would look unused to the retention sweep. Where the store keeps a last-active time and it
+   * has gone stale, one write moves it on. Never fails the request.
+   */
+  private async keepActive(user: UserData): Promise<UserData> {
+    if (user.lastActiveAt === undefined || Date.now() - user.lastActiveAt < ACTIVE_TOUCH_MS) return user;
+    try {
+      return (await this.store.update(user.userId, (current) => ({ ...current }), user)) ?? user;
+    } catch {
+      return user;
+    }
+  }
+
+  /**
+   * The profile for an account seen for the first time. Null when the identity provider says
+   * there is no such user: the account was erased and this is a session token that outlived
+   * it, which must not bring an empty profile back. A provider that cannot be reached must not
+   * permit profile creation until identity can be confirmed.
+   */
+  private async createAccountProfile(userId: string): Promise<UserData | null> {
+    let identity: Identity | null = null;
+    if (this.directory) {
+      try {
+        identity = await this.directory.identity(userId);
+        if (identity === null) return null;
+      } catch {
+        throw new PersistenceError();
+      }
+    }
     const profile: UserData = {
       ...emptyProfile(userId, false),
       ...(identity?.email ? { email: identity.email } : {}),
@@ -155,6 +187,22 @@ export class AuthService {
     }
   }
 
+  /** Records that the listener agreed to this version of the policies, now. */
+  public async recordConsent(user: UserData, policyVersion: string): Promise<UserData | null> {
+    const consent = { policyVersion, at: new Date().toISOString() };
+    return this.updateProfile(user.userId, (current) => ({ ...current, consent }), user);
+  }
+
+  /** Erases everything held about a listener (UserStore.erase). Safe to repeat. */
+  public async deleteAccount(userId: string): Promise<void> {
+    try {
+      await this.store.erase(userId);
+    } catch {
+      throw new PersistenceError();
+    }
+    this.libraryStore?.forget?.(userId);
+  }
+
   /** The only way likes and playlists change (user/library.ts). */
   public get library(): LibraryStore {
     if (!this.libraryStore) throw new PersistenceError();
@@ -206,9 +254,9 @@ export function mergeGuestInto(account: UserData, guest: UserData): UserData {
   const recentlyPlayed = [...account.recentlyPlayed, ...guest.recentlyPlayed]
     .sort((left, right) => right.playedAt.localeCompare(left.playedAt))
     .filter((entry, index, all) => all.findIndex((other) => other.songId === entry.songId) === index)
-    .slice(0, 50);
+    .slice(0, RECENTLY_PLAYED_LIMIT);
   const taste = account.taste && guest.taste ? mergeTaste(account.taste, guest.taste) : (account.taste ?? guest.taste);
-  return { ...account, likedSongIds, libraries, recentlyPlayed, ...(taste ? { taste } : {}) };
+  return { ...account, likedSongIds, libraries, recentlyPlayed: isPersonalised(account) ? recentlyPlayed : [], ...(isPersonalised(account) && taste ? { taste } : {}) };
 }
 
 export function bearerToken(value: string | undefined): string | null {

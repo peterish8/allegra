@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as account from "../account.js";
 import type * as auth from "../auth.js";
 import type * as authRedirect from "../authRedirect.js";
 import type * as connect from "../connect.js";
@@ -18,6 +19,7 @@ import type * as library from "../library.js";
 import type * as oauth from "../oauth.js";
 import type * as profiles from "../profiles.js";
 import type * as relations from "../relations.js";
+import type * as reports from "../reports.js";
 import type * as shares from "../shares.js";
 
 import type {
@@ -27,6 +29,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  account: typeof account;
   auth: typeof auth;
   authRedirect: typeof authRedirect;
   connect: typeof connect;
@@ -37,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   oauth: typeof oauth;
   profiles: typeof profiles;
   relations: typeof relations;
+  reports: typeof reports;
   shares: typeof shares;
 }>;
 

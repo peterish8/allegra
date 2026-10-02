@@ -19,7 +19,9 @@ import { useEffect, useId, useState, type CSSProperties, type ReactNode } from '
 import { AndroidAppCard } from './AndroidAppCard';
 import { TactileButton } from './ui';
 import { useSettings } from '../hooks/useSettings';
-import { fetchHealth } from '../lib/api';
+import Link from 'next/link';
+import { LEGAL_PATHS } from '@shared/legal';
+import { fetchAccountSettings, setPersonalization, fetchHealth } from '../lib/api';
 import { DEFAULT_KARAOKE_MIX, type KaraokeMix } from '../lib/karaokeMix';
 import { clearRoformerCache, detectLiveKaraokeCapabilities, roformerCacheBytes, type LiveKaraokeBackend } from '../lib/liveKaraoke';
 import { resetSettings, type KaraokeMode, type LyricsSize, type ThemePreference } from '../lib/settings';
@@ -154,6 +156,28 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
   const [modelNote, setModelNote] = useState<string | null>(null);
   const [health, setHealth] = useState<{ state: 'loading' } | { state: 'ok'; version: string } | { state: 'down' }>({ state: 'loading' });
   const [confirmReset, setConfirmReset] = useState(false);
+  const [personalization, setPersonalizationState] = useState<boolean | null>(null);
+  const [privacyBusy, setPrivacyBusy] = useState(false);
+  const [privacyError, setPrivacyError] = useState<string | null>(null);
+  const accountKey = account === null ? null : `${account.isGuest}:${account.email ?? account.name ?? ''}`;
+  useEffect(() => {
+    const controller = new AbortController();
+    setPersonalizationState(null);
+    if (accountKey !== null) void fetchAccountSettings(controller.signal).then((found) => {
+      if (!controller.signal.aborted) setPersonalizationState(found.personalization !== false);
+    }).catch(() => { if (!controller.signal.aborted) setPrivacyError('Could not load your listening preference. Reload to try again.'); });
+    return () => controller.abort();
+  }, [accountKey]);
+  const changePersonalization = async (next: boolean): Promise<void> => {
+    setPrivacyBusy(true);
+    setPrivacyError(null);
+    try {
+      const found = await setPersonalization(next);
+      setPersonalizationState(found.personalization !== false);
+      window.dispatchEvent(new CustomEvent('allegra:library'));
+    } catch { setPrivacyError('Could not save that preference. Try again.'); }
+    finally { setPrivacyBusy(false); }
+  };
   const savedTimings = Object.keys(settings.lyricsOffsets).length;
 
   useEffect(() => {
@@ -212,7 +236,7 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
         <div>
           <span className="eyebrow eyebrow-accent"><SettingsIcon size={13} aria-hidden="true" /> Settings</span>
           <h1>Make it <em>sound like yours.</em></h1>
-          <p>These choices are saved on this device and apply straight away.</p>
+          <p>Make listening your own. Account privacy choices follow you across devices.</p>
         </div>
       </motion.section>
 
@@ -355,13 +379,18 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
             {account && !account.isGuest ? 'Manage account' : 'Sign in'}
           </TactileButton>
         </Row>
+        <Row label="Learn from my listening" hint="When off, Allegra erases listening history and taste and stops learning from your plays on every device. Likes and playlists stay.">
+          <button type="button" className="settings-switch" role="switch" aria-label="Learn from my listening" aria-checked={personalization === true} disabled={personalization === null || privacyBusy} onClick={() => void changePersonalization(!personalization)}><span className="settings-switch__thumb" aria-hidden="true" /></button>
+        </Row>
+        {privacyError ? <p className="auth-error" role="alert">{privacyError}</p> : null}
+        <Row label="Policies" hint={<span className="legal-nav"><Link href={LEGAL_PATHS.privacy}>Privacy</Link><Link href={LEGAL_PATHS.terms}>Terms</Link><Link href={LEGAL_PATHS.copyright}>Copyright & complaints</Link></span>} />
         <Switch
           label="Share anonymous usage data"
           hint="Page views and speed measurements (Vercel Analytics, no cookies) help us fix slow screens. Takes effect the next time Allegra loads."
           checked={settings.analytics}
           onChange={(analytics) => update({ analytics })}
         />
-        <Row label="Where settings live" hint="Everything on this page is saved in this browser only. Clearing site data resets it." />
+        <Row label="Where settings live" hint="Appearance, playback and usage preferences stay in this browser. Learning from listening is an account-wide setting." />
       </Section>
 
       <Section id="settings-android" icon={<Smartphone size={18} />} title="Android app" lead="Allegra on your phone, with the same account.">

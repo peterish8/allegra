@@ -182,6 +182,5 @@ login redirect rather than your app. Verify against the production alias.
 
 ## Scope
 
-Anything that ships a control which does nothing is out. The Premium page is a labelled UI demo with
-no payments. Karaoke is real: it separates locally in a browser worker, with a mid-side fallback
+Anything that ships a control which does nothing is out. Allegra is free and has no payments. Karaoke is real: it separates locally in a browser worker, with a mid-side fallback
 when the model cannot run on the current device.

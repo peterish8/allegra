@@ -14,6 +14,7 @@ export interface LibraryRecord {
 /** Recent listens kept per listener. Older ones are dropped on every write, not archived. */
 export const RECENTLY_PLAYED_LIMIT = 25;
 
+import type { Consent, ReportReason } from '../shared/legal.js';
 import type { SongRef, SongSnapshot } from '../shared/songRef.js';
 
 export interface RecentRecord {
@@ -54,6 +55,34 @@ export interface UserData {
   readonly displayName?: string;
   readonly email?: string;
   readonly taste?: TasteProfile;
+  /** When the listener agreed to the policies, and which version. */
+  readonly consent?: Consent;
+  /** Server time (ms) of the last write, where the store keeps one. The retention sweep reads it. */
+  readonly lastActiveAt?: number;
+}
+
+/**
+ * False once the listener switched off "learn from my listening" (`settings.personalization`).
+ * Then nothing is recorded about what they play and nothing is learned from it; turning it off
+ * also erases what was already learned (routes/user.ts).
+ */
+export function isPersonalised(user: Pick<UserData, 'settings'>): boolean {
+  return user.settings.personalization !== false;
+}
+
+/** A complaint about a shared playlist, for the grievance officer. */
+export interface ReportDraft {
+  readonly code: string;
+  readonly reason: ReportReason;
+  readonly details?: string;
+  readonly contact?: string;
+}
+
+/** What a listener's export holds beyond their profile and library. */
+export interface AccountExtras {
+  readonly complete: boolean;
+  readonly shares: readonly { readonly code: string; readonly libraryId: string; readonly createdAt: string }[];
+  readonly devices: readonly { readonly name: string; readonly kind: string; readonly appVersion: string; readonly createdAt: number }[];
 }
 
 /** A playlist someone shared. It points at the owner's playlist, so it stays live. */
@@ -92,6 +121,15 @@ export interface UserStore {
   findShare(ownerId: string, libraryId: string): Promise<ShareRecord | null>;
   saveShare(share: ShareRecord): Promise<void>;
   deleteShare(code: string): Promise<void>;
+  /** Share links and devices, for the listener's data export. */
+  accountExtras(userId: string): Promise<AccountExtras>;
+  /**
+   * Erases everything held about this listener: profile, library, covers, share links, devices
+   * and the sign-in identity. Safe to repeat.
+   */
+  erase(userId: string): Promise<void>;
+  /** Records a complaint against a live share link. False when there is no such link. */
+  fileReport(report: ReportDraft): Promise<boolean>;
 }
 
 /**
@@ -104,6 +142,8 @@ export class MemoryUserStore implements UserStore {
   private readonly users = new Map<string, UserData>();
   private readonly shares = new Map<string, ShareRecord>();
   private readonly libraryOwned = new Set<string>();
+  /** What `fileReport` recorded, for tests to read. */
+  public readonly reports: ReportDraft[] = [];
 
   public async get(userId: string): Promise<UserData | null> {
     return this.users.get(userId) ?? null;
@@ -166,5 +206,26 @@ export class MemoryUserStore implements UserStore {
 
   public async deleteShare(code: string): Promise<void> {
     this.shares.delete(code);
+  }
+
+  public async accountExtras(userId: string): Promise<AccountExtras> {
+    const shares = [...this.shares.values()]
+      .filter((share) => share.ownerId === userId)
+      .map((share) => ({ code: share.code, libraryId: share.libraryId, createdAt: share.createdAt }));
+    return { shares, devices: [], complete: true };
+  }
+
+  public async erase(userId: string): Promise<void> {
+    this.users.delete(userId);
+    this.libraryOwned.delete(userId);
+    for (const share of [...this.shares.values()]) {
+      if (share.ownerId === userId) this.shares.delete(share.code);
+    }
+  }
+
+  public async fileReport(report: ReportDraft): Promise<boolean> {
+    if (!this.shares.has(report.code)) return false;
+    this.reports.push(report);
+    return true;
   }
 }

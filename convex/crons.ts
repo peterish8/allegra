@@ -8,5 +8,7 @@ const crons = cronJobs();
 crons.interval('sweep expired oauth grants', { hours: 24 }, internal.oauth.sweep, {});
 // Keep the Connect command queue short-lived and prune long-inactive device registrations.
 crons.interval('sweep Connect commands and stale devices', { minutes: 5 }, internal.connect.sweep, {});
+// The privacy policy's retention periods (packages/shared/legal.ts): unused guest profiles and accounts are erased.
+crons.interval('erase inactive guests and accounts', { hours: 24 }, internal.account.sweepInactive, {});
 
 export default crons;
