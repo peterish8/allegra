@@ -118,20 +118,43 @@ jobs:
       contents: write
 
     steps:
+      # History, so the release notes can list what changed since the previous build.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - uses: actions/download-artifact@v4
         with:
           name: LuvLyrics-apk
           path: apps/mobile
 
+      # The release carries what the app's update screen shows (apps/mobile/src/services/appUpdate.ts),
+      # as Echo Music's does: the version, the date and size (from the release and its APK), and
+      # changelog.json — what changed since the previous build, from the commit subjects.
       - name: Publish to the apk-latest release
+        working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
-          # This job has no checkout, so gh cannot read the repository from git.
           GH_REPO: ${{ github.repository }}
         run: |
+          PREVIOUS="$(gh release view apk-latest --json targetCommitish --jq .targetCommitish 2>/dev/null || true)"
+          case "$PREVIOUS" in *[!0-9a-f]*) PREVIOUS="" ;; esac
+          [ "${#PREVIOUS}" -eq 40 ] || PREVIOUS=""
+          VERSION="$(node -p "require('./apps/mobile/app.json').expo.version")"
+          node scripts/mobile-release-notes.mjs --from "$PREVIOUS" --to "$GITHUB_SHA" --version "$VERSION" --out "$RUNNER_TEMP/notes"
+          {
+            cat "$RUNNER_TEMP/notes/notes.md"
+            echo
+            echo "Built from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7}. Download LuvLyrics.apk below and open it on your Android phone to install, or use Update app in the app's About page."
+            echo "Direct link: https://github.com/${GITHUB_REPOSITORY}/releases/download/apk-latest/LuvLyrics.apk"
+          } > "$RUNNER_TEMP/notes/release-body.md"
           gh release delete apk-latest --yes --cleanup-tag || true
-          gh release create apk-latest LuvLyrics.apk \
+          gh release create apk-latest apps/mobile/LuvLyrics.apk "$RUNNER_TEMP/notes/changelog.json" \
             --prerelease \
             --target "$GITHUB_SHA" \
-            --title "LuvLyrics — latest build" \
-            --notes "Built from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7}. Download LuvLyrics.apk below and open it on your Android phone to install. Direct link: https://github.com/${GITHUB_REPOSITORY}/releases/download/apk-latest/LuvLyrics.apk"
+            --title "LuvLyrics $VERSION — latest build" \
+            --notes-file "$RUNNER_TEMP/notes/release-body.md"

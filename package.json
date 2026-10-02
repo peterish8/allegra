@@ -11,7 +11,7 @@
     "dev:mobile": "npm --prefix apps/mobile start",
     "mock": "node mocks/server.mjs",
     "contract-test": "node tests/contract/contract-smoke.mjs",
-    "infra:test": "node --test tests/infra/infra-files.test.mjs",
+    "infra:test": "node --test tests/infra/infra-files.test.mjs tests/infra/mobile-release-notes.test.mjs",
     "convex:test": "node --import tsx --test tests/convex/authRedirect.test.ts && vitest run convex/connect.test.ts",
     "sync:shared": "node scripts/sync-shared.mjs",
     "convex:dev": "convex dev",
