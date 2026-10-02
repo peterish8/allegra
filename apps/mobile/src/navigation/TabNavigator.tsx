@@ -19,7 +19,6 @@ import PlaylistDetailScreen from '../screens/PlaylistDetailScreen';
 import SearchScreen from '../screens/SearchScreen';
 import StreamScreen from '../screens/StreamScreen';
 import SettingsScreen from '../screens/SettingsScreen';
-import { AudioDownloaderScreen } from '../screens/AudioDownloaderScreen';
 import ArtistScreen from '../screens/ArtistScreen';
 import CollectionScreen from '../screens/CollectionScreen';
 import { SCREEN_BG, stackContentStyle } from './theme';
@@ -138,7 +137,7 @@ export const TabNavigator: React.FC = () => {
       <Tab.Navigator
         id="MainTabs"
         initialRouteName="Stream"
-        // Back from Settings / the downloader returns to the tab you came from.
+        // Back from Settings returns to the tab you came from.
         backBehavior="history"
         tabBar={navBarStyle === 'modern-pill' ? renderModernPillTabBar : renderCustomTabBar}
         screenOptions={{
@@ -157,7 +156,6 @@ export const TabNavigator: React.FC = () => {
         <Tab.Screen name="Library" component={LibraryStackScreen} options={{ tabBarLabel: 'Library', tabBarIcon: LibraryIcon }} />
         <Tab.Screen name="Search" component={SearchScreen} options={{ tabBarLabel: 'Search', tabBarIcon: SearchIcon }} />
         <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: 'Settings' }} />
-        <Tab.Screen name="AudioDownloader" component={AudioDownloaderScreen} options={{ tabBarLabel: 'Downloader' }} />
         <Tab.Screen name="Browse" component={BrowseStackScreen} options={{ tabBarLabel: 'Browse' }} />
       </Tab.Navigator>
     </View>

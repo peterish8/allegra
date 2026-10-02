@@ -59,6 +59,9 @@ import { useSongsStore } from '../store/songsStore';
 import { usePlayerStore } from '../store/playerStore';
 import { useStreamHistoryStore } from '../store/streamHistoryStore';
 import { useUpdateStore } from '../store/updateStore';
+import AddListSheet from '../components/stream/AddListSheet';
+import { DownloadsTray } from '../components/stream/DownloadsTray';
+import { libraryKeys, matchKey } from '../utils/downloadState';
 import { useLuvsPreferencesStore } from '../store/luvsPreferencesStore';
 import { useDownloadQueueStore } from '../store/downloadQueueStore';
 import { Song, UnifiedSong } from '../types/song';
@@ -293,6 +296,19 @@ const StreamScreen: React.FC = () => {
     setToast(`Saving “${song.title}” to your library`);
   }, [addToDownloads]);
 
+  // Save all: every result that is not already on the phone. (Ones already queued are skipped by the queue.)
+  const unsavedResults = useMemo(() => {
+    const have = libraryKeys(localSongs);
+    return (results ?? []).filter(song => !have.has(matchKey(song.title, song.artist)));
+  }, [results, localSongs]);
+  const saveAll = useCallback(() => {
+    if (unsavedResults.length === 0) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    addToDownloads(unsavedResults);
+    setToast(`Saving ${unsavedResults.length} ${unsavedResults.length === 1 ? 'song' : 'songs'} to your library`);
+  }, [unsavedResults, addToDownloads]);
+  const [listOpen, setListOpen] = useState(false);
+
   const queueNext = useCallback((song: UnifiedSong) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     StreamService.playNext(song);
@@ -419,6 +435,14 @@ const StreamScreen: React.FC = () => {
         {mixSection}
         {artists.length > 0 ? (
           <BrowseShelf shelf={{ title: 'Artists', items: artists }} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />
+        ) : null}
+        {unsavedResults.length >= 2 && !searching ? (
+          <View style={styles.saveAllRow}>
+            <Tactile onPress={saveAll} pressScale={0.96} accessibilityRole="button" accessibilityLabel={`Save all ${unsavedResults.length} songs to your library`} style={styles.saveAll}>
+              <Ionicons name="arrow-down-circle-outline" size={18} color={Signal.ink} />
+              <Text style={styles.saveAllText}>Save all {unsavedResults.length}</Text>
+            </Tactile>
+          </View>
         ) : null}
         {searching ? <ActivityIndicator color={Signal.wave} style={styles.spinner} /> : null}
         {!searching && count === 0 ? (
@@ -578,8 +602,15 @@ const StreamScreen: React.FC = () => {
             <Pressable onPress={clearSearch} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear search">
               <Ionicons name="close-circle" size={18} color={Signal.inkMuted} />
             </Pressable>
-          ) : null}
+          ) : (
+            // Songs from a list (a note, a chat): the part of Get songs that is not a search.
+            <Tactile onPress={() => { Haptics.selectionAsync().catch(() => {}); setListOpen(true); }} hitSlop={10} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Add a list of songs" style={styles.listButton}>
+              <Ionicons name="list" size={19} color={Signal.inkSoft} />
+            </Tactile>
+          )}
         </View>
+
+        <DownloadsTray onPress={openDownloads} />
 
         <View style={styles.chips}>
           <MoodChips moods={ytChips.length > 0 ? ytChips.map(c => c.title) : MOOD_LABELS} selected={mood} onSelect={selectMood} />
@@ -595,6 +626,7 @@ const StreamScreen: React.FC = () => {
       />
       {toast ? <Toast visible message={toast} type="info" duration={2200} onDismiss={() => setToast(null)} /> : null}
       <AboutSheet visible={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <AddListSheet visible={listOpen} onClose={() => setListOpen(false)} onSaved={setToast} />
     </View>
   );
 };
@@ -628,6 +660,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.09)',
   },
   searchInput: { flex: 1, color: Signal.ink, fontSize: 16, paddingVertical: 0 },
+  listButton: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  saveAllRow: { paddingHorizontal: GUTTER, marginTop: 4, marginBottom: 2, alignItems: 'flex-start' },
+  saveAll: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 38, paddingHorizontal: 14, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.09)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)' },
+  saveAllText: { color: Signal.ink, fontSize: 14, fontWeight: '600' },
   chips: { marginTop: Space.sm },
   firstSection: { marginTop: Space.md },
   list: { paddingHorizontal: GUTTER },

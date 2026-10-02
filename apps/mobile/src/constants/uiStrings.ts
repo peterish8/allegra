@@ -33,13 +33,6 @@ export const LikedSongsStrings = {
   noLikedSongsYet: 'No liked songs yet',
 };
 
-export const YoutubeBrowserStrings = {
-  connectionFailed: 'Connection failed',
-  retry: 'Retry',
-  analyzingStream: 'Analyzing stream…',
-  downloadThisSong: 'Download this song',
-};
-
 export const SearchResultsStrings = {
   noResultsFound: 'No results found',
 };

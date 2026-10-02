@@ -16,7 +16,6 @@ import { navTheme, SCREEN_BG, stackContentStyle } from './theme';
 import TabNavigator from './TabNavigator';
 import NowPlayingScreen from '../screens/NowPlayingScreen';
 import LyricsEditorScreen from '../screens/LyricsEditorScreen';
-import { YoutubeBrowserScreen } from '../screens/YoutubeBrowserScreen';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { MoreMenuHost } from '../components/MoreMenu';
 import { ListenTogetherHost } from '../components/listenTogether/ListenTogetherHost';
@@ -101,14 +100,6 @@ export const RootNavigator: React.FC = () => {
             component={AddToPlaylistModal}
             options={{
               presentation: 'transparentModal',
-              animation: 'slide_from_bottom',
-            }}
-          />
-          <Stack.Screen
-            name="YoutubeBrowser"
-            component={YoutubeBrowserScreen}
-            options={{
-              presentation: 'fullScreenModal',
               animation: 'slide_from_bottom',
             }}
           />

@@ -15,26 +15,10 @@ export type RootStackParamList = {
   NowPlaying: { songId: string; lyrics?: boolean; sheet?: PlayerSheetName };
   /** Lyrics editor for a song saved on the phone. */
   EditLyrics: { songId: string };
-  YoutubeBrowser: undefined;
   LuvsVault: undefined; // Luvs liked songs vault
   CreatePlaylist: { playlistId?: string, initialName?: string } | undefined; // Create or Edit playlist modal
   AddToPlaylist: { songId?: string; playlistId?: string }; // NEW: Add song to playlist modal
 };
-
-/** Params for the audio downloader, which lives inside the tab navigator. */
-export type AudioDownloaderParams = {
-  fromBrowser?: boolean;
-  videoTitle?: string;
-  videoAuthor?: string;
-  videoId?: string;
-  audioUrl?: string;
-  audioBitrate?: number;
-  audioFormat?: string;
-  thumbnail?: string;
-  lengthSeconds?: number;
-  voiceQuery?: string;
-  autoDownload?: boolean;
-} | undefined;
 
 // Bottom Tab Navigator
 export type TabParamList = {
@@ -45,7 +29,6 @@ export type TabParamList = {
   // Pushed screens without a tab icon. They live in the tab navigator so the
   // bottom bar stays on screen, as in Spotify and Apple Music (see VISIBLE_TABS).
   Settings: undefined;
-  AudioDownloader: AudioDownloaderParams;
   /** YouTube Music pages (artists, albums, playlists), stacked so back walks the trail. */
   Browse: NavigatorScreenParams<BrowseStackParamList> | undefined;
 };

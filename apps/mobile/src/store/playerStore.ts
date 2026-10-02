@@ -37,8 +37,6 @@ export function setPlaylistSelectionRouter(router: PlaylistSelectionRouter | nul
 const MINI_PLAYER_HIDES_ON: Readonly<Record<string, readonly string[]>> = {
   NowPlaying: ['NowPlaying'],
   EditLyrics: ['Editor'],
-  YoutubeBrowser: ['manual'],
-  AudioDownloader: ['Downloader'],
 };
 
 /** The flags that are still earned with `routeName` in front. Unknown (`undefined`) leaves them alone. */

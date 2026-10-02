@@ -63,7 +63,7 @@ class ImageSearchServiceImpl {
 
     /**
      * Search iTunes for High-Res (1000x1000) Cover Art URLs only
-     * Used by AudioDownloader
+     * Used by the cover search
      */
     async searchItunes(query: string): Promise<string[]> {
         try {

@@ -49,7 +49,6 @@ export interface MoreItem {
 export const MORE_TILES: readonly MoreItem[] = [
   { key: 'Search', label: 'Search', icon: 'search' },
   { key: 'Playlists', label: 'Playlists', icon: 'albums-outline' },
-  { key: 'AudioDownloader', label: 'Get songs', icon: 'cloud-download-outline' },
 ];
 
 /** Less frequent destinations, listed below the tiles. */

@@ -242,8 +242,6 @@ describe('stale mini player hides', () => {
 
   it('keeps the flag the screen in front is entitled to', () => {
     expect([...liveMiniPlayerHides(sources('NowPlaying'), 'NowPlaying')]).toEqual(['NowPlaying']);
-    expect([...liveMiniPlayerHides(sources('Downloader'), 'AudioDownloader')]).toEqual(['Downloader']);
-    expect([...liveMiniPlayerHides(sources('manual'), 'YoutubeBrowser')]).toEqual(['manual']);
     expect([...liveMiniPlayerHides(sources('Editor'), 'EditLyrics')]).toEqual(['Editor']);
   });
 

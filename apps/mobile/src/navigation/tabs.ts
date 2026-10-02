@@ -2,8 +2,8 @@ import { Platform } from 'react-native';
 
 /**
  * The everyday tabs — the only routes with an icon in the bottom bar, in bar
- * order: Stream, Luvs, (mic), Library, then •••. Search, Playlists, the
- * downloader, Settings and the YouTube Music pages are tab routes too (so the
+ * order: Stream, Luvs, (mic), Library, then •••. Search, Playlists,
+ * Settings and the YouTube Music pages are tab routes too (so the
  * bar stays on screen while they're open) but live behind the ••• menu
  * (components/MoreMenu.tsx). Only the full-screen player covers the bar.
  */
