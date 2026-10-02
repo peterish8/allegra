@@ -32,11 +32,14 @@ import Animated, {
   useAnimatedReaction,
   useAnimatedRef,
   useAnimatedScrollHandler,
+  useFrameCallback,
   scrollTo,
   runOnJS,
   SharedValue,
 } from 'react-native-reanimated';
 import { useSettingsStore } from '../store/settingsStore';
+import { usePlayerStore } from '../store/playerStore';
+import { lyricClockAt } from '../playback/lyricClock';
 import InstrumentalWaveform, { isInstrumentalLyric, useIsActiveLine } from './InstrumentalWaveform';
 import { Frosted } from './allegra/Frosted';
 import { Motion, Signal } from '../constants/allegraTheme';
@@ -187,6 +190,8 @@ interface SynchronizedLyricsProps {
   edgeFade?: number;
   /** Mirrors the list's scroll offset, so the player sheet knows when the lines sit at the top. */
   scrollOffset?: SharedValue<number>;
+  /** The lines are on screen: only then does the lyric clock run a frame at a time. Default on. */
+  live?: boolean;
 }
 
 export interface SynchronizedLyricsRef {
@@ -208,6 +213,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   bottomSpacerHeight = SCREEN_HEIGHT * 0.4,
   edgeFade = 0,
   scrollOffset,
+  live = true,
 }, ref) => {
   // The gap is padding on each row (the same for every line); the text itself
   // carries no margin, so a row's height is exactly text + 2 × gap.
@@ -278,8 +284,35 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   }, [currentTime, currentTimeNumberSV]);
 
   // The sung line — a binary search on the UI thread.
+  // The lyric clock: the player's position (reported about four times a second) carried on a frame at a time
+  // while a song plays, so a line switches when it is sung rather than up to a quarter second later, and in
+  // steps of that size. A new report puts it right; paused or hidden, it just is the last report, and no
+  // frame callback runs at all (nothing ticks when nothing is watching).
+  const playing = usePlayerStore(s => s.isPlaying);
+  const clockSV = useSharedValue(typeof currentTime === 'number' ? currentTime : 0);
+  const anchorPositionSV = useSharedValue(0);
+  const anchorAtSV = useSharedValue(0);
+  const clockRunningSV = useSharedValue(false);
+  useAnimatedReaction(
+    () => currentTimeSV.value,
+    position => {
+      anchorPositionSV.value = position;
+      anchorAtSV.value = Date.now();
+      if (!clockRunningSV.value) clockSV.value = position;
+    },
+  );
+  const clockFrame = useFrameCallback(() => {
+    clockSV.value = lyricClockAt(anchorPositionSV.value, anchorAtSV.value, Date.now(), clockSV.value);
+  }, false);
+  const clockRunning = live && playing && lyrics.length > 0;
+  useEffect(() => {
+    clockRunningSV.value = clockRunning;
+    clockFrame.setActive(clockRunning);
+    if (!clockRunning) clockSV.value = anchorPositionSV.value;
+  }, [clockRunning, clockFrame, clockRunningSV, clockSV, anchorPositionSV]);
+
   const activeIndexDV = useDerivedValue(() => {
-    const et = currentTimeSV.value + lyricsDelay;
+    const et = clockSV.value + lyricsDelay;
     if (lyrics.length === 0) return -1;
     let left = 0, right = lyrics.length - 1, result = -1;
     while (left <= right) {

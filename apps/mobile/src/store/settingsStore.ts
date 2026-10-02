@@ -34,6 +34,21 @@ export type AppBackground = 'shader' | 'glass' | 'glow';
  * Stored settings from before "Glow animated" was retired still say 'glow';
  * the closest look left is Apple + glow. Anything unknown gets the default.
  */
+/**
+ * Settings → Lyrics → Timing, in seconds added to the playback position: 0 is "in sync" (the row says so).
+ * The default used to be −1.2, a leftover from the first player, which lit every line 1.2 seconds after it
+ * began and showed "Timing −1.2s" on a fresh install.
+ */
+export const DEFAULT_LYRICS_DELAY = 0;
+/** The old default. A saved value of exactly this was never chosen, so settings v5 moves it to in sync. */
+const OLD_DEFAULT_LYRICS_DELAY = -1.2;
+
+/** The timing a saved setting should carry after migration: untouched old default → in sync; any chosen value kept. */
+export const migrateLyricsDelay = (version: number, saved: unknown): number => {
+  if (typeof saved !== 'number' || !Number.isFinite(saved)) return DEFAULT_LYRICS_DELAY;
+  return version < 5 && Math.abs(saved - OLD_DEFAULT_LYRICS_DELAY) < 1e-6 ? DEFAULT_LYRICS_DELAY : saved;
+};
+
 export const normalizePlayerBackground = (value: unknown): PlayerBackground =>
   (value === 'apple' || value === 'youtube' || value === 'aura' ? value : 'blend');
 
@@ -186,7 +201,7 @@ const DEFAULT_SETTINGS = {
   showPerformanceHUD: false, // Default disabled
   downloadDirectoryUri: null,
   applyThemeToOtherPages: false,
-  lyricsDelay: -1.2,
+  lyricsDelay: DEFAULT_LYRICS_DELAY,
   quickPins: ['export', 'import', 'scan'] as [string, string, string],
   ytVideoPreview: false,
   youtubeApiKey: '',
@@ -257,7 +272,7 @@ export const useSettingsStore = create<SettingsState>()(
       resetToDefaults: () => set(DEFAULT_SETTINGS),
 
       // Advanced
-      lyricsDelay: -1.2,
+      lyricsDelay: DEFAULT_LYRICS_DELAY,
       setLyricsDelay: (lyricsDelay) => set({ lyricsDelay }),
 
       // Beta
@@ -291,7 +306,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'lyricflow-settings',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 4,
+      version: 5,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<SettingsState> & { lyricsFontSize?: string };
         const { lyricsFontSize, ...rest } = state;
@@ -311,6 +326,8 @@ export const useSettingsStore = create<SettingsState>()(
           // gives the square card.
           playerCoverFull: version < 4 ? true : state.playerCoverFull ?? true,
           appleMusicInspired: version < 4 ? true : state.appleMusicInspired ?? true,
+          // v5: the old −1.2 s default (never chosen) becomes in sync.
+          lyricsDelay: migrateLyricsDelay(version, state.lyricsDelay),
         } as SettingsState;
       },
     }

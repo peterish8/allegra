@@ -1,4 +1,28 @@
-import { isCardPlayerBackground, lyricsTextStyle, normalizeMiniPlayerBackground, normalizePlayerBackground } from './settingsStore';
+import { DEFAULT_LYRICS_DELAY, isCardPlayerBackground, lyricsTextStyle, migrateLyricsDelay, normalizeMiniPlayerBackground, normalizePlayerBackground } from './settingsStore';
+
+describe('lyrics timing', () => {
+  it('starts in sync', () => {
+    expect(DEFAULT_LYRICS_DELAY).toBe(0);
+  });
+
+  // −1.2 was the old default, so a saved −1.2 was never chosen: it lit every line 1.2 s late.
+  it('moves the old untouched default to in sync', () => {
+    expect(migrateLyricsDelay(4, -1.2)).toBe(0);
+    expect(migrateLyricsDelay(3, -1.2)).toBe(0);
+  });
+
+  it('keeps a timing someone set, even the same number once they are on the new version', () => {
+    expect(migrateLyricsDelay(4, 0.4)).toBe(0.4);
+    expect(migrateLyricsDelay(4, -2)).toBe(-2);
+    expect(migrateLyricsDelay(5, -1.2)).toBe(-1.2);
+  });
+
+  it('falls back to in sync for a missing or broken value', () => {
+    expect(migrateLyricsDelay(4, undefined)).toBe(0);
+    expect(migrateLyricsDelay(4, Number.NaN)).toBe(0);
+    expect(migrateLyricsDelay(4, 'late')).toBe(0);
+  });
+});
 
 describe('normalizePlayerBackground', () => {
   it('keeps the two backgrounds that still exist', () => {

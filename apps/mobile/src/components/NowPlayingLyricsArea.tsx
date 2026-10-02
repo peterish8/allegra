@@ -345,6 +345,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
         activeLinePosition={0.35}
         topSpacerHeight={24}
         edgeFade={56}
+        live={showLyrics}
         scrollOffset={scrollOffset}
         isUserScrolling={isUserScrollingRef.current}
         onScrollStateChange={(isScrolling) => {
