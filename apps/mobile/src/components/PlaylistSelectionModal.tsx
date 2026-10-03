@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View, Text, StyleSheet, Modal, Pressable, TextInput,
     FlatList, ActivityIndicator, KeyboardAvoidingView, Platform
@@ -30,7 +30,10 @@ export const PlaylistSelectionModal = ({ visible, onClose, onSelect, onSkip }: P
         if (visible) { fetchPlaylists(); setIsCreating(false); setNewPlaylistName(''); setSearchQuery(''); }
     }, [visible, fetchPlaylists]);
 
-    const filteredPlaylists = playlists.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    const filteredPlaylists = useMemo(() => {
+        const needle = searchQuery.toLowerCase();
+        return needle ? playlists.filter(p => p.name.toLowerCase().includes(needle)) : playlists;
+    }, [playlists, searchQuery]);
 
     const handleCreate = async () => {
         if (!newPlaylistName.trim()) return;

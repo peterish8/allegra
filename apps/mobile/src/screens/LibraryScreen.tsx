@@ -113,9 +113,10 @@ const LibraryScreen: React.FC = () => {
 
   const list = useMemo(() => {
     const needle = filter.trim().toLowerCase();
+    // One pass for both filters; the sort works on the (usually much shorter) result.
     return visible
-      .filter(s => !artist || leadArtist(s.artist) === artist)
-      .filter(s => !needle || s.title.toLowerCase().includes(needle) || (s.artist ?? '').toLowerCase().includes(needle))
+      .filter(s => (!artist || leadArtist(s.artist) === artist)
+        && (!needle || s.title.toLowerCase().includes(needle) || (s.artist ?? '').toLowerCase().includes(needle)))
       .sort(sorters[sort]);
   }, [visible, sort, filter, artist]);
 

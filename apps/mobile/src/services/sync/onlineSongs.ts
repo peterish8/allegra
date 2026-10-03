@@ -114,7 +114,8 @@ export async function playList(playlistId: string, songs: readonly Song[], index
       .then(more => {
         const state = usePlayerStore.getState();
         if (more.length === 0 || state.currentPlaylistId !== playlistId || !state.playlistQueue) return;
-        state.updateQueue([...state.playlistQueue, ...more.filter(song => !state.playlistQueue?.some(queued => queued.id === song.id))]);
+        const queued = new Set(state.playlistQueue.map(song => song.id));
+        state.updateQueue([...state.playlistQueue, ...more.filter(song => !queued.has(song.id))]);
         prepareNextInQueue();
       })
       .catch(() => undefined);

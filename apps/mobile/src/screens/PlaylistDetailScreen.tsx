@@ -340,7 +340,8 @@ export const PlaylistDetailScreen: React.FC = () => {
       const onlineRows = playlistId === LIKED_PLAYLIST_ID
         ? useOnlineLibraryStore.getState().likes
         : await getOnlinePlaylistSongs(playlistId);
-      const onlineSongs = onlineRows.map(onlineRowToSong).filter(song => !playlistSongs.some(local => local.id === song.id));
+      const localIds = new Set(playlistSongs.map(local => local.id));
+      const onlineSongs = onlineRows.map(onlineRowToSong).filter(song => !localIds.has(song.id));
       setSongs([...playlistSongs, ...onlineSongs]);
     } catch (e) {
       console.error('Failed to load playlist', e);

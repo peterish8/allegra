@@ -40,8 +40,10 @@ export const useDownloadQueueStore = create<DownloadQueueStore>((set) => ({
 
   addToQueue: (songs: UnifiedSong[], targetPlaylistId?: string, sortOrders?: number[]) => {
     set(state => {
+      // A Set of queued ids: one pass instead of scanning the queue for every song (O(n + m)).
+      const queued = new Set(state.queue.map(q => q.id));
       const newItems = songs
-        .filter(s => !state.queue.find(q => q.id === s.id))
+        .filter(s => !queued.has(s.id))
         .map((s, index) => ({
           id: s.id,
           song: s,
@@ -141,12 +143,10 @@ export const useDownloadQueueStore = create<DownloadQueueStore>((set) => ({
       const { loadAllJobs } = await import('../database/downloadQueueQueries');
       const jobs = await loadAllJobs();
       if (jobs.length > 0) {
-        set(state => ({
-          queue: [
-            ...jobs.filter(j => !state.queue.find(q => q.id === j.id)),
-            ...state.queue,
-          ]
-        }));
+        set(state => {
+          const queued = new Set(state.queue.map(q => q.id));
+          return { queue: [...jobs.filter(j => !queued.has(j.id)), ...state.queue] };
+        });
       }
     } catch (e) {
       if (__DEV__) console.warn('[DownloadQueueStore] hydrateFromDb failed:', e);
