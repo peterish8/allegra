@@ -7354,3 +7354,21 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .site-header .session-avatar,
   .site-header .header-buttons .icon-button svg { transition: none; transform: none !important; }
 }
+
+/* ---------- Quick picks, calmer ----------
+ * The row's buttons were stretched to the top bar's full 66px, so a hover filled a tall oval while
+ * an underline grew and the label lifted. Now: 30px pills on the bar's centre line, one soft fill
+ * and a 1px lift on hover, the underline kept for the chosen mood alone. Sentence-case label. */
+.panel-topbar .mood-pills { align-self: center; align-items: center; height: auto; }
+.panel-topbar .mood-pills-label { font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.panel-topbar .mood-pill,
+.panel-topbar .mood-pill:nth-child(n) { align-self: center; height: 30px; min-height: 0; line-height: 30px; }
+.panel-topbar .mood-pill:hover { background: rgba(255, 255, 255, 0.07); transform: translateY(-1px); }
+.panel-topbar .mood-pill:active { transform: scale(0.96); }
+.panel-topbar .mood-pill:hover::after,
+.panel-topbar .mood-pill:focus-visible::after { opacity: 0; transform: scaleX(0.35); }
+.panel-topbar .mood-pill[aria-pressed='true']::after { opacity: 0.8; transform: scaleX(1); }
+@media (prefers-reduced-motion: reduce) {
+  .panel-topbar .mood-pill:hover,
+  .panel-topbar .mood-pill:active { transform: none; }
+}
