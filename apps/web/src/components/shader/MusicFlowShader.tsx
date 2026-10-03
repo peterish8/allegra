@@ -28,8 +28,6 @@ type MusicFlowShaderProps = {
   mood?: 'energy' | 'chill' | 'different' | 'surprise'
   /** Album-art palette. When set it replaces the mood colours and eases between songs. */
   palette?: Palette | null
-  /** Render the lifted prism treatment used by the light theme. */
-  light?: boolean
   className?: string
 }
 
@@ -57,7 +55,6 @@ uniform vec3 uAccent;
 uniform vec3 uBright;
 uniform vec3 uSky;
 uniform vec3 uDeep;
-uniform float uLight;
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -263,14 +260,6 @@ void main() {
 
   color += uBright * 0.09 * smoothstep(0.84, 1.0, uv.y) * (0.55 + 0.45 * sin(uv.x * 3.2 + uTime * 0.4));
 
-  // Light mode is still the same cover-led field, but refracted through a
-  // bright prism: lift the floor without washing hue into neutral gray.
-  float prism = clamp(uLight, 0.0, 1.0);
-  vec3 lifted = mix(color, vec3(0.96), 0.42);
-  float liftedLuma = dot(lifted, vec3(0.2126, 0.7152, 0.0722));
-  lifted = mix(vec3(liftedLuma), lifted, 1.18);
-  color = mix(color, clamp(lifted, 0.0, 1.0), prism);
-
   gl_FragColor = vec4(color, 1.0);
 }
 `
@@ -363,12 +352,11 @@ function paletteColors(palette: Palette): Colors {
   }
 }
 
-function MusicFlowShader({ energy = 0.72, mood = 'energy', palette = null, light = false, className = '' }: MusicFlowShaderProps) {
+function MusicFlowShader({ energy = 0.72, mood = 'energy', palette = null, className = '' }: MusicFlowShaderProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const energyRef = useRef(energy)
   const moodRef = useRef(mood)
   const paletteRef = useRef(palette)
-  const lightRef = useRef(light)
   const redrawRef = useRef<() => void>(() => undefined)
 
   useEffect(() => {
@@ -384,11 +372,6 @@ function MusicFlowShader({ energy = 0.72, mood = 'energy', palette = null, light
     // With reduced motion the loop is idle; wake it so a new song still recolours the field.
     redrawRef.current()
   }, [palette])
-
-  useEffect(() => {
-    lightRef.current = light
-    redrawRef.current()
-  }, [light])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -426,7 +409,6 @@ function MusicFlowShader({ energy = 0.72, mood = 'energy', palette = null, light
       bright: gl.getUniformLocation(program, 'uBright'),
       sky: gl.getUniformLocation(program, 'uSky'),
       deep: gl.getUniformLocation(program, 'uDeep'),
-      light: gl.getUniformLocation(program, 'uLight'),
     }
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -447,8 +429,6 @@ function MusicFlowShader({ energy = 0.72, mood = 'energy', palette = null, light
     let displayEnergy = energyRef.current
     // Eased toward the live reading so a band that spikes for one frame still lands as a swell.
     const displayBands = new Float32Array([0, 0, 0])
-    let shellIsLight = false
-    let lastThemeCheck = 0
 
     const targetColors = (): Colors => {
       const current = paletteRef.current
@@ -528,11 +508,6 @@ function MusicFlowShader({ energy = 0.72, mood = 'energy', palette = null, light
       gl.uniform3fv(uniforms.bright, shown.bright)
       gl.uniform3fv(uniforms.sky, shown.sky)
       gl.uniform3fv(uniforms.deep, shown.deep)
-      if (timestamp - lastThemeCheck > 500) {
-        shellIsLight = document.querySelector('.app-shell')?.getAttribute('data-theme') === 'light'
-        lastThemeCheck = timestamp
-      }
-      gl.uniform1f(uniforms.light, lightRef.current || shellIsLight ? 1 : 0)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
 
       if (isVisible && isDocumentVisible && !reducedMotion.matches) {

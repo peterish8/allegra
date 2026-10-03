@@ -58,7 +58,6 @@ interface PlayerPanelProps {
   readonly liked: boolean;
   readonly lyrics: React.ComponentProps<typeof LyricsPanel>;
   readonly palette: Palette;
-  readonly light?: boolean;
   /** @deprecated Kept for call-site compatibility; atmosphere is CSS artwork now. */
   readonly energy?: number;
   readonly suggestions?: UnifiedSong[];
@@ -68,10 +67,10 @@ interface PlayerPanelProps {
   readonly onOpenImmersive: () => void;
   readonly onToggle: () => void;
   readonly onNext: () => void;
+  readonly onPrevious: () => void;
   /** Off → all → one, the same cycle as the player bar. */
   readonly repeat?: RepeatMode;
   readonly onCycleRepeat?: () => void;
-  readonly onPrevious: () => void;
   readonly onSeek: (seconds: number) => void;
   readonly onLike: () => void;
   readonly onPlayQueueSong?: (song: UnifiedSong) => void;
@@ -119,17 +118,16 @@ export function PlayerPanel({
   liked,
   lyrics,
   palette,
-  light = false,
   suggestions = [],
   liveKaraoke,
   onCollapse,
   onOpenWorkspace,
   onOpenImmersive,
   onToggle,
-  repeat = 'off',
-  onCycleRepeat,
   onNext,
   onPrevious,
+  repeat = 'off',
+  onCycleRepeat,
   onSeek,
   onLike,
   onPlayQueueSong,
@@ -314,7 +312,7 @@ export function PlayerPanel({
             {song.artwork ? (
               <FluidArtBackground artworkUrl={song.artwork} />
             ) : (
-              <DynamicLyricsBackground artworkUrl={song.artwork} palette={palette} light={light} />
+              <DynamicLyricsBackground artworkUrl={song.artwork} palette={palette} />
             )}
             <div className="listening-world__glow" />
           </div>
@@ -538,6 +536,8 @@ export function PlayerPanel({
                       label={liked ? 'Remove from likes' : 'Add to likes'}
                       active={liked}
                       className="np-action--like"
+                      onClick={onLike}
+                    />
                     {onCycleRepeat ? (
                       <IconButton
                         icon={repeat === 'one' ? Repeat1 : Repeat}
@@ -547,8 +547,6 @@ export function PlayerPanel({
                         onClick={onCycleRepeat}
                       />
                     ) : null}
-                      onClick={onLike}
-                    />
                     <IconButton
                       icon={Waves}
                       label={isNarrowViewport ? (mode === 'workspace' ? 'Show cover' : 'Show lyrics') : lyricsFull ? 'Show cover' : desktopLyricsVisible ? 'Hide lyrics' : 'Show lyrics'}

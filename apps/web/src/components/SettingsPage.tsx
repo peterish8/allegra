@@ -24,7 +24,7 @@ import { LEGAL_PATHS } from '@shared/legal';
 import { fetchAccountSettings, setPersonalization, fetchHealth } from '../lib/api';
 import { DEFAULT_KARAOKE_MIX, type KaraokeMix } from '../lib/karaokeMix';
 import { clearRoformerCache, detectLiveKaraokeCapabilities, roformerCacheBytes, type LiveKaraokeBackend } from '../lib/liveKaraoke';
-import { resetSettings, type KaraokeMode, type LyricsHighlight, type LyricsSize, type ThemePreference } from '../lib/settings';
+import { resetSettings, type KaraokeMode, type LyricsHighlight, type LyricsSize } from '../lib/settings';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
 
 interface SettingsPageProps {
@@ -357,17 +357,7 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
         </Row>
       </Section>
 
-      <Section id="settings-appearance" icon={<PaletteIcon size={18} />} title="Appearance" lead="Light, dark and moving parts.">
-        <Choice<ThemePreference>
-          label="Theme"
-          value={settings.theme}
-          options={[
-            { value: 'dark', label: 'Dark' },
-            { value: 'light', label: 'Light' },
-            { value: 'system', label: 'Match device' }
-          ]}
-          onChange={(theme) => update({ theme })}
-        />
+      <Section id="settings-appearance" icon={<PaletteIcon size={18} />} title="Appearance" lead="The moving light behind the app.">
         <Switch
           label="Animated background"
           hint="The flowing light behind the app. Off saves battery on older devices. Your device’s reduce-motion setting is always respected."

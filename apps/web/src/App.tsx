@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ArrowUpToLine, ChevronRight, Download, House, Heart as HeartIcon, Moon, Sun, Disc3, Pause, Play, SkipBack, SkipForward, Sparkles, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpToLine, ChevronRight, Download, House, Heart as HeartIcon, Disc3, Pause, Play, SkipBack, SkipForward, Sparkles, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -158,21 +158,8 @@ export default function App() {
   const [palette, setPalette] = useState<Palette>(DEFAULT_PALETTE);
   const [ambientColor, setAmbientColor] = useState('#2d7fe4');
   const [settings, updateSettings] = useSettings();
-  // Background motion and theme are saved settings; the header buttons are shortcuts to them.
+  // Background motion is a saved setting; the header button is a shortcut to it.
   const motionPaused = !settings.animatedBackground;
-  const [systemLight, setSystemLight] = useState(() => window.matchMedia?.('(prefers-color-scheme: light)').matches ?? false);
-  useEffect(() => {
-    if (settings.theme !== 'system' || !window.matchMedia) return undefined;
-    const query = window.matchMedia('(prefers-color-scheme: light)');
-    const onChange = (): void => setSystemLight(query.matches);
-    onChange();
-    query.addEventListener('change', onChange);
-    return () => query.removeEventListener('change', onChange);
-  }, [settings.theme]);
-  const theme: 'dark' | 'light' = settings.theme === 'system' ? (systemLight ? 'light' : 'dark') : settings.theme;
-  const toggleTheme = (): void => {
-    updateSettings({ theme: theme === 'dark' ? 'light' : 'dark' });
-  };
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try { return window.localStorage.getItem('allegra-nav-collapsed') === 'true'; } catch { return false; }
   });
@@ -1272,9 +1259,9 @@ export default function App() {
   return (
     <PlaylistsContext.Provider value={playlists}>
     <QueueActionsContext.Provider value={queueActions}>
-    <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme={theme} data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
+    <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme="dark" data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
       {immersiveOpen ? null : (
-        <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={shaderPalette} light={theme === 'light'} />
+        <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={shaderPalette} />
       )}
       <a className="skip-link" href="#main-content">Skip to content</a>
       <AuthDialog open={authOpen} account={account} onClose={() => setAuthOpen(false)} />
@@ -1300,7 +1287,7 @@ export default function App() {
                     : <><strong>Guest</strong><small>Sign in to keep your music</small></>}
               </span>
             </button>
-            <div className="header-buttons"><button className="icon-button theme-toggle" type="button" aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} onClick={toggleTheme}>{theme === 'dark' ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}</button><Link className="icon-button app-download-link" href={`${paths.settings}#settings-android`} aria-label="Get the Android app" title="Get the Android app"><Download size={15} aria-hidden="true" /></Link><button className="motion-toggle icon-button" type="button" aria-label={motionPaused ? 'Resume background motion' : 'Pause background motion'} title={motionPaused ? 'Resume background motion' : 'Pause background motion'} onClick={() => updateSettings((current) => ({ animatedBackground: !current.animatedBackground }))}>{motionPaused ? <Play size={15} fill="currentColor" aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}</button><Link className={`icon-button settings-link${view === 'settings' ? ' is-active' : ''}`} href={paths.settings} aria-label="Settings" title="Settings" aria-current={view === 'settings' ? 'page' : undefined}><SettingsIcon size={15} aria-hidden="true" /></Link></div>
+            <div className="header-buttons"><Link className="icon-button app-download-link" href={`${paths.settings}#settings-android`} aria-label="Get the Android app" title="Get the Android app"><Download size={15} aria-hidden="true" /></Link><button className="motion-toggle icon-button" type="button" aria-label={motionPaused ? 'Resume background motion' : 'Pause background motion'} title={motionPaused ? 'Resume background motion' : 'Pause background motion'} onClick={() => updateSettings((current) => ({ animatedBackground: !current.animatedBackground }))}>{motionPaused ? <Play size={15} fill="currentColor" aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}</button><Link className={`icon-button settings-link${view === 'settings' ? ' is-active' : ''}`} href={paths.settings} aria-label="Settings" title="Settings" aria-current={view === 'settings' ? 'page' : undefined}><SettingsIcon size={15} aria-hidden="true" /></Link></div>
           </div>
       </header>
 
@@ -1315,12 +1302,10 @@ export default function App() {
               onClose={() => setPaletteOpen(false)}
               activeQuery={query.trim()}
               recent={recentlyPlayed}
-              theme={theme}
               onPlaySong={(song, queue) => playSong(song, queue)}
               onOpenArtist={openArtist}
               onNavigate={(path) => { router.push(path); }}
               onSearchAll={(value) => { if (view !== 'discover') router.push(paths.discover); setQuery(value); }}
-              onToggleTheme={toggleTheme}
               onClearSearch={() => setQuery('')}
             />
         </div>
@@ -1392,7 +1377,7 @@ export default function App() {
         <div className="browse-grid">
           <div className="browse-main">
             <motion.section className="hero-banner" variants={pageVariants} initial="hidden" animate="visible" transition={pageTransition} aria-label="Featured track" data-live={playerIsPlaying ? 'true' : undefined} data-searching={isSearching ? 'true' : undefined}>
-                 <div className="hero-banner-shader" aria-hidden="true"><MusicFlowShader energy={0.55} palette={bannerPalette} light={theme === 'light'} /></div>
+                 <div className="hero-banner-shader" aria-hidden="true"><MusicFlowShader energy={0.55} palette={bannerPalette} /></div>
               <motion.div className="hero-banner-copy" variants={itemVariants}>
                 <span className="hero-banner-eyebrow">{isCurrent ? 'Now playing' : 'Curated playlist'}</span>
                 <h1>{activeSong ? activeSong.title.replace(/\s*\([^)]*\)\s*/g, ' ').trim() : 'Good music, ready when you are'}</h1>
@@ -1715,13 +1700,10 @@ export default function App() {
           alternativesLoading: lyricsAlternativesLoading,
           alternativesError: lyricsAlternativesError,
           onLoadAlternatives: loadLyricsAlternatives,
-        repeat={playerRepeat}
-        onCycleRepeat={cyclePlayerRepeat}
           onSelectAlternative: selectLyricsAlternative,
           songId: playerSong?.id ?? null
         }}
         palette={palette}
-        light={theme === 'light'}
         energy={playerEnergy}
         suggestions={suggestions.length > 0 ? suggestions : aiPicks}
         muted={remotePlayback ? playerVolume <= 0 : audio.isMuted}
@@ -1733,6 +1715,8 @@ export default function App() {
         onToggle={togglePlayer}
         onNext={skipNextSmart}
         onPrevious={previousPlayer}
+        repeat={playerRepeat}
+        onCycleRepeat={cyclePlayerRepeat}
         onSeek={seekPlayer}
         onLike={() => { if (playerSong) toggleLike(playerSong); }}
         onPlayQueueSong={(song) => void playSong(song, playerQueue.length > 0 ? playerQueue : displaySongs)}

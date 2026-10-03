@@ -6,7 +6,6 @@ export interface DynamicLyricsBackgroundProps {
   readonly artworkUrl: string | null;
   /** Seed / fallback while the one-shot extract finishes. */
   readonly palette?: Palette | null;
-  readonly light?: boolean;
   readonly className?: string;
 }
 
@@ -48,11 +47,8 @@ function toAtmosphere(palette: Palette, key: string): Atmosphere {
   };
 }
 
-function fallbackAtmosphere(seed: Palette | null | undefined, light: boolean): Atmosphere {
-  const base = seed ?? (light
-    ? { primary: '#9aa3ad', secondary: '#7d8793', tertiary: '#b7c0c9' }
-    : DEFAULT_PALETTE);
-  return toAtmosphere(base, seed ? 'seed' : 'default');
+function fallbackAtmosphere(seed: Palette | null | undefined): Atmosphere {
+  return toAtmosphere(seed ?? DEFAULT_PALETTE, seed ? 'seed' : 'default');
 }
 
 async function loadAtmosphere(url: string, signal: AbortSignal): Promise<Atmosphere> {
@@ -65,8 +61,8 @@ async function loadAtmosphere(url: string, signal: AbortSignal): Promise<Atmosph
   return next;
 }
 
-function sceneVars(atmosphere: Atmosphere, light: boolean): CSSProperties {
-  const baseMix = light ? '#eef1f4' : '#08090b';
+function sceneVars(atmosphere: Atmosphere): CSSProperties {
+  const baseMix = '#08090b';
   return {
     '--music-primary': atmosphere.primary,
     '--music-secondary': atmosphere.secondary,
@@ -89,10 +85,9 @@ function sceneVars(atmosphere: Atmosphere, light: boolean): CSSProperties {
 function DynamicLyricsBackgroundComponent({
   artworkUrl,
   palette = null,
-  light = false,
   className = ''
 }: DynamicLyricsBackgroundProps) {
-  const [current, setCurrent] = useState<Atmosphere>(() => fallbackAtmosphere(palette, light));
+  const [current, setCurrent] = useState<Atmosphere>(() => fallbackAtmosphere(palette));
   const [incoming, setIncoming] = useState<Atmosphere | null>(null);
   const [tabHidden, setTabHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
   const currentKeyRef = useRef(current.key);
@@ -110,7 +105,7 @@ function DynamicLyricsBackgroundComponent({
 
   useEffect(() => {
     if (!artworkUrl) {
-      const next = fallbackAtmosphere(palette, light);
+      const next = fallbackAtmosphere(palette);
       if (next.key !== currentKeyRef.current) {
         setCurrent(next);
         setIncoming(null);
@@ -157,15 +152,15 @@ function DynamicLyricsBackgroundComponent({
       controller.abort();
       if (fadeTimer) window.clearTimeout(fadeTimer);
     };
-  }, [artworkUrl, palette, light]);
+  }, [artworkUrl, palette]);
 
   return (
     <div
       className={`music-background${tabHidden ? ' is-tab-hidden' : ''} ${className}`.trim()}
       aria-hidden="true"
     >
-      <AtmosphereScene atmosphere={current} light={light} fading={Boolean(incoming)} />
-      {incoming ? <AtmosphereScene atmosphere={incoming} light={light} incoming /> : null}
+      <AtmosphereScene atmosphere={current} fading={Boolean(incoming)} />
+      {incoming ? <AtmosphereScene atmosphere={incoming} incoming /> : null}
       <div className="music-background__darkness" />
       <div className="music-background__lyric-field" />
     </div>
@@ -174,19 +169,17 @@ function DynamicLyricsBackgroundComponent({
 
 function AtmosphereScene({
   atmosphere,
-  light,
   incoming = false,
   fading = false
 }: {
   readonly atmosphere: Atmosphere;
-  readonly light: boolean;
   readonly incoming?: boolean;
   readonly fading?: boolean;
 }) {
   return (
     <div
       className={`music-bg-scene${incoming ? ' is-incoming' : ''}${fading ? ' is-fading' : ''}`}
-      style={sceneVars(atmosphere, light)}
+      style={sceneVars(atmosphere)}
     >
       <div className="music-bg-base" />
       {/* Five colour fields drifting on their own long, mismatched cycles, so they merge and

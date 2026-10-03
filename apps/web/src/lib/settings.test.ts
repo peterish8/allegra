@@ -22,7 +22,6 @@ test('corrupt or non-object JSON gives the defaults', () => {
 test('valid fields survive, invalid ones fall back one by one', () => {
   const parsed = parseSettings(
     JSON.stringify({
-      theme: 'system',
       lyricsSize: 'huge',
       analytics: false,
       karaokeMode: 'ai-only',
@@ -31,7 +30,6 @@ test('valid fields survive, invalid ones fall back one by one', () => {
       extra: 'dropped'
     })
   );
-  assert.equal(parsed.theme, 'system');
   assert.equal(parsed.lyricsSize, DEFAULT_SETTINGS.lyricsSize);
   assert.equal(parsed.analytics, false);
   assert.equal(parsed.karaokeMode, DEFAULT_SETTINGS.karaokeMode);
@@ -40,10 +38,8 @@ test('valid fields survive, invalid ones fall back one by one', () => {
   assert.equal('extra' in parsed, false);
 });
 
-test('the old theme key is honoured only until settings are first saved', () => {
-  assert.equal(parseSettings(null, 'light').theme, 'light');
-  assert.equal(parseSettings(null, 'neon').theme, DEFAULT_SETTINGS.theme);
-  assert.equal(parseSettings(JSON.stringify({ theme: 'dark' }), 'light').theme, 'dark');
+test('a theme saved by an older build is dropped: the site is dark only', () => {
+  assert.equal('theme' in parseSettings(JSON.stringify({ theme: 'light' })), false);
 });
 
 test('lyric offsets clamp to ±5 s in 0.1 s steps', () => {

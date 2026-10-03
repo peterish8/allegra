@@ -5,7 +5,6 @@ import { DEFAULT_KARAOKE_MIX, normalizeMix, type KaraokeMix } from './karaokeMix
  * lyrics, karaoke and the settings page all read the same object, and a guest's choices
  * never need the API. Every field survives a corrupt or partial stored value.
  */
-export type ThemePreference = 'dark' | 'light' | 'system';
 export type LyricsSize = 'small' | 'medium' | 'large';
 /** How the sung line lights up: letter by letter as it is sung, or the whole line at once. Same as the phone. */
 export type LyricsHighlight = 'letters' | 'lines';
@@ -13,7 +12,6 @@ export type LyricsHighlight = 'letters' | 'lines';
 export type KaraokeMode = 'auto' | 'basic';
 
 export interface Settings {
-  readonly theme: ThemePreference;
   /** The shader behind the shell. Off keeps a still frame (the header pause button, remembered). */
   readonly animatedBackground: boolean;
   /** When a song came from a search or a short list, keep queueing similar songs after it. */
@@ -35,14 +33,11 @@ export interface Settings {
 }
 
 export const SETTINGS_KEY = 'allegra-settings-v1';
-/** Written by earlier builds; read once so an existing theme choice is not lost. */
-export const LEGACY_THEME_KEY = 'allegra-theme';
 /** Enough for a long listening history; oldest entries go first. */
 export const MAX_LYRICS_OFFSETS = 300;
 export const MAX_LYRICS_OFFSET_SECONDS = 5;
 
 export const DEFAULT_SETTINGS: Settings = {
-  theme: 'dark',
   animatedBackground: true,
   autoplaySimilar: true,
   lyricsSize: 'medium',
@@ -84,7 +79,7 @@ function offsets(value: unknown): Record<string, number> {
 }
 
 /** Stored JSON (or nothing) → complete settings. Unknown fields are dropped, bad ones defaulted. */
-export function parseSettings(raw: string | null, legacyTheme: string | null = null): Settings {
+export function parseSettings(raw: string | null): Settings {
   let stored: Record<string, unknown> = {};
   if (raw) {
     try {
@@ -94,9 +89,7 @@ export function parseSettings(raw: string | null, legacyTheme: string | null = n
       stored = {};
     }
   }
-  const legacy = legacyTheme === 'light' || legacyTheme === 'dark' ? legacyTheme : DEFAULT_SETTINGS.theme;
   return {
-    theme: oneOf(stored.theme, ['dark', 'light', 'system'], raw ? DEFAULT_SETTINGS.theme : legacy),
     animatedBackground: flag(stored.animatedBackground, DEFAULT_SETTINGS.animatedBackground),
     autoplaySimilar: flag(stored.autoplaySimilar, DEFAULT_SETTINGS.autoplaySimilar),
     lyricsSize: oneOf(stored.lyricsSize, ['small', 'medium', 'large'], DEFAULT_SETTINGS.lyricsSize),
@@ -138,7 +131,7 @@ function readStorage(key: string): string | null {
 
 function load(): Settings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS;
-  return parseSettings(readStorage(SETTINGS_KEY), readStorage(LEGACY_THEME_KEY));
+  return parseSettings(readStorage(SETTINGS_KEY));
 }
 
 export function getSettings(): Settings {

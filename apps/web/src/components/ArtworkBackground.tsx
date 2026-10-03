@@ -6,7 +6,6 @@ export interface ArtworkBackgroundProps {
   /** Current song's cover art. `null` shows the palette fallback only. */
   readonly artworkUrl: string | null;
   readonly palette?: Palette | null;
-  readonly light?: boolean;
   readonly className?: string;
 }
 
@@ -31,7 +30,6 @@ function hexLuminance(hex: string | undefined): number {
 export function ArtworkBackground({
   artworkUrl,
   palette = null,
-  light = false,
   className = ''
 }: ArtworkBackgroundProps) {
   const [activeUrl, setActiveUrl] = useState<string | null>(artworkUrl);
@@ -55,7 +53,7 @@ export function ArtworkBackground({
   const veilStrength = 0.18 + hexLuminance(palette?.primary) * 0.3;
   const style = {
     '--artwork-bg-veil': veilStrength,
-    '--artwork-bg-fallback': palette?.primary ?? (light ? '#c9ccd1' : '#0b0b0d')
+    '--artwork-bg-fallback': palette?.primary ?? '#0b0b0d'
   } as CSSProperties;
 
   return (

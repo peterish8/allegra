@@ -56,8 +56,6 @@
 
 html,
 body { background: #050506; }
-html:has(.app-shell[data-theme='light']),
-html:has(.app-shell[data-theme='light']) body { background: #b9bcc3; }
 
 body {
   margin: 0;
@@ -80,8 +78,6 @@ body::after,
   isolation: isolate;
   background: #050506;
 }
-
-.app-shell[data-theme='light'] { background: #c9ccd1; }
 
 /* ---------- Background shader (VibeRoom music-flow field) ----------
  * The active artwork palette is injected on .dynamic-aura by App. Keep the
@@ -108,43 +104,6 @@ body::after,
 .vibe-flutes { background-image: linear-gradient(90deg, color-mix(in srgb, var(--aura-primary) 10%, transparent) 0%, transparent 16%, transparent 42%, color-mix(in srgb, var(--aura-secondary) 10%, transparent) 78%, color-mix(in srgb, var(--aura-tertiary) 17%, transparent) 94%, color-mix(in srgb, var(--aura-primary) 10%, transparent) 100%); opacity: 0.4; mix-blend-mode: screen; }
 .vibe-vignette { background: radial-gradient(ellipse 80% 85% at 60% 45%, transparent 35%, rgba(4, 4, 5, 0.6) 100%); }
 .vibe-scrim { background: linear-gradient(180deg, rgba(5, 5, 6, 0.3), rgba(5, 5, 6, 0.52) 100%); }
-
-/* Light theme keeps the cover hue but lowers contrast behind the light chrome. */
-.app-shell[data-theme='light'] .dynamic-aura {
-  background:
-    radial-gradient(66% 72% at 14% 20%, color-mix(in srgb, var(--aura-primary) 28%, #f8fbff), transparent 74%),
-    radial-gradient(58% 64% at 88% 78%, color-mix(in srgb, var(--aura-secondary) 24%, #f8fbff), transparent 76%),
-    radial-gradient(44% 46% at 58% 42%, color-mix(in srgb, var(--aura-tertiary) 20%, transparent), transparent 72%),
-    conic-gradient(from 210deg at 52% 48%, color-mix(in srgb, var(--aura-secondary) 8%, transparent), color-mix(in srgb, var(--aura-primary) 10%, transparent), color-mix(in srgb, var(--aura-tertiary) 9%, transparent), transparent 72%),
-    #f3f6f8;
-}
-
-.app-shell[data-theme='light'] .dynamic-aura .music-flow-canvas {
-  filter: saturate(1.45) contrast(0.9) brightness(1.08);
-  opacity: 0.5;
-  mix-blend-mode: multiply;
-}
-
-.app-shell[data-theme='light'] .dynamic-aura.is-paused .music-flow-canvas { opacity: 0.28; }
-
-.app-shell[data-theme='light'] .vibe-flutes {
-  display: block;
-  background-image:
-    linear-gradient(104deg, transparent 0%, color-mix(in srgb, var(--aura-primary) 16%, transparent) 18%, transparent 34%, color-mix(in srgb, var(--aura-secondary) 14%, transparent) 58%, transparent 74%, color-mix(in srgb, var(--aura-tertiary) 18%, transparent) 94%),
-    linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.22) 50%, transparent 100%);
-  opacity: 0.42;
-  mix-blend-mode: color-burn;
-}
-
-.app-shell[data-theme='light'] .vibe-vignette {
-  display: block;
-  background: radial-gradient(ellipse 86% 82% at 50% 46%, transparent 38%, rgba(104, 113, 124, 0.12) 100%);
-}
-
-.app-shell[data-theme='light'] .vibe-scrim {
-  display: block;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(226, 232, 238, 0.2) 100%);
-}
 
 :where(a, button, input, select, textarea, [tabindex]:not([tabindex='-1'])):focus-visible {
   outline: 2px solid var(--focus, #111);
@@ -353,31 +312,6 @@ body::after,
   background: var(--panel-bg);
   box-shadow: none;
   color: var(--ink);
-}
-
-.app-shell[data-theme='light'] .content-wrap,
-.app-shell[data-theme='light'] .content-wrap.inner-page-wrap {
-  --bg: #fff;
-  --bg-deep: #f6f6f8;
-  --surface: #f5f5f7;
-  --surface-raised: #f0f0f3;
-  --surface-hover: #e9e9ed;
-  --surface-sunken: #f5f5f7;
-  --ink: #111113;
-  --ink-soft: #3b3b40;
-  --ink-muted: #62626a;
-  --ink-faint: #6a6a72;
-  --border: #ececf0;
-  --border-strong: #dcdce1;
-  --border-subtle: rgba(0, 0, 0, 0.06);
-  --hover-wash: rgba(0, 0, 0, 0.045);
-  --active-wash: rgba(0, 0, 0, 0.075);
-  --focus: #111;
-  --accent-wash: rgba(238, 107, 95, 0.1);
-  --panel-bg: rgba(255, 255, 255, 0.92);
-  --panel-edge: rgba(255, 255, 255, 0.6);
-  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--panel-edge);
-  backdrop-filter: blur(20px) saturate(110%);
 }
 
 /* Direct children own the full panel width; legacy page rules centred them with auto margins. */
@@ -1940,38 +1874,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   animation-play-state: paused;
 }
 
-.app-shell[data-theme='light'] .music-bg-base {
-  background:
-    radial-gradient(
-      135% 100% at 50% -12%,
-      color-mix(in srgb, var(--music-primary, #9aa3ad) 26%, #f3f6f9) 0%,
-      color-mix(in srgb, var(--music-primary, #9aa3ad) 10%, #f3f6f9) 48%,
-      transparent 82%
-    ),
-    linear-gradient(
-      168deg,
-      color-mix(in srgb, var(--music-secondary, #7d8793) 16%, #f1f4f8) 0%,
-      color-mix(in srgb, var(--music-deep, #c9ccd1) 28%, #eef1f5) 54%,
-      #e8edf2 100%
-    );
-}
-.app-shell[data-theme='light'] .ambient-blob { opacity: 0.42; mix-blend-mode: multiply; }
-.app-shell[data-theme='light'] .blob-5 { display: none; }
-.app-shell[data-theme='light'] .music-background::after { opacity: 0.03; }
-.app-shell[data-theme='light'] .music-background__darkness {
-  background:
-    linear-gradient(180deg, rgba(226, 232, 238, 0.3) 0%, rgba(226, 232, 238, 0.04) 30%, rgba(200, 208, 218, 0.24) 100%),
-    radial-gradient(
-      ellipse 90% 80% at 50% 46%,
-      rgba(255, 255, 255, 0) 0%,
-      rgba(210, 218, 226, 0.2) 62%,
-      rgba(186, 195, 206, 0.34) 100%
-    );
-}
-.app-shell[data-theme='light'] .music-background__lyric-field {
-  background: linear-gradient(to right, transparent, rgba(246, 249, 252, 0.12) 35%, rgba(230, 236, 242, 0.28));
-}
-
 /* ---------- Player atmosphere: cover wash (CSS only; not the lyrics stage) ---------- */
 .artwork-bg { position: absolute; z-index: 0; inset: 0; overflow: hidden; pointer-events: none; contain: paint; }
 .artwork-bg-fallback { position: absolute; inset: 0; background: color-mix(in srgb, var(--artwork-bg-fallback, #0b0b0d) 45%, #05060a); }
@@ -2057,11 +1959,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   .artwork-bg-stack.is-incoming { animation: none !important; }
   .artwork-bg-stack { transition: none; }}
 .app-shell[data-motion-paused='true'] .artwork-bg-layer { animation-play-state: paused; }
-
-.app-shell[data-theme='light'] .artwork-bg-fallback { background: color-mix(in srgb, var(--artwork-bg-fallback, #c9ccd1) 40%, #f3f6f8); }
-.app-shell[data-theme='light'] .artwork-bg-layer { filter: blur(52px) saturate(1.85) contrast(0.96) brightness(1.12); opacity: 0.72; }
-.app-shell[data-theme='light'] .artwork-bg-veil { background: rgba(246, 249, 252, calc(var(--artwork-bg-veil, 0.24) * 1.3)); }
-.app-shell[data-theme='light'] .artwork-bg-vignette { background: radial-gradient(ellipse 82% 86% at 50% 44%, transparent 46%, rgba(190, 198, 208, 0.4) 100%); }
 
 .player-sidepanel {
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -2647,24 +2544,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   content: '';
 }
 
-.app-shell[data-theme='light'] .am-queue-scrim { background: rgba(42, 49, 58, 0.16); }
-.app-shell[data-theme='light'] .am-queue {
-  --ink: #17191c;
-  --ink-muted: #69727b;
-  border-color: rgba(30, 38, 46, 0.14);
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.82), transparent 38%),
-    rgba(246, 249, 251, 0.78);
-  box-shadow: 0 28px 64px -24px rgba(49, 60, 72, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.92);
-}
-.app-shell[data-theme='light'] .am-queue-head { border-bottom-color: rgba(30, 38, 46, 0.1); }
-.app-shell[data-theme='light'] .am-queue-now { border-bottom-color: rgba(30, 38, 46, 0.08); }
-.app-shell[data-theme='light'] .am-queue-copy strong,
-.app-shell[data-theme='light'] .am-queue-title strong { color: #17191c; }
-.app-shell[data-theme='light'] .am-queue-index,
-.app-shell[data-theme='light'] .am-queue-time { color: rgba(45, 54, 62, 0.5); }
-.app-shell[data-theme='light'] .am-queue-row:hover { background: rgba(42, 52, 62, 0.055); }
-
 /* ---------- Player controls: quiet studio chrome ---------- */
 
 .am-btn:focus-visible,
@@ -2778,10 +2657,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   font-size: 34px;
   font-weight: 700;
   letter-spacing: -0.02em;
-}
-.app-shell[data-theme='light'] .artist-card-initial {
-  background: linear-gradient(150deg, rgba(20, 24, 30, 0.08), rgba(20, 24, 30, 0.03));
-  color: rgba(20, 24, 30, 0.3);
 }
 /* Still looking for a photo: a slow breath, so the slot reads as loading rather than empty. */
 .artist-card-initial.is-pending { animation: artist-face-pulse 1.8s var(--ease-standard) infinite; }
@@ -2903,27 +2778,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 
 /* Keeps the text on black while letting the glow breathe on the right. */
 .hero-banner::after { background: linear-gradient(90deg, rgba(5, 5, 6, 0.72) 0%, rgba(5, 5, 6, 0.3) 55%, rgba(5, 5, 6, 0.1) 100%); }
-
-.app-shell[data-theme='light'] .hero-banner {
-  background: linear-gradient(120deg, rgba(248, 250, 252, 0.82), rgba(238, 243, 247, 0.54));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84), 0 20px 50px -24px rgba(72, 82, 96, 0.28);
-}
-
-.app-shell[data-theme='light'] .hero-banner::after {
-  background: linear-gradient(90deg, rgba(248, 250, 252, 0.62) 0%, rgba(248, 250, 252, 0.22) 55%, rgba(248, 250, 252, 0.04) 100%);
-}
-
-.app-shell[data-theme='light'] .hero-banner-shader canvas {
-  opacity: 0.52;
-  filter: saturate(1.35) contrast(0.9) brightness(1.08);
-  mix-blend-mode: multiply;
-}
-
-.app-shell[data-theme='light'] .hero-banner-eyebrow,
-.app-shell[data-theme='light'] .hero-banner-copy > p,
-.app-shell[data-theme='light'] .hero-banner-meta { color: var(--ink-muted); }
-
-.app-shell[data-theme='light'] .hero-banner h1 { color: var(--ink); }
 
 /* ---------- Cinematic detail pages (artist, playlist, liked) ----------
  * The photo runs to the very top and both screen edges; the controls float over it as glass; the
@@ -3103,7 +2957,7 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 
 /* ---------- Glass tokens ----------
  * Cards, rows, fields and sheets all read the same translucent surface, so every page sits on the
- * shader the way the rail and the player bar do. Light theme keeps its opaque paper. */
+ * shader the way the rail and the player bar do. */
 .content-wrap,
 .content-wrap.inner-page-wrap {
   --surface: rgba(255, 255, 255, 0.055);
@@ -3114,12 +2968,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   --border-strong: rgba(255, 255, 255, 0.17);
   --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.09);
   --glass-blur: blur(26px) saturate(170%);
-}
-
-.app-shell[data-theme='light'] .content-wrap,
-.app-shell[data-theme='light'] .content-wrap.inner-page-wrap {
-  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  --glass-blur: none;
 }
 
 .library-stat,
@@ -3367,10 +3215,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   -webkit-backdrop-filter: var(--glass-blur);
 }
 
-.app-shell[data-theme='light'] .track-list,
-.app-shell[data-theme='light'] .library-track-list,
-.app-shell[data-theme='light'] .top-songs { background: rgba(255, 255, 255, 0.6); }
-
 .track-row,
 .top-song { border-radius: 14px; }
 
@@ -3511,11 +3355,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   content: '';
   inset: 0;
 }
-.app-shell[data-theme='light'] .home-spotlight {
-  --spotlight-veil: rgba(246, 249, 252, 0.56);
-  --spotlight-veil-deep: rgba(246, 249, 252, 0.86);
-}
-.app-shell[data-theme='light'] .home-spotlight-wash { opacity: 0.6; filter: blur(64px) saturate(1.5) brightness(1.1); }
 
 .home-spotlight-inner { display: grid; align-items: center; gap: clamp(18px, 2.6cqw, 36px); grid-template-columns: minmax(0, 1fr) minmax(0, 400px); }
 .home-spotlight-lead { min-width: 0; }
@@ -3952,12 +3791,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   background: color-mix(in srgb, var(--art-primary, var(--accent)) 16%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--art-primary, var(--accent)) 28%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
-
-.app-shell[data-theme='light'] .panel-topbar .mood-pills { border-left-color: rgba(20, 28, 36, 0.14); }
-.app-shell[data-theme='light'] .panel-topbar .mood-pill:hover,
-.app-shell[data-theme='light'] .panel-topbar .mood-pill:focus-visible,
-.app-shell[data-theme='light'] .panel-topbar .mood-pill[aria-pressed='true'] { color: #17191c; }
-.app-shell[data-theme='light'] .panel-topbar .mood-pill-bg { background: color-mix(in srgb, var(--art-primary, var(--accent)) 12%, rgba(255, 255, 255, 0.52)); }
 
 @media (prefers-reduced-motion: reduce) {
   .panel-topbar .mood-pill,
@@ -5160,7 +4993,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 @media (prefers-reduced-motion: reduce) { .fluid__spin { animation: none; } }
 .app-shell[data-motion-paused='true'] .fluid__spin { animation-play-state: paused; }
 
-
 /* ---------- Phone player: three zones, never a long scroll ----------
  * Cover:                  header · art (absorbs the slack) · title · scrubber · transport · actions
  * Lyrics / Up Next / Related: header + "now playing" chip · ONE scroller · transport dock
@@ -5902,7 +5734,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   max-height: none;
 }
 
-
 /* ---------- Mobile pass: whole-site phone ergonomics ----------
  * Keep this block last: it deliberately wins over the older per-feature rules above. */
 
@@ -5963,8 +5794,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .library-stat { justify-content: flex-start; }
   .library-stat span { min-height: 2.5em; }
 }
-
-
 
 /* Artist top songs on a phone: the like / save buttons were hover-only (invisible on touch) and
  * 30px; give them full 44px targets, drop the duration so the title keeps its width. */
@@ -6049,7 +5878,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .site-header .header-buttons .icon-button svg { width: 17px; height: 17px; }
 }
 
-
 /* ---------- Phone chrome: tab bar + docked mini player ----------
  * The pattern both Apple Music and YouTube Music settle on for a phone: a short bottom bar of
  * three-to-five labelled destinations (navigation only, never actions), the mini player docked
@@ -6129,14 +5957,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .bottom-nav__item:active { transform: scale(0.95); }
   .bottom-nav__item:focus-visible { outline: 2px solid color-mix(in srgb, var(--wave) 72%, white); outline-offset: -2px; }
 
-  .app-shell[data-theme='light'] .bottom-nav {
-    border-color: rgba(10, 11, 14, 0.1);
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6)), rgba(246, 249, 252, 0.7);
-    box-shadow: 0 22px 54px -26px rgba(20, 24, 32, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  }
-  .app-shell[data-theme='light'] .bottom-nav__item.is-active { color: var(--ink); }
-  .app-shell[data-theme='light'] .bottom-nav__item::before { background: color-mix(in srgb, var(--wave) 55%, transparent); }
-
   /* Mini player: the shelf directly above the tab bar. */
   .mini-player { bottom: calc(var(--tabbar-bottom) + var(--tabbar-h) + 8px); }
 
@@ -6212,10 +6032,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   box-shadow: 0 40px 90px -52px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.16);
   -webkit-backdrop-filter: blur(26px) saturate(150%);
   backdrop-filter: blur(26px) saturate(150%);
-}
-.app-shell[data-theme='light'] .home-spotlight {
-  border-color: rgba(10, 11, 14, 0.1);
-  box-shadow: 0 30px 70px -50px rgba(20, 24, 32, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .home-stage {
@@ -6302,7 +6118,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .home-rail .home-quick-card .artwork { width: 64px; height: 64px; flex: 0 0 64px; }
 .home-rail .home-quick-copy strong { font-size: 14px; }
 .home-rail .home-quick-copy small { font-size: 12px; }
-.app-shell[data-theme='light'] .home-rail .home-quick-card { border-color: rgba(10, 11, 14, 0.1); background: rgba(255, 255, 255, 0.6); }
 
 @container browse (min-width: 900px) {
   .home-rail { display: grid; margin-inline: 0; padding-inline: 0; overflow: visible; grid-template-columns: repeat(3, minmax(0, 1fr)); -webkit-mask-image: none; mask-image: none; }
@@ -6429,7 +6244,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 @media (max-width: 640px) {
   .auth-body:has(.profile-sheet) { padding-top: 30px; }
 }
-
 
 /* Lyrics stage: keep lines in front of the fog, give them room, and float the sync nudge bottom-right. */
 .ytm-lyrics--nobackdrop.ytm-lyrics--softfocus:not(.ytm-lyrics--compact) .ytm-lyrics__scroll {
@@ -6624,8 +6438,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 
 /* ── Settings page ─────────────────────────────────────────────────────────
- * One frosted panel per group, rows split into copy and control. Tokens only, so the
- * light theme (which redefines --surface / --ink / --border inside .content-wrap) follows. */
+ * One frosted panel per group, rows split into copy and control. Tokens only. */
 .settings-page { display: flex; flex-direction: column; gap: 22px; max-width: 880px; padding-bottom: 48px; }
 .settings-hero { grid-template-columns: minmax(0, 1fr); }
 .settings-jump { position: sticky; top: 0; z-index: 3; display: flex; gap: 6px; overflow-x: auto; margin: -6px 0 0; padding: 6px 0; scrollbar-width: none; }

@@ -1,5 +1,5 @@
 import { paths } from '../lib/routes';
-import { ArrowRight, Clock, Compass, Disc3, Heart, House, Library, ListMusic, Moon, Search, Settings, Sun, User } from 'lucide-react';
+import { ArrowRight, Clock, Compass, Disc3, Heart, House, Library, ListMusic, Search, Settings, User } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
@@ -24,12 +24,10 @@ interface CommandPaletteProps {
   /** What the pill shows when a Discover search is active. */
   readonly activeQuery: string;
   readonly recent: readonly UnifiedSong[];
-  readonly theme: 'dark' | 'light';
   readonly onPlaySong: (song: UnifiedSong, queue: UnifiedSong[]) => void;
   readonly onOpenArtist: (name: string) => void;
   readonly onNavigate: (path: string) => void;
   readonly onSearchAll: (query: string) => void;
-  readonly onToggleTheme: () => void;
   readonly onClearSearch: () => void;
 }
 
@@ -46,7 +44,7 @@ interface CommandItem {
 const SHEET_ID = 'command-palette';
 const SEARCH_DEBOUNCE_MS = 220;
 
-export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, theme, onPlaySong, onOpenArtist, onNavigate, onSearchAll, onToggleTheme, onClearSearch }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onPlaySong, onOpenArtist, onNavigate, onSearchAll, onClearSearch }: CommandPaletteProps) {
   const reduced = useReducedMotion();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UnifiedSong[]>([]);
@@ -185,8 +183,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, the
       { id: 'go-playlists', section: 'Go to', title: 'Playlists', icon: <ListMusic size={16} />, run: go(paths.library) }
     ];
     const actions: CommandItem[] = [
-      { id: 'settings', section: 'Settings', title: 'Open settings', hint: 'Playback, lyrics, karaoke, privacy', icon: <Settings size={16} />, run: go(paths.settings) },
-      { id: 'theme', section: 'Settings', title: theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme', icon: theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />, run: onToggleTheme }
+      { id: 'settings', section: 'Settings', title: 'Open settings', hint: 'Playback, lyrics, karaoke, privacy', icon: <Settings size={16} />, run: go(paths.settings) }
     ];
     if (activeQuery) actions.unshift({ id: 'clear', section: 'Settings', title: 'Clear current search', icon: <Search size={16} />, run: onClearSearch });
 
@@ -194,7 +191,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, the
       if (!needle || item.title.toLowerCase().includes(needle)) list.push(item);
     });
     return list;
-  }, [trimmed, results, recent, theme, activeQuery, go, onSearchAll, onPlaySong, onOpenArtist, onToggleTheme, onClearSearch]);
+  }, [trimmed, results, recent, activeQuery, go, onSearchAll, onPlaySong, onOpenArtist, onClearSearch]);
 
   const sections = useMemo(() => {
     const map = new Map<string, CommandItem[]>();
