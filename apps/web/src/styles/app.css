@@ -7372,3 +7372,43 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .panel-topbar .mood-pill:hover,
   .panel-topbar .mood-pill:active { transform: none; }
 }
+
+/* ---------- Sign-in sheet, readable ----------
+ * The sheet was 42% tinted glass that relied on backdrop blur; where a browser blurs little or not at
+ * all, the page's headline read straight through the copy. Its body is now 94% opaque (the blur, when
+ * there is one, only softens the edge of what shows), and the scrim is deep enough to quiet the page.
+ * The Google button keeps Google's white; hover is a small lift with a light sweep across it (transform
+ * and opacity only), and while the consent box is unticked it waits as a quiet outline, not a grey slab. */
+.auth-layer .cmdk-scrim { background: radial-gradient(120% 90% at 50% 30%, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.9)); }
+.auth-sheet {
+  background:
+    radial-gradient(90% 60% at 15% 0%, color-mix(in srgb, var(--wave, #d9e66a) 14%, transparent), transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0)),
+    rgba(17, 18, 23, 0.94);
+}
+.auth-sheet .auth-lede { color: rgba(255, 255, 255, 0.72); }
+.auth-sheet .consent-check { color: rgba(255, 255, 255, 0.7); }
+
+.auth-google { position: relative; overflow: hidden; isolation: isolate; transition: transform var(--d-fast) var(--ease-press), opacity var(--d-fast) var(--ease-standard); }
+.auth-google::after {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  z-index: -1;
+  background: linear-gradient(100deg, transparent, rgba(66, 133, 244, 0.14), transparent);
+  content: '';
+  opacity: 0;
+  transform: translateX(-110%);
+  pointer-events: none;
+}
+.auth-google:not(:disabled):hover { transform: translateY(-2px) scale(1.01); filter: none; }
+.auth-google:not(:disabled):hover::after { opacity: 1; transform: translateX(260%); transition: transform var(--d-slow) var(--ease-decelerate), opacity var(--d-fast) var(--ease-standard); }
+.auth-google:not(:disabled):active { transform: scale(0.98); }
+.auth-google:disabled { opacity: 1; background: transparent; color: rgba(255, 255, 255, 0.62); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); cursor: not-allowed; }
+.auth-google:disabled svg { opacity: 0.7; }
+@media (prefers-reduced-motion: reduce) {
+  .auth-google,
+  .auth-google::after { transition: none; }
+  .auth-google:not(:disabled):hover { transform: none; }
+  .auth-google:not(:disabled):hover::after { opacity: 0; }
+}
