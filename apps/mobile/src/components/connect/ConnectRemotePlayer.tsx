@@ -42,7 +42,7 @@ import { libraryLookup, matchKey } from '../../utils/downloadState';
 import { isSeeking } from '../../playback/positionBus';
 import { safeGoBack } from '../../utils/navigationService';
 import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../../navigation/playerSheet';
-import { playerSheetRest } from '../../navigation/tabs';
+import { playerSheetRest, tabBarTopFromBottom } from '../../navigation/tabs';
 import { playerSheetProgress } from '../../navigation/sheetProgress';
 import { Signal } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
@@ -271,6 +271,12 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
       }
     });
 
+  // As in NowPlayingScreen: the sheet ends at the bottom bar's top while it is closed and reaches the screen's bottom once
+  // open, the bar sliding down under that edge (useTabBarPushStyle) — the bar never pops out from
+  // under a sheet that covered it. The clip moves up by the gap and the sheet down by it, so the
+  // sheet stays where it was and only its bottom edge is cut. Transforms only.
+  const barTop = tabBarTopFromBottom(insets.bottom, pillNav);
+  const sheetClipStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(1 - progress.value) * barTop }] }));
   const sheetStyle = useAnimatedStyle(() => {
     const p = progress.value;
     const corner = SHEET_CORNER * (1 - interpolate(p, [0.9, 1], [0, 1], Extrapolation.CLAMP));
@@ -278,7 +284,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
       opacity: reduceMotion ? p : 1,
       borderTopLeftRadius: corner,
       borderTopRightRadius: corner,
-      transform: [{ translateY: sheetY.value }] as const,
+      transform: [{ translateY: sheetY.value + (1 - p) * barTop }] as const,
     };
   });
   const playerFadeStyle = useAnimatedStyle(() => ({
@@ -293,6 +299,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
   return (
     <View style={styles.root}>
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
+      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, styles.sheetClip, sheetClipStyle]}>
       <GestureDetector gesture={dismissGesture}>
         <Animated.View style={[styles.container, sheetStyle]} onLayout={e => { frameH.value = e.nativeEvent.layout.height; }}>
           <Animated.View style={[styles.playerLayer, playerFadeStyle]}>
@@ -442,12 +449,14 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
           </Animated.View>
         </Animated.View>
       </GestureDetector>
+      </Animated.View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  sheetClip: { overflow: 'hidden' },
   backdrop: { backgroundColor: '#000' },
   container: { flex: 1, backgroundColor: '#0b0b0f', overflow: 'hidden' },
   playerLayer: { ...StyleSheet.absoluteFillObject },

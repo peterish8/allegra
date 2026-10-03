@@ -28,7 +28,7 @@ import NowPlayingControls from '../components/NowPlayingControls';
 import { navigationRef, safeGoBack } from '../utils/navigationService';
 import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../navigation/playerSheet';
 import { shouldCloseSheet } from '../navigation/sheetClose';
-import { playerSheetRest } from '../navigation/tabs';
+import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { playerSheetProgress } from '../navigation/sheetProgress';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from '../utils/haptics';
@@ -314,6 +314,12 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     });
   const playerGesture = Gesture.Race(dismissGesture, upNextGesture);
 
+  // The sheet ends at the bottom bar's top while it is closed and reaches the screen's bottom once
+  // open, the bar sliding down under that edge (useTabBarPushStyle) — the bar never pops out from
+  // under a sheet that covered it. The clip moves up by the gap and the sheet down by it, so the
+  // sheet stays where it was and only its bottom edge is cut. Transforms only.
+  const barTop = tabBarTopFromBottom(insets.bottom, pillNav);
+  const sheetClipStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(1 - progress.value) * barTop }] }));
   // Echo Music's sheet: one full-width sheet that slides with the finger from
   // the mini player's top edge. It is solid from the first point of travel;
   // the pill fades off its top over the first quarter (PillPlayer), and the
@@ -326,7 +332,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       opacity: reduceMotion ? p : 1,
       borderTopLeftRadius: corner,
       borderTopRightRadius: corner,
-      transform: [{ translateY: sheetY.value }] as const,
+      transform: [{ translateY: sheetY.value + (1 - p) * barTop }] as const,
     };
   });
   const playerFadeStyle = useAnimatedStyle(() => ({
@@ -667,6 +673,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   return (
     <View style={styles.root}>
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
+      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, styles.sheetClip, sheetClipStyle]}>
       <GestureDetector gesture={playerGesture}>
       <Animated.View
         style={[styles.container, sheetStyle]}
@@ -803,6 +810,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
         </Animated.View>
       </Animated.View>
       </GestureDetector>
+      </Animated.View>
     </View>
   );
 };
@@ -821,6 +829,9 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     backgroundColor: '#000',
+  },
+  sheetClip: {
+    overflow: 'hidden',
   },
   container: {
     flex: 1,

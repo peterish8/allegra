@@ -16,7 +16,8 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useThemeColors, useIsDark } from '../contexts/ThemeContext';
 import { VoiceMicButton } from './VoiceMicButton';
 import { Glass, Motion, Radius } from '../constants/allegraTheme';
-import { PILL_BAR_HEIGHT, PILL_PLAYER_HEIGHT, PILL_STACK_GAP, pillBarBottom, tabTapParams, VISIBLE_TABS } from '../navigation/tabs';
+import { PILL_BAR_HEIGHT, PILL_PLAYER_HEIGHT, PILL_STACK_GAP, pillBarBottom, tabBarTopFromBottom, tabTapParams, VISIBLE_TABS } from '../navigation/tabs';
+import { useTabBarPushStyle } from '../navigation/sheetProgress';
 import { HostedMoreMenu, useMoreMenu } from './MoreMenu';
 import { MorphIcon, Tactile } from './allegra/motion';
 
@@ -55,6 +56,8 @@ export const ModernPillTabBar: React.FC<BottomTabBarProps> = ({
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const bottomOffset = pillBarBottom(insets.bottom);
+  // The player sheet pushes the bar down as it opens and lets it back up as it closes.
+  const pushStyle = useTabBarPushStyle(tabBarTopFromBottom(insets.bottom, true));
   const { width: screenWidth } = useWindowDimensions();
   const [pill, setPill] = useState({ width: 0, height: 64 });
   const more = useMoreMenu(state, navigation);
@@ -168,8 +171,8 @@ export const ModernPillTabBar: React.FC<BottomTabBarProps> = ({
   );
 
   return (
-    <View
-      style={[styles.container, more.open ? { top: 0, bottom: 0, paddingBottom: bottomOffset } : { bottom: bottomOffset }]}
+    <Animated.View
+      style={[styles.container, more.open ? { top: 0, bottom: 0, paddingBottom: bottomOffset } : { bottom: bottomOffset }, pushStyle]}
       pointerEvents="box-none"
     >
       <LinearGradient
@@ -251,7 +254,7 @@ export const ModernPillTabBar: React.FC<BottomTabBarProps> = ({
         </BlurView>
       </View>
 
-    </View>
+    </Animated.View>
   );
 };
 

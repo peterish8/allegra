@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { TAB_BAR_HEIGHT } from '../constants/layout';
 
 /**
  * The everyday tabs — the only routes with an icon in the bottom bar, in bar
@@ -31,6 +32,14 @@ export const pillBarBottom = (insetBottom: number): number =>
 
 /** Distance from the screen bottom to the pill tab bar's top edge. */
 export const pillBarTop = (insetBottom: number): number => pillBarBottom(insetBottom) + PILL_BAR_HEIGHT;
+
+/**
+ * The bottom bar's top edge, from the screen bottom (pill bar or classic bar). The closed player
+ * sheet ends there, and as it opens the bar is pushed down by the same distance (Echo Music's nav
+ * bar), so sheet and bar meet at one moving edge instead of the bar vanishing under the sheet.
+ */
+export const tabBarTopFromBottom = (insetBottom: number, pill: boolean): number =>
+  (pill ? pillBarTop(insetBottom) : TAB_BAR_HEIGHT + insetBottom);
 
 /** Side inset of the pill (92% wide, at most 440pt, centred). */
 export const pillBarInset = (screenWidth: number): number =>

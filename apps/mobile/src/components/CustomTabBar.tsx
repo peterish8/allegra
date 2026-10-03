@@ -5,12 +5,14 @@
 
 import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VoiceMicButton } from './VoiceMicButton';
 import { useSettingsStore } from '../store/settingsStore';
 import { TAB_BAR_HEIGHT } from '../constants/layout';
-import { tabTapParams, VISIBLE_TABS } from '../navigation/tabs';
+import { tabBarTopFromBottom, tabTapParams, VISIBLE_TABS } from '../navigation/tabs';
+import { useTabBarPushStyle } from '../navigation/sheetProgress';
 import { HostedMoreMenu, useMoreMenu } from './MoreMenu';
 import { MorphIcon } from './allegra/motion';
 
@@ -30,6 +32,8 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
   const rightRoutes = routes.slice(midpoint);
   const more = useMoreMenu(state, navigation);
   const moreActive = more.open || more.activeKey !== null;
+  // The player sheet pushes the bar down as it opens and lets it back up as it closes.
+  const pushStyle = useTabBarPushStyle(tabBarTopFromBottom(insets.bottom, false));
 
   const renderTab = (route: typeof state.routes[0]) => {
     const { options } = descriptors[route.key];
@@ -58,7 +62,7 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
   };
 
   return (
-    <View style={[styles.outerContainer, more.open && styles.outerOpen]} pointerEvents="box-none">
+    <Animated.View style={[styles.outerContainer, more.open && styles.outerOpen, pushStyle]} pointerEvents="box-none">
       <HostedMoreMenu
         open={more.open}
         activeKey={more.activeKey}
@@ -99,7 +103,7 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
           </View>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
