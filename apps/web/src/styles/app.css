@@ -6029,7 +6029,24 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     background: transparent;
   }
   .site-header .session-chip .session-copy { display: none; }
-  .site-header .session-chip .session-avatar { width: 32px; height: 32px; }
+  .site-header .session-chip .session-avatar { width: 36px; height: 36px; flex: 0 0 36px; font-size: 13px; }
+
+  /* One shape for the whole row: every control is a 36px circle drawn inside its 44px touch target
+   * (the padding keeps the fill off the outer 4px), so the avatar, the lit app link and the plain
+   * buttons line up at the same size and the same 8px apart, concentric with the pill's end. */
+  .site-header { padding-right: 4px; }
+  .site-header .header-actions,
+  .site-header .header-buttons { gap: 0; }
+  .site-header .header-buttons .icon-button {
+    padding: 4px;
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    background-clip: content-box;
+    box-shadow: none;
+  }
+  .site-header .header-buttons .icon-button:hover { background-color: color-mix(in srgb, var(--ink) 12%, transparent); }
+  .site-header .header-buttons .app-download-link { background-color: color-mix(in srgb, var(--wave) 16%, transparent); }
+  .site-header .header-buttons .app-download-link:hover { background-color: color-mix(in srgb, var(--wave) 26%, transparent); }
+  .site-header .header-buttons .icon-button svg { width: 17px; height: 17px; }
 }
 
 
