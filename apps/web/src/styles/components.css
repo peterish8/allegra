@@ -1886,28 +1886,45 @@ body::before { display: none; }
 
 /* Letter by letter (SweepWords in LyricsPanel.tsx): the sung line's unsung letters rest dim and a
  * bright copy of each word is revealed by a clip sliding with --p (0..1, written every frame).
- * Transforms in % of the word's own box: nothing is measured, nothing reflows. */
+ * Transforms only: nothing is measured, nothing reflows.
+ *
+ * The clip box reaches --lyric-glow past the word on every side, so the bright copy's halo is
+ * never cut into a rectangle, and its leading edge is a fixed --lyric-glow fade (a static mask
+ * that travels with the box), so the light runs into the letters instead of stopping on a line.
+ * With the box W + 2g wide, translating it by (p − 1)(100% − g) puts its edge at p·(W + g): at the
+ * word's start before it is sung and just past its end (all letters lit, halo whole) once it is. */
+.lyric-words { --lyric-glow: 0.4em; }
 .lyric-word { position: relative; display: inline-block; }
 .lyric-word__base { transition: opacity var(--d-base) var(--ease-standard); }
 .ytm-lyrics__line.is-sweeping.is-active .lyric-word__base { opacity: 0.45; }
+/* The halo belongs to the lit letters only: a glow on the whole line would light the unsung ones. */
+.ytm-lyrics--softfocus .ytm-lyrics__line.is-sweeping.is-active { text-shadow: none !important; }
 .lyric-word__fill {
   position: absolute;
-  inset: 0;
+  inset: calc(-1 * var(--lyric-glow));
   overflow: hidden;
   pointer-events: none;
   color: #fff;
   opacity: 0;
-  transform: translateX(calc((var(--p, 0) - 1) * 100%));
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--lyric-glow)), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--lyric-glow)), transparent);
+  transform: translateX(calc((var(--p, 0) - 1) * (100% - var(--lyric-glow))));
   transition: opacity var(--d-base) var(--ease-standard);
 }
 .lyric-word__fill > span {
   display: block;
+  padding: var(--lyric-glow);
   white-space: nowrap;
-  transform: translateX(calc((1 - var(--p, 0)) * 100%));
+  text-shadow: 0 0 0.3em rgba(255, 255, 255, 0.42);
+  transform: translateX(calc((1 - var(--p, 0)) * (100% - var(--lyric-glow))));
 }
 .ytm-lyrics__line.is-active .lyric-word__fill { opacity: 1; }
-.lyric-words.is-rtl .lyric-word__fill { transform: translateX(calc((1 - var(--p, 0)) * 100%)); }
-.lyric-words.is-rtl .lyric-word__fill > span { transform: translateX(calc((var(--p, 0) - 1) * 100%)); }
+.lyric-words.is-rtl .lyric-word__fill {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - var(--lyric-glow)), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - var(--lyric-glow)), transparent);
+  transform: translateX(calc((1 - var(--p, 0)) * (100% - var(--lyric-glow))));
+}
+.lyric-words.is-rtl .lyric-word__fill > span { transform: translateX(calc((var(--p, 0) - 1) * (100% - var(--lyric-glow)))); }
 @media (prefers-reduced-motion: reduce) {
   .lyric-word__base,
   .lyric-word__fill { transition: none; }

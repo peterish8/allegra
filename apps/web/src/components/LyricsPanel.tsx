@@ -202,6 +202,10 @@ export function LyricsPanel({
         const lit = sweepAt(time, word.segments, word.weight);
         const value = (reduced ? (lit > 0 ? 1 : 0) : lit).toFixed(4);
         if (fill.style.getPropertyValue('--p') !== value) fill.style.setProperty('--p', value);
+        // A word not yet sung draws nothing: its bright copy waits beside it, and even faded its
+        // halo would show at the word's edge.
+        const visibility = lit > 0 ? '' : 'hidden';
+        if (fill.style.visibility !== visibility) fill.style.visibility = visibility;
       });
     },
     [playing, timestamps, sweeps, reduced]
