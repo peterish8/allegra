@@ -1715,6 +1715,8 @@ export default function App() {
           alternativesLoading: lyricsAlternativesLoading,
           alternativesError: lyricsAlternativesError,
           onLoadAlternatives: loadLyricsAlternatives,
+        repeat={playerRepeat}
+        onCycleRepeat={cyclePlayerRepeat}
           onSelectAlternative: selectLyricsAlternative,
           songId: playerSong?.id ?? null
         }}

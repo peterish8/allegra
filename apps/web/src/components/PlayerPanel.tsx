@@ -6,6 +6,8 @@ import {
   ListMusic,
   LoaderCircle,
   Mic,
+  Repeat,
+  Repeat1,
   SkipBack,
   SkipForward,
   SlidersHorizontal,
@@ -33,6 +35,7 @@ import { useNarrowViewport } from '../hooks/useNarrowViewport';
 import { useSettings } from '../hooks/useSettings';
 import { usePress } from '../hooks/usePress';
 import type { LiveKaraokeController } from '../hooks/useLiveKaraoke';
+import type { RepeatMode } from '../hooks/useAudioPlayer';
 import type { Palette } from '../lib/palette';
 import { tapHaptic } from '../lib/haptics';
 import { createDoubleTap } from '../lib/karaokeMix';
@@ -65,6 +68,9 @@ interface PlayerPanelProps {
   readonly onOpenImmersive: () => void;
   readonly onToggle: () => void;
   readonly onNext: () => void;
+  /** Off → all → one, the same cycle as the player bar. */
+  readonly repeat?: RepeatMode;
+  readonly onCycleRepeat?: () => void;
   readonly onPrevious: () => void;
   readonly onSeek: (seconds: number) => void;
   readonly onLike: () => void;
@@ -120,6 +126,8 @@ export function PlayerPanel({
   onOpenWorkspace,
   onOpenImmersive,
   onToggle,
+  repeat = 'off',
+  onCycleRepeat,
   onNext,
   onPrevious,
   onSeek,
@@ -530,6 +538,15 @@ export function PlayerPanel({
                       label={liked ? 'Remove from likes' : 'Add to likes'}
                       active={liked}
                       className="np-action--like"
+                    {onCycleRepeat ? (
+                      <IconButton
+                        icon={repeat === 'one' ? Repeat1 : Repeat}
+                        label={repeat === 'one' ? 'Repeating this song' : repeat === 'all' ? 'Repeating the queue' : 'Repeat'}
+                        active={repeat !== 'off'}
+                        aria-pressed={repeat !== 'off'}
+                        onClick={onCycleRepeat}
+                      />
+                    ) : null}
                       onClick={onLike}
                     />
                     <IconButton
