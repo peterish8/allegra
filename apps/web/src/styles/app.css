@@ -7551,3 +7551,47 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .mood-sleeve.is-lead:hover .mood-sleeve__disc { transform: translateX(-52px); }
   .mood-sleeve:hover .mood-sleeve__face { transform: rotate(-4deg); }
 }
+
+/* ---------- Home stage, neater ----------
+ * One cover, not a fan of ghost sleeves behind it; the veil darkens the greeting's side and lets the
+ * cover's own colour glow on the side the cover sits; the two small labels are sentence case with a
+ * dot of the accent; a hairline parts the greeting from the quick picks, which lift a step on hover. */
+.home-spotlight::after { background: linear-gradient(100deg, rgba(9, 10, 13, 0.9) 0%, rgba(9, 10, 13, 0.72) 48%, rgba(9, 10, 13, 0.46) 100%); }
+.home-spotlight-wash { opacity: 0.6; }
+.home-stage__sleeve::before,
+.home-stage__sleeve::after { display: none; }
+.home-stage__cover { transform: none; box-shadow: 0 30px 60px -26px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.06); }
+@media (hover: hover) { .home-stage__cover:hover { transform: translateY(-3px) scale(1.015); } }
+.home-stage__cover:active { transform: scale(0.98); }
+.home-stage__play { transition: transform var(--d-base) var(--ease-spring); }
+@media (hover: hover) { .home-stage__cover:hover .home-stage__play { transform: scale(1.08); } }
+
+.home-stage__copy .eyebrow,
+.home-stage__meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.home-stage__copy .eyebrow::before,
+.home-stage__meta > span::before { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--wave); content: ''; }
+.home-stage__copy h1 { margin: 10px 0 12px; }
+
+.home-rail { padding-top: clamp(16px, 2.2cqw, 24px); border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.home-rail .home-quick-card { transition: transform var(--d-base) var(--ease-press), background-color var(--d-fast) var(--ease-standard); }
+.home-rail .home-quick-card .artwork { transition: transform var(--d-base) var(--ease-press); }
+@media (hover: hover) {
+  .home-rail .home-quick-card:hover { background: rgba(255, 255, 255, 0.1); transform: translateY(-2px); }
+  .home-rail .home-quick-card:hover .artwork { transform: scale(1.06); }
+}
+.home-rail .home-quick-card:active { transform: scale(0.985); }
+@media (prefers-reduced-motion: reduce) {
+  .home-stage__cover:hover,
+  .home-stage__cover:hover .home-stage__play,
+  .home-rail .home-quick-card:hover,
+  .home-rail .home-quick-card:hover .artwork { transform: none; }
+}
