@@ -9,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from './navigation';
+import ErrorBoundary from './components/ErrorBoundary';
 import { initDatabase } from './database/db';
 import { useSongsStore } from './store/songsStore';
 import { usePlayerStore } from './store/playerStore';
@@ -246,7 +247,10 @@ const App: React.FC = () => {
           <AccountProvider>
             <PlayerProvider>
               <ConnectProvider>
-                <RootNavigator />
+                {/* A screen that fails to draw shows this instead of closing the app; the player above keeps playing. */}
+                <ErrorBoundary name="root" fallback={renderRootFallback}>
+                  <RootNavigator />
+                </ErrorBoundary>
               </ConnectProvider>
             </PlayerProvider>
           </AccountProvider>
@@ -255,7 +259,16 @@ const App: React.FC = () => {
     </GestureHandlerRootView>
   );
 };
-// Forced Refresh for Navigation Update
+
+const renderRootFallback = (retry: () => void) => (
+  <View style={styles.loadingContainer}>
+    <Text style={styles.errorText}>This screen hit a problem</Text>
+    <Text style={styles.errorMessage}>Your music keeps playing. Reopen to carry on.</Text>
+    <Pressable style={styles.retryButton} onPress={retry} accessibilityRole="button">
+      <Text style={styles.retryButtonText}>Reopen</Text>
+    </Pressable>
+  </View>
+);
 
 const styles = StyleSheet.create({
   container: {

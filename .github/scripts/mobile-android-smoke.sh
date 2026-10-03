@@ -6,6 +6,7 @@
 #   player-cover-2.png   the same 12s later (canvas / glow motion)
 #   player-lyrics.png    Now Playing on lyrics (glow in the blend style)
 #   player-lyrics-2.png  the same 5s later: the list has glided to the sung line
+#   player-lyrics-tapped.png  lyrics opened with the button while playing (crash check in taps.txt)
 #   after-close.png      back from the player: the mini pill must be showing
 #   player-reopened.png  the player opened again from the pill
 #   player-nudged.png    a small pull let go: the player springs back open
@@ -216,6 +217,16 @@ sleep 40
 shot player-cover
 sleep 12
 shot player-cover-2
+
+step "lyrics from the button"
+# The lyrics button on a playing song. The Levitating link below mounts the player
+# already on lyrics, so this path (controls going compact) never ran here, and it
+# was the one that closed the app.
+tap_desc "Show lyrics" && sleep 4
+shot player-lyrics-tapped
+alive_after "opening lyrics from the button"
+tap_desc "Hide lyrics" && sleep 3
+alive_after "closing lyrics from the button"
 
 # Make sure it is playing (a media key also proves the session takes buttons),
 # then check it keeps playing with the app in the background.

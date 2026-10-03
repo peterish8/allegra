@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dimensions, InteractionManager, View, StyleSheet, useWindowDimensions } from 'react-native';
+import { Dimensions, InteractionManager, Pressable, Text, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import Artwork from './allegra/Artwork';
@@ -13,6 +13,7 @@ import { DOCK_THUMB, LYRICS_MORPH_MS } from './player/lyricsMorph';
 import { useArtworkPalette } from './allegra/useArtworkPalette';
 import SynchronizedLyrics, { SynchronizedLyricsRef } from './SynchronizedLyrics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ErrorBoundary from './ErrorBoundary';
 
 type ProcessedLyric = { timestamp: number; text: string };
 
@@ -307,6 +308,22 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
     }, LYRICS_PREMOUNT_MS);
     return () => { clearTimeout(t); task?.cancel(); };
   }, [showLyrics]);
+  // Stable, so the memoised lyrics list doesn't re-render with every player render.
+  const onScrollStateChange = React.useCallback((isScrolling: boolean) => {
+    isUserScrollingRef.current = isScrolling;
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    if (!isScrolling) {
+      scrollTimeoutRef.current = setTimeout(() => {
+        isUserScrollingRef.current = false;
+      }, 4000);
+    }
+  }, [isUserScrollingRef, scrollTimeoutRef]);
+  const lyricsFallback = React.useCallback((retry: () => void) => (
+    <Pressable onPress={retry} style={styles.fallback} accessibilityRole="button">
+      <Text style={styles.fallbackTitle}>These lyrics couldn't be drawn</Text>
+      <Text style={styles.fallbackHint}>The song keeps playing. Tap to try again.</Text>
+    </Pressable>
+  ), []);
   // The lines rise in once the cover is on its way, and sink out first on the way back.
   const linesStyle = useAnimatedStyle(() => {
     const p = lyricsP ? lyricsP.value : showLyrics ? 1 : 0;
@@ -335,6 +352,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
         // and the controls, and the sung line's centre rides at 35% of that
         // space — not in the middle of a list whose lower half sits under the controls.
         <Animated.View style={[styles.lyricsFrame, { paddingTop: insets.top + HEADER_CLEARANCE }, linesStyle]} pointerEvents={showLyrics ? 'auto' : 'none'}>
+      <ErrorBoundary name="lyrics" resetKey={processedLyrics} fallback={lyricsFallback}>
       <SynchronizedLyrics
         ref={flatListRef}
         textStyle={textStyle}
@@ -348,18 +366,9 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
         live={showLyrics}
         scrollOffset={scrollOffset}
         isUserScrolling={isUserScrollingRef.current}
-        onScrollStateChange={(isScrolling) => {
-          isUserScrollingRef.current = isScrolling;
-          if (!isScrolling) {
-            if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-            scrollTimeoutRef.current = setTimeout(() => {
-              isUserScrollingRef.current = false;
-            }, 4000);
-          } else {
-            if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-          }
-        }}
+        onScrollStateChange={onScrollStateChange}
       />
+      </ErrorBoundary>
         </Animated.View>
       ) : null}
     </View>
@@ -376,6 +385,9 @@ const styles = StyleSheet.create({
   reed: { flex: 1 },
   reedEdges: { position: 'absolute', bottom: 0, left: 0, right: 0 },
   reedEdge: { position: 'absolute', top: 0, bottom: 0, width: StyleSheet.hairlineWidth },
+  fallback: { flex: 1, justifyContent: 'center', paddingHorizontal: 28, gap: 6 },
+  fallbackTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '700' },
+  fallbackHint: { color: 'rgba(255,255,255,0.62)', fontSize: 15 },
   lyricsFrame: {
     flex: 1,
     // The controls (meta, scrubber, transport) float over the bottom.

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert } from 'react-native';
-import { runOnJS, useAnimatedReaction } from 'react-native-reanimated';
+import { runOnJS, useAnimatedReaction, useSharedValue } from 'react-native-reanimated';
 import { usePlayer } from '../contexts/PlayerContext';
 import { diag } from '../utils/diag';
 import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeResumePosition } from '../store/playerStore';
@@ -169,10 +169,14 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
     flatListRef.current.scrollToIndex({ index: estimatedIndex, animated: true, viewPosition: 0.4 });
   }, []);
 
+  // The worklet reads a shared flag, not the ref: a ref captured by a worklet is copied to the UI
+  // thread once (with every lyric line in it) and never sees a later song's value.
+  const isLinearSV = useSharedValue(isLinear);
+  useEffect(() => { isLinearSV.value = isLinear; }, [isLinear, isLinearSV]);
   useAnimatedReaction(
     () => positionSV.value,
     (pos) => {
-      if (linearScrollDataRef.current.isLinear) {
+      if (isLinearSV.value) {
         runOnJS(doLinearScroll)(pos);
       }
     }
@@ -222,16 +226,20 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
     }
   }, [player, requestPlayback]);
 
-  const handleLyricTap = async (timestamp: number) => {
+  // Stable: it is a prop of every lyric line, and a new one each render re-rendered them all.
+  const handleLyricTap = useCallback(async (timestamp: number) => {
     if (!player) return;
     isSeeking.value = true;
     positionSV.value = timestamp;
-    await player.seekTo(timestamp);
-    // Tapping a lyric always starts playback (existing behaviour), but it must go
-    // through the store or the button shows "play" while audio is running.
-    requestPlayback(true);
-    isSeeking.value = false;
-  };
+    try {
+      await player.seekTo(timestamp);
+      // Tapping a lyric always starts playback (existing behaviour), but it must go
+      // through the store or the button shows "play" while audio is running.
+      requestPlayback(true);
+    } finally {
+      isSeeking.value = false;
+    }
+  }, [player, requestPlayback]);
 
   // Dynamic theme
   const isDynamicTheme = currentSong?.gradientId === 'dynamic';

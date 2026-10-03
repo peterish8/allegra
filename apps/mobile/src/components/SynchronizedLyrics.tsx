@@ -49,6 +49,7 @@ import Animated, {
   runOnJS,
   SharedValue,
 } from 'react-native-reanimated';
+import type { FrameCallback, FrameInfo } from 'react-native-reanimated';
 import { DisplayWord, displayWords, isRtlText, LyricWord } from '@shared/wordSync';
 import { useSettingsStore } from '../store/settingsStore';
 import { usePlayerStore } from '../store/playerStore';
@@ -77,6 +78,11 @@ const DIM_MS = 360;
 const DIM_EASE = Motion.ease.standard;
 /** The space after a word, as a share of the text size (SF Pro's word space). */
 const WORD_SPACE_EM = 0.28;
+/**
+ * A line with more words than this lights as a whole: every swept word is three views and
+ * a per-frame mapper, and a run-on line (a transcript pasted as one line) would mount hundreds.
+ */
+const MAX_SWEEP_WORDS = 24;
 
 export interface SyncedLyric {
   timestamp: number;
@@ -140,10 +146,11 @@ const LyricLine = React.memo(({
 }: LyricLineProps) => {
   const handlePress = useCallback(() => onLyricPress(timestamp), [onLyricPress, timestamp]);
   const isInstrumental = useMemo(() => isInstrumentalLyric(text), [text]);
-  const display = useMemo(
-    () => (letters && !isInstrumental ? displayWords({ timestamp, text, words }, nextTimestamp, true) : null),
-    [letters, isInstrumental, timestamp, text, words, nextTimestamp],
-  );
+  const display = useMemo(() => {
+    if (!letters || isInstrumental) return null;
+    const shaped = displayWords({ timestamp, text, words }, nextTimestamp, true);
+    return shaped && shaped.length <= MAX_SWEEP_WORDS ? shaped : null;
+  }, [letters, isInstrumental, timestamp, text, words, nextTimestamp]);
   const sweeping = display !== null;
   const rtl = useMemo(() => isRtlText(text), [text]);
 
@@ -512,9 +519,13 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
       if (!clockRunningSV.value) clockSV.value = position;
     },
   );
-  const clockFrame = useFrameCallback(() => {
+  // Frame callbacks are stable functions: useFrameCallback re-registers on the UI thread whenever
+  // its callback changes, and an inline one changed on every render.
+  const clockTick = useCallback(() => {
+    'worklet';
     clockSV.value = lyricClockAt(anchorPositionSV.value, anchorAtSV.value, Date.now(), clockSV.value);
-  }, false);
+  }, [clockSV, anchorPositionSV, anchorAtSV]);
+  const clockFrame = useFrameCallback(clockTick, false);
   const clockRunning = live && playing && lyrics.length > 0;
   useEffect(() => {
     clockRunningSV.value = clockRunning;
@@ -569,7 +580,12 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   const glideRunningSV = useSharedValue(false);
   const glideStyle = useAnimatedStyle((): ViewStyle => ({ transform: [{ translateY: glideSV.value }] }));
   // The glide runs a frame at a time only while the lines are still moving.
-  const glideFrame = useFrameCallback(info => {
+  const glideFrameRef = useRef<FrameCallback | null>(null);
+  const setGlideActive = useCallback((active: boolean) => {
+    glideFrameRef.current?.setActive(active);
+  }, []);
+  const glideTick = useCallback((info: FrameInfo) => {
+    'worklet';
     const dt = Math.min(0.05, (info.timeSincePreviousFrame ?? 16) / 1000);
     const next = glideStep(glideSV.value, glideVelocitySV.value, dt);
     if (glideSettled(next)) {
@@ -581,10 +597,9 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
     }
     glideSV.value = next.offset;
     glideVelocitySV.value = next.velocity;
-  }, false);
-  function setGlideActive(active: boolean) {
-    glideFrame.setActive(active);
-  }
+  }, [glideSV, glideVelocitySV, glideRunningSV, setGlideActive]);
+  const glideFrame = useFrameCallback(glideTick, false);
+  glideFrameRef.current = glideFrame;
   const stopGlide = useCallback(() => {
     'worklet';
     glideSV.value = 0;
@@ -851,4 +866,5 @@ const styles = StyleSheet.create({
   },
 });
 
-export default SynchronizedLyrics;
+// Memoised: the player re-renders for many reasons that never touch the lines.
+export default React.memo(SynchronizedLyrics);

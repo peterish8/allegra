@@ -19,9 +19,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   DerivedValue,
   Easing,
-  FadeIn,
-  FadeOut,
-  LinearTransition,
   runOnJS,
   SharedValue,
   cancelAnimation,
@@ -95,8 +92,12 @@ interface NowPlayingControlsProps {
   outputActive?: boolean;
 }
 
-/** Lyrics open or close: the controls glide to their new place instead of jumping when the volume row goes. */
-const ROWS_MOVE = LinearTransition.duration(460).easing(Easing.bezier(0.32, 0.72, 0, 1));
+/**
+ * Lyrics open or close: the volume row fades and the rows above it slide down into its place.
+ * Transforms and opacity only. The row stays mounted: unmounting it through an `exiting`
+ * animation while the box ran a layout transition crashed the app on Android when lyrics opened.
+ */
+const ROWS_MOVE = { duration: 460, easing: Easing.bezier(0.32, 0.72, 0, 1) };
 
 const CONTENT_PAD = 28;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -234,9 +235,17 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   // The title row's place in the box, for the thumbnail's centre.
   const metaY = useSharedValue(0);
   const metaH = useSharedValue(0);
+  // The volume row's height (with its gap): under lyrics the rows above slide down by it.
+  const volumeH = useSharedValue(0);
+  const compactP = useSharedValue(compact ? 1 : 0);
+  const reduceMotion = useReducedMotion();
+  useEffect(() => {
+    compactP.value = reduceMotion ? (compact ? 1 : 0) : withTiming(compact ? 1 : 0, ROWS_MOVE);
+  }, [compact, reduceMotion, compactP]);
   const syncDock = () => {
     if (dockX) dockX.value = CONTENT_PAD + DOCK_THUMB / 2;
-    if (dockY) dockY.value = boxY.value + CONTAINER_PAD_TOP + metaY.value + metaH.value / 2;
+    // Docked under lyrics, where the title row has slid down by the volume row.
+    if (dockY) dockY.value = boxY.value + CONTAINER_PAD_TOP + metaY.value + metaH.value / 2 + volumeH.value;
   };
   // The thumbnail's slot is laid out once, as lyrics open (and removed once
   // they have closed); the title glides over by transform alone, so the flight
@@ -263,10 +272,12 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   const transportEnd = useSharedValue(0);
   const liftStyle = useAnimatedStyle(() => {
     const p = upNext ? upNext.value : 0;
-    const bottom = boxY.value + CONTAINER_PAD_TOP + transportEnd.value;
+    const bottom = boxY.value + CONTAINER_PAD_TOP + transportEnd.value + volumeH.value * compactP.value;
     const lift = transportEnd.value > 0 ? Math.min(0, upNextTop - 6 - bottom) : 0;
     return { transform: [{ translateY: p * lift }] };
   });
+  const dropStyle = useAnimatedStyle(() => ({ transform: [{ translateY: volumeH.value * compactP.value }] }));
+  const volumeStyle = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, compactP.value * 1.6) }));
   const lowerStyle = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, (upNext ? upNext.value : 0) * 2.5) }));
   const shadeStyle = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, (upNext ? upNext.value : 0) * 2.5) }));
   // Long titles scroll only while this screen is the one in front.
@@ -274,6 +285,9 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   // Read at render: when the title changes this is the way the skip went.
   const songDirection = lastSongDirection();
   const hideVolume = useSettingsStore(s => s.appleMusicInspired && s.hidePlayerVolume);
+  useEffect(() => {
+    if (hideVolume) volumeH.value = 0;
+  }, [hideVolume, volumeH]);
   const [backNudge, setBackNudge] = useState(0);
   const [forwardNudge, setForwardNudge] = useState(0);
 
@@ -299,8 +313,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
 
   return (
     <Animated.View
-      // Pinned to the bottom: when the volume row goes, the box shrinks from its top edge.
-      layout={ROWS_MOVE}
+      // Pinned to the bottom. Its size never changes with lyrics: the volume row fades in place (ROWS_MOVE).
       style={[styles.container, animatedStyle]}
       pointerEvents={controlsVisible ? 'box-none' : 'none'}
       onLayout={e => { boxY.value = e.nativeEvent.layout.y; syncDock(); }}
@@ -312,6 +325,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
 
       {/* Echo keeps the bottom row a clear step above the system bar. */}
       <Animated.View style={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 14 }, liftStyle]} pointerEvents="box-none">
+        <Animated.View style={dropStyle} pointerEvents="box-none">
         <Animated.View
           style={styles.metaRow}
           onLayout={e => { metaY.value = e.nativeEvent.layout.y; metaH.value = e.nativeEvent.layout.height; syncDock(); }}
@@ -402,10 +416,15 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             <NudgeIcon name="play-forward" size={42} color={INK} direction={1} trigger={forwardNudge} />
           </Tactile>
         </Animated.View>
+        </Animated.View>
 
         <Animated.View style={lowerStyle} pointerEvents={upNextOpen ? 'none' : 'box-none'}>
-        {compact || hideVolume ? null : (
-          <Animated.View entering={FadeIn.duration(260)} exiting={FadeOut.duration(160)}>
+        {hideVolume ? null : (
+          <Animated.View
+            style={volumeStyle}
+            pointerEvents={compact ? 'none' : 'auto'}
+            onLayout={e => { volumeH.value = e.nativeEvent.layout.height; syncDock(); }}
+          >
             {remoteVolume ? <RemoteVolumeRow level={remoteVolume.level} onCommit={remoteVolume.onCommit} /> : <VolumeRow />}
           </Animated.View>
         )}
