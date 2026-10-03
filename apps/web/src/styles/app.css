@@ -7428,3 +7428,126 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 @media (max-width: 960px) {
   .listening-world .np-meta { padding-left: 52px; }
 }
+
+/* ---------- Browse by mood: record sleeves ----------
+ * A bento of sleeves: the first mood is the big one, two stack beside it, three line up below.
+ * Each sleeve is its colour on near-black with a record tucked half inside; on hover the record
+ * slides further out and turns, the sleeve lifts a step and the arrow nudges on. Transforms and
+ * opacity only; the record's grooves are one static gradient, so turning it costs nothing. */
+.mood-sleeves {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 132px;
+  gap: 14px;
+}
+.mood-sleeve {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  padding: 18px 20px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--mood-tint) 26%, rgba(255, 255, 255, 0.06));
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 140% at 0% 100%, color-mix(in srgb, var(--mood-tint) 34%, transparent), transparent 62%),
+    linear-gradient(160deg, color-mix(in srgb, var(--mood-tint) 16%, #101114), #0c0d10 70%);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--d-base) var(--ease-press), border-color var(--d-base) var(--ease-standard);
+}
+.mood-sleeve.is-lead { grid-column: span 2; grid-row: span 2; padding: 26px 28px; }
+.mood-sleeve:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--mood-tint) 50%, transparent); }
+.mood-sleeve:active { transform: translateY(-1px) scale(0.985); }
+
+/* The sleeve's printed face: a soft square of the tint, top right; the record peeks out of its
+ * left edge, behind it, and slides further out (turning) on hover. */
+.mood-sleeve__face {
+  position: absolute;
+  z-index: -1;
+  top: 16px;
+  right: 16px;
+  width: 62px;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--mood-tint) 88%, #fff), color-mix(in srgb, var(--mood-tint) 66%, #000));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 20px rgba(0, 0, 0, 0.35);
+  transform: rotate(-4deg);
+  transition: transform var(--d-slow) var(--ease-spring);
+}
+.mood-sleeve__disc {
+  position: absolute;
+  z-index: -2;
+  top: 19px;
+  right: 19px;
+  width: 56px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--mood-tint) 80%, #000) 0 18%, #0b0b0d 19% 21%, transparent 22%),
+    repeating-radial-gradient(circle, #141418 0 2px, #1f1f24 2px 3px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  transform: translateX(-22px) rotate(0deg);
+  transition: transform var(--d-slow) var(--ease-spring);
+}
+.mood-sleeve__disc i { position: absolute; inset: 0; border-radius: 50%; background: linear-gradient(120deg, rgba(255, 255, 255, 0.16), transparent 42%); }
+.mood-sleeve:hover .mood-sleeve__disc { transform: translateX(-38px) rotate(160deg); }
+.mood-sleeve:hover .mood-sleeve__face { transform: rotate(0deg) scale(1.04); }
+
+.mood-sleeve.is-lead .mood-sleeve__face { top: 28px; right: 32px; width: 150px; border-radius: 20px; }
+.mood-sleeve.is-lead .mood-sleeve__disc { top: 34px; right: 38px; width: 138px; transform: translateX(-52px); }
+.mood-sleeve.is-lead:hover .mood-sleeve__disc { transform: translateX(-88px) rotate(160deg); }
+
+.mood-sleeve__copy { display: flex; min-width: 0; max-width: 100%; flex-direction: column; gap: 4px; }
+.mood-sleeve__copy strong { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+.mood-sleeve__copy small { color: rgba(255, 255, 255, 0.66); font-size: 13px; line-height: 1.35; }
+.mood-sleeve.is-lead .mood-sleeve__copy strong { font-size: 34px; letter-spacing: -0.035em; }
+.mood-sleeve.is-lead .mood-sleeve__copy small { font-size: 15px; }
+
+.mood-sleeve__go {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity var(--d-fast) var(--ease-standard), transform var(--d-base) var(--ease-press);
+}
+.mood-sleeve:hover .mood-sleeve__go,
+.mood-sleeve:focus-visible .mood-sleeve__go { opacity: 1; transform: none; }
+
+@media (max-width: 720px) {
+  .mood-sleeves { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 112px; gap: 10px; }
+  .mood-sleeve { padding: 14px 16px; border-radius: 18px; }
+  .mood-sleeve.is-lead { grid-row: span 1; padding: 18px 20px; }
+  .mood-sleeve:last-child:nth-child(even) { grid-column: span 2; }
+  #browse-moods + .section-heading-end,
+  .home-section:has(#browse-moods) .section-heading-end { display: none; }
+  .mood-sleeve__face { top: 12px; right: 12px; width: 48px; }
+  .mood-sleeve__disc { top: 14px; right: 14px; width: 44px; }
+  .mood-sleeve.is-lead .mood-sleeve__face { top: 14px; right: 18px; width: 70px; }
+  .mood-sleeve.is-lead .mood-sleeve__disc { top: 17px; right: 21px; width: 64px; transform: translateX(-26px); }
+  .mood-sleeve.is-lead:hover .mood-sleeve__disc { transform: translateX(-40px) rotate(160deg); }
+  .mood-sleeve.is-lead .mood-sleeve__copy strong { font-size: 24px; }
+  .mood-sleeve__copy strong { font-size: 16px; }
+  .mood-sleeve__copy small { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mood-sleeve,
+  .mood-sleeve__face,
+  .mood-sleeve__disc,
+  .mood-sleeve__go { transition: opacity var(--d-fast) var(--ease-standard); }
+  .mood-sleeve:hover,
+  .mood-sleeve:active { transform: none; }
+  .mood-sleeve:hover .mood-sleeve__disc { transform: translateX(-22px); }
+  .mood-sleeve.is-lead:hover .mood-sleeve__disc { transform: translateX(-52px); }
+  .mood-sleeve:hover .mood-sleeve__face { transform: rotate(-4deg); }
+}

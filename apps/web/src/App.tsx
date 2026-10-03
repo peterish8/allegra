@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ArrowUpToLine, ChevronRight, Download, House, Heart as HeartIcon, Disc3, Pause, Play, SkipBack, SkipForward, Sparkles, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpToLine, ChevronRight, Download, House, Heart as HeartIcon, Disc3, Pause, Play, SkipBack, SkipForward, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -19,21 +19,19 @@ import { isLegalView } from './lib/routes';
 import { CollectionPage } from './components/CollectionPage';
 import { ArtistPreviewCard } from './components/ArtistPreviewCard';
 import type { RelatedArtist } from './components/ArtistPage';
-import { LyricsPanel } from './components/LyricsPanel';
 import { LibraryPage } from './components/LibraryPage';
 import { DynamicAura } from './components/DynamicAura';
 import { AuthDialog } from './components/AuthDialog';
 import { useSignIn } from './auth/SignInContext';
 import { CommandPalette } from './components/CommandPalette';
-import { HomePage } from './components/HomePage';
+import { DiscoverSections, HomePage } from './components/HomePage';
 import { ConnectPicker, type ConnectPickerState } from './components/ConnectPicker';
 import { PlayerPanel } from './components/PlayerPanel';
 import { SettingsPage } from './components/SettingsPage';
 import { MusicFlowShader } from './components/shader/MusicFlowShader';
 import type { ImmersivePlayerMode } from './components/PlayerPanel';
 import { SearchResults, artistsFromSongs } from './components/SearchResults';
-import { SongCard } from './components/SongCard';
-import { Artwork, EmptyState, IconButton, OfflineToast, SkeletonCard, TactileButton } from './components/ui';
+import { Artwork, EmptyState, IconButton, OfflineToast, TactileButton } from './components/ui';
 import { useAccount, useListenTracker } from './hooks/useAccount';
 import { accountDisplayName, isResolvingAccount, recallAccountName, rememberAccountName } from './lib/accountState';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
@@ -734,7 +732,6 @@ export default function App() {
   const lyricTranslations = showTranslated && translatedLyrics ? translatedLyrics.map((line) => line.text) : null;
   const queueSongs = playerQueue.length > 0 ? playerQueue : displaySongs;
   const nextSongs = queueSongs.filter((song) => song.id !== activeSong?.id).slice(0, 3);
-  const lightSong = nextSongs[0] ?? activeSong ?? home?.madeForYou[0] ?? home?.recommended[0] ?? null;
   const queueDuration = useMemo(() => queueSongs.reduce((total, song) => total + song.duration, 0), [queueSongs]);
   const playingNext = useMemo(() => {
     const live = playerQueue;
@@ -948,7 +945,6 @@ export default function App() {
       : playerIsPlaying
         ? 'Live'
         : 'Paused';
-  const sectionLabel = 'Made for you';
   /** A live query swaps Browse over to the tabbed result surface. */
   const isSearching = query.trim().length > 0;
 
@@ -1332,7 +1328,6 @@ export default function App() {
             onOpenArtist={openArtist}
             onSeedTaste={(artistNames, languageNames) => account.seed(artistNames, languageNames)}
             onOpenAuth={() => setAuthOpen(true)}
-            onExplore={(value) => { router.push(paths.discover); setQuery(value); }}
           />
         ) : view === 'shared' ? (
           sharedError ? (
@@ -1392,7 +1387,6 @@ export default function App() {
 
             {!isSearching && artists.length > 0 ? <section className="artist-section" aria-labelledby="artists-heading"><div className="section-heading"><h2 id="artists-heading">Popular artists</h2></div><div className="artist-list">{artists.map((artist) => <ArtistPreviewCard key={artist.name} name={artist.name} image={faces[artist.name.toLocaleLowerCase()] || null} photoPending={!(artist.name.toLocaleLowerCase() in faces)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} onPlayTrack={(song, queue) => playSong(song, queue)} onOpenArtist={openArtist} />)}</div></section> : null}
 
-        {!isSearching && aiPicks.length > 0 ? <section className="library-section ai-picks-section" aria-labelledby="ai-picks-heading"><div className="library-section-heading"><div><span className="eyebrow eyebrow-accent"><Sparkles size={13} aria-hidden="true" /> {aiPicksProvider ? `AI picks, by ${aiPicksProvider}` : 'AI picks'}</span><h2 id="ai-picks-heading">{aiPicksReasoning ?? 'Picked for your taste'}</h2></div></div><div className="library-track-list">{aiPicks.map((song, index) => <SongCard key={song.id} song={song} index={index} isCurrent={song.id === playerSong?.id} isPlaying={song.id === playerSong?.id && playerIsPlaying} onPlay={(pick) => playSong(pick)} onLike={() => toggleLike(song)} liked={likedIds.has(likedKey(song))} onOpenAlbum={openAlbum} />)}</div></section> : null}
 
             {isSearching ? (
               <SearchResults
@@ -1413,14 +1407,20 @@ export default function App() {
                 onRetry={retryCurrentSearch}
               />
             ) : (
-            <section className="catalog-section" aria-labelledby="catalog-heading" aria-busy={searching}><div className="section-heading"><h2 id="catalog-heading">{sectionLabel}</h2><span className="result-count" aria-live="polite">{searching ? 'Listening…' : `${displaySongs.length} tracks · ${formatTime(queueDuration)}`}</span></div>{searching && displaySongs.length === 0 ? <div className="track-list" aria-label="Loading songs"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div> : searchError && displaySongs.length === 0 ? <EmptyState title="That search did not come back" copy={searchError} action={<TactileButton variant="primary" onClick={retryCurrentSearch}>Try the search again</TactileButton>} /> : displaySongs.length === 0 ? <EmptyState title="Nothing came back" copy="Try an artist, a lyric, or a mood. Start with “Arijit Singh” or “late night.”" action={<TactileButton variant="accent" onClick={() => setQuery('Arijit Singh')}>Try a suggestion</TactileButton>} /> : <><div className="track-head" aria-hidden="true"><span>Track</span><span>Album</span><span>Length</span></div><motion.div className="track-list" variants={pageVariants} initial="hidden" animate="visible">{displaySongs.map((song, index) => <SongCard key={song.id} song={song} index={index} isCurrent={song.id === playerSong?.id} isPlaying={song.id === playerSong?.id && playerIsPlaying} onPlay={(pick) => playSong(pick)} onLike={() => toggleLike(song)} liked={likedIds.has(likedKey(song))} onOpenAlbum={openAlbum} />)}</motion.div></>}</section>
+              <DiscoverSections
+                trending={home?.trending ?? []}
+                madeForYou={home?.madeForYou ?? []}
+                recommended={home?.recommended ?? []}
+                currentSongId={playerSong?.id ?? null}
+                isPlaying={playerIsPlaying}
+                likedIds={likedIds}
+                onPlay={(song, queue) => playSong(song, queue)}
+                onToggle={togglePlayer}
+                onLike={toggleLike}
+                onExplore={(value) => setQuery(value)}
+              />
             )}
 
-            <section id="daylight" className="light-scene" aria-labelledby="light-scene-heading">
-          {lightSong ? <div className="light-scene-grid"><div className="light-scene-art"><button onClick={() => playSong(lightSong)} aria-label={`Play ${lightSong.title}`}><Artwork song={lightSong} size="large" /></button><div className="light-scene-track"><strong>{lightSong.title}</strong><span>{lightSong.artist}</span></div></div><div className="light-scene-copy"><h2 id="light-scene-heading">Keep listening</h2><p>One more track from your queue, ready when you are.</p><TactileButton variant="primary" icon={Play} aria-label={`Play ${lightSong.title}`} onClick={() => playSong(lightSong)}>Play next</TactileButton></div></div> : <div className="light-scene-empty"><Disc3 size={22} aria-hidden="true" /><p>Play something and your next pick shows up here.</p></div>}
-        </section>
-
-            <section id="words" className="lyrics-teaser"><div className="teaser-intro"><div><h2>Lyrics <em>in time</em></h2><p>Follow along with the song you are playing.</p></div><TactileButton variant="secondary" icon={Waves} onClick={() => { if (playerSong) setPlayerMode('workspace'); }}>Open lyrics</TactileButton></div><LyricsPanel lines={lyrics} translations={lyricTranslations} currentTime={playerTime} playing={playerIsPlaying} loading={lyricsLoading} error={lyricsError} onRetry={retryLyrics} onSeek={seekPlayer} onActivateLine={activateLyricLine} artworkUrl={activeSong?.artwork} translating={translating} translated={showTranslated} translateError={translateError} translateProvider={translateProvider} onToggleTranslate={toggleTranslate} source={lyricsPayload?.source} matchReason={lyricsPayload?.matchReason} alternatives={lyricsAlternatives} alternativesLoading={lyricsAlternativesLoading} alternativesError={lyricsAlternativesError} onLoadAlternatives={loadLyricsAlternatives} onSelectAlternative={selectLyricsAlternative} songId={activeSong?.id ?? null} softFocus /></section>
           </div>
 
           <aside id="queue" ref={nowPlayingRef} className="now-panel" aria-label="Now playing">

@@ -34,8 +34,6 @@ interface HomePageProps {
   readonly onOpenArtist: (name: string) => void;
   readonly onSeedTaste: (artists: string[], languages: string[]) => Promise<void>;
   readonly onOpenAuth: () => void;
-  /** Hand a query to Discover — what the mood tiles do. */
-  readonly onExplore: (query: string) => void;
 }
 
 function greeting(now = new Date()): string {
@@ -94,15 +92,15 @@ function shuffled(songs: readonly UnifiedSong[]): UnifiedSong[] {
 }
 
 /**
- * The personal front door. It opens on one song worth pressing play on, then reads outward:
- * what they were playing, who they play, what we made for them, and only then the chart and
- * the moods — somewhere to wander when nothing personal is calling.
+ * The personal front door: everything here is the listener's own. It opens on one song worth
+ * pressing play on, then reads outward: who they play, what they were playing, what we made for
+ * them, what they love. The charts and the moods live on Browse (`DiscoverSections`).
  */
 export function HomePage({
   profile, taste, recentlyPlayed, likedSongs, picks, picksReason, picksProvider,
   trending, madeForYou, recommended, faces,
   currentSongId, isPlaying, likedIds,
-  onPlay, onToggle, onLike, onOpenArtist, onSeedTaste, onOpenAuth, onExplore
+  onPlay, onToggle, onLike, onOpenArtist, onSeedTaste, onOpenAuth
 }: HomePageProps) {
   const reduced = useReducedMotion();
   const [skippedSetup, setSkippedSetup] = useState(() => window.localStorage.getItem('allegra-skip-setup') === '1');
@@ -128,7 +126,6 @@ export function HomePage({
     () => dedupe([recentlyPlayed.slice(1), likedSongs, picks, trending], 6),
     [recentlyPlayed, likedSongs, picks, trending]
   );
-  const chart = useMemo(() => trending.slice(0, 10), [trending]);
 
   const stagger = reduced ? undefined : { initial: { opacity: 0, y: 14 }, animate: { opacity: 1, y: 0 } };
 
@@ -280,34 +277,62 @@ export function HomePage({
         />
       ) : null}
 
-      {recommended.length > 0 ? (
-        <Shelf id="home-fresh" title="Somewhere new to wander" hint="See all" href={paths.discover} songs={recommended.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
-      ) : null}
-
       {likedSongs.length > 0 ? (
         <Shelf id="home-liked" title="Songs you love" hint={`${likedSongs.length} liked`} href={paths.liked} songs={likedSongs.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
       ) : null}
 
-      <Section id="home-moods" title="Browse by mood" hint="Opens in Discover" reduced={reduced}>
-        <div className="mood-grid">
-          {MOODS.map((mood) => (
+    </div>
+  );
+}
+interface DiscoverSectionsProps {
+  readonly trending: readonly UnifiedSong[];
+  readonly madeForYou: readonly UnifiedSong[];
+  readonly recommended: readonly UnifiedSong[];
+  readonly currentSongId: string | null;
+  readonly isPlaying: boolean;
+  readonly likedIds: ReadonlySet<string>;
+  readonly onPlay: (song: UnifiedSong, queue: UnifiedSong[]) => void;
+  readonly onToggle: () => void;
+  readonly onLike: (song: UnifiedSong) => void;
+  /** A mood sleeve hands its query to the Browse search. */
+  readonly onExplore: (query: string) => void;
+}
+
+/**
+ * Browse's half of the split: somewhere to wander. Moods first (a bento of record sleeves), then
+ * what everyone is playing today, then what is loved right now and somewhere new.
+ */
+export function DiscoverSections({ trending, madeForYou, recommended, currentSongId, isPlaying, likedIds, onPlay, onToggle, onLike, onExplore }: DiscoverSectionsProps) {
+  const reduced = useReducedMotion();
+  const chart = useMemo(() => trending.slice(0, 10), [trending]);
+  return (
+    <>
+      <Section id="browse-moods" title="Browse by mood" hint="Pick a feeling, we fill the room" reduced={reduced}>
+        <div className="mood-sleeves">
+          {MOODS.map((mood, index) => (
             <button
               key={mood.label}
               type="button"
-              className="mood-card"
+              className={`mood-sleeve${index === 0 ? ' is-lead' : ''}`}
               style={{ '--mood-tint': mood.tint } as CSSProperties}
               onClick={() => onExplore(mood.query)}
+              aria-label={`${mood.label}: ${mood.note}`}
             >
-              <span className="mood-card-label">{mood.label}</span>
-              <span className="mood-card-note">{mood.note}</span>
-              <span className="mood-card-chip" aria-hidden="true" />
+              {/* The record waits half inside its sleeve; hovering slides it out and sets it turning. */}
+              <span className="mood-sleeve__disc" aria-hidden="true"><i /></span>
+              <span className="mood-sleeve__face" aria-hidden="true" />
+              <span className="mood-sleeve__copy">
+                <strong>{mood.label}</strong>
+                <small>{mood.note}</small>
+              </span>
+              <span className="mood-sleeve__go" aria-hidden="true"><ChevronRight size={16} /></span>
             </button>
           ))}
         </div>
       </Section>
 
       {chart.length > 0 ? (
-        <Section id="home-chart" title="Top 10 today" hint="See all" href={paths.discover} reduced={reduced}>
+        <Section id="browse-chart" title="Top 10 today" reduced={reduced}>
           <ol className="chart-grid">
             {chart.map((song, index) => {
               const current = song.id === currentSongId;
@@ -349,9 +374,13 @@ export function HomePage({
       ) : null}
 
       {madeForYou.length > 0 ? (
-        <Shelf id="home-loved" title="Loved right now" hint="What everyone has on" songs={madeForYou.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
+        <Shelf id="browse-loved" title="Loved right now" hint="What everyone has on" songs={madeForYou.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
       ) : null}
-    </div>
+      {recommended.length > 0 ? (
+        <Shelf id="browse-fresh" title="Somewhere new to wander" songs={recommended.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
+      ) : null}
+
+    </>
   );
 }
 /* ----------------------------------------------------------------- sections */
