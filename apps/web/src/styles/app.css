@@ -7250,3 +7250,107 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .report-sheet { max-height: calc(100dvh - 32px); overflow-y: auto; }
 .settings-switch:disabled { opacity: 0.45; cursor: wait; }
 @media (max-width: 600px) { .legal-block { padding: 18px; } .legal-head { padding-top: 12px; } }
+
+/* ---------- Rail, tidied ----------
+ * One 16px inset for everything in the rail: the logo row, the links, the dividers and the footer
+ * all start and end on the same lines. The collapse control is a bare glyph on the logo's centre
+ * line, not a disc. Links light with a filled pill (no edge bar) and give a small, quick lift on
+ * hover; the footer's three controls share one row in equal cells. Transforms and opacity only. */
+@media (min-width: 901px) {
+  .site-header .site-header-top {
+    height: 44px;
+    margin: 0 4px 14px;
+    padding: 0 0 14px;
+    box-sizing: content-box;
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+  .site-header .brand { margin: 0; padding-left: 12px; transition: transform var(--d-fast) var(--ease-press); }
+  .site-header .brand:hover { transform: scale(1.03); }
+  .site-header .brand-mark { transition: transform var(--d-base) var(--ease-spring); }
+  .site-header .brand:hover .brand-mark { transform: rotate(-8deg) scale(1.08); }
+
+  .site-header .nav-collapse-toggle {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    margin-right: 2px;
+    border-radius: 10px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.5);
+  }
+  .site-header .nav-collapse-toggle svg { transition: transform var(--d-fast) var(--ease-press); }
+  .site-header .nav-collapse-toggle:hover { background: transparent; color: #fff; }
+  .site-header .nav-collapse-toggle:hover svg { transform: translateX(-2px); }
+  .site-header .nav-collapse-toggle:active svg { transform: translateX(-2px) scale(0.9); }
+
+  .site-header .desktop-nav { margin: 0; gap: 2px; }
+  .site-header .nav-link {
+    width: auto;
+    min-height: 40px;
+    margin: 0 4px;
+    padding: 0 12px;
+    gap: 12px;
+    border-radius: 12px;
+    color: rgba(255, 255, 255, 0.62);
+    transition: color var(--d-fast) var(--ease-standard), background-color var(--d-fast) var(--ease-standard);
+  }
+  .site-header .nav-link svg { transition: transform var(--d-base) var(--ease-spring), color var(--d-fast) var(--ease-standard); }
+  .site-header .nav-label { transition: transform var(--d-fast) var(--ease-press); }
+  .site-header .nav-link:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+  .site-header .nav-link:hover svg { transform: translateY(-1px) scale(1.12); }
+  .site-header .nav-link:hover .nav-label { transform: translateX(2px); }
+  .site-header .nav-link:active svg { transform: scale(0.92); }
+  .site-header .nav-link.is-active { background: rgba(255, 255, 255, 0.1); color: #fff; }
+  .site-header .nav-link.is-active::before { display: none; }
+  .site-header .nav-link.is-active svg { color: var(--art-primary, var(--wave)); }
+  .site-header .nav-divider { margin: 8px 16px; }
+
+  .site-header .header-actions { gap: 10px; margin: auto 4px 0; padding: 14px 0 0; }
+  .site-header .session-chip { padding: 7px 8px; border-radius: 14px; transition: background-color var(--d-fast) var(--ease-standard); }
+  .site-header .session-avatar { transition: transform var(--d-base) var(--ease-spring); }
+  .site-header .session-chip:hover .session-avatar { transform: scale(1.08) rotate(-6deg); }
+
+  /* Download, motion and settings: three equal cells in one quiet strip. */
+  .site-header .header-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    gap: 2px;
+    padding: 3px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.045);
+  }
+  .site-header .header-buttons .icon-button {
+    width: auto;
+    height: 38px;
+    flex: none;
+    margin: 0;
+    border: 0;
+    border-radius: 11px;
+    background: transparent;
+    box-shadow: none;
+    color: rgba(255, 255, 255, 0.64);
+  }
+  .site-header .header-buttons .icon-button svg { width: 17px; height: 17px; transition: transform var(--d-base) var(--ease-spring); }
+  .site-header .header-buttons .icon-button:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+  .site-header .header-buttons .app-download-link { color: var(--wave); }
+  .site-header .header-buttons .app-download-link:hover { background: color-mix(in srgb, var(--wave) 14%, transparent); color: var(--wave); }
+  .site-header .header-buttons .app-download-link:hover svg { transform: translateY(2px); }
+  .site-header .header-buttons .motion-toggle:hover svg { transform: scale(1.14); }
+  .site-header .header-buttons .settings-link:hover svg { transform: rotate(60deg); }
+  .site-header .header-buttons .icon-button:active svg { transform: scale(0.88); }
+
+  .is-nav-collapsed .site-header .site-header-top { height: 44px; margin: 0; padding: 0; justify-content: center; border: 0; }
+  .is-nav-collapsed .site-header .nav-collapse-toggle { width: 44px; height: 44px; flex-basis: 44px; margin: 0; }
+  .is-nav-collapsed .site-header .nav-collapse-toggle:hover svg { transform: translateX(2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-header .brand,
+  .site-header .brand-mark,
+  .site-header .nav-link svg,
+  .site-header .nav-label,
+  .site-header .nav-collapse-toggle svg,
+  .site-header .session-avatar,
+  .site-header .header-buttons .icon-button svg { transition: none; transform: none !important; }
+}
