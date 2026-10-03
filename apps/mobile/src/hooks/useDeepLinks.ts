@@ -5,8 +5,9 @@
  *       find the song (official YouTube Music match, catalog audio), play it
  *       and open Now Playing — on the cover, or on lyrics with lyrics=1
  *   lyricflow://open/<stream|luvs|library|playlists|search|settings>
- *   lyricflow://player[?sheet=menu|together|queue|timer]
- *       open Now Playing on the current song (optionally with a sheet up)
+ *   lyricflow://player[?sheet=menu|together|queue|timer][&lyrics=1]
+ *       open Now Playing on the current song (optionally with a sheet up, or
+ *       switched to lyrics: on an open player that is the lyrics button's path)
  *   lyricflow://together?code=<room>
  *       a Listen together invite: opens the room sheet with the code filled in
  *   lyricflow://style?playerBackground=aura&miniPlayerBackground=glass&appBackground=glow&fps=1
@@ -76,7 +77,8 @@ const handle = async (url: string | null) => {
     if (link.action === 'together' && code) useListenTogetherStore.setState({ inviteCode: code });
     const requested = link.action === 'together' ? 'together' : link.params.sheet;
     const sheet = SHEETS.find(s => s === requested);
-    if (songId) navigationRef.navigate('NowPlaying', { songId, sheet });
+    const lyrics = link.action === 'player' && link.params.lyrics === '1';
+    if (songId) navigationRef.navigate('NowPlaying', { songId, sheet, ...(lyrics ? { lyrics } : {}) });
     else if (link.action === 'together') useListenTogetherStore.getState().announce('Play a song, then open Listen together to join');
     return;
   }

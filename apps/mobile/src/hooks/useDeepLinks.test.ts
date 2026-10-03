@@ -24,4 +24,8 @@ describe('player and invite links', () => {
     expect(parseDeepLink('lyricflow://player?sheet=menu')).toEqual({ action: 'player', params: { sheet: 'menu' } });
     expect(parseDeepLink('lyricflow://together?code=ab12cd')).toEqual({ action: 'together', params: { code: 'ab12cd' } });
   });
+
+  it('parses a lyrics switch for the open player', () => {
+    expect(parseDeepLink('lyricflow://player?lyrics=1')).toEqual({ action: 'player', params: { lyrics: '1' } });
+  });
 });
