@@ -17,6 +17,22 @@ describe('firstNonNull', () => {
 });
 
 describe('youLyPlus', () => {
+  it('keeps KPoe syllable timings as word tags', async () => {
+    const f = mockFetch([['https://lyricsplus', {
+      lyrics: [
+        { time: 1000, text: 'Hello there', syllabus: [
+          { text: 'Hel', time: 1000, duration: 200 },
+          { text: 'lo', time: 1200, duration: 300 },
+          { text: 'ooh', time: 1300, duration: 300, isBackground: true },
+          { text: 'there', time: 1600, duration: 400 },
+        ] },
+      ],
+    }]]);
+    const hit = await youLyPlus(query);
+    f.restore();
+    expect(hit?.lyrics).toBe('[00:01.00]<00:01.000>Hel<00:01.200>lo <00:01.500><00:01.600>there<00:02.000>');
+  });
+
   it('converts KPoe syllable lines to line LRC', async () => {
     const f = mockFetch([['https://lyricsplus', {
       lyrics: [

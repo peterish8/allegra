@@ -39,6 +39,10 @@ export interface LyricLine {
   timestamp: number;      // SECONDS (float). All-zero ⇒ unsynced
   text: string;           // '[INSTRUMENTAL]' for empty stamped lines
   lineOrder: number;      // 0-based, contiguous
+  /** Optional, additive. Word/syllable timing from word-synced sources (YouLyPlus, BetterLyrics TTML).
+   *  SECONDS. `text` of each piece keeps a trailing space where a word ends, so the pieces joined
+   *  spell the line exactly; clients ignore `words` that don't (packages/shared/wordSync.ts). */
+  words?: { text: string; start: number; end: number }[];
 }
 
 export interface LyricsPayload {
@@ -173,6 +177,7 @@ the authenticated cover-upload flow or `coverKey: null` to clear it.
 `{ title, artist, lines: LyricLine[], targetLanguage? = "English", language? }` (no auth required)
 `→ ApiResponse<{ lines: LyricLine[]; provider: string }>`
 Same `lines` length/order/timestamps as the request; `[INSTRUMENTAL]` markers pass through unchanged.
+Translated lines carry no `words` (the timing belongs to the original wording).
 MyMemory is the free keyless primary. A configured, self-hosted LibreTranslate instance is the
 fallback; unmanaged public mirrors are never assumed. The legacy `/api/ai/translate-lyrics` path is
 an alias for compatibility. `502` means both available providers failed.

@@ -33,7 +33,7 @@ import * as Haptics from '../utils/haptics';
 import appConfig from '../../app.json';
 import { TabScreenProps } from '../types/navigation';
 import { usePlayerStore } from '../store/playerStore';
-import { AppBackground, LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, MiniPlayerBackground, PlayerBackground, isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
+import { AppBackground, LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, LyricsHighlight, MiniPlayerBackground, PlayerBackground, isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
 import { CustomAlert } from '../components/CustomAlert';
 import { Toast } from '../components/Toast';
 import ListenTogetherSettings from '../components/settings/ListenTogetherSettings';
@@ -233,7 +233,7 @@ const SettingsScreen: React.FC<Props> = () => {
   const summaries = {
     player: `${BG_NAME[settings.playerBackground]} · canvas ${settings.canvasEnabled ? 'on' : 'off'}`,
     playback: `${settings.keepScreenOn ? 'Screen stays on' : 'Screen can sleep'} · haptics ${(settings.hapticsEnabled ?? true) ? 'on' : 'off'}`,
-    lyrics: `Size ${settings.lyricsSize} · ${ALIGN_NAME[settings.lyricsAlign]} · ${timing === 0 ? 'in sync' : `${timing > 0 ? '+' : ''}${timing.toFixed(1)}s`}`,
+    lyrics: `Size ${settings.lyricsSize} · ${ALIGN_NAME[settings.lyricsAlign]} · ${settings.lyricsHighlight === 'letters' ? 'letter by letter' : 'line by line'} · ${timing === 0 ? 'in sync' : `${timing > 0 ? '+' : ''}${timing.toFixed(1)}s`}`,
     nav: `${settings.navBarStyle === 'modern-pill' ? 'Floating pill' : 'Classic bar'} · voice ${(settings.micEnabled ?? true) ? 'on' : 'off'}`,
     discover: `Languages: ${luvsLanguageSummary.toLowerCase()}`,
     library: `${songs.length} ${songs.length === 1 ? 'song' : 'songs'}${hiddenSongs.length > 0 ? ` · ${hiddenSongs.length} hidden` : ''}`,
@@ -384,6 +384,15 @@ const SettingsScreen: React.FC<Props> = () => {
             value={settings.lyricsAlign}
             options={[{ value: 'left', label: 'Left' }, { value: 'center', label: 'Centre' }, { value: 'right', label: 'Right' }]}
             onChange={settings.setLyricsAlign}
+          />
+          <Choice<LyricsHighlight>
+            label="Highlight"
+            hint={settings.lyricsHighlight === 'letters'
+              ? 'Words fill in as they are sung, syllable by syllable when the lyrics are word-timed.'
+              : 'The whole sung line lights up at once.'}
+            value={settings.lyricsHighlight}
+            options={[{ value: 'letters', label: 'Letter by letter' }, { value: 'lines', label: 'Line by line' }]}
+            onChange={settings.setLyricsHighlight}
           />
           <Choice<'compact' | 'normal' | 'relaxed'>
             label="Line spacing"

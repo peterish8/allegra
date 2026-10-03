@@ -1,4 +1,5 @@
-import { formatLrcTime, hasLrcTimestamps, parseClock, toLineLrc, ttmlToLrc } from './lrc';
+import { formatLrcTime, hasLrcTimestamps, parseClock, toLineLrc, toTimedLrc, ttmlToLrc } from './lrc';
+import { lyricaService } from '../LyricaService';
 import { parseTimestampedLyrics } from '../../utils/timestampParser';
 
 describe('formatLrcTime', () => {
@@ -33,10 +34,19 @@ describe('ttmlToLrc', () => {
     <p>no timing</p>
   </div></body></tt>`;
 
-  it('flattens word spans, drops background vocals and decodes entities', () => {
+  it('keeps word spans as word tags, drops background vocals and decodes entities', () => {
     expect(ttmlToLrc(ttml)).toBe(
-      ['[00:01.00]Hello world', '[00:04.25]Main line', "[00:06.00]Tom & Jerry's"].join('\n'),
+      [
+        '[00:01.00]<00:01.000>Hello <00:01.500>world<00:01.800>',
+        '[00:04.25]Main line',
+        "[00:06.00]Tom & Jerry's",
+      ].join('\n'),
     );
+  });
+
+  it('keeps syllables of one word together', () => {
+    const syllabic = '<p begin="2s"><span begin="2s" end="2.2s">Beau</span><span begin="2.2s" end="2.4s">ti</span><span begin="2.4s" end="2.9s">ful</span> <span begin="3s" end="3.5s">day</span></p>';
+    expect(ttmlToLrc(syllabic)).toBe('[00:02.00]<00:02.000>Beau<00:02.200>ti<00:02.400>ful <00:02.900><00:03.000>day<00:03.500>');
   });
 
   it('produces text the app parser reads as synced lines', () => {
@@ -46,6 +56,22 @@ describe('ttmlToLrc', () => {
       [4.25, 'Main line'],
       [6, "Tom & Jerry's"],
     ]);
+  });
+
+  it('reaches the player as lines with their word timings', () => {
+    const lines = lyricaService.parseLrc(ttmlToLrc(ttml), 200);
+    expect(lines[0].text).toBe('Hello world');
+    expect(lines[0].words).toEqual([
+      { text: 'Hello ', start: 1, end: 1.5 },
+      { text: 'world', start: 1.5, end: 1.8 },
+    ]);
+    expect(lines[1].words).toBeUndefined();
+  });
+});
+
+describe('toTimedLrc', () => {
+  it('keeps word timings, drops bg markers and metadata tags', () => {
+    expect(toTimedLrc('[ar:x]\n[00:10.00]{bg}<00:10.00>Word <00:10.50>by')).toBe('[00:10.00]<00:10.00>Word <00:10.50>by');
   });
 });
 

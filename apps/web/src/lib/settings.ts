@@ -7,6 +7,8 @@ import { DEFAULT_KARAOKE_MIX, normalizeMix, type KaraokeMix } from './karaokeMix
  */
 export type ThemePreference = 'dark' | 'light' | 'system';
 export type LyricsSize = 'small' | 'medium' | 'large';
+/** How the sung line lights up: letter by letter as it is sung, or the whole line at once. Same as the phone. */
+export type LyricsHighlight = 'letters' | 'lines';
 /** `auto` tries the on-device model and falls back; `basic` always uses the light remover. */
 export type KaraokeMode = 'auto' | 'basic';
 
@@ -17,6 +19,8 @@ export interface Settings {
   /** When a song came from a search or a short list, keep queueing similar songs after it. */
   readonly autoplaySimilar: boolean;
   readonly lyricsSize: LyricsSize;
+  /** Letter by letter uses a source's word timings, or estimates them for a line-synced song. */
+  readonly lyricsHighlight: LyricsHighlight;
   readonly showLyricsSource: boolean;
   /** Plain black behind the player instead of the artwork-coloured atmosphere. */
   readonly playerBlackBackground: boolean;
@@ -42,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   animatedBackground: true,
   autoplaySimilar: true,
   lyricsSize: 'medium',
+  lyricsHighlight: 'letters',
   showLyricsSource: true,
   playerBlackBackground: false,
   rememberLyricsOffset: true,
@@ -95,6 +100,7 @@ export function parseSettings(raw: string | null, legacyTheme: string | null = n
     animatedBackground: flag(stored.animatedBackground, DEFAULT_SETTINGS.animatedBackground),
     autoplaySimilar: flag(stored.autoplaySimilar, DEFAULT_SETTINGS.autoplaySimilar),
     lyricsSize: oneOf(stored.lyricsSize, ['small', 'medium', 'large'], DEFAULT_SETTINGS.lyricsSize),
+    lyricsHighlight: oneOf(stored.lyricsHighlight, ['letters', 'lines'], DEFAULT_SETTINGS.lyricsHighlight),
     showLyricsSource: flag(stored.showLyricsSource, DEFAULT_SETTINGS.showLyricsSource),
     playerBlackBackground: flag(stored.playerBlackBackground, DEFAULT_SETTINGS.playerBlackBackground),
     rememberLyricsOffset: flag(stored.rememberLyricsOffset, DEFAULT_SETTINGS.rememberLyricsOffset),

@@ -10,6 +10,8 @@ import { SortOption, ViewMode } from '../types/song';
 
 type Theme = 'dark' | 'light' | 'auto';
 export type LyricsAlign = 'left' | 'center' | 'right';
+/** How the sung line lights up: letter by letter as it is sung (Echo Music's karaoke fill), or the whole line at once. */
+export type LyricsHighlight = 'letters' | 'lines';
 type LineSpacing = 'compact' | 'normal' | 'relaxed';
 type ScrollSpeed = 'slow' | 'medium' | 'fast';
 
@@ -63,6 +65,8 @@ interface SettingsState {
   lyricsSize: number;
   /** Where lyric lines sit; a song's own centre/right alignment (lyrics editor) wins. */
   lyricsAlign: LyricsAlign;
+  /** Letter by letter uses a source's word timings, or estimates them for a line-synced song. */
+  lyricsHighlight: LyricsHighlight;
   lineSpacing: LineSpacing;
   
   // Playback
@@ -100,6 +104,7 @@ interface SettingsState {
   setDefaultGradient: (gradientId: string) => void;
   setLyricsSize: (size: number) => void;
   setLyricsAlign: (align: LyricsAlign) => void;
+  setLyricsHighlight: (highlight: LyricsHighlight) => void;
   setLineSpacing: (spacing: LineSpacing) => void;
   setScrollSpeed: (speed: ScrollSpeed) => void;
   setSkipDuration: (duration: 10 | 15 | 30) => void;
@@ -179,6 +184,7 @@ const DEFAULT_SETTINGS = {
   defaultGradientId: 'aurora',
   lyricsSize: 28,
   lyricsAlign: 'left' as LyricsAlign,
+  lyricsHighlight: 'letters' as LyricsHighlight,
   lineSpacing: 'normal' as LineSpacing,
   scrollSpeed: 'medium' as ScrollSpeed,
   skipDuration: 15 as const,
@@ -228,6 +234,7 @@ export const useSettingsStore = create<SettingsState>()(
       setDefaultGradient: (defaultGradientId) => set({ defaultGradientId }),
       setLyricsSize: (size) => set({ lyricsSize: clampLyricsSize(size) }),
       setLyricsAlign: (lyricsAlign) => set({ lyricsAlign }),
+      setLyricsHighlight: (lyricsHighlight) => set({ lyricsHighlight }),
       setLineSpacing: (lineSpacing) => set({ lineSpacing }),
       
       // Playback actions
@@ -317,6 +324,7 @@ export const useSettingsStore = create<SettingsState>()(
             ? LYRICS_PRESET_SIZE[lyricsFontSize as keyof typeof LYRICS_PRESET_SIZE] ?? 28
             : clampLyricsSize(state.lyricsSize ?? 28),
           lyricsAlign: state.lyricsAlign ?? 'left',
+          lyricsHighlight: state.lyricsHighlight === 'lines' ? 'lines' : 'letters',
           playerBackground: normalizePlayerBackground(state.playerBackground),
           miniPlayerBackground: normalizeMiniPlayerBackground(state.miniPlayerBackground),
           // v2: hold-to-talk became the default. The old default was 'tap',

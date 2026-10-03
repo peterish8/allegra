@@ -107,7 +107,11 @@ export class TranslationService {
         const translated = primary ?? fallback;
         if (!translated) return null;
         return {
-          lines: lines.map((line) => ({ ...line, text: translated.get(line.text.trim()) ?? line.text })),
+          // A translated line drops its word timing: it timed the original words.
+          lines: lines.map((line) => {
+            const text = translated.get(line.text.trim());
+            return text === undefined || text === line.text ? line : { timestamp: line.timestamp, text, lineOrder: line.lineOrder };
+          }),
           provider: primary ? 'mymemory' : 'libretranslate'
         };
       }

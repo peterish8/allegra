@@ -2,9 +2,11 @@
  * LRC helpers shared by the Echo lyrics providers.
  *
  * Providers hand back anything from word-synced "enhanced LRC" to Apple TTML.
- * LuvLyrics renders line-synced lyrics, so everything is normalised to plain
- * `[mm:ss.xx]line` text that `parseTimestampedLyrics` already understands.
+ * Everything is normalised to `[mm:ss.xx]line` text, keeping word timings as
+ * `<mm:ss.xxx>` tags inside the line (see `@shared/wordSync`) so the lyrics can
+ * light up letter by letter. `stripWordTags` gives the plain line back.
  */
+import { alignSyllables, enhancedLine, LyricWord, stripWordTags } from '@shared/wordSync';
 
 const pad = (n: number, width = 2): string => String(n).padStart(width, '0');
 
@@ -66,40 +68,71 @@ const stripBackgroundSpans = (body: string): string => {
 };
 
 /**
- * Apple-style TTML -> line LRC. Each `<p begin="…">` becomes one line; word
- * spans are flattened. Background-vocal spans (ttm:role="x-bg") are dropped so
- * the main line stays readable.
+ * The timed spans of a `<p>` body, in order. Text between spans (usually the
+ * space that ends a word) joins the span before it; a span holding other spans
+ * is skipped in favour of the ones inside it.
+ */
+const timedSpans = (body: string): LyricWord[] => {
+  const spans: { text: string; start: number; end: number }[] = [];
+  for (const m of body.matchAll(/<span\b([^>]*)>([^<]*)<\/span>|([^<]+)|<[^>]*>/g)) {
+    if (m[3] !== undefined) {
+      const last = spans[spans.length - 1];
+      if (last) last.text += decodeEntities(m[3]);
+      continue;
+    }
+    if (m[1] === undefined) continue;
+    const start = parseClock(m[1].match(/\bbegin="([^"]+)"/)?.[1]);
+    const end = parseClock(m[1].match(/\bend="([^"]+)"/)?.[1]);
+    if (start === null) {
+      const last = spans[spans.length - 1];
+      if (last) last.text += decodeEntities(m[2]);
+      continue;
+    }
+    spans.push({ text: decodeEntities(m[2]), start: start / 1000, end: (end ?? start) / 1000 });
+  }
+  return spans;
+};
+
+/**
+ * Apple-style TTML -> LRC. Each `<p begin="…">` becomes one line, its timed word
+ * (or syllable) spans kept as word tags. Background-vocal spans
+ * (ttm:role="x-bg") are dropped so the main line stays readable.
  */
 export const ttmlToLrc = (ttml: string): string => {
   const out: string[] = [];
-  const pRegex = /<p\b([^>]*)>([\s\S]*?)<\/p>/g;
-  let match: RegExpExecArray | null;
-  while ((match = pRegex.exec(ttml)) !== null) {
+  for (const match of ttml.matchAll(/<p\b([^>]*)>([\s\S]*?)<\/p>/g)) {
     const attrs = match[1];
-    let body = match[2];
     const begin = parseClock(attrs.match(/\bbegin="([^"]+)"/)?.[1]);
     if (begin === null) continue;
-    body = stripBackgroundSpans(body);
+    const body = stripBackgroundSpans(match[2]).replace(/<br\s*\/?>/g, ' ');
     // Word spans are often written back-to-back with the space inside or
     // outside the tag — collapse tags to nothing, then normalise whitespace.
-    const text = decodeEntities(body.replace(/<br\s*\/?>/g, ' ').replace(/<[^>]+>/g, ''))
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (text) out.push(`${formatLrcTime(begin)}${text}`);
+    const text = decodeEntities(body.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    const syllables = alignSyllables(timedSpans(body), text);
+    out.push(syllables.length > 0 ? enhancedLine(begin / 1000, syllables) : `${formatLrcTime(begin)}${text}`);
   }
   return out.join('\n');
 };
 
 /**
- * Strips word-level timing (`<00:12.34>`), `{bg}` markers and metadata tags
- * (`[ar:…]`, `[offset:…]`) so enhanced LRC renders as clean line LRC.
+ * Normalises any LRC to clean lines, keeping word timing (`<00:12.34>`), and
+ * dropping `{bg}` markers and metadata tags (`[ar:…]`, `[offset:…]`).
  */
-export const toLineLrc = (lrc: string): string =>
+export const toTimedLrc = (lrc: string): string =>
   lrc
     .split(/\r\n|\r|\n/)
-    .map(line => line.replace(/<\d{1,2}:\d{2}(?:\.\d{1,3})?>/g, '').replace(/\{bg\}/g, ''))
+    .map(line => line.replace(/\{bg\}/g, ''))
     .filter(line => !/^\[(ar|ti|al|by|offset|length|re|ve|au|#):/i.test(line.trim()))
     .map(line => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+
+/** As `toTimedLrc`, with the word timing taken out too: plain line LRC. */
+export const toLineLrc = (lrc: string): string =>
+  toTimedLrc(lrc)
+    .split('\n')
+    .map(line => stripWordTags(line))
     .filter(Boolean)
     .join('\n');
 

@@ -1884,21 +1884,33 @@ body::before { display: none; }
   text-shadow: 0 0 26px rgba(255, 255, 255, 0.22) !important;
 }
 
-.ytm-lyrics__karaoke { position: relative; display: inline-block; max-width: 100%; }
-.ytm-lyrics__karaoke-base { opacity: 0.45; }
-.ytm-lyrics__karaoke-fill {
+/* Letter by letter (SweepWords in LyricsPanel.tsx): the sung line's unsung letters rest dim and a
+ * bright copy of each word is revealed by a clip sliding with --p (0..1, written every frame).
+ * Transforms in % of the word's own box: nothing is measured, nothing reflows. */
+.lyric-word { position: relative; display: inline-block; }
+.lyric-word__base { transition: opacity var(--d-base) var(--ease-standard); }
+.ytm-lyrics__line.is-sweeping.is-active .lyric-word__base { opacity: 0.45; }
+.lyric-word__fill {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  transform-origin: left center;
-  color: #fff;
-  opacity: 1;
   pointer-events: none;
+  color: #fff;
+  opacity: 0;
+  transform: translateX(calc((var(--p, 0) - 1) * 100%));
+  transition: opacity var(--d-base) var(--ease-standard);
 }
-.ytm-lyrics__karaoke-fill > span {
-  display: inline-block;
-  transform-origin: left center;
+.lyric-word__fill > span {
+  display: block;
   white-space: nowrap;
+  transform: translateX(calc((1 - var(--p, 0)) * 100%));
+}
+.ytm-lyrics__line.is-active .lyric-word__fill { opacity: 1; }
+.lyric-words.is-rtl .lyric-word__fill { transform: translateX(calc((1 - var(--p, 0)) * 100%)); }
+.lyric-words.is-rtl .lyric-word__fill > span { transform: translateX(calc((var(--p, 0) - 1) * 100%)); }
+@media (prefers-reduced-motion: reduce) {
+  .lyric-word__base,
+  .lyric-word__fill { transition: none; }
 }
 
 @media (max-width: 960px) {

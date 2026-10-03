@@ -27,6 +27,17 @@ test('plain lyrics are interpolated across duration', () => {
   ]);
 });
 
+test('word tags time the words and never become extra lines', () => {
+  const lines = parseLyrics('[00:01.00]<00:01.000>Hel<00:01.200>lo <00:01.500><00:01.600>there<00:02.000>\n[00:03.00] plain', 200);
+  assert.deepEqual(lines.map((line) => [line.timestamp, line.text]), [[1, 'Hello there'], [3, 'plain']]);
+  assert.deepEqual(lines[0]?.words, [
+    { text: 'Hel', start: 1, end: 1.2 },
+    { text: 'lo ', start: 1.2, end: 1.5 },
+    { text: 'there', start: 1.6, end: 2 }
+  ]);
+  assert.equal(lines[1]?.words, undefined);
+});
+
 test('LRC header tags are metadata and never become lyric lines', () => {
   const lines = parseLyrics(['[ar: Someone]', '[length: 3:47]', '[offset:+200]', '[00:01.00] first', '[00:02.00] second'].join(String.fromCharCode(10)), 200);
   assert.deepEqual(lines.map((line) => line.text), ['first', 'second']);

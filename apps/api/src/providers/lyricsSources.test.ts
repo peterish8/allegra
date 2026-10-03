@@ -31,6 +31,27 @@ test('LyricsPlus: a dead instance does not sink the race, and its lines become L
   assert.equal(found?.lyrics, '[00:27.39] first line\n[00:30.18] second line');
 });
 
+test('LyricsPlus: word-timed lines keep every syllable, background vocals left out', async () => {
+  const provider = new YouLyPlusProvider({
+    servers: ['https://live.test'],
+    fetchImpl: async () =>
+      json({
+        type: 'Syllable',
+        lyrics: [
+          { time: 1_000, text: 'Hello there', syllabus: [
+            { time: 1_000, duration: 200, text: 'Hel' },
+            { time: 1_200, duration: 300, text: 'lo ' },
+            { time: 1_300, duration: 300, text: 'ooh', isBackground: true },
+            { time: 1_600, duration: 400, text: 'there' }
+          ] },
+          { time: 3_000, text: 'plain' }
+        ]
+      })
+  });
+  const found = await provider.find('Song', 'Singer', 200);
+  assert.equal(found?.lyrics, '[00:01.00]<00:01.000>Hel<00:01.200>lo <00:01.500><00:01.600>there<00:02.000>\n[00:03.00] plain');
+});
+
 test('LyricsPlus: an instance saying "no lyrics" is a miss, not a result', async () => {
   const provider = new YouLyPlusProvider({ servers: ['https://live.test'], fetchImpl: async () => json({ error: 'not found' }) });
   assert.equal(await provider.find('Nothing', 'Nobody', 200), null);

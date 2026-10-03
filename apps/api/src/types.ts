@@ -1,3 +1,5 @@
+import type { LyricWord } from './shared/wordSync.js';
+
 export interface UnifiedSong {
   readonly id: string;
   readonly title: string;
@@ -18,6 +20,8 @@ export interface LyricLine {
   readonly timestamp: number;
   readonly text: string;
   readonly lineOrder: number;
+  /** When each word (or syllable) is sung, in seconds, from word-synced sources. See wordSync. */
+  readonly words?: readonly LyricWord[];
 }
 
 export interface LyricsPayload {

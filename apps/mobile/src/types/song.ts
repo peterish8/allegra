@@ -1,6 +1,9 @@
 /**
  * LyricFlow - Song & Lyrics Type Definitions
  */
+import type { LyricWord } from '@shared/wordSync';
+
+export type { LyricWord };
 
 export interface LyricLine {
   id?: number;
@@ -8,6 +11,8 @@ export interface LyricLine {
   text: string;
   lineOrder: number;
   align?: 'left' | 'center' | 'right';
+  /** When each word (or syllable) is sung, from word-synced sources. Ignored once they no longer spell `text`. */
+  words?: LyricWord[];
 }
 
 export interface Song {

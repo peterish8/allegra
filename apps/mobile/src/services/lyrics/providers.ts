@@ -1,12 +1,14 @@
 /**
  * Lyrics providers ported from Echo Music. Every provider:
  *   - takes the same LyricsQuery,
- *   - returns normalised line-LRC (or plain text) or null,
+ *   - returns normalised LRC (or plain text) or null, keeping word timing as
+ *     `<mm:ss.xxx>` tags when the source has it (see `@shared/wordSync`),
  *   - never throws (see fetchWithTimeout).
  */
 import { Buffer } from 'buffer';
 import { buildUrl, fetchJson } from '../net/fetchWithTimeout';
-import { formatLrcTime, hasLrcTimestamps, toLineLrc, ttmlToLrc } from './lrc';
+import { alignSyllables, enhancedLine, LyricWord } from '@shared/wordSync';
+import { formatLrcTime, hasLrcTimestamps, toTimedLrc, ttmlToLrc } from './lrc';
 
 export interface LyricsQuery {
   title: string;
@@ -70,7 +72,7 @@ const result = (
 ): ProviderLyrics | null => {
   if (!raw || !raw.trim()) return null;
   const synced = hasLrcTimestamps(raw);
-  const lyrics = synced ? toLineLrc(raw) : raw.trim();
+  const lyrics = synced ? toTimedLrc(raw) : raw.trim();
   return lyrics ? { provider, lyrics, synced, ...meta } : null;
 };
 
@@ -85,7 +87,8 @@ const YOULY_SERVERS = [
   'https://lyrics-plus-backend.vercel.app',
 ];
 
-interface YoulyLine { text?: string; time?: number; syllabus?: { text?: string }[] }
+interface YoulySyllable { text?: string; time?: number; duration?: number; isBackground?: boolean }
+interface YoulyLine { text?: string; time?: number; duration?: number; syllabus?: YoulySyllable[] }
 interface YoulyResponse {
   syncedLyrics?: string;
   plainLyrics?: string;
@@ -97,13 +100,20 @@ interface YoulyResponse {
 
 let youlyLastWorking: string | null = null;
 
-const youlyLinesToLrc = (lines: YoulyLine[]): string =>
+/** KPoe lines → LRC, every syllable timed (milliseconds upstream); background vocals left out. */
+export const youlyLinesToLrc = (lines: YoulyLine[]): string =>
   lines
     .map(line => {
-      const text = line.syllabus?.length
-        ? line.syllabus.map(s => s.text ?? '').join('')
-        : line.text ?? '';
-      return `${formatLrcTime(line.time ?? 0)}${text.replace(/\s+/g, ' ').trim()}`;
+      const lineStart = (line.time ?? 0) / 1000;
+      const lead = (line.syllabus ?? []).filter(s => !s.isBackground);
+      const text = (line.text?.trim() ? line.text : lead.map(s => s.text ?? '').join('')).replace(/\s+/g, ' ').trim();
+      // Timed only when every syllable is: a partly timed line is lit as a whole.
+      const sung: LyricWord[] = lead.every(s => typeof s.time === 'number')
+        ? lead.map(s => ({ text: s.text ?? '', start: (s.time ?? 0) / 1000, end: ((s.time ?? 0) + (s.duration ?? 0)) / 1000 }))
+        : [];
+      const syllables = alignSyllables(sung, text);
+      if (syllables.length > 0) return enhancedLine(lineStart, syllables);
+      return `${formatLrcTime(line.time ?? 0)}${text}`;
     })
     .join('\n');
 
@@ -116,7 +126,10 @@ export const youLyPlus: LyricsProvider = async q => {
   // Race the mirrors: the first one with usable lyrics wins.
   return firstNonNull(servers.map(async server => {
     const res = await fetchJson<YoulyResponse>(buildUrl(`${server}/v2/lyrics/get`, params), { timeoutMs: 10_000 });
-    const raw = res?.syncedLyrics?.trim()
+    // The syllable list is the richest form; LRCLIB-style text when there is none.
+    const timed = res?.lyrics?.some(l => l.syllabus?.length) ? youlyLinesToLrc(res.lyrics) : '';
+    const raw = timed
+      || res?.syncedLyrics?.trim()
       || (res?.lyrics?.length ? youlyLinesToLrc(res.lyrics) : '')
       || res?.plainLyrics?.trim();
     const hit = result('YouLyPlus', raw, { trackName: res?.trackName, artistName: res?.artistName, albumName: res?.albumName });
@@ -130,7 +143,7 @@ export const youLyPlus: LyricsProvider = async q => {
 const PAXSENIX = 'https://lyrics.paxsenix.org';
 
 interface PaxSearchResult { id: string; songName?: string; trackName?: string; artistName?: string; albumName?: string; duration?: number }
-interface PaxLyricText { text: string }
+interface PaxLyricText { text: string; timestamp?: number; endtime?: number; part?: boolean }
 interface PaxLyricsResponse {
   type?: string;
   content?: { timestamp: number; text?: PaxLyricText[] }[];
@@ -139,6 +152,22 @@ interface PaxLyricsResponse {
   ttmlContent?: string;
   plain?: string;
 }
+
+/** Apple Music's word list → LRC. `part` marks a syllable that runs on into the next one (no space). */
+export const paxContentToLrc = (content: NonNullable<PaxLyricsResponse['content']>): string =>
+  content
+    .map(line => {
+      const pieces = line.text ?? [];
+      const text = pieces.map((t, i) => t.text + (t.part || i === pieces.length - 1 ? '' : ' ')).join('').replace(/\s+/g, ' ').trim();
+      const timed = pieces.every(t => typeof t.timestamp === 'number');
+      if (!timed || pieces.length === 0) return `${formatLrcTime(line.timestamp)}${text}`;
+      const syllables = alignSyllables(
+        pieces.map(t => ({ text: t.text, start: (t.timestamp ?? 0) / 1000, end: (t.endtime ?? t.timestamp ?? 0) / 1000 })),
+        text,
+      );
+      return enhancedLine(line.timestamp / 1000, syllables);
+    })
+    .join('\n');
 
 export const paxsenix: LyricsProvider = async q => {
   const results = await fetchJson<PaxSearchResult[]>(
@@ -171,12 +200,8 @@ export const paxsenix: LyricsProvider = async q => {
 
   let raw: string | undefined;
   if (res.ttmlContent) raw = ttmlToLrc(res.ttmlContent);
+  if (!raw && res.content?.length) raw = paxContentToLrc(res.content);
   if (!raw) raw = res.elrcMultiPerson || res.elrc;
-  if (!raw && res.content?.length) {
-    raw = res.content
-      .map(line => `${formatLrcTime(line.timestamp)}${(line.text ?? []).map(t => t.text).join(' ').replace(/\s+/g, ' ').trim()}`)
-      .join('\n');
-  }
   if (!raw) raw = res.plain;
   return result('Paxsenix', raw, { trackName: best.trackName ?? best.songName, artistName: best.artistName, albumName: best.albumName });
 };

@@ -9,7 +9,7 @@
  */
 import { readFile, writeFile } from 'node:fs/promises';
 
-export const SHARED_COPIES = ['songRef.ts', 'library.ts', 'legal.ts'];
+export const SHARED_COPIES = ['songRef.ts', 'library.ts', 'legal.ts', 'wordSync.ts'];
 
 const root = new URL('../', import.meta.url);
 

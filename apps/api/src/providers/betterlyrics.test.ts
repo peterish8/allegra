@@ -9,8 +9,8 @@ const TTML = `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org
 <p begin="00:01:10.000" end="00:01:12.000">   </p>
 </div></body></tt>`;
 
-test('ttmlToLrc joins word spans, decodes entities and drops translations', () => {
-  assert.equal(ttmlToLrc(TTML), '[00:11.18] Ishq mein\n[01:02.50] Dil & jaan');
+test('ttmlToLrc keeps word spans as word tags, decodes entities and drops translations', () => {
+  assert.equal(ttmlToLrc(TTML), '[00:11.18]<00:11.180>Ishq <00:11.900>mein<00:12.500>\n[01:02.50] Dil & jaan');
 });
 
 test('ttmlToLrc returns null when there are fewer than two timed lines', () => {

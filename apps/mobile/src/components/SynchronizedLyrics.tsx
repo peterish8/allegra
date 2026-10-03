@@ -1,19 +1,31 @@
 /**
- * Time-synced lyrics, the way YouTube Music moves them: every line in the same
- * bold weight, the sung one bright, the rest dimmed — and the whole page
- * gliding up as one piece, with no springs, no stagger and no bounce.
+ * Time-synced lyrics, flowing the way Echo Music moves them.
  *
- * How a line change moves:
+ * How a line is lit:
+ *   - Letter by letter (Settings → Lyrics → Highlight, the default): each word
+ *     fills from its first letter to its last as it is sung, syllable by
+ *     syllable when the source is word-timed (YouLyPlus, BetterLyrics, Apple
+ *     Music via Paxsenix — see `@shared/wordSync`), on estimated timings spread
+ *     over the letters when it is only line-timed. The fill is a clip that
+ *     slides across a bright copy of the word (two transforms, UI thread), drawn
+ *     only on the lines around the sung one.
+ *   - Line by line: the sung line brightens as a whole.
+ *   Either way a line changes only opacity, never its size or layout, so the
+ *   measured offsets never shift under the list. The lines just sung stay
+ *   brighter than the ones to come, falling off with distance.
+ *
+ * How the page moves:
+ *   - A line goes live a beat before it is sung (`LINE_LEAD_S`), so the page is
+ *     already moving when the singing starts.
  *   - The list jumps to its new offset in one frame and the block of lines is
- *     pushed back by the same distance (`glide`, one transform on one view),
- *     so nothing moves on screen yet. The block then eases home on a single
- *     decelerating curve. A new line mid-flight adds to what is left of the
- *     glide, so motion carries on instead of restarting.
+ *     pushed back by the same distance (`glide`, one transform on one view), so
+ *     nothing moves on screen yet; the block then eases home on a critically
+ *     damped follow (`glideStep`). A new line mid-flight adds to what is left and
+ *     keeps the speed it had, so the lines flow on instead of restarting.
  *   - A seek slides the same way, from at most 60% of the height away.
- *   - The sung line changes only its opacity (a short fade), never its size
- *     or layout, so the measured offsets never shift under the list.
  *   - The sung line's centre sits at `activeLinePosition` of the height, so a
  *     wrapped line is balanced around the same point as a short one.
+ *   - Reduce Motion: no glide, and words light whole as they start.
  *
  * Scroll by hand and the lines stay put, every line bright enough to read.
  * Following resumes on the next line change once you've let go for half a
@@ -24,7 +36,6 @@ import React, { useEffect, useRef, useCallback, useMemo, useState, forwardRef, u
 import { View, Dimensions, Text, Pressable, StyleSheet, LayoutChangeEvent, TextStyle, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
-  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
   withTiming,
@@ -33,13 +44,16 @@ import Animated, {
   useAnimatedRef,
   useAnimatedScrollHandler,
   useFrameCallback,
+  useReducedMotion,
   scrollTo,
   runOnJS,
   SharedValue,
 } from 'react-native-reanimated';
+import { DisplayWord, displayWords, isRtlText, LyricWord } from '@shared/wordSync';
 import { useSettingsStore } from '../store/settingsStore';
 import { usePlayerStore } from '../store/playerStore';
 import { lyricClockAt } from '../playback/lyricClock';
+import { glideSettled, glideStep, lineRestOpacity, LINE_LEAD_S, lyricSweep } from '../playback/lyricMotion';
 import InstrumentalWaveform, { isInstrumentalLyric, useIsActiveLine } from './InstrumentalWaveform';
 import { Frosted } from './allegra/Frosted';
 import { Motion, Signal } from '../constants/allegraTheme';
@@ -58,15 +72,18 @@ const EARLY_RESUME_MS = 500;
 const DEFAULT_TEXT: TextStyle = { fontSize: 28, lineHeight: 34, textAlign: 'left' };
 const DEFAULT_GAP = 16;
 
-/**
- * The glide: one decelerating curve, no overshoot. Long enough to read as a
- * flow rather than a step, short enough to land well before the next line.
- */
-const GLIDE_MS = 520;
-const GLIDE_EASE = Motion.ease.emphasis;
 /** The sung line brightens (and the last one dims) on a short fade alongside the glide. */
 const DIM_MS = 360;
 const DIM_EASE = Motion.ease.standard;
+/** The space after a word, as a share of the text size (SF Pro's word space). */
+const WORD_SPACE_EM = 0.28;
+
+export interface SyncedLyric {
+  timestamp: number;
+  text: string;
+  /** Word (or syllable) timings, when the source has them. */
+  words?: readonly LyricWord[];
+}
 
 // ------------------------------------------------------------------
 // LyricLine
@@ -74,10 +91,19 @@ const DIM_EASE = Motion.ease.standard;
 
 interface LyricLineProps {
   text: string;
+  words?: readonly LyricWord[];
   activeIndexSV: SharedValue<number>;
   readingSV: SharedValue<boolean>;
+  /** The lyric clock (seconds) and the listener's timing offset, for the letter sweep. */
+  clockSV: SharedValue<number>;
+  delaySV: SharedValue<number>;
   timestamp: number;
+  /** When the next line starts: estimated word timings finish before it. */
+  nextTimestamp?: number;
   index: number;
+  /** Light the line letter by letter (Settings → Lyrics → Highlight). */
+  letters: boolean;
+  reduceMotion: boolean;
   onLyricPress: (timestamp: number) => void;
   onMeasured: (index: number, height: number) => void;
   textStyle: TextStyle;
@@ -85,18 +111,27 @@ interface LyricLineProps {
   songTitle?: string;
 }
 
-/** How bright a line is when it isn't being sung: YouTube Music's one even dim, a little brighter while you read. */
-const restOpacity = (reading: boolean): number => {
-  'worklet';
-  return reading ? 0.62 : 0.42;
+/** Where the song's title sits in a line (its first match), as a character range. */
+const titleRange = (text: string, songTitle?: string): [number, number] | null => {
+  if (!songTitle) return null;
+  const lowerTitle = songTitle.toLowerCase().trim();
+  if (lowerTitle.length < 2) return null;
+  const idx = text.replace(/\s+/g, ' ').toLowerCase().indexOf(lowerTitle);
+  return idx === -1 ? null : [idx, idx + lowerTitle.length];
 };
 
 const LyricLine = React.memo(({
   text,
+  words,
   activeIndexSV,
   readingSV,
+  clockSV,
+  delaySV,
   timestamp,
+  nextTimestamp,
   index,
+  letters,
+  reduceMotion,
   onLyricPress,
   onMeasured,
   textStyle,
@@ -105,6 +140,12 @@ const LyricLine = React.memo(({
 }: LyricLineProps) => {
   const handlePress = useCallback(() => onLyricPress(timestamp), [onLyricPress, timestamp]);
   const isInstrumental = useMemo(() => isInstrumentalLyric(text), [text]);
+  const display = useMemo(
+    () => (letters && !isInstrumental ? displayWords({ timestamp, text, words }, nextTimestamp, true) : null),
+    [letters, isInstrumental, timestamp, text, words, nextTimestamp],
+  );
+  const sweeping = display !== null;
+  const rtl = useMemo(() => isRtlText(text), [text]);
 
   const lastHeightRef = useRef<number>(0);
   const handleLayout = useCallback((e: LayoutChangeEvent) => {
@@ -116,45 +157,209 @@ const LyricLine = React.memo(({
   }, [onMeasured, index]);
 
   // ── How it looks: dimmed at rest, bright while sung ─────────────────────
-  // Only opacity moves on a line; where it sits is the block's glide.
+  // Only opacity moves on a line; where it sits is the block's glide. When the
+  // letters sweep, this dims the line's resting text and the sweep paints the
+  // sung letters over it.
   const dimStyle = useAnimatedStyle((): ViewStyle => {
     const active = activeIndexSV.value;
-    const target = active === index ? 1 : restOpacity(readingSV.value);
+    const target = lineRestOpacity(index, active, readingSV.value, sweeping);
     // Far from the sung line: plain values, no animation to run.
     const far = active >= 0 && Math.abs(index - active) > 6;
     return { opacity: far ? target : withTiming(target, { duration: DIM_MS, easing: DIM_EASE }) };
   });
 
+  // The sweep is drawn only around the sung line: the one just sung (fading
+  // out), the sung one, and the next (ready before it starts).
+  const [near, setNear] = useState(false);
+  useAnimatedReaction(
+    () => {
+      const active = activeIndexSV.value;
+      return sweeping && index >= active - 1 && index <= active + 1;
+    },
+    (now, prev) => {
+      if (now !== prev) runOnJS(setNear)(now);
+    },
+    [index, sweeping],
+  );
+
+  const title = useMemo(() => titleRange(text, songTitle), [text, songTitle]);
+
   const renderedText = useMemo(() => {
-    if (!songTitle) return text;
+    if (!title) return text;
     const cleanText = text.replace(/\s+/g, ' ');
-    const lowerTitle = songTitle.toLowerCase().trim();
-    if (lowerTitle.length < 2) return text;
-    const idx = cleanText.toLowerCase().indexOf(lowerTitle);
-    if (idx === -1) return text;
     return (
       <Text>
-        {cleanText.substring(0, idx)}
-        <Text style={styles.titleGlow}>{cleanText.substring(idx, idx + lowerTitle.length)}</Text>
-        {cleanText.substring(idx + lowerTitle.length)}
+        {cleanText.substring(0, title[0])}
+        <Text style={styles.titleGlow}>{cleanText.substring(title[0], title[1])}</Text>
+        {cleanText.substring(title[1])}
       </Text>
     );
-  }, [text, songTitle]);
+  }, [text, title]);
+
+  if (isInstrumental || !display) {
+    return (
+      <View onLayout={handleLayout} style={{ paddingVertical: gap }}>
+        <Animated.View style={dimStyle}>
+          <Pressable onPress={handlePress} style={styles.linePressable}>
+            {isInstrumental ? (
+              <InstrumentalLine activeIndexSV={activeIndexSV} index={index} />
+            ) : (
+              <Text style={[styles.lyricText, textStyle]}>{renderedText}</Text>
+            )}
+          </Pressable>
+        </Animated.View>
+      </View>
+    );
+  }
 
   return (
     <View onLayout={handleLayout} style={{ paddingVertical: gap }}>
-      <Animated.View style={dimStyle}>
-        <Pressable onPress={handlePress} style={styles.linePressable}>
-          {isInstrumental ? (
-            <InstrumentalLine activeIndexSV={activeIndexSV} index={index} />
-          ) : (
-            <Text style={[styles.lyricText, textStyle]}>{renderedText}</Text>
-          )}
-        </Pressable>
-      </Animated.View>
+      <Pressable onPress={handlePress} style={styles.linePressable}>
+        {/* The sweep sits over exactly the box the resting words fill. */}
+        <View>
+          <Animated.View style={dimStyle}>
+            <WordRow words={display} textStyle={textStyle} title={title} rtl={rtl} />
+          </Animated.View>
+          {near ? (
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <SweepRow
+                words={display}
+                textStyle={textStyle}
+                rtl={rtl}
+                index={index}
+                activeIndexSV={activeIndexSV}
+                clockSV={clockSV}
+                delaySV={delaySV}
+                reduceMotion={reduceMotion}
+              />
+            </View>
+          ) : null}
+        </View>
+      </Pressable>
     </View>
   );
 });
+
+/** How the words of a row flow: the line's alignment, right to left for Arabic and Hebrew. */
+const rowStyle = (textStyle: TextStyle, rtl: boolean): ViewStyle => {
+  const align = textStyle.textAlign;
+  const toEnd = (align === 'right') !== rtl;
+  return {
+    flexDirection: rtl ? 'row-reverse' : 'row',
+    flexWrap: 'wrap',
+    justifyContent: align === 'center' ? 'center' : toEnd ? 'flex-end' : 'flex-start',
+  };
+};
+
+const gapStyle = (word: DisplayWord, textStyle: TextStyle, rtl: boolean): ViewStyle | undefined => {
+  if (!word.gapAfter) return undefined;
+  const space = (textStyle.fontSize ?? 28) * WORD_SPACE_EM;
+  return rtl ? { marginLeft: space } : { marginRight: space };
+};
+
+interface WordRowProps {
+  words: DisplayWord[];
+  textStyle: TextStyle;
+  title: [number, number] | null;
+  rtl: boolean;
+}
+
+/** The line's resting text, a word at a time so the sweep can sit exactly over each word. */
+const WordRow = React.memo(({ words, textStyle, title, rtl }: WordRowProps) => {
+  let at = 0;
+  return (
+    <View style={rowStyle(textStyle, rtl)}>
+      {words.map((w, i) => {
+        const from = at;
+        at += w.text.length + (w.gapAfter ? 1 : 0);
+        const inTitle = title !== null && from < title[1] && from + w.text.length > title[0];
+        return (
+          <View key={i} style={gapStyle(w, textStyle, rtl)}>
+            <Text style={[styles.lyricText, textStyle, inTitle && styles.titleGlow]}>{w.text}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+});
+
+interface SweepRowProps {
+  words: DisplayWord[];
+  textStyle: TextStyle;
+  rtl: boolean;
+  index: number;
+  activeIndexSV: SharedValue<number>;
+  clockSV: SharedValue<number>;
+  delaySV: SharedValue<number>;
+  reduceMotion: boolean;
+}
+
+/**
+ * The sung letters: the same words laid out the same way over the resting row,
+ * each a bright copy revealed by a sliding clip. Shown while its line is sung,
+ * fading out once the next line takes over.
+ */
+const SweepRow = ({ words, textStyle, rtl, index, activeIndexSV, clockSV, delaySV, reduceMotion }: SweepRowProps) => {
+  const shownStyle = useAnimatedStyle((): ViewStyle => {
+    const target = activeIndexSV.value === index ? 1 : 0;
+    return { opacity: withTiming(target, { duration: DIM_MS, easing: DIM_EASE }) };
+  });
+  return (
+    <Animated.View style={[rowStyle(textStyle, rtl), shownStyle]}>
+      {words.map((w, i) => (
+        <SweepWord
+          key={i}
+          word={w}
+          textStyle={textStyle}
+          rtl={rtl}
+          clockSV={clockSV}
+          delaySV={delaySV}
+          reduceMotion={reduceMotion}
+        />
+      ))}
+    </Animated.View>
+  );
+};
+
+interface SweepWordProps {
+  word: DisplayWord;
+  textStyle: TextStyle;
+  rtl: boolean;
+  clockSV: SharedValue<number>;
+  delaySV: SharedValue<number>;
+  reduceMotion: boolean;
+}
+
+const SweepWord = ({ word, textStyle, rtl, clockSV, delaySV, reduceMotion }: SweepWordProps) => {
+  const segments = word.segments;
+  const weight = word.weight;
+  const widthSV = useSharedValue(0);
+  // How much of the word is still unlit, in px: the clip slides that far back
+  // and the bright copy slides forward by the same, so the letters stay put.
+  const unlitSV = useDerivedValue(() => {
+    const lit = lyricSweep(clockSV.value + delaySV.value, segments, weight);
+    const p = reduceMotion ? (lit > 0 ? 1 : 0) : lit;
+    return (1 - p) * widthSV.value;
+  });
+  const clipStyle = useAnimatedStyle((): ViewStyle => ({
+    opacity: widthSV.value > 0 ? 1 : 0,
+    transform: [{ translateX: rtl ? unlitSV.value : -unlitSV.value }],
+  }));
+  const brightStyle = useAnimatedStyle((): TextStyle => ({
+    transform: [{ translateX: rtl ? -unlitSV.value : unlitSV.value }],
+  }));
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    widthSV.value = e.nativeEvent.layout.width;
+  }, [widthSV]);
+  return (
+    <View style={gapStyle(word, textStyle, rtl)}>
+      <Text style={[styles.lyricText, textStyle, styles.sizer]}>{word.text}</Text>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.sweepClip, clipStyle]} onLayout={onLayout}>
+        <Animated.Text style={[styles.lyricText, textStyle, brightStyle]}>{word.text}</Animated.Text>
+      </Animated.View>
+    </View>
+  );
+};
 
 /** A music break: the waveform instead of a blank line. */
 const InstrumentalLine: React.FC<{ activeIndexSV: SharedValue<number>; index: number }> = ({ activeIndexSV, index }) => {
@@ -171,7 +376,7 @@ const InstrumentalLine: React.FC<{ activeIndexSV: SharedValue<number>; index: nu
 // ------------------------------------------------------------------
 
 interface SynchronizedLyricsProps {
-  lyrics: { timestamp: number; text: string }[];
+  lyrics: SyncedLyric[];
   currentTime: number | SharedValue<number>;
   onLyricPress: (timestamp: number) => void;
   isUserScrolling?: boolean;
@@ -274,6 +479,12 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
 
   // Selector, not the whole store: this component re-renders while lyrics scroll.
   const lyricsDelay = useSettingsStore(s => s.lyricsDelay);
+  const letters = useSettingsStore(s => s.lyricsHighlight) !== 'lines';
+  const reduceMotion = useReducedMotion();
+  const delaySV = useSharedValue(lyricsDelay);
+  useEffect(() => { delaySV.value = lyricsDelay; }, [lyricsDelay, delaySV]);
+  // Only the start times go to the UI thread for the line search, not every word.
+  const timestamps = useMemo(() => lyrics.map(l => l.timestamp), [lyrics]);
 
   // currentTime may be a number or a shared value.
   const currentTimeNumberSV = useSharedValue(typeof currentTime === 'number' ? currentTime : 0);
@@ -311,19 +522,20 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
     if (!clockRunning) clockSV.value = anchorPositionSV.value;
   }, [clockRunning, clockFrame, clockRunningSV, clockSV, anchorPositionSV]);
 
+  // A line goes live LINE_LEAD_S before it is sung, so the page is already on its way.
   const activeIndexDV = useDerivedValue(() => {
-    const et = clockSV.value + lyricsDelay;
-    if (lyrics.length === 0) return -1;
-    let left = 0, right = lyrics.length - 1, result = -1;
+    const et = clockSV.value + delaySV.value + LINE_LEAD_S;
+    if (timestamps.length === 0) return -1;
+    let left = 0, right = timestamps.length - 1, result = -1;
     while (left <= right) {
       // eslint-disable-next-line no-bitwise
       const mid = (left + right) >>> 1;
-      const nextTs = lyrics[mid + 1]?.timestamp;
-      if (et >= lyrics[mid].timestamp && (nextTs === undefined || et < nextTs)) {
+      const nextTs = timestamps[mid + 1];
+      if (et >= timestamps[mid] && (nextTs === undefined || et < nextTs)) {
         result = mid;
         break;
       }
-      if (et < lyrics[mid].timestamp) right = mid - 1;
+      if (et < timestamps[mid]) right = mid - 1;
       else left = mid + 1;
     }
     return result;
@@ -352,7 +564,32 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   const lastIndexSV = useSharedValue(-1);
   /** What is left of the block's glide: the lines sit this far below where the list has already jumped to. */
   const glideSV = useSharedValue(0);
+  /** The glide's speed (px/s), kept across line changes so the flow never restarts from rest. */
+  const glideVelocitySV = useSharedValue(0);
+  const glideRunningSV = useSharedValue(false);
   const glideStyle = useAnimatedStyle((): ViewStyle => ({ transform: [{ translateY: glideSV.value }] }));
+  // The glide runs a frame at a time only while the lines are still moving.
+  const glideFrame = useFrameCallback(info => {
+    const dt = Math.min(0.05, (info.timeSincePreviousFrame ?? 16) / 1000);
+    const next = glideStep(glideSV.value, glideVelocitySV.value, dt);
+    if (glideSettled(next)) {
+      glideSV.value = 0;
+      glideVelocitySV.value = 0;
+      glideRunningSV.value = false;
+      runOnJS(setGlideActive)(false);
+      return;
+    }
+    glideSV.value = next.offset;
+    glideVelocitySV.value = next.velocity;
+  }, false);
+  function setGlideActive(active: boolean) {
+    glideFrame.setActive(active);
+  }
+  const stopGlide = useCallback(() => {
+    'worklet';
+    glideSV.value = 0;
+    glideVelocitySV.value = 0;
+  }, [glideSV, glideVelocitySV]);
 
   // Reading on your own: dragging, flinging, and when the list came to rest.
   const draggingSV = useSharedValue(false);
@@ -388,23 +625,22 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
       lastIndexSV.value = now.idx;
       scrollTo(scrollRef, 0, toY, false);
       scrollYSV.value = toY;
-      if (firstFrame || Math.abs(delta) < 0.5) {
-        cancelAnimation(glideSV);
-        glideSV.value = 0;
-        return;
-      }
-      // A line re-measured by a pixel or two: not worth a motion.
-      if (sameLine && Math.abs(delta) < 2) {
-        glideSV.value = glideSV.value + delta;
-        glideSV.value = withTiming(0, { duration: DIM_MS, easing: GLIDE_EASE });
+      if (firstFrame || Math.abs(delta) < 0.5 || reduceMotion) {
+        stopGlide();
         return;
       }
       // The block starts where it was on screen (what was left of the last
-      // glide plus this jump) and eases home. A seek comes in from at most
+      // glide plus this jump, or a line re-measured by a pixel or two) and
+      // eases home, at the speed it already had. A seek comes in from at most
       // 60% of the height away instead of racing across the song.
       const cap = containerHeightSV.value * 0.6;
-      glideSV.value = Math.max(-cap, Math.min(cap, glideSV.value + delta));
-      glideSV.value = withTiming(0, { duration: GLIDE_MS, easing: GLIDE_EASE });
+      glideSV.value = sameLine && Math.abs(delta) < 2
+        ? glideSV.value + delta
+        : Math.max(-cap, Math.min(cap, glideSV.value + delta));
+      if (!glideRunningSV.value) {
+        glideRunningSV.value = true;
+        runOnJS(setGlideActive)(true);
+      }
     },
   );
 
@@ -461,8 +697,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
       // screen, so nothing jumps under the finger.
       if (glideSV.value !== 0) {
         const left = glideSV.value;
-        cancelAnimation(glideSV);
-        glideSV.value = 0;
+        stopGlide();
         scrollTo(scrollRef, 0, Math.max(0, scrollYSV.value - left), false);
       }
       runOnJS(clearResume)();
@@ -499,21 +734,27 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
     },
   }));
 
-  const renderLyricLine = useCallback((item: { timestamp: number; text: string }, index: number) => (
+  const renderLyricLine = useCallback((item: SyncedLyric, index: number) => (
     <LyricLine
       key={`lyric_${index}`}
       activeIndexSV={activeIndexSV}
       readingSV={isUserScrollingSV}
+      clockSV={clockSV}
+      delaySV={delaySV}
       text={item.text}
+      words={item.words}
       timestamp={item.timestamp}
+      nextTimestamp={lyrics[index + 1]?.timestamp}
       index={index}
+      letters={letters}
+      reduceMotion={reduceMotion}
       onLyricPress={onLyricPress}
       onMeasured={handleItemMeasured}
       textStyle={textStyle}
       gap={gap}
       songTitle={songTitle}
     />
-  ), [activeIndexSV, isUserScrollingSV, onLyricPress, handleItemMeasured, textStyle, gap, songTitle]);
+  ), [activeIndexSV, isUserScrollingSV, clockSV, delaySV, lyrics, letters, reduceMotion, onLyricPress, handleItemMeasured, textStyle, gap, songTitle]);
 
   return (
     <View style={styles.container}>
@@ -593,6 +834,13 @@ const styles = StyleSheet.create({
   lyricText: {
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  // Holds a sung word's place (and size) without drawing it.
+  sizer: {
+    opacity: 0,
+  },
+  sweepClip: {
+    overflow: 'hidden',
   },
   // Title words inside a lyric: a soft glow, same weight so nothing re-wraps.
   titleGlow: {

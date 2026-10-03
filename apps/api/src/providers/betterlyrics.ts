@@ -1,5 +1,6 @@
 import { decodeHtml } from '../lib/decodeHtml.js';
 import { fetchBodyWithTimeout } from '../lib/fetchWithTimeout.js';
+import { alignSyllables, enhancedLine, type LyricWord } from '../shared/wordSync.js';
 
 const DEFAULT_BASE_URL = 'https://lyrics-api.boidu.dev';
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -16,7 +17,7 @@ export interface BetterLyricsProviderOptions {
 }
 
 export interface BetterLyricsTrack {
-  /** LRC text: one `[mm:ss.xx] line` per lyric line. */
+  /** LRC text: one `[mm:ss.xx] line` per lyric line, words timed with `<mm:ss.xxx>` tags when the TTML is. */
   readonly lyrics: string;
   readonly source: string;
 }
@@ -77,8 +78,9 @@ function extractLrc(body: unknown): string | null {
 }
 
 /**
- * Flattens TTML to line-level LRC. Word/syllable spans are joined back into text and
- * translation / romanisation spans are dropped, so the UI shows the original lyric.
+ * TTML to LRC. Translation / romanisation spans are dropped, so the UI shows the
+ * original lyric; timed word/syllable spans become word tags (see shared/wordSync),
+ * so the lyrics can light up letter by letter.
  */
 export function ttmlToLrc(ttml: string): string | null {
   const lines: string[] = [];
@@ -95,9 +97,34 @@ export function ttmlToLrc(ttml: string): string | null {
     if (!text) {
       continue;
     }
-    lines.push(`${formatLrcTime(seconds)} ${text}`);
+    const syllables = alignSyllables(timedSpans(withoutExtras), text);
+    lines.push(syllables.length > 0 ? enhancedLine(seconds, syllables) : `${formatLrcTime(seconds)} ${text}`);
   }
   return lines.length >= 2 ? lines.join('\n') : null;
+}
+
+/** The timed innermost spans of a line, in order; text between spans (the space ending a word) joins the span before. */
+function timedSpans(body: string): LyricWord[] {
+  const spans: { text: string; start: number; end: number }[] = [];
+  for (const match of body.matchAll(/<span\b([^>]*)>([^<]*)<\/span>|([^<]+)|<[^>]*>/gi)) {
+    const between = match[3];
+    const attributes = match[1];
+    const last = spans[spans.length - 1];
+    if (between !== undefined) {
+      if (last) last.text += decodeHtml(between);
+      continue;
+    }
+    if (attributes === undefined) continue;
+    const begin = attributes.match(/\bbegin="([^"]+)"/i)?.[1];
+    const end = attributes.match(/\bend="([^"]+)"/i)?.[1];
+    const start = begin ? parseClock(begin) : null;
+    if (start === null) {
+      if (last) last.text += decodeHtml(match[2] ?? '');
+      continue;
+    }
+    spans.push({ text: decodeHtml(match[2] ?? ''), start, end: (end ? parseClock(end) : null) ?? start });
+  }
+  return spans;
 }
 
 /** "11.180", "1:11.18", "00:01:11.180" and "11.18s" all resolve to seconds. */

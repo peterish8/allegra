@@ -306,6 +306,13 @@ const initializeTables = async (database: SQLite.SQLiteDatabase): Promise<void> 
       log('Migration complete');
     }
     await database.execAsync('CREATE INDEX IF NOT EXISTS idx_songs_origin_id ON songs(origin_id)');
+    // Word-synced lyrics: each line's word timings as JSON (`LyricWord[]`), null for a line-synced line.
+    const lyricColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(lyrics)');
+    if (!lyricColumns.some(c => c.name === 'words')) {
+      log('Adding lyrics.words column...');
+      await database.execAsync('ALTER TABLE lyrics ADD COLUMN words TEXT');
+      log('Migration complete');
+    }
   } catch (e) {
     log('Migration check failed', e);
     throw e; // RETHROW to ensure init fails if schema is broken

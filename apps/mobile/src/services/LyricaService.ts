@@ -3,6 +3,7 @@
  * Single source for all lyrics (LRCLIB, YouTube Music, Genius, JioSaavn, etc.)
  */
 
+import { parseWordTags } from '@shared/wordSync';
 import { LyricLine } from '../types/song';
 import { EchoLyricsCascade } from './lyrics/EchoLyricsCascade';
 import { ProviderLyrics } from './lyrics/providers';
@@ -244,28 +245,28 @@ class LyricaService {
     const safeDuration = duration > 0 ? duration : 180;
 
     if (hasTimestamps) {
-        // Standard LRC Parsing
+        // Standard LRC Parsing; word tags (`<mm:ss.xxx>`) become the line's words.
+        const timed: { timestamp: number; content: string; index: number }[] = [];
         lines.forEach((line, index) => {
           const match = line.match(timeRegex);
           if (match) {
             const minutes = parseInt(match[1], 10);
             const seconds = parseInt(match[2], 10);
-            const millisecondsStr = match[3].padEnd(3, '0'); 
+            const millisecondsStr = match[3].padEnd(3, '0');
             const milliseconds = parseInt(millisecondsStr, 10);
-            
+
             const timestamp = minutes * 60 + seconds + milliseconds / 1000;
-            let text = line.replace(timeRegex, '').trim();
-
-            if (!text) {
-              text = '[INSTRUMENTAL]';
-            }
-
-            result.push({
-              timestamp,
-              text,
-              lineOrder: index,
-            });
+            timed.push({ timestamp, content: line.replace(timeRegex, ''), index });
           }
+        });
+        timed.forEach(({ timestamp, content, index }, i) => {
+          const { text, words } = parseWordTags(content, timestamp, timed[i + 1]?.timestamp);
+          result.push({
+            timestamp,
+            text: text || '[INSTRUMENTAL]',
+            lineOrder: index,
+            ...(text && words ? { words } : {}),
+          });
         });
     } else {
         // PLAIN TEXT AUTO-SCROLL LOGIC

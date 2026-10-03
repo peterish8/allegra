@@ -43,6 +43,8 @@ export const parseTimestampedLyrics = (rawText: string): LyricLine[] => {
   if (textToParse.includes('\\n')) {
       textToParse = textToParse.replace(/\\n/g, '\n');
   }
+  // Word timing (`<mm:ss.xxx>`, enhanced LRC) is for the player; the editor works in lines.
+  textToParse = textToParse.replace(/<\d{1,3}:\d{1,2}(?:\.\d{1,3})?>/g, '');
   
   const lines = textToParse.split(/\r\n|\r|\n/).map((line) => line.trim()).filter(Boolean);
   const lyrics: LyricLine[] = [];
@@ -234,7 +236,10 @@ export const normalizeLyrics = (lyrics: LyricLine[]): LyricLine[] => {
 
   let normalized = lyrics.map(line => ({
     ...line,
-    timestamp: isMilliseconds ? line.timestamp / 1000 : line.timestamp
+    timestamp: isMilliseconds ? line.timestamp / 1000 : line.timestamp,
+    ...(isMilliseconds && line.words
+      ? { words: line.words.map(w => ({ ...w, start: w.start / 1000, end: w.end / 1000 })) }
+      : {}),
   }));
 
   // 2. Ensure sorted by timestamp

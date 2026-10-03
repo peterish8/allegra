@@ -1,6 +1,7 @@
 import { Check, Ellipsis, Info, Languages, LoaderCircle, Mic, Minus, Moon, Plus, RefreshCw, SlidersHorizontal, WifiOff, X } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -16,18 +17,21 @@ import {
 import { createPortal } from 'react-dom';
 
 import type { LyricLine, LyricsPayload } from '@shared/types';
+import { displayWords, isRtlText, sweepAt, type DisplayWord } from '@shared/wordSync';
 
 import { IconButton, TactileButton } from './ui';
 import { useNarrowViewport } from '../hooks/useNarrowViewport';
 import { useSettings } from '../hooks/useSettings';
+import { followSettled, followStep, lineAt, LINE_LEAD_S, lyricClockAt } from '../lib/lyricFlow';
 import { clampLyricsOffset, withLyricsOffset, type LyricsSize } from '../lib/settings';
-import { clamp } from '../lib/utils';
 
 interface LyricsPanelProps {
   readonly lines: LyricLine[];
   /** English under each line, by index (translation keeps line order). Null shows the original alone. */
   readonly translations?: readonly string[] | null;
   readonly currentTime: number;
+  /** The song is playing: the lyric clock then runs a frame at a time between the player's time reports. */
+  readonly playing?: boolean;
   readonly loading: boolean;
   readonly error: string | null;
   readonly onRetry: () => void;
@@ -44,7 +48,6 @@ interface LyricsPanelProps {
   readonly hideBackdrop?: boolean;
   /** Soft-focus stage: active line stays near the optical center (default true). */
   readonly softFocus?: boolean;
-  readonly karaokeProgress?: boolean;
   readonly karaokeActive?: boolean;
   readonly karaokeBusy?: boolean;
   /** 0–1 while preparing karaoke. */
@@ -74,19 +77,25 @@ const FOLLOW_RESUME_MS = 2200;
 /** Multiplies every lyric font-size rule (see `--lyrics-scale` in the stylesheets). */
 const LYRICS_SCALE: Record<LyricsSize, number> = { small: 0.85, medium: 1, large: 1.2 };
 
-/** easeOutCubic: fast start, gentle settle — reads as a snap rather than a drift. */
-function easeOutCubic(t: number): number {
-  return 1 - (1 - t) ** 3;
-}
-
 /**
- * Synced lyrics with a hand-rolled smooth scroll (see `scrollActiveIntoView`).
+ * Synced lyrics that flow the way Echo Music moves them (the phone does the same).
+ *
+ * - A lyric clock runs a frame at a time between the player's time reports (lib/lyricFlow),
+ *   and a line goes live `LINE_LEAD_S` before it is sung so the list is already moving.
+ * - Letter by letter (Settings → Lyrics → Highlight, the default): each word of the sung
+ *   line fills from its first letter to its last, by syllable when the lyrics are
+ *   word-timed (`words` from YouLyPlus / BetterLyrics) and on estimated timings otherwise
+ *   (packages/shared/wordSync). The fill is a clip sliding across a bright copy of the
+ *   word — two transforms per word, written as `--p` straight to the DOM each frame.
+ * - The list eases onto the sung line on a critically damped follow that keeps its speed
+ *   when the next line arrives mid-glide (`scrollActiveIntoView`).
  * Soft-focus uses overflow scroll (not transform lock) so past/future lines stay reachable.
  */
 export function LyricsPanel({
   lines,
   translations = null,
   currentTime,
+  playing = false,
   loading,
   error,
   onRetry,
@@ -101,7 +110,6 @@ export function LyricsPanel({
   onToggleTranslate,
   hideBackdrop = false,
   softFocus = true,
-  karaokeProgress = false,
   karaokeActive = false,
   karaokeBusy = false,
   karaokeProgressRatio = null,
@@ -126,6 +134,8 @@ export function LyricsPanel({
   const resumeTimerRef = useRef(0);
   /** rAF handle for our own scroll animation, so a new target can cancel the last one cleanly. */
   const scrollAnimationRef = useRef(0);
+  /** Where the follow is heading, where it is (fractional px) and its speed — kept across line changes. */
+  const followRef = useRef({ target: 0, position: 0, velocity: 0 });
   /** True while our own animation is moving the container — the scroll handler must ignore it. */
   const isAnimatingRef = useRef(false);
   const lastSongKeyRef = useRef('');
@@ -155,11 +165,64 @@ export function LyricsPanel({
     [rememberOffset, songId, updateSettings]
   );
 
-  const activeIndex = useMemo(() => findActiveLine(lines, syncedTime), [syncedTime, lines]);
-  const lineProgress = useMemo(
-    () => (karaokeProgress ? activeLineProgress(lines, activeIndex, syncedTime) : 0),
-    [lines, activeIndex, syncedTime, karaokeProgress]
+  const letters = settings.lyricsHighlight === 'letters';
+  const timestamps = useMemo(() => lines.map((line) => line.timestamp), [lines]);
+  /** Each line as words that know when they are sung, while lines light letter by letter. */
+  const sweeps = useMemo(
+    () => lines.map((line, index) => (letters && !isInstrumental(line.text) ? displayWords(line, lines[index + 1]?.timestamp, true) : null)),
+    [lines, letters]
   );
+
+  // The lyric clock: re-anchored on every time report, carried on a frame at a time while playing.
+  const [activeIndex, setActiveIndex] = useState(() => lineAt(timestamps, syncedTime + LINE_LEAD_S));
+  const activeRef = useRef(activeIndex);
+  const clockRef = useRef({ anchor: syncedTime, at: 0, value: syncedTime });
+  useEffect(() => {
+    clockRef.current = { anchor: syncedTime, at: performance.now(), value: clockRef.current.value };
+  }, [syncedTime]);
+
+  /** One frame: which line is live, and how far each of its words is lit (written straight to the DOM). */
+  const tick = useCallback(
+    (now: number) => {
+      const clock = clockRef.current;
+      const time = playing ? lyricClockAt(clock.anchor, clock.at, now, clock.value) : clock.anchor;
+      clock.value = time;
+      const live = lineAt(timestamps, time + LINE_LEAD_S);
+      if (live !== activeRef.current) {
+        activeRef.current = live;
+        setActiveIndex(live);
+      }
+      const words = sweeps[live];
+      if (!words) return;
+      const fills = lineRefs.current[live]?.querySelectorAll<HTMLElement>('.lyric-word__fill');
+      if (!fills) return;
+      words.forEach((word, index) => {
+        const fill = fills[index];
+        if (!fill) return;
+        const lit = sweepAt(time, word.segments, word.weight);
+        const value = (reduced ? (lit > 0 ? 1 : 0) : lit).toFixed(4);
+        if (fill.style.getPropertyValue('--p') !== value) fill.style.setProperty('--p', value);
+      });
+    },
+    [playing, timestamps, sweeps, reduced]
+  );
+
+  // Playing: every frame. Paused: once per change (a seek, a nudge, a new song).
+  useEffect(() => {
+    if (playing) return;
+    tick(performance.now());
+  }, [tick, playing, syncedTime]);
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    const loop = (now: number): void => {
+      tick(now);
+      frame = window.requestAnimationFrame(loop);
+    };
+    frame = window.requestAnimationFrame(loop);
+    return () => window.cancelAnimationFrame(frame);
+  }, [tick, playing]);
+
   const nudgeSync = useCallback((delta: number) => setSyncOffset(syncOffset + delta), [setSyncOffset, syncOffset]);
 
   const songKey = useMemo(
@@ -247,33 +310,41 @@ export function LyricsPanel({
       const distance = nextTop - start;
       if (Math.abs(distance) < 2) return;
 
-      if (scrollAnimationRef.current) window.cancelAnimationFrame(scrollAnimationRef.current);
-
+      const follow = followRef.current;
       if (instant) {
+        if (scrollAnimationRef.current) window.cancelAnimationFrame(scrollAnimationRef.current);
+        scrollAnimationRef.current = 0;
         isAnimatingRef.current = false;
+        follow.velocity = 0;
         container.scrollTop = nextTop;
         return;
       }
 
-      // Driven by rAF, not the browser's native smooth scroll: native duration/easing
-      // varies by engine and consistently lagged behind the highlight class flipping to
-      // the new line, which read as the line "catching up" a beat late instead of rising
-      // into place with it. A short, tuned duration keeps line-to-line hops snappy — the
-      // active line comes up smoothly right as it lights up, not after.
-      const duration = Math.min(520, Math.max(220, Math.abs(distance) * 0.5));
-      const startedAt = performance.now();
+      // Driven by rAF, not the browser's native smooth scroll (whose easing varies by engine
+      // and lagged the highlight). A critically damped follow: a new line mid-glide only moves
+      // the target and the list keeps the speed it had, so the lines flow instead of restarting.
+      follow.target = nextTop;
+      if (scrollAnimationRef.current) return;
+      follow.position = start;
+      follow.velocity = 0;
       isAnimatingRef.current = true;
+      let last = performance.now();
 
       const step = (now: number): void => {
-        const elapsed = now - startedAt;
-        const t = Math.min(1, elapsed / duration);
-        container.scrollTop = start + distance * easeOutCubic(t);
-        if (t < 1) {
-          scrollAnimationRef.current = window.requestAnimationFrame(step);
-        } else {
+        const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+        last = now;
+        const state = followStep(follow.position - follow.target, follow.velocity, dt);
+        follow.velocity = state.velocity;
+        if (followSettled(state)) {
+          follow.position = follow.target;
+          container.scrollTop = follow.target;
           isAnimatingRef.current = false;
           scrollAnimationRef.current = 0;
+          return;
         }
+        follow.position = follow.target + state.offset;
+        container.scrollTop = follow.position;
+        scrollAnimationRef.current = window.requestAnimationFrame(step);
       };
       scrollAnimationRef.current = window.requestAnimationFrame(step);
     },
@@ -651,8 +722,7 @@ export function LyricsPanel({
               translation={translationFor(line, translations?.[index])}
               index={index}
               activeIndex={activeIndex}
-              progress={index === activeIndex ? lineProgress : 0}
-              karaoke={karaokeProgress && index === activeIndex}
+              sweep={sweeps[index] ?? null}
               onActivate={handleLineActivate}
               lineRefs={lineRefs}
             />
@@ -824,8 +894,7 @@ const LyricLineButton = memo(function LyricLineButton({
   translation,
   index,
   activeIndex,
-  progress,
-  karaoke,
+  sweep,
   onActivate,
   lineRefs
 }: {
@@ -833,8 +902,8 @@ const LyricLineButton = memo(function LyricLineButton({
   readonly translation: string | null;
   readonly index: number;
   readonly activeIndex: number;
-  readonly progress: number;
-  readonly karaoke: boolean;
+  /** The line's words, when it is lit letter by letter; the panel's frame loop writes each word's `--p`. */
+  readonly sweep: readonly DisplayWord[] | null;
   readonly onActivate: (timestamp: number) => void;
   readonly lineRefs: MutableRefObject<Record<number, HTMLButtonElement | null>>;
 }) {
@@ -850,11 +919,11 @@ const LyricLineButton = memo(function LyricLineButton({
           ? 'is-future is-distant'
           : 'is-future';
 
-  const instrumental = line.text === '[INSTRUMENTAL]' || line.text === '🎵';
+  const instrumental = isInstrumental(line.text);
 
   return (
     <button
-      className={`ytm-lyrics__line ${state}`}
+      className={`ytm-lyrics__line ${state}${sweep ? ' is-sweeping' : ''}`}
       type="button"
       ref={(element) => {
         lineRefs.current[index] = element;
@@ -868,8 +937,8 @@ const LyricLineButton = memo(function LyricLineButton({
         <span className="ytm-lyrics__instrumental" aria-label="Instrumental break">
           <span className="lyric-wave" aria-hidden="true"><i /><i /><i /><i /><i /></span>
         </span>
-      ) : karaoke ? (
-        <KaraokeLine text={line.text} progress={progress} />
+      ) : sweep ? (
+        <SweepWords words={sweep} rtl={isRtlText(line.text)} />
       ) : (
         line.text
       )}
@@ -902,45 +971,29 @@ function lineOpacity(distance: number, active: boolean): number {
   return 0.2;
 }
 
-function KaraokeLine({ text, progress }: { readonly text: string; readonly progress: number }) {
-  const amount = clamp(progress, 0, 1);
-  const inverse = amount <= 0.001 ? 1 : 1 / amount;
+function isInstrumental(text: string): boolean {
+  return text === '[INSTRUMENTAL]' || text === '🎵';
+}
 
+/**
+ * A line lit letter by letter: each word is its resting text with a bright copy over it,
+ * revealed by a clip that slides with `--p` (0..1, set per frame by the panel). Both moves
+ * are transforms in % of the word's own width, so nothing is measured and nothing reflows.
+ */
+function SweepWords({ words, rtl }: { readonly words: readonly DisplayWord[]; readonly rtl: boolean }) {
   return (
-    <span className="ytm-lyrics__karaoke">
-      <span className="ytm-lyrics__karaoke-base" aria-hidden="true">
-        {text}
-      </span>
-      <span className="ytm-lyrics__karaoke-fill" style={{ transform: `scaleX(${amount})` }}>
-        <span style={{ transform: `scaleX(${inverse})` }}>{text}</span>
-      </span>
-      <span className="sr-only">{text}</span>
+    <span className={`lyric-words${rtl ? ' is-rtl' : ''}`}>
+      {words.map((word, index) => (
+        <Fragment key={index}>
+          <span className="lyric-word">
+            <span className="lyric-word__base">{word.text}</span>
+            <span className="lyric-word__fill" aria-hidden="true">
+              <span>{word.text}</span>
+            </span>
+          </span>
+          {word.gapAfter ? ' ' : ''}
+        </Fragment>
+      ))}
     </span>
   );
-}
-
-function findActiveLine(lines: LyricLine[], time: number): number {
-  let low = 0;
-  let high = lines.length - 1;
-  let answer = 0;
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    const line = lines[middle];
-    if (!line || line.timestamp > time) high = middle - 1;
-    else {
-      answer = middle;
-      low = middle + 1;
-    }
-  }
-  return answer;
-}
-
-function activeLineProgress(lines: LyricLine[], activeIndex: number, time: number): number {
-  const current = lines[activeIndex];
-  if (!current) return 0;
-  const next = lines[activeIndex + 1];
-  const start = current.timestamp;
-  const end = next?.timestamp ?? start + 4;
-  if (end <= start) return 1;
-  return clamp((time - start) / (end - start), 0, 1);
 }

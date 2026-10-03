@@ -1,4 +1,5 @@
 import { fetchBodyWithTimeout } from '../lib/fetchWithTimeout.js';
+import { alignSyllables, enhancedLine, type LyricWord } from '../shared/wordSync.js';
 import { isRecord, looksLikeHtml, lrcStamp, type LyricsCandidate } from './lyricsCandidate.js';
 
 /**
@@ -69,20 +70,41 @@ export class YouLyPlusProvider {
   }
 }
 
+/** A KPoe line's lead-vocal syllables (milliseconds upstream → seconds), or none unless every one is timed. */
+function syllablesOf(line: Record<string, unknown>): LyricWord[] {
+  const syllabus = Array.isArray(line.syllabus) ? line.syllabus.filter(isRecord).filter((syllable) => syllable.isBackground !== true) : [];
+  if (syllabus.length === 0 || !syllabus.every((syllable) => typeof syllable.time === 'number')) return [];
+  return syllabus.map((syllable) => {
+    const time = syllable.time as number;
+    const duration = typeof syllable.duration === 'number' ? syllable.duration : 0;
+    return { text: typeof syllable.text === 'string' ? syllable.text : '', start: time / 1000, end: (time + duration) / 1000 };
+  });
+}
+
 function toCandidate(body: unknown): LyricsCandidate | null {
   if (!isRecord(body) || !Array.isArray(body.lyrics)) {
     return null;
   }
   const lines = body.lyrics.filter(isRecord).map((line) => ({
     time: typeof line.time === 'number' ? line.time : null,
-    text: typeof line.text === 'string' ? line.text.trim() : ''
+    text: typeof line.text === 'string' ? line.text.trim() : '',
+    syllables: syllablesOf(line)
   }));
   if (lines.length === 0) {
     return null;
   }
   // "None" (or no times at all) is unsynced text.
   const synced = body.type !== 'None' && lines.some((line) => line.time !== null && line.time > 0);
-  const lyrics = lines.map((line) => (synced ? `${lrcStamp(line.time ?? 0)} ${line.text}` : line.text)).join('\n').trim();
+  const lyrics = lines
+    .map((line) => {
+      if (!synced) return line.text;
+      // Word-timed ("Word"/"Syllable" types): every syllable keeps its time as a word tag.
+      const text = line.text || line.syllables.map((syllable) => syllable.text).join('').replace(/\s+/g, ' ').trim();
+      const timed = alignSyllables(line.syllables, text);
+      return timed.length > 0 ? enhancedLine((line.time ?? 0) / 1000, timed) : `${lrcStamp(line.time ?? 0)} ${text}`;
+    })
+    .join('\n')
+    .trim();
   if (!lyrics || looksLikeHtml(lyrics)) {
     return null;
   }

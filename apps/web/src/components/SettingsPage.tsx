@@ -24,7 +24,7 @@ import { LEGAL_PATHS } from '@shared/legal';
 import { fetchAccountSettings, setPersonalization, fetchHealth } from '../lib/api';
 import { DEFAULT_KARAOKE_MIX, type KaraokeMix } from '../lib/karaokeMix';
 import { clearRoformerCache, detectLiveKaraokeCapabilities, roformerCacheBytes, type LiveKaraokeBackend } from '../lib/liveKaraoke';
-import { resetSettings, type KaraokeMode, type LyricsSize, type ThemePreference } from '../lib/settings';
+import { resetSettings, type KaraokeMode, type LyricsHighlight, type LyricsSize, type ThemePreference } from '../lib/settings';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
 
 interface SettingsPageProps {
@@ -276,6 +276,18 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
             { value: 'large', label: 'Large' }
           ]}
           onChange={(lyricsSize) => update({ lyricsSize })}
+        />
+        <Choice<LyricsHighlight>
+          label="Highlight"
+          hint={settings.lyricsHighlight === 'letters'
+            ? 'Words fill in as they are sung, syllable by syllable when the lyrics are word-timed.'
+            : 'The whole sung line lights up at once.'}
+          value={settings.lyricsHighlight}
+          options={[
+            { value: 'letters', label: 'Letter by letter' },
+            { value: 'lines', label: 'Line by line' }
+          ]}
+          onChange={(lyricsHighlight) => update({ lyricsHighlight })}
         />
         <Switch
           label="Show where lyrics came from"

@@ -9,13 +9,34 @@ import {
   withDbSafe,
 } from './db';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Song } from '../types/song';
+import { LyricLine, LyricWord, Song } from '../types/song';
 import { normalizeLyrics } from '../utils/timestampParser';
 
 const LOG_PREFIX = '[QUERIES]';
 
 const log = (msg: string, data?: any) => {
   if (__DEV__) console.log(`${LOG_PREFIX} ${msg}`, data ?? '');
+};
+
+/** A line's word timings as stored: JSON, or null for a line-synced line. */
+const wordsColumn = (line: LyricLine): string | null =>
+  line.words && line.words.length > 0 ? JSON.stringify(line.words) : null;
+
+/** The stored word timings back, dropping anything that isn't a list of timed words. */
+export const readWords = (raw: string | null | undefined): { words?: LyricWord[] } => {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return {};
+    const words = parsed.filter((w): w is LyricWord =>
+      typeof w === 'object' && w !== null
+      && typeof (w as LyricWord).text === 'string'
+      && typeof (w as LyricWord).start === 'number'
+      && typeof (w as LyricWord).end === 'number');
+    return words.length > 0 ? { words } : {};
+  } catch {
+    return {};
+  }
 };
 
 
@@ -145,6 +166,7 @@ export const getSongById = async (id: string): Promise<Song | null> => {
     timestamp: number;
     text: string;
     line_order: number;
+    words: string | null;
   }>('SELECT * FROM lyrics WHERE song_id = ? ORDER BY line_order', [id]);
   
   return {
@@ -172,6 +194,7 @@ export const getSongById = async (id: string): Promise<Song | null> => {
       timestamp: row.timestamp,
       text: row.text,
       lineOrder: row.line_order,
+      ...readWords(row.words),
     }))),
   };
 };
@@ -213,8 +236,8 @@ export const insertSong = async (song: Song): Promise<void> => {
 
     for (const lyric of normalizedLyrics) {
       await db.runAsync(
-        `INSERT INTO lyrics (song_id, timestamp, text, line_order) VALUES (?, ?, ?, ?)`,
-        [song.id, lyric.timestamp, lyric.text, lyric.lineOrder]
+        `INSERT INTO lyrics (song_id, timestamp, text, line_order, words) VALUES (?, ?, ?, ?, ?)`,
+        [song.id, lyric.timestamp, lyric.text, lyric.lineOrder, wordsColumn(lyric)]
       );
     }
 
@@ -265,8 +288,8 @@ export const updateSong = async (song: Song): Promise<void> => {
       // OPTIMIZATION: Batch insert using individual parameterized statements
       for (const lyric of normalizedLyrics) {
         await db.runAsync(
-          `INSERT INTO lyrics (song_id, timestamp, text, line_order) VALUES (?, ?, ?, ?)`,
-          [song.id, lyric.timestamp, lyric.text, lyric.lineOrder]
+          `INSERT INTO lyrics (song_id, timestamp, text, line_order, words) VALUES (?, ?, ?, ?, ?)`,
+          [song.id, lyric.timestamp, lyric.text, lyric.lineOrder, wordsColumn(lyric)]
         );
       }
     }
