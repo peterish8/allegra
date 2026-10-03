@@ -7412,3 +7412,19 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .auth-google:not(:disabled):hover { transform: none; }
   .auth-google:not(:disabled):hover::after { opacity: 0; }
 }
+
+/* ---------- Full player: fewer things in the action row ----------
+ * Shuffle and repeat flank the transport (smaller and dimmer than the skips, lit when on), the
+ * heart sits at the end of the title line, and the action row keeps only the tools: lyrics, add to
+ * a playlist, devices, volume and karaoke, with room between them. */
+.listening-world .np-meta { position: relative; padding-right: 52px; }
+.listening-world .np-meta-like { position: absolute; top: 50%; right: 0; width: 44px; height: 44px; transform: translateY(-50%); border: 0; background: transparent; }
+.listening-world .np-meta-like svg { width: 22px; height: 22px; }
+.listening-world .np-btns .np-mode { width: 40px; height: 40px; }
+.listening-world .np-btns .np-mode > svg { width: 18px; height: 18px; opacity: 0.6; }
+.listening-world .np-btns .np-mode[aria-pressed='true'] { color: var(--wave); }
+.listening-world .np-btns .np-mode[aria-pressed='true'] > svg { opacity: 1; }
+.listening-world .np-actions { gap: 14px; }
+@media (max-width: 960px) {
+  .listening-world .np-meta { padding-left: 52px; }
+}

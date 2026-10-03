@@ -8,6 +8,7 @@ import {
   Mic,
   Repeat,
   Repeat1,
+  Shuffle,
   SkipBack,
   SkipForward,
   SlidersHorizontal,
@@ -71,6 +72,8 @@ interface PlayerPanelProps {
   /** Off → all → one, the same cycle as the player bar. */
   readonly repeat?: RepeatMode;
   readonly onCycleRepeat?: () => void;
+  readonly shuffle?: boolean;
+  readonly onToggleShuffle?: () => void;
   readonly onSeek: (seconds: number) => void;
   readonly onLike: () => void;
   readonly onPlayQueueSong?: (song: UnifiedSong) => void;
@@ -128,6 +131,8 @@ export function PlayerPanel({
   onPrevious,
   repeat = 'off',
   onCycleRepeat,
+  shuffle = false,
+  onToggleShuffle,
   onSeek,
   onLike,
   onPlayQueueSong,
@@ -510,11 +515,22 @@ export function PlayerPanel({
                         ))
                       : song.artist}
               </p>
+                  {/* Beside the title, as in Apple Music and Spotify: the action row keeps the tools. */}
+                  <IconButton
+                    icon={Heart}
+                    label={liked ? 'Remove from likes' : 'Add to likes'}
+                    active={liked}
+                    className="np-action--like np-meta-like"
+                    onClick={onLike}
+                  />
                 </motion.div>
                 <div className="np-controls">
                   <Scrubber currentTime={currentTime} duration={duration} progress={audioProgress} onSeek={onSeek} />
                   {playbackError ? <p className="playback-error" role="alert">{playbackError}</p> : null}
                   <div className="np-btns">
+                    {onToggleShuffle ? (
+                      <IconButton icon={Shuffle} label={shuffle ? 'Shuffle on' : 'Shuffle off'} active={shuffle} aria-pressed={shuffle} className="np-mode" onClick={onToggleShuffle} />
+                    ) : null}
                     <IconButton icon={SkipBack} label="Previous track" onClick={goPrevious} solidOnHover />
                     <button
                       className={`ctrl-play tactile-control${isBuffering ? ' is-buffering' : ''}`}
@@ -529,24 +545,18 @@ export function PlayerPanel({
                       {isBuffering ? <span className="ctrl-play-wait" aria-hidden="true" /> : null}
                     </button>
                     <IconButton icon={SkipForward} label="Next track" onClick={goNext} solidOnHover />
-                  </div>
-                  <div className="np-actions">
-                    <IconButton
-                      icon={Heart}
-                      label={liked ? 'Remove from likes' : 'Add to likes'}
-                      active={liked}
-                      className="np-action--like"
-                      onClick={onLike}
-                    />
                     {onCycleRepeat ? (
                       <IconButton
                         icon={repeat === 'one' ? Repeat1 : Repeat}
                         label={repeat === 'one' ? 'Repeating this song' : repeat === 'all' ? 'Repeating the queue' : 'Repeat'}
                         active={repeat !== 'off'}
                         aria-pressed={repeat !== 'off'}
+                        className="np-mode"
                         onClick={onCycleRepeat}
                       />
                     ) : null}
+                  </div>
+                  <div className="np-actions">
                     <IconButton
                       icon={Waves}
                       label={isNarrowViewport ? (mode === 'workspace' ? 'Show cover' : 'Show lyrics') : lyricsFull ? 'Show cover' : desktopLyricsVisible ? 'Hide lyrics' : 'Show lyrics'}

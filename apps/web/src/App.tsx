@@ -1717,6 +1717,8 @@ export default function App() {
         onPrevious={previousPlayer}
         repeat={playerRepeat}
         onCycleRepeat={cyclePlayerRepeat}
+        shuffle={playerShuffle}
+        onToggleShuffle={togglePlayerShuffle}
         onSeek={seekPlayer}
         onLike={() => { if (playerSong) toggleLike(playerSong); }}
         onPlayQueueSong={(song) => void playSong(song, playerQueue.length > 0 ? playerQueue : displaySongs)}
