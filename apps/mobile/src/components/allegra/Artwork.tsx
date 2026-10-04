@@ -116,15 +116,21 @@ interface ArtworkProps {
    * flashed in between. Leave off in recycled list rows.
    */
   continuous?: boolean;
+  /**
+   * Nothing behind a real cover while it loads: it simply fades in over whatever is under it. For the player's cover
+   * stage, where a tap swaps the full cover for the card and the generated cover used to flash, colourful, through the
+   * fade. The generated cover still stands in when there is no cover or it fails to load.
+   */
+  quiet?: boolean;
 }
 
-export const Artwork: React.FC<ArtworkProps> = ({ uri, title, artist, size = 160, style, priority = 'normal', transition = Motion.duration.base, continuous = false }) => {
+export const Artwork: React.FC<ArtworkProps> = ({ uri, title, artist, size = 160, style, priority = 'normal', transition = Motion.duration.base, continuous = false, quiet = false }) => {
   const [failed, setFailed] = useState<string | null>(null);
   // A failure belongs to one cover; the next song's cover gets its own try.
   const showImage = !!uri && failed !== uri;
   return (
     <View style={[styles.frame, style]}>
-      <GeneratedArtwork title={title || 'Untitled'} artist={artist} size={size} />
+      {quiet && showImage ? null : <GeneratedArtwork title={title || 'Untitled'} artist={artist} size={size} />}
       {showImage ? (
         <Image
           source={{ uri }}

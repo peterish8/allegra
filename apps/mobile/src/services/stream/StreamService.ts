@@ -9,6 +9,9 @@
  *   - every stream is recorded to seed the home feed.
  */
 import { prepareNextInQueue, usePlayerStore, usesNativeQueue } from '../../store/playerStore';
+import { usePlaybackModesStore } from '../../store/playbackModesStore';
+import type { RepeatMode } from '../../../../../packages/connect/src/types';
+import { useSettingsStore } from '../../store/settingsStore';
 import { currentQueueTag, fire, nativeQueue, onQueueLow } from '../../playback/nativeQueue';
 import { useStreamHistoryStore } from '../../store/streamHistoryStore';
 import { useDownloadQueueStore } from '../../store/downloadQueueStore';
@@ -197,19 +200,60 @@ async function loadLyrics(streamId: string, meta: UnifiedSong | undefined): Prom
 const RADIO_THRESHOLD = 2; // extend when this few songs remain after the current one
 let radioInFlight = false;
 
+/** Queues that belong to someone else (the device playing over Connect, a shared room): never topped up here. */
+const NOT_OURS = new Set(['connect', 'listen-together']);
+
 /**
- * `force` is the engine saying the queue is running low (its own rule, Echo's "auto load more"); otherwise this
- * is the song-change safety net with its own threshold.
+ * Whether a queue should be topped up now (Echo Music's "auto load more"). A Stream radio always keeps going; any
+ * other queue of ours (Library, a playlist, search results) does when the listener has it on (Settings → Playback →
+ * Keep playing similar songs). Never with repeat-one (the song loops), never for a queue that is not ours. `force` is
+ * the engine saying the queue is running low by its own rule; otherwise it is the song-change safety net.
  */
-async function extendRadio(streamId: string, force = false): Promise<void> {
+export function shouldRefillQueue(p: {
+  playlistId: string | null;
+  repeat: RepeatMode;
+  enabled: boolean;
+  remaining: number;
+  force: boolean;
+}): boolean {
+  if (!p.playlistId || NOT_OURS.has(p.playlistId) || p.repeat === 'one') return false;
+  if (p.playlistId !== STREAM_QUEUE_ID && !p.enabled) return false;
+  return p.force || p.remaining <= RADIO_THRESHOLD;
+}
+
+/** A song from the queue as a recommendation seed: the catalog's own entry when streamed, else its title and artist. */
+function seedFor(song: Song): UnifiedSong {
+  return catalog.get(song.id) ?? {
+    id: song.id,
+    title: song.title,
+    artist: song.artist ?? '',
+    highResArt: song.coverImageUri ?? '',
+    downloadUrl: '',
+    source: 'Local',
+  };
+}
+
+/**
+ * Tops the queue up with songs like `songId` (YouTube Music's automix, resolved to catalog audio) before it runs
+ * out. The answer carries the tag of the queue it was found for, so it never lands in a queue loaded since.
+ */
+async function extendRadio(songId: string, force = false): Promise<void> {
   const state = usePlayerStore.getState();
   const queue = state.playlistQueue;
-  if (!queue || state.currentPlaylistId !== STREAM_QUEUE_ID || radioInFlight) return;
-  const idx = queue.findIndex(s => s.id === streamId);
-  if (idx < 0 || (!force && queue.length - 1 - idx > RADIO_THRESHOLD)) return;
-
-  const seed = catalog.get(streamId);
-  if (!seed) return;
+  if (!queue || radioInFlight) return;
+  const idx = queue.findIndex(s => s.id === songId);
+  if (idx < 0) return;
+  const refill = shouldRefillQueue({
+    playlistId: state.currentPlaylistId,
+    repeat: usePlaybackModesStore.getState().repeatMode,
+    enabled: useSettingsStore.getState().autoQueueRefill ?? true,
+    remaining: queue.length - 1 - idx,
+    force,
+  });
+  if (!refill) return;
+  const playlistId = state.currentPlaylistId;
+  const seed = seedFor(queue[idx]);
+  if (!seed.title) return;
 
   // The queue this answer is for. If another queue has been loaded by the time the songs arrive, they are dropped.
   const tag = currentQueueTag();
@@ -217,7 +261,7 @@ async function extendRadio(streamId: string, force = false): Promise<void> {
   try {
     const recs = await recommendFor(seed);
     const latest = usePlayerStore.getState();
-    if (!latest.playlistQueue || latest.currentPlaylistId !== STREAM_QUEUE_ID) return;
+    if (!latest.playlistQueue || latest.currentPlaylistId !== playlistId) return;
     if (usesNativeQueue() && currentQueueTag() !== tag) return;
     const queued = latest.playlistQueue.flatMap(s => [s.id, `${s.title.trim().toLowerCase()}|${(s.artist ?? '').trim().toLowerCase()}`]);
     const fresh = dedupeStreamable(recs, queued);
@@ -231,6 +275,8 @@ async function extendRadio(streamId: string, force = false): Promise<void> {
     }
     latest.updateQueue([...latest.playlistQueue, ...fresh.map(s => toStreamSong(s))]);
     prepareNextInQueue();
+  } catch {
+    // No suggestions this time: the queue ends (or repeats) as it would have.
   } finally {
     radioInFlight = false;
   }
@@ -238,5 +284,5 @@ async function extendRadio(streamId: string, force = false): Promise<void> {
 
 // The engine says when the queue is running low (and the screen asks again when it comes back to the front).
 onQueueLow(({ mediaId }) => {
-  if (isStreamSongId(mediaId)) fire(extendRadio(mediaId, true));
+  if (mediaId) fire(extendRadio(mediaId, true));
 });

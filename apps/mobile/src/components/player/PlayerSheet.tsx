@@ -10,6 +10,8 @@ import * as GestureHandler from 'react-native-gesture-handler';
 import Animated, { runOnJS, SharedValue, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Frosted from '../allegra/Frosted';
+import { useArtworkPalette } from '../allegra/useArtworkPalette';
+import { usePlayerStore } from '../../store/playerStore';
 import { Motion } from '../../constants/allegraTheme';
 import { SLEEP_CHOICES, SleepChoice, useSleepTimerStore } from '../../store/sleepTimerStore';
 import { durationSV, positionSV } from '../../playback/positionBus';
@@ -73,6 +75,9 @@ interface PlayerSheetProps {
 }
 
 export const PlayerSheet: React.FC<PlayerSheetProps> = ({ visible, title, tall = false, onClose, children }) => {
+  // The same glass as Up next: clear, tinted by the playing cover.
+  const cover = usePlayerStore(s => s.currentSong?.coverImageUri);
+  const palette = useArtworkPalette(cover);
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
   const shown = useSharedValue(0);
@@ -152,7 +157,7 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({ visible, title, tall =
       </Animated.View>
       <GestureDetector gesture={pan}>
         <Animated.View style={[styles.sheet, tall && styles.tall, { paddingBottom: insets.bottom + 12 }, sheet]}>
-          <Frosted radius={28} intensity={70} tint={0.5} />
+          <Frosted radius={28} intensity={85} tint={0.3} palette={palette} />
           <View style={styles.grabber} />
           {title ? <Text style={styles.title}>{title}</Text> : <View style={styles.untitled} />}
           <SheetScrollContext.Provider value={scrollState}>{children}</SheetScrollContext.Provider>

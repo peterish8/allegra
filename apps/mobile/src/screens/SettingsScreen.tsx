@@ -373,6 +373,7 @@ const SettingsScreen: React.FC<Props> = () => {
             onChange={settings.setPlayInMiniPlayerOnly}
           />
           <Kit.Switch label="Keep screen on" hint="While Now Playing is open." value={settings.keepScreenOn} onChange={settings.setKeepScreenOn} />
+          <Kit.Switch label="Keep playing similar songs" hint="When the queue is about to end, songs like the one playing are added." value={settings.autoQueueRefill ?? true} onChange={settings.setAutoQueueRefill} />
           <Kit.Switch label="Haptics" hint="Little taps you feel on buttons and swipes." value={settings.hapticsEnabled ?? true} onChange={settings.setHapticsEnabled} />
         </Section>
 

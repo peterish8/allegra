@@ -21,6 +21,7 @@ import * as GestureHandler from 'react-native-gesture-handler';
 import Animated, { runOnJS, SharedValue, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Frosted from '../allegra/Frosted';
+import { useArtworkPalette } from '../allegra/useArtworkPalette';
 import Artwork from '../allegra/Artwork';
 import { Tactile } from '../allegra/motion';
 import { Motion, Signal } from '../../constants/allegraTheme';
@@ -309,6 +310,10 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
     <View {...rest} style={[style, { zIndex: cellIndex === lifting ? 2 : 0, elevation: cellIndex === lifting ? 2 : 0 }]} />
   ), [lifting]);
 
+  // Frosted glass tinted by the playing cover, like the player behind it — not a grey slab.
+  const cover = usePlayerStore(s => s.currentSong?.coverImageUri);
+  const palette = useArtworkPalette(cover);
+
   return (
     <GestureDetector gesture={pan}>
       <Animated.View
@@ -316,7 +321,7 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
         pointerEvents={open ? 'auto' : 'none'}
         onLayout={e => { panelW.value = e.nativeEvent.layout.width; }}
       >
-        <Frosted radius={28} intensity={70} tint={0.55} />
+        <Frosted radius={28} intensity={85} tint={0.3} palette={palette} />
         <View style={styles.grabber} />
         <View style={styles.head}>
           <View style={styles.headText}>
@@ -395,13 +400,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   pillText: { color: Signal.ink, fontSize: 15, fontWeight: '600' },
   chips: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginTop: 14, marginBottom: 8 },
-  chip: { height: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)' },
-  chipOn: { backgroundColor: Signal.wave },
+  chip: {
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: 17,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  // The chosen chip is lit glass, not the app's green.
+  chipOn: { backgroundColor: 'rgba(255,255,255,0.92)', borderColor: 'rgba(255,255,255,0.92)' },
   chipText: { color: Signal.ink, fontSize: 14, fontWeight: '600' },
-  chipTextOn: { color: Signal.waveInk },
+  chipTextOn: { color: '#0B0B0F' },
   empty: { color: 'rgba(255,255,255,0.6)', fontSize: 15, paddingVertical: 28, textAlign: 'center' },
   rowWrap: { height: ROW_H, paddingHorizontal: 8 },
   lifted: { marginHorizontal: 8, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.12)' },
@@ -420,7 +436,7 @@ const styles = StyleSheet.create({
     gap: 3,
     paddingBottom: 15,
   },
-  bar: { width: 3, borderRadius: 1.5, backgroundColor: Signal.wave },
+  bar: { width: 3, borderRadius: 1.5, backgroundColor: '#FFFFFF' },
   rowText: { flex: 1, marginLeft: 14 },
   rowTitle: { color: '#fff', fontSize: 15, fontWeight: '600' },
   rowSub: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 3 },

@@ -73,6 +73,8 @@ interface SettingsState {
   scrollSpeed: ScrollSpeed;
   skipDuration: 10 | 15 | 30;
   keepScreenOn: boolean;
+  /** Echo Music's "auto load more": a queue running out is topped up with songs like the one playing. */
+  autoQueueRefill: boolean;
   hapticsEnabled: boolean;
   showTimeRemaining: boolean;
   playInMiniPlayerOnly: boolean;
@@ -109,6 +111,7 @@ interface SettingsState {
   setScrollSpeed: (speed: ScrollSpeed) => void;
   setSkipDuration: (duration: 10 | 15 | 30) => void;
   setKeepScreenOn: (enabled: boolean) => void;
+  setAutoQueueRefill: (enabled: boolean) => void;
   setHapticsEnabled: (enabled: boolean) => void;
   setShowTimeRemaining: (show: boolean) => void;
   setPlayInMiniPlayerOnly: (enabled: boolean) => void;
@@ -189,6 +192,7 @@ const DEFAULT_SETTINGS = {
   scrollSpeed: 'medium' as ScrollSpeed,
   skipDuration: 15 as const,
   keepScreenOn: true,
+  autoQueueRefill: true,
   hapticsEnabled: true,
   showTimeRemaining: true,
   playInMiniPlayerOnly: false,
@@ -241,6 +245,7 @@ export const useSettingsStore = create<SettingsState>()(
       setScrollSpeed: (scrollSpeed) => set({ scrollSpeed }),
       setSkipDuration: (skipDuration) => set({ skipDuration }),
       setKeepScreenOn: (keepScreenOn) => set({ keepScreenOn }),
+      setAutoQueueRefill: (autoQueueRefill) => set({ autoQueueRefill }),
       setHapticsEnabled: (hapticsEnabled) => set({ hapticsEnabled }),
       setShowTimeRemaining: (showTimeRemaining) => set({ showTimeRemaining }),
       setPlayInMiniPlayerOnly: (playInMiniPlayerOnly) => set({ playInMiniPlayerOnly }),

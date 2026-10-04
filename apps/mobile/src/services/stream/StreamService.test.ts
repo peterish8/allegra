@@ -147,3 +147,30 @@ describe('StreamService.save', () => {
     expect(StreamService.save('stream:saavn:unknown')).toBe(false);
   });
 });
+
+describe('shouldRefillQueue (Echo’s auto load more)', () => {
+  const { shouldRefillQueue } = jest.requireActual('./StreamService') as typeof import('./StreamService');
+  const base = { playlistId: 'library', repeat: 'all' as const, enabled: true, remaining: 1, force: false };
+
+  it('tops up any queue of ours that is running out', () => {
+    expect(shouldRefillQueue(base)).toBe(true);
+    expect(shouldRefillQueue({ ...base, playlistId: 'playlist-42' })).toBe(true);
+    expect(shouldRefillQueue({ ...base, remaining: 9, force: true })).toBe(true);
+  });
+
+  it('waits while plenty is left', () => {
+    expect(shouldRefillQueue({ ...base, remaining: 9 })).toBe(false);
+  });
+
+  it('respects the setting, except for a Stream radio, which always keeps going', () => {
+    expect(shouldRefillQueue({ ...base, enabled: false })).toBe(false);
+    expect(shouldRefillQueue({ ...base, enabled: false, playlistId: 'stream' })).toBe(true);
+  });
+
+  it('never tops up repeat-one, another device’s queue, a shared room, or no queue', () => {
+    expect(shouldRefillQueue({ ...base, repeat: 'one' })).toBe(false);
+    expect(shouldRefillQueue({ ...base, playlistId: 'connect' })).toBe(false);
+    expect(shouldRefillQueue({ ...base, playlistId: 'listen-together' })).toBe(false);
+    expect(shouldRefillQueue({ ...base, playlistId: null })).toBe(false);
+  });
+});

@@ -150,14 +150,14 @@ const FullCover: React.FC<{
       {reeded ? (
         <>
           <MaskedView style={{ width, height: h }} maskElement={<ReededMask width={width} height={h} />}>
-            <Artwork uri={uri} title={title} artist={artist} size={Math.max(width, h)} priority="high" continuous style={{ width, height: h }} />
+            <Artwork uri={uri} title={title} artist={artist} size={Math.max(width, h)} priority="high" continuous quiet style={{ width, height: h }} />
           </MaskedView>
           <ReedEdges width={width} height={h} />
           <LinearGradient colors={['rgba(0,0,0,0.32)', 'rgba(0,0,0,0)']} style={[styles.fullShade, { height: Math.round(h * 0.22) }]} />
         </>
       ) : (
         <>
-          <Artwork uri={uri} title={title} artist={artist} size={Math.max(width, h)} priority="high" continuous style={{ width, height: h }} />
+          <Artwork uri={uri} title={title} artist={artist} size={Math.max(width, h)} priority="high" continuous quiet style={{ width, height: h }} />
           <LinearGradient colors={['rgba(0,0,0,0.32)', 'rgba(0,0,0,0)']} style={[styles.fullShade, { height: Math.round(h * 0.22) }]} />
           <LinearGradient colors={[`${meet}00`, `${meet}cc`, meet]} locations={[0, 0.6, 1]} style={[styles.fullMelt, { height: Math.round(h * 0.42) }]} />
         </>
@@ -251,7 +251,7 @@ const Stage: React.FC<{
         <Animated.View style={[{ width: card, height: card, alignItems: 'center', justifyContent: 'center' }, stageStyle]}>
           {mode === 'card' ? (
             <Animated.View key="card" entering={reduce ? undefined : shrinkIn} exiting={reduce ? undefined : fadeAway} style={styles.stageLayer}>
-              <Artwork uri={uri} title={title} artist={artist} size={card} priority="high" continuous style={[styles.card, { width: card, height: card }]} />
+              <Artwork uri={uri} title={title} artist={artist} size={card} priority="high" continuous quiet style={[styles.card, { width: card, height: card }]} />
             </Animated.View>
           ) : null}
         </Animated.View>
