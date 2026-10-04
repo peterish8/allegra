@@ -4,7 +4,7 @@ import presenceTest from '@convex-dev/presence/test';
 import rateLimiterTest from '@convex-dev/rate-limiter/test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ACCOUNT_RETENTION_DAYS, GUEST_RETENTION_DAYS } from '../packages/shared/legal';
+import { ACCOUNT_RETENTION_DAYS, ACTIVE_TOUCH_DAYS, GUEST_RETENTION_DAYS } from '../packages/shared/legal';
 import { api, internal } from './_generated/api';
 import schema from './schema';
 
@@ -166,6 +166,54 @@ describe('retention sweep', () => {
   async function remaining(t: Backend): Promise<string[]> {
     return t.run(async (ctx) => (await ctx.db.query('profiles').take(100)).map((row) => row.userId).sort());
   }
+
+  it('keeps a guest until the policy period and touch interval have elapsed', async () => {
+    const t = backend();
+    const now = Date.parse('2026-10-01T00:00:00.000Z');
+    vi.setSystemTime(new Date(now));
+    await insertProfile(t, 'guest-inside-touch-slack', true, now - (GUEST_RETENTION_DAYS + ACTIVE_TOUCH_DAYS - 1) * DAY);
+
+    await t.mutation(internal.account.sweepInactive, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await remaining(t)).toEqual(['guest-inside-touch-slack']);
+  });
+
+  it('erases a guest after the policy period and touch interval have elapsed', async () => {
+    const t = backend();
+    const now = Date.parse('2026-10-01T00:00:00.000Z');
+    vi.setSystemTime(new Date(now));
+    await insertProfile(t, 'guest-past-touch-slack', true, now - (GUEST_RETENTION_DAYS + ACTIVE_TOUCH_DAYS + 1) * DAY);
+
+    await t.mutation(internal.account.sweepInactive, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await remaining(t)).toEqual([]);
+  });
+
+  it('keeps an account until the policy period and touch interval have elapsed', async () => {
+    const t = backend();
+    const now = Date.parse('2026-10-01T00:00:00.000Z');
+    vi.setSystemTime(new Date(now));
+    await insertProfile(t, 'account-inside-touch-slack', false, now - (ACCOUNT_RETENTION_DAYS + ACTIVE_TOUCH_DAYS - 1) * DAY);
+
+    await t.mutation(internal.account.sweepInactive, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await remaining(t)).toEqual(['account-inside-touch-slack']);
+  });
+
+  it('erases an account after the policy period and touch interval have elapsed', async () => {
+    const t = backend();
+    const now = Date.parse('2026-10-01T00:00:00.000Z');
+    vi.setSystemTime(new Date(now));
+    await insertProfile(t, 'account-past-touch-slack', false, now - (ACCOUNT_RETENTION_DAYS + ACTIVE_TOUCH_DAYS + 1) * DAY);
+
+    await t.mutation(internal.account.sweepInactive, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await remaining(t)).toEqual([]);
+  });
 
   it('erases only profiles unused for longer than the policy allows', async () => {
     const t = backend();
