@@ -24,3 +24,8 @@ apps/web/public/models/roformer/
 
 .vercel
 .env*
+
+# Local-only
+.mcp.json
+/output/
+/mobile allegra.png
