@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert } from 'react-native';
-import { runOnJS, useAnimatedReaction, useSharedValue } from 'react-native-reanimated';
 import { usePlayer } from '../contexts/PlayerContext';
 import { diag } from '../utils/diag';
 import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeResumePosition, usesNativeQueue } from '../store/playerStore';
@@ -139,49 +138,15 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
     return rawLyrics;
   }, [currentSong?.lyrics, currentSong?.transliteratedLyrics, showTransliteration, currentSong?.duration]);
 
-  const isLinear = React.useMemo(() => {
-    if (!processedLyrics || processedLyrics.length <= 10) return false;
-    const firstGap = processedLyrics[1].timestamp - processedLyrics[0].timestamp;
-    let isConstant = true;
-    for (let i = 1; i < 9; i++) {
-      const gap = processedLyrics[i + 1].timestamp - processedLyrics[i].timestamp;
-      if (Math.abs(gap - firstGap) > 0.05) {
-        isConstant = false;
-        break;
-      }
-    }
-    return isConstant;
-  }, [processedLyrics]);
-
   const isUserScrolling = useRef(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Selector only — this hook re-renders on position ticks during playback.
   const lyricsDelay = useSettingsStore(s => s.lyricsDelay);
 
-  const linearScrollDataRef = useRef({ isLinear, processedLyrics, lyricsDelay });
-  linearScrollDataRef.current = { isLinear, processedLyrics, lyricsDelay };
-
-  const doLinearScroll = useCallback((pos: number) => {
-    const { isLinear: lin, processedLyrics: lyrics } = linearScrollDataRef.current;
-    if (!lin || !flatListRef.current || isUserScrolling.current || !lyrics.length) return;
-    const progress = Math.min(1, Math.max(0, pos / (durationSV.value || 180)));
-    const estimatedIndex = Math.floor(progress * (lyrics.length - 1));
-    flatListRef.current.scrollToIndex({ index: estimatedIndex, animated: true, viewPosition: 0.4 });
-  }, []);
-
-  // The worklet reads a shared flag, not the ref: a ref captured by a worklet is copied to the UI
-  // thread once (with every lyric line in it) and never sees a later song's value.
-  const isLinearSV = useSharedValue(isLinear);
-  useEffect(() => { isLinearSV.value = isLinear; }, [isLinear, isLinearSV]);
-  useAnimatedReaction(
-    () => positionSV.value,
-    (pos) => {
-      if (isLinearSV.value) {
-        runOnJS(doLinearScroll)(pos);
-      }
-    }
-  );
+  // SynchronizedLyrics is the one owner of automatic lyric scrolling, for synced and generated timestamps alike.
+  // A second driver lived here (a JS-thread animated scrollToIndex fired from every position report for evenly
+  // spaced lyrics, with no check that the lyrics were even on screen); it fought the list's own follow.
 
   const getActiveLyricIndex = useCallback(() => {
     if (!processedLyrics || processedLyrics.length === 0) return -1;
@@ -282,7 +247,6 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
     showLyrics,
     setShowLyrics,
     processedLyrics,
-    isLinear,
     flatListRef,
     getActiveLyricIndex,
     togglePlay,

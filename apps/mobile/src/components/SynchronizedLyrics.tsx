@@ -100,6 +100,8 @@ interface LyricLineProps {
   words?: readonly LyricWord[];
   activeIndexSV: SharedValue<number>;
   readingSV: SharedValue<boolean>;
+  /** Whether the lyrics are on screen (see `SynchronizedLyricsProps.live`). */
+  liveSV: SharedValue<boolean>;
   /** The lyric clock (seconds) and the listener's timing offset, for the letter sweep. */
   clockSV: SharedValue<number>;
   delaySV: SharedValue<number>;
@@ -131,6 +133,7 @@ const LyricLine = React.memo(({
   words,
   activeIndexSV,
   readingSV,
+  liveSV,
   clockSV,
   delaySV,
   timestamp,
@@ -209,7 +212,7 @@ const LyricLine = React.memo(({
         <Animated.View style={dimStyle}>
           <Pressable onPress={handlePress} style={styles.linePressable}>
             {isInstrumental ? (
-              <InstrumentalLine activeIndexSV={activeIndexSV} index={index} />
+              <InstrumentalLine activeIndexSV={activeIndexSV} liveSV={liveSV} index={index} />
             ) : (
               <Text style={[styles.lyricText, textStyle]}>{renderedText}</Text>
             )}
@@ -369,8 +372,8 @@ const SweepWord = ({ word, textStyle, rtl, clockSV, delaySV, reduceMotion }: Swe
 };
 
 /** A music break: the waveform instead of a blank line. */
-const InstrumentalLine: React.FC<{ activeIndexSV: SharedValue<number>; index: number }> = ({ activeIndexSV, index }) => {
-  const isActiveLine = useIsActiveLine(activeIndexSV, index);
+const InstrumentalLine: React.FC<{ activeIndexSV: SharedValue<number>; liveSV: SharedValue<boolean>; index: number }> = ({ activeIndexSV, liveSV, index }) => {
+  const isActiveLine = useIsActiveLine(activeIndexSV, index, liveSV);
   return (
     <Animated.View style={styles.instrumentalWrap}>
       <InstrumentalWaveform active={isActiveLine} size="lg" />
@@ -402,7 +405,12 @@ interface SynchronizedLyricsProps {
   edgeFade?: number;
   /** Mirrors the list's scroll offset, so the player sheet knows when the lines sit at the top. */
   scrollOffset?: SharedValue<number>;
-  /** The lines are on screen: only then does the lyric clock run a frame at a time. Default on. */
+  /**
+   * The lines are on screen. Hidden lyrics are inert: the lyric clock does not follow the song, the sung line
+   * does not move, nothing scrolls or glides, no word sweeps and no waveform dances. A glide or waveform already
+   * running is stopped, and on reopening everything is put right in one step (the list jumps to the sung line,
+   * with no glide from where it was when it was hidden). Default on.
+   */
   live?: boolean;
 }
 
@@ -490,6 +498,9 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   const reduceMotion = useReducedMotion();
   const delaySV = useSharedValue(lyricsDelay);
   useEffect(() => { delaySV.value = lyricsDelay; }, [lyricsDelay, delaySV]);
+  // Visibility, mirrored for the UI thread. A worklet reads this, never a React ref or prop.
+  const liveSV = useSharedValue(live);
+  useEffect(() => { liveSV.value = live; }, [live, liveSV]);
   // Only the start times go to the UI thread for the line search, not every word.
   const timestamps = useMemo(() => lyrics.map(l => l.timestamp), [lyrics]);
 
@@ -511,9 +522,12 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   const anchorPositionSV = useSharedValue(0);
   const anchorAtSV = useSharedValue(0);
   const clockRunningSV = useSharedValue(false);
+  // Hidden lyrics take no reports at all (-1 stands for "not watching"): the clock, and everything that follows
+  // it, stays where it was. Reopening reads the position again, which is what resynchronises them.
   useAnimatedReaction(
-    () => currentTimeSV.value,
+    () => (liveSV.value ? currentTimeSV.value : -1),
     position => {
+      if (position < 0) return;
       anchorPositionSV.value = position;
       anchorAtSV.value = Date.now();
       if (!clockRunningSV.value) clockSV.value = position;
@@ -615,8 +629,17 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   const requestResume = useCallback(() => resumeFollowingRef.current(), []);
 
   useAnimatedReaction(
-    () => ({ target: activeTargetYSV.value, user: isUserScrollingSV.value, idx: activeIndexDV.value }),
+    () => ({ target: activeTargetYSV.value, user: isUserScrollingSV.value, idx: activeIndexDV.value, live: liveSV.value }),
     (now, prev) => {
+      if (!now.live) {
+        // Hidden: nothing follows the song. A glide that was under way stops where it is.
+        if (prev && prev.live) {
+          stopGlide();
+          glideRunningSV.value = false;
+          runOnJS(setGlideActive)(false);
+        }
+        return;
+      }
       if (now.target < 0) return;
       if (now.user) {
         // Apple's rule: the next line re-attaches the list once it has been
@@ -630,12 +653,13 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
         }
         return;
       }
-      if (prev && prev.target === now.target && prev.user === now.user) return;
+      if (prev && prev.live && prev.target === now.target && prev.user === now.user) return;
       const maxY = Math.max(0, contentHeightSV.value - containerHeightSV.value);
       const toY = contentHeightSV.value > 0 ? Math.min(now.target, maxY) : now.target;
       const fromY = scrollYSV.value;
       const delta = toY - fromY;
-      const firstFrame = !prev || lastIndexSV.value < 0;
+      // Coming back from hidden is a first frame too: the list jumps to the sung line, no glide from the old place.
+      const firstFrame = !prev || !prev.live || lastIndexSV.value < 0;
       const sameLine = !(prev && prev.user) && now.idx === lastIndexSV.value;
       lastIndexSV.value = now.idx;
       scrollTo(scrollRef, 0, toY, false);
@@ -754,6 +778,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
       key={`lyric_${index}`}
       activeIndexSV={activeIndexSV}
       readingSV={isUserScrollingSV}
+      liveSV={liveSV}
       clockSV={clockSV}
       delaySV={delaySV}
       text={item.text}
@@ -769,7 +794,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
       gap={gap}
       songTitle={songTitle}
     />
-  ), [activeIndexSV, isUserScrollingSV, clockSV, delaySV, lyrics, letters, reduceMotion, onLyricPress, handleItemMeasured, textStyle, gap, songTitle]);
+  ), [activeIndexSV, isUserScrollingSV, liveSV, clockSV, delaySV, lyrics, letters, reduceMotion, onLyricPress, handleItemMeasured, textStyle, gap, songTitle]);
 
   return (
     <View style={styles.container}>

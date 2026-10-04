@@ -31,6 +31,12 @@ export { LYRICS_MORPH_MS };
  * finish, so the mount never lands on the sheet's own opening frames.
  */
 const LYRICS_PREMOUNT_MS = 900;
+/**
+ * Whether the lines are mounted (hidden) before they are asked for. Hidden lyrics are inert (`live` off: no
+ * clock, scrolling, glide, sweep or waveform), so this only costs the mount itself. It is a switch so a build
+ * can run without it when judging whether the pre-mount matters.
+ */
+const PREMOUNT_HIDDEN_LYRICS = true;
 
 const clamp01 = (v: number) => {
   'worklet';
@@ -297,17 +303,20 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   // stay: mounting the list is the slow part, and done on the tap it lands
   // after the cover has already flown, so the lines pop in with no fade.
   const [lyricsMounted, setLyricsMounted] = React.useState(showLyrics);
+  const hasLines = processedLyrics.length > 0;
   React.useEffect(() => {
     if (showLyrics) {
       setLyricsMounted(true);
       return undefined;
     }
+    // A song with no lyric lines has nothing to open onto: no hidden list for it.
+    if (!PREMOUNT_HIDDEN_LYRICS || !hasLines) return undefined;
     let task: { cancel: () => void } | null = null;
     const t = setTimeout(() => {
       task = InteractionManager.runAfterInteractions(() => setLyricsMounted(true));
     }, LYRICS_PREMOUNT_MS);
     return () => { clearTimeout(t); task?.cancel(); };
-  }, [showLyrics]);
+  }, [showLyrics, hasLines]);
   // Stable, so the memoised lyrics list doesn't re-render with every player render.
   const onScrollStateChange = React.useCallback((isScrolling: boolean) => {
     isUserScrollingRef.current = isScrolling;

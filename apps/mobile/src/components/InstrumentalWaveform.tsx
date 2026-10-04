@@ -126,11 +126,14 @@ export default InstrumentalWaveform;
 /**
  * Bridge a Reanimated active-index to React state — the waveform needs a real
  * boolean, not a shared value. Shared by every lyric renderer.
+ *
+ * `liveSV` is whether the lyrics are on screen. Hidden lyrics have no sung line, so a waveform that was dancing
+ * stops (its repeating animation is cancelled) instead of running on for a line nobody can see.
  */
-export function useIsActiveLine(activeIndexSV: SharedValue<number>, index: number): boolean {
+export function useIsActiveLine(activeIndexSV: SharedValue<number>, index: number, liveSV?: SharedValue<boolean>): boolean {
   const [isActive, setIsActive] = useState(false);
   useAnimatedReaction(
-    () => activeIndexSV.value === index,
+    () => activeIndexSV.value === index && (liveSV ? liveSV.value : true),
     (next, prev) => {
       if (next !== prev) runOnJS(setIsActive)(next);
     },
