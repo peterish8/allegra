@@ -36,3 +36,53 @@ export const tapSide = (x: number, width: number, cardWidth: number): -1 | 0 | 1
   if (Math.abs(from) <= cardWidth / 2) return 0;
   return from < 0 ? -1 : 1;
 };
+
+// -- The loop ---------------------------------------------------------------------------------------------------
+// With three cards or more the row has no ends: the position is any number, a card's place in it is read round a
+// circle, and past the last card comes the first again. With fewer it would show one card on both sides, so a row of
+// one or two keeps its ends (the clamped functions above).
+
+/** Whether a row of `count` cards loops. */
+export const loops = (count: number): boolean => {
+  'worklet';
+  return count >= 3;
+};
+
+/** `value` mod `count`, always 0..count-1 (JavaScript's % keeps the sign). */
+export const wrapIndex = (value: number, count: number): number => {
+  'worklet';
+  if (count <= 0) return 0;
+  return ((Math.round(value) % count) + count) % count;
+};
+
+/**
+ * Card `index`'s signed distance from `position`, the short way round when the row loops: in (-count/2, count/2],
+ * so the cards on the far side of the circle come in from the other edge.
+ */
+export const loopDistance = (index: number, position: number, count: number): number => {
+  'worklet';
+  const d = index - position;
+  if (!loops(count)) return d;
+  const m = ((d % count) + count) % count;
+  return m > count / 2 ? m - count : m;
+};
+
+/** How the position follows a drag on a looping row: freely, one card per `step` points. */
+export const loopFocusFromDrag = (start: number, translationX: number, step: number): number => {
+  'worklet';
+  return start - translationX / step;
+};
+
+/** Where a release on a looping row settles: the card the flick is heading for, any number of times round. */
+export const loopSettleFocus = (position: number, velocityX: number, step: number): number => {
+  'worklet';
+  return Math.round(position - (velocityX / step) * 0.16);
+};
+
+/** The position, nearest to `from`, that puts card `index` in the middle (the short way round). */
+export const nearestPositionOf = (index: number, from: number, count: number): number => {
+  'worklet';
+  if (!loops(count)) return Math.min(Math.max(0, index), Math.max(0, count - 1));
+  const base = Math.round(from);
+  return base + loopDistance(index, base, count);
+};

@@ -53,6 +53,7 @@ import { tasteSeeds } from '../services/luvsTaste';
 import { leadArtist } from '../services/ytmusic/browse';
 import { recommendFor } from '../services/stream/recommend';
 import { buildHomeFeed, HomeFeed } from '../services/stream/homeFeed';
+import { readFeedCache, writeFeedCache } from '../services/stream/feedCache';
 import { StreamService } from '../services/stream/StreamService';
 import { streamIdFor } from '../services/stream/streamSong';
 import { useSongsStore } from '../store/songsStore';
@@ -151,10 +152,29 @@ const StreamScreen: React.FC = () => {
   const followed = useFollowedArtistsStore(s => s.artists);
 
 
+  // The last page opens at once from the phone (services/stream/feedCache) while the network answers; whichever
+  // half has already arrived fresh is never replaced by the cached one.
+  const freshFeed = useRef(false);
+  const freshHome = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    readFeedCache().then(cached => {
+      if (!alive || !cached) return;
+      if (cached.feed && !freshFeed.current) {
+        setFeed(cached.feed);
+        setLoading(false);
+      }
+      if (cached.home && !freshHome.current) setYtHome(cached.home);
+    });
+    return () => { alive = false; };
+  }, []);
+
   const loadYtHome = useCallback(async () => {
     const first = await YTMusicClient.home().catch(() => null);
     if (!first) return;
+    freshHome.current = true;
     setYtHome(first);
+    writeFeedCache(null, first);
     // Echo fills the feed with one more page straight away.
     if (first.continuation) {
       const more = await YTMusicClient.homeMore(first.continuation).catch(() => null);
@@ -211,7 +231,11 @@ const StreamScreen: React.FC = () => {
       { localSongs: localRef.current, history: historyRef.current, languages: preferred },
       { searchMusic: q => searchOfficial(q), recommend: seed => recommendFor(seed, 12) },
     ).catch(() => null);
+    // A failed refresh keeps the page that is showing (cached or earlier) instead of blanking it.
+    if (!next) return;
+    freshFeed.current = true;
     setFeed(next);
+    writeFeedCache(next, null);
   }, [preferred]);
 
   const loadAccountPicks = useCallback(async () => {

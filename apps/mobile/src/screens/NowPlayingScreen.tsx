@@ -701,12 +701,15 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           onTogetherPress={() => setSheet('together')}
         />
 
-        <CoverArtSearchScreen
-          visible={showCoverSearch}
-          initialQuery={`${currentSong?.title} ${currentSong?.artist}`}
-          onClose={() => setShowCoverSearch(false)}
-          onSelect={handleCoverSelect}
-        />
+        {/* Built when asked for (Details → Change cover), not on every open of the player. */}
+        {showCoverSearch ? (
+          <CoverArtSearchScreen
+            visible
+            initialQuery={`${currentSong?.title} ${currentSong?.artist}`}
+            onClose={() => setShowCoverSearch(false)}
+            onSelect={handleCoverSelect}
+          />
+        ) : null}
 
         <Animated.View style={[styles.contentArea, stageBackStyle]}>
           <NowPlayingLyricsArea

@@ -58,3 +58,36 @@ describe('letters', () => {
     expect(railPick(900, 260, 26)).toBe(25);
   });
 });
+
+describe('the deck', () => {
+  const { pickDeck, keepDeckOrder } = jest.requireActual('./libraryShape');
+  const deckSong = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: id, dateCreated: '2026-01-01T00:00:00Z', ...extra });
+
+  it('picks what was played last, then what arrived last, each once', () => {
+    const songs = [
+      deckSong('a', { dateCreated: '2026-01-03T00:00:00Z' }),
+      deckSong('b', { lastPlayed: '2026-02-01T00:00:00Z' }),
+      deckSong('c', { dateCreated: '2026-01-05T00:00:00Z', lastPlayed: '2026-02-02T00:00:00Z' }),
+      deckSong('d', { dateCreated: '2026-01-04T00:00:00Z' }),
+    ];
+    expect(pickDeck(songs, 10).map((s: { id: string }) => s.id)).toEqual(['c', 'b', 'd', 'a']);
+    expect(pickDeck(songs, 2).map((s: { id: string }) => s.id)).toEqual(['c', 'b']);
+  });
+
+  it('keeps a played song where it was instead of jumping it to the front', () => {
+    // The deck was a b c d; playing c stamps it, so the fresh picks put it first.
+    const fresh = [deckSong('c', { lastPlayed: 'now' }), deckSong('a'), deckSong('b'), deckSong('d')];
+    expect(keepDeckOrder(['a', 'b', 'c', 'd'], fresh).map((s: { id: string }) => s.id)).toEqual(['a', 'b', 'c', 'd']);
+    // The fresh object is the one kept (its new details show).
+    expect(keepDeckOrder(['a', 'b', 'c', 'd'], fresh)[2].lastPlayed).toBe('now');
+  });
+
+  it('adds newcomers after the songs it kept, and drops songs that left', () => {
+    const fresh = [deckSong('e'), deckSong('a'), deckSong('c')];
+    expect(keepDeckOrder(['a', 'b', 'c'], fresh).map((s: { id: string }) => s.id)).toEqual(['a', 'c', 'e']);
+  });
+
+  it('starts from the fresh order when there is no deck yet', () => {
+    expect(keepDeckOrder([], [deckSong('x'), deckSong('y')]).map((s: { id: string }) => s.id)).toEqual(['x', 'y']);
+  });
+});

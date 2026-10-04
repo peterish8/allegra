@@ -101,6 +101,28 @@ export async function buildHomeFeed(input: FeedInput, sources: FeedSources): Pro
   const keepListening = dedupeStreamable(history.map(h => h.song)).slice(0, 12);
   const forgottenFavorites = pickForgottenFavorites(input.localSongs, now);
 
+  const played = new Set(history.map(h => streamIdFor(h.song)));
+
+  // Similar-to shelves for the two artists the listener returns to most. They need only the history and the
+  // library, so their searches start now and run alongside the seeds and the radios instead of after them (the page
+  // waited for three rounds of network calls one after another; now two).
+  const artistWeight = new Map<string, number>();
+  for (const h of input.history) {
+    const a = primaryArtist(h.song.artist);
+    if (a) artistWeight.set(a, (artistWeight.get(a) ?? 0) + seedScore(h, now));
+  }
+  for (const s of input.localSongs) {
+    const a = primaryArtist(s.artist);
+    if (a && a !== 'Unknown Artist' && s.playCount > 0) artistWeight.set(a, (artistWeight.get(a) ?? 0) + s.playCount * 0.5);
+  }
+  const topArtists = [...artistWeight.entries()].filter(([, w]) => w > 0).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([a]) => a);
+  const similarShelves: Promise<SimilarShelf[]> = Promise.all(topArtists.map(async artist => {
+    const results = await sources.searchMusic(artist).catch(() => []);
+    const lower = artist.toLowerCase();
+    const songs = dedupeStreamable(results.filter(r => r.artist.toLowerCase().includes(lower)), played).slice(0, 12);
+    return { artist, songs };
+  })).then(shelves => shelves.filter(shelf => shelf.songs.length >= 3)).catch(() => []);
+
   // Seeds: best streamed songs first, topped up from the most-played library songs.
   const streamSeeds = [...input.history]
     .sort((a, b) => seedScore(b, now) - seedScore(a, now))
@@ -115,8 +137,6 @@ export async function buildHomeFeed(input: FeedInput, sources: FeedSources): Pro
     const resolved = await Promise.all(localTop.map(s => resolveLocalSeed(s, sources)));
     seeds = [...seeds, ...resolved.filter((s): s is UnifiedSong => s !== null)];
   }
-
-  const played = new Set(history.map(h => streamIdFor(h.song)));
 
   // Cold start: no history anywhere — lead with charts in the listener's languages.
   if (seeds.length === 0) {
@@ -149,23 +169,6 @@ export async function buildHomeFeed(input: FeedInput, sources: FeedSources): Pro
     if (pick) dailyDiscover.push({ seed, recommendation: pick });
   });
 
-  // Similar-to shelves for the two artists the listener returns to most.
-  const artistWeight = new Map<string, number>();
-  for (const h of input.history) {
-    const a = primaryArtist(h.song.artist);
-    if (a) artistWeight.set(a, (artistWeight.get(a) ?? 0) + seedScore(h, now));
-  }
-  for (const s of input.localSongs) {
-    const a = primaryArtist(s.artist);
-    if (a && a !== 'Unknown Artist') artistWeight.set(a, (artistWeight.get(a) ?? 0) + s.playCount * 0.5);
-  }
-  const topArtists = [...artistWeight.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([a]) => a);
-  const similar = (await Promise.all(topArtists.map(async artist => {
-    const results = await sources.searchMusic(artist).catch(() => []);
-    const lower = artist.toLowerCase();
-    const songs = dedupeStreamable(results.filter(r => r.artist.toLowerCase().includes(lower)), played).slice(0, 12);
-    return { artist, songs };
-  }))).filter(shelf => shelf.songs.length >= 3);
-
+  const similar = await similarShelves;
   return { quickPicks, keepListening, dailyDiscover, similar, forgottenFavorites, coldStart: false };
 }

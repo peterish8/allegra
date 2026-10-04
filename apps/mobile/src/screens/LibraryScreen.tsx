@@ -30,7 +30,7 @@ import { useSongActions } from '../components/library/useSongActions';
 import GlassDeck from '../components/library/GlassDeck';
 import ArtistOrbit from '../components/library/ArtistOrbit';
 import AlphabetRail from '../components/library/AlphabetRail';
-import { groupArtists, leadArtist, letterIndex } from '../components/library/libraryShape';
+import { groupArtists, keepDeckOrder, leadArtist, letterIndex, pickDeck } from '../components/library/libraryShape';
 import DynamicAura from '../components/allegra/DynamicAura';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
 import { RiseIn, Tactile } from '../components/allegra/motion';
@@ -120,18 +120,13 @@ const LibraryScreen: React.FC = () => {
       .sort(sorters[sort]);
   }, [visible, sort, filter, artist]);
 
-  // The deck: what you played last, else what arrived last.
+  // The deck: what you played last, else what arrived last — in the order it already had. Playing a card stamps it
+  // as played, which would jump it to the front and slide every card along; it stays where it was instead.
+  const deckOrder = useRef<string[]>([]);
   const deck = useMemo(() => {
-    const played = visible
-      .filter(s => s.lastPlayed)
-      .sort((a, b) => Date.parse(b.lastPlayed ?? '') - Date.parse(a.lastPlayed ?? ''));
-    const newest = [...visible].sort(sorters.recent);
-    const picks: Song[] = [];
-    for (const s of [...played, ...newest]) {
-      if (picks.length >= DECK_MAX) break;
-      if (!picks.some(p => p.id === s.id)) picks.push(s);
-    }
-    return picks;
+    const next = keepDeckOrder(deckOrder.current, pickDeck(visible, DECK_MAX));
+    deckOrder.current = next.map(s => s.id);
+    return next;
   }, [visible]);
 
   // The room takes the colour of what's playing, else of the front of the deck.

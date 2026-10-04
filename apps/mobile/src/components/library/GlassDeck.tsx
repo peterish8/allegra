@@ -6,7 +6,10 @@
  *     plates. Each plate carries its cover with the title and artist under it.
  *   - Drag to move along the row (it follows the finger, then settles on the
  *     nearest card with a spring). Tap the middle card to play it; tap a card
- *     beside it to bring it to the middle.
+ *     beside it to bring it to the middle. With three cards or more the row
+ *     loops: past the last card comes the first again, either way.
+ *   - The row keeps its order and its place: playing a card leaves it in the
+ *     middle (the list it comes from is kept in order by LibraryScreen).
  *   - Underneath, a glass pill: shuffle everything, step back or forward
  *     along the row, and play or pause the card in the middle.
  *
@@ -35,7 +38,7 @@ import Artwork from '../allegra/Artwork';
 import { Tactile } from '../allegra/motion';
 import { Glass, Motion, Radius, Signal } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
-import { flowOffset, focusFromDrag, settleFocus, tapSide } from './flowMath';
+import { flowOffset, focusFromDrag, loopDistance, loopFocusFromDrag, loops, loopSettleFocus, nearestPositionOf, settleFocus, tapSide, wrapIndex } from './flowMath';
 import type { Song } from '../../types/song';
 
 const SETTLE = { stiffness: 220, damping: 26, mass: 1 } as const;
@@ -61,14 +64,16 @@ interface GlassDeckProps {
 const Plate: React.FC<{
   song: Song;
   index: number;
+  count: number;
   size: number;
   height: number;
   step: number;
   position: SharedValue<number>;
   nowPlaying: boolean;
-}> = React.memo(({ song, index, size, height, step, position, nowPlaying }) => {
+}> = React.memo(({ song, index, count, size, height, step, position, nowPlaying }) => {
   const style = useAnimatedStyle(() => {
-    const d = index - position.value;
+    // Read round the circle when the row loops, so the first card follows the last.
+    const d = loopDistance(index, position.value, count);
     const a = Math.abs(d);
     const turn = Math.max(-1, Math.min(1, d));
     return {
@@ -115,8 +120,10 @@ const Plate: React.FC<{
 
 export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, isPlaying, onPlay, onTogglePlay, onShuffle, initialIndex = 0 }) => {
   const n = songs.length;
+  const loop = loops(n);
   const reduce = useReducedMotion();
   const first = Math.min(Math.max(0, initialIndex), Math.max(0, n - 1));
+  // Any number when the row loops (each lap adds n); the card in the middle is wrapIndex(position, n).
   const position = useSharedValue(first);
   const start = useSharedValue(first);
   const [focus, setFocus] = useState(first);
@@ -124,7 +131,8 @@ export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, is
   const step = Math.round(size * 0.66);
   const stageWidth = size + step * 2;
 
-  // A different set of songs starts from the first card.
+  // The songs changed (one was played, one arrived): the card in the middle stays in the middle, wherever it now is.
+  const focusedId = React.useRef<string | undefined>(songs[first]?.id);
   const signature = songs.map(s => s.id).join('|');
   const firstRun = React.useRef(true);
   useEffect(() => {
@@ -132,18 +140,32 @@ export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, is
       firstRun.current = false;
       return;
     }
-    position.value = 0;
-    setFocus(0);
+    const at = songs.findIndex(s => s.id === focusedId.current);
+    const index = at >= 0 ? at : Math.min(wrapIndex(position.value, Math.max(1, n)), Math.max(0, n - 1));
+    position.value = nearestPositionOf(index, position.value, n);
+    setFocus(index);
+    focusedId.current = songs[index]?.id;
+  // The ids are what matter; `songs` is read through them.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature, position]);
 
-  const moveTo = useCallback((index: number) => {
-    const next = Math.min(Math.max(0, index), n - 1);
-    position.value = reduce ? withTiming(next, { duration: Motion.duration.fast }) : withSpring(next, SETTLE);
+  /** The row came to rest on `target` (a position: any lap when it loops). */
+  const settled = useCallback((target: number) => {
+    const index = loop ? wrapIndex(target, n) : Math.min(Math.max(0, target), n - 1);
+    focusedId.current = songs[index]?.id;
     setFocus(f => {
-      if (f !== next) Haptics.selectionAsync().catch(() => {});
-      return next;
+      if (f !== index) Haptics.selectionAsync().catch(() => {});
+      return index;
     });
-  }, [n, position, reduce]);
+  }, [loop, n, songs]);
+
+  /** One card along (or back), from where the row is heading. */
+  const moveBy = useCallback((delta: number) => {
+    const from = Math.round(position.value);
+    const target = loop ? from + delta : Math.min(Math.max(0, from + delta), n - 1);
+    position.value = reduce ? withTiming(target, { duration: Motion.duration.fast }) : withSpring(target, SETTLE);
+    settled(target);
+  }, [loop, n, position, reduce, settled]);
 
   const centre = songs[Math.min(focus, n - 1)];
   const playFocused = useCallback(() => {
@@ -160,8 +182,8 @@ export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, is
   const onTap = useCallback((x: number) => {
     const side = tapSide(x, stageWidth, size);
     if (side === 0) playFocused();
-    else moveTo(focus + side);
-  }, [stageWidth, size, playFocused, moveTo, focus]);
+    else moveBy(side);
+  }, [stageWidth, size, playFocused, moveBy]);
 
   const pan = Gesture.Pan()
     .enabled(n > 1)
@@ -171,12 +193,12 @@ export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, is
       start.value = position.value;
     })
     .onUpdate(e => {
-      position.value = focusFromDrag(start.value, e.translationX, step, n);
+      position.value = loop ? loopFocusFromDrag(start.value, e.translationX, step) : focusFromDrag(start.value, e.translationX, step, n);
     })
     .onEnd(e => {
-      const target = settleFocus(position.value, e.velocityX, step, n);
+      const target = loop ? loopSettleFocus(position.value, e.velocityX, step) : settleFocus(position.value, e.velocityX, step, n);
       position.value = withSpring(target, { ...SETTLE, velocity: -e.velocityX / step });
-      runOnJS(moveTo)(target);
+      runOnJS(settled)(target);
     });
   const tap = Gesture.Tap()
     .maxDistance(10)
@@ -196,13 +218,14 @@ export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, is
           accessibilityRole="adjustable"
           accessibilityLabel={`Recent songs. ${centre?.title ?? ''}${centre?.artist ? ` by ${centre.artist}` : ''}. Swipe to browse, double tap to play`}
           accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-          onAccessibilityAction={e => moveTo(focus + (e.nativeEvent.actionName === 'increment' ? 1 : -1))}
+          onAccessibilityAction={e => moveBy(e.nativeEvent.actionName === 'increment' ? 1 : -1)}
         >
           {songs.map((song, index) => (
             <Plate
               key={song.id}
               song={song}
               index={index}
+              count={n}
               size={size}
               height={height}
               step={step}
@@ -220,13 +243,13 @@ export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, is
           <Ionicons name="shuffle" size={20} color={Signal.inkSoft} />
         </Tactile>
         <Tactile
-          onPress={() => moveTo(focus - 1)}
-          disabled={focus <= 0}
+          onPress={() => moveBy(-1)}
+          disabled={!loop && focus <= 0}
           hitSlop={6}
           pressScale={0.88}
           accessibilityRole="button"
           accessibilityLabel="Previous song in the row"
-          style={[styles.pillButton, focus <= 0 && styles.dim]}
+          style={[styles.pillButton, !loop && focus <= 0 && styles.dim]}
         >
           <Ionicons name="play-skip-back" size={22} color={Signal.ink} />
         </Tactile>
@@ -240,13 +263,13 @@ export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, is
           <Ionicons name={playingHere ? 'pause' : 'play'} size={24} color={Signal.waveInk} style={playingHere ? undefined : styles.playNudge} />
         </Tactile>
         <Tactile
-          onPress={() => moveTo(focus + 1)}
-          disabled={focus >= n - 1}
+          onPress={() => moveBy(1)}
+          disabled={!loop && focus >= n - 1}
           hitSlop={6}
           pressScale={0.88}
           accessibilityRole="button"
           accessibilityLabel="Next song in the row"
-          style={[styles.pillButton, focus >= n - 1 && styles.dim]}
+          style={[styles.pillButton, !loop && focus >= n - 1 && styles.dim]}
         >
           <Ionicons name="play-skip-forward" size={22} color={Signal.ink} />
         </Tactile>

@@ -16,7 +16,7 @@
  * shows a floating artwork card instead (NowPlayingLyricsArea).
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { InteractionManager, View, StyleSheet } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import Animated, { SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import AppleBackdrop, { heroHeight, usePlayerFrame } from './player/AppleBackdrop';
@@ -45,6 +45,8 @@ interface NowPlayingBackgroundProps {
 }
 
 const CROSSFADE_MS = 600;
+/** After the player has opened (its sheet settles in well under this), build the glow in the background. */
+const GLOW_PREMOUNT_MS = 1200;
 
 const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   coverImageUri,
@@ -64,7 +66,23 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   const palette = useArtworkPalette(coverImageUri, gradientColors);
 
   const glowOn = style === 'blend' && showLyrics;
-  const glowColors = useGlowColors(style === 'blend' ? coverImageUri : null);
+  // The glow (a Skia canvas and a palette read) sat invisible under the cover on every open of the player. It is
+  // built once the open has settled (as the hidden lyrics are), or at once if lyrics are opened first, and then
+  // stays, so it cross-fades both ways and a tap on lyrics never waits for it.
+  const [glowWanted, setGlowWanted] = useState(glowOn);
+  useEffect(() => {
+    if (glowWanted || style !== 'blend') return undefined;
+    if (glowOn) {
+      setGlowWanted(true);
+      return undefined;
+    }
+    let task: { cancel: () => void } | null = null;
+    const t = setTimeout(() => {
+      task = InteractionManager.runAfterInteractions(() => setGlowWanted(true));
+    }, GLOW_PREMOUNT_MS);
+    return () => { clearTimeout(t); task?.cancel(); };
+  }, [glowOn, glowWanted, style]);
+  const glowColors = useGlowColors(style === 'blend' && glowWanted ? coverImageUri : null);
 
   // Apple <-> glow cross-fade.
   const glowOpacity = useSharedValue(glowOn ? 1 : 0);
@@ -142,7 +160,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
         </Animated.View>
       ) : null}
 
-      {style === 'blend' ? (
+      {style === 'blend' && glowWanted ? (
         <Animated.View style={[StyleSheet.absoluteFill, glowStyle]}>
           <GlowBackground colors={glowColors} variant="player" active={glowOn} />
         </Animated.View>

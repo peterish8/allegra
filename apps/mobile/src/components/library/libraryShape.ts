@@ -65,3 +65,44 @@ export const railPick = (y: number, railHeight: number, count: number): number =
   return Math.max(0, Math.min(count - 1, Math.floor((y / railHeight) * count)));
 };
 
+
+/**
+ * The deck's songs: what was played last, then what arrived last, at most `max`, each once. One pass over each list,
+ * with a Set for "already picked".
+ */
+export const pickDeck = (songs: readonly Song[], max: number): Song[] => {
+  const time = (iso: string | undefined) => (iso ? Date.parse(iso) || 0 : 0);
+  const played = songs.filter(s => s.lastPlayed).sort((a, b) => time(b.lastPlayed) - time(a.lastPlayed));
+  const newest = [...songs].sort((a, b) => time(b.dateCreated) - time(a.dateCreated));
+  const picked = new Set<string>();
+  const out: Song[] = [];
+  for (const list of [played, newest]) {
+    for (const s of list) {
+      if (out.length >= max) return out;
+      if (picked.has(s.id)) continue;
+      picked.add(s.id);
+      out.push(s);
+    }
+  }
+  return out;
+};
+
+/**
+ * The deck as it was, kept: songs already in it stay where they were (playing one stamps it as played, which would
+ * otherwise jump it to the front and move every card along), songs that joined go after them, songs that left drop
+ * out. Each song is the fresh object from `next` (a new cover or title shows), in O(n).
+ */
+export const keepDeckOrder = (previousIds: readonly string[], next: readonly Song[]): Song[] => {
+  const byId = new Map(next.map(s => [s.id, s] as const));
+  const kept: Song[] = [];
+  const seen = new Set<string>();
+  for (const id of previousIds) {
+    const song = byId.get(id);
+    if (song && !seen.has(id)) {
+      kept.push(song);
+      seen.add(id);
+    }
+  }
+  for (const s of next) if (!seen.has(s.id)) kept.push(s);
+  return kept;
+};
