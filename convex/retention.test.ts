@@ -74,6 +74,15 @@ describe('closed report retention', () => {
     expect(await report(t, 'dismiss')).toMatchObject({ status: 'closed', closedAt: Date.now() });
   });
 
+  it('timestamps an already-closed report that predates the migration', async () => {
+    const t = backend();
+    await insertReport(t, { code: 'legacy-close', status: 'closed' });
+
+    await t.mutation(internal.reports.dismiss, { code: 'legacy-close' });
+
+    expect(await report(t, 'legacy-close')).toMatchObject({ status: 'closed', closedAt: Date.now() });
+  });
+
   it('backfills legacy closed reports at migration time and leaves them readable for a year', async () => {
     const t = backend();
     await insertReport(t, { code: 'legacy-closed', status: 'closed' });
@@ -101,5 +110,33 @@ describe('closed report retention', () => {
     expect((await report(t, 'old'))?.contact).toBeUndefined();
     expect(await report(t, 'recent')).toMatchObject({ details: 'What happened', contact: 'listener@example.test' });
     expect(await report(t, 'open')).toMatchObject({ details: 'What happened', contact: 'listener@example.test' });
+  });
+
+  it('finishes expired reports across bounded pages without reprocessing trimmed rows forever', async () => {
+    const t = backend();
+    const closedAt = Date.now() - 366 * DAY;
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 401; index += 1) {
+        await ctx.db.insert('reports', {
+          code: `old-${index}`,
+          ownerId: 'listener',
+          libraryId: 'playlist',
+          reason: 'other',
+          details: 'What happened',
+          contact: 'listener@example.test',
+          createdAt: Date.parse('2026-09-01T00:00:00.000Z'),
+          status: 'closed',
+          closedAt
+        });
+      }
+    });
+
+    await t.mutation(internal.retention.trimClosedReports, {});
+    await t.finishAllScheduledFunctions(() => { vi.runAllTimers(); });
+
+    for (const code of ['old-0', 'old-200', 'old-400']) {
+      expect((await report(t, code))?.details).toBeUndefined();
+      expect((await report(t, code))?.contact).toBeUndefined();
+    }
   });
 });

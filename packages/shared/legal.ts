@@ -68,3 +68,5 @@ export function isReportReason(value: unknown): value is ReportReason {
 
 export const REPORT_DETAILS_MAX = 1000;
 export const REPORT_CONTACT_MAX = 200;
+/** A closed report's contact details and message are deleted this long after it closes. */
+export const REPORT_DETAIL_RETENTION_DAYS = 365;

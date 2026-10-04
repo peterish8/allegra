@@ -20,6 +20,7 @@ import type * as oauth from "../oauth.js";
 import type * as profiles from "../profiles.js";
 import type * as relations from "../relations.js";
 import type * as reports from "../reports.js";
+import type * as retention from "../retention.js";
 import type * as shares from "../shares.js";
 
 import type {
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   profiles: typeof profiles;
   relations: typeof relations;
   reports: typeof reports;
+  retention: typeof retention;
   shares: typeof shares;
 }>;
 

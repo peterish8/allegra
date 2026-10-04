@@ -207,10 +207,12 @@ export default defineSchema({
     details: v.optional(v.string()),
     contact: v.optional(v.string()),
     createdAt: v.number(),
-    status: v.union(v.literal('open'), v.literal('closed'))
+    status: v.union(v.literal('open'), v.literal('closed')),
+    closedAt: v.optional(v.number())
   })
     .index('by_code', ['code'])
-    .index('by_status_and_createdAt', ['status', 'createdAt']),
+    .index('by_status_and_createdAt', ['status', 'createdAt'])
+    .index('by_status_and_closedAt', ['status', 'closedAt']),
 
   /**
    * "Listeners of this song go on to play…" — YouTube Music's song radio and the catalog's own
