@@ -11,7 +11,7 @@
 import { Presence } from '@convex-dev/presence';
 import { v } from 'convex/values';
 
-import { ACCOUNT_RETENTION_DAYS, GUEST_RETENTION_DAYS } from '../packages/shared/legal';
+import { ACCOUNT_RETENTION_DAYS, ACTIVE_TOUCH_DAYS, GUEST_RETENTION_DAYS } from '../packages/shared/legal';
 import { components, internal } from './_generated/api';
 import { internalMutation, mutation, query, type MutationCtx } from './_generated/server';
 import { roomOf } from './connect';
@@ -216,9 +216,9 @@ export const extras = query({
 });
 
 /**
- * The daily retention sweep. Erases guest profiles unused for GUEST_RETENTION_DAYS and accounts
- * unused for ACCOUNT_RETENTION_DAYS. A profile with no `lastActiveAt` (written before the field
- * existed) is left alone: run `backfillLastActive` once after deploying.
+ * The daily retention sweep. Adds the API's maximum ACTIVE_TOUCH_DAYS interval to each promised
+ * retention period, so read-only listeners are not erased early. A profile with no `lastActiveAt`
+ * (written before the field existed) is left alone: run `backfillLastActive` once after deploying.
  */
 export const sweepInactive = internalMutation({
   args: {},
@@ -227,7 +227,7 @@ export const sweepInactive = internalMutation({
     const inactive = (isGuest: boolean, days: number, limit: number) =>
       ctx.db
         .query('profiles')
-        .withIndex('by_isGuest_and_lastActiveAt', (q) => q.eq('isGuest', isGuest).gt('lastActiveAt', 0).lt('lastActiveAt', now - days * DAY_MS))
+        .withIndex('by_isGuest_and_lastActiveAt', (q) => q.eq('isGuest', isGuest).gt('lastActiveAt', 0).lt('lastActiveAt', now - (days + ACTIVE_TOUCH_DAYS) * DAY_MS))
         .take(limit);
     const guests = await inactive(true, GUEST_RETENTION_DAYS, SWEEP_GUESTS);
     const accounts = await inactive(false, ACCOUNT_RETENTION_DAYS, SWEEP_ACCOUNTS);

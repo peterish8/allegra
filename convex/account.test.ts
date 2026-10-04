@@ -218,13 +218,13 @@ describe('retention sweep', () => {
   it('erases only profiles unused for longer than the policy allows', async () => {
     const t = backend();
     const now = Date.now();
-    await insertProfile(t, 'guest-stale', true, now - (GUEST_RETENTION_DAYS + 1) * DAY);
+    await insertProfile(t, 'guest-stale', true, now - (GUEST_RETENTION_DAYS + ACTIVE_TOUCH_DAYS + 1) * DAY);
     await insertProfile(t, 'guest-fresh', true, now - (GUEST_RETENTION_DAYS - 1) * DAY);
     // Written before the marker existed: never guessed at.
     await insertProfile(t, 'guest-legacy', true);
     // An account gets the longer period: old enough to drop a guest, not an account.
     await insertProfile(t, 'account-quiet', false, now - (GUEST_RETENTION_DAYS + 30) * DAY);
-    await insertProfile(t, 'account-stale', false, now - (ACCOUNT_RETENTION_DAYS + 1) * DAY);
+    await insertProfile(t, 'account-stale', false, now - (ACCOUNT_RETENTION_DAYS + ACTIVE_TOUCH_DAYS + 1) * DAY);
 
     const swept = await t.mutation(internal.account.sweepInactive, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
