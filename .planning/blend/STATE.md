@@ -5,7 +5,7 @@ Updated 2026-10-04. Status: in progress. Owner approved PLAN.md section 2 on 202
 | Plan | Status | Commit | Notes |
 |---|---|---|---|
 | 01-01 | done | 98efa47 | touch-slack retention edges pass |
-| 01-02 | blocked | | legacy closed reports lack `closedAt`; choose a conservative backfill policy |
+| 01-02 | done | 349c353, 5060321 | shared 365-day trim; migration-time backfill after deployment |
 | 01-03 | blocked | | `playStats` also names an active device-local counter; narrow scope and verify Convex data |
 | 01-04 | blocked | | depends on 01-02; tombstone time fields and full-resync pass-through need explicit handling |
 | 02-01 | not started | | |
@@ -46,7 +46,6 @@ Updated 2026-10-04. Status: in progress. Owner approved PLAN.md section 2 on 202
 | 11-02 | not started | | checkpoint |
 
 Owner actions outstanding:
-- Decide how to timestamp reports already closed before `closedAt` exists; see 01-02 summary.
 - Confirm the Convex profile `playStats` field is absent in production and preserve the separate mobile SQLite play counter; see 01-03 summary.
 - Supply one Spotify "Download your data" export (plan 04-01).
 - Check production for profiles without `lastActiveAt` (PLAN R5).
