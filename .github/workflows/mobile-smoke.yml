@@ -21,6 +21,8 @@ on:
       - 'packages/**'
       - '.github/workflows/mobile-smoke.yml'
       - '.github/scripts/mobile-android-smoke.sh'
+      - '.github/scripts/mobile-player-probe.sh'
+      - '.github/scripts/player-assertions.sh'
   workflow_dispatch:
 
 permissions:

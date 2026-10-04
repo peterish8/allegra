@@ -449,7 +449,16 @@ if [ -n "${W:-}" ] && [ -n "${H:-}" ]; then
   sleep 3
   alive_after "the Apple player gestures"
 fi
+# The player's transport stays on screen and responds, after Now Playing has been open for a while, with lyrics
+# toggled, with the screen off and after a kill (mobile-player-probe.sh). Audio playing or a picture being saved
+# does not show a blank screen; reading the screen and tapping it does. A failure fails the job.
+step "player probe: controls stay on screen and respond"
+bash "$(dirname "$0")/mobile-player-probe.sh" - "$OUT/probe" quick
+PROBE_FAILS=$?
+cp "$OUT/probe/controls.txt" "$OUT/player-controls.txt" 2>/dev/null || true
+for f in "$OUT"/probe/*.png; do [ -f "$f" ] && cp "$f" "$OUT/probe-$(basename "$f")"; done
 luvs_steps
 
 finish
+[ "$PROBE_FAILS" -eq 0 ] || { echo "== player probe: $PROBE_FAILS failed checks (see player-controls.txt)"; exit 1; }
 exit 0

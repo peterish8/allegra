@@ -8,6 +8,7 @@
  *   miniPlayerBackground=glow|tint|glass|black
  *   appBackground=shader|glass|glow
  *   fps=1|0             the frame rate readout
+ *   canvas=1|0          the looping cover video (off lets uiautomator read a screen that is never idle)
  */
 import type { AppBackground, MiniPlayerBackground, PlayerBackground } from '../store/settingsStore';
 
@@ -16,6 +17,7 @@ export interface StyleUpdates {
   miniPlayerBackground?: MiniPlayerBackground;
   appBackground?: AppBackground;
   showPerformanceHUD?: boolean;
+  canvasEnabled?: boolean;
 }
 
 const PLAYER: readonly PlayerBackground[] = ['apple', 'blend', 'youtube', 'aura'];
@@ -33,9 +35,11 @@ export const styleUpdates = (params: Record<string, string>): StyleUpdates => {
   const mini = pick(MINI, params.miniPlayerBackground);
   const app = pick(APP, params.appBackground);
   const fps = flag(params.fps);
+  const canvas = flag(params.canvas);
   if (player !== undefined) out.playerBackground = player;
   if (mini !== undefined) out.miniPlayerBackground = mini;
   if (app !== undefined) out.appBackground = app;
   if (fps !== undefined) out.showPerformanceHUD = fps;
+  if (canvas !== undefined) out.canvasEnabled = canvas;
   return out;
 };
