@@ -315,6 +315,22 @@ describe('editing the queue', () => {
   });
 });
 
+describe('reading the engine', () => {
+  it('does not drop a read asked for while another is in flight (it may have started before the change)', async () => {
+    let firstAnswer: (state: unknown) => void = () => undefined;
+    native.getQueueState
+      .mockReturnValueOnce(new Promise(resolve => { firstAnswer = resolve; }))
+      .mockResolvedValue({ ids: ['b', 'c'], index: 0, shuffle: false, repeat: 'all', tag: 'library#1', positionSec: 0 });
+    const first = usePlayerStore.getState().reconcileNativeQueue();
+    const second = usePlayerStore.getState().reconcileNativeQueue();
+    firstAnswer({ ids: ids(queue), index: 0, shuffle: false, repeat: 'all', tag: 'library#1', positionSec: 0 });
+    await Promise.all([first, second]);
+    await flush();
+    expect(native.getQueueState).toHaveBeenCalledTimes(2);
+    expect(usePlayerStore.getState().currentSongId).toBe('b');
+  });
+});
+
 describe('a saved queue', () => {
   const restored = {
     ids: ['x', 'y', 'z'], index: 1, shuffle: true, repeat: 'off', tag: 'stream#3', positionSec: 42,

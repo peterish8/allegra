@@ -243,15 +243,26 @@ function resolveMirror(state: NativeQueueState): Song[] | null {
 }
 
 let hydrating = false;
-/** Reads the engine's queue and adopts it. Without `withItems` it is only the ids and the cursor. */
+let hydrateAgain: { withItems: boolean } | null = null;
+/**
+ * Reads the engine's queue and adopts it. Without `withItems` it is only the ids and the cursor. A request made
+ * while a read is in flight is not dropped: that read may have started before the change that prompted it, so
+ * one more follows it.
+ */
 async function hydrateFromEngine(withItems: boolean): Promise<void> {
-  if (hydrating) return;
+  if (hydrating) {
+    hydrateAgain = { withItems: withItems || (hydrateAgain?.withItems ?? false) };
+    return;
+  }
   hydrating = true;
   try {
     const state = await NativeAudioPlayer.getQueueState(withItems);
     if (state) applyNativeQueue(state);
   } finally {
     hydrating = false;
+    const again = hydrateAgain;
+    hydrateAgain = null;
+    if (again) await hydrateFromEngine(again.withItems);
   }
 }
 

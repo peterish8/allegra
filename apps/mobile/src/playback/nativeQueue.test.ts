@@ -7,6 +7,7 @@ jest.mock('../services/NativeAudioPlayer', () => ({
     addToQueue: jest.fn(async () => true),
     removeFromQueue: jest.fn(async () => true),
     load: jest.fn(async () => undefined),
+    getQueueState: jest.fn(async () => null),
   },
 }));
 
@@ -38,7 +39,8 @@ const ids = (songs: readonly Song[]) => songs.map(s => s.id);
 const native = NativeAudioPlayer as unknown as Record<string, jest.Mock>;
 
 beforeEach(() => {
-  for (const key of ['setQueue', 'replaceQueue', 'playNext', 'addToQueue', 'removeFromQueue', 'load']) native[key].mockClear();
+  for (const key of ['setQueue', 'replaceQueue', 'playNext', 'addToQueue', 'removeFromQueue', 'load', 'getQueueState']) native[key].mockClear();
+  native.getQueueState.mockResolvedValue(null);
   forgetEngineQueue();
 });
 
@@ -204,13 +206,14 @@ describe('insert', () => {
 
 describe('load', () => {
   it('replaces the song in place when the engine holds it (a fresh link), keeping the queue', async () => {
-    noteEngineQueue({ ids: ['a', 'b'], tag: 'library#1' });
+    native.getQueueState.mockResolvedValue({ ids: ['a', 'b'], index: 1, shuffle: false, repeat: 'all', tag: 'library#1', positionSec: 0 });
     await nativeQueue.load(song('b'), 'https://fresh/b.m4a', [song('a'), song('b')], 'library');
     expect(native.load).toHaveBeenCalledWith('https://fresh/b.m4a', expect.objectContaining({ mediaId: 'b' }));
     expect(native.setQueue).not.toHaveBeenCalled();
   });
 
-  it('hands the engine the whole queue again when it lost it (the service restarted)', async () => {
+  it('hands the engine the whole queue again when it lost it (the service restarted), whatever the screen believed', async () => {
+    noteEngineQueue({ ids: ['a', 'b', 'c'], tag: 'library#1' });
     await nativeQueue.load(song('b'), 'https://fresh/b.m4a', [song('a'), song('b'), song('c')], 'library');
     expect(native.load).not.toHaveBeenCalled();
     const [items, start, , play] = native.setQueue.mock.calls[0];

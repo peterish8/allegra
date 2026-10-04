@@ -210,15 +210,19 @@ export const nativeQueue = {
 
   /**
    * Make `song` the playing item at `uri` (a first load, a fresh link for an expired one, a reload after the
-   * player was lost). The queue it belongs to is kept; when the engine does not hold the song (a service that
-   * restarted) it is handed the screen's queue again. The caller decides whether to play.
+   * player was lost). The queue it belongs to is kept. Whether the engine still holds the song is asked, not
+   * assumed (a service that restarted holds nothing): if it does not, it is handed the screen's queue again.
+   * The caller decides whether to play.
    */
   async load(song: Song, uri: string, queue: readonly Song[] | null, playlistId: string | null): Promise<void> {
     const at = queue ? queue.findIndex(s => s.id === song.id) : -1;
-    if (queue && queue.length > 1 && at >= 0 && !engineHolds(song.id)) {
-      const songs = queue.map((s, i) => (i === at ? { ...s, audioUri: uri } : s));
-      await nativeQueue.setQueue(songs, at, playlistId ?? 'queue', false);
-      return;
+    if (queue && queue.length > 1 && at >= 0) {
+      const held = await NativeAudioPlayer.getQueueState(false);
+      if (!held || !held.ids.includes(song.id)) {
+        const songs = queue.map((s, i) => (i === at ? { ...s, audioUri: uri } : s));
+        await nativeQueue.setQueue(songs, at, playlistId ?? 'queue', false);
+        return;
+      }
     }
     rememberSongs([{ ...song, audioUri: uri }]);
     await NativeAudioPlayer.load(uri, {
