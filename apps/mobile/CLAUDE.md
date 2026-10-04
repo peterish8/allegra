@@ -36,7 +36,7 @@
 ## Key architecture
 
 ### Player
-- `PlayerContext.tsx` — wraps `useAudioPlayer` (iOS) / `NativeAudioPlayer` (Android), syncs status to Zustand, handles auto-next
+- `PlayerContext.tsx` — wraps `useAudioPlayer` (iOS) / `NativeAudioPlayer` (Android), syncs status to Zustand. On Android it also mirrors the Kotlin queue engine's reports (`onQueueChanged`, `onTrackAdvanced`) into the store; on iOS it handles auto-next
 - `playerStatusGuard.ts` — returns `true` to preserve playing state during buffering/seek to prevent UI flicker
 - `playbackIntent.ts` — suppresses stale native status echoes (see below)
 - `usePlayerStore` (Zustand) — single source of truth for `isPlaying`, `currentSong`, `currentSongId`, `position`, queue
@@ -77,7 +77,7 @@ if (wasPlaying) player.play();
 `seekTo` is async and pauses playback — always resume if the user was playing.
 
 ### Auto-next (end of song)
-`PlayerContext` uses `didJustFinish` (cross-platform signal) as primary, plus a `isNearEndFallback` (within 0.35s of end) as secondary. The fallback only triggers when `store.isPlaying` is true — prevents auto-advancing when user manually pauses near end.
+Android: the Kotlin queue engine advances by itself (below); JavaScript only hears about it. iOS: `PlayerContext` uses `didJustFinish` (cross-platform signal) as primary, plus a `isNearEndFallback` (within 0.35s of end) as secondary. The fallback only triggers when `store.isPlaying` is true — prevents auto-advancing when user manually pauses near end.
 
 ### Audio load ownership
 `MiniPlayer` and `NowPlayingScreen` both watch `loadedAudioId`, so both will try to
@@ -90,6 +90,16 @@ re-ran the effect, the load bailed without playing, and the re-run couldn't clai
 that was still held, so a first pick sat at 0:00. `MiniPlayer` re-runs on `audioUri` too,
 because a streamed song can arrive before its audio link resolves.
 
+### The queue on Android: the Kotlin engine owns it (Echo Music's design)
+`QueueEngine.kt` (`android/.../playback/`, in the player service) holds the **whole queue** in ExoPlayer's playlist: next, previous, shuffle, repeat, play next, add to queue, reorder, "running low" and a saved queue are decided there, ported from Echo's `MusicService`/`PlayerConnection`. JavaScript is a remote control: `playerStore` keeps its public functions (`setPlaylistQueue`, `updateQueue`, `removeFromQueue`, `nextInPlaylist`, `previousInPlaylist`, `skipToQueueIndex`, `clearPlaylistQueue`), and on Android (`usesNativeQueue()`) they forward to the engine while `playlistQueue` / `currentQueueIndex` only **mirror** what it reports (ids and cursor in **play order**; shuffle changes the order, not the ids). iOS and tests keep the JavaScript-owned queue.
+- Rules in `QueueMath.kt` (pure, JVM-tested; keep `playback/nativeQueue.ts` constants in step): previous restarts a song past 3 s or with nothing before it; shuffle keeps the playing song first; play next keeps its place under shuffle, appended songs join the end of the play order; repeat off / all / one; at the end of the queue repeat-all starts over, otherwise it rests on the first song, paused; "running low" at the playing song plus four.
+- Commands are ordered and answer true only once applied on the player's thread (`NativeAudioPlayer.serial`); a transport call made while one is in flight waits behind it. While one is in flight the engine's reports are set aside and the settled queue is read afterwards (`isQueueBusy` / `whenQueueIdle`) — never adopt a report mid-command.
+- Every queue has a **tag** (`<playlistId>#<n>`). Edits carry the tag of the queue they were made for and the engine refuses them if a newer queue replaced it: a late radio top-up or reorder can never land in the wrong queue. Songs with no allowed address (file / content / https) are left out of the engine's queue.
+- A load names its song (`player.replace(uri, song)`) and keeps the queue (`nativeQueue.load` → `MainPlayer.load` → `QueueEngine.loadItem`: the song is replaced in place or becomes a queue of one). Never load "the current song" blindly: that once replaced the whole playlist with one song. A new queue holds the shared load guard (`beginAudioLoad`) until the engine applied it; only then is `loadedAudioId` the song.
+- `onQueueLow` (once per queue size) asks JavaScript for more; radio stays in JavaScript (`StreamService.extendRadio`, YouTube Music is metadata-only here) and is refused by the engine for a queue that is gone. Back in the foreground `reconcileNativeQueue` reads the engine and asks again.
+- The queue, position, shuffle and repeat are saved (`QueueSnapshot`, written whole then renamed) and restored at launch (`restoreNativeQueue`, before `setInitialSong`) as paused, with songs rebuilt from what the engine holds.
+- Notification, lock-screen, Bluetooth and Android Auto skips go to the engine (`QueueForwardingPlayer`), so they work with the screen off and JavaScript asleep. Radio fetching still needs JavaScript; do not promise it in the background.
+
 ### Library auto-next
 `nextInPlaylist()` in `playerStore.ts` reads `useSongsStore.getState().songs` at call time to rebuild the queue when `currentPlaylistId === 'library'` and queue is null. `songsStore` must never statically import `playerStore` (only `await import`) — the init-time back-edge used to leave `playerStore` half-initialised.
 
@@ -97,7 +107,7 @@ because a streamed song can arrive before its audio link resolves.
 
 | Area | Files |
 |------|-------|
-| Playback engine | `src/contexts/PlayerContext.tsx`, `src/contexts/playerStatusGuard.ts` |
+| Playback engine | `src/contexts/PlayerContext.tsx`, `src/contexts/playerStatusGuard.ts`; Kotlin `playback/QueueEngine.kt` + `QueueMath.kt` + `QueueSnapshot.kt`, `modules/MainPlayerModule.kt` + `PlayerBridge.kt`, `services/PlaybackService.kt` + `QueueForwardingPlayer.kt`; JS `services/NativeAudioPlayer.ts`, `playback/nativeQueue.ts` |
 | Player state | `src/store/playerStore.ts` |
 | Main UI | `src/components/MiniPlayer.tsx`, `src/screens/NowPlayingScreen.tsx` |
 | Lyrics | `src/components/SynchronizedLyrics.tsx` |
@@ -133,7 +143,7 @@ because a streamed song can arrive before its audio link resolves.
 - For synced library state, SQLite is the phone's source of truth: downloaded tracks and local playlists live in the normal library tables; account-only likes and playlist entries live in `liked_online_songs` / `playlist_online_songs` and stream on demand. Those online rows are not downloads. `sync_outbox` retains local operations and play events while offline, and the account revision cursor advances only after the inbound changes have been applied. First sign-in with an existing library asks the listener to merge or choose a side before binding; keep downloads in every choice.
 - Connect's signed-in Convex session owns active playback, device presence and remote commands. The local audio player remains authoritative on the device that is playing; all other devices use the Connect view and send acknowledged commands. While Listen Together is active, register the phone as unable to accept playback control. Keep song references provider-qualified and resolve them to an on-device copy or an Allegra API stream; never transfer upstream stream URLs between devices.
 - `src/services/ytmusic/` is metadata only (search / next / related). Never add stream-URL extraction, client spoofing or PoToken code there — audio always comes from the catalog providers via `resolver.ts`
-- After changing the queue under a playing track, call `prepareNextInQueue()` — Media3 may have staged the old "next" for gapless advance
+- `prepareNextInQueue()` now only prefetches the next song's cover; there is nothing to stage on Android (the engine holds the whole queue). Changing the queue goes through the store functions, which forward to the engine
 - Type is SF Pro everywhere (Apple Music's face). Styles set only `fontWeight` (and `fontSize`) — never a `fontFamily` for UI text, and no `letterSpacing` (iOS applies Apple's tracking itself; Android gets it from `sfTracking`). iOS uses the system font, which is SF Pro. Android maps the final weight to a bundled SF Pro Text face in `src/theme/appleTypography.ts`, imported first in `index.ts` — keep it first. Only Regular/Semibold/Bold ship: 500 renders Regular, 800+ Bold. The OTFs are Apple-licensed for personal builds only, not a Play Store release
 - Fonts in `assets/fonts/` must be real font binaries — the old Inter files were once saved GitHub HTML pages, which Android silently swapped for Roboto
 - Motion: springs for anything a finger can interrupt, 200–400ms for state changes, 40ms list staggers, max two moving effects per screen, transform/opacity only. Primitives live in `components/allegra/motion.tsx` (`RiseIn`, `Tactile`, `SwapText`, `MorphIcon`, `NudgeIcon`) — reuse them instead of hand-rolling
@@ -183,7 +193,7 @@ because a streamed song can arrive before its audio link resolves.
 - Luvs opens each clip on its hook inside the native player (`LuvsPlayerModule.activateUrl(…, startAtHook)` seeks once the real length is known; the catalogue's duration is often missing, which left every clip at 0:00). `services/luvsHook.ts` and the Kotlin constants must stay in step
 - `MAX_CONCURRENT` downloads is 2 — don't raise it without testing on low-end Android
 - APK size: the phone APK (`luvlyricsapp-apk.yml`) is arm64-v8a only, and native libraries ship compressed (`expo.useLegacyPackaging=true`), since it is sideloaded and download size matters. Native code is ~3/4 of the APK (Skia alone is 11 MB raw), so a new native dependency is the thing to weigh, not JS or images
-- Nothing ticks when nothing is watching. `PlayerBridge`'s 250ms position poller suspends on a channel until `onIsPlayingChanged(true)`; `PlaybackService`'s stall watchdog is armed only while `playWhenReady` and buffering (a new timer needs the same rule); listen-together's 1s seek watch exists only while a room is open (`startSeekWatch`/`stopSeekWatch`); the desktop bridge's heartbeat watchdog starts with the first desktop connect and ends itself, its IP check is 5s in the foreground and 60s in the background. Add a periodic job only if it can stop itself
+- Nothing ticks when nothing is watching. `PlayerBridge`'s 250ms position poller suspends on a channel until `onIsPlayingChanged(true)` and only runs while the app is in front (`setUiVisible`, from the module's activity lifecycle; every change of state still goes out). Hidden lyrics are inert: `SynchronizedLyrics` with `live` off takes no position reports, follows nothing, scrolls and glides nothing, sweeps no words and dances no waveform, and resynchronises in one jump when shown; `SynchronizedLyrics` is the only owner of automatic lyric scrolling; `PlaybackService`'s stall watchdog is armed only while `playWhenReady` and buffering (a new timer needs the same rule); listen-together's 1s seek watch exists only while a room is open (`startSeekWatch`/`stopSeekWatch`); the desktop bridge's heartbeat watchdog starts with the first desktop connect and ends itself, its IP check is 5s in the foreground and 60s in the background. Add a periodic job only if it can stop itself
 - Ambient visuals (shader field, glows) take their frame cap, canvas density and rest rule from `utils/visualBudget` (pure) via `hooks/useVisualBudget` — device tier, Battery Saver (`utils/batterySaver`, native `Startup.isPowerSaveMode` + `onPowerSaveChanged`) and whether music plays. Normal phones: 60fps cap while playing, 24 paused; low-end or Battery Saver: 30fps at 0.6px/pt and rest while paused. The cap redraws once 80% of the gap has passed (a 1/60s cap would skip every other frame on 60Hz). Never add `LOW_END`/`FRAME_S`/`RENDER_SCALE` constants to a visual
 - Start-up is three phases (`services/bootPhases`): first frame (preload, fonts, audio mode, database — awaited by `App.tsx`), then `runWhenIdle(name, job, extraDelayMs)` for everything that can wait (queue hydrations, FTS check, desktop bridge load, playlist migration, Luvs warm-up which is skipped under Battery Saver). New boot work goes in a phase, not straight into `initialize()`. Sentry tracing stays on with stall and native-frames tracking off
 - Library refetch keeps the same array when nothing changed (`store/songsReconcile.reconcileSongs`), cover backfill lands in batches (`songsStore.patchCovers`), and screens don't subscribe to whole stores (`useSongsStore()` with no selector is banned; use selectors or `useShallow`)
@@ -211,6 +221,9 @@ because a streamed song can arrive before its audio link resolves.
 npm run ci
 # runs: check-secrets → lint → typecheck → jest --coverage
 ```
+Kotlin (queue rules, saved-queue format, the progress bus): `cd android && ./gradlew :app:testDebugUnitTest` (JDK 17 and the Android SDK).
+
+The player is also checked on a running emulator or phone, which asserts the transport controls stay on screen and respond (a real tap flips Play/Pause), not that audio plays or a screenshot saved: `.github/scripts/mobile-player-probe.sh <apk|-> <out-dir>` (helpers in `player-assertions.sh`; the app is driven by `lyricflow://` links, `style?canvas=0` switches the looping cover video off).
 
 **If `npm` fails with `Cannot find module '...npm-cli.js'`** (broken global npm install
 on this Windows box), call the binaries directly — same result, no npm shim:
