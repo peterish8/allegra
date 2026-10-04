@@ -10,7 +10,7 @@
 #   2. React draws and answers: a lyricflow:// link navigates (the app's own [diag:link] line says where it landed)
 #   3. the screen layer never died (no "UiRecovery … React instance lost")
 #   4. About opens from Stream and shows its Updates panel — the way out of a bad build must always work
-#   6. lyrics open for 30 s with animations on, so their UI-thread glide runs (it killed the screen in 1.0.2–1.0.4)
+#   6. Now Playing with animations on: the cover, then lyrics switched on, so UI-thread motion actually runs
 #   5. all of it again after a force stop (the second start restores the saved queue and state)
 # Exit code is the number of failed checks; results go to <out-dir>/launch.txt with logcat beside it.
 set -u
@@ -135,23 +135,28 @@ sleep 2
 
 check_start first
 
-# 6. Lyrics, gliding as on a phone: animations on (the emulator's "off" reads as Reduce Motion, which skips the glide —
-#    the UI-thread code that killed the screen in 1.0.2–1.0.4), a streamed song, lyrics open for 30 s. Without a
-#    network the song never plays and this proves nothing, but it never fails a good build either.
+# 6. Now Playing as on a phone: animations on (the emulator's "off" reads as Reduce Motion, which skips the
+#    UI-thread motion — the lyric glide that killed the screen in 1.0.2–1.0.4 never ran in CI). A streamed song opens
+#    on the cover for 20 s (backdrop, glow, canvas), then lyrics are switched on in the open player, the way the
+#    lyrics button does it, for 30 s. Without a network nothing plays and this proves nothing, but it never fails a
+#    good build either.
 adb shell settings put global animator_duration_scale 1
 adb logcat -c
-link "lyricflow://play?q=Blinding%20Lights%20The%20Weeknd&lyrics=1"
-sleep 35
-shot lyrics
+link "lyricflow://play?q=Blinding%20Lights%20The%20Weeknd"
+sleep 20
+shot player-cover
+link "lyricflow://player?lyrics=1"
+sleep 30
+shot player-lyrics
 if [ "$(lost_ui)" -gt 0 ]; then
-  fail "lyrics: the screen died with lyrics open (React instance lost)"
+  fail "player: the screen died in Now Playing (React instance lost)"
   adb logcat -d 2>/dev/null | grep -A 8 "UiRecovery.*React instance lost" | head -n 20 >> "$OUT/launch.txt"
 elif [ -z "$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r')" ] || [ "$(crashes)" -gt 0 ]; then
-  fail "lyrics: the app crashed with lyrics open"
+  fail "player: the app crashed in Now Playing"
 else
-  ok "lyrics: 30 s of gliding lyrics, screen alive"
+  ok "player: 20 s on the cover and 30 s of gliding lyrics, screen alive"
 fi
-adb logcat -d -v time > "$OUT/logcat-lyrics.txt" 2>/dev/null
+adb logcat -d -v time > "$OUT/logcat-player.txt" 2>/dev/null
 adb shell settings put global animator_duration_scale 0
 
 check_start second

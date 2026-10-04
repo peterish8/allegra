@@ -110,6 +110,38 @@ jobs:
           path: apps/mobile/LuvLyrics.apk
           retention-days: 14
 
+  # The unit-level gate: the same checks as Mobile CI (secrets, lint, typecheck, every test — including
+  # src/workletSafety.test.ts, which reads every UI-thread function for what would throw on the phone's UI thread).
+  # Mobile CI is a separate workflow, so without this a failing test never stopped a release.
+  checks:
+    name: Secrets, lint, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22: the sync tests open a real SQLite database through node:sqlite, which Node 20 lacks.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Secret scan
+        run: npm run security:secrets
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:ci
+
   # The release gate: the same commit, built for the emulator's CPU, must open — twice, from cold — draw, answer a
   # link, keep its screen layer alive, and reach About and its Updates panel. 1.0.3 compiled and was published,
   # then closed on every launch on every phone, and a phone with a build that cannot open cannot update itself.
@@ -189,7 +221,8 @@ jobs:
   publish:
     name: Publish main APK
     if: github.ref == 'refs/heads/main'
-    needs: [apk, launch-check]
+    # Every gate: it builds, its checks and tests pass, and it opens on an emulator. Never drop one.
+    needs: [apk, checks, launch-check]
     runs-on: ubuntu-latest
     permissions:
       contents: write
