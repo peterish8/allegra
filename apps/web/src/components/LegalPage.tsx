@@ -2,7 +2,7 @@ import { motion } from 'motion/react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-import { ACCOUNT_RETENTION_DAYS, GUEST_RETENTION_DAYS, MINIMUM_AGE, OPERATOR, POLICY_VERSION, operatorPublished, type LegalDocument } from '@shared/legal';
+import { ACCOUNT_RETENTION_DAYS, GUEST_RETENTION_DAYS, MINIMUM_AGE, OPERATOR, POLICY_VERSION, REPORT_DETAIL_RETENTION_DAYS, operatorPublished, type LegalDocument } from '@shared/legal';
 
 import { paths } from '../lib/routes';
 import { itemVariants, pageVariants } from '../motion';
@@ -117,7 +117,7 @@ function Privacy() {
           <li>An account that has not been used for {ACCOUNT_RETENTION_DAYS} days (two years) is erased automatically.</li>
           <li>Only your 25 most recent listens are kept; older ones are dropped as new ones arrive.</li>
           <li>A device that has been offline for 30 days is forgotten.</li>
-          <li>Reports are kept for as long as it takes to deal with them and to keep a record that we did.</li>
+          <li>Reports are kept as a record. The reporter&rsquo;s contact details and message are deleted {REPORT_DETAIL_RETENTION_DAYS} days after the report is closed.</li>
         </ul>
       </Block>
 
