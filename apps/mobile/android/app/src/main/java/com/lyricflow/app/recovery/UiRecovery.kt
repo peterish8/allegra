@@ -100,14 +100,21 @@ object UiRecovery {
 
 /** Registers [UiRecovery] with Expo's host (listed in `ExpoModulesPackageList.getPackageList`). */
 class UiRecoveryPackage : Package {
+    // Called while MainApplication is being constructed, before Android has attached its base context: the
+    // context must only be kept here, never used (`applicationContext` on it threw and the app could not start).
     override fun createReactNativeHostHandlers(context: Context): List<ReactNativeHostHandler> =
-        listOf(UiRecoveryHandler(context.applicationContext))
+        listOf(UiRecoveryHandler(context))
 }
 
-private class UiRecoveryHandler(private val app: Context) : ReactNativeHostHandler {
+private class UiRecoveryHandler(private val context: Context) : ReactNativeHostHandler {
     override fun onReactInstanceException(useDeveloperSupport: Boolean, exception: Exception) {
         // A development build shows the red box instead.
         if (useDeveloperSupport) return
-        UiRecovery.onReactLost(app, exception)
+        try {
+            UiRecovery.onReactLost(context.applicationContext ?: context, exception)
+        } catch (e: Exception) {
+            // Recovery must never be the thing that takes the app down.
+            android.util.Log.e("UiRecovery", "recovery failed", e)
+        }
     }
 }
