@@ -6,10 +6,11 @@ import { opsForGuestMerge } from '../user/libraryOps.js';
 import type { SongSnapshot } from '../shared/songRef.js';
 import { MemoryUserStore, RECENTLY_PLAYED_LIMIT, isPersonalised, type ProfileChange, type UserData, type UserStore } from '../user/store.js';
 import { mergeTaste } from '../user/taste.js';
+import { ACTIVE_TOUCH_DAYS } from '../shared/legal.js';
 import type { GuestTokenVerifier, TokenVerifier, VerifiedCaller } from './verifier.js';
 
 /** How stale a profile's last-active time may get before a read-only listener moves it on. */
-const ACTIVE_TOUCH_MS = 7 * 24 * 60 * 60 * 1000;
+const ACTIVE_TOUCH_MS = ACTIVE_TOUCH_DAYS * 24 * 60 * 60 * 1000;
 
 export interface AuthUser {
   readonly userId: string;

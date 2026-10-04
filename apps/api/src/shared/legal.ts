@@ -19,6 +19,13 @@ export const GUEST_RETENTION_DAYS = 90;
 /** An account nobody has used for this long is erased. */
 export const ACCOUNT_RETENTION_DAYS = 730;
 
+/**
+ * A listener who only reads moves their last-active time on at most this often (the API's
+ * keepActive). The inactivity sweep adds it to every retention period, so nobody is erased
+ * before the period the policy states.
+ */
+export const ACTIVE_TOUCH_DAYS = 7;
+
 export const LEGAL_PATHS = {
   privacy: '/privacy',
   terms: '/terms',
