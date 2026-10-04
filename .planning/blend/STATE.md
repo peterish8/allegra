@@ -7,7 +7,7 @@ Updated 2026-10-04. Status: in progress. Owner approved PLAN.md section 2 on 202
 | 01-01 | done | 98efa47 | touch-slack retention edges pass |
 | 01-02 | blocked | | legacy closed reports lack `closedAt`; choose a conservative backfill policy |
 | 01-03 | blocked | | `playStats` also names an active device-local counter; narrow scope and verify Convex data |
-| 01-04 | not started | | |
+| 01-04 | blocked | | depends on 01-02; tombstone time fields and full-resync pass-through need explicit handling |
 | 02-01 | not started | | |
 | 02-02 | not started | | |
 | 02-03 | not started | | |
