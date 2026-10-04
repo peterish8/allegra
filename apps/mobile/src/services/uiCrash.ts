@@ -36,3 +36,15 @@ export function reportRecoveredCrash(): void {
     ],
   );
 }
+
+/**
+ * The app drew its first screen: this start no longer counts towards the native rescue screen
+ * (`recovery/LaunchGuard.kt`), which opens after three starts in a row that never got this far.
+ */
+export function markStartHealthy(): void {
+  try {
+    getNativeModule<{ markHealthy?: () => void }>('Startup')?.markHealthy?.();
+  } catch {
+    // An older native build has no launch guard.
+  }
+}

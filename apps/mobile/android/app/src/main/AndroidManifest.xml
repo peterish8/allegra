@@ -47,6 +47,9 @@
       </intent-filter>
     </activity>
 
+    <!-- The way out of a build that cannot open (recovery/RescueActivity.kt): native, no React. -->
+    <activity android:name=".recovery.RescueActivity" android:exported="false" android:theme="@style/AppTheme" android:screenOrientation="portrait" android:label="@string/app_name"/>
+
     <!-- Media3 session service — supplies the system media notification, lock
          screen controls, Bluetooth/Android Auto. The intent-filter is required
          for Media3 to discover the session. -->

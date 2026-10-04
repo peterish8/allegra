@@ -15,6 +15,7 @@ on:
       - "packages/**"
       - "convex/_generated/**"
       - ".github/workflows/mobile-apk.yml"
+      - ".github/scripts/mobile-launch-check.sh"
       - "!apps/mobile/**/*.md"
       - "!apps/mobile/docs/**"
   workflow_dispatch:
@@ -109,10 +110,86 @@ jobs:
           path: apps/mobile/LuvLyrics.apk
           retention-days: 14
 
+  # The release gate: the same commit, built for the emulator's CPU, must open — twice, from cold — draw, answer a
+  # link, keep its screen layer alive, and reach About and its Updates panel. 1.0.3 compiled and was published,
+  # then closed on every launch on every phone, and a phone with a build that cannot open cannot update itself.
+  # `publish` waits for this; a failure here leaves the last good build on apk-latest.
+  launch-check:
+    name: Opens on an emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Signing key
+        run: |
+          mkdir -p /tmp/tpl && cd /tmp/tpl
+          npm pack expo-template-bare-minimum@sdk-54 --silent
+          tar -xzf expo-template-bare-minimum-*.tgz package/android/app/debug.keystore
+          cp package/android/app/debug.keystore "$GITHUB_WORKSPACE/apps/mobile/android/app/debug.keystore"
+
+      # The phone APK is arm64 only; the emulator runs x86_64. Same sources, same release build type.
+      - name: Build release APK (x86_64)
+        working-directory: apps/mobile/android
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          EXPO_PUBLIC_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -PreactNativeArchitectures=x86_64 \
+            "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/apps/mobile/LuvLyrics-x86_64.apk"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Open the app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: apps/mobile
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # Vulkan, as the smoke test: on GLES the emulator's own GL pipe can deadlock (mobile-smoke.yml).
+          script: |
+            adb shell setprop debug.hwui.renderer skiavk
+            bash ../../.github/scripts/mobile-launch-check.sh LuvLyrics-x86_64.apk launch
+
+      - name: Upload launch check
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launch-check
+          path: apps/mobile/launch/
+          retention-days: 14
+
   publish:
     name: Publish main APK
     if: github.ref == 'refs/heads/main'
-    needs: apk
+    needs: [apk, launch-check]
     runs-on: ubuntu-latest
     permissions:
       contents: write

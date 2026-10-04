@@ -22,7 +22,8 @@ import java.io.File
  * Here the error is written down (`ui-crash.txt`, read once by JavaScript at the next start through
  * `Startup.takeUiCrash`, which shows it so it can be reported) and the activity is started again, which starts a
  * fresh React instance. The music is not touched: the service keeps its queue and JavaScript reads it back.
- * A run of failures stops the restarts, so a screen that fails on every start cannot loop.
+ * A run of failures stops the restarts, so a screen that fails on every start cannot loop: the rescue screen
+ * ([RescueActivity], native) opens instead, with the version and a way to install the latest build.
  */
 object UiRecovery {
     private const val TAG = "UiRecovery"
@@ -36,9 +37,14 @@ object UiRecovery {
     private val main = Handler(Looper.getMainLooper())
     private val restarts = ArrayDeque<Long>()
 
+    /** The rescue screen is up (or React was started only on the way to it): nothing may restart over it. */
+    @Volatile
+    var rescuing = false
+
     fun onReactLost(context: Context, error: Exception) {
         Log.e(TAG, "React instance lost; restarting the screen", error)
         record(context, error)
+        if (rescuing) return
         val now = System.currentTimeMillis()
         val restart = synchronized(restarts) {
             while (restarts.isNotEmpty() && now - restarts.first() > WINDOW_MS) restarts.removeFirst()
@@ -50,7 +56,15 @@ object UiRecovery {
             }
         }
         if (!restart) {
-            Log.e(TAG, "React instance lost $MAX_RESTARTS times in ${WINDOW_MS / 1000}s; not restarting again")
+            Log.e(TAG, "React instance lost $MAX_RESTARTS times in ${WINDOW_MS / 1000}s; opening the rescue screen")
+            rescuing = true
+            main.postDelayed({
+                try {
+                    RescueActivity.open(context)
+                } catch (e: Exception) {
+                    Log.e(TAG, "could not open the rescue screen", e)
+                }
+            }, RESTART_DELAY_MS)
             return
         }
         main.postDelayed({
@@ -62,6 +76,23 @@ object UiRecovery {
                 Log.e(TAG, "could not restart the screen", e)
             }
         }, RESTART_DELAY_MS)
+    }
+
+    /** "Open LuvLyrics again" from the rescue screen: a fresh budget of restarts. */
+    fun resetRestarts() {
+        rescuing = false
+        synchronized(restarts) { restarts.clear() }
+    }
+
+    /** The last lost instance's error, left in place (the rescue screen shows it). Null when there is none. */
+    fun peek(context: Context): String? {
+        val file = File(context.filesDir, FILE)
+        if (!file.isFile) return null
+        return try {
+            file.readText().lines().drop(1).joinToString("\n").trim().ifEmpty { null }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /** The last lost instance's error, once: the file is removed as it is read. Null when there is none. */

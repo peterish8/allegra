@@ -9,6 +9,9 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnable
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 import expo.modules.ReactActivityDelegateWrapper
+import com.lyricflow.app.recovery.LaunchGuard
+import com.lyricflow.app.recovery.RescueActivity
+import com.lyricflow.app.recovery.UiRecovery
 
 class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -16,6 +19,16 @@ class MainActivity : ReactActivity() {
     // coloring the background, status bar, and navigation bar.
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
+    if (LaunchGuard.rescueThisStart) {
+      // The last starts never drew a screen: the native rescue screen instead of React (which was not loaded,
+      // see createReactActivityDelegate), so a broken build can still be replaced from the phone.
+      UiRecovery.rescuing = true
+      super.onCreate(null)
+      RescueActivity.open(this)
+      finish()
+      return
+    }
+    LaunchGuard.noteStart(this)
     super.onCreate(null)
   }
 
@@ -30,6 +43,9 @@ class MainActivity : ReactActivity() {
    * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
    */
   override fun createReactActivityDelegate(): ReactActivityDelegate {
+    // Runs in ReactActivity's constructor, before onCreate: whether this start is a rescue is decided here, so a
+    // rescue start never loads React (no component name, no app).
+    LaunchGuard.decideStart()
     return ReactActivityDelegateWrapper(
           this,
           BuildConfig.IS_NEW_ARCHITECTURE_ENABLED,
@@ -37,7 +53,10 @@ class MainActivity : ReactActivity() {
               this,
               mainComponentName,
               fabricEnabled
-          ){})
+          ){
+            override fun getMainComponentName(): String? =
+                if (LaunchGuard.rescueThisStart) null else super.getMainComponentName()
+          })
   }
 
   /**

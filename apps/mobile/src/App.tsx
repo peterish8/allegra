@@ -10,6 +10,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from './navigation';
 import ErrorBoundary from './components/ErrorBoundary';
+import { markStartHealthy } from './services/uiCrash';
 import { initDatabase } from './database/db';
 import { useSongsStore } from './store/songsStore';
 import { usePlayerStore } from './store/playerStore';
@@ -213,6 +214,12 @@ const App: React.FC = () => {
 
     initialize();
   }, [fetchSongs, retryKey]);
+
+  // The first screen is drawn (the app, or its own retry screen): this start counts as healthy, so the native
+  // rescue screen (recovery/LaunchGuard.kt) stays for builds that never get here.
+  useEffect(() => {
+    if (isReady) markStartHealthy();
+  }, [isReady]);
 
   if (!isReady) {
     return (

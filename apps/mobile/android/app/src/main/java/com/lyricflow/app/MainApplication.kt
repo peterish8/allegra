@@ -15,6 +15,7 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
+import com.lyricflow.app.recovery.LaunchGuard
 import com.lyricflow.app.startup.StartupPreloader
 
 class MainApplication : Application(), ReactApplication {
@@ -40,6 +41,8 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // First: MainActivity's constructor reads it to decide whether this start opens the rescue screen.
+    LaunchGuard.init(this)
     StartupPreloader.preload(this)
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())

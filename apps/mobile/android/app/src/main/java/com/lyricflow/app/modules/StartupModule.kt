@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
+import com.lyricflow.app.recovery.LaunchGuard
 import com.lyricflow.app.recovery.UiRecovery
 import com.lyricflow.app.startup.StartupPreloader
 import expo.modules.kotlin.modules.Module
@@ -42,6 +43,12 @@ class StartupModule : Module() {
                 "cores" to Runtime.getRuntime().availableProcessors(),
                 "apiLevel" to Build.VERSION.SDK_INT,
             )
+        }
+
+        // The app drew its first screen: this start does not count towards the rescue screen (recovery/LaunchGuard.kt).
+        Function("markHealthy") {
+            appContext.reactContext?.let { LaunchGuard.markHealthy(it) }
+            null
         }
 
         // The error that took the last React instance down (recovery/UiRecovery.kt), once; null when there is none.
