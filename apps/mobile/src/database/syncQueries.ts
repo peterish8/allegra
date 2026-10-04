@@ -138,12 +138,13 @@ export interface LocalSongRow {
   readonly duration: number;
   readonly coverImageUri?: string;
   readonly originId?: string;
+  readonly coverRemoteUri?: string;
 }
 
 export const getLocalSongs = (): Promise<LocalSongRow[]> =>
   withDbRead(async db =>
-    (await db.getAllAsync<{ id: string; title: string; artist: string | null; album: string | null; duration: number; cover_image_uri: string | null; origin_id: string | null }>(
-      'SELECT id, title, artist, album, duration, cover_image_uri, origin_id FROM songs',
+    (await db.getAllAsync<{ id: string; title: string; artist: string | null; album: string | null; duration: number; cover_image_uri: string | null; origin_id: string | null; cover_remote_uri: string | null }>(
+      'SELECT id, title, artist, album, duration, cover_image_uri, origin_id, cover_remote_uri FROM songs',
     )).map(row => ({
       id: row.id,
       title: row.title,
@@ -152,6 +153,7 @@ export const getLocalSongs = (): Promise<LocalSongRow[]> =>
       duration: row.duration ?? 0,
       ...(row.cover_image_uri ? { coverImageUri: row.cover_image_uri } : {}),
       ...(row.origin_id ? { originId: row.origin_id } : {}),
+      ...(row.cover_remote_uri ? { coverRemoteUri: row.cover_remote_uri } : {}),
     })),
   );
 
@@ -183,6 +185,63 @@ const setOriginIdIn = async (db: Db, songId: string, ref: string): Promise<boole
 export const setOriginId = (songId: string, ref: string): Promise<void> =>
   withDbWrite(async db => {
     await setOriginIdIn(db, songId, ref);
+  });
+
+/** The catalog's https cover for a song that has none recorded yet (Connect sends it; see db.ts). */
+export const setCoverRemoteUri = (songId: string, url: string): Promise<void> =>
+  withDbWrite(async db => {
+    await db.runAsync(
+      "UPDATE songs SET cover_remote_uri = ? WHERE id = ? AND (cover_remote_uri IS NULL OR cover_remote_uri = '')",
+      [url, songId],
+    );
+  });
+
+/** A song on this phone that another device could not yet find, or could not show a cover for. */
+export interface CatalogGap {
+  readonly id: string;
+  readonly title: string;
+  readonly artist?: string;
+  readonly originId?: string;
+  readonly coverImageUri?: string;
+}
+
+/**
+ * Songs with no catalog origin, or with only a cover file that never leaves the phone, that the
+ * catalog has not been asked about since `checkedBefore` (ms). Recently played songs first: they
+ * are the ones most likely to be picked for another device.
+ */
+export const songsMissingCatalogLinks = (limit: number, checkedBefore: number): Promise<CatalogGap[]> =>
+  withDbRead(async db => {
+    const rows = await db.getAllAsync<{
+      id: string;
+      title: string;
+      artist: string | null;
+      origin_id: string | null;
+      cover_image_uri: string | null;
+    }>(
+      `SELECT id, title, artist, origin_id, cover_image_uri FROM songs
+       WHERE is_hidden = 0 AND title <> ''
+         AND (origin_id IS NULL
+              OR ((cover_remote_uri IS NULL OR cover_remote_uri = '')
+                  AND (cover_image_uri IS NULL OR cover_image_uri NOT LIKE 'https://%')))
+         AND (catalog_checked_at IS NULL OR catalog_checked_at < ?)
+       ORDER BY (last_played IS NULL), last_played DESC, date_created DESC
+       LIMIT ?`,
+      [checkedBefore, limit],
+    );
+    return rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      ...(row.artist ? { artist: row.artist } : {}),
+      ...(row.origin_id ? { originId: row.origin_id } : {}),
+      ...(row.cover_image_uri ? { coverImageUri: row.cover_image_uri } : {}),
+    }));
+  });
+
+/** Remember that the catalog was asked about this song, found or not. */
+export const markCatalogChecked = (songId: string, at: number): Promise<void> =>
+  withDbWrite(async db => {
+    await db.runAsync('UPDATE songs SET catalog_checked_at = ? WHERE id = ?', [at, songId]);
   });
 
 const upsertPlaylistIn = async (db: Db, id: string, name: string, description: string | undefined, createdAt: number): Promise<boolean> =>

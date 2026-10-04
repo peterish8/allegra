@@ -162,6 +162,25 @@ It closes the gaps a checklist review of Connect against Spotify Connect's behav
   a stored album/playlist context, push to wake a closed phone app, and drag-to-reorder in the
   remote queue (move-to-next is the only reorder).
 
+## Picks on the remote, and covers across devices (2026-10-04)
+
+Branch `feat/native-queue-engine`. Plan and status: [REMOTE-CONTROL-PLAN.md](./REMOTE-CONTROL-PLAN.md).
+
+- **Reported live:** a song tapped on the phone while it controlled the laptop played on the phone
+  (the laptop stopped); covers showed on the device that played but as the generated cover on the
+  other one, both ways.
+- **Cause:** the phone forwarded a pick only when the song already carried a catalog ref, so older
+  downloads and local files played here and claimed playback; voice and the widget skipped Connect
+  entirely. Covers: the phone sent `''` for every download (its cover is a local file), the website
+  re-sent the stored library snapshot's cover (often that same `''`) instead of the one it showed,
+  and neither receiver looked a missing cover up.
+- **Fix:** `packages/connect/src/routing.ts` (`decidePlaybackRoute`, `ConnectView.ready`, offline
+  notice), the phone's `pickRouter` / `playbackIntents` / "Play on this phone?" sheet,
+  `@shared/artwork`, `songs.cover_remote_uri` with a catalog backfill, receiver-side cover lookups on
+  both clients, and autoplay for a queue that arrived by Connect. No wire or Convex change.
+- **Verified:** typecheck, lint and unit tests (Connect package, phone, web). **Not verified:** a
+  signed-in two-device run, a phone (none attached), the database migration on a real install.
+
 ## Important files
 
 - Contract: [`../../docs/connect-contract.md`](../../docs/connect-contract.md)

@@ -30,6 +30,7 @@ import { CanvasArtwork } from '../services/canvas/types';
 import { isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
 import { isCoverFull } from './player/coverStage';
 import { fullCoverHeight } from './NowPlayingLyricsArea';
+import { useAppActive } from '../hooks/useAppActive';
 import { diag } from '../utils/diag';
 
 interface NowPlayingBackgroundProps {
@@ -60,6 +61,8 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   const { frame, onLayout } = usePlayerFrame();
   // The shader only draws while this screen is the one in front.
   const focused = useIsFocused();
+  const appActive = useAppActive();
+  const surfaceActive = focused && appActive;
   const { width, height } = frame;
   const style = useSettingsStore(s => s.playerBackground);
   const appleInspired = useSettingsStore(s => s.appleMusicInspired);
@@ -67,11 +70,11 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
 
   const glowOn = style === 'blend' && showLyrics;
   // The glow (a Skia canvas and a palette read) sat invisible under the cover on every open of the player. It is
-  // built once the open has settled (as the hidden lyrics are), or at once if lyrics are opened first, and then
-  // stays, so it cross-fades both ways and a tap on lyrics never waits for it.
-  const [glowWanted, setGlowWanted] = useState(glowOn);
+  // built once the open has settled while this route and app are visible, or at once if lyrics are opened first,
+  // and then stays, so it cross-fades both ways and a tap on lyrics never waits for it.
+  const [glowWanted, setGlowWanted] = useState(glowOn && surfaceActive);
   useEffect(() => {
-    if (glowWanted || style !== 'blend') return undefined;
+    if (glowWanted || style !== 'blend' || !surfaceActive) return undefined;
     if (glowOn) {
       setGlowWanted(true);
       return undefined;
@@ -81,7 +84,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
       task = InteractionManager.runAfterInteractions(() => setGlowWanted(true));
     }, GLOW_PREMOUNT_MS);
     return () => { clearTimeout(t); task?.cancel(); };
-  }, [glowOn, glowWanted, style]);
+  }, [glowOn, glowWanted, style, surfaceActive]);
   const glowColors = useGlowColors(style === 'blend' && glowWanted ? coverImageUri : null);
 
   // Apple <-> glow cross-fade.
@@ -130,7 +133,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   if (style === 'aura') {
     return (
       <View style={StyleSheet.absoluteFill} pointerEvents="none" onLayout={onLayout}>
-        <AuraBackdrop palette={palette} width={width} height={height} playing={playing} active={focused} quiet={showLyrics} lift={auraLift} />
+        <AuraBackdrop palette={palette} width={width} height={height} playing={playing} active={surfaceActive} quiet={showLyrics} lift={auraLift} />
       </View>
     );
   }
@@ -152,7 +155,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
         <Animated.View style={[styles.hero, { height: heroH }, heroFollow]}>
           <CanvasVideoLayer
             canvas={canvasAllowed ? canvas : null}
-            playing={playing && canvasAllowed}
+            playing={playing && canvasAllowed && surfaceActive}
             onVisibleChange={onVisibleChange}
             scrimStrength={0}
             overlay={<AppleBackdrop uri={coverImageUri} palette={palette} showHero={heroOn} frame={frame} veil />}
@@ -162,7 +165,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
 
       {style === 'blend' && glowWanted ? (
         <Animated.View style={[StyleSheet.absoluteFill, glowStyle]}>
-          <GlowBackground colors={glowColors} variant="player" active={glowOn} />
+          <GlowBackground colors={glowColors} variant="player" active={glowOn && surfaceActive} />
         </Animated.View>
       ) : null}
     </View>

@@ -30,6 +30,7 @@ const mockFetchLyrics = jest.fn();
 jest.mock('../LyricaService', () => ({
   lyricaService: {
     fetchLyrics: (...args: unknown[]) => mockFetchLyrics(...args),
+    warm: () => {},
     parseLrc: (lrc: string) => lrc.split('\n').map((text, i) => ({ timestamp: i, text, lineOrder: i })),
   },
 }));
@@ -167,10 +168,14 @@ describe('shouldRefillQueue (Echo’s auto load more)', () => {
     expect(shouldRefillQueue({ ...base, enabled: false, playlistId: 'stream' })).toBe(true);
   });
 
-  it('never tops up repeat-one, another device’s queue, a shared room, or no queue', () => {
+  it('never tops up repeat-one, a shared room, or no queue', () => {
     expect(shouldRefillQueue({ ...base, repeat: 'one' })).toBe(false);
-    expect(shouldRefillQueue({ ...base, playlistId: 'connect' })).toBe(false);
     expect(shouldRefillQueue({ ...base, playlistId: 'listen-together' })).toBe(false);
     expect(shouldRefillQueue({ ...base, playlistId: null })).toBe(false);
+  });
+
+  it('keeps a queue handed over by another device going, when the listener has it on', () => {
+    expect(shouldRefillQueue({ ...base, playlistId: 'connect' })).toBe(true);
+    expect(shouldRefillQueue({ ...base, playlistId: 'connect', enabled: false })).toBe(false);
   });
 });

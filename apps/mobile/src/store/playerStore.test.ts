@@ -141,6 +141,17 @@ describe('Connect song selection routing', () => {
     stop();
   });
 
+  it('plays here without asking when the listener chose this phone', () => {
+    const selected = { id: 'chosen-song', title: 'Chosen', artist: 'Artist', audioUri: 'file:///chosen' } as Song;
+    const route = jest.fn(() => true);
+    setPlaylistSelectionRouter(route);
+
+    usePlayerStore.getState().setPlaylistQueue('library', [selected], 0, true, { here: true });
+
+    expect(route).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().currentSongId).toBe('chosen-song');
+  });
+
   it('keeps Connect-owned loads and paused restores out of the router', () => {
     const selected = { id: 'local-song', title: 'Local', artist: 'Artist', audioUri: 'file:///song' } as Song;
     const route = jest.fn(() => true);

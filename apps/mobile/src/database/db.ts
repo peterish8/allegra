@@ -306,6 +306,18 @@ const initializeTables = async (database: SQLite.SQLiteDatabase): Promise<void> 
       log('Migration complete');
     }
     await database.execAsync('CREATE INDEX IF NOT EXISTS idx_songs_origin_id ON songs(origin_id)');
+    // Connect: the catalog's https cover beside a download's local cover file, which no other
+    // device can open, and when the catalog was last asked about a song that has neither yet.
+    if (!columns.some(c => c.name === 'cover_remote_uri')) {
+      log('Adding cover_remote_uri column...');
+      await database.execAsync('ALTER TABLE songs ADD COLUMN cover_remote_uri TEXT');
+      log('Migration complete');
+    }
+    if (!columns.some(c => c.name === 'catalog_checked_at')) {
+      log('Adding catalog_checked_at column...');
+      await database.execAsync('ALTER TABLE songs ADD COLUMN catalog_checked_at INTEGER');
+      log('Migration complete');
+    }
     // Word-synced lyrics: each line's word timings as JSON (`LyricWord[]`), null for a line-synced line.
     const lyricColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(lyrics)');
     if (!lyricColumns.some(c => c.name === 'words')) {

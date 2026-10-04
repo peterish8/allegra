@@ -3,6 +3,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import PillPlayer from '../PillPlayer';
 import { useConnect } from '../../services/connect/ConnectProvider';
+import { useSnapshotCover } from '../../services/connect/useSnapshotCover';
 import { openPlayerSheet } from '../../navigation/playerSheet';
 import { usePlayerStore } from '../../store/playerStore';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -20,6 +21,9 @@ export const ConnectMiniPlayer: React.FC = () => {
     state.miniPlayerHiddenSources.size === 1 && state.miniPlayerHiddenSources.has('NowPlaying'));
   const view = connect.view;
   const song = view?.song;
+  const cover = useSnapshotCover(song);
+  // A song picked here is being looked up for the device that plays: show it on its way.
+  const pending = connect.pendingPick;
 
   useEffect(() => {
     if (!connect.remotePlayback || !view?.song) return;
@@ -42,9 +46,9 @@ export const ConnectMiniPlayer: React.FC = () => {
 
   return (
     <PillPlayer
-      title={song.title}
-      artist={song.artist}
-      coverImageUri={song.artwork}
+      title={pending ? pending.title : song.title}
+      artist={pending ? `Sending to ${pending.deviceName}…` : song.artist}
+      coverImageUri={pending ? undefined : cover || undefined}
       playing={view.isPlaying}
       bottom={bottom}
       sheetUp={hiddenOnlyBySheet}

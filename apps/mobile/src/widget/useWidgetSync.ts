@@ -12,6 +12,7 @@ import { requestWidgetUpdate } from 'react-native-android-widget';
 import React from 'react';
 import { usePlayerStore } from '../store/playerStore';
 import { usePlaylistStore } from '../store/playlistStore';
+import { routeSongPick } from '../services/connect/playbackIntents';
 import { positionSV, durationSV } from '../playback/positionBus';
 import { openPlayerSheet } from '../navigation/playerSheet';
 import { NowPlayingWidget, PlaylistWidget } from './SongWidget';
@@ -126,8 +127,10 @@ export const useWidgetLinks = (): void => {
         if (songs.length === 0) return;
         const songId = params.get('song');
         const index = Math.max(0, songId ? songs.findIndex(s => s.id === songId) : 0);
-        if (player.currentSongId === songs[index].id) player.requestPlayback(true);
-        else player.setPlaylistQueue(playlistId, songs, index);
+        // The phone's own paused song included: while another device plays, the tap goes there.
+        if (player.currentSongId === songs[index].id) {
+          if (!routeSongPick({ playlistId, songs, startIndex: index })) player.requestPlayback(true);
+        } else player.setPlaylistQueue(playlistId, songs, index);
         openPlayerSheet(songs[index].id);
       } else if (path === 'now-playing') {
         if (player.currentSongId) openPlayerSheet(player.currentSongId);

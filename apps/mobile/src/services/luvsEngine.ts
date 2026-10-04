@@ -158,7 +158,9 @@ export const luvsEngine = {
   async loadMore(): Promise<UnifiedSong[]> {
     if (!native) return [];
     syncLibrary(native);
-    await pushTaste(native);
+    // The feed is already on screen: a deeper page never waits on YouTube Music. The answer
+    // reaches the engine when it lands and joins the page after this one.
+    pushTaste(native).catch(() => {});
     // Kotlin sends only the new page; appending here keeps bridge traffic flat
     // instead of growing with every page.
     const page = await native.loadMore();

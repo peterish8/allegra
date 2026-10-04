@@ -31,7 +31,7 @@ import { SettingsPage } from './components/SettingsPage';
 import { MusicFlowShader } from './components/shader/MusicFlowShader';
 import type { ImmersivePlayerMode } from './components/PlayerPanel';
 import { SearchResults, artistsFromSongs } from './components/SearchResults';
-import { Artwork, EmptyState, IconButton, OfflineToast, TactileButton } from './components/ui';
+import { Artwork, EmptyState, IconButton, NoticeToast, OfflineToast, TactileButton } from './components/ui';
 import { useAccount, useListenTracker } from './hooks/useAccount';
 import { accountDisplayName, isResolvingAccount, recallAccountName, rememberAccountName } from './lib/accountState';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
@@ -49,6 +49,8 @@ import type { Palette } from './lib/palette';
 import { ApiError, applyLibraryOps, ensureSession, fetchArtist, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
 import { shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
 import { resolveSnapshotForPlayback, snapshotForSong, snapshotToDisplaySong, useConnect } from './hooks/useConnect';
+import { useSnapshotArtworks } from './hooks/useSnapshotArtwork';
+import { isControllingAnotherDevice } from '../../../packages/connect/src/index';
 import type { LibrarySong } from './lib/libraryRows';
 import { legacyHashToPath, parseRoute, paths } from './lib/routes';
 import { pickTopResult } from './lib/topResult';
@@ -202,12 +204,24 @@ export default function App() {
   const audio = useAudioPlayer();
   const connect = useConnect(audio);
   const connectView = connect.view;
-  const remotePlayback = Boolean(connectView?.activeDeviceId && connectView.activeDeviceOnline
-    && (connectView.activeDeviceId !== connect.deviceId || connect.tabStatus === 'other-tab'));
-  const remoteSong = remotePlayback && connectView?.song ? snapshotToDisplaySong(connectView.song) : null;
+  // Another device plays (or this browser's other tab does): this tab is its remote.
+  const remotePlayback = isControllingAnotherDevice(connectView, connect.deviceId)
+    || Boolean(connect.tabStatus === 'other-tab' && connectView?.activeDeviceId && connectView.activeDeviceOnline);
+  // A song sent without a cover it could share is shown with the one looked up here.
+  const remoteSongs = useMemo(
+    () => (remotePlayback && connectView ? [connectView.song, ...connectView.queue] : []),
+    [remotePlayback, connectView]
+  );
+  const remoteCovers = useSnapshotArtworks(remoteSongs);
+  const shownRemote = (snapshot: SongSnapshot): LibrarySong => {
+    const song = snapshotToDisplaySong(snapshot);
+    const cover = remoteCovers.get(snapshot.ref);
+    return cover && cover !== song.artwork ? { ...song, artwork: cover } : song;
+  };
+  const remoteSong = remotePlayback && connectView?.song ? shownRemote(connectView.song) : null;
   const playerSong = remotePlayback ? remoteSong : audio.currentSong;
   const playerQueue = remotePlayback && connectView
-    ? [...(remoteSong ? [remoteSong] : []), ...connectView.queue.map(snapshotToDisplaySong)]
+    ? [...(remoteSong ? [remoteSong] : []), ...connectView.queue.map(shownRemote)]
     : audio.queue;
   const playerTime = remotePlayback ? connect.livePosition : audio.currentTime;
   const playerDuration = remotePlayback ? (remoteSong?.duration ?? 0) : audio.duration;
@@ -275,6 +289,13 @@ export default function App() {
   transportRef.current = audio;
   /** When true, Next keeps pulling similar-vibe tracks instead of remastered search hits. */
   const radioActiveRef = useRef(false);
+  // A song another device sent here keeps going with similar ones, as Spotify's autoplay carries on
+  // wherever the music is, when the listener has "keep playing similar songs" on.
+  const autoplaySimilarRef = useRef(settings.autoplaySimilar);
+  autoplaySimilarRef.current = settings.autoplaySimilar;
+  useEffect(() => {
+    if (connect.connectLoads > 0) radioActiveRef.current = autoplaySimilarRef.current;
+  }, [connect.connectLoads]);
   const aiPicksRef = useRef<UnifiedSong[]>([]);
   const reloadPlaylists = playlists.reload;
   // Lock screen, media keys, headset buttons and car head units, all through the same funnel.
@@ -986,7 +1007,7 @@ export default function App() {
   };
 
   const playSong = async (song: UnifiedSong, queue: UnifiedSong[] = displaySongs): Promise<void> => {
-    if (connect.playRemote(song, queue)) {
+    if (await connect.playRemote(song, queue)) {
       setPlayerMode('mini');
       tapHaptic();
       return;
@@ -1727,6 +1748,7 @@ export default function App() {
         onOpenArtist={openArtistFromPlayer}
       />
       <OfflineToast visible={offline} />
+      <NoticeToast notice={connect.notice} onDone={connect.dismissNotice} />
     </div>
     </QueueActionsContext.Provider>
     </PlaylistsContext.Provider>

@@ -170,6 +170,7 @@ export const StreamService = {
     const meta = catalog.get(streamId);
     if (meta) useStreamHistoryStore.getState().recordPlay(meta);
     await Promise.all([loadLyrics(streamId, meta), extendRadio(streamId)]);
+    warmNextLyrics();
   },
 };
 
@@ -197,17 +198,26 @@ async function loadLyrics(streamId: string, meta: UnifiedSong | undefined): Prom
   }
 }
 
+/** Fetches the next song's lyrics ahead, so a skip finds them ready instead of starting the cascade. */
+function warmNextLyrics(): void {
+  const { playlistQueue, currentQueueIndex } = usePlayerStore.getState();
+  const next = playlistQueue?.[currentQueueIndex + 1];
+  if (!next || next.lyrics.length > 0) return;
+  lyricaService.warm(next.title, next.artist ?? '', catalog.get(next.id)?.duration ?? next.duration);
+}
+
 const RADIO_THRESHOLD = 2; // extend when this few songs remain after the current one
 let radioInFlight = false;
 
-/** Queues that belong to someone else (the device playing over Connect, a shared room): never topped up here. */
-const NOT_OURS = new Set(['connect', 'listen-together']);
+/** A shared room's queue belongs to its host: never topped up here. */
+const NOT_OURS = new Set(['listen-together']);
 
 /**
  * Whether a queue should be topped up now (Echo Music's "auto load more"). A Stream radio always keeps going; any
- * other queue of ours (Library, a playlist, search results) does when the listener has it on (Settings → Playback →
- * Keep playing similar songs). Never with repeat-one (the song loops), never for a queue that is not ours. `force` is
- * the engine saying the queue is running low by its own rule; otherwise it is the song-change safety net.
+ * other queue this phone plays (Library, a playlist, search results, one handed over by another device through
+ * Connect, as Spotify's autoplay carries on wherever the music is) does when the listener has it on (Settings →
+ * Playback → Keep playing similar songs). Never with repeat-one (the song loops), never for a shared room's queue.
+ * `force` is the engine saying the queue is running low by its own rule; otherwise it is the song-change safety net.
  */
 export function shouldRefillQueue(p: {
   playlistId: string | null;

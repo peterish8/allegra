@@ -165,10 +165,6 @@ const App: React.FC = () => {
           runWhenIdle('lyrics scan queue', () =>
             import('./store/lyricsScanQueueStore').then(m => m.useLyricsScanQueueStore.getState().hydrateFromDb()), 150);
 
-          // Start the desktop bridge if it was on. It still starts by itself, just after the first frame.
-          runWhenIdle('desktop bridge', () =>
-            import('./store/desktopBridgeSettingsStore').then(m => m.useDesktopBridgeSettingsStore.getState().load()), 300);
-
           // Build or verify the FTS5 search index (Android only; no-op on iOS).
           runWhenIdle('search index', () => ensureSearchIndex(), 600);
 

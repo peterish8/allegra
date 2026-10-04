@@ -87,6 +87,9 @@ export function createConnectSession({ transport, player, device: initialDevice,
   let local = player.getSnapshot();
   let previousLocal = local;
   let snapshot: Parameters<Parameters<typeof transport.watch>[1]>[0] | undefined;
+  /** A snapshot has arrived since listening last started: `snapshot` is not left over from before. */
+  let fresh = false;
+  let notice: ConnectView['notice'];
   let didRestore = false;
   let restoring = false;
   let lastError: string | undefined;
@@ -232,6 +235,7 @@ export function createConnectSession({ transport, player, device: initialDevice,
     }
     const selectedDevice = activeDevice();
     return {
+      ready: listening && fresh,
       devices: snapshot?.devices ?? [],
       ...(selectedDevice ? { activeDevice: selectedDevice } : {}),
       ...(state?.activeDeviceId ? { activeDeviceId: state.activeDeviceId } : {}),
@@ -250,7 +254,8 @@ export function createConnectSession({ transport, player, device: initialDevice,
       queuedCommands: queue.size,
       autoplayBlocked,
       ...(lastError ? { lastError } : {}),
-      ...(lastErrorCode ? { lastErrorCode } : {})
+      ...(lastErrorCode ? { lastErrorCode } : {}),
+      ...(notice ? { notice } : {})
     };
   }
 
@@ -277,6 +282,8 @@ export function createConnectSession({ transport, player, device: initialDevice,
       }
       lastBeatAt = clock.now();
       listening = true;
+      // Whatever arrived before is from an earlier listen: wait for this one's first snapshot.
+      fresh = false;
       watchStop = transport.watch(device.deviceId, onSnapshot);
       heartbeatTimer = clock.setInterval(() => { void beat(); }, HEARTBEAT_MS);
       if (listenRetryTimer !== undefined) clearTimer(listenRetryTimer);
@@ -331,6 +338,7 @@ export function createConnectSession({ transport, player, device: initialDevice,
     if (heartbeatTimer !== undefined) clock.clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
     listening = false;
+    fresh = false;
     if (!announce || !wasListening) return Promise.resolve();
     emit({ event: 'mutation.started', operation: 'disconnect', count: 1 });
     return transport.disconnect(device.deviceId).catch(() => undefined);
@@ -347,6 +355,7 @@ export function createConnectSession({ transport, player, device: initialDevice,
     emit({ event: 'query.delivered', operation: 'watch', count: 1 });
     const wasActive = isActive();
     snapshot = next;
+    fresh = true;
     if (next.state) {
       confirmed = confirmedFromState(next.state);
       if (serverRev === undefined || next.state.rev > serverRev) serverRev = next.state.rev;
@@ -583,7 +592,13 @@ export function createConnectSession({ transport, player, device: initialDevice,
     if (command.kind === 'take_over') return;
     const remote = activeId() !== undefined && activeId() !== device.deviceId;
     if (remote && !activeOnline()) {
-      if (command.kind === 'play' || command.kind === 'play_song') { void playLocally(command); return; }
+      if (command.kind === 'play' || command.kind === 'play_song') {
+        // The listener asked for music and the device that had it cannot answer: it plays here,
+        // and they are told why rather than finding this device suddenly playing.
+        notice = { code: 'played_here_owner_offline', deviceName: activeDevice()?.name ?? 'The other device', at: clock.now() };
+        void playLocally(command);
+        return;
+      }
       setError(connectError('offline'), 'The active device is offline.'); return;
     }
     if (remote) {

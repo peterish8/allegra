@@ -200,7 +200,6 @@ export const LuvScrubber: React.FC<{ onScrubbing?: (on: boolean) => void }> = ({
         onSeek={t => luvsBufferManager.seekTo(t * 1000)}
         onScrubStart={() => { onScrubbing?.(true); luvsBufferManager.pause(); }}
         onScrubEnd={() => { onScrubbing?.(false); luvsBufferManager.resume(); }}
-        variant="classic"
       />
     </View>
   );

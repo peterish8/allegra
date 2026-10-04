@@ -13,6 +13,7 @@
  * lead artist (`matchKey`, for songs downloaded before origins were recorded).
  * Songs with neither — local files, imports — never leave the phone.
  */
+import { shareableArtwork } from '@shared/artwork';
 import type { LibraryChange, LibraryOp } from '@shared/library';
 import { fromMobileId, matchKey, parseSongRef, type SongRef, type SongSnapshot } from '@shared/songRef';
 
@@ -29,6 +30,8 @@ export interface LocalSong {
   readonly duration?: number;
   readonly coverImageUri?: string;
   readonly originId?: string;
+  /** The catalog's https cover, kept beside a local cover file that never leaves the phone. */
+  readonly coverRemoteUri?: string;
 }
 
 export interface LocalIndex {
@@ -61,9 +64,9 @@ export function refForLocalSong(song: { readonly id: string; readonly originId?:
   return fromMobileId(song.id);
 }
 
-/** What another device needs to show a phone song. Local cover files do not travel. */
+/** What another device needs to show a phone song. Local cover files do not travel; the catalog's does. */
 export function snapshotOfLocal(song: LocalSong, ref: SongRef): SongSnapshot {
-  const artwork = song.coverImageUri && /^https:\/\//.test(song.coverImageUri) ? song.coverImageUri : '';
+  const artwork = shareableArtwork(song.coverImageUri, song.coverRemoteUri);
   return {
     ref,
     title: song.title,

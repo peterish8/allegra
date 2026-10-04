@@ -30,7 +30,11 @@ let pausedLoadSongId: string | null = null;
 type PlaylistSelectionRouter = (input: { readonly playlistId: string; readonly songs: readonly Song[]; readonly startIndex: number }) => boolean;
 let playlistSelectionRouter: PlaylistSelectionRouter | null = null;
 
-/** Lets Connect route a user-selected song to the current online owner before local playback starts. */
+/**
+ * Lets Connect take a song the listener picks before this phone plays it. The router answers true
+ * when the music is on another device: it sends the pick there (looking the song up first when
+ * the phone cannot name it yet), or asks before playback moves here. False: play it here.
+ */
 export function setPlaylistSelectionRouter(router: PlaylistSelectionRouter | null): () => void {
   playlistSelectionRouter = router;
   return () => { if (playlistSelectionRouter === router) playlistSelectionRouter = null; };
@@ -178,7 +182,11 @@ interface PlayerState {
   /** Drops hide flags the screen now in front does not own (see `liveMiniPlayerHides`). */
   reconcileMiniPlayerHides: (routeName: string | undefined) => void;
   // Playlist queue actions
-  setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number, autoplay?: boolean) => void;
+  /**
+   * `here`: the listener chose this phone ("Play on this phone"), so Connect is not asked where it
+   * plays.
+   */
+  setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number, autoplay?: boolean, options?: { readonly here?: boolean }) => void;
   updateQueue: (songs: Song[]) => void;
   removeFromQueue: (songId: string) => void;
   nextInPlaylist: (automatic?: boolean) => Promise<void>;
@@ -534,8 +542,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   // Playlist queue management
-  setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number, autoplay = true) => {
-    if (autoplay && playlistId !== 'connect' && playlistId !== 'listen-together') {
+  setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number, autoplay = true, options) => {
+    if (autoplay && !options?.here && playlistId !== 'connect' && playlistId !== 'listen-together') {
       try {
         if (playlistSelectionRouter?.({ playlistId, songs, startIndex })) return;
       } catch { /* Keep local playback available if Connect routing cannot build a command. */ }

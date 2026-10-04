@@ -15,6 +15,7 @@ import { AppState, type AppStateStatus, type NativeEventSubscription } from 'rea
 import { makeFunctionReference } from 'convex/server';
 import type { ConvexReactClient } from 'convex/react';
 
+import { shareableArtwork } from '@shared/artwork';
 import type { LibraryChange, LibraryOp } from '@shared/library';
 import { matchKey, parseSongRef, songRef, toAllegraId, type SongRef, type SongSnapshot } from '@shared/songRef';
 
@@ -157,14 +158,18 @@ export function record(op: LibraryOp): void {
 
 /**
  * The ref for a phone song, finding it in the catalog for a download made before
- * origins were recorded (and remembering it). Null for songs that never leave the phone.
+ * origins were recorded (and remembering it, with the catalog's cover). Null for songs
+ * that never leave the phone.
  */
 export async function refFor(song: { id: string; title: string; artist?: string; originId?: string }): Promise<SongRef | null> {
   const known = refForLocalSong(song);
   if (known) return known;
   const found = await findInCatalog(song.title, song.artist ?? '');
-  if (found) await db.setOriginId(song.id, found).catch(() => undefined);
-  return found;
+  if (found) {
+    await db.setOriginId(song.id, found.ref).catch(() => undefined);
+    if (found.artwork) await db.setCoverRemoteUri(song.id, found.artwork).catch(() => undefined);
+  }
+  return found?.ref ?? null;
 }
 
 /** Publish a valid play to shared history after five seconds of real playback. */
@@ -640,7 +645,17 @@ async function dropPhoneOnlyItems(account: AccountLibrary): Promise<void> {
 // ── Catalog lookups ─────────────────────────────────────────────────────────
 
 /** The catalog song with this exact title and lead artist, or null. Never a guess. */
-async function findInCatalog(title: string, artist: string): Promise<SongRef | null> {
+/** The catalog song a phone song is, and the catalog's cover for it ('' when it has none to share). */
+export interface CatalogMatch {
+  readonly ref: SongRef;
+  readonly artwork: string;
+}
+
+/**
+ * The catalog row with the same cleaned title and lead artist (`matchKey`), or null. Offline or a
+ * provider down reads as "not found": the song simply stays on the phone for now.
+ */
+export async function findInCatalog(title: string, artist: string): Promise<CatalogMatch | null> {
   if (!title.trim()) return null;
   try {
     const key = matchKey(title, artist);
@@ -648,7 +663,7 @@ async function findInCatalog(title: string, artist: string): Promise<SongRef | n
     for (const hit of hits) {
       if (matchKey(hit.title, hit.artist) !== key) continue;
       const ref = songRef(hit.source, hit.id);
-      if (ref) return ref;
+      if (ref) return { ref, artwork: shareableArtwork(hit.highResArt, hit.thumbnail) };
     }
   } catch {
     // Offline or provider down: the song simply stays on the phone for now.

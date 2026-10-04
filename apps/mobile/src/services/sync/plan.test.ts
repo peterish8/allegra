@@ -100,6 +100,12 @@ describe('phone songs', () => {
     expect(snapshotOfLocal({ id: 'x', title: 'T', coverImageUri: 'file:///cover.jpg' }, A).artwork).toBe('');
     expect(snapshotOfLocal({ id: 'x', title: 'T', coverImageUri: 'https://c/1.jpg' }, A).artwork).toBe('https://c/1.jpg');
   });
+
+  it('a download sends the catalog cover it kept, since its own cover file stays on the phone', () => {
+    const song = { id: 'x', title: 'T', coverImageUri: 'file:///cover.jpg', coverRemoteUri: 'https://c.saavncdn.com/2.jpg' };
+    expect(snapshotOfLocal(song, A).artwork).toBe('https://c.saavncdn.com/2.jpg');
+    expect(snapshotOfLocal({ ...song, coverRemoteUri: 'http://c.saavncdn.com/2.jpg' }, A).artwork).toBe('https://c.saavncdn.com/2.jpg');
+  });
 });
 
 describe('opsForFirstSync', () => {

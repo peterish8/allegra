@@ -13,10 +13,13 @@ import {
   createConvexTransport,
   createDevelopmentTrace,
   createQueueStager,
+  decidePlaybackRoute,
+  ownerOfflineMessage,
   reportable,
   traceCatalogLookup,
   systemClock,
   upcomingOf,
+  whenRouteReady,
   QUEUE_LIMIT,
   type ConnectSession,
   type ConnectTransport,
@@ -32,6 +35,7 @@ import { useConvexAppClient } from '../../app/ConvexSignInProvider';
 import { useSignIn } from '../auth/SignInContext';
 import type { AudioPlayerState } from './useAudioPlayer';
 import { exactSaavnMatch, type LibrarySong } from '../lib/libraryRows';
+import { snapshotFromSong, withFoundCover } from '../lib/connectSnapshot';
 import { fetchSongsByIds, resolveApiUrl, searchSongs } from '../lib/api';
 import { accountIdFromToken, deviceIdForAccount } from '../lib/connectDeviceId';
 import { browserNameFrom } from '../lib/browserName';
@@ -53,20 +57,6 @@ function createWebConnectTransport(client: ConvexReactClient, trace?: Developmen
     }
   };
   return createConvexTransport(binding, trace ? { trace } : undefined);
-}
-
-function snapshotFromSong(song: UnifiedSong): SongSnapshot | null {
-  const librarySong = song as LibrarySong;
-  const ref = librarySong.libraryRef ?? fromAllegraSong(song);
-  if (!ref) return null;
-  return librarySong.librarySnapshot ?? {
-    ref,
-    title: song.title,
-    artist: song.artist,
-    ...(song.album ? { album: song.album } : {}),
-    artwork: song.artwork,
-    duration: song.duration
-  };
 }
 
 function songFromSnapshot(snapshot: SongSnapshot): LibrarySong {
@@ -94,11 +84,12 @@ async function resolvePlayable(snapshot: SongSnapshot, trace?: DevelopmentTraceB
     const catalogId = parsed?.source === 'gaana' ? snapshot.ref : id;
     const songs = await traceCatalogLookup(trace, () => fetchSongsByIds(catalogId ? [catalogId] : []));
     const exact = songs.find((song) => fromAllegraSong(song) === snapshot.ref);
-    if (exact) return { ...exact, libraryRef: snapshot.ref, librarySnapshot: snapshot };
+    // The sender may have had no cover to share: the catalog's goes with the song from here on.
+    if (exact) return { ...exact, libraryRef: snapshot.ref, librarySnapshot: withFoundCover(snapshot, exact.artwork) };
   }
   const { results } = await traceCatalogLookup(trace, () => searchSongs(`${snapshot.title} ${snapshot.artist}`));
   const match = exactSaavnMatch(snapshot, results);
-  return match ? { ...match, libraryRef: snapshot.ref, librarySnapshot: snapshot } : null;
+  return match ? { ...match, libraryRef: snapshot.ref, librarySnapshot: withFoundCover(snapshot, match.artwork) } : null;
 }
 
 /** How long a tab waits for the Connect lock before showing that another tab is playing. */
@@ -234,7 +225,17 @@ export interface WebConnectState {
   readonly control: (command: RemoteCommand) => void;
   /** `error` is listener copy for a failed move. */
   readonly transferTo: (deviceId: string) => Promise<{ readonly ok: boolean; readonly error?: string }>;
-  readonly playRemote: (song: UnifiedSong, queue: readonly UnifiedSong[]) => boolean;
+  /**
+   * Sends a picked song to the device that plays, when another one does. Resolves true when it
+   * went there; false means play it in this browser. Waits briefly for a fresh Connect state first,
+   * so a click just after the page opened does not take playback from the device really playing.
+   */
+  readonly playRemote: (song: UnifiedSong, queue: readonly UnifiedSong[]) => Promise<boolean>;
+  /** Something the listener should be told about where playback went; null when there is none. */
+  readonly notice: { readonly message: string; readonly at: number } | null;
+  readonly dismissNotice: () => void;
+  /** Counts the songs other devices have loaded into this browser (a transfer, or a pick sent here). */
+  readonly connectLoads: number;
   /**
    * Queue a song on the device that plays. `local`: this browser plays, so the caller queues it
    * here. `unsupported`: another device plays and the song has no form it could find.
@@ -303,6 +304,10 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
   const [tabStatus, setTabStatus] = useState<WebConnectState['tabStatus']>(null);
   const [livePosition, setLivePosition] = useState(0);
   const [documentVisible, setDocumentVisible] = useState(false);
+  const [notice, setNotice] = useState<WebConnectState['notice']>(null);
+  const [connectLoads, setConnectLoads] = useState(0);
+  const noticeSeenRef = useRef<number | undefined>(undefined);
+  const deviceIdRef = useRef<string | null>(null);
   const channelRef = useRef<BroadcastChannel | null>(null);
   const tabStatusRef = useRef<WebConnectState['tabStatus']>(null);
   const pendingTransfersRef = useRef(new Map<string, { resolve: (result: { readonly ok: boolean; readonly error?: string }) => void; timer: number }>());
@@ -350,6 +355,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
       if (generation !== loadGenerationRef.current) return 'not_found';
       await target.seek(options.positionSec);
       void stager.stage(queueSnapshots);
+      setConnectLoads((count) => count + 1);
       if (!options.play) {
         await target.requestPlayback(false);
         return 'ok';
@@ -386,6 +392,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
     if (!convex || !signIn.signedIn || !signIn.available || typeof accountId !== 'string' || !accountId) {
       setSession(null);
       setView(null);
+      deviceIdRef.current = null;
       setDeviceId(null);
       setTabStatus(null);
       tabStatusRef.current = null;
@@ -393,6 +400,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
       return undefined;
     }
     const localDeviceId = browserDeviceId(accountId);
+    deviceIdRef.current = localDeviceId;
     setDeviceId(localDeviceId);
     const harness = process.env.NODE_ENV === 'development' && new URLSearchParams(window.location.search).has('connectDevice');
     const canElect = !harness && 'locks' in navigator && typeof navigator.locks?.request === 'function';
@@ -416,6 +424,11 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
     const updateView = (next: ConnectView): void => {
       setView(next);
       setLivePosition(next.livePosition);
+      // A "play" that started here because the playing device went offline says so once.
+      if (next.notice && next.notice.at !== noticeSeenRef.current) {
+        noticeSeenRef.current = next.notice.at;
+        setNotice({ message: ownerOfflineMessage(next.notice.deviceName), at: next.notice.at });
+      }
       channel?.postMessage({ type: 'view', deviceId: localDeviceId, view: next } satisfies ConnectTabMessage);
     };
     const startLeader = async (): Promise<void> => {
@@ -597,23 +610,31 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
     });
   }, []);
 
-  const playRemote = useCallback((song: UnifiedSong, queue: readonly UnifiedSong[]): boolean => {
-    const current = sessionRef.current;
-    const currentView = current?.view() ?? view;
+  const playRemote = useCallback(async (song: UnifiedSong, queue: readonly UnifiedSong[]): Promise<boolean> => {
     const snapshot = snapshotFromSong(song);
     if (!snapshot) return false;
     // What follows the song in its list: the same songs this browser would play after it.
     const at = queue.findIndex((item) => item.id === song.id);
     const queueSnapshots = reportable(at >= 0 ? queue.slice(at + 1) : queue.filter((item) => item.id !== song.id), snapshotFromSong);
+    const current = sessionRef.current;
     if (current) {
-      if (!currentView?.activeDeviceId || currentView.isThisDeviceActive || !currentView.activeDeviceOnline) return false;
+      const decide = (staleOk: boolean) => decidePlaybackRoute({ view: current.view(), deviceId: deviceIdRef.current, staleOk });
+      let route = decide(false);
+      // Just opened: the device list and state have not arrived, so nobody knows yet who plays.
+      if (route.kind === 'wait') {
+        await whenRouteReady(current, systemClock);
+        route = decide(true);
+      }
+      if (route.kind === 'local_owner_offline') setNotice({ message: ownerOfflineMessage(route.deviceName), at: Date.now() });
+      if (route.kind !== 'remote' || sessionRef.current !== current) return false;
       current.control({ kind: 'play_song', song: snapshot, queue: queueSnapshots });
       return true;
     }
     if (tabStatusRef.current !== 'other-tab' || !channelRef.current) return false;
     control({ kind: 'play_song', song: snapshot, queue: queueSnapshots });
     return true;
-  }, [control, view]);
+  }, [control]);
+  const dismissNotice = useCallback(() => setNotice(null), []);
 
   const queueRemote = useCallback((song: UnifiedSong, next: boolean): 'sent' | 'local' | 'unsupported' => {
     const current = sessionRef.current;
@@ -672,7 +693,10 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
     return stop;
   }, [session]);
 
-  return { session, view, deviceId, connected: Boolean(convex && signIn.signedIn), tabStatus, livePosition, control, transferTo, playRemote, queueRemote, rename };
+  return {
+    session, view, deviceId, connected: Boolean(convex && signIn.signedIn), tabStatus, livePosition,
+    control, transferTo, playRemote, queueRemote, rename, notice, dismissNotice, connectLoads
+  };
 }
 
 export function snapshotToDisplaySong(snapshot: SongSnapshot): LibrarySong {

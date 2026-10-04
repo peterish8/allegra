@@ -21,7 +21,7 @@
 - `PlayerContext.tsx` — wraps `useAudioPlayer`, syncs status to Zustand, handles auto-next
 - `playerStatusGuard.ts` — returns `true` to preserve playing state during buffering/seek to prevent UI flicker
 - `usePlayerStore` (Zustand) — single source of truth for `isPlaying`, `currentSong`, `currentSongId`, `position`, queue
-- `MiniPlayer.tsx` — owns the expanded player UI, Dynamic Island style + Classic style, handles seek
+- `MiniPlayer.tsx` — owns the bottom player (the pill, or the classic bar with its half/full lyric stages), handles seek
 
 ### Scrub/seek pattern (must follow everywhere)
 ```ts
@@ -50,16 +50,14 @@ Effect uses `activeLoadSongIdRef` to prevent duplicate `player.replace()` calls 
 | Lyrics | `src/components/SynchronizedLyrics.tsx`, `src/components/LyricsLine.tsx` |
 | Scrubber | `src/components/TimelineScrubber.tsx` |
 | Downloads | `src/services/DownloadManager.ts`, `src/components/BackgroundDownloader.tsx` |
-| Desktop bridge | `src/services/DesktopBridgeService.ts` (currently disabled — start/stop fully commented) |
 | Stores | `src/store/` — songsStore, playlistStore, settingsStore, downloadQueueStore, etc. |
 | Screens | `src/screens/` — Library, NowPlaying, Playlist, Search, Settings, etc. |
 
 ## Rules
-- No `console.log` in production paths — wrap with `if (__DEV__)` or use the existing `logDesktopEvent` pattern
+- No `console.log` in production paths — wrap with `if (__DEV__)` or use `diag`
 - No `as any` unless unavoidable (FlashList type shim is the one exception)
 - No mock DB in tests — always hit real SQLite
 - Don't introduce shadow styles on NowPlayingScreen — intentionally removed for clean look
-- `DesktopBridgeService` is disabled — don't re-enable without also enabling the full `stop()` cleanup
 - `MAX_CONCURRENT` downloads is 2 — don't raise it without testing on low-end Android
 
 ## Branch naming

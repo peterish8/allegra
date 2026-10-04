@@ -388,7 +388,24 @@ export interface PendingCommandView {
   readonly startedAt: number;
 }
 
+/**
+ * Something the listener should be told that is not an error. `at` changes for every new notice,
+ * so a screen can show each one once.
+ */
+export interface ConnectNotice {
+  /** Playback the listener asked for started here because the device that was playing is offline. */
+  readonly code: 'played_here_owner_offline';
+  readonly deviceName: string;
+  readonly at: number;
+}
+
 export interface ConnectView {
+  /**
+   * A fresh device list and player state have arrived since this device last started listening.
+   * Until then `devices`, `activeDeviceId` and `activeDeviceOnline` may be empty or stale (an app
+   * just opened, or back from the background), so where a pick plays must not be decided on them.
+   */
+  readonly ready: boolean;
   readonly devices: readonly ConnectDevice[];
   readonly activeDevice?: ConnectDevice;
   readonly activeDeviceId?: string;
@@ -414,6 +431,8 @@ export interface ConnectView {
   /** User-facing copy. Branch on `lastErrorCode`, never on this text. */
   readonly lastError?: string;
   readonly lastErrorCode?: ConnectErrorCode | ConnectFailureCode;
+  /** The latest notice, kept until a newer one replaces it. */
+  readonly notice?: ConnectNotice;
 }
 
 export type TransferResult =

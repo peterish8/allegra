@@ -14,6 +14,8 @@ import { useArtworkPalette } from './allegra/useArtworkPalette';
 import SynchronizedLyrics, { SynchronizedLyricsRef } from './SynchronizedLyrics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ErrorBoundary from './ErrorBoundary';
+import { useIsFocused } from '@react-navigation/native';
+import { useAppActive } from '../hooks/useAppActive';
 
 type ProcessedLyric = { timestamp: number; text: string };
 
@@ -277,6 +279,9 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   dockX,
   dockY,
 }) => {
+  const routeFocused = useIsFocused();
+  const appActive = useAppActive();
+  const lyricsLive = showLyrics && routeFocused && appActive;
   // Settings → Lyrics (text size, line spacing) and the song's own alignment (lyrics editor).
   const fontSize = useSettingsStore(st => st.lyricsSize);
   const lineSpacing = useSettingsStore(st => st.lineSpacing);
@@ -309,6 +314,9 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
       setLyricsMounted(true);
       return undefined;
     }
+    // Keep the premount benefit for the visible player, but don't build the
+    // hidden list while this route or the app is out of view.
+    if (!routeFocused || !appActive) return undefined;
     // A song with no lyric lines has nothing to open onto: no hidden list for it.
     if (!PREMOUNT_HIDDEN_LYRICS || !hasLines) return undefined;
     let task: { cancel: () => void } | null = null;
@@ -316,7 +324,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
       task = InteractionManager.runAfterInteractions(() => setLyricsMounted(true));
     }, LYRICS_PREMOUNT_MS);
     return () => { clearTimeout(t); task?.cancel(); };
-  }, [showLyrics, hasLines]);
+  }, [showLyrics, hasLines, routeFocused, appActive]);
   // Stable, so the memoised lyrics list doesn't re-render with every player render.
   const onScrollStateChange = React.useCallback((isScrolling: boolean) => {
     isUserScrollingRef.current = isScrolling;
@@ -372,7 +380,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
         activeLinePosition={0.35}
         topSpacerHeight={24}
         edgeFade={56}
-        live={showLyrics}
+        live={lyricsLive}
         scrollOffset={scrollOffset}
         isUserScrolling={isUserScrollingRef.current}
         onScrollStateChange={onScrollStateChange}

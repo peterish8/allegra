@@ -22,7 +22,6 @@ export interface TimelineScrubberProps {
   onSeek: (time: number) => void;
   onScrubStart?: () => void;
   onScrubEnd?: () => void;
-  variant?: 'classic' | 'island';
   style?: ViewStyle;
   showTimeLabels?: boolean;
   disabled?: boolean;
@@ -39,7 +38,6 @@ const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
   onSeek,
   onScrubStart,
   onScrubEnd,
-  variant = 'classic',
   style,
   showTimeLabels = true,
   disabled = false,
@@ -248,33 +246,6 @@ const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
     };
   });
 
-  /**
-   * Thumb / track handoff (no gap where only the dot shows):
-   *  expand 0→1: thumb out by 0.35, track already thickening the whole time
-   *  collapse 1→0: track thins whole time, thumb returns only after 0.55
-   */
-  const thumbStyle = useAnimatedStyle(() => {
-    'worklet';
-    const p = Math.max(0, Math.min(1, displayProgress.value));
-    const opacity = interpolate(
-      scrubUI.value,
-      [0, 0.3, 0.55, 1],
-      [1, 0, 0, 0],
-      Extrapolation.CLAMP,
-    );
-    const scale = interpolate(
-      scrubUI.value,
-      [0, 0.3, 1],
-      [1, 0.55, 0.4],
-      Extrapolation.CLAMP,
-    );
-    const x = p * trackWidthSV.value;
-    return {
-      opacity,
-      transform: [{ translateX: x }, { scale }] as const,
-    };
-  });
-
   const glowStyle = useAnimatedStyle(() => {
     'worklet';
     return {
@@ -287,61 +258,46 @@ const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
     };
   });
 
-  const isIsland = variant === 'island';
-
   return (
     <View
       style={[
         styles.container,
-        isIsland ? styles.islandContainer : styles.classicContainer,
+        styles.classicContainer,
         style,
       ]}
     >
       <GestureDetector gesture={composedGesture}>
         <View
-          style={[styles.hitArea, isIsland && styles.islandHitArea]}
+          style={styles.hitArea}
           onLayout={onLayout}
           // Classic uses a short layout height (top-of-bar pin); keep fat hitSlop.
-          hitSlop={{ top: isIsland ? 16 : 14, bottom: isIsland ? 16 : 14, left: 4, right: 4 }}
+          hitSlop={{ top: 14, bottom: 14, left: 4, right: 4 }}
         >
           <View style={styles.trackWrapper}>
-            {!isIsland && (
-              <Animated.View style={[styles.scrubGlow, glowStyle]} pointerEvents="none" />
-            )}
+            <Animated.View style={[styles.scrubGlow, glowStyle]} pointerEvents="none" />
 
             {/* Always-visible pill track — never drops to 0 height/opacity */}
             <Animated.View
               style={[
                 styles.trackBase,
-                isIsland ? styles.islandTrackBg : styles.classicTrackBg,
+                styles.classicTrackBg,
                 trackStyle,
               ]}
             >
               <Animated.View
                 style={[
                   styles.fillBase,
-                  isIsland ? styles.islandFill : styles.classicFill,
+                  styles.classicFill,
                   fillStyle,
                 ]}
               />
             </Animated.View>
 
-            {/* Island only. The classic bar is YT-Music style: no dot at rest —
-                the track itself thickens under the finger. A dot cannot be both
-                concentric with a 3.5px track and flush with the bar's top edge,
-                and it was already fading to 0 the moment a scrub began, so it
-                was decoration that cost the track its flush position. */}
-            {isIsland && (
-              <Animated.View
-                pointerEvents="none"
-                style={[styles.thumbBase, styles.islandThumb, thumbStyle]}
-              />
-            )}
           </View>
         </View>
       </GestureDetector>
 
-      {!isIsland && showTimeLabels && (
+      {showTimeLabels && (
         <View style={styles.timeContainer}>
           <Text style={styles.timeText}>{currentTimeLabel}</Text>
           <Text style={styles.timeText}>{durationLabel}</Text>
@@ -367,10 +323,6 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     justifyContent: 'flex-start',
   },
-  islandContainer: {
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-  },
   hitArea: {
     height: 18,
     // Classic: the track is welded to y=0 of the hit box, which the MiniPlayer
@@ -378,11 +330,6 @@ const styles = StyleSheet.create({
     // as the track sitting a pixel or two under the seam. The box stays 18 tall
     // (plus hitSlop) purely as touch target; the visible track is the top 3.5px.
     justifyContent: 'flex-start',
-    paddingTop: 0,
-  },
-  islandHitArea: {
-    height: 30,
-    justifyContent: 'center',
     paddingTop: 0,
   },
   trackWrapper: {
@@ -407,14 +354,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  thumbBase: {
-    position: 'absolute',
-    left: 0,
-    width: 11,
-    height: 11,
-    borderRadius: 6,
-    marginLeft: -5.5,
-  },
   // Unplayed remainder: low enough that the blurred cover art reads through it and
   // it feels part of the artwork, high enough to still register as a line. The
   // affordance is carried by the contrast against the solid white played portion,
@@ -424,22 +363,6 @@ const styles = StyleSheet.create({
   },
   classicFill: {
     backgroundColor: '#FFFFFF',
-  },
-  islandTrackBg: {
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-  },
-  islandFill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
-  },
-  islandThumb: {
-    top: '50%',
-    marginTop: -5.5,
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-    elevation: 2,
   },
   timeContainer: {
     flexDirection: 'row',

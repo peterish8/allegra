@@ -122,8 +122,7 @@ export const PlaylistDetailScreen: React.FC = () => {
 
   // This screen lives in the Library tab's stack, so the tab bar is always behind
   // it. The classic mini player only stacks on top of that when a song is loaded.
-  const miniPlayerStyle = useSettingsStore(state => state.miniPlayerStyle);
-  const hasClassicBar = miniPlayerStyle === 'bar' && !!currentSong;
+  const hasClassicBar = !!currentSong;
   const bottomChrome = bottomChromeHeight(insets.bottom, true, hasClassicBar);
   const fabBottom = bottomChrome + 16;
   const listPaddingBottom = bottomChrome + 80;

@@ -33,6 +33,7 @@ import { useVoiceSearchStore, VoicePick } from '../store/voiceSearchStore';
 import { usePlayerStore } from '../store/playerStore';
 import { useDownloadQueueStore } from '../store/downloadQueueStore';
 import { StreamService } from '../services/stream/StreamService';
+import { routeSongPick } from '../services/connect/playbackIntents';
 import { Tactile } from './allegra/motion';
 import Artwork from './allegra/Artwork';
 import Frosted from './allegra/Frosted';
@@ -122,9 +123,12 @@ export const VoiceSearchCard: React.FC = () => {
     if (!pick) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     if (pick.kind === 'local') {
-      const store = usePlayerStore.getState();
-      store.loadSong(pick.song.id);
-      store.requestPlayback(true);
+      // While another device plays, the song goes there (Connect looks it up or asks first).
+      if (!routeSongPick({ playlistId: 'voice', songs: [pick.song], startIndex: 0 })) {
+        const store = usePlayerStore.getState();
+        store.loadSong(pick.song.id);
+        store.requestPlayback(true);
+      }
     } else {
       // The other streamable matches follow it, then radio takes over.
       const rest = picks

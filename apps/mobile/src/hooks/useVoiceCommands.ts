@@ -10,6 +10,7 @@ import { searchOfficial } from '../services/stream/officialSearch';
 import { UnifiedSong } from '../types/song';
 import { isQuietVoiceEnd, voiceErrorMessage } from '../utils/voiceErrors';
 import { voiceLevel } from '../playback/voiceLevel';
+import { actWhereMusicIs, remoteList } from '../services/connect/playbackIntents';
 
 const catalog = (query: string): Promise<UnifiedSong[]> => searchOfficial(query, 10);
 const voice = () => useVoiceSearchStore.getState();
@@ -110,54 +111,67 @@ export function useVoiceCommands() {
   const dispatch = useCallback((transcript: string) => {
     const songs = useSongsStore.getState().songs;
     const intent = parseVoiceIntent(transcript, songs);
-    const store = usePlayerStore.getState();
+    // Transport words act where the music is: on the device that plays when this phone is its
+    // remote (Connect), on this phone's player otherwise. Each runs on the store as it is then.
+    const player = () => usePlayerStore.getState();
 
     switch (intent.action) {
       case 'NEXT':
-        store.nextInPlaylist();
+        actWhereMusicIs({ kind: 'next' }, () => { player().nextInPlaylist().catch(() => undefined); }).catch(() => undefined);
         confirm('Next song');
         break;
 
       case 'PREV':
-        store.previousInPlaylist();
+        actWhereMusicIs({ kind: 'prev' }, () => player().previousInPlaylist()).catch(() => undefined);
         confirm('Previous song');
         break;
 
       case 'PAUSE':
-        store.requestPlayback(false);
+        actWhereMusicIs({ kind: 'pause' }, () => player().requestPlayback(false)).catch(() => undefined);
         confirm('Paused');
         break;
 
       case 'RESUME':
-        store.requestPlayback(true);
+        actWhereMusicIs({ kind: 'play' }, () => player().requestPlayback(true)).catch(() => undefined);
         confirm('Playing');
         break;
 
       case 'SHUFFLE': {
-        if (usesNativeQueue()) {
-          usePlaybackModesStore.getState().setShuffle(true);
-          confirm('Shuffled');
-          break;
-        }
-        const queue = store.playlistQueue;
-        if (queue && queue.length > 1) {
-          const shuffled = [...queue].sort(() => Math.random() - 0.5);
-          store.updateQueue(shuffled);
-        }
+        actWhereMusicIs({ kind: 'shuffle', on: true }, () => {
+          if (usesNativeQueue()) {
+            usePlaybackModesStore.getState().setShuffle(true);
+            return;
+          }
+          const queue = player().playlistQueue;
+          if (queue && queue.length > 1) {
+            const shuffled = [...queue].sort(() => Math.random() - 0.5);
+            player().updateQueue(shuffled);
+          }
+        }).catch(() => undefined);
         confirm('Shuffled');
         break;
       }
 
       case 'PLAY_INDEX': {
-        const queue = store.playlistQueue;
-        if (queue && intent.index >= 0 && intent.index < queue.length) {
-          const song = queue[intent.index];
-          store.loadSong(song.id);
-          store.requestPlayback(true);
-          confirm(`Playing ${song.title}`);
-        } else {
-          voice().notify('No song at that position');
+        const playHere = (): boolean => {
+          const queue = player().playlistQueue;
+          const song = queue && intent.index >= 0 ? queue[intent.index] : undefined;
+          if (!song) return false;
+          player().loadSong(song.id);
+          player().requestPlayback(true);
+          return true;
+        };
+        // On another device "song number N" counts its list: the song it plays, then its queue.
+        const remote = remoteList();
+        const remoteSong = remote && intent.index >= 0 ? remote[intent.index] : undefined;
+        if (remote && remoteSong) {
+          actWhereMusicIs({ kind: 'play_song', song: remoteSong, queue: remote.slice(intent.index + 1) }, playHere).catch(() => undefined);
+          confirm(`Playing ${remoteSong.title}`);
+          break;
         }
+        const song = !remote ? player().playlistQueue?.[intent.index] : undefined;
+        if (song && playHere()) confirm(`Playing ${song.title}`);
+        else voice().notify('No song at that position');
         break;
       }
 

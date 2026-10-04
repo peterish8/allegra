@@ -1,3 +1,4 @@
+import { shareableArtwork } from '@shared/artwork';
 import { fromMobileId, parseSongRef, type SongRef, type SongSnapshot } from '@shared/songRef';
 import {
   createQueueStager, QUEUE_LIMIT, reportable, traceCatalogLookup, upcomingOf, withUpcoming,
@@ -16,18 +17,30 @@ import { shuffleUpcoming } from '../player/playerMenuActions';
 const clampPosition = (value: number): number => Number.isFinite(value) ? Math.max(0, value) : 0;
 const notFound = (): Error => Object.assign(new Error('That song could not be loaded.'), { data: { code: 'not_found' } });
 
-export function snapshotOfSong(song: Song | null | undefined): SongSnapshot | undefined {
-  if (!song) return undefined;
-  const ref = song.originId && parseSongRef(song.originId) ? song.originId as SongRef : fromMobileId(song.id);
-  if (!ref) return undefined;
+/** The catalog song a phone song is, when the phone already knows it (no lookup). */
+export function knownRefOf(song: Song | null | undefined): SongRef | null {
+  if (!song) return null;
+  return song.originId && parseSongRef(song.originId) ? song.originId as SongRef : fromMobileId(song.id);
+}
+
+/**
+ * What another device is sent for a phone song named by `ref`. The cover is one every device can
+ * load: a download's own cover file stays on the phone and the catalog's travels instead.
+ */
+export function snapshotWithRef(song: Song, ref: SongRef): SongSnapshot {
   return {
     ref,
     title: song.title || 'Unknown title',
     artist: song.artist || 'Unknown artist',
     ...(song.album ? { album: song.album } : {}),
-    artwork: song.coverImageUri && /^https:\/\//i.test(song.coverImageUri) ? song.coverImageUri : '',
+    artwork: shareableArtwork(song.coverImageUri, song.coverRemoteUri),
     duration: clampPosition(song.duration),
   };
+}
+
+export function snapshotOfSong(song: Song | null | undefined): SongSnapshot | undefined {
+  const ref = knownRefOf(song);
+  return song && ref ? snapshotWithRef(song, ref) : undefined;
 }
 
 function waitForLoadedSong(songId: string, timeoutMs: number): Promise<boolean> {
@@ -71,9 +84,13 @@ export function createMobilePlayerPort(getToken: () => string | null, trace?: De
     // The cover the other device showed is the one to show: a catalog song found by search can come
     // back with no usable cover, which left this phone's player blank and published an empty cover
     // that blanked it on every other device too (Connect shares covers as https links only).
-    const hasWebCover = /^https:\/\//i.test(matchedSong.coverImageUri ?? '');
-    const song = !hasWebCover && matched.kind === 'catalog' && /^https:\/\//i.test(snapshot.artwork)
-      ? { ...matchedSong, coverImageUri: snapshot.artwork }
+    const sentCover = shareableArtwork(snapshot.artwork);
+    const hasWebCover = shareableArtwork(matchedSong.coverImageUri, matchedSong.coverRemoteUri) !== '';
+    const song = !hasWebCover && sentCover !== ''
+      ? matched.kind === 'catalog'
+        ? { ...matchedSong, coverImageUri: sentCover }
+        // A download keeps its own cover file to draw here; the link is what it shares.
+        : { ...matchedSong, coverRemoteUri: sentCover }
       : matchedSong;
     const published = snapshotOfSong(song);
     // A downloaded copy keeps its own file cover, which no other device can open: publish the link it was asked for.

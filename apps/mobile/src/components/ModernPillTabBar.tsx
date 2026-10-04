@@ -1,17 +1,16 @@
 /**
  * LyricFlow - Premium pill-shaped navigation bar
- * Matches Dynamic Island aesthetic with live song color theming
+ * Floating glass pill with live song color theming
  * Center mic button bulges above the pill.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
-import { View, Text, StyleSheet, Platform, ImageBackground, ViewStyle, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, useWindowDimensions } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { usePlayerStore } from '../store/playerStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useThemeColors, useIsDark } from '../contexts/ThemeContext';
 import { VoiceMicButton } from './VoiceMicButton';
@@ -49,8 +48,6 @@ export const ModernPillTabBar: React.FC<BottomTabBarProps> = ({
   descriptors,
   navigation,
 }) => {
-  const coverImageUri = usePlayerStore(s => s.currentSong?.coverImageUri);
-  const isDynamicIsland = useSettingsStore(s => s.miniPlayerStyle === 'island');
   const micEnabled = useSettingsStore(s => s.micEnabled);
   const isDark = useIsDark();
   const colors = useThemeColors();
@@ -80,8 +77,6 @@ export const ModernPillTabBar: React.FC<BottomTabBarProps> = ({
   // labels from the page collided with the tab names). The scrim below fades
   // the list out before it reaches the bar.
   const pillBg = 'transparent';
-  const overlayColor = isDark ? '#0A0A0C' : '#FFFFFF';
-  const overlayOpacity = isDark ? 0.90 : 0.82;
   const fallbackBg = isDark ? 'rgba(10,10,12,0.93)' : 'rgba(255,255,255,0.9)';
   const gradientColors: [string, string] = isDark
     ? ['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.5)']
@@ -197,28 +192,8 @@ export const ModernPillTabBar: React.FC<BottomTabBarProps> = ({
           setPill(p => (p.width === width && p.height === height ? p : { width, height }));
         }}
       >
-        {/* Dynamic Background — oversized + heavier blur so album-art edges
-            don't read as a sharp rectangle inside the pill rim. */}
         <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
-          {isDynamicIsland && coverImageUri ? (
-            <ImageBackground
-              source={{ uri: coverImageUri }}
-              style={{
-                position: 'absolute',
-                top: -24,
-                left: -24,
-                right: -24,
-                bottom: -24,
-                transform: [{ scale: 1.25 }],
-              }}
-              blurRadius={Platform.OS === 'android' ? 50 : 60}
-              resizeMode="cover"
-            >
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayColor, opacity: overlayOpacity }]} />
-            </ImageBackground>
-          ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: fallbackBg }]} />
-          )}
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: fallbackBg }]} />
           <LinearGradient colors={gradientColors} style={StyleSheet.absoluteFill} />
         </View>
 

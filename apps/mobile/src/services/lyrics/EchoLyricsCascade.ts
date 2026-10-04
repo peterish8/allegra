@@ -1,9 +1,11 @@
 /**
  * Walks the Echo Music lyrics providers in order.
  *
- * `fetchBest` returns the first synced result, remembering the first plain
- * result as a fallback. `fetchAll` asks every provider at once and returns
- * everything that came back — used by the lyrics picker.
+ * `fetchBest` asks every provider at once but still answers in priority order:
+ * the best-ranked synced result, else the best-ranked plain one. It answers as
+ * soon as every provider ranked above the winner has settled, so a slow or dead
+ * provider costs one timeout, never one each. `fetchAll` returns everything
+ * that came back — used by the lyrics picker.
  */
 import { cacheKey, TtlCache } from '../net/fetchWithTimeout';
 import {
@@ -15,6 +17,21 @@ import {
 } from './providers';
 
 const cache = new TtlCache<ProviderLyrics>(6 * 60 * 60 * 1000);
+/** Lookups still running, so the player and a prefetch for the same song share one. */
+const inFlight = new Map<string, Promise<ProviderLyrics | null>>();
+
+const ask = (name: LyricsProviderName, q: LyricsQuery): Promise<ProviderLyrics | null> =>
+  LYRICS_PROVIDERS[name]?.(q).catch(() => null) ?? Promise.resolve(null);
+
+async function bestInOrder(answers: Promise<ProviderLyrics | null>[], syncedOnly: boolean): Promise<ProviderLyrics | null> {
+  let plainFallback: ProviderLyrics | null = null;
+  for (const answer of answers) {
+    const hit = await answer;
+    if (hit?.synced) return hit;
+    plainFallback ??= hit;
+  }
+  return syncedOnly ? null : plainFallback;
+}
 
 const cleanQuery = (q: LyricsQuery): LyricsQuery => ({
   ...q,
@@ -39,29 +56,23 @@ export const EchoLyricsCascade = {
     const cached = cache.get(key);
     if (cached) return cached;
 
-    let plainFallback: ProviderLyrics | null = null;
-    for (const name of order) {
-      const provider = LYRICS_PROVIDERS[name];
-      if (!provider) continue;
-      const hit = await provider(q);
-      if (!hit) continue;
-      if (hit.synced) {
-        cache.set(key, hit);
+    const running = inFlight.get(key);
+    if (running) return running;
+
+    const lookup = bestInOrder(order.map(name => ask(name, q)), syncedOnly)
+      .then(hit => {
+        if (hit) cache.set(key, hit);
         return hit;
-      }
-      plainFallback ??= hit;
-    }
-    if (plainFallback && !syncedOnly) {
-      cache.set(key, plainFallback);
-      return plainFallback;
-    }
-    return null;
+      })
+      .finally(() => inFlight.delete(key));
+    inFlight.set(key, lookup);
+    return lookup;
   },
 
   async fetchAll(query: LyricsQuery, order: LyricsProviderName[] = DEFAULT_PROVIDER_ORDER): Promise<ProviderLyrics[]> {
     const q = cleanQuery(query);
     if (!q.title || !q.artist) return [];
-    const settled = await Promise.all(order.map(name => LYRICS_PROVIDERS[name]?.(q) ?? Promise.resolve(null)));
+    const settled = await Promise.all(order.map(name => ask(name, q)));
     return settled.filter((r): r is ProviderLyrics => r !== null);
   },
 

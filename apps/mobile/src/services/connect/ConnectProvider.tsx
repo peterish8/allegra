@@ -3,21 +3,59 @@ import Constants from 'expo-constants';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 
-import { createConnectSession, createDevelopmentTrace, type DevelopmentTraceBuffer, type ConnectSession, type ConnectView, type RemoteCommand, type TransferResult } from '../../../../../packages/connect/src/index';
+import {
+  createConnectSession,
+  createDevelopmentTrace,
+  decidePlaybackRoute,
+  isControllingAnotherDevice,
+  ownerOfflineMessage,
+  type DevelopmentTraceBuffer,
+  type ConnectSession,
+  type ConnectView,
+  type RemoteCommand,
+  type TransferResult,
+} from '../../../../../packages/connect/src/index';
+import { shareableArtwork } from '@shared/artwork';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import { setPlaylistSelectionRouter, usePlayerStore } from '../../store/playerStore';
 import { usePositionStore } from '../../store/positionStore';
 import { useListenTogetherStore } from '../../store/listenTogetherStore';
 import { positionSV } from '../../playback/positionBus';
 import { useAccount, allegraConvex } from '../account/AccountProvider';
+import { runWhenIdle } from '../bootPhases';
 import { recordPlay, recordPlayStarted, refFor } from '../sync/LibrarySync';
+import { backfillCatalogLinks, setCatalogBackfillToken } from '../sync/catalogBackfill';
 import { createListenTracker, type HeardSong } from '../sync/listenTracker';
 import { setStreamQueueRouter } from '../stream/StreamService';
 import { toStreamSong } from '../stream/streamSong';
 import { onBeforeSignOut } from '../account/signOutHooks';
-import { createMobilePlayerPort, snapshotOfSong } from './mobilePlayerPort';
+import { createMobilePlayerPort, knownRefOf, snapshotOfSong, snapshotWithRef } from './mobilePlayerPort';
 import { createMobileConnectTransport } from './convexTransport';
 import { setConnectPosition } from './remotePositionStore';
+import { createPickRouter, type PendingPick, type Pick } from './pickRouter';
+import { bindPlaybackIntents } from './playbackIntents';
+import { setSnapshotCoverToken } from './useSnapshotCover';
+
+/** A song only this phone has, picked while another device plays: the listener decides where it plays. */
+export interface ConnectChoice {
+  readonly pick: Pick;
+  readonly title: string;
+  readonly deviceName: string;
+}
+
+/** A short message about where playback went. `at` is new for every message. */
+export interface ConnectToast {
+  readonly message: string;
+  readonly at: number;
+}
+
+/** The older-download catalog lookup runs once per app run, after Connect first reaches the server. */
+let catalogBackfillStarted = false;
+
+const leftOutMessage = (count: number): string =>
+  count === 1
+    ? '1 song that is only on this phone was left out.'
+    : `${count} songs that are only on this phone were left out.`;
 
 interface ConnectContextValue {
   readonly signedIn: boolean;
@@ -31,6 +69,14 @@ interface ConnectContextValue {
   readonly transferTo: (deviceId: string) => Promise<TransferResult>;
   /** Name this phone for the other devices' lists. Kept on this phone. */
   readonly rename: (name: string) => void;
+  /** A song picked here is being looked up for the device that plays. */
+  readonly pendingPick: PendingPick | null;
+  /** A song only this phone has waits for the listener to say where it plays. */
+  readonly choice: ConnectChoice | null;
+  /** `playHere`: play it on this phone (the other device stops); otherwise drop the pick. */
+  readonly resolveChoice: (playHere: boolean) => void;
+  readonly toast: ConnectToast | null;
+  readonly dismissToast: () => void;
 }
 
 const EMPTY_VIEW: ConnectContextValue = {
@@ -44,6 +90,11 @@ const EMPTY_VIEW: ConnectContextValue = {
   control: () => undefined,
   transferTo: async () => ({ ok: false, reason: 'offline' }),
   rename: () => undefined,
+  pendingPick: null,
+  choice: null,
+  resolveChoice: () => undefined,
+  toast: null,
+  dismissToast: () => undefined,
 };
 
 const ConnectContext = createContext<ConnectContextValue>(EMPTY_VIEW);
@@ -80,6 +131,8 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
   const roomActive = useListenTogetherStore(state => state.room !== null);
   const tokenRef = useRef<string | null>(account.token);
   tokenRef.current = account.token;
+  // A cover another device could not send is looked up in the account catalog with this token.
+  useEffect(() => setSnapshotCoverToken(() => tokenRef.current), []);
   const signedInRef = useRef(account.signedIn);
   signedInRef.current = account.signedIn;
   const sessionRef = useRef<ConnectSession | null>(null);
@@ -89,12 +142,19 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [view, setView] = useState<ConnectView | null>(null);
   const [devicesVisible, setDevicesVisible] = useState(false);
   const [appForeground, setAppForeground] = useState(AppState.currentState === 'active');
+  const [pendingPick, setPendingPick] = useState<PendingPick | null>(null);
+  const [choice, setChoice] = useState<ConnectChoice | null>(null);
+  const [toast, setToast] = useState<ConnectToast | null>(null);
+  /** The session's last notice already shown, so each one is shown once. */
+  const noticeSeenRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     let disposed = false;
     let stopView: (() => void) | undefined;
     let current: ConnectSession | undefined;
     let stopSelectionRouter: (() => void) | undefined;
+    let stopIntents: (() => void) | undefined;
+    let disposeRouter: (() => void) | undefined;
     let stopQueueRouter: (() => void) | undefined;
     let stopSignOutHook: (() => void) | undefined;
     let trace: DevelopmentTraceBuffer | undefined;
@@ -141,26 +201,39 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
         ...(trace ? { trace } : {}),
       });
       sessionRef.current = current;
-      stopSelectionRouter = setPlaylistSelectionRouter(({ songs, startIndex }) => {
-        if (roomActive) return false;
-        const active = current?.view();
-        const selected = songs[startIndex];
-        const song = snapshotOfSong(selected);
-        if (!current || !active?.activeDeviceId || active.isThisDeviceActive || !active.activeDeviceOnline || !song) return false;
-        const queue = songs.slice(startIndex + 1).flatMap(item => {
-          const snapshot = snapshotOfSong(item);
-          return snapshot ? [snapshot] : [];
-        }).slice(0, 50);
-        current.control({ kind: 'play_song', song, queue });
-        return true;
+      const live = current;
+      const heldLocally = (): boolean => roomActive;
+      // A song picked here plays where the music is: on the device that plays when another one
+      // does (looked up first when this phone cannot name it yet), asking before it moves here.
+      const router = createPickRouter({
+        connect: () => (disposed ? null : { session: live, deviceId: id }),
+        heldLocally,
+        knownRef: knownRefOf,
+        findRef: song => refFor(song),
+        snapshotFor: snapshotWithRef,
+        playHere: pick => usePlayerStore.getState().setPlaylistQueue(pick.playlistId, [...pick.songs], pick.startIndex, true, { here: true }),
+        onPending: next => { if (!disposed) setPendingPick(next); },
+        onOwnerOffline: name => { if (!disposed) setToast({ message: ownerOfflineMessage(name), at: Date.now() }); },
+        onOnlyHere: (pick, name) => {
+          if (disposed) return;
+          const song = pick.songs[pick.startIndex];
+          if (song) setChoice({ pick, title: song.title, deviceName: name });
+        },
+        onLeftOut: count => { if (!disposed) setToast({ message: leftOutMessage(count), at: Date.now() }); },
+        timers: {
+          setTimeout: (callback, delay) => setTimeout(callback, delay),
+          clearTimeout: handle => clearTimeout(handle as ReturnType<typeof setTimeout>),
+        },
       });
+      disposeRouter = () => router.dispose();
+      stopSelectionRouter = setPlaylistSelectionRouter(pick => router.route(pick));
+      stopIntents = bindPlaybackIntents({ session: live, deviceId: id, heldLocally, routePick: pick => router.route(pick) });
       // Play next, and the rest of an album arriving behind its first song, go where the music is.
       stopQueueRouter = setStreamQueueRouter((songs, next) => {
-        if (roomActive) return false;
-        const active = current?.view();
-        if (!current || !active?.activeDeviceId || active.isThisDeviceActive || !active.activeDeviceOnline) return false;
+        const route = decidePlaybackRoute({ view: live.view(), deviceId: id, heldLocally: heldLocally(), staleOk: true });
+        if (route.kind !== 'remote') return false;
         const [song, ...more] = songs.flatMap(item => snapshotOfSong(toStreamSong(item)) ?? []).slice(0, 50);
-        if (song) current.control({ kind: 'queue_add', song, ...(more.length ? { more } : {}), ...(next ? { next: true } : {}) });
+        if (song) live.control({ kind: 'queue_add', song, ...(more.length ? { more } : {}), ...(next ? { next: true } : {}) });
         return true;
       });
       // Signing out ends the session that could say this phone is leaving: the goodbye goes first.
@@ -170,6 +243,20 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
       stopView = current.subscribe(nextView => {
         setView(nextView);
         setConnectPosition(nextView.livePosition);
+        // A remote "play" that started here because the playing device went offline says so once.
+        const notice = nextView.notice;
+        if (notice && notice.at !== noticeSeenRef.current) {
+          noticeSeenRef.current = notice.at;
+          setToast({ message: ownerOfflineMessage(notice.deviceName), at: notice.at });
+        }
+        // Once Connect has heard from the server (so the phone is online), older downloads learn
+        // their catalog song and its cover, a few at a time: a pick of one then goes to the other
+        // device at once and shows its cover there (sync/catalogBackfill). Once per app run.
+        if (nextView.ready && !catalogBackfillStarted) {
+          catalogBackfillStarted = true;
+          setCatalogBackfillToken(() => tokenRef.current);
+          runWhenIdle('connect catalog links', () => backfillCatalogLinks(), 8_000);
+        }
       });
       current.setVisible(AppState.currentState === 'active');
     }).catch(() => {
@@ -182,6 +269,10 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
     return () => {
       disposed = true;
       stopSelectionRouter?.();
+      stopIntents?.();
+      disposeRouter?.();
+      setPendingPick(null);
+      setChoice(null);
       stopQueueRouter?.();
       stopSignOutHook?.();
       stopView?.();
@@ -226,7 +317,8 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
       title: song.title,
       artist: song.artist ?? '',
       ...(song.album ? { album: song.album } : {}),
-      artwork: song.artwork && /^https:\/\//i.test(song.artwork) ? song.artwork : '',
+      // A download's cover file stays here; the catalog's cover goes into the account's history.
+      artwork: shareableArtwork(song.artwork, song.coverRemoteUri),
       duration: Math.max(0, song.duration ?? 0),
     });
     const tracker = createListenTracker((song, seconds, startedAt) => {
@@ -258,6 +350,7 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
           artist: player.currentSong.artist,
           album: player.currentSong.album,
           artwork: player.currentSong.coverImageUri,
+          coverRemoteUri: player.currentSong.coverRemoteUri,
           duration: player.currentSong.duration,
           originId: player.currentSong.originId,
         } : null,
@@ -286,7 +379,21 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
     AsyncStorage.setItem(DEVICE_NAME_KEY, next).catch(() => undefined);
     sessionRef.current?.rename(next);
   }, []);
-  const remotePlayback = Boolean(view?.activeDeviceId && view.activeDeviceId !== deviceId && view.activeDeviceOnline && view.song);
+  const choiceRef = useRef(choice);
+  choiceRef.current = choice;
+  const resolveChoice = useCallback((playHere: boolean) => {
+    const current = choiceRef.current;
+    setChoice(null);
+    // "Play on this phone" is the listener choosing this device: the song plays here and the
+    // device that was playing stops, as a pick in the device list would make it.
+    if (current && playHere) {
+      const { pick } = current;
+      usePlayerStore.getState().setPlaylistQueue(pick.playlistId, [...pick.songs], pick.startIndex, true, { here: true });
+    }
+  }, []);
+  const dismissToast = useCallback(() => setToast(null), []);
+  // The remote player shows once there is something to show of what the other device plays.
+  const remotePlayback = isControllingAnotherDevice(view, deviceId) && Boolean(view?.song);
 
   const value = useMemo<ConnectContextValue>(() => ({
     signedIn: account.signedIn,
@@ -299,7 +406,12 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
     control,
     transferTo,
     rename,
-  }), [account.signedIn, deviceId, view, remotePlayback, devicesVisible, openDevices, closeDevices, control, transferTo, rename]);
+    pendingPick,
+    choice,
+    resolveChoice,
+    toast,
+    dismissToast,
+  }), [account.signedIn, deviceId, view, remotePlayback, devicesVisible, openDevices, closeDevices, control, transferTo, rename, pendingPick, choice, resolveChoice, toast, dismissToast]);
 
   return <ConnectContext.Provider value={value}>{children}</ConnectContext.Provider>;
 };

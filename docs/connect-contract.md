@@ -33,6 +33,16 @@ All timestamps and positions are milliseconds and seconds respectively.
 Every song crossing the device boundary is a `SongSnapshot`:
 `{ref,title,artist,album?,artwork,duration}`. Queue snapshots are capped at 50.
 
+`artwork` is a cover every device can load: an `https:` URL of at most 2048 characters with no
+credentials, or `''`. Never a device's own file (`file:`, `content:`), a `data:` or `blob:` URL, a
+relative path, or `http:` (Android refuses cleartext images; a catalog host's `http:` link is
+upgraded to `https:` before it is sent). A device whose cover for a song is its own file (a
+download's `cover.jpg`, a cover the listener picked) sends the catalog's cover for the same song
+instead, and a browser sends the cover it shows rather than an older stored one. A receiver reads
+`''` as "look the cover up by `ref`", not as "no cover". One rule, in `packages/shared/artwork.ts`
+(`shareableArtwork`), used by every client that builds a snapshot. Added 2026-10-04. The server
+does not enforce it: it stores what it is sent.
+
 ## Public functions
 
 Every function below requires authentication. `serverNow` is returned from

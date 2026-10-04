@@ -39,6 +39,11 @@ export interface Song {
   youtubeVideoId?: string; // YouTube video ID for beta video preview feature
   /** The catalog song a download came from (`saavn:<id>`, see packages/shared/songRef). Lets another device play it. */
   originId?: string;
+  /**
+   * The catalog's https cover for this song, kept beside a local `coverImageUri` (a download's own
+   * cover.jpg). Another device cannot open this phone's files, so this is the cover that travels.
+   */
+  coverRemoteUri?: string;
 
   // AI Karaoke fields removed
 }

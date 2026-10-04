@@ -32,6 +32,18 @@ describe('resolveVisualBudget', () => {
     const { minStepSeconds } = resolveVisualBudget({ tier: 'normal', batterySaver: false, playing: true });
     expect(minStepSeconds).toBeLessThan(1 / 60);
   });
+
+  it('rests while the app is inactive and resumes the same budget on foreground return', () => {
+    for (const tier of ['low', 'normal'] as const) {
+      for (const playing of [false, true]) {
+        const foreground = resolveVisualBudget({ tier, batterySaver: false, playing, appActive: true });
+        const background = resolveVisualBudget({ tier, batterySaver: false, playing, appActive: false });
+
+        expect(background).toEqual({ ...foreground, running: false });
+        expect(resolveVisualBudget({ tier, batterySaver: false, playing, appActive: true })).toEqual(foreground);
+      }
+    }
+  });
 });
 
 describe('renderScaleFor', () => {

@@ -11,11 +11,13 @@
  * `Frosted`: a live blur under a meter would change the numbers it reports.
  * Updates once a second, so the meter itself costs almost nothing.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { runOnJS, useFrameCallback, useSharedValue } from 'react-native-reanimated';
+import type { FrameInfo } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Glass, Signal } from '../constants/allegraTheme';
+import { useAppActive } from '../hooks/useAppActive';
 import { useSettingsStore } from '../store/settingsStore';
 
 /** How a reading looks: the wave colour when smooth, coral when it drops. */
@@ -30,13 +32,15 @@ const Reading: React.FC<{ label: string; fps: number }> = ({ label, fps }) => (
 
 export const PerformanceHUD: React.FC = () => {
   const show = useSettingsStore(state => state.showPerformanceHUD);
+  const appActive = useAppActive();
+  const enabled = show && appActive;
   const insets = useSafeAreaInsets();
   const [uiFps, setUiFps] = useState(0);
   const [jsFps, setJsFps] = useState(0);
   const frames = useSharedValue(0);
   const since = useSharedValue(0);
 
-  const uiLoop = useFrameCallback(frame => {
+  const tickUi = useCallback((frame: FrameInfo) => {
     'worklet';
     if (since.value === 0) {
       since.value = frame.timestamp;
@@ -49,19 +53,20 @@ export const PerformanceHUD: React.FC = () => {
       frames.value = 0;
       since.value = frame.timestamp;
     }
-  }, false);
+  }, [frames, since, setUiFps]);
+  const uiLoop = useFrameCallback(tickUi, false);
 
   useEffect(() => {
-    uiLoop.setActive(show);
-    if (!show) {
+    uiLoop.setActive(enabled);
+    if (!enabled) {
       frames.value = 0;
       since.value = 0;
     }
-  }, [show, uiLoop, frames, since]);
+  }, [enabled, uiLoop, frames, since]);
 
   // The JS thread's own frames: a busy thread runs fewer animation frames.
   useEffect(() => {
-    if (!show) return undefined;
+    if (!enabled) return undefined;
     let raf = 0;
     let count = 0;
     let last = Date.now();
@@ -77,7 +82,7 @@ export const PerformanceHUD: React.FC = () => {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [show]);
+  }, [enabled]);
 
   if (!show) return null;
 

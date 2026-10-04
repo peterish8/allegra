@@ -4,6 +4,8 @@ export interface HeardSong {
   readonly artist?: string;
   readonly album?: string;
   readonly artwork?: string;
+  /** The catalog's https cover, for a song whose own cover is a file on this phone. */
+  readonly coverRemoteUri?: string;
   readonly duration?: number;
   readonly originId?: string;
 }

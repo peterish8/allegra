@@ -105,6 +105,18 @@ uses its own catalog, stream URL, or downloaded file. Transfer loads the current
 queue on the destination before it takes the active-player lease. The web adapter keeps the one
 layout-owned `<audio>` element and sends play/pause through `requestPlayback`.
 
+While another of the listener's devices plays, every pick and control made on a device goes to
+that device (Spotify's rule): a song tapped in a list, voice, the phone's widget. A device makes
+sound itself only when the listener chooses it, in the device list or by confirming "Play on this
+phone" for a song only that phone has. A device that has not heard from the server since it
+started listening (just opened, back from the background) waits up to 1.5 seconds before deciding,
+because the state it holds may say it is the one playing. `decidePlaybackRoute` in
+`packages/connect/src/routing.ts` is that rule for both clients; the phone looks a download it
+cannot name yet up in the catalog first (`services/connect/pickRouter.ts`).
+
+A song's cover crosses devices as a link every device can load (`docs/connect-contract.md`), never
+as one device's file, and a receiver looks a missing cover up by the song's ref.
+
 The queue belongs to the session, not to a device: any controller can add a song (next, or at the
 end), remove one, move one, or clear what is coming up, and the device that plays applies the
 edit to its own queue and reports the result. Both players hand their queue over through the same

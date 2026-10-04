@@ -265,4 +265,33 @@ describe('sync queries against SQLite', () => {
     expect((await syncDb.getLocalPlaylists()).some(list => list.id === 'mix-1')).toBe(false);
     expect(await syncDb.getOnlinePlaylistSongs('mix-1')).toEqual([]);
   });
+
+  it('lists the songs another device could not find or show yet, recently played first, and remembers each check', async () => {
+    const db = await getDatabase();
+    await insertSong('a', 'No origin');
+    await insertSong('b', 'Origin with a file cover', 'saavn:b1');
+    await insertSong('c', 'Origin with a web cover', 'saavn:c1');
+    await insertSong('d', 'Origin with a kept catalog cover', 'saavn:d1');
+    await db.runAsync("UPDATE songs SET cover_image_uri = 'file:///covers/b.jpg' WHERE id = 'b'");
+    await db.runAsync("UPDATE songs SET cover_image_uri = 'https://c.saavncdn.com/c.jpg' WHERE id = 'c'");
+    await db.runAsync("UPDATE songs SET cover_image_uri = 'file:///covers/d.jpg' WHERE id = 'd'");
+    await syncDb.setCoverRemoteUri('d', 'https://c.saavncdn.com/d.jpg');
+    await db.runAsync("UPDATE songs SET last_played = '2026-10-03T00:00:00.000Z' WHERE id = 'b'");
+
+    const gaps = await syncDb.songsMissingCatalogLinks(10, 1_000);
+    expect(gaps.map(gap => gap.id)).toEqual(['b', 'a']);
+    expect(gaps[0]).toEqual({
+      id: 'b', title: 'Origin with a file cover', artist: 'The Artist', originId: 'saavn:b1', coverImageUri: 'file:///covers/b.jpg',
+    });
+
+    await syncDb.markCatalogChecked('a', 5_000);
+    expect((await syncDb.songsMissingCatalogLinks(10, 1_000)).map(gap => gap.id)).toEqual(['b']);
+    // Asked about before the cut-off: asked about again.
+    expect((await syncDb.songsMissingCatalogLinks(10, 6_000)).map(gap => gap.id)).toEqual(['b', 'a']);
+
+    // A kept catalog cover is never replaced, and travels with the song's library rows.
+    await syncDb.setCoverRemoteUri('d', 'https://other.example/d.jpg');
+    const local = (await syncDb.getLocalSongs()).find(row => row.id === 'd');
+    expect(local?.coverRemoteUri).toBe('https://c.saavncdn.com/d.jpg');
+  });
 });

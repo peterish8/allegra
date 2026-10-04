@@ -10,7 +10,7 @@
  * Rendered at about one device pixel per point and scaled up — the field is
  * soft by design, and that keeps the fragment cost flat across screen densities.
  */
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Canvas, Fill, Group, LinearGradient, Rect, Shader, Skia, vec } from '@shopify/react-native-skia';
 import {
@@ -20,6 +20,7 @@ import {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import type { FrameInfo } from 'react-native-reanimated';
 import { Motion } from '../../constants/allegraTheme';
 import { AuraPalette, hexToRgb } from './palette';
 import { useVisualBudget } from '../../hooks/useVisualBudget';
@@ -224,7 +225,7 @@ export const MusicFlowField: React.FC<MusicFlowFieldProps> = ({
   }, [energy, shownEnergy]);
 
   const pending = useSharedValue(0);
-  const frame = useFrameCallback(info => {
+  const tick = useCallback((info: FrameInfo) => {
     'worklet';
     // Clamped step: a stall or a trip to the background never makes time leap.
     pending.value += Math.min(info.timeSincePreviousFrame ?? 16, 66) / 1000;
@@ -245,7 +246,8 @@ export const MusicFlowField: React.FC<MusicFlowFieldProps> = ({
     const next = current.slice();
     for (let i = 0; i < next.length; i++) next[i] += (goal[i] - next[i]) * k;
     colors.value = next;
-  }, false);
+  }, [minStep, pending, clock, targetColors, colors]);
+  const frame = useFrameCallback(tick, false);
 
   useEffect(() => {
     frame.setActive(running);

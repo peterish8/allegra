@@ -163,3 +163,14 @@ export function EmptyState({ title, copy, action }: { readonly title: string; re
 export function OfflineToast({ visible }: { readonly visible: boolean }) {
   return visible ? <div className="offline-toast" role="status">You are offline. Playback stays ready for when you return.</div> : null;
 }
+
+/** A short note about where playback went ("Pixel 8 is offline, so this plays here."), gone after a few seconds. */
+export function NoticeToast({ notice, onDone }: { readonly notice: { readonly message: string; readonly at: number } | null; readonly onDone: () => void }) {
+  const at = notice?.at;
+  useEffect(() => {
+    if (at === undefined) return undefined;
+    const timer = window.setTimeout(onDone, 3200);
+    return () => window.clearTimeout(timer);
+  }, [at, onDone]);
+  return notice ? <div className="offline-toast" role="status">{notice.message}</div> : null;
+}

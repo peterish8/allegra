@@ -9,6 +9,8 @@ import { EchoLyricsCascade } from './lyrics/EchoLyricsCascade';
 import { ProviderLyrics } from './lyrics/providers';
 
 const BASE_URL = 'https://test-0k.onrender.com/lyrics';
+const COLD_START_TIMEOUT_MS = 45_000;
+const PLAIN_IN_HAND_TIMEOUT_MS = 6_000;
 
 export interface LyricaResult {
   lyrics: string;
@@ -22,7 +24,43 @@ export interface LyricaResult {
   };
 }
 
+interface TimedLine { start_time?: number; text?: string }
+
+/** The backend's timed lines (`start_time` in ms) as LRC. */
+const timedToLrc = (lines: TimedLine[]): string =>
+  lines
+    .map(line => {
+      const ms = line.start_time || 0;
+      const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
+      return `[${pad(ms / 60000)}:${pad((ms % 60000) / 1000)}.${pad((ms % 1000) / 10)}] ${line.text || ''}`;
+    })
+    .join('\n');
+
+/** The title and artist as every lookup sends them, so a prefetch and the real fetch share a cache entry. */
+function cleanTitleArtist(song: string, artist: string): { cleanSong: string; cleanArtist: string } {
+  let cleanSong = song
+    .replace(/\(Lyrics\)/gi, '')
+    .replace(/\(Official.*?\)/gi, '')
+    .replace(/\(MP3_\d+K\)/gi, '')
+    .replace(/\(Audio\)/gi, '')
+    .trim();
+  let cleanArtist = artist === 'Unknown Artist' ? '' : artist;
+  // No artist but "Artist - Title": split it.
+  if (!cleanArtist && cleanSong.includes(' - ')) {
+    const parts = cleanSong.split(' - ');
+    cleanArtist = parts[0].trim();
+    cleanSong = parts.slice(1).join(' - ').trim();
+  }
+  return { cleanSong, cleanArtist };
+}
+
 class LyricaService {
+  /** Warms the provider cache for a song about to play; never throws, never hits the backend. */
+  warm(song: string, artist: string, duration?: number): void {
+    const { cleanSong, cleanArtist } = cleanTitleArtist(song, artist);
+    EchoLyricsCascade.fetchBest({ title: cleanSong, artist: cleanArtist, duration }).catch(() => null);
+  }
+
   async fetchLyrics(
     song: string,
     artist: string,
@@ -31,24 +69,8 @@ class LyricaService {
     options: { skipEcho?: boolean } = {},
   ): Promise<LyricaResult | null> {
     try {
-      // Clean song title - remove file extensions and extra metadata
-      let cleanSong = song
-        .replace(/\(Lyrics\)/gi, '')
-        .replace(/\(Official.*?\)/gi, '')
-        .replace(/\(MP3_\d+K\)/gi, '')
-        .replace(/\(Audio\)/gi, '')
-        .trim();
-      
-      // Clean artist - handle "Unknown Artist"
-      let cleanArtist = artist === 'Unknown Artist' ? '' : artist;
-      
-      // If artist is empty and song has dash, split it
-      if (!cleanArtist && cleanSong.includes(' - ')) {
-        const parts = cleanSong.split(' - ');
-        cleanArtist = parts[0].trim();
-        cleanSong = parts.slice(1).join(' - ').trim();
-      }
-      
+      const { cleanSong, cleanArtist } = cleanTitleArtist(song, artist);
+
       if (__DEV__) console.log('[Lyrica] Cleaned - Artist:', cleanArtist, 'Song:', cleanSong, 'Duration:', duration);
 
       // Echo Music provider cascade first (YouLyPlus, Paxsenix, Unison, BetterLyrics,
@@ -74,6 +96,9 @@ class LyricaService {
         if (__DEV__) console.log('[Lyrica] Synced-only mode active');
       }
       
+      // With plain lyrics already in hand, the backend gets a short chance to beat them with
+      // timestamps; without them it gets long enough to survive a cold start.
+      const timeoutMs = echo ? PLAIN_IN_HAND_TIMEOUT_MS : COLD_START_TIMEOUT_MS;
       for (const strategy of strategies) {
         let url = `${BASE_URL}/?artist=${encodeURIComponent(cleanArtist)}&song=${encodeURIComponent(cleanSong)}&timestamps=${strategy.timestamps}&fast=${strategy.fast}&metadata=true`;
         if (duration) url += `&duration=${Math.floor(duration)}`;
@@ -82,7 +107,7 @@ class LyricaService {
         
         let result: LyricaResult | null;
         try {
-          result = await this.executeFetch(url, strategy.label);
+          result = await this.executeFetch(url, strategy.label, timeoutMs);
         } catch (e) {
           // Backend down or timed out: the Echo plain lyrics beat an error.
           if (echo) return this.fromProvider(echo);
@@ -112,22 +137,18 @@ class LyricaService {
     };
   }
 
-  private async executeFetch(url: string, label: string): Promise<LyricaResult | null> {
-    // defined timeout promise
-    const timeoutPromise = new Promise<null>((_, reject) => 
-        setTimeout(() => reject(new Error('TIMEOUT')), 45000)
-    );
+  private async executeFetch(url: string, label: string, timeoutMs: number): Promise<LyricaResult | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await Promise.race([
-        fetch(url, {
-            headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-            },
-        }),
-        timeoutPromise
-      ]) as Response;
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+        },
+        signal: controller.signal,
+      });
 
       if (!response.ok) {
         let errorText = '';
@@ -163,26 +184,10 @@ class LyricaService {
         }
 
         if (!finalLyrics && Array.isArray(data.data.timed_lyrics)) {
-          finalLyrics = data.data.timed_lyrics
-            .map((line: any) => {
-              const ms = line.start_time || 0;
-              const minutes = Math.floor(ms / 60000);
-              const seconds = Math.floor((ms % 60000) / 1000);
-              const hundredths = Math.floor((ms % 1000) / 10);
-              const timestamp = `[${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}]`;
-              return `${timestamp} ${line.text || ''}`;
-            })
-            .join('\n');
+          finalLyrics = timedToLrc(data.data.timed_lyrics);
         } else if (Array.isArray(finalLyrics)) {
            try {
-               finalLyrics = finalLyrics.map((line: any) => {
-                  const ms = line.start_time || 0;
-                  const minutes = Math.floor(ms / 60000);
-                  const seconds = Math.floor((ms % 60000) / 1000);
-                  const hundredths = Math.floor((ms % 1000) / 10);
-                  const timestamp = `[${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}]`;
-                  return `${timestamp} ${line.text || ''}`;
-               }).join('\n');
+               finalLyrics = timedToLrc(finalLyrics);
            } catch {
                finalLyrics = ''; 
            }
@@ -190,14 +195,7 @@ class LyricaService {
            try {
               const parsedJson = JSON.parse(finalLyrics);
               if (Array.isArray(parsedJson)) {
-                   finalLyrics = parsedJson.map((line: any) => {
-                      const ms = line.start_time || 0;
-                      const minutes = Math.floor(ms / 60000);
-                      const seconds = Math.floor((ms % 60000) / 1000);
-                      const hundredths = Math.floor((ms % 1000) / 10);
-                      const timestamp = `[${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}]`;
-                      return `${timestamp} ${line.text || ''}`;
-                   }).join('\n');
+                   finalLyrics = timedToLrc(parsedJson);
               }
            } catch {
                if (finalLyrics.trim().startsWith('[{"')) {
@@ -221,13 +219,15 @@ class LyricaService {
       }
       return null;
     } catch (err: any) {
-      if (err.message === 'TIMEOUT' || err.name === 'AbortError') {
-         console.warn(`[Lyrica] ${label} timed out safely (45s limit).`);
+      if (err.name === 'AbortError') {
+         if (__DEV__) console.warn(`[Lyrica] ${label} timed out after ${timeoutMs}ms.`);
          throw new Error('Lyrics request timed out');
       }
 
       if (__DEV__) console.log(`[Lyrica] ${label} failed:`, err.message || 'Unknown Network Error');
       throw err instanceof Error ? err : new Error('Lyrics request failed');
+    } finally {
+      clearTimeout(timer);
     }
   }
 

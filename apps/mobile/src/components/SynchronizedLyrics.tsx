@@ -24,7 +24,10 @@
  *     keeps the speed it had, so the lines flow on instead of restarting.
  *   - A seek slides the same way, from at most 60% of the height away.
  *   - The sung line's centre sits at `activeLinePosition` of the height, so a
- *     wrapped line is balanced around the same point as a short one.
+ *     wrapped line is balanced around the same point as a short one. Where a
+ *     line is comes from its own measured box, never from adding up estimates
+ *     (`playback/lyricLayout`), and the space after the last line lets the
+ *     last lines reach that point too.
  *   - Reduce Motion: no glide, and words light whole as they start.
  *
  * Scroll by hand and the lines stay put, every line bright enough to read.
@@ -55,6 +58,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { usePlayerStore } from '../store/playerStore';
 import { lyricClockAt } from '../playback/lyricClock';
 import { glideSettled, glideStep, lineRestOpacity, LINE_LEAD_S, lyricSweep } from '../playback/lyricMotion';
+import { anchorFooter, anchorScrollY, LineBox, lineOffsets } from '../playback/lyricLayout';
 import InstrumentalWaveform, { isInstrumentalLyric, useIsActiveLine } from './InstrumentalWaveform';
 import { Frosted } from './allegra/Frosted';
 import { Motion, Signal } from '../constants/allegraTheme';
@@ -113,7 +117,8 @@ interface LyricLineProps {
   letters: boolean;
   reduceMotion: boolean;
   onLyricPress: (timestamp: number) => void;
-  onMeasured: (index: number, height: number) => void;
+  /** The line's box: its top inside the block of lines, and its height. */
+  onMeasured: (index: number, y: number, height: number) => void;
   textStyle: TextStyle;
   gap: number;
   songTitle?: string;
@@ -157,13 +162,11 @@ const LyricLine = React.memo(({
   const sweeping = display !== null;
   const rtl = useMemo(() => isRtlText(text), [text]);
 
-  const lastHeightRef = useRef<number>(0);
+  // Every report goes up: React Native only sends one when the row's frame changed, and the list must hear each
+  // one (a row that kept its frame across new lyrics sends nothing, so its last report has to stay valid).
   const handleLayout = useCallback((e: LayoutChangeEvent) => {
-    const h = e.nativeEvent.layout.height;
-    if (Math.abs(lastHeightRef.current - h) > 1) {
-      lastHeightRef.current = h;
-      onMeasured(index, h);
-    }
+    const { y, height } = e.nativeEvent.layout;
+    onMeasured(index, y, height);
   }, [onMeasured, index]);
 
   // ── How it looks: dimmed at rest, bright while sung ─────────────────────
@@ -449,47 +452,62 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
 
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
 
-  // Line offsets and heights, mirrored to the UI thread for the worklets.
-  const itemHeights = useRef<number[]>([]);
+  // Each line's measured box (its top inside the block of lines, and its height) and where the block starts in
+  // the content (below the spacer and any header). Offsets and heights are mirrored to the UI thread for the worklets.
+  //
+  // The boxes are never cleared, not for new lyrics, a new text size or the highlight switch: rows are keyed by
+  // index and stay mounted, and React Native reports a row's box when it mounts and whenever its frame changes,
+  // so the last report is always the row's real box. Clearing them on new lyrics (as this once did) dropped every
+  // row whose frame happened not to change, its box fell back to a one-row estimate, and with wrapped lines the
+  // arithmetic ran a row short per line, so the sung line slid further down the screen as the song went on.
+  const itemBoxes = useRef<(LineBox | undefined)[]>([]);
+  const linesTop = useRef<number | null>(null);
   const itemOffsets = useRef<number[]>([]);
+  const itemHeights = useRef<number[]>([]);
   const itemOffsetsSV = useSharedValue<number[]>([]);
   const itemHeightsSV = useSharedValue<number[]>([]);
-  const containerHeightSV = useSharedValue(SCREEN_HEIGHT);
+  const containerHeightSV = useSharedValue(0);
   const contentHeightSV = useSharedValue(0);
   const isUserScrollingSV = useSharedValue(false);
   useEffect(() => { isUserScrollingSV.value = isUserScrolling; }, [isUserScrolling, isUserScrollingSV]);
+  // The viewport's height in React too (it changes only on layout), for the space after the last line.
+  const [viewportHeight, setViewportHeight] = useState(0);
 
   const recomputeOffsets = useCallback(() => {
-    let offset = topSpacerHeight;
-    const offsets: number[] = [];
-    const heights: number[] = [];
-    for (let i = 0; i < lyrics.length; i++) {
-      const h = itemHeights.current[i] ?? estimate;
-      offsets.push(offset);
-      heights.push(h);
-      offset += h;
-    }
+    const { offsets, heights } = lineOffsets(linesTop.current ?? topSpacerHeight, itemBoxes.current, lyrics.length, estimate);
     itemOffsets.current = offsets;
+    itemHeights.current = heights;
     itemOffsetsSV.value = offsets;
     itemHeightsSV.value = heights;
   }, [topSpacerHeight, lyrics.length, itemOffsetsSV, itemHeightsSV, estimate]);
 
-  // New lyrics (another song) or a new text size: forget the old measurements.
-  useEffect(() => { itemHeights.current = []; }, [lyrics, gap, textStyle.fontSize]);
   useEffect(() => { recomputeOffsets(); }, [recomputeOffsets, lyrics]);
 
-  // Heights arrive a line at a time as they lay out; batch them into one
-  // offsets update per frame instead of one per line.
+  // Boxes arrive a line at a time as they lay out (and every line below one
+  // that grew moves); batch them into one offsets update per frame.
   const pendingFrame = useRef<number | null>(null);
-  const handleItemMeasured = useCallback((idx: number, height: number) => {
-    if (Math.abs((itemHeights.current[idx] ?? estimate) - height) <= 1) return;
-    itemHeights.current[idx] = height;
+  const recomputeOffsetsRef = useRef(recomputeOffsets);
+  recomputeOffsetsRef.current = recomputeOffsets;
+  const scheduleRecompute = useCallback(() => {
     if (pendingFrame.current != null) return;
     pendingFrame.current = requestAnimationFrame(() => {
       pendingFrame.current = null;
-      recomputeOffsets();
+      // A song/settings update may have landed since this frame was queued.
+      recomputeOffsetsRef.current();
     });
-  }, [recomputeOffsets, estimate]);
+  }, []);
+  const handleItemMeasured = useCallback((idx: number, y: number, height: number) => {
+    const known = itemBoxes.current[idx];
+    if (known && known.y === y && known.height === height) return;
+    itemBoxes.current[idx] = { y, height };
+    scheduleRecompute();
+  }, [scheduleRecompute]);
+  const handleLinesLayout = useCallback((e: LayoutChangeEvent) => {
+    const y = e.nativeEvent.layout.y;
+    if (linesTop.current === y) return;
+    linesTop.current = y;
+    scheduleRecompute();
+  }, [scheduleRecompute]);
   useEffect(() => () => { if (pendingFrame.current != null) cancelAnimationFrame(pendingFrame.current); }, []);
 
   // Selector, not the whole store: this component re-renders while lyrics scroll.
@@ -579,9 +597,12 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
     const idx = activeIndexDV.value;
     const offsets = itemOffsetsSV.value;
     const heights = itemHeightsSV.value;
-    if (idx < 0 || idx >= offsets.length) return -1;
-    const centre = offsets[idx] + (heights[idx] ?? 0) / 2;
-    return Math.max(0, centre - containerHeightSV.value * activeLinePosition);
+    const viewport = containerHeightSV.value;
+    const content = contentHeightSV.value;
+    if (idx < 0 || idx >= offsets.length || viewport <= 0 || content <= 0) return -1;
+    // Include the content extent in the target, so a jump clamped during
+    // layout is retried when the lyric rows/footer finish arriving.
+    return anchorScrollY(offsets[idx], heights[idx] ?? 0, viewport, activeLinePosition, content);
   });
 
   // ─── Following the sung line ─────────────────────────────────────
@@ -654,8 +675,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
         return;
       }
       if (prev && prev.live && prev.target === now.target && prev.user === now.user) return;
-      const maxY = Math.max(0, contentHeightSV.value - containerHeightSV.value);
-      const toY = contentHeightSV.value > 0 ? Math.min(now.target, maxY) : now.target;
+      const toY = now.target;
       const fromY = scrollYSV.value;
       const delta = toY - fromY;
       // Coming back from hidden is a first frame too: the list jumps to the sung line, no glide from the old place.
@@ -766,8 +786,9 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   useImperativeHandle(ref, () => ({
     scrollToIndex: ({ index, animated = true, viewPosition = activeLinePosition }) => {
       const offsets = itemOffsets.current;
-      if (index < offsets.length) {
-        const targetY = Math.max(0, offsets[index] - containerHeightSV.value * viewPosition);
+      if (index >= 0 && index < offsets.length) {
+        const targetY = anchorScrollY(offsets[index], itemHeights.current[index] ?? 0,
+          containerHeightSV.value, viewPosition, contentHeightSV.value);
         scrollRef.current?.scrollTo({ y: targetY, animated });
       }
     },
@@ -808,7 +829,9 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
         // Android only; iOS ignores this prop.
         fadingEdgeLength={edgeFade > 0 ? edgeFade : undefined}
         onLayout={e => {
-          containerHeightSV.value = e.nativeEvent.layout.height;
+          const h = e.nativeEvent.layout.height;
+          containerHeightSV.value = h;
+          setViewportHeight(h);
         }}
         onContentSizeChange={(_w, h) => {
           contentHeightSV.value = h;
@@ -816,8 +839,8 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
       >
         <View style={{ height: topSpacerHeight }} />
         {headerContent}
-        <Animated.View style={glideStyle}>{lyrics.map(renderLyricLine)}</Animated.View>
-        <View style={{ height: bottomSpacerHeight }} />
+        <Animated.View style={glideStyle} onLayout={handleLinesLayout}>{lyrics.map(renderLyricLine)}</Animated.View>
+        <View style={{ height: anchorFooter(viewportHeight, activeLinePosition, bottomSpacerHeight) }} />
       </Animated.ScrollView>
 
       {pillDirection !== 0 && (

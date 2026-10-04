@@ -13,10 +13,11 @@
  * canvas density and rest rule come from the visual budget (device tier,
  * Battery Saver, playback), and it stops when `active` is false.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { Canvas, Fill, RadialGradient, Rect, vec } from '@shopify/react-native-skia';
 import { Easing, useDerivedValue, useFrameCallback, useSharedValue, withTiming } from 'react-native-reanimated';
+import type { FrameInfo } from 'react-native-reanimated';
 import { useVisualBudget } from '../../hooks/useVisualBudget';
 
 import { Blob, BASE, CYCLE_S, FADE_MS, MINI_BLOBS, oscillate, PLAYER_BLOBS, rgba, rotatedColorAt, toRgb } from './glowMath';
@@ -90,13 +91,14 @@ const GlowBackground: React.FC<GlowBackgroundProps> = ({ colors, variant = 'play
   }, [budget.minStepSeconds, minStep]);
   const progress = useSharedValue(0);
   const pending = useSharedValue(0);
-  const frame = useFrameCallback(info => {
+  const tick = useCallback((info: FrameInfo) => {
     'worklet';
     pending.value += Math.min(info.timeSincePreviousFrame ?? 16, 66) / 1000;
     if (pending.value < minStep.value) return;
     progress.value = (progress.value + pending.value / CYCLE_S) % 1;
     pending.value = 0;
-  }, false);
+  }, [minStep, pending, progress]);
+  const frame = useFrameCallback(tick, false);
   const running = active && budget.running;
   useEffect(() => {
     frame.setActive(running);

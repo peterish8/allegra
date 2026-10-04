@@ -210,6 +210,15 @@ export async function fetchLyricsAlternatives(song: UnifiedSong, signal?: AbortS
   );
 }
 
+/** `GET /api/artwork`: cover links for a song by title and artist, best guess first. */
+export async function fetchArtworkUrls(title: string, artist: string, signal?: AbortSignal): Promise<readonly string[]> {
+  const { urls } = await request<{ urls: string[] }>(
+    `/api/artwork?${new URLSearchParams({ title, artist, limit: '1' }).toString()}`,
+    { signal }
+  );
+  return Array.isArray(urls) ? urls : [];
+}
+
 /** Optional Apple Music editorial motion artwork. `null` keeps the normal cover untouched. */
 export async function fetchCanvasArtwork(song: Pick<UnifiedSong, 'title' | 'artist' | 'album' | 'duration'>, signal?: AbortSignal): Promise<MotionArtwork | null> {
   return request(

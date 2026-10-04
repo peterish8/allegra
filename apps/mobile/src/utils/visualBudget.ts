@@ -4,8 +4,8 @@
  * One rule set instead of a copy in every visual: the frame cap, the pixel
  * density and whether the visual should draw at all all come from here, so the
  * battery cost of the app's atmosphere is tuned in one place. Pure — the hook
- * (`hooks/useVisualBudget`) feeds it the device tier, Battery Saver and whether
- * music is playing.
+ * (`hooks/useVisualBudget`) feeds it the device tier, Battery Saver, playback
+ * state and whether AppState says the app is active.
  *
  *   low tier / Battery Saver   30fps at 0.6 pixels per point, and rests on its
  *                              last frame while music is paused
@@ -21,6 +21,8 @@ export interface VisualBudgetInput {
   batterySaver: boolean;
   /** Music is playing. */
   playing: boolean;
+  /** The app is foregrounded. Omitted by older callers, which remain active. */
+  appActive?: boolean;
 }
 
 export interface VisualBudget {
@@ -39,11 +41,14 @@ export interface VisualBudget {
 const GAP_TOLERANCE = 0.8;
 const gapFor = (fps: number): number => (1 / fps) * GAP_TOLERANCE;
 
-export const resolveVisualBudget = ({ tier, batterySaver, playing }: VisualBudgetInput): VisualBudget => {
+export const resolveVisualBudget = ({ tier, batterySaver, playing, appActive = true }: VisualBudgetInput): VisualBudget => {
+  let budget: VisualBudget;
   if (tier === 'low' || batterySaver) {
-    return { minStepSeconds: gapFor(30), pixelsPerPoint: 0.6, running: playing };
+    budget = { minStepSeconds: gapFor(30), pixelsPerPoint: 0.6, running: playing };
+  } else {
+    budget = { minStepSeconds: gapFor(playing ? 60 : 24), pixelsPerPoint: 1, running: true };
   }
-  return { minStepSeconds: gapFor(playing ? 60 : 24), pixelsPerPoint: 1, running: true };
+  return { ...budget, running: appActive && budget.running };
 };
 
 /**

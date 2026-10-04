@@ -1009,3 +1009,53 @@ test('a subscriber that throws cannot stop a command from being sent', async () 
   sessionA.dispose();
   sessionB.dispose();
 });
+
+test('a view is ready only once this listen has heard from the server', async () => {
+  // Where a pick plays is decided on this flag: a phone back from the background must not act on
+  // the state it held before it left.
+  const clock = new TestClock();
+  const transport = new MemoryTransport(() => clock.now());
+  transport.seedState(state(clock));
+  const session = createConnectSession({ transport, player: new FakePlayerPort(), device: device('phone-b', 'Pixel 8'), clock });
+  assert.equal(session.view().ready, false);
+
+  session.setVisible(true);
+  await settle();
+  assert.equal(session.view().ready, true);
+
+  session.setVisible(false);
+  await settle();
+  assert.equal(session.view().ready, false);
+  assert.equal(session.view().activeDeviceId, 'web-a');
+
+  session.setVisible(true);
+  await settle();
+  assert.equal(session.view().ready, true);
+  session.dispose();
+});
+
+test('a song started while the playing device is offline plays here, and says why', async () => {
+  const { clock, transport, playerB, sessionA, sessionB } = await sessionPair();
+  silently(transport, () => sessionA.dispose());
+  clock.advance(20_000);
+  transport.setDeviceOffline('web-a');
+  await settle();
+  assert.equal(sessionB.view().notice, undefined);
+
+  sessionB.control({ kind: 'play_song', song: nextSong, queue: [] });
+  await settle();
+
+  assert.equal(playerB.getSnapshot().song?.ref, nextSong.ref);
+  assert.equal(playerB.getSnapshot().isPlaying, true);
+  assert.deepEqual(sessionB.view().notice, { code: 'played_here_owner_offline', deviceName: 'Laptop', at: clock.now() });
+  sessionB.dispose();
+});
+
+test('a control sent to an online device leaves no notice', async () => {
+  const { sessionA, sessionB } = await sessionPair();
+  sessionB.control({ kind: 'play_song', song: nextSong, queue: [] });
+  await settle();
+  assert.equal(sessionB.view().notice, undefined);
+  sessionA.dispose();
+  sessionB.dispose();
+});

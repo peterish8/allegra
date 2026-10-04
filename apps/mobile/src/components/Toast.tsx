@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Animated, StyleSheet, Text, View, Pressable, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useSettingsStore } from '../store/settingsStore';
 import { Frosted } from './allegra/Frosted';
 import { Signal } from '../constants/allegraTheme';
 
@@ -32,7 +31,6 @@ export const Toast: React.FC<ToastProps> = ({
   duration = DEFAULT_DURATION,
 }) => {
   const insets = useSafeAreaInsets();
-  const isIsland = useSettingsStore(state => state.miniPlayerStyle === 'island');
 
   // Stay mounted through the exit animation (parent often flips visible=false).
   const [mounted, setMounted] = useState(false);
@@ -40,7 +38,7 @@ export const Toast: React.FC<ToastProps> = ({
   const [displayType, setDisplayType] = useState(type);
 
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(isIsland ? SLIDE : -SLIDE)).current;
+  const translateY = useRef(new Animated.Value(-SLIDE)).current;
   const progress = useRef(new Animated.Value(1)).current;
 
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -48,8 +46,6 @@ export const Toast: React.FC<ToastProps> = ({
   const dismissingRef = useRef(false);
   // Generation token — ignore stale timers / animation callbacks.
   const genRef = useRef(0);
-  // Lock entry direction for this show cycle so mid-toast style flips don't re-animate.
-  const fromBottomRef = useRef(isIsland);
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
 
@@ -69,7 +65,7 @@ export const Toast: React.FC<ToastProps> = ({
     dismissingRef.current = true;
     clearAnims();
 
-    const exitY = fromBottomRef.current ? SLIDE : -SLIDE;
+    const exitY = -SLIDE;
     const anim = Animated.parallel([
       Animated.timing(opacity, {
         toValue: 0,
@@ -97,12 +93,11 @@ export const Toast: React.FC<ToastProps> = ({
     (nextMessage: string, nextType: ToastProps['type'], gen: number, holdMs: number) => {
       clearAnims();
       dismissingRef.current = false;
-      fromBottomRef.current = isIsland;
       setDisplayMessage(nextMessage);
       setDisplayType(nextType ?? 'success');
       setMounted(true);
 
-      const enterY = fromBottomRef.current ? SLIDE : -SLIDE;
+      const enterY = -SLIDE;
       opacity.setValue(0);
       translateY.setValue(enterY);
       progress.setValue(1);
@@ -135,7 +130,7 @@ export const Toast: React.FC<ToastProps> = ({
         runExit(gen);
       }, holdMs);
     },
-    [clearAnims, isIsland, opacity, progress, runExit, translateY]
+    [clearAnims, opacity, progress, runExit, translateY]
   );
 
   useEffect(() => {
@@ -172,9 +167,7 @@ export const Toast: React.FC<ToastProps> = ({
         ? 'alert-circle'
         : 'information-circle';
 
-  const positionStyle = fromBottomRef.current
-    ? { bottom: insets.bottom + 88, left: 20, right: 20 }
-    : { top: insets.top + 12, left: 20, right: 20 };
+  const positionStyle = { top: insets.top + 12, left: 20, right: 20 };
 
   return (
     <Animated.View

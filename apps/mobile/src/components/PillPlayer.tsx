@@ -12,7 +12,9 @@
  * - Tap or swipe up opens Now Playing; swipe sideways to skip.
  *
  * Everything that moves is transform / opacity / colour, so it stays smooth
- * on old phones. The disc does not spin there (performanceTier).
+ * on old phones. The disc does not spin there (performanceTier). Under the
+ * open player and in the background the pill is invisible: its glow and disc
+ * rest there and pick up where they stopped.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
@@ -23,6 +25,7 @@ import Animated, {
   interpolateColor,
   runOnJS,
   useAnimatedProps,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -46,6 +49,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { PILL_PLAYER_HEIGHT, pillPlayerInset } from '../navigation/tabs';
 import { playerSheetProgress } from '../navigation/sheetProgress';
 import { lastSongDirection } from '../store/playerStore';
+import { useAppActive } from '../hooks/useAppActive';
 
 export { PILL_PLAYER_HEIGHT };
 
@@ -59,6 +63,14 @@ const COOKIE = 40;
 const GLASS_ART = 40;
 const SPIN_MS = 14000;
 const SPIN = !isLowEndDevice();
+/** The pill is gone once the player sheet is this fraction open: it fades over the first quarter. */
+const HAND_OVER_AT = 0.25;
+
+/** The shell's opacity: arrived (`enter`) and not yet handed over to the opening sheet. */
+const shellOpacity = (enter: number, sheet: number): number => {
+  'worklet';
+  return enter * Math.max(0, 1 - sheet / HAND_OVER_AT);
+};
 
 /** How far the pill can be pulled, in points, however far the finger goes. */
 const PILL_GIVE_UP = 14;
@@ -143,18 +155,26 @@ const PillPlayer: React.FC<PillPlayerProps> = ({
         : interpolateColor(mix.value, [0, 1], [fromColor.value, toColor.value]),
   }), [background]);
 
-  // ── Disc: turns slowly while playing, holds its angle when paused ─────────
+  // ── Seen: the pill stays mounted under the open player and while the app is
+  // in the background, so its glow and disc rest whenever nobody can see it.
+  // The UI thread knows (the shell's own opacity, below) and tells JavaScript
+  // only when that flips, never per frame.
+  const [shown, setShown] = useState(false);
+  const appActive = useAppActive();
+
+  // ── Disc: turns slowly while playing and seen, holds its angle otherwise ──
   const spin = useSharedValue(0);
+  const spinning = SPIN && playing && shown && appActive;
   useEffect(() => {
     if (!SPIN) return;
-    if (playing) {
+    if (spinning) {
       const from = spin.value % 360;
       spin.value = from;
       spin.value = withRepeat(withTiming(from + 360, { duration: SPIN_MS, easing: Easing.linear }), -1, false);
     } else {
       cancelAnimation(spin);
     }
-  }, [playing, spin]);
+  }, [spinning, spin]);
   const discStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value}deg` }] }));
 
   // ── Progress ring ─────────────────────────────────────────────────────────
@@ -178,13 +198,18 @@ const PillPlayer: React.FC<PillPlayerProps> = ({
   const restTop = Math.max(Dimensions.get('window').height, Dimensions.get('screen').height) - bottom - PILL_PLAYER_HEIGHT;
   const shellMotion = useAnimatedStyle(() => {
     const p = playerSheetProgress.value;
-    const handOver = Math.max(0, 1 - p * 4);
     // The pill gives a few points under the finger, never more: the further
     // the pull, the harder it resists (a swipe up opens the player instead).
     const y = (1 - enter.value) * 24 + dragY.value - restTop * p;
     const x = dragX.value;
-    return { opacity: enter.value * handOver, transform: [{ translateY: y }, { translateX: x }] as const };
+    return { opacity: shellOpacity(enter.value, p), transform: [{ translateY: y }, { translateX: x }] as const };
   });
+  useAnimatedReaction(
+    () => shellOpacity(enter.value, playerSheetProgress.value) > 0,
+    (now, before) => {
+      if (now !== before) runOnJS(setShown)(now);
+    },
+  );
 
   const [backNudge, setBackNudge] = useState(0);
   const [nextNudge, setNextNudge] = useState(0);
@@ -233,7 +258,7 @@ const PillPlayer: React.FC<PillPlayerProps> = ({
       >
         {glow ? (
           <View style={[StyleSheet.absoluteFill, styles.glowClip]} pointerEvents="none">
-            <GlowBackground colors={glowColors} variant="mini" />
+            <GlowBackground colors={glowColors} variant="mini" active={shown} />
           </View>
         ) : null}
         {glass ? <GlassShadow radius={PILL_PLAYER_HEIGHT / 2} /> : null}

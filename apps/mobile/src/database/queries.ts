@@ -61,6 +61,7 @@ export const getAllSongs = async (): Promise<Song[]> => {
       is_liked: number | null;
       is_hidden: number | null;
       origin_id: string | null;
+      cover_remote_uri: string | null;
     }>('SELECT * FROM songs WHERE is_hidden = 0 ORDER BY date_created DESC');
     
     return songsRows.map((row) => ({
@@ -83,6 +84,7 @@ export const getAllSongs = async (): Promise<Song[]> => {
       isLiked: row.is_liked === 1,
       isHidden: row.is_hidden === 1,
       originId: row.origin_id ?? undefined,
+      coverRemoteUri: row.cover_remote_uri ?? undefined,
     }));
   });
 };
@@ -108,6 +110,7 @@ export const getHiddenSongs = async (): Promise<Song[]> => {
       is_liked: number | null;
       is_hidden: number | null;
       origin_id: string | null;
+      cover_remote_uri: string | null;
     }>('SELECT * FROM songs WHERE is_hidden = 1 ORDER BY date_created DESC');
     
     return songsRows.map((row) => ({
@@ -130,6 +133,7 @@ export const getHiddenSongs = async (): Promise<Song[]> => {
       isLiked: row.is_liked === 1,
       isHidden: row.is_hidden === 1,
       originId: row.origin_id ?? undefined,
+      coverRemoteUri: row.cover_remote_uri ?? undefined,
     }));
   });
 };
@@ -157,6 +161,7 @@ export const getSongById = async (id: string): Promise<Song | null> => {
     is_hidden: number | null;
     youtube_video_id: string | null;
     origin_id: string | null;
+    cover_remote_uri: string | null;
   }>('SELECT * FROM songs WHERE id = ?', [id]);
   
   if (!songRow) return null;
@@ -189,6 +194,7 @@ export const getSongById = async (id: string): Promise<Song | null> => {
     isHidden: songRow.is_hidden === 1,
     youtubeVideoId: songRow.youtube_video_id ?? undefined,
     originId: songRow.origin_id ?? undefined,
+    coverRemoteUri: songRow.cover_remote_uri ?? undefined,
     lyrics: normalizeLyrics(lyricsRows.map((row) => ({
       id: row.id,
       timestamp: row.timestamp,
@@ -208,8 +214,9 @@ export const insertSong = async (song: Song): Promise<void> => {
     await db.runAsync(
       `INSERT OR REPLACE INTO songs
          (id, title, artist, album, gradient_id, duration, date_created, date_modified,
-          play_count, scroll_speed, lyrics_align, text_case, audio_uri, is_liked, cover_image_uri, youtube_video_id, origin_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          play_count, scroll_speed, lyrics_align, text_case, audio_uri, is_liked, cover_image_uri, youtube_video_id, origin_id,
+          cover_remote_uri)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         song.id,
         song.title,
@@ -228,6 +235,7 @@ export const insertSong = async (song: Song): Promise<void> => {
         song.coverImageUri ?? null,
         song.youtubeVideoId ?? null,
         song.originId ?? null,
+        song.coverRemoteUri ?? null,
       ]
     );
 
@@ -256,7 +264,7 @@ export const updateSong = async (song: Song): Promise<void> => {
          title = ?, artist = ?, album = ?, gradient_id = ?, duration = ?,
          date_modified = ?, scroll_speed = ?, lyrics_align = ?, text_case = ?,
          cover_image_uri = ?, audio_uri = ?, is_liked = ?, youtube_video_id = ?,
-         origin_id = COALESCE(?, origin_id)
+         origin_id = COALESCE(?, origin_id), cover_remote_uri = COALESCE(?, cover_remote_uri)
        WHERE id = ?`,
       [
         song.title,
@@ -273,6 +281,7 @@ export const updateSong = async (song: Song): Promise<void> => {
         song.isLiked ? 1 : 0,
         song.youtubeVideoId ?? null,
         song.originId ?? null,
+        song.coverRemoteUri ?? null,
         song.id,
       ]
     );

@@ -19,7 +19,6 @@ import {
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useShallow } from 'zustand/react/shallow';
 import { Ionicons } from '@expo/vector-icons';
 import type { LayoutChangeEvent } from 'react-native';
 import SettingsGlow from '../components/settings/SettingsGlow';
@@ -44,8 +43,6 @@ import { exportAllSongs, shareExportedFile, importSongsFromJson } from '../utils
 import { clearAllData } from '../database/queries';
 import { useLuvsPreferencesStore } from '../store/luvsPreferencesStore';
 import { LanguagePickerModal } from '../components/LanguagePickerModal';
-import { useDesktopBridgeSettingsStore } from '../store/desktopBridgeSettingsStore';
-import { trustedPairingService, TrustedDesktopRecord } from '../services/TrustedPairingService';
 import { useSongsStore } from '../store/songsStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { scanAudioFiles, convertAudioFileToSong } from '../services/mediaScanner';
@@ -86,18 +83,6 @@ const SettingsScreen: React.FC<Props> = () => {
   const hiddenSongs = useSongsStore(s => s.hiddenSongs);
   const fetchHiddenSongs = useSongsStore(s => s.fetchHiddenSongs);
   const unhideSong = useSongsStore(s => s.hideSong);
-  const { desktopConnectEnabled, allowDesktopDownloads, setDesktopConnectEnabled, setAllowDesktopDownloads } = useDesktopBridgeSettingsStore(
-    useShallow(s => ({
-      desktopConnectEnabled: s.desktopConnectEnabled,
-      allowDesktopDownloads: s.allowDesktopDownloads,
-      setDesktopConnectEnabled: s.setDesktopConnectEnabled,
-      setAllowDesktopDownloads: s.setAllowDesktopDownloads,
-    })),
-  );
-  const [pairingModalVisible, setPairingModalVisible] = React.useState(false);
-  const [pairingPayloadText, setPairingPayloadText] = React.useState('');
-  const [pairingBusy, setPairingBusy] = React.useState(false);
-  const [, setTrustedDesktops] = React.useState<TrustedDesktopRecord[]>([]);
 
   const [notice, setNotice] = React.useState<string | null>(null);
   const [alertConfig, setAlertConfig] = React.useState<{
@@ -189,22 +174,6 @@ const SettingsScreen: React.FC<Props> = () => {
     setSelectedFiles(new Set());
   }, [availableAudioFiles, selectedFiles, addSong, fetchSongs]);
 
-  const handlePairFromPayload = React.useCallback(async () => {
-    try {
-      setPairingBusy(true);
-      const payload = JSON.parse(pairingPayloadText);
-      await trustedPairingService.saveTrustedDesktop(payload);
-      const desktops = await trustedPairingService.listTrustedDesktops();
-      setTrustedDesktops(desktops);
-      setPairingModalVisible(false);
-      setPairingPayloadText('');
-    } catch (e) {
-      Alert.alert('Pairing failed', e instanceof Error ? e.message : 'Invalid payload');
-    } finally {
-      setPairingBusy(false);
-    }
-  }, [pairingPayloadText]);
-
   // A dark room with one glow of the playing cover's colour behind the title
   // (SettingsGlow), dark panels, jump chips that stay under the status bar.
   const hasSong = usePlayerStore(state => !!state.currentSongId);
@@ -237,7 +206,6 @@ const SettingsScreen: React.FC<Props> = () => {
     nav: `${settings.navBarStyle === 'modern-pill' ? 'Floating pill' : 'Classic bar'} · voice ${(settings.micEnabled ?? true) ? 'on' : 'off'}`,
     discover: `Languages: ${luvsLanguageSummary.toLowerCase()}`,
     library: `${songs.length} ${songs.length === 1 ? 'song' : 'songs'}${hiddenSongs.length > 0 ? ` · ${hiddenSongs.length} hidden` : ''}`,
-    desktop: desktopConnectEnabled ? 'On' : 'Off',
     about: `Version ${APP_VERSION}`,
   };
 
@@ -287,7 +255,6 @@ const SettingsScreen: React.FC<Props> = () => {
                 { key: 'discover', label: 'Discover' },
                 { key: 'together', label: 'Listen together' },
                 { key: 'library', label: 'Library & data' },
-                { key: 'desktop', label: 'Desktop' },
                 { key: 'about', label: 'About' },
               ]}
             />
@@ -467,12 +434,6 @@ const SettingsScreen: React.FC<Props> = () => {
           />
         </Section>
 
-        <Section id="desktop" summary={summaries.desktop} icon="desktop-outline" title="Desktop Connect" lead="Send songs between this phone and your computer." onLayout={at('desktop')}>
-          <Kit.Switch label="Desktop Connect" hint="Lets a paired computer see and control this phone." value={desktopConnectEnabled} onChange={setDesktopConnectEnabled} />
-          <Kit.Switch label="Allow downloads from desktop" value={allowDesktopDownloads} onChange={setAllowDesktopDownloads} />
-          <Action label="Pair a computer" onPress={() => setPairingModalVisible(true)} />
-        </Section>
-
         <Section id="about" summary={summaries.about} icon="information-circle-outline" title="About" lead="Version, credits and a fresh start." onLayout={at('about')}>
           <Row label="LuvLyrics" hint={`Version ${APP_VERSION}. ${songs.length} songs, ${likedCount} liked.`} />
           <Row
@@ -566,28 +527,6 @@ const SettingsScreen: React.FC<Props> = () => {
                 onPress={handleImportSelected} disabled={selectedFiles.size === 0}
               >
                 <Text style={[styles.selectionButtonText, styles.selectionButtonTextImport]}>Import {selectedFiles.size}</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={pairingModalVisible} transparent animationType="slide" onRequestClose={() => setPairingModalVisible(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setPairingModalVisible(false)}>
-          <Pressable style={styles.nameModal} onPress={e => e.stopPropagation()}>
-            <Text style={styles.nameModalTitle}>{SettingsStrings.trustedPairing}</Text>
-            <Text style={styles.pairingHint}>Scan the desktop QR and paste its JSON payload here.</Text>
-            <TextInput
-              style={styles.pairingInput} value={pairingPayloadText} onChangeText={setPairingPayloadText}
-              multiline autoCapitalize="none" autoCorrect={false}
-              placeholder="Paste QR payload JSON" placeholderTextColor="rgba(255,255,255,0.35)"
-            />
-            <View style={styles.nameModalButtons}>
-              <Pressable style={styles.nameModalButton} onPress={() => setPairingModalVisible(false)}>
-                <Text style={styles.nameModalButtonText}>{SettingsStrings.cancel}</Text>
-              </Pressable>
-              <Pressable style={[styles.nameModalButton, styles.nameModalButtonPrimary]} onPress={handlePairFromPayload} disabled={pairingBusy}>
-                <Text style={[styles.nameModalButtonText, styles.nameModalButtonTextPrimary]}>{pairingBusy ? 'Pairing…' : 'Pair'}</Text>
               </Pressable>
             </View>
           </Pressable>
@@ -746,13 +685,6 @@ const styles = StyleSheet.create({
   nameModalButtonPrimary: { backgroundColor: '#2E2E2E' },
   nameModalButtonText: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
   nameModalButtonTextPrimary: { color: '#fff' },
-  pairingHint: { color: Colors.textSecondary, fontSize: 13, marginBottom: 10 },
-  pairingInput: {
-    minHeight: 100, maxHeight: 180, borderRadius: 10,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.04)', color: Colors.textPrimary,
-    padding: 10, textAlignVertical: 'top', marginBottom: 12,
-  },
 
   // Selection modal
   selectionOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'flex-end' },

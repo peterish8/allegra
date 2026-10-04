@@ -29,6 +29,7 @@ import { useCoverArtBackfill } from '../hooks/useCoverArtBackfill';
 import { useDeepLinks } from '../hooks/useDeepLinks';
 import { useWidgetLinks, useWidgetSync } from '../widget/useWidgetSync';
 import ConnectDeviceSheet from '../components/connect/ConnectDeviceSheet';
+import ConnectNoticeHost from '../components/connect/ConnectNoticeHost';
 import ConnectMiniPlayer from '../components/connect/ConnectMiniPlayer';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -113,6 +114,8 @@ export const RootNavigator: React.FC = () => {
         {/* Listen together: runs the room sync, shows join requests anywhere. */}
         <ListenTogetherHost />
         <ConnectDeviceSheet />
+        {/* Where a pick went: "<device> is offline, so this plays here", and "Play on this phone?". */}
+        <ConnectNoticeHost />
         <BackgroundDownloader />
         {/* Hold the mic, say a song: the answer appears here, over everything. */}
         <VoiceSearchCard />

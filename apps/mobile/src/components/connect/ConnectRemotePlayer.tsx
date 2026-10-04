@@ -30,6 +30,7 @@ import type { SongSnapshot } from '@shared/songRef';
 import type { RootStackScreenProps } from '../../types/navigation';
 import { useConnect } from '../../services/connect/ConnectProvider';
 import { useConnectPositionStore } from '../../services/connect/remotePositionStore';
+import { useSnapshotCover } from '../../services/connect/useSnapshotCover';
 import { toggleOnlineLike } from '../../services/sync/onlineLike';
 import { lyricaService } from '../../services/LyricaService';
 import { extractAlbumColors } from '../../services/NativePalette';
@@ -55,6 +56,14 @@ import { PlayerSheet, SheetScrollView } from '../player/PlayerSheet';
 import Artwork from '../allegra/Artwork';
 
 const { Gesture, GestureDetector } = GestureHandler;
+
+/** Queue rows near the top look a missing cover up; rows further down use only what is at hand. */
+const QUEUE_COVER_LOOKUPS = 8;
+
+const QueuedCover: React.FC<{ song: SongSnapshot; index: number; style: React.ComponentProps<typeof Artwork>['style'] }> = ({ song, index, style }) => {
+  const cover = useSnapshotCover(song, { lookUp: index < QUEUE_COVER_LOOKUPS });
+  return <Artwork uri={cover || undefined} title={song.title} artist={song.artist} size={48} style={style} />;
+};
 
 type Props = RootStackScreenProps<'NowPlaying'>;
 
@@ -190,7 +199,8 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
 
   // ── The cover's colours ─────────────────────────────────────────────────
   const [colors, setColors] = useState<string[]>(FALLBACK_COLORS);
-  const artwork = song?.artwork;
+  // The sender may have had no cover it could share: '' means look it up here (useSnapshotCover).
+  const artwork = useSnapshotCover(song) || undefined;
   useEffect(() => {
     let current = true;
     if (!artwork) { setColors(FALLBACK_COLORS); return () => { current = false; }; }
@@ -402,7 +412,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
                           accessibilityRole="button"
                           accessibilityLabel={`Play ${queued.title}`}
                         >
-                          <Artwork uri={queued.artwork} title={queued.title} artist={queued.artist} size={48} style={styles.rowArt} />
+                          <QueuedCover song={queued} index={index} style={styles.rowArt} />
                           <View style={styles.rowCopy}>
                             <Text style={styles.rowTitle} numberOfLines={1}>{queued.title}</Text>
                             <Text style={styles.rowArtist} numberOfLines={1}>{queued.artist}</Text>

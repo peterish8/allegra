@@ -16,12 +16,10 @@
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.95",
-    "@gsap/react": "^2.1.2",
     "@tailwindcss/postcss": "^4.3.3",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "convex": "^1.46.0",
-    "gsap": "^3.15.0",
     "lucide-react": "^0.468.0",
     "motion": "^12.23.24",
     "next": "^16.3.5",

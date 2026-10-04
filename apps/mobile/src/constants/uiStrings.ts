@@ -18,7 +18,6 @@ export const SettingsStrings = {
   cancel: 'Cancel',
   close: 'Close',
   save: 'Save',
-  trustedPairing: 'Trusted pairing',
   unhide: 'Unhide',
 };
 

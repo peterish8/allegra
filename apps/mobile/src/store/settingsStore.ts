@@ -78,12 +78,10 @@ interface SettingsState {
   hapticsEnabled: boolean;
   showTimeRemaining: boolean;
   playInMiniPlayerOnly: boolean;
-  miniPlayerStyle: 'bar' | 'island'; // New setting
   navBarStyle: 'classic' | 'modern-pill'; // NEW: Navbar style
   voiceMode: 'hold' | 'tap';
   micEnabled: boolean;
   libraryBackgroundMode: 'daily' | 'aurora' | 'current' | 'black' | 'grey' | 'theme-blue' | 'purest-black' | 'theme-subtle';
-  islandBgMode: 'album-art' | 'song-gradient' | 'aurora' | 'purest-black' | 'grey' | 'theme-subtle' | 'theme-blue';
   classicBarBgMode: 'album-art' | 'song-gradient' | 'aurora' | 'purest-black' | 'grey' | 'theme-subtle' | 'theme-blue';
   animateBackground: boolean;
   libraryFocusMode: boolean; // Toggle for "Focus Mode" (Black Background)
@@ -115,12 +113,10 @@ interface SettingsState {
   setHapticsEnabled: (enabled: boolean) => void;
   setShowTimeRemaining: (show: boolean) => void;
   setPlayInMiniPlayerOnly: (enabled: boolean) => void;
-  setMiniPlayerStyle: (style: 'bar' | 'island') => void; // New action
   setNavBarStyle: (style: 'classic' | 'modern-pill') => void; // NEW: Navbar action
   setVoiceMode: (mode: 'hold' | 'tap') => void;
   setMicEnabled: (enabled: boolean) => void;
   setLibraryBackgroundMode: (mode: 'daily' | 'aurora' | 'current' | 'black' | 'grey' | 'theme-blue' | 'purest-black' | 'theme-subtle') => void;
-  setIslandBgMode: (mode: 'album-art' | 'song-gradient' | 'aurora' | 'purest-black' | 'grey' | 'theme-subtle' | 'theme-blue') => void;
   setClassicBarBgMode: (mode: 'album-art' | 'song-gradient' | 'aurora' | 'purest-black' | 'grey' | 'theme-subtle' | 'theme-blue') => void;
   setAnimateBackground: (enabled: boolean) => void;
   setLibraryFocusMode: (enabled: boolean) => void;
@@ -196,12 +192,10 @@ const DEFAULT_SETTINGS = {
   hapticsEnabled: true,
   showTimeRemaining: true,
   playInMiniPlayerOnly: false,
-  miniPlayerStyle: 'bar' as const, // the island mini player is retired; see TabNavigator
   navBarStyle: 'modern-pill' as const, // Default to modern pill navbar
   voiceMode: 'hold' as const,
   micEnabled: true,
   libraryBackgroundMode: 'daily' as const,
-  islandBgMode: 'album-art' as const,
   classicBarBgMode: 'album-art' as const,
   animateBackground: true,
   libraryFocusMode: false, // Default disabled
@@ -249,12 +243,10 @@ export const useSettingsStore = create<SettingsState>()(
       setHapticsEnabled: (hapticsEnabled) => set({ hapticsEnabled }),
       setShowTimeRemaining: (showTimeRemaining) => set({ showTimeRemaining }),
       setPlayInMiniPlayerOnly: (playInMiniPlayerOnly) => set({ playInMiniPlayerOnly }),
-      setMiniPlayerStyle: (miniPlayerStyle) => set({ miniPlayerStyle }),
       setNavBarStyle: (navBarStyle) => set({ navBarStyle }),
       setVoiceMode: (voiceMode) => set({ voiceMode }),
       setMicEnabled: (micEnabled) => set({ micEnabled }),
       setLibraryBackgroundMode: (libraryBackgroundMode) => set({ libraryBackgroundMode }),
-      setIslandBgMode: (islandBgMode) => set({ islandBgMode }),
       setClassicBarBgMode: (classicBarBgMode) => set({ classicBarBgMode }),
       setAnimateBackground: (animateBackground: boolean) => set({ animateBackground }),
       setLibraryFocusMode: (libraryFocusMode: boolean) => set({ libraryFocusMode }),

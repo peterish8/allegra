@@ -14,6 +14,7 @@ import { downloadManager } from '../services/DownloadManager';
 import { findYouTubeVideoId } from '../services/YouTubeSearchService';
 import { patchYoutubeVideoId } from '../database/queries';
 import { useQueueShape } from '../store/downloadQueueSelectors';
+import { shareableArtwork } from '@shared/artwork';
 import { songRef } from '@shared/songRef';
 
 export const BackgroundDownloader = () => {
@@ -196,8 +197,10 @@ export const BackgroundDownloader = () => {
                 updateItem(item.id, { status: 'completed', progress: 1, stageStatus: 'Done' });
                 
                 if (__DEV__) console.log(`[BackgroundDownloader] Calling addSong...`);
-                // Remember which catalog song this was, so another device can play it (Connect, sync).
+                // Remember which catalog song this was, so another device can play it (Connect, sync),
+                // and the catalog's cover: the downloaded cover file never leaves this phone.
                 newSong.originId = songRef(item.song.source, item.song.id) ?? undefined;
+                newSong.coverRemoteUri = shareableArtwork(item.song.highResArt, item.song.thumbnail) || undefined;
                 await addSong(newSong);
 
                 // A song liked online that is now downloaded: the like moves onto the
