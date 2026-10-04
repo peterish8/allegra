@@ -4,7 +4,7 @@ Updated 2026-10-04. Status: in progress. Owner approved PLAN.md section 2 on 202
 
 | Plan | Status | Commit | Notes |
 |---|---|---|---|
-| 01-01 | in progress | | |
+| 01-01 | done | 98efa47 | touch-slack retention edges pass |
 | 01-02 | not started | | |
 | 01-03 | not started | | |
 | 01-04 | not started | | |
