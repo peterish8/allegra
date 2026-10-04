@@ -10,6 +10,7 @@
 #   2. React draws and answers: a lyricflow:// link navigates (the app's own [diag:link] line says where it landed)
 #   3. the screen layer never died (no "UiRecovery … React instance lost")
 #   4. About opens from Stream and shows its Updates panel — the way out of a bad build must always work
+#   6. lyrics open for 30 s with animations on, so their UI-thread glide runs (it killed the screen in 1.0.2–1.0.4)
 #   5. all of it again after a force stop (the second start restores the saved queue and state)
 # Exit code is the number of failed checks; results go to <out-dir>/launch.txt with logcat beside it.
 set -u
@@ -133,6 +134,26 @@ link "lyricflow://style?canvas=0&appBackground=glass"
 sleep 2
 
 check_start first
+
+# 6. Lyrics, gliding as on a phone: animations on (the emulator's "off" reads as Reduce Motion, which skips the glide —
+#    the UI-thread code that killed the screen in 1.0.2–1.0.4), a streamed song, lyrics open for 30 s. Without a
+#    network the song never plays and this proves nothing, but it never fails a good build either.
+adb shell settings put global animator_duration_scale 1
+adb logcat -c
+link "lyricflow://play?q=Blinding%20Lights%20The%20Weeknd&lyrics=1"
+sleep 35
+shot lyrics
+if [ "$(lost_ui)" -gt 0 ]; then
+  fail "lyrics: the screen died with lyrics open (React instance lost)"
+  adb logcat -d 2>/dev/null | grep -A 8 "UiRecovery.*React instance lost" | head -n 20 >> "$OUT/launch.txt"
+elif [ -z "$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r')" ] || [ "$(crashes)" -gt 0 ]; then
+  fail "lyrics: the app crashed with lyrics open"
+else
+  ok "lyrics: 30 s of gliding lyrics, screen alive"
+fi
+adb logcat -d -v time > "$OUT/logcat-lyrics.txt" 2>/dev/null
+adb shell settings put global animator_duration_scale 0
+
 check_start second
 
 say "== $FAILS failed checks"

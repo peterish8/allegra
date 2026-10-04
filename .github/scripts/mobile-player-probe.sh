@@ -58,6 +58,12 @@ shot A-cover
 
 # -- B. Lyrics switched on after playback started, then off ---------------------------------------------------
 step "B. lyrics toggled after playback started"
+# The emulator runs with animations off, which the app reads as Reduce Motion: lyrics then jump instead of gliding,
+# and the glide's UI-thread code never ran in CI. It threw on real phones (glideStep's GLIDE_SMOOTH_S) and killed the
+# screen. Animations are on for this section, so the glide runs here as it does on a phone.
+adb shell settings put global animator_duration_scale 1
+adb shell settings put global transition_animation_scale 1
+adb shell settings put global window_animation_scale 1
 link "lyricflow://player?lyrics=1"
 sleep 4
 assert_controls "B lyrics just opened"
@@ -68,6 +74,11 @@ ui_dump && b=$(desc_bounds 'Hide lyrics') && [ -n "$b" ] && tap_bounds "$b"
 sleep 3
 assert_controls "B lyrics hidden again"
 soak_player 15 5 "B back on the cover"
+# The glide ran for 30 s of lyrics above: the screen must still be the app's own (not dead, not restarted).
+assert_alive "B"
+adb shell settings put global animator_duration_scale 0
+adb shell settings put global transition_animation_scale 0
+adb shell settings put global window_animation_scale 0
 
 # -- C. Repeated open / close / pause / skip -------------------------------------------------------------------
 step "C. repeated open, close, pause and skip"

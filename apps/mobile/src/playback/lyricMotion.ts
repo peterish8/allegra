@@ -43,10 +43,16 @@ export interface GlideState {
   velocity: number;
 }
 
-/** One frame of the glide towards 0. */
-export function glideStep(offset: number, velocity: number, dt: number, smoothS: number = GLIDE_SMOOTH_S): GlideState {
+/**
+ * One frame of the glide towards 0.
+ *
+ * The time constant is read in the body, never as a default parameter: the worklet compiler copies to the UI
+ * thread only what the body uses, so `smoothS = GLIDE_SMOOTH_S` left the constant behind and the first glide
+ * threw "Property 'GLIDE_SMOOTH_S' doesn't exist", which took the whole screen down when lyrics were open.
+ */
+export function glideStep(offset: number, velocity: number, dt: number, smoothS?: number): GlideState {
   'worklet';
-  const omega = 2 / smoothS;
+  const omega = 2 / (smoothS ?? GLIDE_SMOOTH_S);
   const x = omega * dt;
   const decay = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
   const temp = (velocity + omega * offset) * dt;
