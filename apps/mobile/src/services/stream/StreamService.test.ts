@@ -11,8 +11,7 @@ jest.mock('../../store/settingsStore', () => ({
 jest.mock('../NativeAudioPlayer', () => ({
   NativeAudioPlayer: {
     isAvailable: () => false,
-    prepareNext: jest.fn(),
-    seekToNextIfReady: jest.fn().mockResolvedValue(false),
+    hasQueue: () => false,
   },
 }));
 const mockRecordPlay = jest.fn();

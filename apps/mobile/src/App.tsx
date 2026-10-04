@@ -134,7 +134,10 @@ const App: React.FC = () => {
               // Background: populate likedSongIds Set (heart icons) without blocking render
               usePlaylistStore.getState().fetchPlaylists().catch(() => {});
             }
-            if (preloaded.lastPlayedId) {
+            // A queue the engine saved comes back first, paused where it was, so the mini player never loads a lone
+            // song over it. Without one, the last played song is restored the old way.
+            const restored = await usePlayerStore.getState().restoreNativeQueue().catch(() => false);
+            if (!restored && preloaded.lastPlayedId) {
               const last = preloaded.songs.find(s => s.id === preloaded.lastPlayedId);
               if (last) usePlayerStore.getState().setInitialSong(last);
             }
@@ -142,7 +145,8 @@ const App: React.FC = () => {
             // iOS / first-launch fallback — existing sequential path
             await fetchSongs();
             await usePlaylistStore.getState().fetchPlaylists();
-            const lastPlayed = await import('./database/queries').then(m => m.getLastPlayedSong());
+            const restored = await usePlayerStore.getState().restoreNativeQueue().catch(() => false);
+            const lastPlayed = restored ? null : await import('./database/queries').then(m => m.getLastPlayedSong());
             if (lastPlayed) usePlayerStore.getState().setInitialSong(lastPlayed);
           }
 

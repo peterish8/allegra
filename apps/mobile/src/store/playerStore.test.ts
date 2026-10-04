@@ -12,8 +12,7 @@ jest.mock('./settingsStore', () => ({
 jest.mock('../services/NativeAudioPlayer', () => ({
   NativeAudioPlayer: {
     isAvailable: () => false,
-    prepareNext: jest.fn(),
-    seekToNextIfReady: jest.fn().mockResolvedValue(false),
+    hasQueue: () => false,
   },
 }));
 
@@ -27,7 +26,6 @@ import {
   liveMiniPlayerHides,
 } from './playerStore';
 import { isStalePlayingEcho, clearPlaybackIntent } from '../playback/playbackIntent';
-import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import type { Song } from '../types/song';
 
 describe('requestPlayback', () => {
@@ -179,14 +177,14 @@ describe('adoptPreparedTrack', () => {
   });
 });
 
-describe('skipping to the next song', () => {
+// The JavaScript-owned queue (iPhone, and anywhere the Kotlin engine is missing). On Android the engine owns the
+// queue: see playerStore.native.test.ts.
+describe('skipping to the next song (JavaScript-owned queue)', () => {
   const song = (id: string): Song =>
     ({ id, title: id, artist: 'a', audioUri: `file:///${id}.mp3` }) as Song;
-  const seekToNext = NativeAudioPlayer.seekToNextIfReady as jest.Mock;
   const queue = ['a', 'b', 'c', 'd'].map(song);
 
   beforeEach(() => {
-    seekToNext.mockReset().mockResolvedValue(false);
     usePlayerStore.setState({
       playlistQueue: queue,
       currentQueueIndex: 0,
@@ -198,38 +196,19 @@ describe('skipping to the next song', () => {
     });
   });
 
-  // The screen used to wait for the native player's answer before it changed anything.
-  it('changes the song on screen in the same tick, before the native player answers', () => {
-    seekToNext.mockReturnValue(new Promise(() => undefined));
-    void usePlayerStore.getState().nextInPlaylist();
+  it('changes the song on screen in the same tick', () => {
+    usePlayerStore.getState().nextInPlaylist().catch(() => undefined);
     const s = usePlayerStore.getState();
     expect(s.currentSongId).toBe('b');
     expect(s.currentQueueIndex).toBe(1);
-    // Claimed, so the mini player does not start a load of its own while the staged item is tried.
-    expect(s.loadedAudioId).toBe('b');
   });
 
   it('moves two songs on for two quick taps, not the same one twice', async () => {
-    seekToNext.mockResolvedValue(true);
-    const first = usePlayerStore.getState().nextInPlaylist();
-    const second = usePlayerStore.getState().nextInPlaylist();
-    await Promise.all([first, second]);
+    await Promise.all([usePlayerStore.getState().nextInPlaylist(), usePlayerStore.getState().nextInPlaylist()]);
     expect(usePlayerStore.getState().currentSongId).toBe('c');
-    expect(seekToNext.mock.calls.map(call => call[0])).toEqual(['b', 'c']);
   });
 
-  it('never puts an older song back when its native answer arrives late', async () => {
-    let answerFirst: (used: boolean) => void = () => undefined;
-    seekToNext.mockReturnValueOnce(new Promise<boolean>(resolve => { answerFirst = resolve; })).mockResolvedValue(true);
-    const first = usePlayerStore.getState().nextInPlaylist();
-    await usePlayerStore.getState().nextInPlaylist();
-    answerFirst(true);
-    await first;
-    expect(usePlayerStore.getState().currentSongId).toBe('c');
-    expect(usePlayerStore.getState().currentSong?.id).toBe('c');
-  });
-
-  it('hands the load back to the mini player when nothing was staged', async () => {
+  it('hands the load to the mini player', async () => {
     await usePlayerStore.getState().nextInPlaylist();
     const s = usePlayerStore.getState();
     expect(s.currentSongId).toBe('b');

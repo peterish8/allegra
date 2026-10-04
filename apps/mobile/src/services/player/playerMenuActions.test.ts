@@ -3,12 +3,10 @@ jest.mock('react-native', () => ({ Share: { share: jest.fn(async () => ({})) } }
 jest.mock('../../database/queries', () => ({ getSongById: jest.fn().mockResolvedValue(null) }));
 jest.mock('../../store/songsStore', () => ({ useSongsStore: { getState: () => ({ songs: [], setCurrentSong: jest.fn() }) } }));
 jest.mock('../../store/settingsStore', () => ({ useSettingsStore: { getState: () => ({ updatePlaylistHistory: jest.fn() }) } }));
-const prepareNext = jest.fn();
 jest.mock('../NativeAudioPlayer', () => ({
   NativeAudioPlayer: {
     isAvailable: () => true,
-    prepareNext: (...a: unknown[]) => prepareNext(...a),
-    seekToNextIfReady: jest.fn().mockResolvedValue(false),
+    hasQueue: () => false,
     setRingtone: jest.fn(async () => 'permission'),
   },
 }));
@@ -27,14 +25,12 @@ describe('player menu actions', () => {
   it('shuffles only what plays next and restages the next song', () => {
     const queue = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(id => song(id));
     usePlayerStore.setState({ playlistQueue: queue, currentQueueIndex: 2, currentSong: queue[2], currentSongId: 'c' });
-    prepareNext.mockClear();
 
     expect(shuffleUpcoming()).toBe(5);
     const after = usePlayerStore.getState().playlistQueue!.map(s => s.id);
     expect(after.slice(0, 3)).toEqual(['a', 'b', 'c']);
     expect([...after.slice(3)].sort()).toEqual(['d', 'e', 'f', 'g', 'h']);
     expect(usePlayerStore.getState().currentQueueIndex).toBe(2);
-    expect(prepareNext).toHaveBeenCalled();
   });
 
   it('does nothing without at least two songs to reorder', () => {

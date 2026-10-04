@@ -261,7 +261,6 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
       diag('upnext', `moved ${a} -> ${b}`);
       Haptics.selectionAsync().catch(() => {});
       usePlayerStore.getState().updateQueue(moveItem(q, a, b));
-      // Media3 may have staged the old "next".
       prepareNextInQueue();
       settled.current = true;
     } else {
@@ -287,7 +286,7 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
     if (!s.playlistQueue || i === s.currentQueueIndex) return;
     Haptics.selectionAsync().catch(() => {});
     diag('upnext', `play row ${i}`);
-    s.setPlaylistQueue(s.currentPlaylistId ?? 'queue', s.playlistQueue, i);
+    s.skipToQueueIndex(i);
   }, []);
 
   const shuffle = useCallback(() => {

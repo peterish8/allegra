@@ -3,7 +3,7 @@ import { Alert } from 'react-native';
 import { runOnJS, useAnimatedReaction, useSharedValue } from 'react-native-reanimated';
 import { usePlayer } from '../contexts/PlayerContext';
 import { diag } from '../utils/diag';
-import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeResumePosition } from '../store/playerStore';
+import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeResumePosition, usesNativeQueue } from '../store/playerStore';
 import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
 import { useSongsStore } from '../store/songsStore';
 import { useArtHistoryStore } from '../store/artHistoryStore';
@@ -71,7 +71,8 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
         } else {
           if (!beginAudioLoad(targetSongId)) return;
           if (__DEV__) console.log('[NowPlaying] Loading audio:', songToPlay.title);
-          await player?.replace(songToPlay.audioUri);
+          // The song is named: a load keeps the queue it sits in (and never loads another song's address).
+          await player?.replace(songToPlay.audioUri, songToPlay);
           // Give up only if another song took over while this one loaded. A
           // dependency change (the lyrics landing mid-load) re-runs this effect,
           // and bailing on `cancelled` here left the song loaded but never
@@ -203,7 +204,8 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
 
   const skipBackward = async () => {
     if (!player) return;
-    if (positionSV.value > 3) {
+    // On Android the engine applies the rule (past 3 s a song starts over); the store's previous handles both.
+    if (!usesNativeQueue() && positionSV.value > 3) {
       isSeeking.value = true;
       positionSV.value = 0;
       // seekTo pauses on iOS — restart-track must not silently stop playback.

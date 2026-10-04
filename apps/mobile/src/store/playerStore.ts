@@ -5,18 +5,25 @@ import { useSongsStore } from './songsStore';
 import { useSettingsStore } from './settingsStore';
 import { usePlaybackModesStore } from './playbackModesStore';
 import { setPlaybackIntent } from '../playback/playbackIntent';
-import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
+import { NativeAudioPlayer, isQueueBusy, whenQueueIdle, type NativeQueueState } from '../services/NativeAudioPlayer';
 import { prefetchCover } from '../components/player/coverImages';
-
-function trackMeta(song: Song) {
-  return {
-    title: song.title || 'Unknown Title',
-    artist: song.artist || 'Unknown Artist',
-    album: song.album || '',
-    artworkUri: song.coverImageUri || '',
-    mediaId: song.id,
-  };
-}
+import {
+  currentQueueTag,
+  fire,
+  forgetEngineQueue,
+  isRunningLow,
+  knownSong,
+  mirrorOf,
+  nativeQueue,
+  noteEngineQueue,
+  notifyQueueLow,
+  playlistIdOf,
+  previousWillRestart,
+  rememberSongs,
+  sameIds,
+  songFromNative,
+  toNativeItem,
+} from '../playback/nativeQueue';
 
 let pausedLoadSongId: string | null = null;
 
@@ -51,17 +58,18 @@ export function shouldAutoPlayLoadedSong(songId: string): boolean {
   return pausedLoadSongId !== songId;
 }
 
-/** Stage queue[index+1] in Media3 when Android can take it. No-op elsewhere. */
+/**
+ * Have the next song's cover downloaded and decoded before the skip, so Now Playing changes it with the title.
+ * (It used to stage the next song in Media3 too. On Android the Kotlin queue engine holds the whole queue now,
+ * so there is nothing to stage; callers still call this after they change the queue.)
+ */
 export function prepareNextInQueue(): void {
   const { playlistQueue, currentQueueIndex, currentSongId } = usePlayerStore.getState();
   if (!playlistQueue || playlistQueue.length < 2) return;
   if (usePlaybackModesStore.getState().repeatMode === 'off' && currentQueueIndex >= playlistQueue.length - 1) return;
   const next = playlistQueue[(currentQueueIndex + 1) % playlistQueue.length];
   if (!next || next.id === currentSongId) return;
-  // Have the next cover downloaded and decoded before the skip, so Now Playing changes it with the title.
   prefetchCover(next.coverImageUri);
-  if (!NativeAudioPlayer.isAvailable() || !next.audioUri) return;
-  NativeAudioPlayer.prepareNext(next.audioUri, trackMeta(next), next.id);
 }
 
 // Module-level controls ref — written by PlayerContext at mount, read everywhere else.
@@ -72,6 +80,8 @@ export const playerControls = {
   seekTo: async (_pos: number) => { if (__DEV__) console.warn('[playerControls] Player not initialized'); },
   setVolume: (_volume: number) => { if (__DEV__) console.warn('[playerControls] Player not initialized'); },
   getVolume: () => 1,
+  /** Seconds into the playing song (written by PlayerContext; the store does not import the UI position bus). */
+  getPosition: () => 0,
 };
 
 // When the native player owns playback state (Android, via Media3), it echoes
@@ -85,6 +95,14 @@ export function setNativeOwnsPlaybackState(owns: boolean): void {
 }
 export function isNativeOwningPlaybackState(): boolean {
   return nativeOwnsPlaybackState;
+}
+
+/**
+ * Android with the Kotlin queue engine: the engine decides what plays next and `playlistQueue` is only its
+ * mirror. Everywhere else (iPhone, tests) the queue is JavaScript's and the code below the native branches runs.
+ */
+export function usesNativeQueue(): boolean {
+  return nativeOwnsPlaybackState && NativeAudioPlayer.hasQueue();
 }
 
 // Single owner for replace() calls. MiniPlayer and NowPlayingScreen both watch
@@ -164,12 +182,145 @@ interface PlayerState {
   updateQueue: (songs: Song[]) => void;
   removeFromQueue: (songId: string) => void;
   nextInPlaylist: (automatic?: boolean) => Promise<void>;
+  /** A tap on a row of Up next: `index` counts in the queue as shown (play order). */
+  skipToQueueIndex: (index: number) => void;
   previousInPlaylist: () => void;
-  /** Media3 already advanced — update queue cursor without reloading audio. */
-  adoptPreparedTrack: (mediaId: string) => void;
+  /** The playing song changed under us (the engine advanced): update the queue cursor without reloading audio. */
+  adoptPreparedTrack: (mediaId: string, index?: number) => void;
+  /** The Kotlin engine reported its queue (Android): the screen's mirror follows it. */
+  adoptNativeQueue: (state: NativeQueueState) => void;
+  /** Read the engine's queue now and adopt it (back in the foreground, after a burst of commands). */
+  reconcileNativeQueue: () => Promise<void>;
+  /** Put the saved queue back at launch, paused where it was. False when there was none. */
+  restoreNativeQueue: () => Promise<boolean>;
   clearPlaylistQueue: () => void;
   
   reset: () => void;
+}
+
+/**
+ * What changes with the song on screen: the playlist's history, the library's "last played", and the full song
+ * (lyrics) from the database. It never touches `loadedAudioId` — `loadSong` does, and a load replaces the
+ * engine's queue.
+ */
+function noteTrackChange(song: Song): void {
+  const playlistId = usePlayerStore.getState().currentPlaylistId;
+  if (playlistId) useSettingsStore.getState().updatePlaylistHistory(playlistId, song.id);
+  useSongsStore.getState().setCurrentSong(song);
+  queries.getSongById(song.id).then(full => {
+    if (full && usePlayerStore.getState().currentSongId === song.id) usePlayerStore.setState({ currentSong: full });
+  }).catch(() => {});
+}
+
+/** Which way a change of place in the queue went (wrapping at the ends counts as forward / back). */
+function directionOf(from: number, to: number, length: number): -1 | 0 | 1 {
+  if (from < 0 || length < 2) return 0;
+  const d = to - from;
+  if (d === 1 || d === -(length - 1)) return 1;
+  if (d === -1 || d === length - 1) return -1;
+  return 0;
+}
+
+/**
+ * The songs on screen for the ids the engine reports. A song already on screen keeps its full object (lyrics),
+ * then what was handed to the engine, then the library, then what the engine itself knows (a restored queue).
+ * Null when some id has no source: the details have to be asked for.
+ */
+function resolveMirror(state: NativeQueueState): Song[] | null {
+  const shown = new Map<string, Song>();
+  for (const song of usePlayerStore.getState().playlistQueue ?? []) shown.set(song.id, song);
+  const items = state.items ? new Map(state.items.map(item => [item.id, item])) : null;
+  let library: Map<string, Song> | null = null;
+  return mirrorOf(state.ids, id => {
+    const have = shown.get(id) ?? knownSong(id);
+    if (have) return have;
+    if (!library) library = new Map(useSongsStore.getState().songs.map(song => [song.id, song]));
+    const fromLibrary = library.get(id);
+    if (fromLibrary) return fromLibrary;
+    const item = items?.get(id);
+    return item ? songFromNative(item) : undefined;
+  });
+}
+
+let hydrating = false;
+/** Reads the engine's queue and adopts it. Without `withItems` it is only the ids and the cursor. */
+async function hydrateFromEngine(withItems: boolean): Promise<void> {
+  if (hydrating) return;
+  hydrating = true;
+  try {
+    const state = await NativeAudioPlayer.getQueueState(withItems);
+    if (state) applyNativeQueue(state);
+  } finally {
+    hydrating = false;
+  }
+}
+
+/** Reads the engine's queue once no command is in flight, in case an event was set aside meanwhile. */
+function scheduleReconcile(): void {
+  whenQueueIdle(() => { fire(hydrateFromEngine(false)); });
+}
+
+/** Makes the screen's mirror match the engine. Does nothing when it already does (so it can never feed back). */
+function applyNativeQueue(state: NativeQueueState): void {
+  noteEngineQueue(state);
+  // Shuffle and repeat can change from outside (Android Auto, a headset): the toggles follow.
+  const modes = usePlaybackModesStore.getState();
+  if (modes.shuffle !== state.shuffle || modes.repeatMode !== state.repeat) {
+    usePlaybackModesStore.setState({ shuffle: state.shuffle, repeatMode: state.repeat, repeatOne: state.repeat === 'one' });
+  }
+  if (state.ids.length === 0) {
+    if (usePlayerStore.getState().playlistQueue) usePlayerStore.setState({ playlistQueue: null, currentQueueIndex: -1 });
+    return;
+  }
+  const songs = resolveMirror(state);
+  if (!songs) {
+    // Ids with no song behind them (a queue restored by the service): ask once for the details.
+    if (!state.items) fire(hydrateFromEngine(true));
+    return;
+  }
+  const prev = usePlayerStore.getState();
+  const current = songs[state.index];
+  const sameQueue = !!prev.playlistQueue && sameIds(prev.playlistQueue.map(song => song.id), state.ids);
+  const songChanged = !!current && prev.currentSongId !== current.id;
+  if (sameQueue && prev.currentQueueIndex === state.index && !songChanged) return;
+  const patch: Partial<PlayerState> = { currentQueueIndex: state.index };
+  if (!sameQueue) patch.playlistQueue = songs;
+  const playlistId = playlistIdOf(state.tag);
+  if (playlistId) patch.currentPlaylistId = playlistId;
+  if (current && songChanged) {
+    songDirection = directionOf(prev.currentQueueIndex, state.index, songs.length);
+    patch.currentSong = current;
+    patch.currentSongId = current.id;
+    // The engine is already playing it: nothing may load it again (a load replaces the queue).
+    patch.loadedAudioId = current.id;
+  }
+  usePlayerStore.setState(patch);
+  if (current && songChanged) noteTrackChange(current);
+}
+
+/**
+ * Hands a new queue to the engine. The shared load guard is held meanwhile: neither the mini player nor Now
+ * Playing may load this song by itself (a load replaces the queue with one song). `loadedAudioId` only becomes
+ * the song once the engine has really applied the queue.
+ */
+async function pushQueue(playlistId: string, songs: Song[], startIndex: number, autoplay: boolean): Promise<void> {
+  const start = songs[startIndex];
+  const claimed = beginAudioLoad(start.id);
+  let applied = false;
+  try {
+    applied = await nativeQueue.setQueue(songs, startIndex, playlistId, autoplay);
+    if (!applied) {
+      // The engine did not take the queue: play the one song so a tap is never dead.
+      const item = toNativeItem(start);
+      if (item) {
+        await NativeAudioPlayer.load(item.uri, { title: item.title, artist: item.artist, album: item.album, artworkUri: item.artworkUri, mediaId: item.id });
+        applied = true;
+      }
+    }
+  } finally {
+    if (claimed) endAudioLoad(start.id);
+  }
+  if (applied && usePlayerStore.getState().currentSongId === start.id) usePlayerStore.setState({ loadedAudioId: start.id });
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
@@ -235,8 +386,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  adoptPreparedTrack: (mediaId: string) => {
+  adoptPreparedTrack: (mediaId: string, index?: number) => {
     const state = get();
+    if (usesNativeQueue()) {
+      // A command of ours is still being applied: the engine's events describe a moving target, so the screen
+      // waits and reads the settled queue instead.
+      if (isQueueBusy()) { scheduleReconcile(); return; }
+      const queue = state.playlistQueue;
+      if (state.currentSongId === mediaId && (index === undefined || state.currentQueueIndex === index)) return;
+      const at = queue && index !== undefined && queue[index]?.id === mediaId ? index : (queue?.findIndex(s => s.id === mediaId) ?? -1);
+      if (!queue || at < 0) { scheduleReconcile(); return; }
+      const song = queue[at];
+      songDirection = directionOf(state.currentQueueIndex, at, queue.length);
+      pausedLoadSongId = null;
+      set({ currentQueueIndex: at, currentSong: song, currentSongId: song.id, loadedAudioId: song.id });
+      noteTrackChange(song);
+      return;
+    }
     if (state.currentSongId === mediaId) {
       // nextInPlaylist already synced via seekToNextIfReady — still stage the one after.
       prepareNextInQueue();
@@ -304,24 +470,57 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return { miniPlayerHiddenSources: live, hideMiniPlayer: live.size > 0 };
   }),
 
+  adoptNativeQueue: (state: NativeQueueState) => {
+    // Set aside while our own command is being applied; the settled queue is read when the last one is done.
+    if (isQueueBusy()) { scheduleReconcile(); return; }
+    applyNativeQueue(state);
+  },
+
+  reconcileNativeQueue: async () => {
+    if (!usesNativeQueue()) return;
+    await hydrateFromEngine(false);
+    // The engine's "running low" is sent once per queue size, and JavaScript may have been asleep for it:
+    // back in the foreground, ask again from what the queue is now.
+    const { playlistQueue, currentQueueIndex, currentSongId } = get();
+    if (playlistQueue && isRunningLow(playlistQueue.length, currentQueueIndex)) {
+      notifyQueueLow({ size: playlistQueue.length, mediaId: currentSongId ?? '', tag: currentQueueTag() });
+    }
+  },
+
+  restoreNativeQueue: async () => {
+    if (!NativeAudioPlayer.hasQueue() || !NativeAudioPlayer.hasSavedQueue()) return false;
+    const state = await NativeAudioPlayer.restoreQueue();
+    if (!state || state.ids.length === 0) return false;
+    // Adopted before any screen can ask for a load: the engine already holds the song, paused where it was.
+    applyNativeQueue(state);
+    return true;
+  },
+
   // Silent Queue Update (for sorting/reordering)
-  updateQueue: (newQueue: Song[]) => set((state) => {
+  updateQueue: (newQueue: Song[]) => {
+    set((state) => {
       // Try to find current song in new queue to keep index correct
       const currentId = state.currentSongId;
       let newIndex = state.currentQueueIndex;
-      
+
       if (currentId) {
           const foundIndex = newQueue.findIndex(s => s.id === currentId);
           if (foundIndex !== -1) {
               newIndex = foundIndex;
           }
       }
-      
+
       return {
           playlistQueue: newQueue,
           currentQueueIndex: newIndex
       };
-  }),
+    });
+    // The engine reorders around the playing song without interrupting it.
+    if (usesNativeQueue()) {
+      rememberSongs(newQueue);
+      fire(nativeQueue.replace(newQueue).then(() => scheduleReconcile()));
+    }
+  },
 
   // Playlist queue management
   setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number, autoplay = true) => {
@@ -344,6 +543,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       console.log(`[PLAYER] Set playlist queue: ${playlistId}, ${songs.length} songs, starting at ${startIndex}`);
     }
     
+    // Android: the engine takes the whole queue and starts the song. (`loadSong` is not used here: it clears
+    // `loadedAudioId`, and a load of one song would replace the queue the engine is being given.)
+    const startSong = songs[startIndex];
+    if (startSong?.audioUri && usesNativeQueue()) {
+      noteTrackChange(startSong);
+      get().requestPlayback(autoplay);
+      fire(pushQueue(playlistId, songs, startIndex, autoplay));
+      return;
+    }
+
     // Fetch full song details (lyrics) for the starting song
     if (startSongId) {
         get().loadSong(startSongId);
@@ -357,6 +566,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // ... existing implementation ...
     const state = get();
     if (!state.playlistQueue) return;
+
+    if (usesNativeQueue()) {
+      // The engine takes every copy out; if it was the playing song the engine moves on and says so. The
+      // screen drops the others at once.
+      if (state.currentSongId !== songId) {
+        const kept = state.playlistQueue.filter(s => s.id !== songId);
+        const at = state.currentSongId ? kept.findIndex(s => s.id === state.currentSongId) : -1;
+        set({ playlistQueue: kept.length > 0 ? kept : null, currentQueueIndex: at >= 0 ? at : state.currentQueueIndex });
+      }
+      fire(nativeQueue.remove(songId).then(() => scheduleReconcile()));
+      return;
+    }
     
     const newQueue = state.playlistQueue.filter(s => s.id !== songId);
     const currentIndex = state.currentQueueIndex;
@@ -390,8 +611,43 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
   
+  skipToQueueIndex: (index: number) => {
+    const state = get();
+    const queue = state.playlistQueue;
+    if (!queue || index < 0 || index >= queue.length || index === state.currentQueueIndex) return;
+    if (!usesNativeQueue()) {
+      state.setPlaylistQueue(state.currentPlaylistId ?? 'queue', queue, index);
+      return;
+    }
+    // The engine moves to that place in its queue; the screen moves at once.
+    const song = queue[index];
+    songDirection = directionOf(state.currentQueueIndex, index, queue.length);
+    pausedLoadSongId = null;
+    set({ currentQueueIndex: index, currentSong: song, currentSongId: song.id, loadedAudioId: song.id });
+    noteTrackChange(song);
+    fire(nativeQueue.skipTo(index).then(() => scheduleReconcile()));
+  },
+
   nextInPlaylist: async (automatic = false) => {
     const state = get();
+
+    // Android: the engine owns what plays next. The screen moves at once (it knows the order: its mirror is
+    // the engine's queue in play order), the engine does the skip, and the settled state is read afterwards.
+    if (usesNativeQueue()) {
+      const queue = state.playlistQueue;
+      if (!queue || queue.length === 0) {
+        fire(nativeQueue.next().then(() => scheduleReconcile()));
+        return;
+      }
+      songDirection = 1;
+      const nextIndex = (state.currentQueueIndex + 1) % queue.length;
+      const nextSong = queue[nextIndex];
+      pausedLoadSongId = null;
+      set({ currentQueueIndex: nextIndex, currentSong: nextSong, currentSongId: nextSong.id, loadedAudioId: nextSong.id });
+      noteTrackChange(nextSong);
+      fire(nativeQueue.next().then(() => scheduleReconcile()));
+      return;
+    }
 
     // Safety net: queue was never set (e.g. song launched via fallback path or Recently Played)
     // Rebuild from memory so auto-next still works. Read at call time: songsStore
@@ -421,11 +677,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const nextSong = freshState.playlistQueue[nextIndex];
     pausedLoadSongId = null;
 
-    // The screen answers first, in this same tick. It used to wait for the native player to say whether
-    // the next item was staged, so a skip showed nothing for a beat, and two quick taps both read the
-    // same index (the second skipped from the song the first had left) or the slower reply put an older
-    // song back on screen. `loadedAudioId` is claimed for the song so the mini player does not start a
-    // load of its own while the staged item is tried; the fallback below hands it back.
+    // The screen answers first, in this same tick, so a skip shows at once and two quick taps do not both
+    // read the same index. (JavaScript-owned queue: iPhone and tests. On Android the engine owns it, above.)
     set({
       currentQueueIndex: nextIndex,
       currentSong: nextSong,
@@ -434,25 +687,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       isPlaying: true,
     });
 
-    // Prefer the staged Media3 item — avoids pause → load → prepare gap on skip.
-    const usedNative = await NativeAudioPlayer.seekToNextIfReady(nextSong.id);
-    // Skipped again while waiting: the newer skip owns the screen and the audio from here.
-    if (get().currentSongId !== nextSong.id) return;
-    if (usedNative) {
-      if (freshState.currentPlaylistId) {
-        useSettingsStore.getState().updatePlaylistHistory(freshState.currentPlaylistId, nextSong.id);
-      }
-      useSongsStore.getState().setCurrentSong(nextSong);
-      queries.getSongById(nextSong.id).then(full => {
-        if (full && get().currentSongId === nextSong.id) set({ currentSong: full });
-      }).catch(() => {});
-      prepareNextInQueue();
-      setPlaybackIntent(true);
-      playerControls.play();
-      return;
-    }
-
-    // Nothing staged: have the audio loaded (MiniPlayer / NowPlaying see loadedAudioId unset and load it).
+    // Have the audio loaded (MiniPlayer / NowPlaying see loadedAudioId unset and load it).
     set({ loadedAudioId: null });
     await get().loadSong(nextSong.id);
     if (get().currentSongId !== nextSong.id) return;
@@ -465,6 +700,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   previousInPlaylist: () => {
     const state = get();
+
+    // Android: Echo's rule, applied by the engine - past 3 s (or with nothing before it) the song starts over,
+    // otherwise it goes back one. The screen predicts the same rule so it only moves when the song does.
+    if (usesNativeQueue()) {
+      const queue = state.playlistQueue;
+      const repeat = usePlaybackModesStore.getState().repeatMode;
+      if (!queue || queue.length === 0 || previousWillRestart(playerControls.getPosition(), state.currentQueueIndex, repeat)) {
+        fire(nativeQueue.previous().then(() => scheduleReconcile()));
+        return;
+      }
+      songDirection = -1;
+      const prevIndex = (state.currentQueueIndex - 1 + queue.length) % queue.length;
+      const prevSong = queue[prevIndex];
+      pausedLoadSongId = null;
+      set({ currentQueueIndex: prevIndex, currentSong: prevSong, currentSongId: prevSong.id, loadedAudioId: prevSong.id });
+      noteTrackChange(prevSong);
+      fire(nativeQueue.previous().then(() => scheduleReconcile()));
+      return;
+    }
+
     if (!state.playlistQueue || state.playlistQueue.length === 0) return;
 
     songDirection = -1;
@@ -489,6 +744,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
   
   clearPlaylistQueue: () => {
+    // The engine keeps the song that is playing and drops the rest.
+    if (usesNativeQueue()) fire(nativeQueue.replace([]).then(() => scheduleReconcile()));
     set({ 
       playlistQueue: null,
       currentPlaylistId: null,
@@ -501,6 +758,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   reset: () => {
     pausedLoadSongId = null;
+    // The song is gone (deleted, signed out): nothing may be left queued in the engine either.
+    if (usesNativeQueue()) {
+      fire(nativeQueue.clear());
+      forgetEngineQueue();
+    }
     set({
       currentSongId: null,
       currentSong: null,

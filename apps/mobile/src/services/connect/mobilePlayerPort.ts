@@ -4,7 +4,7 @@ import {
   type DevelopmentTraceBuffer, type PlayerPort, type PlayerSnapshot, type RepeatMode,
 } from '../../../../../packages/connect/src/index';
 
-import { playerControls, prepareNextInQueue, usePlayerStore } from '../../store/playerStore';
+import { playerControls, prepareNextInQueue, usePlayerStore, usesNativeQueue } from '../../store/playerStore';
 import { usePlaybackModesStore } from '../../store/playbackModesStore';
 import { usePositionStore } from '../../store/positionStore';
 import { useSongsStore } from '../../store/songsStore';
@@ -222,6 +222,11 @@ export function createMobilePlayerPort(getToken: () => string | null, trace?: De
     async setShuffle(on) {
       const modes = usePlaybackModesStore.getState();
       if (modes.shuffle === on) return;
+      // The Kotlin engine shuffles (and puts the order back); there is nothing to reorder or remember here.
+      if (usesNativeQueue()) {
+        modes.setShuffle(on);
+        return;
+      }
       const store = usePlayerStore.getState();
       const queue = store.playlistQueue ?? [];
       const current = queue.findIndex(song => song.id === store.currentSongId);

@@ -11,7 +11,7 @@ jest.mock('../store/settingsStore', () => ({
 }));
 jest.mock('./positionBus', () => ({ positionSV: { value: 0 }, durationSV: { value: 0 }, isSeeking: { value: false } }));
 jest.mock('../services/NativeAudioPlayer', () => ({
-  NativeAudioPlayer: { isAvailable: () => false, prepareNext: jest.fn(), seekToNextIfReady: jest.fn() },
+  NativeAudioPlayer: { isAvailable: () => false, hasQueue: () => false },
 }));
 
 import { planRecovery, pickSameSong, MAX_AUTO_RESUMES } from './recovery';

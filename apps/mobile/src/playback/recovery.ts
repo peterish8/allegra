@@ -121,6 +121,7 @@ const reloadAt = async (songId: string, at: number): Promise<boolean> => {
   // A recreated player starts plain: put back repeat and tempo / pitch.
   const modes = usePlaybackModesStore.getState();
   if (modes.repeatOne) modes.setRepeatOne(true);
+  if (modes.shuffle) modes.setShuffle(true);
   if (modes.tempo !== 1 || modes.pitch !== 1) modes.setTempoPitch(modes.tempo, modes.pitch);
   return true;
 };

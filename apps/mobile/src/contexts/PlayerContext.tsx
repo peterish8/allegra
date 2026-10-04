@@ -9,6 +9,8 @@ import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { usePlaybackModesStore } from '../store/playbackModesStore';
 import { PlaybackLoss, recoverPlayback } from '../playback/recovery';
+import { forgetEngineQueue, nativeQueue, notifyQueueLow } from '../playback/nativeQueue';
+import type { Song } from '../types/song';
 
 const PlayerContext = createContext<any>(null);
 
@@ -34,7 +36,6 @@ function useEndOfTrackLatch() {
 
 const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const lastZustandUpdateRef = useRef(0);
-  const endHandledForSongIdRef = useEndOfTrackLatch();
   const currentSong = usePlayerStore(state => state.currentSong);
 
   const player = useRef({
@@ -45,17 +46,15 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     },
     pause: () => NativeAudioPlayer.pause(),
     seekTo: (time: number) => NativeAudioPlayer.seekTo(time),
-    replace: (source: any) => {
+    // Makes `song` (the one the caller is loading; the store's current song if none is given) the playing item at
+    // `source`. The queue it sits in is kept: a load never replaces the engine's playlist with one song.
+    replace: (source: any, song?: Song) => {
       const uri = typeof source === 'string' ? source : source?.uri;
       if (!uri) return;
-      const current = usePlayerStore.getState().currentSong;
-      return NativeAudioPlayer.load(uri, {
-        title: current?.title || 'Unknown Title',
-        artist: current?.artist || 'Unknown Artist',
-        album: current?.album || '',
-        artworkUri: current?.coverImageUri || '',
-        mediaId: current?.id || '',
-      });
+      const store = usePlayerStore.getState();
+      const target = song ?? store.currentSong;
+      if (!target) return;
+      return nativeQueue.load(target, uri, store.playlistQueue, store.currentPlaylistId);
     },
     setActiveForLockScreen: (active: boolean, metadata?: any, _options?: any) => {
       if (active && metadata) {
@@ -75,6 +74,7 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     playerControls.seekTo = pos => new Promise(resolve => setTimeout(() => { player.seekTo(pos); resolve(); }, 0));
     playerControls.setVolume = volume => NativeAudioPlayer.setVolume(volume);
     playerControls.getVolume = () => NativeAudioPlayer.getVolume() ?? 1;
+    playerControls.getPosition = () => positionSV.value;
   }, [player]);
 
   // Media3 is the source of truth here — see requestPlayback.
@@ -98,7 +98,7 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   useEffect(() => {
     const statusSub = NativeAudioPlayer.addListener('onPlaybackStatus', (event: any) => {
-      const { position, duration, isPlaying, playWhenReady, didJustFinish, suppressed } = event;
+      const { position, duration, isPlaying, playWhenReady, suppressed } = event;
       const store = usePlayerStore.getState();
 
       if (!isSeeking.value) {
@@ -116,13 +116,8 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       }
 
-      const activeSongId = store.currentSongId;
-      if (didJustFinish && !!activeSongId && endHandledForSongIdRef.current !== activeSongId) {
-        endHandledForSongIdRef.current = activeSongId;
-        store.setIsPlaying(true);
-        store.nextInPlaylist(true).catch(() => {});
-        return;
-      }
+      // The end of a song is the engine's: it advances (or starts the queue over, or rests) by itself, so
+      // nothing here decides what plays next.
 
       // Adopted verbatim — no guard. playWhenReady is the user-facing transport
       // state (flips the instant a command lands); isPlaying stays false while
@@ -136,43 +131,48 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
 
     // Media3 auto-advanced into a prepared next item — sync the store without re-load.
-    const advancedSub = NativeAudioPlayer.addListener('onTrackAdvanced', (event: { mediaId?: string }) => {
+    const advancedSub = NativeAudioPlayer.addListener('onTrackAdvanced', (event: { mediaId?: string; index?: number }) => {
       const mediaId = event?.mediaId;
       if (!mediaId) return;
-      usePlayerStore.getState().adoptPreparedTrack(mediaId);
+      usePlayerStore.getState().adoptPreparedTrack(mediaId, event.index);
     });
 
-    const commandSub = NativeAudioPlayer.addListener('onRemoteCommand', (event: any) => {
-      if (__DEV__) console.log('[PlayerContext] Android native remote command:', event.command);
-      const store = usePlayerStore.getState();
-      if (event.command === 'next') {
-        store.nextInPlaylist().catch(() => {});
-      } else if (event.command === 'previous') {
-        store.previousInPlaylist();
-      }
+    // The engine owns the queue: the screen's copy follows what it reports, and tops the radio up on request.
+    const queueSub = NativeAudioPlayer.addListener('onQueueChanged', (event: any) => {
+      if (event && Array.isArray(event.ids)) usePlayerStore.getState().adoptNativeQueue(event);
+    });
+    const lowSub = NativeAudioPlayer.addListener('onQueueLow', (event: { size?: number; mediaId?: string; tag?: string | null }) => {
+      notifyQueueLow({ size: event?.size ?? 0, mediaId: event?.mediaId ?? '', tag: event?.tag ?? null });
     });
 
     // Media3 stopped for good (link refused, stream stalled, service gone).
     // The status already says paused; pick the song up where it stopped.
     const errorSub = NativeAudioPlayer.addListener('onPlaybackError', (event: { reason?: PlaybackLoss; position?: number }) => {
       if (!event?.reason) return;
+      // The service is gone and its queue with it: the next load hands the engine the screen's queue again.
+      if (event.reason === 'released') forgetEngineQueue();
       recoverPlayback(event.reason, event.position).catch(() => {});
     });
 
     // Back from another app: get the real state at once instead of trusting
     // whatever the UI last showed.
     const appStateSub = AppState.addEventListener('change', state => {
-      if (state === 'active') NativeAudioPlayer.refreshStatus();
+      if (state === 'active') {
+        NativeAudioPlayer.refreshStatus();
+        // Songs may have changed while the screen was off (the engine plays on by itself): read where it is.
+        usePlayerStore.getState().reconcileNativeQueue().catch(() => {});
+      }
     });
 
     return () => {
       statusSub.remove();
       advancedSub.remove();
-      commandSub.remove();
+      queueSub.remove();
+      lowSub.remove();
       errorSub.remove();
       appStateSub.remove();
     };
-  }, [endHandledForSongIdRef]);
+  }, []);
 
   return <PlayerContext.Provider value={player}>{children}</PlayerContext.Provider>;
 };

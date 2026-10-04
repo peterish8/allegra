@@ -1,6 +1,6 @@
 /**
  * Plays catalog songs straight from the provider CDN through the normal player
- * queue (Media3 on Android handles remote URLs and gapless staging), and keeps
+ * queue (on Android the Kotlin queue engine holds it and Media3 plays remote URLs), and keeps
  * a streaming session alive the way Echo Music does:
  *
  *   - synced lyrics are fetched for the playing stream song (Echo cascade),
@@ -8,7 +8,8 @@
  *     Music's automix for the song, resolved to catalog audio (recommend.ts),
  *   - every stream is recorded to seed the home feed.
  */
-import { prepareNextInQueue, usePlayerStore } from '../../store/playerStore';
+import { prepareNextInQueue, usePlayerStore, usesNativeQueue } from '../../store/playerStore';
+import { currentQueueTag, fire, nativeQueue, onQueueLow } from '../../playback/nativeQueue';
 import { useStreamHistoryStore } from '../../store/streamHistoryStore';
 import { useDownloadQueueStore } from '../../store/downloadQueueStore';
 import { Song, UnifiedSong } from '../../types/song';
@@ -70,6 +71,11 @@ export const StreamService = {
     }
     remember([song]);
     const item = toStreamSong(song);
+    if (usesNativeQueue()) {
+      // The engine puts it right after the playing song (shuffle-aware) and the screen follows its report.
+      fire(nativeQueue.insert([item], 'next').then(() => state.reconcileNativeQueue()));
+      return;
+    }
     const queue = state.playlistQueue.filter(s => s.id !== item.id);
     const at = Math.max(0, queue.findIndex(s => s.id === state.currentSongId)) + 1;
     queue.splice(at, 0, item);
@@ -87,6 +93,10 @@ export const StreamService = {
     const fresh = dedupeStreamable(songs, queued);
     if (fresh.length === 0) return;
     remember(fresh);
+    if (usesNativeQueue()) {
+      fire(nativeQueue.insert(fresh.map(s => toStreamSong(s)), 'end').then(() => state.reconcileNativeQueue()));
+      return;
+    }
     state.updateQueue([...state.playlistQueue, ...fresh.map(s => toStreamSong(s))]);
     prepareNextInQueue();
   },
@@ -134,11 +144,16 @@ export const StreamService = {
     if (fresh.length === 0) return 0;
     remember(fresh);
     const current = state.currentSong ?? song;
+    const radio = [current, ...fresh.map(s => toStreamSong(s))];
     usePlayerStore.setState({
-      playlistQueue: [current, ...fresh.map(s => toStreamSong(s))],
+      playlistQueue: radio,
       currentPlaylistId: STREAM_QUEUE_ID,
       currentQueueIndex: 0,
     });
+    // The engine keeps the song playing and makes the queue this list (it is now a stream queue).
+    if (usesNativeQueue()) {
+      fire(nativeQueue.replace(radio, STREAM_QUEUE_ID).then(() => state.reconcileNativeQueue()));
+    }
     prepareNextInQueue();
     return fresh.length;
   },
@@ -182,29 +197,46 @@ async function loadLyrics(streamId: string, meta: UnifiedSong | undefined): Prom
 const RADIO_THRESHOLD = 2; // extend when this few songs remain after the current one
 let radioInFlight = false;
 
-async function extendRadio(streamId: string): Promise<void> {
+/**
+ * `force` is the engine saying the queue is running low (its own rule, Echo's "auto load more"); otherwise this
+ * is the song-change safety net with its own threshold.
+ */
+async function extendRadio(streamId: string, force = false): Promise<void> {
   const state = usePlayerStore.getState();
   const queue = state.playlistQueue;
   if (!queue || state.currentPlaylistId !== STREAM_QUEUE_ID || radioInFlight) return;
   const idx = queue.findIndex(s => s.id === streamId);
-  if (idx < 0 || queue.length - 1 - idx > RADIO_THRESHOLD) return;
+  if (idx < 0 || (!force && queue.length - 1 - idx > RADIO_THRESHOLD)) return;
 
   const seed = catalog.get(streamId);
   if (!seed) return;
 
+  // The queue this answer is for. If another queue has been loaded by the time the songs arrive, they are dropped.
+  const tag = currentQueueTag();
   radioInFlight = true;
   try {
     const recs = await recommendFor(seed);
     const latest = usePlayerStore.getState();
     if (!latest.playlistQueue || latest.currentPlaylistId !== STREAM_QUEUE_ID) return;
+    if (usesNativeQueue() && currentQueueTag() !== tag) return;
     const queued = latest.playlistQueue.flatMap(s => [s.id, `${s.title.trim().toLowerCase()}|${(s.artist ?? '').trim().toLowerCase()}`]);
     const fresh = dedupeStreamable(recs, queued);
     if (fresh.length === 0) return;
     remember(fresh);
+    if (usesNativeQueue()) {
+      // The engine refuses these if its queue is no longer the one they were found for.
+      await nativeQueue.insert(fresh.map(s => toStreamSong(s)), 'end', tag);
+      await latest.reconcileNativeQueue();
+      return;
+    }
     latest.updateQueue([...latest.playlistQueue, ...fresh.map(s => toStreamSong(s))]);
-    // If this was the last song, Media3 staged a wrap-around to the queue head.
     prepareNextInQueue();
   } finally {
     radioInFlight = false;
   }
 }
+
+// The engine says when the queue is running low (and the screen asks again when it comes back to the front).
+onQueueLow(({ mediaId }) => {
+  if (isStreamSongId(mediaId)) fire(extendRadio(mediaId, true));
+});

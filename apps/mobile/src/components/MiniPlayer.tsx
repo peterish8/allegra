@@ -389,7 +389,8 @@ export const MiniPlayer: React.FC<{ isHomeTab?: boolean }> = ({ isHomeTab = true
         if (!beginAudioLoad(songId)) return;
         try {
           if (__DEV__) console.log('[MiniPlayer] Syncing audio for:', currentSong.title);
-          await player.replace(currentSong.audioUri);
+          // The song is named: a load keeps the queue it sits in (and never loads another song's address).
+          await player.replace(currentSong.audioUri, currentSong);
           // Skipped on while this loaded: the newer song's own load decides what is playing. Marking this
           // one loaded (and playing it) put the old audio under the new title for a moment.
           if (usePlayerStore.getState().currentSongId !== songId) return;

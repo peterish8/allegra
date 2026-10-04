@@ -6,6 +6,7 @@
  */
 import { create } from 'zustand';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
+import { fire } from '../playback/nativeQueue';
 import type { RepeatMode } from '../../../../packages/connect/src/types';
 
 /** Echo's tempo/pitch steps. */
@@ -24,6 +25,12 @@ interface PlaybackModesState {
   setTempoPitch: (tempo: number, pitch: number) => void;
 }
 
+/** Repeat off / all / one belongs to the engine on Android; elsewhere only "one" is a native loop. */
+const applyRepeat = (mode: RepeatMode): void => {
+  if (NativeAudioPlayer.hasQueue()) fire(NativeAudioPlayer.setRepeatMode(mode));
+  else NativeAudioPlayer.setRepeatOne(mode === 'one');
+};
+
 export const usePlaybackModesStore = create<PlaybackModesState>(set => ({
   repeatOne: false,
   repeatMode: 'all',
@@ -31,14 +38,18 @@ export const usePlaybackModesStore = create<PlaybackModesState>(set => ({
   tempo: 1,
   pitch: 1,
   setRepeatOne: on => {
-    NativeAudioPlayer.setRepeatOne(on);
+    applyRepeat(on ? 'one' : 'all');
     set({ repeatOne: on, repeatMode: on ? 'one' : 'all' });
   },
   setRepeatMode: mode => {
-    NativeAudioPlayer.setRepeatOne(mode === 'one');
+    applyRepeat(mode);
     set({ repeatOne: mode === 'one', repeatMode: mode });
   },
-  setShuffle: on => set({ shuffle: on }),
+  // On Android the engine shuffles (Echo: current song first, the rest mixed) and reports back.
+  setShuffle: on => {
+    if (NativeAudioPlayer.hasQueue()) fire(NativeAudioPlayer.setShuffle(on));
+    set({ shuffle: on });
+  },
   setTempoPitch: (tempo, pitch) => {
     NativeAudioPlayer.setPlaybackParameters(tempo, pitch);
     set({ tempo, pitch });

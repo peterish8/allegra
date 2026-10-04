@@ -2,7 +2,8 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { NativeVoiceInput } from '../services/NativeVoiceInput';
 import { parseVoiceIntent, songQueryOf } from '../utils/voiceIntentParser';
-import { usePlayerStore } from '../store/playerStore';
+import { usePlayerStore, usesNativeQueue } from '../store/playerStore';
+import { usePlaybackModesStore } from '../store/playbackModesStore';
 import { useSongsStore } from '../store/songsStore';
 import { useVoiceSearchStore } from '../store/voiceSearchStore';
 import { searchOfficial } from '../services/stream/officialSearch';
@@ -133,6 +134,11 @@ export function useVoiceCommands() {
         break;
 
       case 'SHUFFLE': {
+        if (usesNativeQueue()) {
+          usePlaybackModesStore.getState().setShuffle(true);
+          confirm('Shuffled');
+          break;
+        }
         const queue = store.playlistQueue;
         if (queue && queue.length > 1) {
           const shuffled = [...queue].sort(() => Math.random() - 0.5);
