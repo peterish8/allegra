@@ -11,7 +11,7 @@
  * White on the cover's own colours, no chrome of our own: the backdrop
  * (NowPlayingBackground) carries the look.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Pressable, StyleSheet, Text, GestureResponderEvent } from 'react-native';
 import * as Haptics from '../utils/haptics';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -43,6 +43,7 @@ import { formatTimeSV, isSeeking } from '../playback/positionBus';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { useSettingsStore } from '../store/settingsStore';
 import { lastSongDirection } from '../store/playerStore';
+import { LYRICS_TAP_WINDOW_MS, lyricsButtonTap, LyricsTapRun, NO_TAPS } from './player/lyricsButtonTaps';
 
 interface NowPlayingControlsProps {
   animatedStyle: React.ComponentProps<typeof Animated.View>['style'];
@@ -58,6 +59,10 @@ interface NowPlayingControlsProps {
   onSkipBackward: () => void;
   onToggleLike: () => void;
   onToggleLyrics: () => void;
+  /** Long press on the lyrics button: the lyrics picker (every source, choose one). */
+  onLyricsLongPress?: () => void;
+  /** Three quick taps on the lyrics button switched how lyrics light up. */
+  onHighlightSwitched?: (highlight: 'letters' | 'lines') => void;
   positionSV: SharedValue<number>;
   durationSV: SharedValue<number>;
   onSeek: (seconds: number) => void | Promise<void>;
@@ -207,6 +212,8 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   onSkipBackward,
   onToggleLike,
   onToggleLyrics,
+  onLyricsLongPress,
+  onHighlightSwitched,
   positionSV,
   durationSV,
   onSeek,
@@ -305,6 +312,44 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
       setTimeout(() => { isSeeking.value = false; }, 280);
     }
   }, [durationSV, positionSV, onSeek]);
+
+  // The lyrics button: one tap shows or hides lyrics, three quick ones switch letter by letter ↔ line by line,
+  // a long press opens the picker (player/lyricsButtonTaps).
+  const taps = useRef<LyricsTapRun>(NO_TAPS);
+  const closeLater = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (closeLater.current) clearTimeout(closeLater.current); }, []);
+  const lyricsTap = useCallback(() => {
+    const { run, action } = lyricsButtonTap(taps.current, Date.now(), showLyrics);
+    taps.current = run;
+    if (action === 'toggle') {
+      tick('light');
+      onToggleLyrics();
+    } else if (action === 'toggle-later') {
+      tick('light');
+      if (closeLater.current) clearTimeout(closeLater.current);
+      closeLater.current = setTimeout(() => {
+        closeLater.current = null;
+        if (taps.current.count > 0) {
+          taps.current = NO_TAPS;
+          onToggleLyrics();
+        }
+      }, LYRICS_TAP_WINDOW_MS);
+    } else if (action === 'switch-highlight') {
+      if (closeLater.current) { clearTimeout(closeLater.current); closeLater.current = null; }
+      const settings = useSettingsStore.getState();
+      const next = settings.lyricsHighlight === 'lines' ? 'letters' : 'lines';
+      settings.setLyricsHighlight(next);
+      tick('light');
+      onHighlightSwitched?.(next);
+    }
+  }, [showLyrics, onToggleLyrics, onHighlightSwitched]);
+  const lyricsLongPress = useCallback(() => {
+    if (!onLyricsLongPress) return;
+    if (closeLater.current) { clearTimeout(closeLater.current); closeLater.current = null; }
+    taps.current = NO_TAPS;
+    tick('light');
+    onLyricsLongPress();
+  }, [onLyricsLongPress]);
 
   const output = useCallback(() => {
     tick('light');
@@ -457,12 +502,15 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
           </View>
 
           <Tactile
-            onPress={() => { tick('light'); onToggleLyrics(); }}
+            onPress={lyricsTap}
+            onLongPress={onLyricsLongPress ? lyricsLongPress : undefined}
+            delayLongPress={420}
             hitSlop={10}
             pressScale={0.86}
             style={[styles.footerBtn, showLyrics && styles.footerBtnOn]}
             accessibilityRole="button"
             accessibilityLabel={showLyrics ? 'Hide lyrics' : 'Show lyrics'}
+            accessibilityHint="Long press to choose from every lyrics source. Triple tap to switch letter by letter and line by line."
           >
             <MaterialCommunityIcons name="comment-quote-outline" size={24} color={showLyrics ? '#15151a' : INK_SOFT} />
           </Tactile>

@@ -45,6 +45,7 @@ import PlayerMenu, { PlayerMenuAction } from '../components/player/PlayerMenu';
 import { SongDetails, TempoPitch } from '../components/player/PlayerExtras';
 import AmbientMode from '../components/player/AmbientMode';
 import ListenTogetherPanel from '../components/listenTogether/ListenTogetherPanel';
+import LyricsPicker from '../components/player/LyricsPicker';
 import { Toast } from '../components/Toast';
 import { StreamService } from '../services/stream/StreamService';
 import { isStreamSongId } from '../services/stream/streamSong';
@@ -163,7 +164,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   ambientRef.current = ambient;
   // A sheet over the player (timer, menu…). Swiping down or pressing back
   // closes the sheet only; the next swipe or press closes the player.
-  type Sheet = 'timer' | 'menu' | 'details' | 'advanced' | 'together';
+  type Sheet = 'timer' | 'menu' | 'details' | 'advanced' | 'together' | 'lyrics';
   const initialSheet = route.params.sheet;
   const [sheet, setSheet] = useState<Sheet | null>(initialSheet && initialSheet !== 'queue' ? initialSheet : null);
   const sheetRef = useRef(sheet);
@@ -551,6 +552,12 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
   // The heart: fills at once, and says where the song went. A streamed song is
   // saved into the library first (isCurrentSongSaving), then lands in Liked songs.
+  // What the lyrics picker searches for: one object per song, so the search runs once per opening.
+  const pickerTarget = React.useMemo(
+    () => ({ title: currentSong?.title ?? '', artist: currentSong?.artist ?? '', duration: currentSong?.duration ?? 0 }),
+    [currentSong?.title, currentSong?.artist, currentSong?.duration],
+  );
+
   const onToggleLike = useCallback(async () => {
     if (!currentSong) return;
     const result = await toggleLike(currentSong.id);
@@ -758,6 +765,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           onSkipBackward={skipBackward}
           onToggleLike={onToggleLike}
           onToggleLyrics={() => setShowLyrics(!showLyrics)}
+          onLyricsLongPress={() => setSheet('lyrics')}
+          onHighlightSwitched={h => say(h === 'letters' ? 'Lyrics light up letter by letter' : 'Lyrics light up line by line')}
           positionSV={positionSV}
           durationSV={durationSV}
           onSeek={handleScrub}
@@ -800,6 +809,19 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
         </PlayerSheet>
         <PlayerSheet visible={sheet === 'advanced'} title="Tempo and pitch" onClose={closeSheet}>
           <TempoPitch />
+        </PlayerSheet>
+        <PlayerSheet visible={sheet === 'lyrics'} title="Lyrics" tall onClose={closeSheet}>
+          {currentSong && sheet === 'lyrics' ? (
+            <LyricsPicker
+              target={pickerTarget}
+              currentSource={currentSong.lyricSource}
+              onDone={(message, used) => {
+                closeSheet();
+                if (used) setShowLyrics(true);
+                say(message);
+              }}
+            />
+          ) : null}
         </PlayerSheet>
         <PlayerSheet visible={sheet === 'together'} title="Listen together" tall onClose={closeSheet}>
           <ListenTogetherPanel />

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { formatSize, parseAndroidRelease, releasedAgo } from './androidRelease.ts';
+import { formatSize, isNewerRelease, parseAndroidRelease, releasedAgo, watchAndroidRelease } from './androidRelease.ts';
+import type { AndroidRelease } from './androidRelease.ts';
 
 const release = {
   name: 'LuvLyrics 0.2.0 — latest build',
@@ -45,4 +46,32 @@ test('release age is in words for the first two weeks', () => {
   assert.equal(releasedAgo(new Date('2026-10-03T01:00:00Z'), now), 'today');
   assert.equal(releasedAgo(new Date('2026-10-02T01:00:00Z'), now), 'yesterday');
   assert.equal(releasedAgo(new Date('2026-09-29T01:00:00Z'), now), '4 days ago');
+});
+
+test('reads the build commit, short', () => {
+  assert.equal(parseAndroidRelease({ ...release, target_commitish: '21738edbd1e2c0ffee21738edbd1e2c0ffee2173' })?.build, '21738ed');
+  assert.equal(parseAndroidRelease({ ...release, target_commitish: 'main' })?.build, null);
+  assert.equal(parseAndroidRelease(release)?.build, null);
+});
+
+const build = (iso: string, url = 'https://example.com/LuvLyrics.apk'): AndroidRelease =>
+  ({ url, sizeBytes: 1, version: '1.0.0', build: null, publishedAt: new Date(iso) });
+
+test('only a later build replaces the one showing', () => {
+  const older = build('2026-10-04T06:00:00Z');
+  const newer = build('2026-10-04T09:00:00Z');
+  assert.equal(isNewerRelease(older, null), true);
+  assert.equal(isNewerRelease(newer, older), true);
+  assert.equal(isNewerRelease(older, newer), false);
+  assert.equal(isNewerRelease(newer, newer), false);
+  assert.equal(isNewerRelease(null, older), false);
+});
+
+test('an open page picks up a build published after it loaded', async () => {
+  const answers = [build('2026-10-04T06:00:00Z'), build('2026-10-04T06:00:00Z'), build('2026-10-04T09:00:00Z')];
+  const heard: string[] = [];
+  const stop = watchAndroidRelease(r => heard.push(r.publishedAt.toISOString()), 5, async () => answers.shift() ?? null);
+  await new Promise(resolve => setTimeout(resolve, 60));
+  stop();
+  assert.deepEqual(heard, ['2026-10-04T06:00:00.000Z', '2026-10-04T09:00:00.000Z']);
 });

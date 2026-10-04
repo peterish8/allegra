@@ -1,7 +1,7 @@
 import { ArrowRight, Download, Heart, MonitorSmartphone, Mic2, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { ANDROID_APK_FALLBACK_URL, ANDROID_RELEASES_URL, fetchAndroidRelease, formatSize, releasedAgo } from '../lib/androidRelease';
+import { ANDROID_APK_FALLBACK_URL, ANDROID_RELEASES_URL, formatSize, releasedAgo, watchAndroidRelease } from '../lib/androidRelease';
 import type { AndroidRelease } from '../lib/androidRelease';
 import { detectBrowserName } from '../lib/browserName';
 
@@ -33,12 +33,10 @@ export function AndroidAppCard() {
 
   // The newest build: CI replaces the `apk-latest` release on every push to main. Its real size, version
   // and date replace the fixed wording once they arrive; until then (or without a network) the fixed link works.
+  // The page keeps looking while it is open (every 10 minutes, and when the visitor comes back to the tab), so
+  // a build published after it loaded is the one it offers — never an older one.
   const [latest, setLatest] = useState<AndroidRelease | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetchAndroidRelease(controller.signal).then((release) => { if (!controller.signal.aborted) setLatest(release); });
-    return () => controller.abort();
-  }, []);
+  useEffect(() => watchAndroidRelease(setLatest), []);
 
   return (
     <div className="apk-card">
@@ -103,18 +101,18 @@ export function AndroidAppCard() {
           <a className="apk-card__download" href={latest?.url ?? ANDROID_APK_FALLBACK_URL} download="LuvLyrics.apk" rel="noopener">
             <Download size={18} strokeWidth={2} aria-hidden="true" />
             <span className="apk-card__download-copy">
-              <strong>Download APK</strong>
+              <strong>{latest?.version ? `Download LuvLyrics ${latest.version}` : 'Download APK'}</strong>
               <small>LuvLyrics.apk · {latest?.sizeBytes ? formatSize(latest.sizeBytes) : 'about 32 MB'}</small>
             </span>
           </a>
           <a className="settings-link" href={ANDROID_RELEASES_URL} target="_blank" rel="noopener noreferrer">Release notes and older builds</a>
         </div>
-        {latest ? (
-          <p className="apk-card__latest" aria-live="polite">
-            <i aria-hidden="true" />
-            Latest build{latest.version ? ` ${latest.version}` : ''} · released {releasedAgo(latest.publishedAt)}
-          </p>
-        ) : null}
+        <p className="apk-card__latest" aria-live="polite">
+          <i aria-hidden="true" />
+          {latest
+            ? <>Latest build{latest.version ? ` ${latest.version}` : ''} · released {releasedAgo(latest.publishedAt)}{latest.build ? ` · ${latest.build}` : ''}</>
+            : 'Checking for the latest build…'}
+        </p>
 
         <ol className="apk-card__steps" aria-label="How to install">
           {STEPS.map((step) => <li key={step}>{step}</li>)}
