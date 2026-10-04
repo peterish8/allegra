@@ -1,5 +1,6 @@
 package com.lyricflow.app.workers
 
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -23,7 +24,7 @@ class ProgressBusTest {
 
         // Start collecting before posting
         val collected = withTimeoutOrNull(1000L) {
-            val job = kotlinx.coroutines.async {
+            val job = async {
                 ProgressBus.events.first()
             }
             kotlinx.coroutines.delay(50) // let collector register
@@ -41,7 +42,7 @@ class ProgressBusTest {
     fun `multiple events preserve order`() = runBlocking {
         val events = mutableListOf<ProgressEvent>()
 
-        val job = kotlinx.coroutines.async {
+        val job = async {
             ProgressBus.events.collect { events.add(it) }
         }
 
@@ -73,7 +74,7 @@ class ProgressBusTest {
         )
 
         val collected = withTimeoutOrNull(1000L) {
-            val job = kotlinx.coroutines.async {
+            val job = async {
                 ProgressBus.events.first()
             }
             kotlinx.coroutines.delay(50)

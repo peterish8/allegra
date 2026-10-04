@@ -22,14 +22,17 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import com.lyricflow.app.playback.QueueEngine
+import com.lyricflow.app.playback.QueueItemSpec
+import com.lyricflow.app.playback.QueueMath.RepeatKind
 import com.lyricflow.app.services.PlaybackService
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 private const val TAG = "LyrFlow"
 private const val META_MAX = 500
@@ -51,7 +54,7 @@ class MainPlayerModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("MainPlayer")
 
-        Events("onPlaybackStatus", "onRemoteCommand", "onTrackAdvanced", "onVolumeChanged", "onPlaybackError")
+        Events("onPlaybackStatus", "onRemoteCommand", "onTrackAdvanced", "onVolumeChanged", "onPlaybackError", "onQueueChanged", "onQueueLow")
 
         OnCreate {
             Log.d(TAG, "MainPlayerModule.OnCreate — registering callbacks")
@@ -69,12 +72,28 @@ class MainPlayerModule : Module() {
             PlayerBridge.onRemoteCommand = { command ->
                 sendEvent("onRemoteCommand", mapOf("command" to command))
             }
-            PlayerBridge.onTrackAdvanced = { mediaId ->
-                sendEvent("onTrackAdvanced", mapOf("mediaId" to mediaId))
+            PlayerBridge.onTrackAdvanced = { mediaId, index, reason ->
+                sendEvent("onTrackAdvanced", mapOf("mediaId" to mediaId, "index" to index, "reason" to reason))
+            }
+            PlayerBridge.onQueueChanged = { state ->
+                sendEvent("onQueueChanged", state)
+            }
+            PlayerBridge.onQueueLow = { size, mediaId, tag ->
+                sendEvent("onQueueLow", mapOf("size" to size, "mediaId" to mediaId, "tag" to tag))
             }
             PlayerBridge.onPlaybackError = { reason, position ->
                 sendEvent("onPlaybackError", mapOf("reason" to reason, "position" to position))
             }
+        }
+
+        // Position reports (four a second) only go to JavaScript while the app is in front; on the way back it
+        // gets the real state at once.
+        OnActivityEntersForeground {
+            PlayerBridge.setUiVisible(true)
+            mainHandler.post { PlayerBridge.emitStatus() }
+        }
+        OnActivityEntersBackground {
+            PlayerBridge.setUiVisible(false)
         }
 
         // Hardware volume keys move the Now Playing volume slider too.
@@ -152,8 +171,8 @@ class MainPlayerModule : Module() {
         /** Player menu → Repeat: loop the current song. Media3 then never ends
          *  the item, so the staged "next" is not advanced into. */
         Function("setRepeatOne") { on: Boolean ->
-            val player = PlayerBridge.getPlayer() ?: return@Function false
-            mainHandler.post { player.repeatMode = if (on) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF }
+            val engine = PlayerBridge.getEngine() ?: return@Function false
+            mainHandler.post { engine.setRepeat(if (on) RepeatKind.ONE else RepeatKind.ALL) }
             true
         }
 
@@ -242,89 +261,119 @@ class MainPlayerModule : Module() {
             PlayerBridge.onStatusUpdate = null
             PlayerBridge.onRemoteCommand = null
             PlayerBridge.onTrackAdvanced = null
+            PlayerBridge.onQueueChanged = null
+            PlayerBridge.onQueueLow = null
             PlayerBridge.onPlaybackError = null
         }
 
+        /**
+         * Make this song the playing item. The rest of the queue stays: a song the queue already holds is
+         * replaced in place (a fresh link for an expired one); any other becomes a queue of one. The caller
+         * decides whether to play.
+         */
         AsyncFunction("load") { uri: String, metadata: Map<String, String> ->
-            if (!isAllowedUri(uri)) {
+            val id = metadata["mediaId"].takeUnless { it.isNullOrBlank() } ?: uri
+            val spec = QueueItemSpec.fromMap(metadata + mapOf("id" to id, "uri" to uri))
+            if (spec == null) {
                 Log.w(TAG, "load() rejected uri scheme")
                 return@AsyncFunction
             }
-            Log.d(TAG, "load() called")
-            val context = appContext.reactContext ?: throw Exception("React context not available")
-
-            // startService, not startForegroundService: MediaSessionService posts
-            // the media notification and promotes itself to foreground when playback
-            // begins. Starting it as a foreground service here would demand a
-            // startForeground() call within ~5s that never comes while the user is
-            // merely loading a track, which Android kills the process for.
-            val intent = Intent(context, PlaybackService::class.java)
-            context.startService(intent)
-
-            var retries = 0
-            while (PlayerBridge.getPlayer() == null && retries < 100) {
-                Thread.sleep(20)
-                retries++
-            }
-
-            val player = PlayerBridge.getPlayer()
-            if (player == null) {
-                Log.e(TAG, "load() TIMEOUT — player still null after ${retries * 20}ms")
+            val engine = awaitEngine() ?: run {
+                Log.e(TAG, "load() TIMEOUT — engine still null")
                 return@AsyncFunction
             }
-
-            val mediaItem = buildMediaItem(uri, metadata, metadata["mediaId"] ?: "")
-            val latch = CountDownLatch(1)
-            mainHandler.post {
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                latch.countDown()
-            }
-            latch.await(5, TimeUnit.SECONDS)
+            onMain { engine.loadItem(spec); true }
+            Unit
         }
 
-        /**
-         * Queue the following track so Media3 can auto-advance without a JS reload.
-         * mediaId must be the app song id — used to sync the store on transition.
-         */
-        Function("prepareNext") { uri: String, metadata: Map<String, String>, mediaId: String ->
-            if (!isAllowedUri(uri) || mediaId.isBlank()) return@Function null
-            val player = PlayerBridge.getPlayer() ?: return@Function null
-            val item = buildMediaItem(uri, metadata, mediaId)
-            mainHandler.post {
-                // Keep only current + this next (drop any stale prepared item).
-                val current = player.currentMediaItemIndex
-                while (player.mediaItemCount > current + 1) {
-                    player.removeMediaItem(player.mediaItemCount - 1)
-                }
-                val existingNext = player.getMediaItemAtOrNull(current + 1)
-                if (existingNext?.mediaId == mediaId) return@post
-                player.addMediaItem(item)
-            }
-            null
+        // -- The queue (Echo Music's engine, in Kotlin; JavaScript is its remote control) --------------------
+
+        /** A new queue. `startIndex` is the place in `items`; items with no allowed address are left out. */
+        AsyncFunction("setQueue") { items: List<Map<String, String>>, startIndex: Int, positionSec: Double, play: Boolean, tag: String? ->
+            val specs = items.mapNotNull { QueueItemSpec.fromMap(it) }
+            val startId = items.getOrNull(startIndex)?.get("id")
+            val engine = awaitEngine() ?: return@AsyncFunction false
+            val start = specs.indexOfFirst { it.id == startId }.coerceAtLeast(0)
+            // The screen speaks seconds; Media3 speaks milliseconds. Converted here, once.
+            onMain { engine.setQueue(specs, start, (positionSec * 1000.0).toLong(), play, tag); true } == true
         }
 
-        /**
-         * If the next MediaItem is already [mediaId], seek to it natively.
-         * Returns true only when the seek was issued — JS must not call load().
-         */
-        AsyncFunction("seekToNextIfReady") { mediaId: String ->
-            if (mediaId.isBlank()) return@AsyncFunction false
-            val player = PlayerBridge.getPlayer() ?: return@AsyncFunction false
-            val ok = AtomicBoolean(false)
-            val latch = CountDownLatch(1)
-            mainHandler.post {
-                val nextIndex = player.currentMediaItemIndex + 1
-                if (nextIndex < player.mediaItemCount &&
-                    player.getMediaItemAt(nextIndex).mediaId == mediaId
-                ) {
-                    player.seekToNextMediaItem()
-                    ok.set(true)
-                }
-                latch.countDown()
-            }
-            latch.await(2, TimeUnit.SECONDS)
-            ok.get()
+        // Edits carry `expectTag`, the tag of the queue they were made for: if a newer queue has replaced it
+        // the engine refuses them (a late radio top-up must not land in the wrong queue). Every call answers
+        // true only once the change has been applied on the player's own thread.
+
+        /** Reorder, remove or top up without interrupting the song that is playing. */
+        AsyncFunction("replaceQueue") { items: List<Map<String, String>>, expectTag: String?, newTag: String? ->
+            val engine = PlayerBridge.getEngine() ?: return@AsyncFunction false
+            val specs = items.mapNotNull { QueueItemSpec.fromMap(it) }
+            onMain { engine.replaceQueue(specs, expectTag, newTag) } == true
+        }
+
+        AsyncFunction("playNextItems") { items: List<Map<String, String>>, dropDuplicates: Boolean, expectTag: String? ->
+            val specs = items.mapNotNull { QueueItemSpec.fromMap(it) }
+            val engine = awaitEngine() ?: return@AsyncFunction false
+            onMain { engine.playNext(specs, dropDuplicates, expectTag) } == true
+        }
+
+        AsyncFunction("addToQueueItems") { items: List<Map<String, String>>, dropDuplicates: Boolean, expectTag: String? ->
+            val specs = items.mapNotNull { QueueItemSpec.fromMap(it) }
+            val engine = awaitEngine() ?: return@AsyncFunction false
+            onMain { engine.addToQueue(specs, dropDuplicates, expectTag) } == true
+        }
+
+        AsyncFunction("removeQueueItem") { mediaId: String, expectTag: String? ->
+            val engine = PlayerBridge.getEngine() ?: return@AsyncFunction false
+            onMain { engine.removeById(mediaId, expectTag) } == true
+        }
+
+        AsyncFunction("clearQueue") {
+            val engine = PlayerBridge.getEngine() ?: return@AsyncFunction false
+            onMain { engine.clear(); true } == true
+        }
+
+        AsyncFunction("skipToNext") {
+            val engine = PlayerBridge.getEngine() ?: return@AsyncFunction false
+            onMain { engine.skipToNext(); true } == true
+        }
+
+        AsyncFunction("skipToPrevious") {
+            val engine = PlayerBridge.getEngine() ?: return@AsyncFunction false
+            onMain { engine.skipToPrevious(); true } == true
+        }
+
+        /** A tap on a row of "Up next": `position` counts in play order. */
+        AsyncFunction("skipToIndex") { position: Int ->
+            val engine = PlayerBridge.getEngine() ?: return@AsyncFunction false
+            onMain { engine.skipToIndex(position); true } == true
+        }
+
+        AsyncFunction("setShuffle") { on: Boolean ->
+            val engine = awaitEngine() ?: return@AsyncFunction false
+            onMain { engine.setShuffle(on); true } == true
+        }
+
+        /** "off", "all" or "one". */
+        AsyncFunction("setRepeatMode") { mode: String ->
+            val engine = awaitEngine() ?: return@AsyncFunction false
+            onMain { engine.setRepeat(RepeatKind.fromWire(mode)); true } == true
+        }
+
+        /** The queue as the engine holds it, with every song's details when asked (null when it is empty). */
+        AsyncFunction("getQueueState") { withItems: Boolean ->
+            val engine = PlayerBridge.getEngine() ?: return@AsyncFunction null
+            onMain { engine.state(withItems) }?.takeIf { (it["ids"] as? List<*>)?.isNotEmpty() == true }
+        }
+
+        /** Whether an earlier run saved a queue. Looks at the file only; does not start the service. */
+        Function("hasSavedQueue") {
+            val context = appContext.reactContext ?: return@Function false
+            File(context.filesDir, "native-queue.json").isFile
+        }
+
+        /** Puts the saved queue back, paused where it was (null when nothing was saved). */
+        AsyncFunction("restoreQueue") {
+            val engine = awaitEngine() ?: return@AsyncFunction null
+            onMain { engine.restore() ?: emptyMap() }?.takeIf { it.isNotEmpty() }
         }
 
         /** False when there is no player (the service is gone): JS reloads the song. */
@@ -380,12 +429,38 @@ class MainPlayerModule : Module() {
         }
     }
 
-    private fun buildMediaItem(uri: String, metadata: Map<String, String>, mediaId: String): MediaItem =
-        MediaItem.Builder()
-            .setUri(uri)
-            .setMediaId(mediaId)
-            .setMediaMetadata(mediaMetadataOf(metadata))
-            .build()
+    /** Starts the playback service if it is not running and waits (up to 2 s) for its queue engine. */
+    private fun awaitEngine(): QueueEngine? {
+        val context = appContext.reactContext ?: return null
+        // startService, not startForegroundService: MediaSessionService posts the media notification and
+        // promotes itself to foreground when playback begins. Starting it as a foreground service here would
+        // demand a startForeground() call within ~5s that never comes while the user is merely loading a
+        // track, which Android kills the process for.
+        context.startService(Intent(context, PlaybackService::class.java))
+        var waited = 0
+        while (PlayerBridge.getEngine() == null && waited < 100) {
+            Thread.sleep(20)
+            waited++
+        }
+        return PlayerBridge.getEngine()
+    }
+
+    /** Runs [block] on the main thread (ExoPlayer's looper) and waits for it. Null if it failed or took too long. */
+    private fun <T : Any> onMain(timeoutSeconds: Long = 5, block: () -> T): T? {
+        val result = AtomicReference<T?>(null)
+        val latch = CountDownLatch(1)
+        mainHandler.post {
+            try {
+                result.set(block())
+            } catch (e: Exception) {
+                Log.w(TAG, "player call failed: ${e.message}")
+            } finally {
+                latch.countDown()
+            }
+        }
+        latch.await(timeoutSeconds, TimeUnit.SECONDS)
+        return result.get()
+    }
 
     private fun mediaMetadataOf(metadata: Map<String, String>): MediaMetadata =
         MediaMetadata.Builder()
@@ -411,7 +486,4 @@ class MainPlayerModule : Module() {
         val scheme = Uri.parse(uri).scheme?.lowercase() ?: return false
         return scheme == "file" || scheme == "content" || scheme == "https"
     }
-
-    private fun Player.getMediaItemAtOrNull(index: Int): MediaItem? =
-        if (index in 0 until mediaItemCount) getMediaItemAt(index) else null
 }

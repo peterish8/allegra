@@ -18,6 +18,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.lyricflow.app.modules.PlayerBridge
+import com.lyricflow.app.playback.QueueEngine
+import java.io.File
 
 private const val TAG = "LyrFlow"
 private const val MAX_RETRIES = 4
@@ -42,6 +44,7 @@ class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
     private lateinit var exoPlayer: ExoPlayer
+    private lateinit var queueEngine: QueueEngine
     private val retryHandler = Handler(Looper.getMainLooper())
     private var retries = 0
 
@@ -208,7 +211,11 @@ class PlaybackService : MediaSessionService() {
                 )
             )
             .build()
-        exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
+        // The queue is the engine's: it listens before anything else so a skip, a shuffle or the end of the
+        // queue is settled the moment ExoPlayer reports it. Repeat starts on "all", as the screen has always had it.
+        queueEngine = QueueEngine(exoPlayer, File(filesDir, "native-queue.json"))
+        exoPlayer.repeatMode = Player.REPEAT_MODE_ALL
+        exoPlayer.addListener(queueEngine)
         exoPlayer.addListener(recovery)
 
         val sessionActivity = packageManager
@@ -222,9 +229,9 @@ class PlaybackService : MediaSessionService() {
                 )
             }
 
-        // The session drives the notification, so it gets the queue-aware wrapper.
+        // The session drives the notification, so it gets the wrapper whose skip buttons go to the engine.
         // PlayerBridge keeps the raw ExoPlayer for status polling and seeks.
-        val sessionPlayer = QueueForwardingPlayer(exoPlayer)
+        val sessionPlayer = QueueForwardingPlayer(exoPlayer, queueEngine)
         val session = MediaSession.Builder(this, sessionPlayer)
             .apply { sessionActivity?.let { setSessionActivity(it) } }
             .build()
@@ -238,7 +245,7 @@ class PlaybackService : MediaSessionService() {
         // and hold the foreground while music plays.
         addSession(session)
 
-        PlayerBridge.setPlayer(exoPlayer, this)
+        PlayerBridge.setPlayer(exoPlayer, this, queueEngine)
         Log.d(TAG, "PlaybackService.onCreate() done — media session ready")
     }
 
@@ -248,6 +255,8 @@ class PlaybackService : MediaSessionService() {
         // Swiping the app away while paused should tear the service down rather
         // than leave a dead notification pinned.
         val player = mediaSession?.player
+        // The queue and where it was come back next time the app asks for them.
+        if (::queueEngine.isInitialized) queueEngine.saveNow()
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
         }
@@ -258,6 +267,8 @@ class PlaybackService : MediaSessionService() {
         Log.d(TAG, "PlaybackService.onDestroy()")
         retryHandler.removeCallbacksAndMessages(null)
         exoPlayer.removeListener(recovery)
+        exoPlayer.removeListener(queueEngine)
+        queueEngine.release()
         // Tell JS the player is gone, so the transport shows play and the next
         // tap reloads the song where it stopped instead of doing nothing.
         PlayerBridge.emitReleased()

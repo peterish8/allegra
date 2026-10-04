@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.lyricflow.app.playback.QueueEngine
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
@@ -11,6 +12,7 @@ import kotlinx.coroutines.channels.Channel
 object PlayerBridge {
     private var activePlayerRef = WeakReference<ExoPlayer>(null)
     private var activeServiceRef = WeakReference<Context>(null)
+    private var activeEngineRef = WeakReference<QueueEngine>(null)
 
     var onStatusUpdate: ((
         position: Double,
@@ -22,8 +24,12 @@ object PlayerBridge {
         suppressed: Boolean
     ) -> Unit)? = null
     var onRemoteCommand: ((command: String) -> Unit)? = null
-    /** Fires when Media3 lands on a new item (auto end-of-track or seekToNext). */
-    var onTrackAdvanced: ((mediaId: String) -> Unit)? = null
+    /** The song now playing changed: [index] is its place in the queue in play order, [reason] is auto / seek / playlist. */
+    var onTrackAdvanced: ((mediaId: String, index: Int, reason: String) -> Unit)? = null
+    /** The queue, its order, shuffle or repeat changed (one message per tick). */
+    var onQueueChanged: ((state: Map<String, Any?>) -> Unit)? = null
+    /** The playing song and those after it are running out: JavaScript may add more. */
+    var onQueueLow: ((size: Int, mediaId: String, tag: String?) -> Unit)? = null
     /**
      * Playback stopped for good and the player can't fix it in place:
      * "expired" (the link was refused), "network" (retries ran out), "stall"
@@ -32,9 +38,16 @@ object PlayerBridge {
     var onPlaybackError: ((reason: String, position: Double) -> Unit)? = null
     private var lastPositionSeconds = 0.0
 
+    /**
+     * Whether a screen is on to watch the position. Position reports (four a second) only go out while it is;
+     * every change of state still does. Nothing ticks when nothing is watching.
+     */
+    @Volatile
+    private var uiVisible = true
+
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
-            emitStatus(playbackState == Player.STATE_ENDED)
+            emitStatus()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -56,14 +69,8 @@ object PlayerBridge {
             emitStatus()
         }
 
+        // Which song is playing is [QueueEngine]'s to announce (it knows the place in the queue).
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            if (
-                reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
-                reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK
-            ) {
-                val id = mediaItem?.mediaId
-                if (!id.isNullOrEmpty()) onTrackAdvanced?.invoke(id)
-            }
             emitStatus()
         }
     }
@@ -74,9 +81,10 @@ object PlayerBridge {
     /** Conflated, so a "started playing" that lands mid-iteration is never lost. */
     private val playingSignal = Channel<Unit>(Channel.CONFLATED)
 
-    fun setPlayer(player: ExoPlayer, context: Context) {
+    fun setPlayer(player: ExoPlayer, context: Context, engine: QueueEngine) {
         activePlayerRef = WeakReference(player)
         activeServiceRef = WeakReference(context)
+        activeEngineRef = WeakReference(engine)
         player.addListener(playerListener)
         startProgressPoller()
         // A player that is already playing (service restarted mid-song) has no
@@ -89,17 +97,26 @@ object PlayerBridge {
         activePlayerRef.get()?.removeListener(playerListener)
         activePlayerRef.clear()
         activeServiceRef.clear()
+        activeEngineRef.clear()
     }
 
     fun getPlayer(): ExoPlayer? = activePlayerRef.get()
+
+    fun getEngine(): QueueEngine? = activeEngineRef.get()
+
+    /** The app came to the front (true) or left it (false). Returning wakes the position reports. */
+    fun setUiVisible(visible: Boolean) {
+        uiVisible = visible
+        if (visible) playingSignal.trySend(Unit)
+    }
 
     fun emitStatus(didJustFinish: Boolean = false) {
         val player = activePlayerRef.get() ?: return
         val isPlaying = player.isPlaying
         val isBuffering = player.playbackState == Player.STATE_BUFFERING
-        // Only treat ENDED as finish when there is no next item — otherwise Media3
-        // will auto-advance and JS must not also call nextInPlaylist.
-        val finished = didJustFinish && !player.hasNextMediaItem()
+        // The end of the queue is [QueueEngine]'s: it starts over or rests on the first song, so the screen
+        // never has to move on by itself.
+        val finished = false
 
         val position = player.currentPosition.toDouble() / 1000.0
         val duration = player.duration.toDouble() / 1000.0
@@ -114,6 +131,18 @@ object PlayerBridge {
             finished,
             player.playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE
         )
+    }
+
+    fun emitTrackAdvanced(mediaId: String, index: Int, reason: String) {
+        onTrackAdvanced?.invoke(mediaId, index, reason)
+    }
+
+    fun emitQueueChanged(state: Map<String, Any?>) {
+        onQueueChanged?.invoke(state)
+    }
+
+    fun emitQueueLow(size: Int, mediaId: String, tag: String?) {
+        onQueueLow?.invoke(size, mediaId, tag)
     }
 
     fun emitError(reason: String) {
@@ -133,10 +162,10 @@ object PlayerBridge {
     }
 
     /**
-     * Position ticks, four a second, but only while the player is playing.
-     * Paused, buffering, ended or backgrounded-and-idle, the loop is suspended
-     * on the channel and costs no wake-ups; every state change JS needs still
-     * arrives through the listener events above.
+     * Position ticks, four a second, but only while the player is playing and a screen is showing.
+     * Paused, buffering, ended, backgrounded or idle, the loop is suspended on the channel and costs no
+     * wake-ups; every state change JS needs still arrives through the listener events above, and coming
+     * back to the front wakes the loop again ([setUiVisible]).
      */
     private fun startProgressPoller() {
         pollerJob?.cancel()
@@ -146,7 +175,7 @@ object PlayerBridge {
                 while (isActive) {
                     val stillPlaying = withContext(Dispatchers.Main) {
                         val player = activePlayerRef.get()
-                        if (player != null && player.isPlaying) {
+                        if (player != null && player.isPlaying && uiVisible) {
                             emitStatus()
                             true
                         } else {
