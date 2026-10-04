@@ -168,5 +168,14 @@ assert_alive() {
     adb logcat -d -b crash 2>/dev/null | grep -A 8 "Process: $PKG" | tail -n 9 >> "$OUT/controls.txt"
     return 1
   fi
+  # A lost React instance leaves the process (and the music) running, so pidof and the crash buffer miss it: the
+  # screen went dead and was restarted (recovery/UiRecovery.kt). That is the grey-screen bug, so it fails.
+  n=$(adb logcat -d 2>/dev/null | grep -c "UiRecovery.*React instance lost")
+  if [ "${n:-0}" -gt "${PLAYER_LOST_UI:-0}" ]; then
+    PLAYER_LOST_UI=$n
+    _record "FAIL: $ctx: the screen died (React instance lost) and was restarted"
+    adb logcat -d 2>/dev/null | grep -A 6 "UiRecovery.*React instance lost" | tail -n 7 >> "$OUT/controls.txt"
+    return 1
+  fi
   _record "ok: $ctx: the app is running"
 }

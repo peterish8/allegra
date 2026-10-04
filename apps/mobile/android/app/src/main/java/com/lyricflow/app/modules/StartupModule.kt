@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
+import com.lyricflow.app.recovery.UiRecovery
 import com.lyricflow.app.startup.StartupPreloader
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -41,6 +42,11 @@ class StartupModule : Module() {
                 "cores" to Runtime.getRuntime().availableProcessors(),
                 "apiLevel" to Build.VERSION.SDK_INT,
             )
+        }
+
+        // The error that took the last React instance down (recovery/UiRecovery.kt), once; null when there is none.
+        Function("takeUiCrash") {
+            appContext.reactContext?.let { UiRecovery.take(it) }
         }
 
         // Battery Saver: the shader and glows step down while it is on

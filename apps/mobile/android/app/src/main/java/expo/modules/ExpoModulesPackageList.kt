@@ -27,6 +27,8 @@ class ExpoModulesPackageList : ModulesProvider {
             expo.modules.kotlin.edgeToEdge.EdgeToEdgePackage(),
             expo.modules.systemui.SystemUIPackage(),
             io.sentry.react.expo.SentryExpoPackage(),
+            // After Sentry: a lost React instance is reported first, then the screen is brought back.
+            com.lyricflow.app.recovery.UiRecoveryPackage(),
         )
     }
 

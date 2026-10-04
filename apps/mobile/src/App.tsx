@@ -154,6 +154,10 @@ const App: React.FC = () => {
           // Each job runs once touches have settled, staggered so they don't
           // land in a burst on the JS thread.
 
+          // The screen was started again after a fatal error in the React layer (recovery/UiRecovery.kt): say so,
+          // with the error to copy for a report. Soon after the first frame, before the background jobs.
+          runWhenIdle('recovered crash', () => import('./services/uiCrash').then(m => m.reportRecoveredCrash()));
+
           // Restore downloads and lyrics scans that were in flight when the app was killed.
           runWhenIdle('download queue', () =>
             import('./store/downloadQueueStore').then(m => m.useDownloadQueueStore.getState().hydrateFromDb()));
