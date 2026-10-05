@@ -13,7 +13,10 @@ import { positionSV } from '../../playback/positionBus';
 import type { Song } from '../../types/song';
 import { getAllegraSongById, matchConnectSong, matchEach, toMobileSong, type MatchedSong, type SongMatcherDeps } from './songMatcher';
 import { shuffleUpcoming } from '../player/playerMenuActions';
+import { ALLEGRA_API_URL } from '../account/config';
 
+/** A stream that has not answered in this long is not the quick way to play: the lookups run instead. */
+const PROBE_TIMEOUT_MS = 3_000;
 const clampPosition = (value: number): number => Number.isFinite(value) ? Math.max(0, value) : 0;
 const notFound = (): Error => Object.assign(new Error('That song could not be loaded.'), { data: { code: 'not_found' } });
 
@@ -111,6 +114,19 @@ export function createMobilePlayerPort(getToken: () => string | null, trace?: De
       return traceCatalogLookup(trace, () => searchOfficial(query, 12));
     },
     token: getToken,
+    // One byte of the stream: it answers fast for a song the API can play, and warms the stream for the player.
+    probeStream: async streamPath => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      try {
+        const res = await fetch(`${ALLEGRA_API_URL}${streamPath}`, { headers: { Range: 'bytes=0-0' }, signal: controller.signal });
+        return res.ok;
+      } catch {
+        return false;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
   };
 
   /** The player's queue as the stager reads it: the store, which is written and read at once. */

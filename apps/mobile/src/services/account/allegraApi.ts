@@ -79,10 +79,15 @@ export interface ChangesReply {
   rev: number;
   changes: LibraryChange[];
   more: boolean;
+  resync?: true;
 }
 
-export const getLibraryChanges = (token: string, since: number, limit = 200): Promise<SendOutcome<ChangesReply>> =>
-  send<ChangesReply>('GET', `/api/me/library/changes?since=${Math.max(0, Math.floor(since))}&limit=${limit}`, token);
+export const getLibraryChanges = (token: string, since: number, limit = 200, resyncContinuation = false): Promise<SendOutcome<ChangesReply>> =>
+  send<ChangesReply>(
+    'GET',
+    `/api/me/library/changes?since=${Math.max(0, Math.floor(since))}&limit=${limit}${resyncContinuation ? '&resync=true' : ''}`,
+    token,
+  );
 
 /** A play, for Recently played and the taste that ranks Quick picks. `playedAt` for plays made offline. */
 export interface PlayEventPayload {
@@ -94,6 +99,8 @@ export interface PlayEventPayload {
 }
 
 export interface ListenSignalPayload {
+  readonly playId?: string;
+  readonly cumulativeSeconds?: number;
   readonly songId?: string;
   readonly songRef: SongRef;
   readonly song?: SongSnapshot;

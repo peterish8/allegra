@@ -16,13 +16,17 @@ import LibraryScreen from '../screens/LibraryScreen';
 import LuvsScreen from '../screens/LuvsScreen';
 import PlaylistsScreen from '../screens/PlaylistsScreen';
 import PlaylistDetailScreen from '../screens/PlaylistDetailScreen';
+import { BlendsScreen } from '../screens/BlendsScreen';
+import { BlendScreen } from '../screens/BlendScreen';
+import BlendJoinScreen from '../screens/BlendJoinScreen';
+import ImportScreen from '../screens/ImportScreen';
 import SearchScreen from '../screens/SearchScreen';
 import StreamScreen from '../screens/StreamScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ArtistScreen from '../screens/ArtistScreen';
 import CollectionScreen from '../screens/CollectionScreen';
 import { SCREEN_BG, stackContentStyle } from './theme';
-import { Motion } from '../constants/allegraTheme';
+import { Motion, Signal } from '../constants/allegraTheme';
 import { isDoubleTap } from './tabs';
 import { LIBRARY_ROOT, libraryRootMove, scrollLibraryHomeToTop } from './libraryRoot';
 import * as Haptics from '../utils/haptics';
@@ -42,6 +46,7 @@ const STACK_OPTIONS = {
   contentStyle: stackContentStyle,
   freezeOnBlur: true,
 } as const;
+const BLEND_HEADER = { headerShown: true, headerStyle: { backgroundColor: Signal.bg }, headerTintColor: Signal.ink, headerShadowVisible: false } as const;
 
 /**
  * The tab cross-fade: the default is 150ms on a linear curve; this is the token's fast duration on
@@ -66,6 +71,10 @@ const LibraryStackScreen: React.FC<BottomTabScreenProps<TabParamList, 'Library'>
       <LibraryStack.Screen name="LibraryHome" component={LibraryScreen} />
       <LibraryStack.Screen name="Playlists" component={PlaylistsScreen} />
       <LibraryStack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} options={{ animation: 'slide_from_bottom' }} />
+      <LibraryStack.Screen name="Blends" component={BlendsScreen} options={BLEND_HEADER} />
+      <LibraryStack.Screen name="Blend" component={BlendScreen} options={BLEND_HEADER} />
+      <LibraryStack.Screen name="BlendJoin" component={BlendJoinScreen} options={{ ...BLEND_HEADER, title: 'Join a Blend' }} />
+      <LibraryStack.Screen name="Import" component={ImportScreen} options={{ ...BLEND_HEADER, title: 'Import Spotify' }} />
     </LibraryStack.Navigator>
   );
 };

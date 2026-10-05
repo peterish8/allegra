@@ -252,14 +252,12 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Swiping the app away while paused should tear the service down rather
-        // than leave a dead notification pinned.
-        val player = mediaSession?.player
+        // Swiping the app away closes it, music included: pause, keep the queue and where it was for next time,
+        // then end the service. (It used to stop only when already paused, so music kept playing after a close.)
         // The queue and where it was come back next time the app asks for them.
         if (::queueEngine.isInitialized) queueEngine.saveNow()
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
-            stopSelf()
-        }
+        mediaSession?.player?.pause()
+        stopSelf()
         super.onTaskRemoved(rootIntent)
     }
 

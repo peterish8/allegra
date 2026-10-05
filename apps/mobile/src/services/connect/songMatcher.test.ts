@@ -64,6 +64,46 @@ describe('Connect song matching', () => {
     }
   });
 
+  it('plays at once when the ref\'s stream answers, with no account lookup or search', async () => {
+    const getCatalogSong = jest.fn();
+    const searchCatalog = jest.fn(async () => []);
+    const probeStream = jest.fn(async () => true);
+    const result = await matchConnectSong(snapshot, {
+      localSongs: () => [], getCatalogSong, searchCatalog, token: () => 'token', probeStream,
+    });
+
+    expect(probeStream).toHaveBeenCalledWith('/api/stream/abc');
+    expect(getCatalogSong).not.toHaveBeenCalled();
+    expect(searchCatalog).not.toHaveBeenCalled();
+    expect(result?.kind).toBe('catalog');
+    if (result?.kind === 'catalog') {
+      expect(result.song.id).toBe('abc');
+      expect(result.song.source).toBe('Saavn');
+      expect(result.song.streamUrl).toContain('/api/stream/abc');
+      expect(result.song.title).toBe(snapshot.title);
+    }
+  });
+
+  it('probes Gaana by its whole ref', async () => {
+    const probeStream = jest.fn(async () => true);
+    const result = await matchConnectSong({ ...snapshot, ref: 'gaana:abc' }, {
+      localSongs: () => [], getCatalogSong: jest.fn(), searchCatalog: async () => [], token: () => null, probeStream,
+    });
+
+    expect(probeStream).toHaveBeenCalledWith('/api/stream/gaana%3Aabc');
+    if (result?.kind === 'catalog') expect(result.song.source).toBe('Gaana');
+  });
+
+  it('falls back to the account lookup when the stream does not answer', async () => {
+    const getCatalogSong = jest.fn(async () => catalog);
+    const result = await matchConnectSong(snapshot, {
+      localSongs: () => [], getCatalogSong, searchCatalog: async () => [], token: () => 'token', probeStream: async () => false,
+    });
+
+    expect(getCatalogSong).toHaveBeenCalledWith('saavn:abc', 'token');
+    expect(result?.kind).toBe('catalog');
+  });
+
   it('looks up Gaana by namespaced ref and accepts only that exact provider row', async () => {
     const gaanaSnapshot: SongSnapshot = { ...snapshot, ref: 'gaana:abc' };
     const gaanaSong = { ...catalog, source: 'Gaana' as const, streamUrl: '/api/stream/gaana%3Aabc' };

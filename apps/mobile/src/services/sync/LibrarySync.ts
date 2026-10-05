@@ -16,7 +16,7 @@ import { makeFunctionReference } from 'convex/server';
 import type { ConvexReactClient } from 'convex/react';
 
 import { shareableArtwork } from '@shared/artwork';
-import type { LibraryChange, LibraryOp } from '@shared/library';
+import { isTombstone, type LibraryChange, type LibraryOp } from '@shared/library';
 import { matchKey, parseSongRef, songRef, toAllegraId, type SongRef, type SongSnapshot } from '@shared/songRef';
 
 import * as db from '../../database/syncQueries';
@@ -44,6 +44,7 @@ import { nextPlayOutboxAction, parsePendingPlay } from './playOutbox';
 const libraryRevision = makeFunctionReference<'query', Record<string, never>, number | null>('library:myRev');
 const OPS_PER_BATCH = 100;
 const FLUSH_DELAY_MS = 1500;
+const RESYNC_MAX_PAGES = 100;
 
 interface Session {
   readonly userId: string;
@@ -372,6 +373,8 @@ async function flush(current: Session, includeLibrary: boolean): Promise<{ reado
         continue;
       }
       const taste = await api.postListenSignal(token, {
+        playId: `${play.songRef}:${play.playedAt}`.slice(0, 128),
+        cumulativeSeconds: play.seconds,
         ...(play.songId ? { songId: play.songId } : {}),
         songRef: play.songRef,
         ...(play.song ? { song: play.song } : {}),
@@ -397,6 +400,32 @@ async function pull(current: Session): Promise<boolean> {
     if (!token) return false;
     const reply = await api.getLibraryChanges(token, since);
     if (reply.outcome !== 'sent') return false;
+    if (reply.data.resync === true) {
+      const changes = [...reply.data.changes];
+      let resyncSince = reply.data.rev;
+      let more = reply.data.more;
+      let pages = 1;
+      while (more && pages < RESYNC_MAX_PAGES) {
+        const nextToken = current.getToken();
+        if (!nextToken) return false;
+        const next = await api.getLibraryChanges(nextToken, resyncSince, 500, true);
+        if (next.outcome !== 'sent' || next.data.resync !== true) return false;
+        if (next.data.more && next.data.rev <= resyncSince) return false;
+        changes.push(...next.data.changes);
+        resyncSince = next.data.rev;
+        more = next.data.more;
+        pages += 1;
+      }
+      if (more) return false;
+      if (!await reconcileResync(changes, token)) {
+        await refreshStores();
+        return false;
+      }
+      await refreshStores();
+      // This is the only cursor write in a resync: every page and every local write succeeded.
+      await db.setMeta(revKey(current.userId), String(resyncSince));
+      return true;
+    }
     if (reply.data.changes.length > 0) {
       const applied = await apply(reply.data.changes, token);
       changed = true;
@@ -412,6 +441,129 @@ async function pull(current: Session): Promise<boolean> {
   }
   if (changed) await refreshStores();
   return true;
+}
+
+interface PendingLibraryEdits {
+  readonly likeRefs: ReadonlySet<string>;
+  /** Any pending operation keeps a local playlist from being dropped during replacement. */
+  readonly playlistIds: ReadonlySet<string>;
+  /** Pending playlist metadata changes also protect the playlist's existing contents. */
+  readonly playlistMetadataIds: ReadonlySet<string>;
+  readonly itemKeys: ReadonlySet<string>;
+}
+
+function pendingLibraryEdits(entries: readonly db.OutboxEntry[]): PendingLibraryEdits {
+  const likeRefs = new Set<string>();
+  const playlistIds = new Set<string>();
+  const playlistMetadataIds = new Set<string>();
+  const itemKeys = new Set<string>();
+  for (const entry of entries) {
+    let value: unknown;
+    try {
+      value = JSON.parse(entry.body) as unknown;
+    } catch {
+      continue;
+    }
+    if (!isRecord(value) || typeof value.op !== 'string') continue;
+    if ((value.op === 'like' || value.op === 'unlike') && typeof value.ref === 'string') {
+      likeRefs.add(value.ref);
+      continue;
+    }
+    if ((value.op === 'playlist_upsert' || value.op === 'playlist_delete') && typeof value.playlistId === 'string') {
+      playlistIds.add(value.playlistId);
+      playlistMetadataIds.add(value.playlistId);
+      continue;
+    }
+    if ((value.op === 'playlist_add' || value.op === 'playlist_remove') && typeof value.playlistId === 'string' && typeof value.ref === 'string') {
+      playlistIds.add(value.playlistId);
+      itemKeys.add(`${value.playlistId}\u0000${value.ref}`);
+    }
+  }
+  return { likeRefs, playlistIds, playlistMetadataIds, itemKeys };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Replaces the account-synced part of the phone library from a full live feed. The outbox is a
+ * separate source of pending local intent: rows it names are left alone until the operation is sent.
+ */
+async function reconcileResync(changes: readonly LibraryChange[], token: string): Promise<boolean> {
+  try {
+    const [outbox, songs, playlists, onlineLikes] = await Promise.all([
+      db.readOutbox('op'),
+      db.getLocalSongs(),
+      db.getLocalPlaylists(),
+      db.getOnlineLikes(),
+    ]);
+    const pending = pendingLibraryEdits(outbox);
+    const liveChanges = changes.filter((change) => !isTombstone(change));
+    const liveLikes = new Set(liveChanges.flatMap((change) => change.kind === 'like' && change.liked ? [change.ref] : []));
+    const livePlaylists = new Map<string, Set<string>>();
+    for (const change of liveChanges) {
+      if (change.kind === 'playlist' && change.playlistId !== LIKED_PLAYLIST_ID) {
+        livePlaylists.set(change.playlistId, new Set());
+      }
+    }
+    for (const change of liveChanges) {
+      if (change.kind === 'playlist_item' && change.playlistId !== LIKED_PLAYLIST_ID) {
+        livePlaylists.get(change.playlistId)?.add(change.ref);
+      }
+    }
+
+    const songById = new Map(songs.map((song) => [song.id, song]));
+    const likedPlaylist = playlists.find((playlist) => playlist.isDefault);
+    for (const songId of likedPlaylist?.songIds ?? []) {
+      const song = songById.get(songId);
+      const ref = song ? refForLocalSong(song) : null;
+      if (ref && !pending.likeRefs.has(ref) && !liveLikes.has(ref)) {
+        await db.setPlaylistMembership(LIKED_PLAYLIST_ID, songId, false);
+      }
+    }
+    for (const row of onlineLikes) {
+      const parsed = parseSongRef(row.ref);
+      if (parsed && !pending.likeRefs.has(row.ref) && !liveLikes.has(`${parsed.source}:${parsed.id}`)) {
+        await db.removeOnlineLike(row.ref);
+      }
+    }
+
+    for (const playlist of playlists) {
+      if (playlist.isDefault) continue;
+      const accountItems = livePlaylists.get(playlist.id);
+      if (!accountItems) {
+        if (!pending.playlistIds.has(playlist.id)) await db.deletePlaylistRaw(playlist.id);
+        continue;
+      }
+      if (pending.playlistMetadataIds.has(playlist.id)) continue;
+      const pendingItem = (ref: string) => pending.itemKeys.has(`${playlist.id}\u0000${ref}`);
+      for (const songId of playlist.songIds) {
+        const song = songById.get(songId);
+        const ref = song ? refForLocalSong(song) : null;
+        if (ref && !pendingItem(ref) && !accountItems.has(ref)) {
+          await db.setPlaylistMembership(playlist.id, songId, false);
+        }
+      }
+      for (const row of await db.getOnlinePlaylistSongs(playlist.id)) {
+        const parsed = parseSongRef(row.ref);
+        const ref = parsed ? `${parsed.source}:${parsed.id}` : null;
+        if (ref && !pendingItem(ref) && !accountItems.has(ref)) {
+          await db.removeOnlinePlaylistSong(playlist.id, row.ref);
+        }
+      }
+    }
+
+    const applicable = liveChanges.filter((change) => {
+      if (change.kind === 'like') return !pending.likeRefs.has(change.ref);
+      if (change.kind === 'playlist') return !pending.playlistMetadataIds.has(change.playlistId);
+      return !pending.playlistMetadataIds.has(change.playlistId) && !pending.itemKeys.has(`${change.playlistId}\u0000${change.ref}`);
+    });
+    return await apply(applicable, token);
+  } catch (error) {
+    log('resync reconcile failed', error);
+    return false;
+  }
 }
 
 /** False when any change could not be written, so the caller keeps its place and retries. */

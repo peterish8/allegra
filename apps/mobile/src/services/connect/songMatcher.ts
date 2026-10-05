@@ -2,6 +2,7 @@ import { matchKey, parseSongRef, type SongSnapshot } from '@shared/songRef';
 
 import type { AllegraSong } from '../account/allegraApi';
 import { getAllegraSongs, toPlayableAllegraSong } from '../account/allegraApi';
+import { ALLEGRA_API_URL } from '../account/config';
 import { searchOfficial } from '../stream/officialSearch';
 import { isOnDevice } from '../stream/streamSong';
 import type { Song, UnifiedSong } from '../../types/song';
@@ -11,6 +12,11 @@ export interface SongMatcherDeps {
   readonly getCatalogSong: (ref: string, token: string) => Promise<AllegraSong | null>;
   readonly searchCatalog: (query: string, artist: string) => Promise<UnifiedSong[]>;
   readonly token: () => string | null;
+  /**
+   * True when Allegra's stream route answers for this path. A ref already names the provider and id, so a song
+   * whose stream answers plays at once, without the account lookup and the YouTube Music search behind it.
+   */
+  readonly probeStream?: (streamPath: string) => Promise<boolean>;
 }
 
 export type MatchedSong = { readonly kind: 'local'; readonly song: Song } | { readonly kind: 'catalog'; readonly song: UnifiedSong };
@@ -29,6 +35,27 @@ export async function matchConnectSong(snapshot: SongSnapshot, deps: SongMatcher
   const wanted = matchKey(snapshot.title, snapshot.artist);
   const local = deps.localSongs().find(song => song.originId === snapshot.ref || matchKey(song.title, song.artist) === wanted);
   if (local?.audioUri && isOnDevice(local.audioUri)) return { kind: 'local', song: local };
+
+  if (deps.probeStream) {
+    // The route is the one the catalog row would have named: the id, or the whole ref for Gaana.
+    const streamPath = `/api/stream/${encodeURIComponent(parsed.source === 'gaana' ? snapshot.ref : parsed.id)}`;
+    if (await deps.probeStream(streamPath)) {
+      const streamUrl = `${ALLEGRA_API_URL}${streamPath}`;
+      return {
+        kind: 'catalog',
+        song: {
+          id: parsed.id,
+          title: snapshot.title,
+          artist: snapshot.artist,
+          highResArt: snapshot.artwork,
+          downloadUrl: streamUrl,
+          streamUrl,
+          source: parsed.source === 'gaana' ? 'Gaana' : 'Saavn',
+          duration: snapshot.duration,
+        },
+      };
+    }
+  }
 
   const token = deps.token();
   if (token) {

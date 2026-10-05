@@ -208,6 +208,15 @@ const LibraryScreen: React.FC = () => {
         {headerButtons}
       </View>
 
+      <View style={[styles.topActions, { paddingHorizontal: Space.lg, marginBottom: Space.md }]}>
+        <Tactile onPress={() => navigation.navigate('Blends')} accessibilityRole="button" style={[styles.iconButton, { width: 'auto', paddingHorizontal: Space.md, flexDirection: 'row', gap: Space.sm }]}>
+          <Ionicons name="people-outline" size={18} color={Signal.ink} /><Text style={{ color: Signal.ink }}>Blends</Text>
+        </Tactile>
+        <Tactile onPress={() => navigation.navigate('Import')} accessibilityRole="button" style={[styles.iconButton, { width: 'auto', paddingHorizontal: Space.md, flexDirection: 'row', gap: Space.sm }]}>
+          <Ionicons name="cloud-upload-outline" size={18} color={Signal.ink} /><Text style={{ color: Signal.ink }}>Import Spotify</Text>
+        </Tactile>
+      </View>
+
       {visible.length > 0 ? (
         <RiseIn style={styles.hero}>
           <View onLayout={(e: LayoutChangeEvent) => setHeroBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
