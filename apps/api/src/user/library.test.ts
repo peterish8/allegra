@@ -58,3 +58,41 @@ test('unknown listeners are refused rather than given an empty library', async (
   const library = new MemoryLibraryStore(new MemoryUserStore());
   await assert.rejects(library.apply('nobody', [{ op: 'like', ref: 'saavn:a', at: 1 }]));
 });
+
+test('pruned tombstones request a paged full resync and retention uses updatedAt', async () => {
+  const now = Date.parse('2026-10-05T00:00:00.000Z');
+  const users = new MemoryUserStore();
+  const library = new MemoryLibraryStore(users, () => now);
+  await users.save(profile());
+
+  await library.apply('u1', [
+    { op: 'like', ref: 'saavn:old', at: now - 91 * 24 * 60 * 60 * 1000 },
+    { op: 'unlike', ref: 'saavn:old', at: now - 91 * 24 * 60 * 60 * 1000 + 1 },
+    // This unlike has an old likedAt but a recent updatedAt, so the tombstone must stay.
+    { op: 'like', ref: 'saavn:recent', at: now - 200 * 24 * 60 * 60 * 1000 },
+    { op: 'unlike', ref: 'saavn:recent', at: now - 89 * 24 * 60 * 60 * 1000 },
+    { op: 'like', ref: 'saavn:live-a', at: now - 1000 },
+    { op: 'like', ref: 'saavn:live-b', at: now - 999 }
+  ]);
+
+  assert.equal(library.pruneTombstones(now - 90 * 24 * 60 * 60 * 1000), 1);
+
+  const first = await library.changes('u1', 1, 1);
+  const all = [...first.changes];
+  let since = first.rev;
+  let more: boolean = first.more;
+  assert.equal(first.resync, true);
+  assert.equal(first.more, true);
+  assert.deepEqual(first.changes, []); // the first retained row is the 89-day tombstone
+
+  while (more) {
+    const page = await library.changes('u1', since, 1, true);
+    assert.equal(page.resync, true);
+    all.push(...page.changes);
+    since = page.rev;
+    more = page.more;
+  }
+
+  assert.deepEqual(all.filter((change) => change.kind === 'like').map((change) => change.ref), ['saavn:live-a', 'saavn:live-b']);
+  assert.ok((await library.changes('u1', 3, 10)).changes.some((change) => change.kind === 'like' && !change.liked));
+});

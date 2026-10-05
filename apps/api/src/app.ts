@@ -19,6 +19,9 @@ import { OAuthSigner } from './oauth/tokens.js';
 import { MemoryCacheStore } from './lib/cache.js';
 import { songChangeLimiter, type SongChangeLimitConfig } from './lib/songChangeLimiter.js';
 import { accountRouter } from './routes/account.js';
+import { importsRouter } from './routes/imports.js';
+import { blendsRouter } from './routes/blends.js';
+import { spotifyRouter } from './routes/spotify.js';
 import { sharedRouter } from './routes/shared.js';
 import { streamRouter } from './routes/stream.js';
 import { uploadsRouter } from './routes/uploads.js';
@@ -39,6 +42,10 @@ export interface AppOptions extends Omit<ServiceOptions, 'jwtSecret'> {
   readonly additionalOrigins?: readonly string[];
   readonly jwtSecret?: string;
   readonly services?: AppServices;
+  /** Import matching (`IMPORT_ENABLED`); off answers 404. */
+  readonly importEnabled?: boolean;
+  /** Blends (`BLEND_ENABLED`); off answers 404. */
+  readonly blendEnabled?: boolean;
   readonly rateLimit?: false | {
     readonly api?: RateLimitConfig;
     readonly stream?: RateLimitConfig;
@@ -51,6 +58,7 @@ export interface AppOptions extends Omit<ServiceOptions, 'jwtSecret'> {
     readonly plays?: RateLimitConfig;
     readonly guests?: RateLimitConfig;
     readonly uploads?: RateLimitConfig;
+    readonly imports?: RateLimitConfig;
     readonly songChanges?: SongChangeLimitConfig;
   };
   readonly enableRequestLogging?: boolean;
@@ -107,9 +115,19 @@ export function createApp(options: AppOptions): Express {
   app.use('/api', artworkRouter(services.artwork));
   app.use('/api', lyricsRouter(services.lyrics));
   app.use('/api', streamRouter(services.stream));
-  app.use('/api', authRouter(services.auth));
-  app.use('/api', userRouter(services.auth, services.catalog, services.actions, services.covers));
-  app.use('/api', accountRouter(services.auth, services.users));
+  app.use('/api', authRouter(services.auth, services.blends));
+  app.use('/api', userRouter(services.auth, services.catalog, services.actions, services.covers, services.tally, services.blends));
+  app.use('/api', accountRouter(services.auth, services.users, services.tally, services.blends));
+  app.use('/api', importsRouter(services.auth, services.importMatcher, options.importEnabled === true));
+  app.use('/api', blendsRouter({
+    auth: services.auth,
+    blends: services.blends,
+    builder: services.blendBuilder,
+    enabled: options.blendEnabled === true,
+    ...(options.allowedOrigin ? { origin: options.allowedOrigin } : {})
+  }));
+  // Spotify transfer reuses import matching, so it follows the same flag.
+  if (options.importEnabled === true) app.use('/api', spotifyRouter(services.spotify, services.auth, options.convexServerSecret));
   app.use('/api', sharedRouter(services.auth, services.catalog, services.actions, services.users));
   app.use('/api', uploadsRouter(services.auth, services.covers));
   app.use('/api', discoveryRouter(services.translation, services.recommendations, services.auth, services.catalog));
@@ -157,6 +175,8 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
   const writes = limiter(limits.writes ?? { windowMs: 60_000, limit: 60 });
   // Cover uploads land in file storage.
   const uploads = limiter(limits.uploads ?? { windowMs: 60_000, limit: 10 });
+  // Import matching: 50 tracks a request, so 1,500 tracks a minute, each a catalog search on a miss.
+  const imports = limiter(limits.imports ?? { windowMs: 60_000, limit: 30 });
   // A connected assistant can call tools in quick bursts, but not unboundedly.
   const mcp = limiter(limits.mcp ?? { windowMs: 60_000, limit: 120 });
   // Sign-in, code exchange and client registration: a handful per connect.
@@ -201,7 +221,15 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
       uploads(request, response, next);
       return;
     }
-    if (!isRead && (path.startsWith('/api/me') || path.startsWith('/api/libraries') || path.startsWith('/api/shared'))) {
+    if (path.startsWith('/api/import')) {
+      imports(request, response, next);
+      return;
+    }
+    if (path.startsWith('/api/blend-invites/') && isRead) {
+      lookup(request, response, next);
+      return;
+    }
+    if (!isRead && (path.startsWith('/api/me') || path.startsWith('/api/libraries') || path.startsWith('/api/shared') || path.startsWith('/api/blends') || path.startsWith('/api/blend-invites'))) {
       writes(request, response, next);
       return;
     }

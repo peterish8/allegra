@@ -16,7 +16,17 @@ export const CONVEX_QUERIES = [
   'shares:byLibrary',
   'covers:inspect',
   'library:changes',
-  'account:extras'
+  'account:extras',
+  'taste:top',
+  'library:recentLikes',
+  'library:recentItems',
+  'blends:get',
+  'blends:listForUser',
+  'blends:preview',
+  'spotify:connection',
+  'spotify:listPlaylists',
+  'spotify:receipts',
+  'spotify:dailyAccounts'
 ] as const;
 export const CONVEX_MUTATIONS = [
   'profiles:save',
@@ -28,6 +38,29 @@ export const CONVEX_MUTATIONS = [
   'covers:remove',
   'library:apply',
   'account:erase',
+  'taste:record',
+  'taste:bonus',
+  'taste:seed',
+  'taste:clear',
+  'blends:create',
+  'blends:invite',
+  'blends:join',
+  'blends:leave',
+  'blends:rename',
+  'blends:saveBuild',
+  'blends:claimBuild',
+  'blends:releaseBuild',
+  'blends:setLearning',
+  'blends:renameMember',
+  'spotify:saveState',
+  'spotify:consumeState',
+  'spotify:saveConnection',
+  'spotify:disconnect',
+  'spotify:setDaily',
+  'spotify:savePlaylist',
+  'spotify:claimPlaylist',
+  'spotify:releasePlaylist',
+  'spotify:checkpoint',
   'reports:file'
 ] as const;
 

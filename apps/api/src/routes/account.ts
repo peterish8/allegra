@@ -2,8 +2,11 @@ import { Router } from 'express';
 
 import type { AuthService } from '../auth/auth.js';
 import { POLICY_VERSION } from '../shared/legal.js';
+import { currentWeight } from '../shared/blendDecay.js';
 import { isTombstone, type LibraryChange } from '../shared/library.js';
 import type { UserData, UserStore } from '../user/store.js';
+import type { TasteTally } from '../user/tasteTally.js';
+import type { BlendStore } from '../user/blendStore.js';
 import { callerProfile, publicProfile, sendUnauthorized } from './auth.js';
 import { asRecord, sanitizeSettings, sendFailure, sendSuccess } from './common.js';
 
@@ -16,7 +19,7 @@ const EXPORT_PAGE_SIZE = 500;
  * copy of everything held about them, and a way to have it erased. Works for a guest session
  * as well as an account. Reply shapes are docs/api-contract.md.
  */
-export function accountRouter(auth: AuthService, users: UserStore): Router {
+export function accountRouter(auth: AuthService, users: UserStore, tally: TasteTally, blends: BlendStore): Router {
   const router = Router();
 
   // Sent once after sign-in, when the listener ticked the box in the sign-in dialog.
@@ -50,7 +53,13 @@ export function accountRouter(auth: AuthService, users: UserStore): Router {
         sendUnauthorized(response);
         return;
       }
-      const [library, extras] = await Promise.all([libraryOf(auth, user), users.accountExtras(user.userId)]);
+      const now = Date.now();
+      const [library, extras, tallyRows, blendRows] = await Promise.all([
+        libraryOf(auth, user),
+        users.accountExtras(user.userId),
+        tally.top(user.userId, 200),
+        blends.listForUser(user.userId)
+      ]);
       sendSuccess(response, {
         complete: library.complete && extras.complete,
         exportedAt: new Date().toISOString(),
@@ -58,10 +67,16 @@ export function accountRouter(auth: AuthService, users: UserStore): Router {
         profile: publicProfile(user),
         settings: sanitizeSettings(user.settings),
         taste: user.taste ?? null,
+        tally: tallyRows.map(({ title, artist, score }) => ({ title, artist, minutes: Math.round(currentWeight(score, now)) })),
         recentlyPlayed: user.recentlyPlayed,
         library,
         shares: extras.shares,
-        devices: extras.devices
+        devices: extras.devices,
+        blends: blendRows.map((blend) => ({
+          name: blend.name,
+          joinedAt: new Date(blend.joinedAt).toISOString(),
+          members: blend.members.map((member) => member.displayName)
+        }))
       });
     } catch (error) {
       sendFailure(response, error);
@@ -77,6 +92,8 @@ export function accountRouter(auth: AuthService, users: UserStore): Router {
         return;
       }
       await auth.deleteAccount(user.userId);
+      // In Convex the erase already left every Blend; the memory store needs telling.
+      await blends.forget?.(user.userId);
       response.status(204).end();
     } catch (error) {
       sendFailure(response, error);

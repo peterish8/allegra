@@ -1,5 +1,8 @@
 import { deriveMoodPrompts } from './moodPrompts.js';
 import type { TasteEntry, TasteProfile } from './store.js';
+import { creditedArtists } from '../shared/identity.js';
+
+export { creditedArtists } from '../shared/identity.js';
 
 /**
  * The taste profile is a small, decaying tally: every signal nudges the artists and languages it touches, and
@@ -33,20 +36,6 @@ export interface SongTraits {
 
 export function emptyTaste(now = new Date()): TasteProfile {
   return { artists: [], languages: [], signals: 0, onboarded: false, updatedAt: now.toISOString() };
-}
-
-/** "A, B & C feat. D" -> ["A", "B", "C", "D"]. The first name is the headline artist. */
-export function creditedArtists(artist: string): string[] {
-  const seen = new Set<string>();
-  const names: string[] = [];
-  for (const part of artist.split(/,|&| feat\.? | ft\.? | x /i)) {
-    const name = part.trim();
-    const key = name.toLowerCase();
-    if (!name || seen.has(key)) continue;
-    seen.add(key);
-    names.push(name);
-  }
-  return names;
 }
 
 function bump(entries: readonly TasteEntry[], name: string, amount: number, keep: number): TasteEntry[] {
@@ -93,6 +82,50 @@ export function applySeeds(taste: TasteProfile | undefined, artistNames: readonl
   let languages = [...base.languages];
   for (const name of languageNames) languages = bump(languages, name, SIGNAL_WEIGHT.seed, MAX_LANGUAGES);
   return { artists, languages, signals: base.signals + artistNames.length + languageNames.length, onboarded: true, updatedAt: now.toISOString() };
+}
+
+/** Most artists one import may seed, however many it brought (PLAN.md §4.4, I6). */
+export const IMPORT_SEED_MAX_ARTISTS = 25;
+
+/**
+ * An import's top artists, log-scaled so the biggest counts SIGNAL_WEIGHT.seed and 900 imported
+ * likes cannot drown out what the listener plays here. Names are merged case-insensitively first.
+ */
+export function importSeedWeights(counts: readonly { name: string; count: number }[]): { name: string; weight: number }[] {
+  const merged = new Map<string, { name: string; count: number }>();
+  for (const { name, count } of counts) {
+    const trimmed = name.trim();
+    if (!trimmed || !(count > 0)) continue;
+    const key = trimmed.toLowerCase();
+    const seen = merged.get(key);
+    merged.set(key, { name: seen?.name ?? trimmed, count: (seen?.count ?? 0) + count });
+  }
+  const top = [...merged.values()].sort((a, b) => b.count - a.count).slice(0, IMPORT_SEED_MAX_ARTISTS);
+  const max = top[0]?.count ?? 0;
+  return top.map(({ name, count }) => ({ name, weight: max > 0 ? (SIGNAL_WEIGHT.seed * Math.log2(1 + count)) / Math.log2(1 + max) : 0 }));
+}
+
+/**
+ * One seed per top artist of an import; languages are left alone. The existing taste fades as it
+ * would over that many signals, but the seeds are added together, undecayed: applied one by one,
+ * each bump would fade the ones before it and the import's biggest artist would land lowest.
+ */
+export function applyImportSeed(taste: TasteProfile | undefined, counts: readonly { name: string; count: number }[], now = new Date()): TasteProfile {
+  const base = taste ?? emptyTaste(now);
+  const weights = importSeedWeights(counts);
+  const fade = DECAY ** weights.length;
+  const scores = new Map<string, TasteEntry>();
+  for (const entry of base.artists) scores.set(entry.name.toLowerCase(), { name: entry.name, score: entry.score * fade });
+  for (const { name, weight } of weights) {
+    const seen = scores.get(name.toLowerCase());
+    scores.set(name.toLowerCase(), { name: seen?.name ?? name, score: (seen?.score ?? 0) + weight });
+  }
+  const artists = [...scores.values()]
+    .filter((entry) => entry.score > 0.05)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, MAX_ARTISTS)
+    .map((entry) => ({ name: entry.name, score: Math.round(entry.score * 1000) / 1000 }));
+  return { artists, languages: base.languages, signals: base.signals + weights.length, onboarded: true, updatedAt: now.toISOString() };
 }
 
 /** A play counts by how much of it was heard: finished-ish is a vote for, a few seconds is a vote against. */

@@ -17,6 +17,7 @@ function versionOf(raw: unknown): number {
 
 /** Profiles and shares in Convex (convex/profiles.ts, convex/shares.ts). */
 export class ConvexUserStore implements UserStore {
+  public readonly atomicLearningPrivacy = true;
   /**
    * The version each profile this store handed out was read at, so `update` can start from a
    * copy the request already holds. Keyed by the object itself: nothing to clear, and a copy

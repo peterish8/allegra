@@ -73,6 +73,31 @@ test('with the catalog down, a like still lands, only without details or taste',
   assert.equal((await ctx.user()).taste, undefined);
 });
 
+test('accepted native device likes and playlist adds teach the tally; import operations do not', async () => {
+  const ctx = await listener();
+  const importedSong = { ref: 'saavn:imported', title: 'Imported song', artist: 'Imported artist', artwork: '', duration: 180 } as const;
+  await ctx.actions.applyFromDevice(await ctx.user(), [
+    { op: 'like', ref: importedSong.ref, song: importedSong, origin: 'import', at: Date.now() },
+    { op: 'playlist_upsert', playlistId: 'imported-playlist', name: 'Imported', origin: 'import', at: Date.now() },
+    { op: 'playlist_add', playlistId: 'imported-playlist', ref: importedSong.ref, song: importedSong, origin: 'import', at: Date.now() }
+  ]);
+  assert.deepEqual(await ctx.tally.top(ctx.userId, 200), []);
+  assert.equal((await ctx.user()).taste, undefined);
+
+  const nativeSong = { ref: 'saavn:native-device', title: 'Native song', artist: 'Native artist', artwork: '', duration: 180 } as const;
+  await ctx.actions.applyFromDevice(await ctx.user(), [
+    { op: 'like', ref: nativeSong.ref, song: nativeSong, at: Date.now() },
+    { op: 'playlist_upsert', playlistId: 'native-playlist', name: 'Native', at: Date.now() },
+    { op: 'playlist_add', playlistId: 'native-playlist', ref: nativeSong.ref, song: nativeSong, at: Date.now() }
+  ]);
+  const [learned] = await ctx.tally.top(ctx.userId, 200);
+  assert.equal(learned?.title, nativeSong.title);
+  assert.ok((await ctx.user()).taste?.artists.some((entry) => entry.name === nativeSong.artist));
+  await ctx.actions.applyFromDevice(await ctx.user(), [{ op: 'unlike', ref: nativeSong.ref, at: Date.now() + 1000 }]);
+  const [afterUnlike] = await ctx.tally.top(ctx.userId, 200);
+  assert.ok((afterUnlike?.score ?? Infinity) < (learned?.score ?? -Infinity));
+});
+
 test('adding to a playlist that isn’t there is NotFoundError, and changes nothing', async () => {
   const ctx = await listener();
   await assert.rejects(ctx.actions.addToPlaylist(await ctx.user(), 'missing', 's1'), NotFoundError);

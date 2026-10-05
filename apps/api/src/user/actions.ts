@@ -4,23 +4,20 @@ import type { AuthService } from '../auth/auth.js';
 import type { CatalogService } from '../catalog/catalog.js';
 import type { CoverStorage } from '../lib/covers.js';
 import { NotFoundError } from '../lib/errors.js';
+import { CODE_ALPHABET, randomCode } from '../lib/randomCode.js';
 import { alignOpTimes, type LibraryOp, type PlaylistCover, type RejectReason } from '../shared/library.js';
 import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { UnifiedSong } from '../types.js';
 import { opsForPlaylistCopy, refForId, snapshotOf, unifiedSongFromSnapshot } from './libraryOps.js';
 import { RECENTLY_PLAYED_LIMIT, isPersonalised, type LibraryRecord, type RecentRecord, type UserData, type UserStore } from './store.js';
 import { SIGNAL_WEIGHT, applySignal, playWeight } from './taste.js';
+import type { TasteTally } from './tasteTally.js';
 
 /** Eight url-safe characters (~10^11 codes): long enough not to guess, short enough to read out loud. */
-const CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
-const CODE_SHAPE = /^[a-z0-9]{6,12}$/;
+const CODE_SHAPE = new RegExp(`^[${CODE_ALPHABET}]{6,12}$`);
 
 export function isShareCode(code: string): boolean {
   return CODE_SHAPE.test(code);
-}
-
-function newCode(): string {
-  return Array.from(crypto.randomBytes(8), (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join('');
 }
 
 export interface PlaylistDraft {
@@ -75,7 +72,8 @@ export class ListenerActions {
     private readonly users: UserStore,
     private readonly catalog: CatalogService,
     private readonly covers: CoverStorage | undefined,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly tally?: TasteTally
   ) {}
 
   // ── Likes ─────────────────────────────────────────────────────────────────
@@ -83,17 +81,33 @@ export class ListenerActions {
   public async like(user: UserData, songId: string): Promise<void> {
     const ref = refOf(songId);
     const song = await this.lookUp(songId);
-    await this.apply(user.userId, [{ op: 'like', ref, ...withSnapshot(song), at: this.now() }]);
-    if (song && !user.likedSongIds.includes(songId)) await this.learn(user, song, SIGNAL_WEIGHT.like);
+    const at = this.now();
+    const alreadyLiked = user.likedSongIds.includes(songId);
+    await this.apply(user.userId, [{ op: 'like', ref, ...withSnapshot(song), at }]);
+    if (song && !alreadyLiked) {
+      if (isPersonalised(user)) {
+        const snapshot = snapshotOf(song);
+        if (snapshot) await this.tallySafely(() => this.tally!.bonus(user.userId, snapshot, 'like', at));
+      }
+      await this.learn(user, song, SIGNAL_WEIGHT.like);
+    }
   }
 
   public async unlike(user: UserData, songId: string): Promise<void> {
     const ref = refForId(songId);
     if (!ref) return; // never liked: nothing to undo
-    await this.apply(user.userId, [{ op: 'unlike', ref, at: this.now() }]);
-    if (!user.likedSongIds.includes(songId)) return;
+    const at = this.now();
+    const wasLiked = user.likedSongIds.includes(songId);
+    await this.apply(user.userId, [{ op: 'unlike', ref, at }]);
+    if (!wasLiked) return;
     const song = await this.lookUp(songId);
-    if (song) await this.learn(user, song, SIGNAL_WEIGHT.unlike);
+    if (song) {
+      if (isPersonalised(user)) {
+        const snapshot = snapshotOf(song);
+        if (snapshot) await this.tallySafely(() => this.tally!.bonus(user.userId, snapshot, 'unlike', at));
+      }
+      await this.learn(user, song, SIGNAL_WEIGHT.unlike);
+    }
   }
 
   // ── Playlists ─────────────────────────────────────────────────────────────
@@ -141,8 +155,16 @@ export class ListenerActions {
     const library = playlistOf(user, playlistId);
     const ref = refOf(songId);
     const song = await this.lookUp(songId);
-    await this.apply(user.userId, [{ op: 'playlist_add', playlistId: library.id, ref, ...withSnapshot(song), at: this.now() }]);
-    if (song && !library.songIds.includes(songId)) await this.learn(user, song, SIGNAL_WEIGHT.playlistAdd);
+    const at = this.now();
+    const alreadyInPlaylist = library.songIds.includes(songId);
+    await this.apply(user.userId, [{ op: 'playlist_add', playlistId: library.id, ref, ...withSnapshot(song), at }]);
+    if (song && !alreadyInPlaylist) {
+      if (isPersonalised(user)) {
+        const snapshot = snapshotOf(song);
+        if (snapshot) await this.tallySafely(() => this.tally!.bonus(user.userId, snapshot, 'playlistAdd', at));
+      }
+      await this.learn(user, song, SIGNAL_WEIGHT.playlistAdd);
+    }
     return this.playlistAfter(user.userId, library.id);
   }
 
@@ -158,7 +180,7 @@ export class ListenerActions {
   public async share(user: UserData, playlistId: string): Promise<{ readonly code: string; readonly created: boolean }> {
     const library = playlistOf(user, playlistId);
     const existing = await this.users.findShare(user.userId, library.id);
-    const code = existing?.code ?? newCode();
+    const code = existing?.code ?? randomCode(8);
     if (!existing) await this.users.saveShare({ code, ownerId: user.userId, libraryId: library.id, createdAt: new Date(this.now()).toISOString() });
     if (!library.isPublic) await this.apply(user.userId, [{ op: 'playlist_upsert', playlistId: library.id, isPublic: true, at: this.now() }]);
     return { code, created: !existing };
@@ -203,6 +225,8 @@ export class ListenerActions {
 
   // ── The phone's library sync ──────────────────────────────────────────────
 
+  // Deliberately no tally bonus here: synchronized rows may be imported and do not identify native user actions.
+
   /**
    * A batch of operations from another device. Taste learns from them as from the website's buttons.
    *
@@ -212,19 +236,41 @@ export class ListenerActions {
    * reply says which operations lost to something newer, so the device knows to pull.
    */
   public async applyFromDevice(user: UserData, ops: readonly LibraryOp[], clock?: DeviceClock): Promise<DeviceBatchResult> {
+    const oldLikes = ops.some((op) => op.op === 'unlike') ? await this.auth.library.recentLikes(user.userId, 1000) : [];
     const result = await this.apply(user.userId, clock ? alignOpTimes(ops, clock.sentAt, clock.receivedAt) : ops);
-    const rejected = new Set(result.rejected.map((item) => item.index));
+    const applied = new Set(result.appliedIndexes);
     const lessons: { song: SongSnapshot; weight: number }[] = [];
+    const tallyWrites: (() => Promise<unknown>)[] = [];
     ops.forEach((op, index) => {
-      if (rejected.has(index) || !('song' in op) || !op.song) return;
+      if (!applied.has(index)) return;
+      if (op.op === 'unlike') {
+        const previous = oldLikes.find((entry) => entry.ref === op.ref);
+        if (!previous?.song || previous.origin === 'import') return;
+        lessons.push({ song: previous.song, weight: SIGNAL_WEIGHT.unlike });
+        if (isPersonalised(user)) tallyWrites.push(() => this.tally!.bonus(user.userId, previous.song!, 'unlike', op.at));
+        return;
+      }
+      if (!('song' in op) || !op.song ||
+        ((op.op === 'like' || op.op === 'playlist_add') && op.origin === 'import')) return;
       const alreadyLiked = user.likedSongIds.some((id) => refForId(id) === op.ref);
-      if (op.op === 'like' && !alreadyLiked) lessons.push({ song: op.song, weight: SIGNAL_WEIGHT.like });
-      if (op.op === 'playlist_add') lessons.push({ song: op.song, weight: SIGNAL_WEIGHT.playlistAdd });
+      if (op.op === 'like' && !alreadyLiked) {
+        lessons.push({ song: op.song, weight: SIGNAL_WEIGHT.like });
+        if (isPersonalised(user)) tallyWrites.push(() => this.tally!.bonus(user.userId, op.song!, 'like', op.at));
+      }
+      if (op.op === 'playlist_add') {
+        const library = user.libraries.find((item) => item.id === op.playlistId);
+        const alreadyAdded = library?.songIds.some((id) => refForId(id) === op.ref) ?? false;
+        if (!alreadyAdded) {
+          lessons.push({ song: op.song, weight: SIGNAL_WEIGHT.playlistAdd });
+          if (isPersonalised(user)) tallyWrites.push(() => this.tally!.bonus(user.userId, op.song!, 'playlistAdd', op.at));
+        }
+      }
     });
     if (lessons.length > 0) {
       await this.auth.updateProfile(user.userId, (current) =>
         isPersonalised(current) ? lessons.reduce((taught, lesson) => teach(taught, lesson.song, lesson.weight), current) : null, user);
     }
+    for (const write of tallyWrites) await this.tallySafely(write);
     return { rev: result.rev, rejected: result.rejected, superseded: result.superseded, applied: result.applied };
   }
 
@@ -275,7 +321,7 @@ export class ListenerActions {
         hydrated = [];
       }
     }
-    const byIdentity = new Map(hydrated.map((song) => [songIdentity(song), song]));
+    const byIdentity = new Map(hydrated.map((song) => [catalogIdentity(song), song]));
     return records.flatMap((record) => {
       const fromSnapshot = record.song ? unifiedSongFromSnapshot(record.song) : null;
       const found = fromSnapshot ?? byIdentity.get(recordIdentity(record)) ?? hydrated.find((song) => song.id === record.songId);
@@ -284,24 +330,37 @@ export class ListenerActions {
   }
 
   /** How long a song was actually heard: a few seconds counts against it, most of it for it. */
-  public async listened(user: UserData, songId: string, seconds: number, snapshot?: SongSnapshot, songRef?: SongRef, playedAt?: string): Promise<UserData> {
+  public async listened(user: UserData, songId: string, seconds: number, snapshot?: SongSnapshot, songRef?: SongRef, playedAt?: string, playId?: string): Promise<UserData> {
     if (!isPersonalised(user)) return user;
     const song = (snapshot ? unifiedSongFromSnapshot(snapshot) : null) ?? await this.lookUp(songId);
     if (!song) return user;
     const ref = snapshot?.ref ?? songRef;
     const weight = playWeight(seconds, song.duration);
-    if (!ref || !playedAt) return (await this.learn(user, song, weight)) ?? user;
-    return (await this.auth.updateProfile(user.userId, (current) => {
-      if (!isPersonalised(current)) return null;
-      const index = current.recentlyPlayed.findIndex((item) => recentIdentity(item) === (ref.startsWith('gaana:') ? ref : parseSongRef(ref)?.id ?? ref) && item.playedAt === playedAt);
-      const prior = index >= 0 ? current.recentlyPlayed[index] : undefined;
-      if (prior?.listenSignalApplied) return null;
-      const taught = teach(current, song, weight);
-      if (index < 0 || !prior) return taught;
-      const recentlyPlayed = [...current.recentlyPlayed];
-      recentlyPlayed[index] = { ...prior, listenSignalApplied: true };
-      return { ...taught, recentlyPlayed };
-    }, user)) ?? user;
+    let updated: UserData | null;
+    if (!ref || !playedAt) {
+      updated = await this.learn(user, song, weight);
+    } else {
+      updated = await this.auth.updateProfile(user.userId, (current) => {
+        if (!isPersonalised(current)) return null;
+        const index = current.recentlyPlayed.findIndex((item) => recentIdentity(item) === (ref.startsWith('gaana:') ? ref : parseSongRef(ref)?.id ?? ref) && item.playedAt === playedAt);
+        const prior = index >= 0 ? current.recentlyPlayed[index] : undefined;
+        if (prior?.listenSignalApplied) return null;
+        const taught = teach(current, song, weight);
+        if (index < 0 || !prior) return taught;
+        const recentlyPlayed = [...current.recentlyPlayed];
+        recentlyPlayed[index] = { ...prior, listenSignalApplied: true };
+        return { ...taught, recentlyPlayed };
+      }, user);
+    }
+    // Retry the idempotent tally even when the older taste update was already marked applied.
+    if (ref && playedAt && isPersonalised(user)) {
+      const tallySong = snapshot ?? snapshotOf(song);
+      const at = Date.parse(playedAt);
+      if (tallySong && Number.isFinite(at)) {
+        await this.tallySafely(() => this.tally!.record(user.userId, tallySong, seconds, at, playId));
+      }
+    }
+    return updated ?? user;
   }
 
   public async skipped(user: UserData, songId: string): Promise<void> {
@@ -360,6 +419,16 @@ export class ListenerActions {
   private learn(user: UserData, song: TasteSong, weight: number): Promise<UserData | null> {
     return this.auth.updateProfile(user.userId, (current) => (isPersonalised(current) ? teach(current, song, weight) : null), user);
   }
+
+  /** The tally is derived data: a failed write must not fail the user's underlying action. */
+  private async tallySafely(write: () => Promise<unknown>): Promise<void> {
+    if (!this.tally) return;
+    try {
+      await write();
+    } catch {
+      // The next idempotent listen signal can retry without exposing provider or storage details.
+    }
+  }
 }
 
 type TasteSong = { readonly artist: string; readonly language?: string };
@@ -374,7 +443,7 @@ function recordIdentity(record: RecentRecord): string {
   return parsed ? `${parsed.source}:${parsed.id}` : record.songId;
 }
 
-function songIdentity(song: UnifiedSong): string {
+function catalogIdentity(song: UnifiedSong): string {
   return song.source === 'Gaana' ? `gaana:${song.id}` : song.id;
 }
 

@@ -83,3 +83,13 @@ test('no AWS settings are read any more', () => {
   }) as unknown as Record<string, unknown>;
   for (const key of ['cache', 'uploads', 'karaoke', 'ai']) assert.equal(config[key], undefined, key);
 });
+
+test('import and blend flags are off unless exactly "true"', () => {
+  const base = { NODE_ENV: 'test' };
+  assert.equal(loadConfig(base).importEnabled, false);
+  assert.equal(loadConfig(base).blendEnabled, false);
+  assert.equal(loadConfig({ ...base, IMPORT_ENABLED: 'true', BLEND_ENABLED: 'true' }).importEnabled, true);
+  assert.equal(loadConfig({ ...base, IMPORT_ENABLED: 'true', BLEND_ENABLED: 'true' }).blendEnabled, true);
+  assert.equal(loadConfig({ ...base, IMPORT_ENABLED: '1', BLEND_ENABLED: 'yes' }).importEnabled, false);
+  assert.equal(loadConfig({ ...base, IMPORT_ENABLED: '1', BLEND_ENABLED: 'yes' }).blendEnabled, false);
+});

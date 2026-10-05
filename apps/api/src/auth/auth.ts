@@ -68,6 +68,11 @@ export class AuthService {
     this.songSnapshots = options.songSnapshots;
   }
 
+  /** Whether learning-off already erases/fences derived rows within the profile transaction. */
+  public get atomicLearningPrivacy(): boolean {
+    return this.store.atomicLearningPrivacy === true;
+  }
+
   public async createGuest(): Promise<Session> {
     const userId = crypto.randomUUID();
     await this.persist(emptyProfile(userId, true));

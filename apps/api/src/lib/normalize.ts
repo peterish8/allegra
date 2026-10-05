@@ -2,6 +2,7 @@ import { isDerivative } from './derivative.js';
 import type { SaavnSong } from '../providers/saavn.js';
 import type { UnifiedSong } from '../types.js';
 import { decodeHtml } from './decodeHtml.js';
+import { identityKey } from '../shared/identity.js';
 
 export function normalizeSong(
   raw: SaavnSong,
@@ -51,9 +52,7 @@ export function normalizeSong(
  * because a re-release often lists the same people in a different order.
  */
 export function songIdentity(song: UnifiedSong): string {
-  const title = flatten(song.title.replace(/[([][^)\]]*[)\]]/gu, ' '));
-  const artists = flatten(song.artist).split(' ').sort().join(' ');
-  return `${title}|${artists}`;
+  return identityKey(song.title, song.artist);
 }
 
 /**

@@ -3,6 +3,7 @@ import { Router, type Request, type Response } from 'express';
 import { bearerToken } from '../auth/auth.js';
 import type { AuthService } from '../auth/auth.js';
 import type { Consent } from '../shared/legal.js';
+import type { BlendStore } from '../user/blendStore.js';
 import type { UserData } from '../user/store.js';
 import { asRecord, sendFailure, sendSuccess } from './common.js';
 
@@ -25,7 +26,8 @@ export function publicProfile(user: UserData): {
   };
 }
 
-export function authRouter(auth: AuthService): Router {
+/** `blends` is told about a new display name, so every Blend shows it (PLAN.md §5). */
+export function authRouter(auth: AuthService, blends?: Pick<BlendStore, 'renameMember'>): Router {
   const router = Router();
 
   const createGuest = async (_request: Request, response: Response): Promise<void> => {
@@ -101,6 +103,13 @@ export function authRouter(auth: AuthService): Router {
       if (!updated) {
         sendUnauthorized(response);
         return;
+      }
+      if (blends && !updated.isGuest) {
+        try {
+          await blends.renameMember(updated.userId, updated.displayName ?? '');
+        } catch {
+          // The Blend keeps the old name until the next rename; the profile is saved.
+        }
       }
       sendSuccess(response, publicProfile(updated));
     } catch (error) {
