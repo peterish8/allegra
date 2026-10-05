@@ -176,6 +176,24 @@ fixes on `main`.
 before writing the handoff. Published 1.0.8 and the in-progress 1.0.9 release were kept distinct.
 The final check confirmed the 1.0.9 workflow succeeded and published; the handoff was updated again.
 
+**22. The Join button sat under the phone's player.** An invite link opened a popup that rendered
+beneath the mini player and bottom nav, so it could not be tapped. The popup had `z-index: 90`, above
+the player's 40, yet still lost.
+*Cause:* the page wrapper is a `motion.section` that animates `transform`. A transformed ancestor
+becomes the containing block and stacking context for `position: fixed` children, so the popup's
+z-index only competed inside the page.
+*Fix:* Blend sheets, the join popup and every info walkthrough render through `createPortal` to
+`<body>`, at z-index 110 (above the player and nav, under sign-in at 120).
+*Rule:* an overlay inside an animated page is portalled to `<body>`; check it at 375 px with the
+player showing.
+
+**23. Browse showed Hindi to everyone.** "Loved right now" and "Top 10 today" ignored the listener's
+languages although the catalog could already build per-language shelves (`getLanguageHome`).
+*Cause:* `GET /api/home` never passed any languages in, and no client asked.
+*Fix:* `/api/home` takes `languages` and a `region` (a state, or the Vercel geo headers); the web
+sends the listener's top played languages and a Settings → Browse region. Tamil Nadu now gets Tamil.
+*Rule:* when a service has a personalised path, trace a request end to end and see it taken.
+
 **Would do differently:** before reporting a feature finished, hit it live: the route, the
 deployment, the device. Passing service tests alone did not prove the API boundary or release;
 refresh the checkout and release evidence before handing work to the next session.
