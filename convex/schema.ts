@@ -284,8 +284,10 @@ export default defineSchema({
     together: v.optional(blendStorySong),
     gifts: v.optional(v.array(blendGift)),
     glue: v.optional(v.array(v.string())),
-    palette: v.optional(v.object({ a: v.string(), b: v.string() }))
-  }).index('by_memberCount_and_createdAt', ['memberCount', 'createdAt']),
+    palette: v.optional(v.object({ a: v.string(), b: v.string() })),
+    /** When the Blend last became (or was re-invited while) one member; the sweep clock. */
+    waitingSince: v.optional(v.number())
+  }).index('by_memberCount_and_waitingSince', ['memberCount', 'waitingSince']),
 
   /** A listener in a Blend. Display name is a snapshot (≤ 40 chars); no photo or email (D11). */
   blendMembers: defineTable({

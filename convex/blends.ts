@@ -128,6 +128,7 @@ export async function leaveBlend(ctx: MutationCtx, blendId: Id<'blends'>, userId
   }
   await ctx.db.patch('blends', blendId, {
     memberCount: remaining.length,
+    ...(remaining.length === 1 ? { waitingSince: Date.now() } : {}),
     ...invalidateBuild(blend),
     ...(blend.ownerId === userId && heir ? { ownerId: heir.userId } : {})
   });
@@ -183,6 +184,7 @@ export const create = mutation({
       ownerId: args.userId,
       memberCount: 1,
       createdAt: now,
+      waitingSince: now,
       buildVersion: 0,
       inputVersion: 0,
       stale: true,
@@ -288,7 +290,8 @@ export const invite = mutation({
     }
     const expiresAt = now + BLEND_INVITE_DAYS * DAY_MS;
     const inviteId = await ctx.db.insert('blendInvites', { code: args.code, blendId: blend._id, createdBy: args.userId, createdAt: now, expiresAt });
-    await ctx.db.patch('blends', blend._id, { activeInviteId: inviteId });
+    // A fresh link restarts a lone member's wait, so the sweep can't delete the Blend under it.
+    await ctx.db.patch('blends', blend._id, { activeInviteId: inviteId, ...(blend.memberCount === 1 ? { waitingSince: now } : {}) });
     return { code: args.code, expiresAt };
   }
 });
@@ -336,7 +339,7 @@ export const join = mutation({
       consent: args.consent,
       learning: args.learning && isProfileLearning(joiningProfile)
     });
-    await ctx.db.patch('blends', blend._id, { memberCount: blend.memberCount + 1, ...invalidateBuild(blend) });
+    await ctx.db.patch('blends', blend._id, { memberCount: blend.memberCount + 1, waitingSince: undefined, ...invalidateBuild(blend) });
     return { blendId: blend._id as string };
   }
 });
@@ -394,7 +397,12 @@ export const saveBuild = mutation({
     const lease = blend.buildLease;
     if (lease && lease.expiresAt > Date.now() &&
       (lease.token !== args.leaseToken || lease.inputVersion !== args.expectedInputVersion || lease.builtFor !== args.builtFor)) return { saved: false };
-    if (args.tracks.length > 50 || args.pairs.length > 15 || args.identities.length > 50) fail('invalid');
+    if (args.tracks.length > 50 || args.pairs.length > 15 || args.identities.length > 50 || args.gifts.length > 30 || args.glue.length > 50) fail('invalid');
+    // Every name in the build must be a current member: a build read before a leave can't carry them.
+    const memberIds = new Set(currentMembers.map((member) => member.userId));
+    const known = (id: string): boolean => memberIds.has(id);
+    if (!args.tracks.every((track) => track.for.every(known)) || !args.pairs.every((pair) => known(pair.a) && known(pair.b) && Number.isFinite(pair.match))
+      || !args.gifts.every((gift) => known(gift.fromUserId) && known(gift.toUserId))) return { saved: false };
     // The identities of the last two builds: this one first, then the previous one.
     // The build being replaced is the first `tracks.length` identities: keep it and the new one only.
     const lastBuild = blend.previousTracks.slice(0, blend.tracks.length);
@@ -482,7 +490,8 @@ export const sweep = internalMutation({
     for (const operation of expiredOperations) await ctx.db.delete('blendOperations', operation._id);
     const lonely = await ctx.db
       .query('blends')
-      .withIndex('by_memberCount_and_createdAt', (q) => q.eq('memberCount', 1).lte('createdAt', now - LONELY_AFTER_MS))
+      // Timed from entering the one-member state, not creation: an old pair someone left gets a full invite window.
+      .withIndex('by_memberCount_and_waitingSince', (q) => q.eq('memberCount', 1).gte('waitingSince', 0).lte('waitingSince', now - LONELY_AFTER_MS))
       .take(SWEEP_BATCH / 4);
     for (const blend of lonely) await deleteBlend(ctx, blend);
     if (expired.length === SWEEP_BATCH || expiredOperations.length === SWEEP_BATCH || lonely.length === SWEEP_BATCH / 4) {

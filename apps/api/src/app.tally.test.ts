@@ -92,13 +92,13 @@ test('a native like adds the bonus once, unlike removes it, and a playlist add a
   assert.ok(Math.abs((await weightOf(tally)) - 5) < 0.01);
 });
 
-test('turning learning off clears the tally and the export lists it in whole minutes', async () => {
+test('turning learning off clears the tally and the export lists its rounded weight', async () => {
   const { server, tally } = build();
   await request(server).post('/api/me/taste/signal').set('Authorization', ACCOUNT)
     .send({ songRef: snapshot.ref, song: snapshot, seconds: 200, playedAt: new Date().toISOString() });
   const exported = await request(server).get('/api/me/export').set('Authorization', ACCOUNT);
   assert.equal(exported.status, 200);
-  assert.deepEqual(exported.body.data.tally, [{ title: 'Tum Hi Ho', artist: 'Arijit Singh', minutes: 3 }]);
+  assert.deepEqual(exported.body.data.tally, [{ title: 'Tum Hi Ho', artist: 'Arijit Singh', weight: 3 }]);
 
   await request(server).patch('/api/me/settings').set('Authorization', ACCOUNT).send({ personalization: false });
   assert.deepEqual(await tally.top(USER, 200), []);

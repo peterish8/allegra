@@ -67,7 +67,7 @@ export function accountRouter(auth: AuthService, users: UserStore, tally: TasteT
         profile: publicProfile(user),
         settings: sanitizeSettings(user.settings),
         taste: user.taste ?? null,
-        tally: tallyRows.map(({ title, artist, score }) => ({ title, artist, minutes: Math.round(currentWeight(score, now)) })),
+        tally: tallyRows.map(({ title, artist, score }) => ({ title, artist, weight: Math.round(currentWeight(score, now)) })),
         recentlyPlayed: user.recentlyPlayed,
         library,
         shares: extras.shares,

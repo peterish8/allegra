@@ -111,6 +111,8 @@ export function createApp(options: AppOptions): Express {
     app.use(createRateLimiter(options.rateLimit));
   }
 
+  // Private by default: account data must never land in a shared cache. Routes that may be cached (stream) overwrite it.
+  app.use('/api', (_request, response, next) => { response.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api', catalogRouter(services.catalog));
   app.use('/api', artworkRouter(services.artwork));
   app.use('/api', lyricsRouter(services.lyrics));
@@ -185,7 +187,8 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
   return (request, response, next) => {
     const path = request.path;
     const isRead = request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS';
-    if (path === '/api/health' || path.startsWith('/.well-known/')) {
+    // The internal Spotify hook is secret-gated and every call comes from Convex's few IPs.
+    if (path === '/api/health' || path.startsWith('/.well-known/') || path.startsWith('/api/internal/')) {
       next();
       return;
     }
@@ -221,7 +224,8 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
       uploads(request, response, next);
       return;
     }
-    if (path.startsWith('/api/import')) {
+    // A Spotify sync step is up to 50 catalog matches, same cost as an import request.
+    if (path.startsWith('/api/import') || (!isRead && path.startsWith('/api/spotify'))) {
       imports(request, response, next);
       return;
     }

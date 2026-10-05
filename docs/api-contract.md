@@ -320,13 +320,15 @@ report reasons) live in `packages/shared/legal.ts`.
 AccountExport {
   exportedAt, policyVersion, complete: boolean,
   profile: { userId, isGuest, createdAt, displayName?, email?, consent? },
-  settings, taste | null, tally: { title, artist, minutes }[], recentlyPlayed,
+  settings, taste | null, tally: { title, artist, weight }[], recentlyPlayed,
   library: { changes: LibraryChange[] (current rows only), complete: boolean },
   shares: { code, libraryId, createdAt }[],
   devices: { name, kind, appVersion, createdAt }[],
   blends: { name, joinedAt, members: displayName[] }[]
 }
 ```
+
+`tally[].weight` is weighted listening: heard minutes plus like and playlist bonuses, decayed to today. It is not a minute count.
 
 `complete` is false if the bounded library scan, 100-share limit or 50-device limit was exceeded.
 The file remains usable, but must not be presented as a complete account export in that case.

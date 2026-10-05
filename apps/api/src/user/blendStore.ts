@@ -272,6 +272,10 @@ export class MemoryBlendStore implements BlendStore {
     const lease = this.leases.get(input.blendId);
     if (lease && lease.expiresAt > this.now() &&
       (lease.token !== input.leaseToken || lease.inputVersion !== input.expectedInputVersion || lease.builtFor !== input.builtFor)) return { saved: false };
+    // Same rule as convex/blends.ts saveBuild: a build can only name current members.
+    const known = (id: string): boolean => blend.members.some((member) => member.userId === id);
+    if (!input.tracks.every((track) => track.for.every(known)) || !input.pairs.every((pair) => known(pair.a) && known(pair.b))
+      || !(input.gifts ?? []).every((gift) => known(gift.fromUserId) && known(gift.toUserId))) return { saved: false };
     // The build being replaced is the first `tracks.length` identities: keep it and the new one only.
     const lastBuild = blend.previousTracks.slice(0, blend.tracks.length);
     const rest: MemoryBlend = { ...blend };

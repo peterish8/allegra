@@ -199,6 +199,19 @@ describe('blends', () => {
     expect(await t.run(async (ctx) => (await ctx.db.query('blendInvites').take(10)).length)).toBe(0);
   });
 
+  it('an old pair that drops to one member gets a full invite window before the sweep', async () => {
+    const t = backend();
+    const blend = await create(t, 'asha');
+    await join(t, blend.code, 'ravi');
+    vi.advanceTimersByTime(60 * DAY);
+    await t.mutation(api.blends.leave, { secret, blendId: blend.blendId, userId: 'ravi' });
+    await t.mutation(internal.blends.sweep, {});
+    expect(await blendRow(t, blend.blendId)).not.toBeNull();
+    vi.advanceTimersByTime(8 * DAY);
+    await t.mutation(internal.blends.sweep, {});
+    expect(await blendRow(t, blend.blendId)).toBeNull();
+  });
+
   it('only the owner can rename; others are told it was not found', async () => {
     const t = backend();
     const blend = await create(t, 'asha');

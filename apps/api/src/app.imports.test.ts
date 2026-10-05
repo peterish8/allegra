@@ -145,3 +145,9 @@ test('Spotify routes follow IMPORT_ENABLED and the daily hook needs the server s
   const daily = await request(server).post('/api/internal/spotify/daily').set('x-convex-server-secret', 'guess').send({ userId: 'user_import' });
   assert.equal(daily.status, 401);
 });
+
+test('account responses are never cacheable', async () => {
+  const { server } = build();
+  const reply = await request(server).get('/api/spotify/status').set('Authorization', ACCOUNT);
+  assert.equal(reply.headers['cache-control'], 'no-store');
+});

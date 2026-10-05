@@ -15,7 +15,7 @@ export interface MatchedTrack {
   readonly track: ImportedTrack;
   readonly song: SongSnapshot | null;
   readonly confidence: MatchConfidence;
-  /** Will be saved. Exact and close matches start accepted; misses start unaccepted. */
+  /** Will be saved. Only exact matches start accepted: a close match is a different recording until someone ticks it. */
   readonly accepted: boolean;
   /** Provider/search outage after bounded retries; safe to skip now and retry in a later session. */
   readonly retryable?: boolean;
@@ -110,7 +110,7 @@ export async function runMatching(input: {
           track: input.tracks.get(key) as ImportedTrack,
           song: reply?.song ?? null,
           confidence,
-          accepted: confidence !== 'none' && reply?.retryable !== true,
+          accepted: confidence === 'exact' && reply?.retryable !== true,
           ...(reply?.retryable ? { retryable: true } : {})
         }];
       });

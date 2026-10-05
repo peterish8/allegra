@@ -86,7 +86,7 @@ test('replies with no song come back as none and unaccepted', async () => {
     send: async () => [{ index: 0, song, confidence: 'close' }, { index: 1, song: null, confidence: 'none' }],
     onBatch: (batch) => { results.push(...batch); }
   });
-  assert.deepEqual(results.map(([key, match]) => [key, match.confidence, match.accepted]), [['k0', 'close', true], ['k1', 'none', false]]);
+  assert.deepEqual(results.map(([key, match]) => [key, match.confidence, match.accepted]), [['k0', 'close', false], ['k1', 'none', false]]);
 });
 
 test('transient per-track provider misses are retried and never checkpointed before final status', async () => {

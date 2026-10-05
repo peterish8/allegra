@@ -1,5 +1,7 @@
 # State: Blend and Import
 
+> Superseded for phases 03-11 on 2026-10-05: all are implemented on `feat/blend-and-import`. Current status per finding: `AUDIT-2026-10-05.md`, last section.
+
 Updated 2026-10-04. Status: in progress. Owner approved PLAN.md section 2 on 2026-10-04.
 
 | Plan | Status | Commit | Notes |
