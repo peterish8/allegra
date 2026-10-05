@@ -115,6 +115,14 @@
   --d-shimmer: 1400ms;
   /* One song's backdrop colours dissolving into the next. */
   --d-atmosphere: 1300ms;
+  /* Ambient float of decorative shapes (Blend orbs): slow enough to read as breathing, not motion. */
+  --d-drift: 9s;
+  /* Member colours in a Blend: bright enough to carry dark initials, distinct from one another. */
+  --tone-sky: #6fc1ff;
+  --tone-lilac: #b8a6ff;
+  --tone-mint: #7fdcc0;
+  --tone-coral: #ee6b5f;
+  --tone-amber: #ffc56b;
 
   /* Shorthand transitions — color/opacity/transform only (never layout props) */
   --transition-fast: color var(--d-fast) var(--ease-standard), background-color var(--d-fast) var(--ease-standard), border-color var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard), transform var(--d-fast) var(--ease-standard), box-shadow var(--d-fast) var(--ease-standard);

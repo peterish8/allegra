@@ -236,3 +236,166 @@
 @media (hover: hover) { .blend-tile:hover { border-color: rgba(255, 255, 255, 0.24); } }
 /* A sheet floats over everything, so it keeps a solid veil: its text must stay readable. */
 .blend-sheet { border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 26px; background: linear-gradient(170deg, rgba(14, 15, 19, 0.9), rgba(9, 10, 13, 0.96)); -webkit-backdrop-filter: blur(26px) saturate(150%); backdrop-filter: blur(26px) saturate(150%); }
+
+/* Spotify panel: round icon buttons (label in aria-label and the hover title). */
+.spotify-icon-btn { display: inline-grid; width: 44px; height: 44px; place-items: center; padding: 0; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 50%; background: rgba(255, 255, 255, 0.06); color: var(--ink); cursor: pointer; transition: transform var(--d-fast) var(--ease-press), opacity var(--d-fast) var(--ease-standard); }
+.spotify-icon-btn.is-primary { border-color: transparent; background: var(--wave); color: var(--wave-ink); }
+.spotify-icon-btn:active { transform: scale(0.94); }
+.spotify-icon-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
+.spotify-icon-btn .is-spinning { animation: spotify-spin var(--d-spin) linear infinite; }
+@keyframes spotify-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spotify-icon-btn .is-spinning { animation: none; } .spotify-icon-btn:active { transform: none; } }
+
+/* ---------- Blend hero: tastes as light ----------
+ * One orb per member, overlapping more the closer their taste; `screen` makes the overlap glow,
+ * and the match number lives inside it. Orbs only drift (transform); reduced motion holds them. */
+.blend-hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  overflow: clip;
+  padding: clamp(14px, 2.4vw, 24px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 30px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02) 70%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 40px 90px -52px rgba(0, 0, 0, 0.85);
+  -webkit-backdrop-filter: blur(26px) saturate(150%);
+  backdrop-filter: blur(26px) saturate(150%);
+}
+.blend-stage { --orb: clamp(150px, 28vw, 260px); position: relative; display: grid; height: calc(var(--orb) * 1.3); place-items: center; }
+.blend-stage.is-group { --orb: clamp(130px, 22vw, 210px); height: calc(var(--orb) * 1.6); }
+.blend-stage__orbs { position: absolute; inset: 0; pointer-events: none; }
+.blend-orb {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--orb);
+  height: var(--orb);
+  margin: calc(var(--orb) / -2) 0 0 calc(var(--orb) / -2);
+  border-radius: 50%;
+  /* closest-side keeps the fade inside the circle, so the edge dissolves instead of being cut. */
+  background:
+    radial-gradient(circle closest-side at 40% 36%, rgba(255, 255, 255, 0.28), transparent 45%),
+    radial-gradient(circle closest-side,
+      var(--tone) 0%,
+      color-mix(in srgb, var(--tone) 82%, transparent) 42%,
+      color-mix(in srgb, var(--tone) 34%, transparent) 72%,
+      transparent 100%);
+  mix-blend-mode: screen;
+  transform: translate(calc(var(--x) * var(--orb)), calc(var(--y) * var(--orb)));
+  animation: blend-drift var(--d-drift) var(--ease-standard) infinite alternate;
+  animation-delay: calc(var(--lag) * var(--d-drift) * -0.5);
+}
+@keyframes blend-drift {
+  from { transform: translate(calc(var(--x) * var(--orb)), calc(var(--y) * var(--orb))) scale(1); }
+  to { transform: translate(calc(var(--x) * var(--orb) + 10px), calc(var(--y) * var(--orb) - 12px)) scale(1.05); }
+}
+/* The friend who has not joined yet: an outline holding their place, breathing. */
+.blend-orb.is-ghost {
+  width: calc(var(--orb) * 0.7);
+  height: calc(var(--orb) * 0.7);
+  margin: calc(var(--orb) * -0.35) 0 0 calc(var(--orb) * -0.35);
+  border: 2px dashed rgba(255, 255, 255, 0.32);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.06), transparent 70%);
+  mix-blend-mode: normal;
+  animation: blend-ghost var(--d-drift) var(--ease-standard) infinite alternate;
+}
+@keyframes blend-ghost {
+  from { opacity: 0.45; transform: translate(calc(var(--x) * var(--orb)), 0) rotate(0deg); }
+  to { opacity: 1; transform: translate(calc(var(--x) * var(--orb)), 0) rotate(40deg); }
+}
+.blend-stage__center { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; text-shadow: 0 2px 24px rgba(0, 0, 0, 0.35); }
+.blend-stage__match { color: #fff; font-size: clamp(54px, 9vw, 104px); font-weight: 800; letter-spacing: -0.055em; line-height: 0.95; font-variant-numeric: tabular-nums; }
+.blend-stage__label { color: rgba(255, 255, 255, 0.82); font-size: 14px; font-weight: 600; }
+.blend-stage__names { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; pointer-events: none; }
+.blend-stage__names li {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(9, 10, 13, 0.36);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+  transform: translate(calc(var(--x) * var(--orb) - 50%), calc(var(--y) * var(--orb) + var(--orb) * 0.44));
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+.blend-stage__names li::before { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); content: ""; }
+.blend-stage.is-group .blend-stage__names li { transform: translate(calc(var(--x) * var(--orb) - 50%), calc(var(--y) * var(--orb) - 50%)); }
+
+.blend-hero__bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px 20px; margin-top: 4px; }
+.blend-hero__copy { display: flex; min-width: 0; flex: 1 1 260px; flex-direction: column; gap: 6px; }
+.blend-hero__copy .blend-header__title { font-size: clamp(26px, 3.4vw, 40px); letter-spacing: -0.035em; }
+.blend-hero__meta { display: flex; flex-wrap: wrap; margin: 0; color: rgba(255, 255, 255, 0.72); font-size: 14px; }
+.blend-hero__meta span + span::before { margin: 0 8px; color: rgba(255, 255, 255, 0.35); content: "\00B7"; }
+.blend-hero__note { margin: 0; color: rgba(255, 255, 255, 0.72); font-size: 13px; }
+.blend-hero__note button { padding: 0; border: 0; background: none; color: var(--ink); font: inherit; text-decoration: underline; cursor: pointer; }
+.blend-hero__actions { display: flex; align-items: center; gap: 10px; }
+
+.blend-round { display: inline-grid; width: 48px; height: 48px; place-items: center; padding: 0; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 50%; background: rgba(255, 255, 255, 0.07); color: var(--ink); cursor: pointer; transition: transform var(--d-fast) var(--ease-press), opacity var(--d-fast) var(--ease-standard); }
+.blend-round.is-play { width: 64px; height: 64px; border-color: transparent; background: var(--wave); color: var(--wave-ink); box-shadow: 0 18px 40px -18px color-mix(in srgb, var(--wave) 80%, transparent); }
+@media (hover: hover) { .blend-round:hover { transform: translateY(-2px); } .blend-round.is-play:hover { transform: scale(1.05); } }
+.blend-round:active { transform: scale(0.94); }
+.blend-round:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+.blend-waiting { align-items: flex-start; }
+.blend-pairs { display: grid; place-items: center; padding: 8px 0; }
+
+/* The lens: a segmented switch whose lit pill slides to the chosen person, tinted their colour. */
+.blend-lens { display: inline-flex; max-width: 100%; gap: 2px; padding: 4px; overflow-x: auto; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 999px; background: rgba(255, 255, 255, 0.05); scrollbar-width: none; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+.blend-lens::-webkit-scrollbar { display: none; }
+.blend-lens__option { position: relative; flex: none; min-height: 38px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; color: rgba(255, 255, 255, 0.7); font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity var(--d-fast) var(--ease-standard); }
+.blend-lens__option.is-active { color: #fff; }
+.blend-lens__pill { position: absolute; inset: 0; border-radius: 999px; background: color-mix(in srgb, var(--tone, #ffffff) 26%, rgba(255, 255, 255, 0.08)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+.blend-lens__label { position: relative; display: inline-flex; align-items: center; gap: 8px; }
+.blend-lens__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); }
+.blend-lens__option:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Each song carries a stripe of whose taste it came from. */
+.blend-track { position: relative; padding-left: 16px; }
+.blend-track::before { position: absolute; top: 12px; bottom: 12px; left: 4px; width: 3px; border-radius: 3px; background: var(--stripe); content: ""; }
+.blend-track.is-discovery::before { background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0 4px, transparent 4px 8px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .blend-orb, .blend-orb.is-ghost { animation: none; }
+  .blend-round:hover, .blend-round.is-play:hover, .blend-round:active { transform: none; }
+}
+@media (max-width: 560px) {
+  .blend-hero__bar { align-items: stretch; }
+  .blend-hero__actions { justify-content: flex-start; }
+}
+
+/* Story cards: clear glass with a glow in one member's colour (--card-tone, set per card). */
+.story-card {
+  isolation: isolate;
+  overflow: clip;
+  border-color: rgba(255, 255, 255, 0.14);
+  border-radius: 24px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02) 70%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+}
+.story-card::before {
+  position: absolute;
+  z-index: -1;
+  top: -30%;
+  right: -30%;
+  width: 90%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle closest-side, color-mix(in srgb, var(--card-tone, var(--wave)) 45%, transparent), transparent);
+  content: "";
+  pointer-events: none;
+}
+.story-card__eyebrow { color: rgba(255, 255, 255, 0.7); letter-spacing: 0; text-transform: none; font-weight: 600; }
+.story-card__detail { color: rgba(255, 255, 255, 0.74); }
+.story-card__share, .story-card__play { background: rgba(255, 255, 255, 0.1); }
+.blend-lens { align-self: flex-start; }

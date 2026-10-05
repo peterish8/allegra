@@ -1,6 +1,7 @@
 import { Play, Share2 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 
 import type { Story } from '@shared/blendStories';
 import type { BlendDetail } from '@shared/blendView';
@@ -9,6 +10,7 @@ import type { UnifiedSong } from '@shared/types';
 import { blendTrackSong, storyText } from '../../lib/blendText';
 import { DEFAULT_PALETTE, type Palette } from '../../lib/palette';
 import { motionTokens } from '../../motion';
+import { BlendTones } from './MemberDisc';
 import { shareStoryCard, storyCardBlob } from './shareCard';
 
 /** One card per story. The exhaustive switch makes a new Story kind a type error until it is drawn. */
@@ -63,12 +65,16 @@ export function BlendStories({ detail, palette, onPlay }: { readonly detail: Ble
   const generation = useRef(0);
   useEffect(() => { generation.current += 1; setPrepared(null); return () => { generation.current += 1; }; }, [detail]);
   if (detail.stories.length === 0) return null;
+  // Cards take turns glowing in each member's colour, so the row reads as everyone's.
+  const glows = [...useContext(BlendTones).values()];
+
   return (
     <ul className="blend-stories" aria-label="Your Blend in numbers">
       {detail.stories.map((story, index) => (
         <motion.li
           key={`${story.kind}-${index}`}
           className="story-card"
+          style={{ '--card-tone': glows[index % Math.max(1, glows.length)] } as CSSProperties}
           initial={reduced ? { opacity: 0 } : { opacity: 0, y: 12 }}
           animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0 }}
           transition={{ duration: motionTokens.duration.base, ease: motionTokens.ease.decelerate, delay: index * motionTokens.stagger }}
