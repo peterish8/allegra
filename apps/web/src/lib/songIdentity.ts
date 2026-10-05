@@ -1,13 +1,12 @@
 import type { UnifiedSong } from '@shared/types';
+import { identityKey } from '@shared/identity';
 
 /**
  * Same recording under different release ids (cover/album variants).
  * Mirrors `apps/api/src/lib/normalize.ts` so queue/radio and shelves agree.
  */
 export function songIdentity(song: Pick<UnifiedSong, 'title' | 'artist'>): string {
-  const title = flatten(song.title.replace(/[([][^)\]]*[)\]]/gu, ' '));
-  const artists = flatten(song.artist).split(' ').sort().join(' ');
-  return `${title}|${artists}`;
+  return identityKey(song.title, song.artist);
 }
 
 /** Keep first occurrence of each recording identity. */

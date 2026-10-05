@@ -483,6 +483,15 @@ export const peekOutbox = (kind: OutboxKind, limit: number): Promise<OutboxEntry
     )).map(row => ({ id: row.id, kind: row.kind, body: row.body, createdAt: row.created_at })),
   );
 
+/** Snapshot every queued entry of one kind without changing or settling it. */
+export const readOutbox = (kind: OutboxKind): Promise<OutboxEntry[]> =>
+  withDbRead(async db =>
+    (await db.getAllAsync<{ id: number; kind: OutboxKind; body: string; created_at: number }>(
+      'SELECT id, kind, body, created_at FROM sync_outbox WHERE kind = ? ORDER BY id ASC',
+      [kind],
+    )).map(row => ({ id: row.id, kind: row.kind, body: row.body, createdAt: row.created_at })),
+  );
+
 export const removeOutbox = (ids: readonly number[]): Promise<void> =>
   withDbWrite(async db => {
     for (const id of ids) await db.runAsync('DELETE FROM sync_outbox WHERE id = ?', [id]);

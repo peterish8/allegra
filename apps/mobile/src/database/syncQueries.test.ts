@@ -153,6 +153,8 @@ describe('sync queries against SQLite', () => {
 
     expect(await syncDb.peekOutbox('op', 20)).toEqual([]);
     expect(await syncDb.peekOutbox('play', 20)).toHaveLength(1);
+    expect(await syncDb.readOutbox('op')).toEqual([]);
+    expect(await syncDb.readOutbox('play')).toHaveLength(1);
   });
 
   it('merges downloads and online library rows without turning online songs into downloads', async () => {

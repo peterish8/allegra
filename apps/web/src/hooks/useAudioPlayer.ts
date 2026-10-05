@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UnifiedSong } from '@shared/types';
 
 import { resolveApiUrl } from '../lib/api';
+import { PlayheadStore, type Playhead } from '../lib/playhead';
 import { withUpcoming } from '../../../../packages/connect/src/index';
 import { songIdentity, uniqueByIdentity } from '../lib/songIdentity';
 import { clamp } from '../lib/utils';
@@ -15,7 +16,8 @@ export interface AudioPlayerState {
   readonly isPlaying: boolean;
   /** True only while the element is genuinely waiting on data it needs to keep playing. */
   readonly isBuffering: boolean;
-  readonly currentTime: number;
+  /** Seconds into the song. A store, not state: subscribe with `usePlayhead` where the time is drawn. */
+  readonly playhead: Playhead;
   readonly duration: number;
   readonly isMuted: boolean;
   /** 0-1. Persisted per browser. */
@@ -67,8 +69,13 @@ export function useAudioPlayer(): AudioPlayerState {
   const [queue, setQueue] = useState<UnifiedSong[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const playheadRef = useRef<PlayheadStore | null>(null);
+  playheadRef.current ??= new PlayheadStore();
+  const playhead = playheadRef.current;
+  const setCurrentTime = playhead.set;
   const [duration, setDuration] = useState(0);
+  const durationRef = useRef(0);
+  durationRef.current = duration;
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolumeState] = useState(() => {
     try {
@@ -341,7 +348,15 @@ export function useAudioPlayer(): AudioPlayerState {
     if (!audio) return;
 
     audio.volume = volume;
-    const onTimeUpdate = (): void => setCurrentTime(audio.currentTime);
+    const onTimeUpdate = (): void => {
+      const time = audio.currentTime;
+      setCurrentTime(time);
+      // A timeupdate means the playhead moved, so any earlier stall is over.
+      if (!audio.paused && audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) setIsBuffering(false);
+      // Some streams stop short of `ended`; move on when within a frame of the end.
+      const length = Number.isFinite(audio.duration) ? audio.duration : durationRef.current;
+      if (length > 0 && length - time <= 0.35 && isPlayingRef.current && !autoAdvancedRef.current) advanceToNext();
+    };
     const onLoadedMetadata = (): void => {
       const nextDuration = Number.isFinite(audio.duration) ? audio.duration : currentSongRef.current?.duration ?? 0;
       setDuration(nextDuration);
@@ -373,7 +388,6 @@ export function useAudioPlayer(): AudioPlayerState {
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
     audio.addEventListener('waiting', onWaiting);
-    audio.addEventListener('stalled', onWaiting);
     audio.addEventListener('playing', onPlaying);
     audio.addEventListener('canplay', onPlaying);
     return () => {
@@ -384,7 +398,6 @@ export function useAudioPlayer(): AudioPlayerState {
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
       audio.removeEventListener('waiting', onWaiting);
-      audio.removeEventListener('stalled', onWaiting);
       audio.removeEventListener('playing', onPlaying);
       audio.removeEventListener('canplay', onPlaying);
     };
@@ -433,11 +446,6 @@ export function useAudioPlayer(): AudioPlayerState {
   }, [stop]);
 
   useEffect(() => {
-    if (duration <= 0 || duration - currentTime > 0.35 || !isPlayingRef.current || autoAdvancedRef.current) return;
-    advanceToNext();
-  }, [advanceToNext, currentTime, duration]);
-
-  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, button, [contenteditable="true"]')) return;
@@ -457,7 +465,7 @@ export function useAudioPlayer(): AudioPlayerState {
     queue,
     isPlaying,
     isBuffering,
-    currentTime,
+    playhead,
     duration,
     isMuted,
     volume,

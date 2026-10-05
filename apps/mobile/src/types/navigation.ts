@@ -49,6 +49,10 @@ export type LibraryStackParamList = {
   LibraryHome: undefined;
   Playlists: undefined;
   PlaylistDetail: { playlistId: string };
+  Blends: undefined;
+  Blend: { blendId: string };
+  BlendJoin: { code: string };
+  Import: undefined;
 };
 
 // Screen Props

@@ -20,6 +20,10 @@ import { CollectionPage } from './components/CollectionPage';
 import { ArtistPreviewCard } from './components/ArtistPreviewCard';
 import type { RelatedArtist } from './components/ArtistPage';
 import { LibraryPage } from './components/LibraryPage';
+import { ImportPage } from './components/import/ImportPage';
+import { BlendJoinPage } from './components/blend/BlendJoinPage';
+import { BlendPage } from './components/blend/BlendPage';
+import { BlendsPage } from './components/blend/BlendsPage';
 import { DynamicAura } from './components/DynamicAura';
 import { AuthDialog } from './components/AuthDialog';
 import { useSignIn } from './auth/SignInContext';
@@ -27,6 +31,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { DiscoverSections, HomePage } from './components/HomePage';
 import { ConnectPicker, type ConnectPickerState } from './components/ConnectPicker';
 import { PlayerPanel } from './components/PlayerPanel';
+import { BarScrubber, FeatureProgress, FeatureRemaining } from './components/PlayheadViews';
 import { SettingsPage } from './components/SettingsPage';
 import { MusicFlowShader } from './components/shader/MusicFlowShader';
 import type { ImmersivePlayerMode } from './components/PlayerPanel';
@@ -55,6 +60,7 @@ import type { LibrarySong } from './lib/libraryRows';
 import { legacyHashToPath, parseRoute, paths } from './lib/routes';
 import { pickTopResult } from './lib/topResult';
 import { formatTime, titleAccent } from './lib/utils';
+import { PlayheadStore, type Playhead } from './lib/playhead';
 import { itemVariants, motionTokens, pageVariants, spring } from './motion';
 
 const DEFAULT_QUERY = 'top songs';
@@ -140,7 +146,7 @@ export default function App() {
   const [aiPicksProvider, setAiPicksProvider] = useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
-  const { view, artistName, playlistId, sharedCode } = useMemo(() => parseRoute(pathname), [pathname]);
+  const { view, artistName, playlistId, sharedCode, blendId, inviteCode } = useMemo(() => parseRoute(pathname), [pathname]);
   const [shared, setShared] = useState<SharedPlaylist | null>(null);
   const [sharedLoading, setSharedLoading] = useState(false);
   const [sharedError, setSharedError] = useState<string | null>(null);
@@ -223,7 +229,10 @@ export default function App() {
   const playerQueue = remotePlayback && connectView
     ? [...(remoteSong ? [remoteSong] : []), ...connectView.queue.map(shownRemote)]
     : audio.queue;
-  const playerTime = remotePlayback ? connect.livePosition : audio.currentTime;
+  // Another device's position arrives once a second; the local one is the element's own store.
+  const [remotePlayhead] = useState(() => new PlayheadStore());
+  useEffect(() => remotePlayhead.set(connect.livePosition), [connect.livePosition, remotePlayhead]);
+  const playhead: Playhead = remotePlayback ? remotePlayhead : audio.playhead;
   const playerDuration = remotePlayback ? (remoteSong?.duration ?? 0) : audio.duration;
   const playerIsPlaying = remotePlayback && connectView ? connectView.isPlaying : audio.isPlaying;
   const playerIsBuffering = remotePlayback ? false : audio.isBuffering;
@@ -250,13 +259,7 @@ export default function App() {
   // The bar's sliders follow the finger and act on release. Seeking on every step restarted the
   // stream a hundred times in a drag, and on another device each step is a command whose echo
   // pulled the thumb back. Volume on this device still changes as it is dragged, to be heard.
-  const [barScrub, setBarScrub] = useState<number | null>(null);
   const [barVolume, setBarVolume] = useState<number | null>(null);
-  const commitBarScrub = (): void => {
-    if (barScrub === null) return;
-    setBarScrub(null);
-    seekPlayer(barScrub);
-  };
   const dragBarVolume = (volume: number): void => {
     if (remotePlayback) setBarVolume(volume);
     else changePlayerVolume(volume);
@@ -341,7 +344,7 @@ export default function App() {
   useMediaSession({
     song: playerSong,
     isPlaying: playerIsPlaying,
-    currentTime: playerTime,
+    playhead,
     duration: playerDuration,
     requestPlayback: async (playing) => {
       if (remotePlayback) connect.control({ kind: playing ? 'play' : 'pause' });
@@ -485,7 +488,7 @@ export default function App() {
   const account = useAccount(signIn.signedIn, () => {
     void loadPersonalSpace();
   });
-  useListenTracker(audio.currentSong ?? null, audio.currentTime, account.refresh);
+  useListenTracker(audio.currentSong ?? null, audio.playhead, account.refresh);
 
   // Guest, account, or not known yet. Convex hands back a returning Google session some moments after the
   // page loads, and the profile a moment after that; showing "Guest" for that stretch made a signed-in
@@ -507,7 +510,7 @@ export default function App() {
       setRememberedName(null);
     }
   }, [accountResolving, account.profile]);
-  const knownAccount = account.profile && !account.profile.isGuest ? account.profile : null;
+  const knownAccount = !accountResolving && account.profile && !account.profile.isGuest ? account.profile : null;
   const chipName = knownAccount ? accountDisplayName(knownAccount) : accountResolving ? rememberedName : null;
 
   // A remote track change can write recent history on the phone. Give that
@@ -634,12 +637,12 @@ export default function App() {
         togglePlayer();
       } else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
         event.preventDefault();
-        seekPlayer(playerTime + (event.key === 'ArrowRight' ? 5 : -5));
+        seekPlayer(playhead.get() + (event.key === 'ArrowRight' ? 5 : -5));
       }
     };
     window.addEventListener('keydown', onTransportKey);
     return () => window.removeEventListener('keydown', onTransportKey);
-  }, [hasSongLoaded, playerTime, seekPlayer, togglePlayer]);
+  }, [hasSongLoaded, playhead, seekPlayer, togglePlayer]);
 
   useEffect(() => {
     setTranslatedLyrics(null);
@@ -765,7 +768,6 @@ export default function App() {
     () => playingNext.reduce((total, song) => total + song.duration, 0),
     [playingNext]
   );
-  const barTime = barScrub ?? playerTime;
   // Queue edits happen on the device that plays. On another device a row is named by its place
   // and its ref, so an edit made while the queue moved still lands on the right song.
   const queueEditable = remotePlayback ? connectView?.queueEditable ?? false : true;
@@ -956,9 +958,6 @@ export default function App() {
   // The banner glows in a dark shade of the cover colour over black.
   const bannerPalette = useMemo(() => shadePalette(palette, 0.6), [palette]);
   const isCurrent = activeSong !== null && playerSong?.id === activeSong.id;
-  const featureRemaining = isCurrent && playerDuration > 0
-    ? Math.max(0, playerDuration - playerTime)
-    : activeSong?.duration ?? 0;
   const featureState = !isCurrent
     ? 'Ready'
     : playerIsBuffering
@@ -1278,7 +1277,7 @@ export default function App() {
     <QueueActionsContext.Provider value={queueActions}>
     <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme="dark" data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
       {immersiveOpen ? null : (
-        <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={shaderPalette} />
+        <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={shaderPalette} variant={settings.appBackground} />
       )}
       <a className="skip-link" href="#main-content">Skip to content</a>
       <AuthDialog open={authOpen} account={account} onClose={() => setAuthOpen(false)} />
@@ -1308,10 +1307,10 @@ export default function App() {
           </div>
       </header>
 
-      <main id="main-content" ref={mainRef} tabIndex={-1} aria-label={view === 'home' ? 'Home' : view === 'library' ? 'Your listening library' : view === 'album' ? 'Album' : view === 'settings' ? 'Settings' : isLegalView(view) ? 'Policies' : 'Discover music'} className={`content-wrap ${view !== 'discover' ? 'inner-page-wrap' : ''} ${isDetailView ? 'is-detail' : ''} ${isCollectionView ? 'is-collection' : ''}`}>
+      <main id="main-content" ref={mainRef} tabIndex={-1} aria-label={view === 'home' ? 'Home' : view === 'library' ? 'Your listening library' : view === 'album' ? 'Album' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Blend' : isLegalView(view) ? 'Policies' : 'Discover music'} className={`content-wrap ${view !== 'discover' ? 'inner-page-wrap' : ''} ${isDetailView ? 'is-detail' : ''} ${isCollectionView ? 'is-collection' : ''}`}>
         <div className="panel-topbar">
             {isDetailView || isCollectionView ? <button type="button" className="topbar-back" onClick={() => goBack(view === 'liked' || view === 'playlist' ? '#library' : view === 'shared' ? '#home' : '#discover')} aria-label="Back"><ArrowLeft size={17} aria-hidden="true" /><span>Back</span></button> : null}
-            <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong></nav>
+            <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' || view === 'import' || view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' ? 'Blends' : view === 'blend' ? 'Blend' : view === 'blendJoin' ? 'Join a Blend' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong></nav>
             <div className="mood-pills" role="group" aria-label="Quick picks"><span className="mood-pills-label" aria-hidden="true">Quick picks</span>{moodPrompts.map((prompt) => <button key={prompt} type="button" className="mood-pill" aria-pressed={query === prompt} onClick={() => { if (view !== 'discover') router.push(paths.discover); setQuery(query === prompt ? '' : prompt); }}><span>{prompt}</span></button>)}</div>
             <CommandPalette
               open={paletteOpen}
@@ -1381,6 +1380,14 @@ export default function App() {
           )
         ) : isLegalView(view) ? (
           <LegalPage doc={view} />
+        ) : view === 'import' ? (
+          <ImportPage accountKey={knownAccount?.userId ?? null} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} likedIds={likedIds} onSaved={() => void loadPersonalSpace()} />
+        ) : view === 'blends' ? (
+          <BlendsPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} />
+        ) : view === 'blend' && blendId ? (
+          <BlendPage key={`${knownAccount?.userId ?? 'guest'}:${blendId}`} blendId={blendId} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlay={(song, queue) => void playSong(song, queue)} onLike={toggleLike} />
+        ) : view === 'blendJoin' && inviteCode ? (
+          <BlendJoinPage key={`${knownAccount?.userId ?? 'guest'}:${inviteCode}`} code={inviteCode} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} />
         ) : view === 'settings' ? (
           <SettingsPage
             account={account.profile && !accountResolving ? { isGuest: account.profile.isGuest, name: account.profile.displayName ?? null, email: account.profile.email ?? null } : null}
@@ -1389,7 +1396,7 @@ export default function App() {
             karaokeBackend={liveKaraoke.backend}
             karaokeActive={liveKaraoke.active}
           />
-        ) : view === 'library' ? <LibraryPage likedSongs={likedSongs} recentlyPlayed={recentlyPlayed} likedIds={likedIds} loading={personalLoading} error={personalError} actionError={personalActionError} currentSongId={playerSong?.id} isPlaying={playerIsPlaying} onPlay={playSong} onLike={toggleLike} onRetry={() => void loadPersonalSpace()} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'liked' ? <CollectionPage kind="liked" title="Liked Songs" songs={likedSongs} loading={personalLoading} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(likedSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'playlist' ? <CollectionPage kind="playlist" title={activePlaylist?.name ?? (playlists.loading ? 'Playlist' : 'Playlist not found')} songs={activePlaylistSongs} loading={playlists.loading || (activePlaylist !== null && activePlaylistSongs.length < activePlaylist.songIds.length)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(activePlaylistSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} {...(activePlaylist ? { onDelete: () => { void playlists.remove(activePlaylist.id); router.push(paths.library); }, share: { libraryId: activePlaylist.id, isPublic: activePlaylist.isPublic, onChanged: () => { void playlists.reload(); } }, cover: { libraryId: activePlaylist.id, ...(activePlaylist.coverUrl ? { coverUrl: activePlaylist.coverUrl } : {}), onUpload: playlists.setCover } } : {})} /> : view === 'artist' && artistName ? <ArtistPage name={artistName} profile={artistProfile} photoFallback={faces[artistName.toLocaleLowerCase()] || null} songs={artistTracks} related={relatedArtists} loading={artistLoading && artistTracks.length === 0} error={artistTracks.length === 0 ? artistError : null} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onBack={() => goBack(paths.discover)} onRetry={() => setArtistReload((count) => count + 1)} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(artistTracks, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbumByName} onOpenArtist={openArtist} /> : view === 'album' && albumSeed ? <AlbumPage seed={albumSeed} tracks={albumTracks} palette={palette} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={() => playAlbumTracks(albumTracks, false)} onShuffle={() => playAlbumTracks(albumTracks, true)} onLike={toggleLike} onLikeAlbum={() => toggleLike(albumSeed)} albumLiked={likedIds.has(likedKey(albumSeed))} /> : <>
+        ) : view === 'library' ? <LibraryPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} likedSongs={likedSongs} recentlyPlayed={recentlyPlayed} likedIds={likedIds} loading={personalLoading} error={personalError} actionError={personalActionError} currentSongId={playerSong?.id} isPlaying={playerIsPlaying} onPlay={playSong} onLike={toggleLike} onRetry={() => void loadPersonalSpace()} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'liked' ? <CollectionPage kind="liked" title="Liked Songs" songs={likedSongs} loading={personalLoading} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(likedSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'playlist' ? <CollectionPage kind="playlist" title={activePlaylist?.name ?? (playlists.loading ? 'Playlist' : 'Playlist not found')} songs={activePlaylistSongs} loading={playlists.loading || (activePlaylist !== null && activePlaylistSongs.length < activePlaylist.songIds.length)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(activePlaylistSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} {...(activePlaylist ? { onDelete: () => { void playlists.remove(activePlaylist.id); router.push(paths.library); }, share: { libraryId: activePlaylist.id, isPublic: activePlaylist.isPublic, onChanged: () => { void playlists.reload(); } }, cover: { libraryId: activePlaylist.id, ...(activePlaylist.coverUrl ? { coverUrl: activePlaylist.coverUrl } : {}), onUpload: playlists.setCover } } : {})} /> : view === 'artist' && artistName ? <ArtistPage name={artistName} profile={artistProfile} photoFallback={faces[artistName.toLocaleLowerCase()] || null} songs={artistTracks} related={relatedArtists} loading={artistLoading && artistTracks.length === 0} error={artistTracks.length === 0 ? artistError : null} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onBack={() => goBack(paths.discover)} onRetry={() => setArtistReload((count) => count + 1)} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(artistTracks, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbumByName} onOpenArtist={openArtist} /> : view === 'album' && albumSeed ? <AlbumPage seed={albumSeed} tracks={albumTracks} palette={palette} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={() => playAlbumTracks(albumTracks, false)} onShuffle={() => playAlbumTracks(albumTracks, true)} onLike={toggleLike} onLikeAlbum={() => toggleLike(albumSeed)} albumLiked={likedIds.has(likedKey(albumSeed))} /> : <>
         <div className="browse-grid">
           <div className="browse-main">
             <motion.section className="hero-banner" variants={pageVariants} initial="hidden" animate="visible" transition={pageTransition} aria-label="Featured track" data-live={playerIsPlaying ? 'true' : undefined} data-searching={isSearching ? 'true' : undefined}>
@@ -1452,8 +1459,8 @@ export default function App() {
                 <span className="now-panel-play">{playerIsBuffering && isCurrent ? <Disc3 size={20} className="spin" aria-hidden="true" /> : isCurrent && playerIsPlaying ? <Pause size={20} fill="currentColor" aria-hidden="true" /> : <Play size={20} fill="currentColor" aria-hidden="true" />}</span>
               </button>
               <div className="now-panel-info"><div><h3>{activeSong.title}</h3><p>{activeSong.artist}</p></div><IconButton icon={HeartIcon} label={likedIds.has(likedKey(activeSong)) ? 'Remove from likes' : 'Add to likes'} active={likedIds.has(likedKey(activeSong))} onClick={() => toggleLike(activeSong)} /></div>
-              <div className="feature-progress" aria-hidden="true"><span style={{ transform: `scaleX(${playerDuration && isCurrent ? playerTime / playerDuration : 0})` }} /></div>
-              <div className="now-panel-foot"><span>{formatTime(featureRemaining)} {isCurrent && playerDuration > 0 ? 'left' : 'total'}</span><button type="button" className="feature-open" onClick={() => { if (playerSong) setPlayerMode('immersive'); else void playSong(activeSong); }}>View player</button></div>
+              <FeatureProgress playhead={playhead} duration={playerDuration} current={isCurrent} />
+              <div className="now-panel-foot"><FeatureRemaining playhead={playhead} duration={isCurrent && playerDuration > 0 ? playerDuration : activeSong.duration} current={isCurrent && playerDuration > 0} /><button type="button" className="feature-open" onClick={() => { if (playerSong) setPlayerMode('immersive'); else void playSong(activeSong); }}>View player</button></div>
             </> : <div className="feature-loading"><Disc3 size={24} className="spin" aria-hidden="true" /><span>Loading your first song</span></div>}
             <div className="now-panel-queue">
               <div className="queue-heading"><h3>Up next</h3><span>{queueSongs.length} tracks · {formatTime(queueDuration)}</span></div>
@@ -1531,25 +1538,7 @@ export default function App() {
                 <strong>{playerSong.title}</strong>
                 <span>{[playerSong.artist, playerSong.album].filter(Boolean).join(' \u2014 ')}</span>
               </button>
-              <div className="am-scrub">
-                <time>{formatTime(barTime)}</time>
-                <input
-                  type="range"
-                  className="am-range"
-                  aria-label="Track position"
-                  min={0}
-                  max={Math.max(playerDuration, 1)}
-                  step={0.1}
-                  value={Math.min(barTime, Math.max(playerDuration, 1))}
-                  style={{ '--fill': `${playerDuration > 0 ? (barTime / playerDuration) * 100 : 0}%` } as CSSProperties}
-                  onChange={(event) => setBarScrub(Number(event.target.value))}
-                  onPointerUp={commitBarScrub}
-                  onPointerCancel={() => setBarScrub(null)}
-                  onKeyUp={commitBarScrub}
-                  onBlur={commitBarScrub}
-                />
-                <time>-{formatTime(Math.max(0, playerDuration - barTime))}</time>
-              </div>
+              <BarScrubber playhead={playhead} duration={playerDuration} onSeek={seekPlayer} />
             </div>
             <IconButton icon={HeartIcon} label={likedIds.has(likedKey(playerSong)) ? 'Remove from likes' : 'Add to likes'} active={likedIds.has(likedKey(playerSong))} onClick={() => toggleLike(playerSong)} />
           </div>
@@ -1693,7 +1682,7 @@ export default function App() {
         mode={playerMode === 'workspace' ? 'workspace' : 'immersive'}
         song={immersiveOpen ? playerSong : null}
         queue={playerQueue}
-        currentTime={playerTime}
+        playhead={playhead}
         duration={playerDuration}
         isPlaying={playerIsPlaying}
         isBuffering={playerIsBuffering}
@@ -1702,7 +1691,7 @@ export default function App() {
         lyrics={{
           lines: lyrics,
           translations: lyricTranslations,
-          currentTime: playerTime,
+          playhead,
           playing: playerIsPlaying,
           loading: lyricsLoading,
           error: lyricsError,

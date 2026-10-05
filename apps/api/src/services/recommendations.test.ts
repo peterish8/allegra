@@ -94,6 +94,18 @@ test('favourite artists contribute their top songs, and a failing artist page do
   assert.deepEqual(fallback?.songs.map((item) => item.id), ['p']);
 });
 
+test('featured artist splitting ranks x-separated credits consistently with taste', async () => {
+  const seed = song('seed', 'Seed', 'Seed Artist');
+  const featured = song('featured', 'Featured', 'Other Artist x Arijit Singh');
+  const plain = song('plain', 'Plain', 'Other Artist');
+  const { catalog } = fakeCatalog({ suggestions: { seed: [plain, featured] } });
+  const result = await new RecommendationService(catalog, new MemoryCacheStore()).recommend(
+    { ...emptyTaste, seeds: [seed], favoriteArtists: [{ name: 'Arijit Singh', score: 5 }] },
+    new Set()
+  );
+  assert.equal(result?.songs[0]?.id, 'featured');
+});
+
 test('no artist takes more than two slots', async () => {
   const seed = song('seed', 'Seed', 'Seedy');
   const many = ['1', '2', '3', '4'].map((id) => song(id, `Song ${id}`, 'Same Artist'));

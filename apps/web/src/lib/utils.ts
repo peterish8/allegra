@@ -36,6 +36,4 @@ export function readableCount(value: number): string {
 }
 
 /** Credited names on a song line ("A, B & C feat. D"), in order. */
-export function creditedArtists(artist: string): string[] {
-  return artist.split(/,|&| feat\.? /i).map((part) => part.trim()).filter(Boolean);
-}
+export { creditedArtists } from '@shared/identity';

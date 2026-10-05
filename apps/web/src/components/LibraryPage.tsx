@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { paths } from '../lib/routes';
-import { ArrowUpRight, Clock3, Heart, ListMusic, Play, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowUpRight, Clock3, Heart, ListMusic, Play, RefreshCw, Sparkles, Trash2, Users } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -12,6 +12,8 @@ import { usePlaylistsContext } from '../hooks/usePlaylists';
 import type { LibraryRecord } from '../lib/api';
 import type { LibrarySong } from '../lib/libraryRows';
 import { EmptyState, TactileButton } from './ui';
+import { BlendsShelf } from './blend/BlendsShelf';
+import { flags } from '../lib/flags';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
 
 interface LibraryPageProps {
@@ -27,9 +29,12 @@ interface LibraryPageProps {
   readonly onLike: (song: UnifiedSong) => void;
   readonly onRetry: () => void;
   readonly onDiscover: () => void;
+  /** A signed-in account (not a guest): Blends and Import need one. */
+  readonly signedIn?: boolean;
+  readonly onSignIn?: () => void;
 }
 
-export function LibraryPage({ likedSongs, recentlyPlayed, likedIds, loading, error, actionError, currentSongId, isPlaying, onPlay, onLike, onRetry, onDiscover }: LibraryPageProps) {
+export function LibraryPage({ likedSongs, recentlyPlayed, likedIds, loading, error, actionError, currentSongId, isPlaying, onPlay, onLike, onRetry, onDiscover, signedIn = false, onSignIn = () => undefined }: LibraryPageProps) {
   const reduced = useReducedMotion();
   const transition = reduced ? { duration: motionTokens.duration.instant } : undefined;
   const playlistsApi = usePlaylistsContext();
@@ -58,11 +63,16 @@ export function LibraryPage({ likedSongs, recentlyPlayed, likedIds, loading, err
       ) : (
         <>
           <LibrarySection eyebrow="Kept close" title="Your likes" icon={<Heart size={15} aria-hidden="true" />}>
-            {likedSongs.length > 0 ? <SongGrid songs={likedSongs} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} /> : <EmptyState title="Make a small collection" copy="Tap the heart on any track and it will land here for the next listening session." action={<TactileButton variant="accent" icon={ArrowUpRight} onClick={onDiscover}>Find something to keep</TactileButton>} />}
+            {likedSongs.length > 0 ? <SongGrid songs={likedSongs} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} /> : <EmptyState title="Make a small collection" copy="Tap the heart on any track and it will land here for the next listening session." action={<div className="library-empty-actions"><TactileButton variant="accent" icon={ArrowUpRight} onClick={onDiscover}>Find something to keep</TactileButton>{flags.import ? <Link className="import-link" href={paths.import}>Import your library</Link> : null}</div>} />}
           </LibrarySection>
           <LibrarySection eyebrow="Your rooms" title="Playlists" icon={<ListMusic size={15} aria-hidden="true" />}>
             <PlaylistsSection likedIds={likedIds} currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} onLike={onLike} onDiscover={onDiscover} />
           </LibrarySection>
+          {flags.blend ? (
+            <LibrarySection eyebrow="Shared with friends" title="Blends" icon={<Users size={15} aria-hidden="true" />}>
+              <BlendsShelf signedIn={signedIn} onSignIn={onSignIn} />
+            </LibrarySection>
+          ) : null}
           <LibrarySection eyebrow="Recent traces" title="Played lately" icon={<Clock3 size={15} aria-hidden="true" />}>
             {recentlyPlayed.length > 0 ? <SongGrid songs={recentlyPlayed} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} /> : <EmptyState title="The first song is waiting" copy="Start with a search, follow a mood, and your recent path will appear here." action={<TactileButton variant="primary" onClick={onDiscover}>Open discover</TactileButton>} />}
           </LibrarySection>

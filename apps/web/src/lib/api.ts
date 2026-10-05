@@ -1,7 +1,10 @@
 import type { AccountProfile, ApiResponse, ArtistProfile, ArtistSummary, HomePayload, LyricLine, LyricsPayload, MotionArtwork, SharedPlaylist, TasteSummary, UnifiedSong } from '@shared/types';
 import { POLICY_VERSION, type ReportReason } from '@shared/legal';
+import type { BlendCreated, BlendDetail, BlendInviteLink, BlendInvitePreview, BlendSummary } from '@shared/blendView';
+import type { ImportedTrack } from '@shared/importParse';
 import type { LibraryChange, LibraryOp } from '@shared/library';
 import { fromAllegraSong, type SongRef, type SongSnapshot } from '@shared/songRef';
+import type { SpotifySourcePlaylist, SpotifyStatus, SpotifySyncStep } from '@shared/spotify';
 
 export interface LibraryRecord {
   readonly id: string;
@@ -26,12 +29,27 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/+$/
 
 export class ApiError extends Error {
   public readonly status: number;
+  /** A machine-readable reason some routes add beside the copy (Blend: 'full', 'limit', …). */
+  public readonly code: string | undefined;
+  /** From a 429's Retry-After header, in seconds. */
+  public readonly retryAfterSeconds: number | undefined;
 
-  public constructor(message: string, status: number) {
+  public constructor(message: string, status: number, extra: { readonly code?: string; readonly retryAfterSeconds?: number } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = extra.code;
+    this.retryAfterSeconds = extra.retryAfterSeconds;
   }
+}
+
+/** Retry-After accepts either a delta or an HTTP date. */
+function retryAfterOf(response: Response): number | undefined {
+  const raw = response.headers.get('retry-after');
+  const seconds = raw === null ? Number.NaN : Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  const date = raw === null ? Number.NaN : Date.parse(raw);
+  return Number.isFinite(date) ? Math.max(0, (date - Date.now()) / 1000) : undefined;
 }
 
 export function apiBaseUrl(): string {
@@ -151,7 +169,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError('The music service returned an unexpected response.', response.status);
   }
   if (!response.ok || !body.success) {
-    throw new ApiError(body.success ? 'Something went wrong. Try again shortly.' : body.error, response.status);
+    const extra = body as unknown as Record<string, unknown>;
+    const code = typeof extra.code === 'string' ? extra.code : undefined;
+    const retryAfterSeconds = retryAfterOf(response);
+    throw new ApiError(body.success ? 'Something went wrong. Try again shortly.' : body.error, response.status, {
+      ...(code ? { code } : {}),
+      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {})
+    });
   }
   return body.data;
 }
@@ -282,7 +306,8 @@ export async function fetchSuggestions(songId: string, signal?: AbortSignal, lim
   return request(`/api/songs/${encodeURIComponent(songId)}/suggestions?limit=${Math.min(30, Math.max(1, limit))}`, { signal });
 }
 
-function snapshotForAccount(song: UnifiedSong): { readonly ref: SongRef; readonly snapshot: SongSnapshot } | null {
+/** The ref and snapshot an account write needs for a song (also used by Import's manual fixes). */
+export function snapshotForAccount(song: UnifiedSong): { readonly ref: SongRef; readonly snapshot: SongSnapshot } | null {
   const synced = song as UnifiedSong & { readonly libraryRef?: SongRef; readonly librarySnapshot?: SongSnapshot };
   const ref = synced.libraryRef ?? fromAllegraSong(song);
   if (!ref) return null;
@@ -349,11 +374,12 @@ export interface LibraryApplyReply {
   readonly applied: number;
 }
 
-export async function applyLibraryOps(ops: readonly LibraryOp[]): Promise<LibraryApplyReply> {
+export async function applyLibraryOps(ops: readonly LibraryOp[], options: { readonly sentAt?: number; readonly signal?: AbortSignal } = {}): Promise<LibraryApplyReply> {
   const result = await request<LibraryApplyReply>('/api/me/library/ops', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ ops, sentAt: Date.now() })
+    body: JSON.stringify({ ops, sentAt: options.sentAt ?? Date.now() }),
+    ...(options.signal ? { signal: options.signal } : {})
   });
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('allegra:library-own-write', { detail: { ...result, opCount: ops.length } }));
@@ -470,6 +496,91 @@ function isApiResponse<T>(value: unknown): value is ApiResponse<T> {
   return typeof record.success === 'boolean' && ('data' in record || 'error' in record);
 }
 
+/* ---------- Import (behind NEXT_PUBLIC_IMPORT_ENABLED) ---------- */
+
+export interface ImportMatchResult {
+  readonly index: number;
+  readonly song: SongSnapshot | null;
+  readonly confidence: 'exact' | 'close' | 'none';
+  readonly retryable?: boolean;
+}
+
+/** Finds up to 50 imported tracks in the catalog. Only title, artist, album and length are sent. */
+export async function matchImportTracks(tracks: readonly ImportedTrack[], signal?: AbortSignal): Promise<ImportMatchResult[]> {
+  const reply = await request<{ results: ImportMatchResult[] }>('/api/import/match', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ tracks }),
+    ...(signal ? { signal } : {})
+  });
+  return reply.results;
+}
+
+/** After an import is saved: its top artists seed the taste once (the server keeps 25). */
+export async function sendImportSeed(artists: readonly { name: string; count: number }[], signal?: AbortSignal): Promise<void> {
+  await requestWithoutBody('/api/me/taste/import-seed', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ artists }), ...(signal ? { signal } : {}) });
+}
+
+/* ---------- Blends (behind NEXT_PUBLIC_BLEND_ENABLED) ---------- */
+
+const BLEND_CONSENT = { policyVersion: POLICY_VERSION } as const;
+
+export async function createBlend(name?: string, operationId?: string): Promise<BlendCreated> {
+  return request('/api/blends', { method: 'POST', headers: { ...JSON_HEADERS, ...(operationId ? { 'Idempotency-Key': operationId } : {}) }, body: JSON.stringify({ ...(name ? { name } : {}), consent: BLEND_CONSENT }) });
+}
+
+export async function fetchSpotifyStatus(signal?: AbortSignal): Promise<SpotifyStatus> {
+  return request('/api/spotify/status', signal ? { signal } : undefined);
+}
+
+export async function connectSpotify(returnTo: 'web' | 'mobile' = 'web'): Promise<{ url: string }> {
+  return request('/api/spotify/connect', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ returnTo }) });
+}
+
+export async function fetchSpotifyPlaylists(signal?: AbortSignal): Promise<{ playlists: readonly SpotifySourcePlaylist[] }> {
+  return request('/api/spotify/playlists', signal ? { signal } : undefined);
+}
+
+export async function syncSpotifyPlaylist(playlistId: string, signal?: AbortSignal): Promise<SpotifySyncStep> {
+  return request('/api/spotify/sync', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ playlistId }), ...(signal ? { signal } : {}) });
+}
+
+export async function setSpotifyDailySync(dailyEnabled: boolean): Promise<{ dailyEnabled: boolean }> {
+  return request('/api/spotify/settings', { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ dailyEnabled }) });
+}
+
+export async function disconnectSpotify(): Promise<{ disconnected: true }> {
+  return request('/api/spotify/disconnect', { method: 'POST' });
+}
+
+export async function fetchBlends(signal?: AbortSignal): Promise<BlendSummary[]> {
+  return request('/api/blends', signal ? { signal } : undefined);
+}
+
+export async function fetchBlend(id: string, signal?: AbortSignal): Promise<BlendDetail> {
+  return request(`/api/blends/${encodeURIComponent(id)}`, signal ? { signal } : undefined);
+}
+
+export async function fetchBlendInvite(id: string, regenerate = false): Promise<BlendInviteLink> {
+  return request(`/api/blends/${encodeURIComponent(id)}/invite`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ regenerate }) });
+}
+
+export async function previewBlendInvite(code: string, signal?: AbortSignal): Promise<BlendInvitePreview> {
+  return request(`/api/blend-invites/${encodeURIComponent(code)}`, signal ? { signal } : undefined);
+}
+
+export async function acceptBlendInvite(code: string): Promise<BlendSummary> {
+  return request(`/api/blend-invites/${encodeURIComponent(code)}/accept`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ consent: BLEND_CONSENT }) });
+}
+
+export async function leaveBlend(id: string): Promise<void> {
+  await request<{ left: true }>(`/api/blends/${encodeURIComponent(id)}/leave`, { method: 'POST' });
+}
+
+export async function renameBlend(id: string, name: string): Promise<BlendSummary> {
+  return request(`/api/blends/${encodeURIComponent(id)}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ name }) });
+}
+
 /* ---------- Accounts, taste and sharing ---------- */
 
 export function hasStoredSession(): boolean {
@@ -548,13 +659,13 @@ export async function seedTaste(artists: readonly string[], languages: readonly 
 }
 
 /** How long a song was really listened to; the server counts it for or against the song's artist. */
-export async function sendListenSignal(song: UnifiedSong, seconds: number): Promise<void> {
+export async function sendListenSignal(song: UnifiedSong, seconds: number, playedAt: string): Promise<void> {
   const playback = snapshotForAccount(song);
   if (!playback) return;
   await requestWithoutBody('/api/me/taste/signal', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ songRef: playback.ref, song: playback.snapshot, seconds: Math.round(seconds) })
+    body: JSON.stringify({ songRef: playback.ref, song: playback.snapshot, seconds: Math.round(seconds), cumulativeSeconds: Math.round(seconds), playId: `${playback.snapshot.ref}:${playedAt}`.slice(0, 128), playedAt })
   });
 }
 

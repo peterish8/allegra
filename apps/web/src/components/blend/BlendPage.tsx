@@ -1,0 +1,326 @@
+import { Heart, LogOut, Pencil, Play, Share2 } from 'lucide-react';
+import { motion } from 'motion/react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import type { BlendTrack, PairMatch } from '@shared/blendTypes';
+import type { BlendDetail } from '@shared/blendView';
+import { BLEND_NAME_MAX, utcDay } from '@shared/blendLimits';
+import type { UnifiedSong } from '@shared/types';
+
+import { announceBlendsChanged } from '../../hooks/useBlends';
+import { ApiError, fetchBlend, fetchBlendInvite, leaveBlend, renameBlend } from '../../lib/api';
+import { BLEND_TEXT, blendTrackSong, changeText, artistName, learningOffText } from '../../lib/blendText';
+import { paths } from '../../lib/routes';
+import { itemVariants, pageVariants } from '../../motion';
+import { SkeletonCard, TactileButton } from '../ui';
+import { BlendInviteSheet } from './BlendInviteSheet';
+import { BlendRing } from './BlendRing';
+import { BlendReveal, revealSeen, useBlendPalette } from './BlendReveal';
+import { BlendSheet } from './BlendSheet';
+import { BlendStories } from './BlendStories';
+import { MemberDisc, MemberDiscs } from './MemberDisc';
+import { MatchNumber } from './MatchNumber';
+
+interface BlendPageProps {
+  readonly blendId: string;
+  readonly currentSongId: string | null;
+  readonly isPlaying: boolean;
+  readonly likedIds: ReadonlySet<string>;
+  /** The app's one playback funnel (App.playSong): never the audio element directly. */
+  readonly onPlay: (song: UnifiedSong, queue: UnifiedSong[]) => void;
+  readonly onLike: (song: UnifiedSong) => void;
+}
+
+type Load = { readonly kind: 'loading' } | { readonly kind: 'ready'; readonly detail: BlendDetail } | { readonly kind: 'notfound' } | { readonly kind: 'error'; readonly message: string };
+
+export function BlendPage({ blendId, currentSongId, isPlaying, likedIds, onPlay, onLike }: BlendPageProps) {
+  const [load, setLoad] = useState<Load>({ kind: 'loading' });
+  const [attempt, setAttempt] = useState(0);
+  const [revealing, setRevealing] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoad({ kind: 'loading' });
+    fetchBlend(blendId, controller.signal)
+      .then((detail) => {
+        if (controller.signal.aborted) return;
+        setLoad({ kind: 'ready', detail });
+        setRevealing(detail.state === 'ready' && detail.members.length >= 2 && !revealSeen(detail));
+      })
+      .catch((failure: unknown) => {
+        if (controller.signal.aborted) return;
+        if (failure instanceof ApiError && failure.status === 404) setLoad({ kind: 'notfound' });
+        else setLoad({ kind: 'error', message: failure instanceof Error ? failure.message : 'Your Blend could not be loaded.' });
+      });
+    return () => controller.abort();
+  }, [blendId, attempt]);
+
+  const waitingForBuild = load.kind === 'ready' && load.detail.members.length >= 2 && load.detail.stale === true;
+  useEffect(() => {
+    if (!waitingForBuild) return;
+    const controller = new AbortController();
+    let timer: number | undefined;
+    let pending = false;
+    let tries = 0;
+    const schedule = () => {
+      if (controller.signal.aborted || timer !== undefined || pending || tries >= 6 || document.visibilityState !== 'visible') return;
+      timer = window.setTimeout(() => { timer = undefined; void tick(); }, 3000);
+    };
+    const tick = async () => {
+      pending = true;
+      tries += 1;
+      try {
+        const detail = await fetchBlend(blendId, controller.signal);
+        if (controller.signal.aborted) return;
+        setLoad({ kind: 'ready', detail });
+        if (!detail.stale && detail.state === 'ready' && !revealSeen(detail)) setRevealing(true);
+        if (!detail.stale) return;
+      } catch { if (controller.signal.aborted) return; }
+      finally { pending = false; }
+      schedule();
+    };
+    document.addEventListener('visibilitychange', schedule);
+    schedule();
+    return () => { controller.abort(); if (timer !== undefined) window.clearTimeout(timer); document.removeEventListener('visibilitychange', schedule); };
+  }, [blendId, waitingForBuild]);
+
+  if (load.kind === 'loading') {
+    return (
+      <section className="blend-page" aria-busy="true" aria-label="Loading your Blend">
+        <div className="blend-header blend-header--skeleton"><span className="skeleton blend-join__disc-skeleton" /><span className="skeleton-line skeleton-line-long" /></div>
+        <div className="blend-stories blend-stories--skeleton" aria-hidden="true"><span className="skeleton story-card" /><span className="skeleton story-card" /></div>
+        <div className="track-list"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
+      </section>
+    );
+  }
+  if (load.kind === 'notfound') {
+    return (
+      <section className="blend-page"><div className="state-card"><h3>Blend not found</h3><p>{BLEND_TEXT.notfound}</p><Link className="import-link" href={paths.library}>Go to Library</Link></div></section>
+    );
+  }
+  if (load.kind === 'error') {
+    return (
+      <section className="blend-page"><div className="state-card" role="alert"><h3>That did not load</h3><p>{load.message}</p><TactileButton variant="accent" onClick={() => setAttempt((count) => count + 1)}>Try again</TactileButton></div></section>
+    );
+  }
+  return (
+    <>
+      {revealing ? <BlendReveal detail={load.detail} onDone={() => setRevealing(false)} /> : null}
+      <BlendView detail={load.detail} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} onRefresh={() => setAttempt(value => value + 1)} onRenamed={(name) => setLoad({ kind: 'ready', detail: { ...load.detail, name } })} />
+    </>
+  );
+}
+
+function BlendView({ detail, currentSongId, isPlaying, likedIds, onPlay, onLike, onRefresh, onRenamed }: {
+  readonly detail: BlendDetail;
+  readonly currentSongId: string | null;
+  readonly isPlaying: boolean;
+  readonly likedIds: ReadonlySet<string>;
+  readonly onPlay: (song: UnifiedSong, queue: UnifiedSong[]) => void;
+  readonly onLike: (song: UnifiedSong) => void;
+  readonly onRenamed: (name: string) => void;
+  readonly onRefresh: () => void;
+}) {
+  const router = useRouter();
+  const palette = useBlendPalette(detail);
+  const [filter, setFilter] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [invite, setInvite] = useState<{ code: string; url: string; expiresAt: number } | null>(null);
+  const [openPair, setOpenPair] = useState<PairMatch | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const viewer = detail.members.find((member) => member.isYou);
+  const group = detail.members.length > 2;
+  const pair = detail.pairs[0];
+  const match = group && detail.pairs.length > 0 ? Math.round(detail.pairs.reduce((total, item) => total + item.match, 0) / detail.pairs.length) : pair?.match;
+  const tracks = useMemo(() => (filter ? detail.tracks.filter((track) => track.for.includes(filter)) : detail.tracks), [detail.tracks, filter]);
+  const songs = useMemo(() => tracks.map(blendTrackSong), [tracks]);
+  const updatedToday = !detail.stale && detail.builtFor === utcDay(Date.now());
+  const waiting = detail.members.length < 2;
+
+  const leave = async (): Promise<void> => {
+    try {
+      await leaveBlend(detail.id);
+      announceBlendsChanged();
+      router.push(paths.library);
+    } catch (failure) {
+      setLeaveError(failure instanceof Error ? failure.message : 'That did not work. Try again.');
+    }
+  };
+
+  const openInvite = useCallback(async () => {
+    setInviteError(null);
+    try {
+      setInvite(await fetchBlendInvite(detail.id));
+    } catch (failure) {
+      setInviteError(failure instanceof Error ? failure.message : 'The invite could not be loaded. Try again.');
+    }
+  }, [detail.id]);
+
+  return (
+    <motion.section className="blend-page" aria-labelledby="blend-title" variants={pageVariants} initial="hidden" animate="visible">
+      <motion.header className="blend-header" variants={itemVariants}>
+        {group ? <BlendRing members={detail.members} pairs={detail.pairs} onPair={setOpenPair} /> : <MemberDiscs members={detail.members} size="large" />}
+        <div className="blend-header__copy">
+          <BlendTitle detail={detail} canRename={viewer?.userId === detail.ownerId} onRenamed={onRenamed} />
+          <p className="blend-header__meta">
+            {match !== undefined && !waiting ? <><span className="blend-header__match"><MatchNumber value={match} /></span> {group ? 'group match' : 'taste match'}</> : null}
+            {!group && pair?.confidence === 'low' ? <span className="blend-chip-note">{BLEND_TEXT.lowconfidence}</span> : null}
+            {updatedToday ? <span className="blend-header__updated">Updated today</span> : null}
+          </p>
+          {detail.change ? <p className="blend-header__change">{changeText(detail.change, artistName(detail.change.artist, detail.tracks))}</p> : null}
+          {detail.members.filter((member) => !member.learning).map((member) => <p key={member.userId} className="blend-header__note">{member.isYou ? 'Your picks come from likes and playlists.' : learningOffText(member.displayName)}</p>)}
+        </div>
+        <div className="blend-header__actions">
+          {songs.length > 0 ? <TactileButton variant="accent" icon={Play} onClick={() => { const first = songs[0]; if (first) onPlay(first, songs); }}>Play</TactileButton> : null}
+          <TactileButton variant="secondary" icon={Share2} onClick={() => void openInvite()}>Invite</TactileButton>
+          <TactileButton variant="ghost" icon={LogOut} onClick={() => setLeaving(true)}>Leave</TactileButton>
+        </div>
+      </motion.header>
+      {inviteError ? <p role="alert" className="blend-sheet__error">{inviteError}</p> : null}
+      {detail.stale && !waiting ? <p role="status" className="blend-header__note">Your Blend is waiting to refresh. <button type="button" onClick={onRefresh}>Refresh</button></p> : null}
+
+      {waiting ? (
+        <div className="state-card"><h3>Waiting for your friend</h3><p>Send the invite link. Your Blend fills in when they join.</p></div>
+      ) : detail.state === 'not_enough' ? (
+        <div className="state-card"><h3>Not enough yet</h3><p>{BLEND_TEXT.notenough}</p></div>
+      ) : (
+        <>
+          <BlendStories detail={detail} palette={palette} onPlay={(song) => onPlay(song, [song])} />
+          <div className="blend-chips" role="group" aria-label="Show picks for">
+            <button type="button" aria-pressed={filter === null} className={`blend-chip${filter === null ? ' is-active' : ''}`} onClick={() => setFilter(null)}>All</button>
+            {detail.members.map((member) => (
+              <button key={member.userId} type="button" aria-pressed={filter === member.userId} className={`blend-chip${filter === member.userId ? ' is-active' : ''}`} onClick={() => setFilter(member.userId)}>
+                <MemberDisc member={member} size="small" />{member.isYou ? 'You' : member.displayName}
+              </button>
+            ))}
+          </div>
+          <ol className="blend-tracks">
+            {tracks.map((track, index) => (
+              <BlendTrackRow
+                key={track.song.ref}
+                track={track}
+                index={index}
+                detail={detail}
+                song={songs[index] as UnifiedSong}
+                active={currentSongId === songs[index]?.id}
+                isPlaying={isPlaying}
+                liked={likedIds.has(songs[index]?.id ?? '')}
+                onPlay={() => { const song = songs[index]; if (song) onPlay(song, songs); }}
+                onLike={() => { const song = songs[index]; if (song) onLike(song); }}
+              />
+            ))}
+          </ol>
+        </>
+      )}
+
+      {leaving ? (
+        <BlendSheet title={`Leave ${detail.name}?`} onClose={() => { setLeaving(false); setLeaveError(null); }}>
+          {() => (
+            <>
+              <p className="blend-sheet__body">You&rsquo;ll stop seeing it, and it refreshes without your songs.</p>
+              <div className="blend-sheet__actions">
+                <TactileButton variant="accent" onClick={() => void leave()}>Leave</TactileButton>
+                <TactileButton variant="ghost" onClick={() => setLeaving(false)}>Stay</TactileButton>
+              </div>
+              {leaveError ? <p className="blend-sheet__error" role="alert">{leaveError}</p> : null}
+            </>
+          )}
+        </BlendSheet>
+      ) : null}
+      {invite ? <BlendInviteSheet blendId={detail.id} invite={invite} onClose={() => setInvite(null)} /> : null}
+      {openPair ? <PairSheet pair={openPair} detail={detail} onClose={() => setOpenPair(null)} /> : null}
+    </motion.section>
+  );
+}
+
+function BlendTitle({ detail, canRename, onRenamed }: { readonly detail: BlendDetail; readonly canRename: boolean; readonly onRenamed: (name: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(detail.name);
+  const [error, setError] = useState<string | null>(null);
+  const save = async (): Promise<void> => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > BLEND_NAME_MAX) {
+      setError(`A name needs 1 to ${BLEND_NAME_MAX} characters.`);
+      return;
+    }
+    try {
+      const saved = await renameBlend(detail.id, trimmed);
+      onRenamed(saved.name);
+      announceBlendsChanged();
+      setEditing(false);
+      setError(null);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'That did not save.');
+    }
+  };
+  if (!editing) {
+    return (
+      <h1 id="blend-title" className="blend-header__title">
+        {detail.name}
+        {canRename ? <button type="button" className="blend-rename" onClick={() => { setName(detail.name); setEditing(true); }} aria-label="Rename this Blend"><Pencil size={14} aria-hidden="true" /></button> : null}
+      </h1>
+    );
+  }
+  return (
+    <form className="blend-rename-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      <h1 id="blend-title" className="sr-only">{detail.name}</h1>
+      <label className="sr-only" htmlFor="blend-name">Blend name</label>
+      <input id="blend-name" value={name} maxLength={BLEND_NAME_MAX} onChange={(event) => setName(event.target.value)} autoFocus />
+      <TactileButton type="submit" variant="accent">Save</TactileButton>
+      <TactileButton type="button" variant="ghost" onClick={() => { setEditing(false); setError(null); }}>Cancel</TactileButton>
+      {error ? <p className="blend-sheet__error" role="alert">{error}</p> : null}
+    </form>
+  );
+}
+
+function BlendTrackRow({ track, index, detail, song, active, isPlaying, liked, onPlay, onLike }: {
+  readonly track: BlendTrack;
+  readonly index: number;
+  readonly detail: BlendDetail;
+  readonly song: UnifiedSong;
+  readonly active: boolean;
+  readonly isPlaying: boolean;
+  readonly liked: boolean;
+  readonly onPlay: () => void;
+  readonly onLike: () => void;
+}) {
+  const holders = detail.members.filter((member) => track.for.includes(member.userId));
+  return (
+    <li className={`blend-track${active ? ' is-current' : ''}`}>
+      <span className="blend-track__index" aria-hidden="true">{index + 1}</span>
+      <button type="button" className="blend-track__main" onClick={onPlay} aria-label={`Play ${song.title} by ${song.artist}`} aria-current={active && isPlaying ? 'true' : undefined}>
+        {song.artwork ? <img className="blend-track__art" src={song.artwork} alt="" width={44} height={44} loading="lazy" /> : <span className="blend-track__art" />}
+        <span className="blend-track__text"><span className="blend-track__title">{song.title}</span><span className="blend-track__artist">{song.artist}</span></span>
+      </button>
+      <span className="blend-track__for">
+        {track.kind === 'discovery' ? <span className="blend-track__new">{BLEND_TEXT.newForYou}</span> : <MemberDiscs members={holders} size="small" />}
+      </span>
+      <button type="button" className={`blend-track__like${liked ? ' is-active' : ''}`} onClick={onLike} aria-pressed={liked} aria-label={liked ? `Unlike ${song.title}` : `Like ${song.title}`}>
+        <Heart size={16} fill={liked ? 'currentColor' : 'none'} aria-hidden="true" />
+      </button>
+    </li>
+  );
+}
+
+/** One pair of a group, opened from its line in the ring: the match and both directions. */
+function PairSheet({ pair, detail, onClose }: { readonly pair: PairMatch; readonly detail: BlendDetail; readonly onClose: () => void }) {
+  const viewer = detail.members.find((member) => member.isYou)?.userId;
+  const viewerIsA = pair.a === viewer;
+  const otherId = viewerIsA ? pair.b : pair.a;
+  const other = detail.members.find((member) => member.userId === otherId)?.displayName ?? 'Someone';
+  return (
+    <BlendSheet title={`You and ${other}`} onClose={onClose}>
+      {() => (
+        <>
+          <p className="blend-sheet__lead">Taste match {pair.match}%{pair.confidence === 'low' ? ` · ${BLEND_TEXT.lowconfidence}` : ''}</p>
+          <p className="blend-sheet__body">Estimated overlap: your picks fit {Math.round(100 * (viewerIsA ? pair.cover.b : pair.cover.a))}% of {other}&rsquo;s taste; theirs fit {Math.round(100 * (viewerIsA ? pair.cover.a : pair.cover.b))}% of yours.</p>
+          {pair.together ? <p className="blend-sheet__body">The artist that brings you together: {artistName(pair.together, detail.tracks)}</p> : null}
+          <div className="blend-sheet__actions"><TactileButton variant="ghost" onClick={onClose}>Close</TactileButton></div>
+        </>
+      )}
+    </BlendSheet>
+  );
+}

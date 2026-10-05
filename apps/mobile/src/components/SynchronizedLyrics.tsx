@@ -57,7 +57,8 @@ import { DisplayWord, displayWords, isRtlText, LyricWord } from '@shared/wordSyn
 import { useSettingsStore } from '../store/settingsStore';
 import { usePlayerStore } from '../store/playerStore';
 import { lyricClockAt } from '../playback/lyricClock';
-import { glideSettled, glideStep, lineRestOpacity, LINE_LEAD_S, lyricSweep } from '../playback/lyricMotion';
+import { featherAlphas, featherAt, glideSettled, glideStep, lineRestOpacity, LINE_LEAD_S, lyricSweep } from '../playback/lyricMotion';
+import { isLowEndDevice } from '../utils/performanceTier';
 import { anchorFooter, anchorScrollY, LineBox, lineOffsets } from '../playback/lyricLayout';
 import InstrumentalWaveform, { isInstrumentalLyric, useIsActiveLine } from './InstrumentalWaveform';
 import { Frosted } from './allegra/Frosted';
@@ -347,30 +348,66 @@ const SweepWord = ({ word, textStyle, rtl, clockSV, delaySV, reduceMotion }: Swe
   const segments = word.segments;
   const weight = word.weight;
   const widthSV = useSharedValue(0);
-  // How much of the word is still unlit, in px: the clip slides that far back
-  // and the bright copy slides forward by the same, so the letters stay put.
-  const unlitSV = useDerivedValue(() => {
+  // The sung part of the word, 0..1, shared by the copies that make its soft edge.
+  const litSV = useDerivedValue(() => {
     const lit = lyricSweep(clockSV.value + delaySV.value, segments, weight);
-    const p = reduceMotion ? (lit > 0 ? 1 : 0) : lit;
-    return (1 - p) * widthSV.value;
+    return reduceMotion ? (lit > 0 ? 1 : 0) : lit;
   });
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    widthSV.value = e.nativeEvent.layout.width;
+  }, [widthSV]);
+  // One hard-edged copy under Reduce Motion, two on a low-end phone, three otherwise.
+  const count = reduceMotion ? 1 : isLowEndDevice() ? 2 : 3;
+  const alphas = featherAlphas(count);
+  return (
+    <View style={gapStyle(word, textStyle, rtl)}>
+      <Text style={[styles.lyricText, textStyle, styles.sizer]} onLayout={onLayout}>{word.text}</Text>
+      {alphas.map((alpha, step) => (
+        <SweepCopy
+          key={step}
+          text={word.text}
+          textStyle={textStyle}
+          rtl={rtl}
+          litSV={litSV}
+          widthSV={widthSV}
+          step={step}
+          count={count}
+          alpha={alpha}
+        />
+      ))}
+    </View>
+  );
+};
+
+interface SweepCopyProps {
+  text: string;
+  textStyle: TextStyle;
+  rtl: boolean;
+  litSV: SharedValue<number>;
+  widthSV: SharedValue<number>;
+  step: number;
+  count: number;
+  alpha: number;
+}
+
+/**
+ * One bright copy of a word, revealed by a sliding clip. How much of the word is still unlit, in px: the clip slides
+ * that far back and the bright copy slides forward by the same, so the letters stay put. Stacked copies sit a step
+ * apart (`featherAt`), which is what makes the edge soft.
+ */
+const SweepCopy = ({ text, textStyle, rtl, litSV, widthSV, step, count, alpha }: SweepCopyProps) => {
+  const unlitSV = useDerivedValue(() => (1 - featherAt(litSV.value, step, count)) * widthSV.value);
   const clipStyle = useAnimatedStyle((): ViewStyle => ({
-    opacity: widthSV.value > 0 ? 1 : 0,
+    opacity: widthSV.value > 0 ? alpha : 0,
     transform: [{ translateX: rtl ? unlitSV.value : -unlitSV.value }],
   }));
   const brightStyle = useAnimatedStyle((): TextStyle => ({
     transform: [{ translateX: rtl ? -unlitSV.value : unlitSV.value }],
   }));
-  const onLayout = useCallback((e: LayoutChangeEvent) => {
-    widthSV.value = e.nativeEvent.layout.width;
-  }, [widthSV]);
   return (
-    <View style={gapStyle(word, textStyle, rtl)}>
-      <Text style={[styles.lyricText, textStyle, styles.sizer]}>{word.text}</Text>
-      <Animated.View style={[StyleSheet.absoluteFill, styles.sweepClip, clipStyle]} onLayout={onLayout}>
-        <Animated.Text style={[styles.lyricText, textStyle, brightStyle]}>{word.text}</Animated.Text>
-      </Animated.View>
-    </View>
+    <Animated.View style={[StyleSheet.absoluteFill, styles.sweepClip, clipStyle]}>
+      <Animated.Text style={[styles.lyricText, textStyle, brightStyle]}>{text}</Animated.Text>
+    </Animated.View>
   );
 };
 
@@ -608,12 +645,12 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   // ─── Following the sung line ─────────────────────────────────────
   const scrollYSV = useSharedValue(0);
   const lastIndexSV = useSharedValue(-1);
-  /** What is left of the block's glide: the lines sit this far below where the list has already jumped to. */
+  /** How far the list still is from the sung line's place, px. The glide scrolls the list itself, so there is one
+   *  channel and nothing to fall out of step (a jump plus a compensating transform flashed one frame a line too high). */
   const glideSV = useSharedValue(0);
   /** The glide's speed (px/s), kept across line changes so the flow never restarts from rest. */
   const glideVelocitySV = useSharedValue(0);
   const glideRunningSV = useSharedValue(false);
-  const glideStyle = useAnimatedStyle((): ViewStyle => ({ transform: [{ translateY: glideSV.value }] }));
   // The glide runs a frame at a time only while the lines are still moving.
   const glideFrameRef = useRef<FrameCallback | null>(null);
   const setGlideActive = useCallback((active: boolean) => {
@@ -621,18 +658,27 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   }, []);
   const glideTick = useCallback((info: FrameInfo) => {
     'worklet';
-    const dt = Math.min(0.05, (info.timeSincePreviousFrame ?? 16) / 1000);
-    const next = glideStep(glideSV.value, glideVelocitySV.value, dt);
-    if (glideSettled(next)) {
+    const target = activeTargetYSV.value;
+    // Someone took the list, or the lyrics were hidden: stay where it is.
+    if (target < 0 || isUserScrollingSV.value || !liveSV.value) {
       glideSV.value = 0;
       glideVelocitySV.value = 0;
       glideRunningSV.value = false;
       runOnJS(setGlideActive)(false);
       return;
     }
-    glideSV.value = next.offset;
-    glideVelocitySV.value = next.velocity;
-  }, [glideSV, glideVelocitySV, glideRunningSV, setGlideActive]);
+    const dt = Math.min(0.05, (info.timeSincePreviousFrame ?? 16) / 1000);
+    const next = glideStep(glideSV.value, glideVelocitySV.value, dt);
+    const settled = glideSettled(next);
+    glideSV.value = settled ? 0 : next.offset;
+    glideVelocitySV.value = settled ? 0 : next.velocity;
+    scrollYSV.value = target + glideSV.value;
+    scrollTo(scrollRef, 0, scrollYSV.value, false);
+    if (settled) {
+      glideRunningSV.value = false;
+      runOnJS(setGlideActive)(false);
+    }
+  }, [activeTargetYSV, isUserScrollingSV, liveSV, scrollRef, scrollYSV, glideSV, glideVelocitySV, glideRunningSV, setGlideActive]);
   const glideFrame = useFrameCallback(glideTick, false);
   glideFrameRef.current = glideFrame;
   const stopGlide = useCallback(() => {
@@ -677,25 +723,24 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
       if (prev && prev.live && prev.target === now.target && prev.user === now.user) return;
       const toY = now.target;
       const fromY = scrollYSV.value;
-      const delta = toY - fromY;
       // Coming back from hidden is a first frame too: the list jumps to the sung line, no glide from the old place.
       const firstFrame = !prev || !prev.live || lastIndexSV.value < 0;
-      const sameLine = !(prev && prev.user) && now.idx === lastIndexSV.value;
       lastIndexSV.value = now.idx;
-      scrollTo(scrollRef, 0, toY, false);
-      scrollYSV.value = toY;
-      if (firstFrame || Math.abs(delta) < 0.5 || reduceMotion) {
+      if (firstFrame || Math.abs(toY - fromY) < 0.5 || reduceMotion) {
+        scrollTo(scrollRef, 0, toY, false);
+        scrollYSV.value = toY;
         stopGlide();
         return;
       }
-      // The block starts where it was on screen (what was left of the last
-      // glide plus this jump, or a line re-measured by a pixel or two) and
-      // eases home, at the speed it already had. A seek comes in from at most
-      // 60% of the height away instead of racing across the song.
+      // The list eases from where it is to the new place, at the speed it already had (the glide scrolls it a frame
+      // at a time). A seek starts at most 60% of the height away instead of racing across the song.
       const cap = containerHeightSV.value * 0.6;
-      glideSV.value = sameLine && Math.abs(delta) < 2
-        ? glideSV.value + delta
-        : Math.max(-cap, Math.min(cap, glideSV.value + delta));
+      const startY = toY + Math.max(-cap, Math.min(cap, fromY - toY));
+      if (startY !== fromY) {
+        scrollTo(scrollRef, 0, startY, false);
+        scrollYSV.value = startY;
+      }
+      glideSV.value = startY - toY;
       if (!glideRunningSV.value) {
         glideRunningSV.value = true;
         runOnJS(setGlideActive)(true);
@@ -752,13 +797,8 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
     },
     onBeginDrag: () => {
       draggingSV.value = true;
-      // Grabbed mid-glide: the list takes over from where the lines are on
-      // screen, so nothing jumps under the finger.
-      if (glideSV.value !== 0) {
-        const left = glideSV.value;
-        stopGlide();
-        scrollTo(scrollRef, 0, Math.max(0, scrollYSV.value - left), false);
-      }
+      // Grabbed mid-glide: the list is already where the lines are, so the finger just takes over.
+      stopGlide();
       runOnJS(clearResume)();
       if (isUserScrollingSV.value) return;
       isUserScrollingSV.value = true;
@@ -839,7 +879,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
       >
         <View style={{ height: topSpacerHeight }} />
         {headerContent}
-        <Animated.View style={glideStyle} onLayout={handleLinesLayout}>{lyrics.map(renderLyricLine)}</Animated.View>
+        <View onLayout={handleLinesLayout}>{lyrics.map(renderLyricLine)}</View>
         <View style={{ height: anchorFooter(viewportHeight, activeLinePosition, bottomSpacerHeight) }} />
       </Animated.ScrollView>
 

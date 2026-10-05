@@ -4,7 +4,12 @@
  */
 import { LEGAL_PATHS, type LegalDocument } from '@shared/legal';
 
-export type AppView = 'home' | 'discover' | 'library' | 'album' | 'artist' | 'playlist' | 'liked' | 'shared' | 'settings' | LegalDocument;
+import { flags as defaultFlags, type Flags } from './flags';
+
+export type AppView =
+  | 'home' | 'discover' | 'library' | 'album' | 'artist' | 'playlist' | 'liked' | 'shared' | 'settings'
+  | 'import' | 'blends' | 'blend' | 'blendJoin'
+  | LegalDocument;
 
 export function isLegalView(view: AppView): view is LegalDocument {
   return view === 'privacy' || view === 'terms' || view === 'copyright';
@@ -15,6 +20,10 @@ export interface Route {
   readonly artistName: string | null;
   readonly playlistId: string | null;
   readonly sharedCode: string | null;
+  /** `/blend/:id`. */
+  readonly blendId: string | null;
+  /** `/blend/join/:code`. */
+  readonly inviteCode: string | null;
 }
 
 export const paths = {
@@ -24,13 +33,17 @@ export const paths = {
   liked: '/liked',
   album: '/album',
   settings: '/settings',
+  import: '/import',
+  blends: '/blends',
   ...LEGAL_PATHS,
+  blend: (id: string): string => `/blend/${encodeURIComponent(id)}`,
+  blendJoin: (code: string): string => `/blend/join/${encodeURIComponent(code)}`,
   artist: (name: string): string => `/artist/${encodeURIComponent(name)}`,
   playlist: (id: string): string => `/playlist/${encodeURIComponent(id)}`,
   shared: (code: string): string => `/shared/${encodeURIComponent(code)}`
 } as const;
 
-const NO_PARAMS: Omit<Route, 'view'> = { artistName: null, playlistId: null, sharedCode: null };
+const NO_PARAMS: Omit<Route, 'view'> = { artistName: null, playlistId: null, sharedCode: null, blendId: null, inviteCode: null };
 
 function decode(segment: string | undefined): string | null {
   if (!segment) return null;
@@ -41,9 +54,23 @@ function decode(segment: string | undefined): string | null {
   }
 }
 
-export function parseRoute(pathname: string): Route {
-  const [first, second] = pathname.split('/').filter(Boolean);
+/** `enabled` gates the routes behind feature flags; off, they fall back as an unknown path would. */
+export function parseRoute(pathname: string, enabled: Flags = defaultFlags): Route {
+  const [first, second, third] = pathname.split('/').filter(Boolean);
   switch (first) {
+    case 'import':
+      return { view: enabled.import ? 'import' : 'home', ...NO_PARAMS };
+    case 'blends':
+      return { view: enabled.blend ? 'blends' : 'home', ...NO_PARAMS };
+    case 'blend': {
+      if (!enabled.blend) return { view: 'home', ...NO_PARAMS };
+      if (second === 'join') {
+        const inviteCode = decode(third)?.toLowerCase() ?? null;
+        return inviteCode ? { view: 'blendJoin', ...NO_PARAMS, inviteCode } : { view: 'blends', ...NO_PARAMS };
+      }
+      const blendId = decode(second);
+      return blendId ? { view: 'blend', ...NO_PARAMS, blendId } : { view: 'blends', ...NO_PARAMS };
+    }
     case 'discover':
       return { view: 'discover', ...NO_PARAMS };
     case 'library':

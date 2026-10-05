@@ -4,7 +4,7 @@ import presenceTest from '@convex-dev/presence/test';
 import rateLimiterTest from '@convex-dev/rate-limiter/test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ACCOUNT_RETENTION_DAYS, GUEST_RETENTION_DAYS } from '../packages/shared/legal';
+import { ACCOUNT_RETENTION_DAYS, ACTIVE_TOUCH_DAYS, GUEST_RETENTION_DAYS } from '../packages/shared/legal';
 import { api, internal } from './_generated/api';
 import schema from './schema';
 
@@ -128,6 +128,56 @@ describe('account erase', () => {
     expect(await rowsOf(t, asha)).toEqual(NOTHING);
   });
 
+  it('erases the most-played tally in batches and leaves other listeners alone', async () => {
+    const t = backend();
+    const asha = await seedAccount(t, 'asha');
+    const ravi = await seedAccount(t, 'ravi');
+    const song = (n: number) => ({ ref: `saavn:s${n}`, title: `Song ${n}`, artist: `Artist ${n % 7}`, artwork: '', duration: 200 });
+    await t.run(async (ctx) => {
+      for (const userId of [asha, ravi]) {
+        const count = userId === asha ? 250 : 3;
+        for (let n = 0; n < count; n++) {
+          await ctx.db.insert('tasteSongs', { userId, identity: `id-${n}`, ...song(n), score: n + 1, likeBonus: false, recentListens: [], updatedAt: 1 });
+        }
+        await ctx.db.insert('tasteMeta', { userId, songCount: count, updatedAt: 1 });
+      }
+    });
+    const tallyOf = (userId: string) => t.run(async (ctx) => ({
+      songs: (await ctx.db.query('tasteSongs').withIndex('by_userId_and_score', (q) => q.eq('userId', userId)).take(1000)).length,
+      meta: (await ctx.db.query('tasteMeta').withIndex('by_userId', (q) => q.eq('userId', userId)).take(10)).length
+    }));
+
+    await t.mutation(api.account.erase, { secret, userId: asha });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await tallyOf(asha)).toEqual({ songs: 0, meta: 0 });
+    expect(await tallyOf(ravi)).toEqual({ songs: 3, meta: 1 });
+  });
+
+  it('erasing an account leaves every Blend: ownership passes on, a Blend left empty is deleted', async () => {
+    const t = backend();
+    const asha = await seedAccount(t, 'asha');
+    const consent = { policyVersion: '2026-10-05', at: 1 };
+    const together = await t.mutation(api.blends.create, { secret, userId: asha, displayName: 'Asha', name: 'Pair', consent, learning: true, code: 'abcdefghjkmn', operationId: 'account-erase-pair-123' });
+    await t.mutation(api.blends.join, { secret, code: together.code, userId: 'ravi', displayName: 'Ravi', consent, learning: true });
+    const alone = await t.mutation(api.blends.create, { secret, userId: asha, displayName: 'Asha', name: 'Solo', consent, learning: true, code: 'abcdefghjkmp' });
+
+    await t.mutation(api.account.erase, { secret, userId: asha });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const pair = await t.query(api.blends.get, { secret, blendId: together.blendId, userId: 'ravi' });
+    expect(pair?.ownerId).toBe('ravi');
+    expect((await t.query(api.blends.preview, { secret, code: together.code, now: Date.now() })).inviterName).toBe('Ravi');
+    expect(pair?.memberCount).toBe(1);
+    expect(pair?.stale).toBe(true);
+    expect(await t.run(async (ctx) => {
+      const id = ctx.db.normalizeId('blends', alone.blendId);
+      return id ? ctx.db.get('blends', id) : null;
+    })).toBeNull();
+    expect(await t.query(api.blends.listForUser, { secret, userId: asha })).toEqual([]);
+    expect(await t.run(async (ctx) => ctx.db.query('blendOperations').withIndex('by_userId_and_operationId', (q) => q.eq('userId', asha)).take(10))).toEqual([]);
+  });
+
   it('marks an export incomplete rather than silently dropping extra shares', async () => {
     const t = backend();
     const userId = await seedAccount(t, 'export');
@@ -167,16 +217,64 @@ describe('retention sweep', () => {
     return t.run(async (ctx) => (await ctx.db.query('profiles').take(100)).map((row) => row.userId).sort());
   }
 
+  it('keeps a guest until the policy period and touch interval have elapsed', async () => {
+    const t = backend();
+    const now = Date.parse('2026-10-01T00:00:00.000Z');
+    vi.setSystemTime(new Date(now));
+    await insertProfile(t, 'guest-inside-touch-slack', true, now - (GUEST_RETENTION_DAYS + ACTIVE_TOUCH_DAYS - 1) * DAY);
+
+    await t.mutation(internal.account.sweepInactive, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await remaining(t)).toEqual(['guest-inside-touch-slack']);
+  });
+
+  it('erases a guest after the policy period and touch interval have elapsed', async () => {
+    const t = backend();
+    const now = Date.parse('2026-10-01T00:00:00.000Z');
+    vi.setSystemTime(new Date(now));
+    await insertProfile(t, 'guest-past-touch-slack', true, now - (GUEST_RETENTION_DAYS + ACTIVE_TOUCH_DAYS + 1) * DAY);
+
+    await t.mutation(internal.account.sweepInactive, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await remaining(t)).toEqual([]);
+  });
+
+  it('keeps an account until the policy period and touch interval have elapsed', async () => {
+    const t = backend();
+    const now = Date.parse('2026-10-01T00:00:00.000Z');
+    vi.setSystemTime(new Date(now));
+    await insertProfile(t, 'account-inside-touch-slack', false, now - (ACCOUNT_RETENTION_DAYS + ACTIVE_TOUCH_DAYS - 1) * DAY);
+
+    await t.mutation(internal.account.sweepInactive, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await remaining(t)).toEqual(['account-inside-touch-slack']);
+  });
+
+  it('erases an account after the policy period and touch interval have elapsed', async () => {
+    const t = backend();
+    const now = Date.parse('2026-10-01T00:00:00.000Z');
+    vi.setSystemTime(new Date(now));
+    await insertProfile(t, 'account-past-touch-slack', false, now - (ACCOUNT_RETENTION_DAYS + ACTIVE_TOUCH_DAYS + 1) * DAY);
+
+    await t.mutation(internal.account.sweepInactive, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await remaining(t)).toEqual([]);
+  });
+
   it('erases only profiles unused for longer than the policy allows', async () => {
     const t = backend();
     const now = Date.now();
-    await insertProfile(t, 'guest-stale', true, now - (GUEST_RETENTION_DAYS + 1) * DAY);
+    await insertProfile(t, 'guest-stale', true, now - (GUEST_RETENTION_DAYS + ACTIVE_TOUCH_DAYS + 1) * DAY);
     await insertProfile(t, 'guest-fresh', true, now - (GUEST_RETENTION_DAYS - 1) * DAY);
     // Written before the marker existed: never guessed at.
     await insertProfile(t, 'guest-legacy', true);
     // An account gets the longer period: old enough to drop a guest, not an account.
     await insertProfile(t, 'account-quiet', false, now - (GUEST_RETENTION_DAYS + 30) * DAY);
-    await insertProfile(t, 'account-stale', false, now - (ACCOUNT_RETENTION_DAYS + 1) * DAY);
+    await insertProfile(t, 'account-stale', false, now - (ACCOUNT_RETENTION_DAYS + ACTIVE_TOUCH_DAYS + 1) * DAY);
 
     const swept = await t.mutation(internal.account.sweepInactive, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);

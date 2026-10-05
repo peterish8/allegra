@@ -7,6 +7,7 @@ import '../src/styles/global.css';
 import '../src/styles/components.css';
 import '../src/styles/app.css';
 import '../src/styles/coverflow.css';
+import '../src/styles/blend.css';
 
 import { ClientShell } from './ClientShell';
 import { Telemetry } from './Telemetry';

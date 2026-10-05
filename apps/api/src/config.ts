@@ -25,6 +25,9 @@ export interface AppConfig {
   readonly convexServerSecret?: string;
   /** Convex site origin, which issues Convex Auth session tokens. Unset disables Google sign-in. */
   readonly convexSiteUrl?: string;
+  /** Public Spotify client identifier and exact registered OAuth callback. */
+  readonly spotifyClientId?: string;
+  readonly spotifyRedirectUri: string;
   readonly enableRequestLogging: boolean;
   /**
    * MusicBrainz + Cover Art Archive, which name the record a song was released on.
@@ -32,6 +35,10 @@ export interface AppConfig {
    */
   readonly musicBrainz?: MusicBrainzConfig;
   readonly translation?: TranslationConfig;
+  /** `IMPORT_ENABLED=true` turns on Spotify/CSV import matching. Off by default (PLAN.md D18). */
+  readonly importEnabled: boolean;
+  /** `BLEND_ENABLED=true` turns on Blends. Off by default (PLAN.md D18). */
+  readonly blendEnabled: boolean;
 }
 
 /** Both hosts are free and keyless; the contact goes in the User-Agent they require. */
@@ -139,6 +146,12 @@ export function loadConfig(env: NodeJS.Dict<string>): AppConfig {
   // Convex serves functions from .convex.cloud and HTTP (including auth) from
   // .convex.site. Deriving it keeps one URL to configure instead of two that must agree.
   const convexSiteUrl = env.CONVEX_SITE_URL?.trim() || convexUrl?.replace(/\.convex\.cloud$/, '.convex.site');
+  const spotifyClientId = env.SPOTIFY_CLIENT_ID?.trim() || undefined;
+  const spotifyRedirectUri = env.SPOTIFY_REDIRECT_URI?.trim() || 'https://allegravibe.vercel.app/api/spotify/callback';
+  try {
+    const callback = new URL(spotifyRedirectUri);
+    if (callback.protocol !== 'https:' && !(callback.protocol === 'http:' && !production)) throw new Error('scheme');
+  } catch { throw new Error('SPOTIFY_REDIRECT_URI must be a trusted https URL (http is allowed in development).'); }
 
 
   const config: AppConfig = {
@@ -158,7 +171,11 @@ export function loadConfig(env: NodeJS.Dict<string>): AppConfig {
     ...(kugouApiUrl ? { kugouApiUrl } : {}),
     ...(convexUrl && convexServerSecret ? { convexUrl, convexServerSecret } : {}),
     ...(convexSiteUrl ? { convexSiteUrl } : {}),
+    ...(spotifyClientId ? { spotifyClientId } : {}),
+    spotifyRedirectUri,
     enableRequestLogging: nodeEnv === 'production',
+    importEnabled: env.IMPORT_ENABLED?.trim() === 'true',
+    blendEnabled: env.BLEND_ENABLED?.trim() === 'true',
     ...(translation ? { translation } : {}),
     ...(musicBrainz ? { musicBrainz } : {})
   };

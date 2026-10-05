@@ -105,8 +105,11 @@ async function closeFor(ctx: MutationCtx, code: string): Promise<number> {
     .take(MAX_PER_CODE);
   let closed = 0;
   for (const row of rows) {
-    if (row.status === 'closed') continue;
-    await ctx.db.patch('reports', row._id, { status: 'closed' });
+    if (row.status === 'closed') {
+      if (row.closedAt === undefined) await ctx.db.patch('reports', row._id, { closedAt: Date.now() });
+      continue;
+    }
+    await ctx.db.patch('reports', row._id, { status: 'closed', closedAt: Date.now() });
     closed += 1;
   }
   return closed;

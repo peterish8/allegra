@@ -11,6 +11,7 @@
 import type * as account from "../account.js";
 import type * as auth from "../auth.js";
 import type * as authRedirect from "../authRedirect.js";
+import type * as blends from "../blends.js";
 import type * as connect from "../connect.js";
 import type * as covers from "../covers.js";
 import type * as crons from "../crons.js";
@@ -20,7 +21,11 @@ import type * as oauth from "../oauth.js";
 import type * as profiles from "../profiles.js";
 import type * as relations from "../relations.js";
 import type * as reports from "../reports.js";
+import type * as retention from "../retention.js";
 import type * as shares from "../shares.js";
+import type * as spotify from "../spotify.js";
+import type * as spotifyCron from "../spotifyCron.js";
+import type * as taste from "../taste.js";
 
 import type {
   ApiFromModules,
@@ -32,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   account: typeof account;
   auth: typeof auth;
   authRedirect: typeof authRedirect;
+  blends: typeof blends;
   connect: typeof connect;
   covers: typeof covers;
   crons: typeof crons;
@@ -41,7 +47,11 @@ declare const fullApi: ApiFromModules<{
   profiles: typeof profiles;
   relations: typeof relations;
   reports: typeof reports;
+  retention: typeof retention;
   shares: typeof shares;
+  spotify: typeof spotify;
+  spotifyCron: typeof spotifyCron;
+  taste: typeof taste;
 }>;
 
 /**

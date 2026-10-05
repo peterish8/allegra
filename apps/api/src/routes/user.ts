@@ -7,6 +7,8 @@ import { MAX_COVER_BYTES, isCoverContentType, looksLikeStorageId, type CoverStor
 import { parseLibraryOps, parseSentAt, type PlaylistCover } from '../shared/library.js';
 import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { ListenerActions } from '../user/actions.js';
+import type { TasteTally } from '../user/tasteTally.js';
+import type { BlendStore } from '../user/blendStore.js';
 import { isPersonalised, type UserData } from '../user/store.js';
 import { applySeeds, tasteSummary } from '../user/taste.js';
 import { callerProfile, sendUnauthorized } from './auth.js';
@@ -19,7 +21,7 @@ const MISSING = "Something's missing from that request.";
  * call (user/actions.ts), the same one the MCP tools and the phone's sync make; these handlers
  * only read the request and shape the reply. Reply shapes are docs/api-contract.md.
  */
-export function userRouter(auth: AuthService, catalog: CatalogService, actions: ListenerActions, covers?: CoverStorage): Router {
+export function userRouter(auth: AuthService, catalog: CatalogService, actions: ListenerActions, covers: CoverStorage | undefined, tally: TasteTally, blends?: BlendStore): Router {
   const router = Router();
 
   router.get('/libraries', async (request, response) => {
@@ -193,8 +195,9 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
     const sinceRaw = typeof request.query.since === 'string' ? Number.parseInt(request.query.since, 10) : 0;
     const since = Number.isInteger(sinceRaw) && sinceRaw > 0 ? sinceRaw : 0;
     const limit = positiveInt(request.query.limit, 200, 500);
+    const resyncContinuation = request.query.resync === 'true';
     try {
-      sendSuccess(response, await auth.library.changes(user.userId, since, limit));
+      sendSuccess(response, await auth.library.changes(user.userId, since, limit, resyncContinuation));
     } catch (error) {
       sendFailure(response, error);
     }
@@ -251,6 +254,21 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
         delete cleared.taste;
         return cleared;
       }, user);
+      if (changed.personalization === false && !auth.atomicLearningPrivacy) {
+        try {
+          await tally.clear(user.userId);
+        } catch {
+          // Learning stays off even if this derived-data cleanup needs to be retried.
+        }
+      }
+      // Blends follow the switch: off, this listener's part uses likes and playlists only (D12).
+      if (typeof changed.personalization === 'boolean' && blends && !auth.atomicLearningPrivacy) {
+        try {
+          await blends.setLearning(user.userId, changed.personalization);
+        } catch {
+          // The Blend catches up at the next switch; the setting itself is saved.
+        }
+      }
       sendSuccess(response, sanitizeSettings(saved?.settings ?? {}));
     } catch (error) {
       sendFailure(response, error);
@@ -291,14 +309,16 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
     if (!user) return;
     const body = asRecord(request.body);
     const playback = playbackFrom(body);
-    const seconds = typeof body.seconds === 'number' && Number.isFinite(body.seconds) && body.seconds >= 0 ? Math.min(body.seconds, 3600) : null;
-    const playedAt = body.playedAt === undefined ? undefined : playedAtFrom(body.playedAt) ?? null;
+    const rawSeconds = body.cumulativeSeconds === undefined ? body.seconds : body.cumulativeSeconds;
+    const seconds = typeof rawSeconds === 'number' && Number.isFinite(rawSeconds) && rawSeconds >= 0 ? Math.min(rawSeconds, 7200) : null;
+    const playedAt = body.playedAt === undefined ? undefined : listenPlayedAtFrom(body.playedAt) ?? null;
+    const playId = typeof body.playId === 'string' && body.playId.length <= 128 ? body.playId : undefined;
     if (!playback || seconds === null || playedAt === null) {
       response.status(400).json({ success: false, data: null, error: MISSING });
       return;
     }
     try {
-      await actions.listened(user, playback.id, seconds, playback.song, playback.ref, playedAt);
+      await actions.listened(user, playback.id, seconds, playback.song, playback.ref, playedAt, playId);
       response.status(204).end();
     } catch (error) {
       sendFailure(response, error);
@@ -332,6 +352,14 @@ function playedAtFrom(value: unknown): string | null {
   const now = Date.now();
   if (!Number.isFinite(time) || time > now + 60_000 || time < now - 7 * 24 * 3600_000) return null;
   return new Date(Math.min(time, now)).toISOString();
+}
+
+/** A signal can arrive late from an offline client; old values reach the tally, which ignores them. */
+function listenPlayedAtFrom(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return null;
+  return new Date(Math.min(time, Date.now())).toISOString();
 }
 
 function playbackFrom(body: Record<string, unknown>): { id: string; ref?: SongRef; song?: SongSnapshot } | null {

@@ -1,0 +1,82 @@
+{
+  "playlists": [
+    {
+      "name": "Synthetic Road Trip",
+      "lastModifiedDate": "2026-01-03",
+      "items": [
+        {
+          "track": {
+            "trackName": "Tum Hi Ho",
+            "artistName": "Arijit Singh",
+            "albumName": "Aashiqui 2",
+            "duration_ms": 248000
+          },
+          "episode": null,
+          "localTrack": null,
+          "addedDate": "2026-01-01"
+        },
+        {
+          "track": {
+            "trackName": "Ilahi",
+            "artistName": "Arijit Singh",
+            "albumName": "Yeh Jawaani Hai Deewani",
+            "duration_ms": 230000
+          },
+          "episode": null,
+          "localTrack": null,
+          "addedDate": "2026-01-02"
+        },
+        {
+          "track": {
+            "trackName": "Love You Zindagi",
+            "artistName": "Jasleen Royal",
+            "albumName": "Dear Zindagi",
+            "duration_ms": 189000
+          },
+          "episode": null,
+          "localTrack": null,
+          "addedDate": "2026-01-03"
+        }
+      ]
+    },
+    {
+      "name": "Synthetic Focus",
+      "lastModifiedDate": "2026-02-03",
+      "items": [
+        {
+          "track": {
+            "trackName": "Agar Tum Saath Ho",
+            "artistName": "Alka Yagnik; Arijit Singh",
+            "albumName": "Tamasha",
+            "duration_ms": 341000
+          },
+          "episode": null,
+          "localTrack": null,
+          "addedDate": "2026-02-01"
+        },
+        {
+          "track": {
+            "trackName": "Raabta",
+            "artistName": "Arijit Singh",
+            "albumName": "Agent Vinod",
+            "duration_ms": 241000
+          },
+          "episode": null,
+          "localTrack": null,
+          "addedDate": "2026-02-02"
+        },
+        {
+          "track": {
+            "trackName": "Phir Le Aya Dil",
+            "artistName": "Arijit Singh",
+            "albumName": "Barfi!",
+            "duration_ms": 317000
+          },
+          "episode": null,
+          "localTrack": null,
+          "addedDate": "2026-02-03"
+        }
+      ]
+    }
+  ]
+}

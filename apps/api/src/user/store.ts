@@ -101,6 +101,8 @@ export interface ShareRecord {
 export type ProfileChange = (current: UserData) => UserData | null;
 
 export interface UserStore {
+  /** True when preference write and taste/Blend privacy fencing share one backend transaction. */
+  readonly atomicLearningPrivacy?: boolean;
   get(userId: string): Promise<UserData | null>;
   findByEmail(email: string): Promise<UserData | null>;
   /** Creates a profile. Changing one goes through `update`, so no write can undo another. */

@@ -49,14 +49,14 @@ const MAX_PAGE = 500;
 
 const rejectReason = v.union(v.literal('bad_time'), v.literal('no_playlist'), v.literal('missing_name'));
 const libraryChange = v.union(
-  v.object({ kind: v.literal('like'), rev: v.number(), ref: v.string(), song: v.optional(songSnapshot), liked: v.boolean(), likedAt: v.number() }),
-  v.object({ kind: v.literal('playlist'), rev: v.number(), playlistId: v.string(), name: v.string(), description: v.optional(v.string()), isPublic: v.boolean(), coverUrl: v.optional(v.string()), deleted: v.boolean(), createdAt: v.number() }),
+  v.object({ kind: v.literal('like'), rev: v.number(), ref: v.string(), song: v.optional(songSnapshot), liked: v.boolean(), likedAt: v.number(), origin: v.optional(v.literal('import')) }),
+  v.object({ kind: v.literal('playlist'), rev: v.number(), playlistId: v.string(), name: v.string(), description: v.optional(v.string()), isPublic: v.boolean(), coverUrl: v.optional(v.string()), deleted: v.boolean(), createdAt: v.number(), origin: v.optional(v.literal('import')) }),
   v.object({ kind: v.literal('playlist_item'), rev: v.number(), playlistId: v.string(), ref: v.string(), song: v.optional(songSnapshot), deleted: v.boolean(), addedAt: v.number() })
 );
 
 const at = v.number();
 const libraryOp = v.union(
-  v.object({ op: v.literal('like'), ref: v.string(), song: v.optional(songSnapshot), at }),
+  v.object({ op: v.literal('like'), ref: v.string(), song: v.optional(songSnapshot), origin: v.optional(v.literal('import')), at }),
   v.object({ op: v.literal('unlike'), ref: v.string(), at }),
   v.object({
     op: v.literal('playlist_upsert'),
@@ -65,10 +65,11 @@ const libraryOp = v.union(
     description: v.optional(v.union(v.string(), v.null())),
     isPublic: v.optional(v.boolean()),
     cover: v.optional(v.union(v.null(), v.object({ key: v.optional(v.string()), url: v.string() }))),
+    origin: v.optional(v.literal('import')),
     at
   }),
   v.object({ op: v.literal('playlist_delete'), playlistId: v.string(), at }),
-  v.object({ op: v.literal('playlist_add'), playlistId: v.string(), ref: v.string(), song: v.optional(songSnapshot), at }),
+  v.object({ op: v.literal('playlist_add'), playlistId: v.string(), ref: v.string(), song: v.optional(songSnapshot), origin: v.optional(v.literal('import')), at }),
   v.object({ op: v.literal('playlist_remove'), playlistId: v.string(), ref: v.string(), at })
 );
 
@@ -209,6 +210,7 @@ export const apply = mutation({
     rejected: v.array(v.object({ index: v.number(), reason: rejectReason })),
     superseded: v.array(v.number()),
     applied: v.number(),
+    appliedIndexes: v.array(v.number()),
     removedCoverKeys: v.array(v.string())
   }),
   handler: async (ctx, args) => {
@@ -311,32 +313,88 @@ export const apply = mutation({
       rejected: write.rejected,
       superseded: write.superseded,
       applied: write.applied,
+      appliedIndexes: write.appliedIndexes,
       removedCoverKeys: write.removedCoverKeys
     };
   }
 });
 
+const libraryEntry = v.object({ ref: v.string(), song: v.optional(songSnapshot), origin: v.optional(v.literal('import')), at: v.number() });
+/** Blend reads at most this many of a listener's newest likes and playlist songs (PLAN.md §4.4). */
+const RECENT_LIKES_MAX = 1000;
+const RECENT_ITEMS_MAX = 300;
+
+/** The listener's newest current likes, newest first; unlikes are never returned. */
+export const recentLikes = query({
+  args: { secret: v.string(), userId: v.string(), limit: v.number() },
+  returns: v.array(libraryEntry),
+  handler: async (ctx, args) => {
+    requireSecret(args.secret);
+    const rows = await ctx.db
+      .query('libraryLikes')
+      .withIndex('by_userId_and_liked_and_likedAt', (q) => q.eq('userId', args.userId).eq('liked', true))
+      .order('desc')
+      .take(Math.max(0, Math.min(RECENT_LIKES_MAX, Math.floor(args.limit))));
+    return rows.map((row) => ({ ref: row.ref, ...(row.song ? { song: row.song } : {}), ...(row.origin ? { origin: row.origin } : {}), at: row.likedAt }));
+  }
+});
+
+/** The newest songs across the listener's playlists, newest first; removed songs are never returned. `origin` is the playlist's. */
+export const recentItems = query({
+  args: { secret: v.string(), userId: v.string(), limit: v.number() },
+  returns: v.array(libraryEntry),
+  handler: async (ctx, args) => {
+    requireSecret(args.secret);
+    const rows = await ctx.db
+      .query('libraryItems')
+      .withIndex('by_userId_and_deleted_and_addedAt', (q) => q.eq('userId', args.userId).eq('deleted', false))
+      .order('desc')
+      .take(Math.max(0, Math.min(RECENT_ITEMS_MAX, Math.floor(args.limit))));
+    // An item is imported when its playlist is: read each parent playlist once.
+    const imported = new Set<string>();
+    for (const playlistId of new Set(rows.map((row) => row.playlistId))) {
+      const playlist = await ctx.db
+        .query('libraryPlaylists')
+        .withIndex('by_userId_and_playlistId', (q) => q.eq('userId', args.userId).eq('playlistId', playlistId))
+        .unique();
+      if (playlist?.origin === 'import') imported.add(playlistId);
+    }
+    return rows.map((row) => ({
+      ref: row.ref,
+      ...(row.song ? { song: row.song } : {}),
+      ...(imported.has(row.playlistId) ? { origin: 'import' as const } : {}),
+      at: row.addedAt
+    }));
+  }
+});
+
 /** Everything after revision `since`, a page at a time. `seeded: false` means the library still lives only in the profile. */
 export const changes = query({
-  args: { secret: v.string(), userId: v.string(), since: v.number(), limit: v.number() },
-  returns: v.object({ seeded: v.boolean(), rev: v.number(), changes: v.array(libraryChange), more: v.boolean() }),
+  args: { secret: v.string(), userId: v.string(), since: v.number(), limit: v.number(), resync: v.optional(v.boolean()) },
+  returns: v.object({ seeded: v.boolean(), rev: v.number(), changes: v.array(libraryChange), more: v.boolean(), resync: v.optional(v.literal(true)) }),
   handler: async (ctx, args) => {
     requireSecret(args.secret);
     const state = await stateOf(ctx, args.userId);
     if (!state) return { seeded: false, rev: 0, changes: [], more: false };
     const limit = Math.max(1, Math.min(MAX_PAGE, Math.floor(args.limit)));
     const since = Math.max(0, args.since);
+    const staleCursor = since > 0 && since < (state.prunedRev ?? 0);
+    const resync = staleCursor || args.resync === true;
+    // The first stale request starts at revision zero. Marked continuation requests then use
+    // their numeric cursor normally, even while it remains below prunedRev.
+    const effectiveSince = staleCursor && args.resync !== true ? 0 : since;
     const [likes, playlists, items] = await Promise.all([
-      ctx.db.query('libraryLikes').withIndex('by_userId_and_rev', (q) => q.eq('userId', args.userId).gt('rev', since)).take(limit),
-      ctx.db.query('libraryPlaylists').withIndex('by_userId_and_rev', (q) => q.eq('userId', args.userId).gt('rev', since)).take(limit),
-      ctx.db.query('libraryItems').withIndex('by_userId_and_rev', (q) => q.eq('userId', args.userId).gt('rev', since)).take(limit)
+      ctx.db.query('libraryLikes').withIndex('by_userId_and_rev', (q) => q.eq('userId', args.userId).gt('rev', effectiveSince)).take(limit),
+      ctx.db.query('libraryPlaylists').withIndex('by_userId_and_rev', (q) => q.eq('userId', args.userId).gt('rev', effectiveSince)).take(limit),
+      ctx.db.query('libraryItems').withIndex('by_userId_and_rev', (q) => q.eq('userId', args.userId).gt('rev', effectiveSince)).take(limit)
     ]);
     const page = pageOfChanges([likes.map(likeRow), playlists.map(playlistRow), items.map(itemRow)], limit, state.rev);
     return {
       seeded: true,
       rev: page.next,
-      changes: since === 0 ? page.changes.filter((change) => !isTombstone(change)) : page.changes,
-      more: page.more
+      changes: effectiveSince === 0 || resync ? page.changes.filter((change) => !isTombstone(change)) : page.changes,
+      more: page.more,
+      ...(resync ? { resync: true as const } : {})
     };
   }
 });

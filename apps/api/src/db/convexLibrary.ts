@@ -1,5 +1,6 @@
 import { isTombstone, type LibraryChange, type LibraryOp, type RejectReason } from '../shared/library.js';
-import type { LibraryApplyResult, LibraryPage, LibraryStore } from '../user/library.js';
+import type { LibraryApplyResult, LibraryEntry, LibraryPage, LibraryStore } from '../user/library.js';
+import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { ConvexGateway } from './convexGateway.js';
 
 const REJECT_REASONS: readonly RejectReason[] = ['bad_time', 'no_playlist', 'missing_name'];
@@ -12,19 +13,54 @@ export class ConvexLibraryStore implements LibraryStore {
     return parseApply(await this.convex.mutation('library:apply', { userId, ops }), ops.length);
   }
 
-  public async changes(userId: string, since: number, limit: number): Promise<LibraryPage> {
-    let page = await this.convex.query('library:changes', { userId, since, limit });
+  public async changes(userId: string, since: number, limit: number, resyncContinuation = false): Promise<LibraryPage> {
+    const args = { userId, since, limit, ...(resyncContinuation ? { resync: true } : {}) };
+    let page = await this.convex.query('library:changes', args);
     // A listener whose library still lives only in their profile: move it into rows (an empty
     // batch does just that), so the first sync sends everything they already have.
     if (isRecord(page) && page.seeded === false) {
       await this.apply(userId, []);
-      page = await this.convex.query('library:changes', { userId, since, limit });
+      page = await this.convex.query('library:changes', args);
     }
     const parsed = parsePage(page);
     // From 0 the caller has nothing, so remembered deletes are left out here whether or not
     // Convex already did; `rev` and `more` are Convex's, so paging is unaffected.
     return since === 0 ? { ...parsed, changes: parsed.changes.filter((change) => !isTombstone(change)) } : parsed;
   }
+
+  public async recentLikes(userId: string, limit: number): Promise<readonly LibraryEntry[]> {
+    return parseEntries(await this.convex.query('library:recentLikes', { userId, limit }));
+  }
+
+  public async recentItems(userId: string, limit: number): Promise<readonly LibraryEntry[]> {
+    return parseEntries(await this.convex.query('library:recentItems', { userId, limit }));
+  }
+}
+
+function parseSnapshot(value: unknown): SongSnapshot | undefined {
+  if (!isRecord(value) || typeof value.ref !== 'string' || typeof value.title !== 'string' || typeof value.artist !== 'string') return undefined;
+  const ref = parseSongRef(value.ref);
+  if (!ref) return undefined;
+  return {
+    ref: `${ref.source}:${ref.id}` as SongRef,
+    title: value.title,
+    artist: value.artist,
+    ...(typeof value.album === 'string' ? { album: value.album } : {}),
+    artwork: typeof value.artwork === 'string' ? value.artwork : '',
+    duration: typeof value.duration === 'number' && Number.isFinite(value.duration) ? value.duration : 0
+  };
+}
+
+/** Convex's recent likes/items reply, narrowed; malformed rows are dropped. */
+function parseEntries(value: unknown): LibraryEntry[] {
+  if (!Array.isArray(value)) throw new Error('Unexpected library reply');
+  return value.flatMap((row): LibraryEntry[] => {
+    if (!isRecord(row) || typeof row.ref !== 'string' || typeof row.at !== 'number') return [];
+    const parsed = parseSongRef(row.ref);
+    if (!parsed) return [];
+    const song = parseSnapshot(row.song);
+    return [{ ref: `${parsed.source}:${parsed.id}` as SongRef, ...(song ? { song } : {}), ...(row.origin === 'import' ? { origin: 'import' as const } : {}), at: row.at }];
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -41,7 +77,11 @@ function parseApply(value: unknown, sent: number): LibraryApplyResult {
       )
     : [];
   const removedCoverKeys = Array.isArray(value.removedCoverKeys) ? value.removedCoverKeys.filter((key): key is string => typeof key === 'string') : [];
-  return { rev: value.rev, rejected, ...outcomeOf(value, sent, rejected), removedCoverKeys };
+  const outcome = outcomeOf(value, sent, rejected);
+  const appliedIndexes = Array.isArray(value.appliedIndexes)
+    ? value.appliedIndexes.filter((index): index is number => typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < sent)
+    : [];
+  return { rev: value.rev, rejected, ...outcome, appliedIndexes, removedCoverKeys };
 }
 
 /**
@@ -70,5 +110,5 @@ function parsePage(value: unknown): LibraryPage {
   const changes = value.changes.filter(
     (change): change is LibraryChange => isRecord(change) && (change.kind === 'like' || change.kind === 'playlist' || change.kind === 'playlist_item')
   );
-  return { rev: value.rev, changes, more: value.more === true };
+  return { rev: value.rev, changes, more: value.more === true, ...(value.resync === true ? { resync: true as const } : {}) };
 }

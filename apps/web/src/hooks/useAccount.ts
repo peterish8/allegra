@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AccountProfile, TasteSummary, UnifiedSong } from '@shared/types';
 
+import type { Playhead } from '../lib/playhead';
 import { ensureSession, fetchProfile, fetchTaste, seedTaste, sendListenSignal, startGuestSession, updateDisplayName } from '../lib/api';
 
 export interface AccountApi {
@@ -133,8 +134,10 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
  * Tells the server how long each song was actually listened to, once it has been left. A few seconds counts
  * against a song's artist and most of it counts for them, so the taste profile follows behaviour, not just taps.
  */
-export function useListenTracker(song: UnifiedSong | null, currentTime: number, refreshTaste: () => Promise<unknown>): void {
-  const state = useRef<{ key: string | null; song: UnifiedSong | null; seconds: number }>({ key: null, song: null, seconds: 0 });
+export function useListenTracker(song: UnifiedSong | null, playhead: Playhead, refreshTaste: () => Promise<unknown>): void {
+  const state = useRef<{ key: string | null; song: UnifiedSong | null; seconds: number; startedAt: string }>({
+    key: null, song: null, seconds: 0, startedAt: ''
+  });
   const key = song ? `${song.source.toLowerCase()}:${song.id}` : null;
   const refreshRef = useRef(refreshTaste);
   refreshRef.current = refreshTaste;
@@ -143,11 +146,15 @@ export function useListenTracker(song: UnifiedSong | null, currentTime: number, 
     const heard = state.current;
     if (heard.key !== key) {
       if (heard.song && heard.seconds >= 1) {
-        void sendListenSignal(heard.song, heard.seconds).then(() => refreshRef.current()).catch(() => undefined);
+        void sendListenSignal(heard.song, heard.seconds, heard.startedAt).then(() => refreshRef.current()).catch(() => undefined);
       }
-      state.current = { key, song, seconds: 0 };
-      return;
+      // When the listen started: the server's most-played tally uses it to ignore a repeated delivery.
+      state.current = { key, song, seconds: 0, startedAt: new Date().toISOString() };
     }
-    heard.seconds = Math.max(heard.seconds, currentTime);
-  }, [key, currentTime, song]);
+  }, [key, song]);
+
+  useEffect(() => playhead.subscribe(() => {
+    const heard = state.current;
+    if (heard.key === key) heard.seconds = Math.max(heard.seconds, playhead.get());
+  }), [key, playhead]);
 }

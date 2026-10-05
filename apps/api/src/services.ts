@@ -6,6 +6,7 @@ import { TranslationService } from './services/translation.js';
 import { CatalogService } from './catalog/catalog.js';
 import { ConvexCoverStorage, ConvexGrantLedger, ConvexUserStore } from './db/convex.js';
 import { ConvexGateway } from './db/convexGateway.js';
+import { ConvexTasteTally } from './db/convexTasteTally.js';
 import { MemoryGrantLedger, type GrantLedger } from './oauth/ledger.js';
 import { AuthService } from './auth/auth.js';
 import { ListenerActions } from './user/actions.js';
@@ -24,9 +25,19 @@ import { YouLyPlusProvider } from './providers/youlyplus.js';
 import { MusicBrainzReleaseAuthority, type ReleaseAuthority } from './providers/musicbrainz.js';
 import { SaavnProvider } from './providers/saavn.js';
 import { MemoryUserStore, type UserStore } from './user/store.js';
+import { MemoryTasteTally, type TasteTally } from './user/tasteTally.js';
+import { ImportMatcher } from './services/importMatch.js';
+import { createLogger } from './lib/logger.js';
+import { ArtistFactsService } from './services/artistFacts.js';
+import { BlendBuildService } from './services/blendBuild.js';
+import { ConvexBlendStore } from './db/convexBlendStore.js';
+import { MemoryBlendStore, type BlendStore } from './user/blendStore.js';
 import { ConvexLibraryStore } from './db/convexLibrary.js';
 import { snapshotOf } from './user/libraryOps.js';
 import type { SongSnapshot } from './shared/songRef.js';
+import { SpotifyProvider } from './providers/spotify.js';
+import { SpotifyStore } from './db/spotifyStore.js';
+import { SpotifyTransferService } from './services/spotifyTransfer.js';
 
 /**
  * Provider settings exactly as config.ts loads them (documented there). Each is optional here so a
@@ -51,6 +62,8 @@ type ProviderSettings = Partial<
     | 'convexUrl'
     | 'convexServerSecret'
     | 'convexSiteUrl'
+    | 'spotifyClientId'
+    | 'spotifyRedirectUri'
   >
 >;
 
@@ -61,6 +74,9 @@ export interface ServiceOptions extends ProviderSettings {
   /** Injected in tests so the election runs without reaching MusicBrainz. */
   readonly releaseAuthority?: ReleaseAuthority;
   readonly userStore?: UserStore;
+  /** Injected in tests; otherwise Convex when configured and memory for local development. */
+  readonly tally?: TasteTally;
+  readonly blends?: BlendStore;
   /** Verifier for signed-in accounts. Built from convexSiteUrl unless supplied (tests). */
   readonly accountVerifier?: TokenVerifier;
 }
@@ -73,6 +89,16 @@ export interface AppServices {
   readonly auth: AuthService;
   /** Profiles, share links and reports: the store the account routes read and erase through. */
   readonly users: UserStore;
+  /** Bounded per-listener most-played tally used for personalization and Blend. */
+  readonly tally: TasteTally;
+  /** Finds imported Spotify/CSV tracks in the catalog (shared, cached results). */
+  readonly importMatcher: ImportMatcher;
+  /** Blend membership, invites and stored builds. */
+  readonly blends: BlendStore;
+  /** Builds a Blend when it is due and shapes it for one viewer. */
+  readonly blendBuilder: BlendBuildService;
+  /** Read-only Spotify Web API OAuth and bounded incremental playlist transfer. */
+  readonly spotify: SpotifyTransferService;
   /** What a listener does (likes, playlists, sharing, plays), for the routes and the MCP tools alike. */
   readonly actions: ListenerActions;
   readonly translation: TranslationService;
@@ -115,6 +141,7 @@ export function createServices(options: ServiceOptions): AppServices {
     : undefined;
   const convexStore = convex ? new ConvexUserStore(convex) : undefined;
   const userStore = options.userStore ?? convexStore ?? new MemoryUserStore();
+  const tally = options.tally ?? (convex ? new ConvexTasteTally(convex) : new MemoryTasteTally());
 
   // Guest tokens are ours; Convex Auth signs the ones that come back from Google.
   // Without a Convex site URL only guest sessions exist, which is how local dev runs.
@@ -143,6 +170,23 @@ export function createServices(options: ServiceOptions): AppServices {
   // Playlist cover storage needs Convex; without it uploads answer 503.
   const covers = convex ? new ConvexCoverStorage(convex) : undefined;
 
+  const importMatcher = new ImportMatcher(catalog, cache);
+  const spotifyProvider = options.spotifyClientId ? new SpotifyProvider(options.spotifyClientId, options.fetchImpl ?? fetch) : undefined;
+  const spotifyStore = new SpotifyStore(convex, options.convexServerSecret ?? options.jwtSecret);
+  const spotify = new SpotifyTransferService(spotifyProvider, options.spotifyClientId, options.spotifyRedirectUri ?? 'https://allegravibe.vercel.app/api/spotify/callback', spotifyStore, auth, importMatcher);
+  const blendLog = createLogger(process.env.NODE_ENV === 'production');
+  const blends = options.blends ?? (convex ? new ConvexBlendStore(convex) : new MemoryBlendStore());
+  const blendBuilder = new BlendBuildService({
+    blends,
+    tally,
+    library: () => auth.library,
+    facts: new ArtistFactsService(catalog, cache),
+    catalog,
+    resolver: importMatcher,
+    // Counts and timings only (PLAN.md §0); silent outside production.
+    log: (fields) => { blendLog.info(fields, 'blend build'); }
+  });
+
   return {
     catalog,
     stream,
@@ -159,7 +203,12 @@ export function createServices(options: ServiceOptions): AppServices {
     }),
     auth,
     users: userStore,
-    actions: new ListenerActions(auth, userStore, catalog, covers),
+    tally,
+    importMatcher,
+    blends,
+    blendBuilder,
+    spotify,
+    actions: new ListenerActions(auth, userStore, catalog, covers, Date.now, tally),
     translation: new TranslationService(cache, {
       ...(options.translation?.baseUrl ? { baseUrl: options.translation.baseUrl } : {}),
       ...(options.translation?.contactEmail ? { contactEmail: options.translation.contactEmail } : {}),

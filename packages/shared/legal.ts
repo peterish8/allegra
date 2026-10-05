@@ -7,7 +7,7 @@
  */
 
 /** The date the current policies took effect. Stored with each consent. */
-export const POLICY_VERSION = '2026-10-02';
+export const POLICY_VERSION = '2026-10-05';
 
 /** Accounts are for adults: under India's DPDP Act everyone below 18 is a child. */
 export const MINIMUM_AGE = 18;
@@ -17,6 +17,13 @@ export const GUEST_RETENTION_DAYS = 90;
 
 /** An account nobody has used for this long is erased. */
 export const ACCOUNT_RETENTION_DAYS = 730;
+
+/**
+ * A listener who only reads moves their last-active time on at most this often (the API's
+ * keepActive). The inactivity sweep adds it to every retention period, so nobody is erased
+ * before the period the policy states.
+ */
+export const ACTIVE_TOUCH_DAYS = 7;
 
 export const LEGAL_PATHS = {
   privacy: '/privacy',
@@ -61,3 +68,8 @@ export function isReportReason(value: unknown): value is ReportReason {
 
 export const REPORT_DETAILS_MAX = 1000;
 export const REPORT_CONTACT_MAX = 200;
+/** A closed report's contact details and message are deleted this long after it closes. */
+export const REPORT_DETAIL_RETENTION_DAYS = 365;
+
+/** Library removal markers are kept long enough for devices that have been offline to catch up. */
+export const LIBRARY_TOMBSTONE_RETENTION_DAYS = 90;

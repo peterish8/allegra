@@ -1,6 +1,7 @@
 import { cachedLookup, cacheKey, type CacheStore } from '../lib/cache.js';
 import { inLanguages, languagesKey } from '../lib/languages.js';
 import { songIdentity } from '../lib/normalize.js';
+import { artistKey, creditedArtists } from '../shared/identity.js';
 import type { UnifiedSong } from '../types.js';
 
 /** The catalog calls this needs — narrow on purpose so tests can fake them. */
@@ -136,12 +137,12 @@ export class RecommendationService {
       fills.forEach((songs) => songs.forEach((song) => add(song, 0.8)));
     }
 
-    const favourites = new Map(artists.map((artist) => [artist.name.toLowerCase(), artist.score / topScore]));
+    const favourites = new Map(artists.map((artist) => [artistKey(artist.name), artist.score / topScore]));
     const liked = new Set(context.favoriteLanguages.map((language) => language.toLowerCase()));
     const ranked = [...candidates.values()]
       .map((candidate) => {
         const { song } = candidate;
-        const artistBoost = Math.max(0, ...creditedArtists(song).map((name) => favourites.get(name) ?? 0));
+        const artistBoost = Math.max(0, ...creditedArtists(song.artist).map((name) => favourites.get(artistKey(name)) ?? 0));
         const languageBoost = song.language && liked.has(song.language.toLowerCase()) ? 0.5 : 0;
         const popularity = Math.log10((song.playCount || 0) + 1) * 0.1;
         return { song, score: candidate.score + artistBoost * 1.5 + languageBoost + popularity };
@@ -173,16 +174,12 @@ function uniqueSongs(songs: readonly UnifiedSong[]): UnifiedSong[] {
   });
 }
 
-function creditedArtists(song: UnifiedSong): string[] {
-  return song.artist.split(/\s*(?:,|&|\bfeat\.?|\bft\.?)\s*/i).map((name) => name.trim().toLowerCase()).filter(Boolean);
-}
-
 /** At most two songs per lead artist, keeping rank order. */
 function diversify(songs: readonly UnifiedSong[], limit: number): UnifiedSong[] {
   const perArtist = new Map<string, number>();
   const out: UnifiedSong[] = [];
   for (const song of songs) {
-    const lead = creditedArtists(song)[0] ?? song.artist.toLowerCase();
+    const lead = artistKey(creditedArtists(song.artist)[0] ?? song.artist);
     const count = perArtist.get(lead) ?? 0;
     if (count >= MAX_PER_ARTIST) continue;
     perArtist.set(lead, count + 1);

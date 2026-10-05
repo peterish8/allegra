@@ -20,6 +20,8 @@
  */
 import { useEffect } from 'react';
 import { Linking } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isBlendInviteCode } from '@shared/blendLimits';
 import { navigationRef, openMainTab } from '../utils/navigationService';
 import { searchOfficial } from '../services/stream/officialSearch';
 import { StreamService } from '../services/stream/StreamService';
@@ -33,12 +35,16 @@ import type { PlayerSheetName } from '../types/navigation';
 const SHEETS: PlayerSheetName[] = ['menu', 'together', 'queue', 'timer'];
 
 export const parseDeepLink = (url: string): { action: string; params: Record<string, string> } | null => {
+  const webInvite = /^https:\/\/(?:allegravibe\.vercel\.app|allegra\.music)\/blend\/join\/([^/?#]+)(?:[?#].*)?$/i.exec(url.trim());
+  if (webInvite) {
+    try { const code = decodeURIComponent(webInvite[1]); return isBlendInviteCode(code) ? { action: 'blend/join', params: { code } } : null; } catch { return null; }
+  }
   const m = /^lyricflow:\/\/([^?#]*)(?:\?([^#]*))?/i.exec(url.trim());
   if (!m) return null;
   const params: Record<string, string> = {};
   for (const pair of (m[2] ?? '').split('&').filter(Boolean)) {
     const [k, v = ''] = pair.split('=');
-    params[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, ' '));
+    try { params[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, ' ')); } catch { return null; }
   }
   return { action: m[1].replace(/\/+$/, '').toLowerCase(), params };
 };
@@ -62,6 +68,11 @@ const handle = async (url: string | null) => {
     return;
   }
   await waitForNavigation();
+  if (link.action === 'blend/join' && isBlendInviteCode(link.params.code ?? '')) {
+    await AsyncStorage.setItem('allegra:pending-blend-invite', link.params.code).catch(() => undefined);
+    openMainTab({ screen: 'Library', params: { screen: 'BlendJoin', params: { code: link.params.code } } });
+    return;
+  }
   if (link.action === 'play' && link.params.q) {
     const found = await searchOfficial(link.params.q, 5).catch(() => []);
     diag('link', `play "${link.params.q}" -> ${found.length} results${found[0] ? `, first "${found[0].title}" by ${found[0].artist}` : ''}`);
@@ -89,6 +100,8 @@ const handle = async (url: string | null) => {
       case 'luvs': openMainTab({ screen: 'Luvs' }); break;
       case 'library': openMainTab({ screen: 'Library', params: { screen: 'LibraryHome' } }); break;
       case 'playlists': openMainTab({ screen: 'Library', params: { screen: 'Playlists' } }); break;
+      case 'blends': openMainTab({ screen: 'Library', params: { screen: 'Blends' } }); break;
+      case 'import': openMainTab({ screen: 'Library', params: { screen: 'Import' } }); break;
       case 'search': openMainTab({ screen: 'Search' }); break;
       case 'settings': openMainTab({ screen: 'Settings' }); break;
       default: break;
@@ -100,8 +113,12 @@ const handle = async (url: string | null) => {
 
 export const useDeepLinks = (): void => {
   useEffect(() => {
-    Linking.getInitialURL().then(handle).catch(() => {});
-    const sub = Linking.addEventListener('url', e => { handle(e.url); });
+    Linking.getInitialURL().then(async url => {
+      if (url) return handle(url);
+      const code = await AsyncStorage.getItem('allegra:pending-blend-invite');
+      if (code && isBlendInviteCode(code)) return handle(`lyricflow://blend/join?code=${encodeURIComponent(code)}`);
+    }).catch(() => {});
+    const sub = Linking.addEventListener('url', e => { void handle(e.url).catch(() => undefined); });
     return () => sub.remove();
   }, []);
 };

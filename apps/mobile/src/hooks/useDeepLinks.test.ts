@@ -20,6 +20,11 @@ describe('parseDeepLink', () => {
 });
 
 describe('player and invite links', () => {
+  it('accepts trusted Blend invites and ignores malformed or unrelated links', () => {
+    expect(parseDeepLink('https://allegravibe.vercel.app/blend/join/abcdefghjkmn')).toEqual({ action: 'blend/join', params: { code: 'abcdefghjkmn' } });
+    expect(parseDeepLink('https://untrusted.example/blend/join/ABCD1234')).toBeNull();
+    expect(parseDeepLink('lyricflow://play?q=%ZZ')).toBeNull();
+  });
   it('parses a sheet request and an invite code', () => {
     expect(parseDeepLink('lyricflow://player?sheet=menu')).toEqual({ action: 'player', params: { sheet: 'menu' } });
     expect(parseDeepLink('lyricflow://together?code=ab12cd')).toEqual({ action: 'together', params: { code: 'ab12cd' } });

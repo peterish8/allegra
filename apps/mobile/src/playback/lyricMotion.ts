@@ -36,6 +36,27 @@ export function lyricSweep(t: number, segments: readonly number[], weight: numbe
   return Math.min(1, lit / weight);
 }
 
+/** How far, as a share of a word, the sweep's soft edge reaches between one copy and the next. */
+export const SWEEP_FEATHER = 0.16;
+
+/**
+ * One copy of the sung letters, for a soft edge. The word is drawn `count` times, each copy a step behind the last,
+ * and stacked with rising opacity, so a letter fades up (dim, half, full) as the sweep passes instead of switching on
+ * at a hard clip edge. `step` 0 is the leading copy; every copy is 0 at p = 0 and 1 at p = 1, so the word still starts
+ * and ends exactly when it is sung.
+ */
+export function featherAt(p: number, step: number, count: number): number {
+  'worklet';
+  const f = SWEEP_FEATHER;
+  const q = p * (1 + (count - 1) * f) - step * f;
+  return q < 0 ? 0 : q > 1 ? 1 : q;
+}
+
+/** Opacity of each copy, leading first; stacked, they ramp a letter through ~0.4, ~0.7 to 1. */
+export function featherAlphas(count: number): number[] {
+  return count >= 3 ? [0.4, 0.5, 1] : count === 2 ? [0.45, 1] : [1];
+}
+
 export interface GlideState {
   /** How far the lines still sit from home, px. */
   offset: number;

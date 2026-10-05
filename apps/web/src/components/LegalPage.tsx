@@ -2,7 +2,8 @@ import { motion } from 'motion/react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-import { ACCOUNT_RETENTION_DAYS, GUEST_RETENTION_DAYS, MINIMUM_AGE, OPERATOR, POLICY_VERSION, operatorPublished, type LegalDocument } from '@shared/legal';
+import { TALLY_MAX_SONGS } from '@shared/blendDecay';
+import { ACCOUNT_RETENTION_DAYS, GUEST_RETENTION_DAYS, LIBRARY_TOMBSTONE_RETENTION_DAYS, MINIMUM_AGE, OPERATOR, POLICY_VERSION, REPORT_DETAIL_RETENTION_DAYS, operatorPublished, type LegalDocument } from '@shared/legal';
 
 import { paths } from '../lib/routes';
 import { itemVariants, pageVariants } from '../motion';
@@ -70,7 +71,8 @@ function Privacy() {
         <h3>If you listen without signing in</h3>
         <p>
           Your browser is given a random guest id. Under that id our servers keep the songs you like, the playlists you
-          make, your last 25 listens and a taste profile (which artists and languages you play most). No name or email
+          make, your last 25 listens, your most-played songs and a taste profile (which artists and languages you play
+          most). No name or email
           is attached to it.
         </p>
         <h3>If you sign in with Google</h3>
@@ -78,10 +80,23 @@ function Privacy() {
           <li>Your name and email address, as Google gives them to us. We never see your Google password.</li>
           <li>Your liked songs and playlists, including any playlist name, description and cover image you add.</li>
           <li>Your last 25 listens and your taste profile, unless you switch that off.</li>
+          <li>The up to {TALLY_MAX_SONGS} songs you play most on Allegra, and roughly how much you play each. A song you stop playing fades and drops off.</li>
           <li>Your language choices.</li>
           <li>The devices you use Allegra on (a name such as &ldquo;Chrome on Windows&rdquo;, the kind of device and the app version), so you can move playback between them, and what is playing while they are connected.</li>
           <li>The date you agreed to this policy and which version it was.</li>
         </ul>
+        <h3>If you import your library</h3>
+        <p>
+          When you import from Spotify, the file stays on your device. Allegra receives song titles, artists, albums
+          and lengths to find them in its catalog. Songs it finds are added to your library like any other.
+        </p>
+        <h3 id="blends">If you make or join a Blend</h3>
+        <p>
+          When you make or join a Blend, your most-played songs, likes and playlists shape a playlist everyone in that
+          Blend can see. They see songs and your taste match, never how much you listen. They see the display name on
+          your account and your initials, never your email or photo. Leave a Blend and you are out of it at its next
+          refresh. Erasing your account removes you from every Blend.
+        </p>
         <h3>If you report a shared playlist</h3>
         <p>The reason you chose, anything you wrote, and a contact address only if you gave one.</p>
         <h3>On your own device</h3>
@@ -116,8 +131,10 @@ function Privacy() {
           <li>A guest profile that has not been used for {GUEST_RETENTION_DAYS} days is erased automatically.</li>
           <li>An account that has not been used for {ACCOUNT_RETENTION_DAYS} days (two years) is erased automatically.</li>
           <li>Only your 25 most recent listens are kept; older ones are dropped as new ones arrive.</li>
+          <li>Your most-played list keeps at most {TALLY_MAX_SONGS} songs. Older listening counts for less over time, and a song you stop playing drops off.</li>
           <li>A device that has been offline for 30 days is forgotten.</li>
-          <li>Reports are kept for as long as it takes to deal with them and to keep a record that we did.</li>
+          <li>Songs and playlists you remove are forgotten {LIBRARY_TOMBSTONE_RETENTION_DAYS} days later; until then, your other devices use the record to remove them too.</li>
+          <li>Reports are kept as a record. The reporter&rsquo;s contact details and message are deleted {REPORT_DETAIL_RETENTION_DAYS} days after the report is closed.</li>
         </ul>
       </Block>
 
@@ -125,7 +142,7 @@ function Privacy() {
         <ul>
           <li><strong>See it.</strong> Settings, then Manage account, then &ldquo;Download my data&rdquo; exports your account data as one file. If a large account exceeds an export limit, we tell you; contact the grievance officer for the remaining data.</li>
           <li><strong>Correct it.</strong> You can change your display name in the same place.</li>
-          <li><strong>Stop the learning.</strong> &ldquo;Learn from my listening&rdquo; in Settings switches the taste profile and listening history off and erases what was learned, on every device.</li>
+          <li><strong>Stop the learning.</strong> &ldquo;Learn from my listening&rdquo; in Settings switches the taste profile and listening history off and erases what was learned, including your most-played list, on every device.</li>
           <li><strong>Erase it.</strong> &ldquo;Delete my account&rdquo; removes your account and everything in it. This cannot be undone.</li>
           <li><strong>Ask us.</strong> For anything else, including naming someone to act for you, write to the grievance officer below. We answer within 90 days at the latest.</li>
         </ul>

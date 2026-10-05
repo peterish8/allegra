@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 
 import type { UnifiedSong } from '@shared/types';
 
+import type { Playhead } from '../lib/playhead';
+
 /**
  * Publishes what is playing to the operating system: lock screen, the Windows volume flyout,
  * macOS Now Playing, Bluetooth and headset buttons, car head units, and the media keys on a
@@ -19,7 +21,7 @@ import type { UnifiedSong } from '@shared/types';
 interface MediaSessionControls {
   readonly song: UnifiedSong | null;
   readonly isPlaying: boolean;
-  readonly currentTime: number;
+  readonly playhead: Playhead;
   readonly duration: number;
   readonly requestPlayback: (playing: boolean) => Promise<void>;
   readonly seek: (seconds: number) => Promise<void>;
@@ -51,7 +53,7 @@ function artworkFor(song: UnifiedSong): MediaImage[] {
 export function useMediaSession({
   song,
   isPlaying,
-  currentTime,
+  playhead,
   duration,
   requestPlayback,
   seek,
@@ -67,8 +69,8 @@ export function useMediaSession({
   const actions = useRef({ requestPlayback, seek, skipNext, skipPrevious, stop });
   actions.current = { requestPlayback, seek, skipNext, skipPrevious, stop };
 
-  const positionRef = useRef({ currentTime, duration });
-  positionRef.current = { currentTime, duration };
+  const positionRef = useRef({ playhead, duration });
+  positionRef.current = { playhead, duration };
 
   useEffect(() => {
     const session = navigator.mediaSession as MediaSession | undefined;
@@ -89,11 +91,12 @@ export function useMediaSession({
     set('stop', () => actions.current.stop());
     set('seekbackward', (details) => {
       const step = details.seekOffset ?? SEEK_STEP_SECONDS;
-      void actions.current.seek(Math.max(0, positionRef.current.currentTime - step));
+      void actions.current.seek(Math.max(0, positionRef.current.playhead.get() - step));
     });
     set('seekforward', (details) => {
       const step = details.seekOffset ?? SEEK_STEP_SECONDS;
-      const { currentTime: at, duration: length } = positionRef.current;
+      const { duration: length } = positionRef.current;
+      const at = positionRef.current.playhead.get();
       void actions.current.seek(length > 0 ? Math.min(length, at + step) : at + step);
     });
     set('seekto', (details) => {
@@ -135,24 +138,28 @@ export function useMediaSession({
 
   useEffect(() => {
     const session = navigator.mediaSession as MediaSession | undefined;
-    if (!session || typeof session.setPositionState !== 'function') return;
-    try {
-      /*
-       * The spec requires a positive duration with the position inside it. A song that has not
-       * reported its metadata yet has duration NaN, and a seek can leave position a hair past the
-       * end — either one throws and, on some platforms, leaves a stale bar on the lock screen.
-       */
-      if (!Number.isFinite(duration) || duration <= 0) {
-        session.setPositionState(undefined);
-        return;
+    if (!session || typeof session.setPositionState !== 'function') return undefined;
+    const publish = (): void => {
+      try {
+        /*
+         * The spec requires a positive duration with the position inside it. A song that has not
+         * reported its metadata yet has duration NaN, and a seek can leave position a hair past the
+         * end — either one throws and, on some platforms, leaves a stale bar on the lock screen.
+         */
+        if (!Number.isFinite(duration) || duration <= 0) {
+          session.setPositionState(undefined);
+          return;
+        }
+        session.setPositionState({
+          duration,
+          playbackRate: 1,
+          position: Math.min(Math.max(playhead.get(), 0), duration)
+        });
+      } catch {
+        // Out-of-range state. The controls still work, they just lose the progress bar.
       }
-      session.setPositionState({
-        duration,
-        playbackRate: 1,
-        position: Math.min(Math.max(currentTime, 0), duration)
-      });
-    } catch {
-      // Out-of-range state. The controls still work, they just lose the progress bar.
-    }
-  }, [currentTime, duration]);
+    };
+    publish();
+    return playhead.subscribe(publish);
+  }, [playhead, duration]);
 }

@@ -13,6 +13,7 @@ import { parseSongRef } from '../shared/songRef.js';
 
 const STREAM_HEADER_TIMEOUT_MS = 25_000;
 const PASSTHROUGH_STATUSES = new Set([200, 206, 416]);
+const STREAM_CACHE_CONTROL = 'private, max-age=86400';
 
 export interface StreamResolverOptions {
   readonly saavn: SaavnProvider;
@@ -55,12 +56,16 @@ export class StreamResolver {
     }
 
     response.status(upstream.response.status);
-    for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+    for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
       const value = upstream.response.headers.get(header);
       if (value) {
         response.setHeader(header, value);
       }
     }
+    // A song id always names the same file. Without this every replay, and the karaoke download
+    // of a song the player already streamed, pulled the whole file through the function again.
+    // Private: the bytes stay in the listener's browser, never in a shared cache.
+    if (upstream.response.status !== 416) response.setHeader('Cache-Control', STREAM_CACHE_CONTROL);
     response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 
     if (!upstream.response.body) {

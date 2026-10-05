@@ -1,0 +1,40 @@
+{
+  "tracks": [
+    {
+      "trackName": "Tum Hi Ho",
+      "artistName": "Arijit Singh",
+      "albumName": "Aashiqui 2",
+      "duration_ms": 248000
+    },
+    {
+      "trackName": "Kesariya",
+      "artistName": "Arijit Singh",
+      "albumName": "Brahmastra",
+      "duration_ms": 268000
+    },
+    {
+      "trackName": "Shayad (feat. Asees Kaur)",
+      "artistName": "Arijit Singh; Asees Kaur",
+      "albumName": "Love Aaj Kal",
+      "duration_ms": 235000
+    },
+    {
+      "trackName": "Pehla Pyaar - Remastered",
+      "artistName": "Armaan Malik",
+      "albumName": "Kabir Singh",
+      "duration_ms": 250000
+    },
+    {
+      "episode": {
+        "episodeName": "Synthetic podcast episode",
+        "showName": "Synthetic show"
+      }
+    },
+    {
+      "localTrack": {
+        "trackName": "Synthetic local file",
+        "artistName": "Synthetic artist"
+      }
+    }
+  ]
+}
