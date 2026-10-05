@@ -25,7 +25,8 @@ export const SHARED_COPIES = [
   'blendBuild.ts',
   'blendStories.ts',
   'blendLimits.ts',
-  'blendView.ts'
+  'blendView.ts',
+  'regions.ts'
 ];
 
 const root = new URL('../', import.meta.url);

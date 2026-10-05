@@ -18,6 +18,9 @@ import { SpotifySyncPanel } from './SpotifySyncPanel';
 import { paths } from '../../lib/routes';
 import { itemVariants, pageVariants } from '../../motion';
 import { TactileButton } from '../ui';
+import { InfoTour } from '../InfoTour';
+import { IMPORT_TOUR } from '../pageTours';
+import { importScene } from '../infoScenes';
 
 /** PLAN.md §9. */
 const COPY = {
@@ -238,8 +241,7 @@ export function ImportPage({ accountKey, signedIn, onSignIn, likedIds, onSaved }
   return (
     <motion.section className="import-page" aria-labelledby="import-title" variants={pageVariants} initial="hidden" animate="visible">
       <motion.header className="import-head" variants={itemVariants}>
-        <h1 id="import-title">Bring your music</h1>
-        <p>Your liked songs and playlists from Spotify, or any CSV. The file stays on this device; only song titles, artists, albums and lengths are sent to find them here.</p>
+        <div className="page-title-row"><h1 id="import-title">Bring your music</h1><InfoTour label="How importing works" steps={IMPORT_TOUR} stage={importScene} /></div>
       </motion.header>
       {!signedIn ? (
         <motion.div className="state-card" variants={itemVariants}>

@@ -1,12 +1,14 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { motionTokens, spring, transitionForReducedMotion } from '../../motion';
 
 /**
  * A modal sheet for Blend steps: labelled dialog, focus kept inside and handed back on close,
- * Escape closes. Enters by rising (transform) and fading (opacity) only.
+ * Escape closes. Enters by rising (transform) and fading (opacity) only. Portalled to <body>: the
+ * pages animate `transform`, which would trap a fixed layer under the mini player and phone nav.
  */
 export function BlendSheet({ title, onClose, children }: { readonly title: string; readonly onClose: () => void; readonly children: (titleId: string) => ReactNode }) {
   const reduced = useReducedMotion() ?? false;
@@ -26,7 +28,7 @@ export function BlendSheet({ title, onClose, children }: { readonly title: strin
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, []);
 
-  return (
+  return createPortal(
     <div className="blend-sheet-layer">
       <motion.div
         className="blend-sheet-backdrop"
@@ -49,6 +51,7 @@ export function BlendSheet({ title, onClose, children }: { readonly title: strin
         <h2 id={titleId} className="blend-sheet__title">{title}</h2>
         {children(titleId)}
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }

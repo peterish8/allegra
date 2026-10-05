@@ -319,8 +319,49 @@ export class CatalogService {
     }
   }
 
-  public async getHome(languages: readonly string[] = []): Promise<HomePayload> {
-    if (languages.length > 0) return this.getLanguageHome(languages);
+  /**
+   * The home shelves. `languages` (the listener's) shape every shelf; `chart` (a state's language,
+   * from the listener's region) replaces "Top 10 today" with that language's chart when the catalog
+   * has enough of it, else the shelves stay as they were.
+   */
+  public async getHome(languages: readonly string[] = [], chart: { readonly region: string; readonly regionName: string; readonly language: string } | null = null): Promise<HomePayload> {
+    const base = languages.length > 0 ? await this.getLanguageHome(languages) : await this.getDefaultHome();
+    if (!chart) return base;
+    const top = await this.getRegionalChart(chart.language);
+    if (top.length < 5) return base;
+    const charted = new Set(top.map(songIdentity));
+    return {
+      trending: top,
+      madeForYou: base.madeForYou.filter((song) => !charted.has(songIdentity(song))),
+      recommended: base.recommended.filter((song) => !charted.has(songIdentity(song))),
+      chart
+    };
+  }
+
+  /** One language's top songs in the provider's own order, a song once each. Empty when the provider fails. */
+  private async getRegionalChart(language: string): Promise<UnifiedSong[]> {
+    const key = `chart:v1:${language}`;
+    const cached = await this.cache.get<UnifiedSong[]>(key);
+    if (cached) return cached;
+    try {
+      const results = (await this.search(`top ${language} songs`, 25, 0, { enrich: false })).results.filter((song) => inLanguages(song, [language]));
+      const seen = new Set<string>();
+      const songs: UnifiedSong[] = [];
+      for (const song of results) {
+        const identity = songIdentity(song);
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        songs.push(song);
+        if (songs.length === 10) break;
+      }
+      if (songs.length >= 5) await this.cache.set(key, songs, 3600);
+      return songs;
+    } catch {
+      return [];
+    }
+  }
+
+  private async getDefaultHome(): Promise<HomePayload> {
     // v3: originals ranked ahead of edits (same as search v4).
     const cached = await this.cache.get<HomePayload>('home:default:v3');
     if (cached) {

@@ -1,13 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { SpotifySourcePlaylist, SpotifyStatus, SpotifySyncStep } from '../shared/spotify.js';
+import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus, type SpotifySyncStep } from '../shared/spotify.js';
 import type { LibraryOp } from '../shared/library.js';
 import type { AuthService } from '../auth/auth.js';
 import type { ImportMatcher } from './importMatch.js';
-import type { SpotifyProvider, SpotifyTrack } from '../providers/spotify.js';
+import type { SpotifyPlaylist, SpotifyProvider, SpotifyTrack } from '../providers/spotify.js';
 import { SpotifyApiError } from '../providers/spotify.js';
 import type { SpotifyStore, StoredSpotifyPlaylist } from '../db/spotifyStore.js';
 
-const SCOPE = 'playlist-read-private playlist-read-collaborative';
+const SCOPE = 'playlist-read-private playlist-read-collaborative user-library-read';
+const LIKED_NAME = 'Liked Songs';
 const STATE_TTL_MS = 10 * 60_000;
 const BATCH = 50;
 const LEASE_MS = 90_000;
@@ -67,19 +68,33 @@ export class SpotifyTransferService {
     return { configured: this.configured, connected: Boolean(connection?.refreshToken), dailyEnabled: connection?.dailyEnabled ?? false, playlists: rows.filter(row => row.enabled).map(publicPlaylist) };
   }
 
+  /** Liked Songs first, then playlists. A connection made before the library scope lists Liked Songs as needing a reconnect. */
   public async sourcePlaylists(userId: string): Promise<SpotifySourcePlaylist[]> {
+    const provider = this.requireProvider();
     const token = await this.accessToken(userId);
-    return this.provider!.playlists(token);
+    const [liked, playlists] = await Promise.all([provider.likedSummary(token), provider.playlists(token)]);
+    const likedRow: SpotifySourcePlaylist = { id: SPOTIFY_LIKED_ID, name: LIKED_NAME, snapshotId: liked?.snapshotId ?? '', total: liked?.total ?? 0, imageUrl: null, kind: 'liked', ...(liked ? {} : { needsReconnect: true }) };
+    return [likedRow, ...playlists];
+  }
+
+  /** What a sync step needs about its source; Liked Songs answers from the saved-tracks endpoint. */
+  private async source(provider: SpotifyProvider, token: string, playlistId: string): Promise<SpotifyPlaylist | null> {
+    if (playlistId !== SPOTIFY_LIKED_ID) return provider.playlist(token, playlistId);
+    const liked = await provider.likedSummary(token);
+    if (!liked) throw new SpotifyApiError(403, 'Reconnect Spotify to bring over your Liked Songs.');
+    return { id: SPOTIFY_LIKED_ID, name: LIKED_NAME, snapshotId: liked.snapshotId, total: liked.total, imageUrl: null };
   }
 
   /** `skipUnchanged`: a finished scan whose Spotify snapshot hasn't moved does no work (daily job). Manual sync always rescans, retrying review rows. */
   public async sync(userId: string, playlistId: string, skipUnchanged = false): Promise<SpotifySyncStep> {
     const provider = this.requireProvider();
-    if (!/^[A-Za-z0-9]{10,40}$/.test(playlistId)) throw new SpotifyApiError(400, 'Choose a valid Spotify playlist.');
+    const liked = playlistId === SPOTIFY_LIKED_ID;
+    if (!liked && !/^[A-Za-z0-9]{10,40}$/.test(playlistId)) throw new SpotifyApiError(400, 'Choose a valid Spotify playlist.');
     const token = await this.accessToken(userId);
-    const source = await provider.playlist(token, playlistId);
+    const source = await this.source(provider, token, playlistId);
     if (!source) throw new SpotifyApiError(404, 'Spotify could not find that playlist.');
-    const now = Date.now(); const libraryId = `spotify-${playlistId}`; // library ids allow only [A-Za-z0-9_-] (parseLibraryOps)
+    // Liked Songs become Allegra likes; a playlist becomes its own library. Library ids allow only [A-Za-z0-9_-] (parseLibraryOps).
+    const now = Date.now(); const libraryId = liked ? SPOTIFY_LIKED_ID : `spotify-${playlistId}`;
     if (skipUnchanged) {
       const saved = (await this.store.playlists(userId)).find(row => row.playlistId === playlistId);
       if (saved?.lastSyncedAt && saved.offset === 0 && saved.scanSnapshotId === source.snapshotId) return { complete: true, added: 0, skipped: 0, reviewNeeded: 0, libraryId };
@@ -95,7 +110,7 @@ export class SpotifyTransferService {
         offset = 0;
         claimed = { ...claimed, added: 0, skipped: 0, reviewNeeded: 0 };
       }
-      const page = await provider.items(token, playlistId, offset, BATCH);
+      const page = liked ? await provider.likedItems(token, offset, BATCH) : await provider.items(token, playlistId, offset, BATCH);
       const ids = page.tracks.map(track => track.id);
       const seen = await this.store.receipts(userId, playlistId, ids);
       const unseen = page.tracks.filter(track => !seen.has(track.id));
@@ -104,7 +119,7 @@ export class SpotifyTransferService {
       const ops: LibraryOp[] = [];
       const profile = await this.auth.getUser(userId);
       if (!profile) throw new SpotifyApiError(401, 'Sign in again to continue this transfer.');
-      const libraryExists = profile.libraries.some(row => row.id === libraryId);
+      const libraryExists = liked || profile.libraries.some(row => row.id === libraryId);
       if (!libraryExists) ops.push({ op: 'playlist_upsert', playlistId: libraryId, name: source.name.slice(0, 60), isPublic: false, at: now });
       const sourceCount = page.total <= offset ? 0 : Math.min(BATCH, page.total - offset);
       let added = claimed.added; const skipped = claimed.skipped + seen.size + Math.max(0, sourceCount - page.tracks.length); let reviewNeeded = claimed.reviewNeeded;
@@ -112,7 +127,9 @@ export class SpotifyTransferService {
         const track = unseen[i]!; const result = results[i];
         if (result?.confidence === 'exact' && result.song) {
           const at = stableAddedAt(track.addedAt);
-          ops.push({ op: 'playlist_add', playlistId: libraryId, ref: result.song.ref, song: result.song, origin: 'import', at });
+          ops.push(liked
+            ? { op: 'like', ref: result.song.ref, song: result.song, origin: 'import', at }
+            : { op: 'playlist_add', playlistId: libraryId, ref: result.song.ref, song: result.song, origin: 'import', at });
           receiptRows.push({ trackId: track.id, libraryId }); added++;
         } else {
           reviewNeeded++;

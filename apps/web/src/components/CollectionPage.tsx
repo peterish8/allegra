@@ -14,6 +14,9 @@ import { EmptyState, SkeletonCard, TactileButton } from './ui';
 import { formatAlbumDuration } from '../lib/album';
 import { extractPalette } from '../lib/palette';
 import type { Palette } from '../lib/palette';
+import { InfoTour } from './InfoTour';
+import { LIKED_TOUR, PLAYLIST_TOUR } from './pageTours';
+import { likedScene, playlistScene } from './infoScenes';
 
 interface CollectionPageProps {
   readonly kind: 'playlist' | 'liked' | 'shared';
@@ -116,7 +119,7 @@ export function CollectionPage({ kind, title, songs, loading, currentSongId, isP
         )}
         <div className="artist-hero-copy">
           <span className="artist-sheet-eyebrow">{kind === 'liked' ? 'Your collection' : kind === 'shared' ? `Shared by ${ownerName ?? 'a listener'}` : 'Playlist'}</span>
-          <h1>{title}</h1>
+          <div className="page-title-row"><h1>{title}</h1>{kind === 'liked' ? <InfoTour label="About Liked Songs" steps={LIKED_TOUR} stage={likedScene} /> : kind === 'playlist' ? <InfoTour label="About playlists" steps={PLAYLIST_TOUR} stage={playlistScene} /> : null}</div>
           <p>{loading ? 'Loading…' : songs.length > 0 ? `${songs.length} ${songs.length === 1 ? 'song' : 'songs'} · ${formatAlbumDuration(totalSeconds)}` : 'No songs yet'}</p>
           <div className="artist-actions">
             {songs.length > 0 ? (

@@ -4,13 +4,16 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode, RefObject } from 'react';
 
-import type { AccountProfile, TasteSummary, UnifiedSong } from '@shared/types';
+import type { AccountProfile, HomePayload, TasteSummary, UnifiedSong } from '@shared/types';
 
 import { ArtistPreviewCard } from './ArtistPreviewCard';
 import { TasteOnboarding } from './TasteOnboarding';
 import { Artwork, IconButton } from './ui';
 import { paths } from '../lib/routes';
 import { motionTokens } from '../motion';
+import { InfoTour } from './InfoTour';
+import { HOME_TOUR } from './pageTours';
+import { homeScene } from './infoScenes';
 
 interface HomePageProps {
   readonly profile: AccountProfile | null;
@@ -174,7 +177,7 @@ export function HomePage({
           ) : null}
         </AnimatePresence>
         <header className="home-hero__head">
-          <h1 id="home-greeting">{name ? `${greeting()}, ${name}` : greeting()}</h1>
+          <div className="page-title-row"><h1 id="home-greeting">{name ? `${greeting()}, ${name}` : greeting()}</h1><InfoTour label="About Home" steps={HOME_TOUR} stage={homeScene} /></div>
           {inRotation.length > 0 ? <p>Lately: {inRotation.join(' · ')}</p> : null}
         </header>
 
@@ -297,15 +300,30 @@ interface DiscoverSectionsProps {
   readonly onLike: (song: UnifiedSong) => void;
   /** A mood sleeve hands its query to the Browse search. */
   readonly onExplore: (query: string) => void;
+  /** Which state's chart Top 10 shows, when the server built a regional one. */
+  readonly chart?: HomePayload['chart'] | null;
+  /** The listener's languages the shelves were asked for (empty: every language). */
+  readonly languages?: readonly string[];
+  /** Personal picks from the listener's own plays; they take over "Somewhere new to wander". */
+  readonly picks?: readonly UnifiedSong[];
 }
+
+const titleCase = (word: string): string => word.charAt(0).toUpperCase() + word.slice(1);
+/** "Tamil", "Tamil and English", "Tamil, Telugu and English". */
+const languageList = (languages: readonly string[]): string => {
+  const names = languages.map(titleCase);
+  return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+};
 
 /**
  * Browse's half of the split: somewhere to wander. Moods first (a bento of record sleeves), then
  * what everyone is playing today, then what is loved right now and somewhere new.
  */
-export function DiscoverSections({ trending, madeForYou, recommended, currentSongId, isPlaying, likedIds, onPlay, onToggle, onLike, onExplore }: DiscoverSectionsProps) {
+export function DiscoverSections({ trending, madeForYou, recommended, currentSongId, isPlaying, likedIds, onPlay, onToggle, onLike, onExplore, chart: chartFor = null, languages = [], picks = [] }: DiscoverSectionsProps) {
   const reduced = useReducedMotion();
   const chart = useMemo(() => trending.slice(0, 10), [trending]);
+  // Somewhere new: the listener's own picks once there are enough of them, else the general shelf.
+  const wander = picks.length >= 6 ? picks : recommended;
   return (
     <>
       <Section id="browse-moods" title="Browse by mood" hint="Pick a feeling, we fill the room" reduced={reduced}>
@@ -333,7 +351,7 @@ export function DiscoverSections({ trending, madeForYou, recommended, currentSon
       </Section>
 
       {chart.length > 0 ? (
-        <Section id="browse-chart" title="Top 10 today" reduced={reduced}>
+        <Section id="browse-chart" title={chartFor?.regionName ? `Top 10 in ${chartFor.regionName}` : 'Top 10 today'} hint={chartFor?.language ? `${titleCase(chartFor.language)} songs, today` : undefined} reduced={reduced}>
           <ol className="chart-grid">
             {chart.map((song, index) => {
               const current = song.id === currentSongId;
@@ -375,10 +393,10 @@ export function DiscoverSections({ trending, madeForYou, recommended, currentSon
       ) : null}
 
       {madeForYou.length > 0 ? (
-        <Shelf id="browse-loved" title="Loved right now" hint="What everyone has on" songs={madeForYou.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
+        <Shelf id="browse-loved" title="Loved right now" hint={languages.length > 0 ? `Popular in ${languageList(languages)}` : 'What everyone has on'} songs={madeForYou.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
       ) : null}
-      {recommended.length > 0 ? (
-        <Shelf id="browse-fresh" title="Somewhere new to wander" songs={recommended.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
+      {wander.length > 0 ? (
+        <Shelf id="browse-fresh" title="Somewhere new to wander" hint={wander === picks ? 'Picked from what you play' : undefined} songs={wander.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
       ) : null}
 
     </>

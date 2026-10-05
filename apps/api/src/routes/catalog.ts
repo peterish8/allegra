@@ -3,6 +3,7 @@ import { Router } from 'express';
 import type { CatalogService } from '../catalog/catalog.js';
 import { sendFailure, sendSuccess, boundedString, nonNegativeInt, positiveInt, queryString } from './common.js';
 import { parseLanguages } from '../lib/languages.js';
+import { regionByCode, type IndianRegion } from '../shared/regions.js';
 
 export function catalogRouter(catalog: CatalogService): Router {
   const router = Router();
@@ -87,13 +88,22 @@ export function catalogRouter(catalog: CatalogService): Router {
     }
   });
 
-  router.get('/home', async (_request, response) => {
+  // `languages`: the listener's, for every shelf. `region`: a state code for the Top 10, `IN` for all of
+  // India, or absent to use where the request comes from (Vercel's geo headers; never stored).
+  router.get('/home', async (request, response) => {
     try {
-      sendSuccess(response, await catalog.getHome());
+      const region = homeRegion(request.query.region, request.header('x-vercel-ip-country'), request.header('x-vercel-ip-country-region'));
+      sendSuccess(response, await catalog.getHome(parseLanguages(request.query.languages), region ? { region: region.code, regionName: region.name, language: region.language } : null));
     } catch (error) {
       sendFailure(response, error);
     }
   });
 
   return router;
+}
+
+/** The state whose chart Top 10 shows: the one asked for, else where the request comes from in India. */
+export function homeRegion(asked: unknown, country: string | undefined, subdivision: string | undefined): IndianRegion | null {
+  if (typeof asked === 'string' && asked.trim() !== '' && asked.trim().toLowerCase() !== 'auto') return regionByCode(asked);
+  return country?.toUpperCase() === 'IN' ? regionByCode(subdivision) : null;
 }

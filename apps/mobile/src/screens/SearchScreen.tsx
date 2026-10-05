@@ -55,6 +55,8 @@ import Artwork from '../components/allegra/Artwork';
 import { GUTTER, MoodChips, SongRow, TrackItem } from '../components/stream/StreamHome';
 import { Toast } from '../components/Toast';
 import { useBottomClearance } from '../hooks/useBottomClearance';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { SEARCH_TOUR, searchScene } from '../components/allegra/infoTours';
 
 type Props = TabScreenProps<'Search'>;
 type Scope = 'All' | 'On this phone' | 'Online';
@@ -388,7 +390,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
         contentContainerStyle={{ paddingTop: insets.top + Space.xs, paddingBottom: bottomClearance }}
       >
         <View style={styles.header}>
-          <Text style={styles.title} accessibilityRole="header">Search</Text>
+          <InfoTitleRow><Text style={styles.title} accessibilityRole="header">Search</Text><InfoTour label="About Search" steps={SEARCH_TOUR} scene={searchScene} /></InfoTitleRow>
         </View>
 
         <View style={styles.search}>

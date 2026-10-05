@@ -64,9 +64,9 @@ export function BlendStories({ detail, palette, onPlay }: { readonly detail: Ble
   const [shareError, setShareError] = useState<string | null>(null);
   const generation = useRef(0);
   useEffect(() => { generation.current += 1; setPrepared(null); return () => { generation.current += 1; }; }, [detail]);
-  if (detail.stories.length === 0) return null;
   // Cards take turns glowing in each member's colour, so the row reads as everyone's.
   const glows = [...useContext(BlendTones).values()];
+  if (detail.stories.length === 0) return null;
 
   return (
     <ul className="blend-stories" aria-label="Your Blend in numbers">

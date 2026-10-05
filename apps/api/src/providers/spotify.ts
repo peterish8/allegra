@@ -13,7 +13,10 @@ export interface SpotifyPlaylist {
   readonly name: string;
   readonly snapshotId: string;
   readonly total: number;
+  readonly imageUrl: string | null;
 }
+/** Liked Songs has no snapshot id; its size and newest save stand in for one. */
+export interface SpotifyLikedSummary { readonly total: number; readonly snapshotId: string }
 export interface SpotifyProfile { readonly id: string }
 
 export class SpotifyApiError extends Error {
@@ -52,7 +55,7 @@ export class SpotifyProvider {
         const id = str(row.id); const name = str(row.name);
         // Spotify applies the development-mode owner/collaborator restriction server-side.
         if (id && name) {
-          out.push({ id, name: name.slice(0, 120), snapshotId: str(row.snapshot_id) ?? '', total: playlistTotal(row) });
+          out.push({ id, name: name.slice(0, 120), snapshotId: str(row.snapshot_id) ?? '', total: playlistTotal(row), imageUrl: coverUrl(row.images) });
         }
       }
       url = typeof page.next === 'string' ? page.next : null;
@@ -77,10 +80,10 @@ export class SpotifyProvider {
     try {
       const base = `${API}/playlists/${encodeURIComponent(playlistId)}`;
       // The field filter keeps the reply small; if Spotify ever rejects it, the full object still has everything.
-      const row = object(await this.get(accessToken, `${base}?fields=id,name,snapshot_id,items(total),tracks(total)`)
+      const row = object(await this.get(accessToken, `${base}?fields=id,name,snapshot_id,images,items(total),tracks(total)`)
         .catch((error: unknown) => { if (error instanceof SpotifyApiError && error.status === 400) return this.get(accessToken, base); throw error; }));
       const id = str(row.id); const name = str(row.name);
-      return id && name ? { id, name: name.slice(0, 120), snapshotId: str(row.snapshot_id) ?? '', total: playlistTotal(row) } : null;
+      return id && name ? { id, name: name.slice(0, 120), snapshotId: str(row.snapshot_id) ?? '', total: playlistTotal(row), imageUrl: coverUrl(row.images) } : null;
     } catch (error) {
       if (error instanceof SpotifyApiError && error.status === 404) return null;
       throw error;
@@ -95,18 +98,24 @@ export class SpotifyProvider {
 
   public async items(accessToken: string, playlistId: string, offset: number, limit = 50): Promise<{ tracks: SpotifyTrack[]; total: number; snapshotId: string }> {
     const url = `${API}/playlists/${encodeURIComponent(playlistId)}/items?limit=${Math.min(50, limit)}&offset=${Math.max(0, offset)}&market=from_token`;
-    const data = await this.get(accessToken, url) as Record<string, unknown>;
-    const tracks: SpotifyTrack[] = [];
-    for (const raw of Array.isArray(data.items) ? data.items : []) {
-      const row = object(raw);
-      const track = object(row.item ?? row.track);
-      const id = str(track.id); const title = str(track.name);
-      const artists = Array.isArray(track.artists) ? track.artists.map((artist) => str(object(artist).name)).filter((name): name is string => Boolean(name)) : [];
-      if (!id || !title || artists.length === 0 || track.is_local === true || track.type && track.type !== 'track') continue;
-      const ms = number(track.duration_ms) ?? 0;
-      tracks.push({ id, title: title.slice(0, 200), artist: artists.join(', ').slice(0, 240), ...(str(object(track.album).name) ? { album: str(object(track.album).name)!.slice(0, 200) } : {}), durationSec: Math.min(7200, Math.max(0, Math.round(ms / 1000))), addedAt: str(row.added_at) ?? '' });
+    return trackPage(object(await this.get(accessToken, url)));
+  }
+
+  /** Liked Songs, newest first. Null when the connection predates the `user-library-read` scope (403). */
+  public async likedSummary(accessToken: string): Promise<SpotifyLikedSummary | null> {
+    try {
+      const data = object(await this.get(accessToken, `${API}/me/tracks?limit=1`));
+      const total = number(data.total) ?? 0;
+      const newest = str(object(Array.isArray(data.items) ? data.items[0] : undefined).added_at) ?? '';
+      return { total, snapshotId: `liked-${total}-${newest}` };
+    } catch (error) {
+      if (error instanceof SpotifyApiError && error.status === 403) return null;
+      throw error;
     }
-    return { tracks, total: number(data.total) ?? tracks.length, snapshotId: str(data.snapshot_id) ?? '' };
+  }
+
+  public async likedItems(accessToken: string, offset: number, limit = 50): Promise<{ tracks: SpotifyTrack[]; total: number; snapshotId: string }> {
+    return trackPage(object(await this.get(accessToken, `${API}/me/tracks?limit=${Math.min(50, limit)}&offset=${Math.max(0, offset)}&market=from_token`)));
   }
 
   private async get(token: string, url: string): Promise<unknown> {
@@ -137,6 +146,30 @@ export class SpotifyProvider {
       throw new SpotifyApiError(503, 'Spotify is temporarily unavailable.');
     } finally { clearTimeout(timer); }
   }
+}
+
+/** One page of playlist items or saved tracks: both wrap the track as `item` (new) or `track` (old) beside `added_at`. */
+function trackPage(data: Record<string, unknown>): { tracks: SpotifyTrack[]; total: number; snapshotId: string } {
+  const tracks: SpotifyTrack[] = [];
+  for (const raw of Array.isArray(data.items) ? data.items : []) {
+    const row = object(raw);
+    const track = object(row.item ?? row.track);
+    const id = str(track.id); const title = str(track.name);
+    const artists = Array.isArray(track.artists) ? track.artists.map((artist) => str(object(artist).name)).filter((name): name is string => Boolean(name)) : [];
+    if (!id || !title || artists.length === 0 || track.is_local === true || track.type && track.type !== 'track') continue;
+    const ms = number(track.duration_ms) ?? 0;
+    tracks.push({ id, title: title.slice(0, 200), artist: artists.join(', ').slice(0, 240), ...(str(object(track.album).name) ? { album: str(object(track.album).name)!.slice(0, 200) } : {}), durationSec: Math.min(7200, Math.max(0, Math.round(ms / 1000))), addedAt: str(row.added_at) ?? '' });
+  }
+  return { tracks, total: number(data.total) ?? tracks.length, snapshotId: str(data.snapshot_id) ?? '' };
+}
+
+/** The smallest cover still sharp at thumbnail size (Spotify lists widest first; mosaics have no width). Only Spotify's https image CDN. */
+function coverUrl(value: unknown): string | null {
+  const images = (Array.isArray(value) ? value : []).map(object)
+    .map(image => ({ url: str(image.url), width: number(image.width) }))
+    .filter((image): image is { url: string; width: number | undefined } => Boolean(image.url && /^https:\/\/[a-z0-9.-]+\.(scdn\.co|spotifycdn\.com)\//i.test(image.url)));
+  const sized = images.filter(image => image.width !== undefined && image.width >= 160).sort((a, b) => a.width! - b.width!);
+  return (sized[0] ?? images[0])?.url ?? null;
 }
 
 /** Spotify renamed a playlist's `tracks` to `items` (both `{ href, total }`); read either. */

@@ -25,6 +25,8 @@ import { DarkColors } from '../constants/colors';
 import { LibraryStackParamList, RootStackParamList } from '../types/navigation';
 import { Glass, Radius, Signal } from '../constants/allegraTheme';
 import { Playlist, Song } from '../types/song';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { PLAYLISTS_TOUR, playlistsScene } from '../components/allegra/infoTours';
 
 export const PlaylistsScreen: React.FC = () => {
   const colors = useThemeColors();
@@ -162,7 +164,7 @@ export const PlaylistsScreen: React.FC = () => {
               <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
             </Pressable>
           ) : null}
-          <Text style={[styles.title, styles.titleFlex]}>Playlists</Text>
+          <InfoTitleRow style={styles.titleFlex}><Text style={styles.title} accessibilityRole="header">Playlists</Text><InfoTour label="About playlists" steps={PLAYLISTS_TOUR} scene={playlistsScene} /></InfoTitleRow>
           <Pressable onPress={handleCreatePlaylist} style={styles.addButton}>
             <Ionicons name="add-circle-outline" size={28} color={colors.textPrimary} />
           </Pressable>

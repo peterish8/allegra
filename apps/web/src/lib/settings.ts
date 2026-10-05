@@ -1,3 +1,5 @@
+import { INDIAN_REGIONS } from '@shared/regions';
+
 import { DEFAULT_KARAOKE_MIX, normalizeMix, type KaraokeMix } from './karaokeMix';
 
 /**
@@ -34,7 +36,12 @@ export interface Settings {
   readonly karaokeMix: KaraokeMix;
   /** Vercel Analytics + Speed Insights (cookie-less). Applies from the next page load. */
   readonly analytics: boolean;
+  /** Whose "Top 10 today": `auto` (where you are), `IN` (all of India) or a state code (packages/shared/regions.ts). */
+  readonly chartRegion: string;
 }
+
+/** Every value `chartRegion` may hold. */
+export const CHART_REGIONS: readonly string[] = ['auto', 'IN', ...INDIAN_REGIONS.map((region) => region.code)];
 
 export const SETTINGS_KEY = 'allegra-settings-v1';
 /** Enough for a long listening history; oldest entries go first. */
@@ -53,7 +60,8 @@ export const DEFAULT_SETTINGS: Settings = {
   lyricsOffsets: {},
   karaokeMode: 'auto',
   karaokeMix: DEFAULT_KARAOKE_MIX,
-  analytics: true
+  analytics: true,
+  chartRegion: 'auto'
 };
 
 function oneOf<T extends string>(value: unknown, options: readonly T[], fallback: T): T {
@@ -106,7 +114,8 @@ export function parseSettings(raw: string | null): Settings {
     lyricsOffsets: offsets(stored.lyricsOffsets),
     karaokeMode: oneOf(stored.karaokeMode, ['auto', 'basic'], DEFAULT_SETTINGS.karaokeMode),
     karaokeMix: stored.karaokeMix === undefined ? DEFAULT_KARAOKE_MIX : normalizeMix(stored.karaokeMix),
-    analytics: flag(stored.analytics, DEFAULT_SETTINGS.analytics)
+    analytics: flag(stored.analytics, DEFAULT_SETTINGS.analytics),
+    chartRegion: oneOf(stored.chartRegion, CHART_REGIONS, DEFAULT_SETTINGS.chartRegion)
   };
 }
 

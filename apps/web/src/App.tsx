@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ArrowUpToLine, ChevronRight, Download, House, Heart as HeartIcon, Disc3, Pause, Play, SkipBack, SkipForward, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpToLine, ChevronRight, Download, House, Heart as HeartIcon, Disc3, Pause, Play, SkipBack, SkipForward, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -49,7 +49,7 @@ import { QueueActionsContext, type QueueActions } from './hooks/useQueueActions'
 import { collectAlbumTracks } from './lib/album';
 import { tapHaptic } from './lib/haptics';
 import { lockScroll } from './lib/scrollLock';
-import { DEFAULT_PALETTE, extractPalette, shadePalette } from './lib/palette';
+import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
 import { ApiError, applyLibraryOps, ensureSession, fetchArtist, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
 import { shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
@@ -58,10 +58,14 @@ import { useSnapshotArtworks } from './hooks/useSnapshotArtwork';
 import { isControllingAnotherDevice } from '../../../packages/connect/src/index';
 import type { LibrarySong } from './lib/libraryRows';
 import { legacyHashToPath, parseRoute, paths } from './lib/routes';
+import { flags } from './lib/flags';
 import { pickTopResult } from './lib/topResult';
 import { formatTime, titleAccent } from './lib/utils';
 import { PlayheadStore, type Playhead } from './lib/playhead';
 import { itemVariants, motionTokens, pageVariants, spring } from './motion';
+import { InfoTour } from './components/InfoTour';
+import { BROWSE_TOUR } from './components/pageTours';
+import { browseScene } from './components/infoScenes';
 
 const DEFAULT_QUERY = 'top songs';
 type PlayerMode = 'mini' | ImmersivePlayerMode;
@@ -434,11 +438,14 @@ export default function App() {
     }
   }, []);
 
+  // What the home shelves are asked for: the listener's languages and the Top 10 region (set further down,
+  // once the account and settings are known).
+  const homeAsk = useRef<{ languages: readonly string[]; region: string }>({ languages: [], region: 'auto' });
   const loadHome = useCallback(async (signal?: AbortSignal): Promise<void> => {
     setSearching(true);
     setSearchError(null);
     try {
-      const payload = await fetchHome(signal);
+      const payload = await fetchHome(signal, homeAsk.current);
       setHome(payload);
       setFeatured(payload.trending);
     } catch (error) {
@@ -457,11 +464,6 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadHome(controller.signal);
-    return () => controller.abort();
-  }, [loadHome]);
 
   const loadPersonalSpace = useCallback(async (): Promise<void> => {
     setPersonalLoading(true);
@@ -545,6 +547,22 @@ export default function App() {
     if (account.taste?.prompts?.length) return [...account.taste.prompts];
     return deriveMoodPrompts(account.taste);
   }, [account.taste]);
+
+  // The listener's languages for the home shelves: the ones they play most (within a third of the
+  // top one, at most three), from the learned taste. A guest or a new account gets every language.
+  const homeLanguages = useMemo(() => {
+    const ranked = [...(account.taste?.languages ?? [])].sort((a, b) => b.score - a.score);
+    const top = ranked[0]?.score ?? 0;
+    return top > 0 ? ranked.filter((entry) => entry.score >= top / 3).slice(0, 3).map((entry) => entry.name.toLowerCase()) : [];
+  }, [account.taste?.languages]);
+  const homeKey = `${homeLanguages.join(',')}|${settings.chartRegion}`;
+  useEffect(() => {
+    homeAsk.current = { languages: homeLanguages, region: settings.chartRegion };
+    const controller = new AbortController();
+    void loadHome(controller.signal);
+    return () => controller.abort();
+    // homeKey carries both inputs; the arrays themselves change identity on every taste refresh.
+  }, [homeKey, loadHome]);
 
   // A shared playlist opened by link: public, so it works before anyone has signed in.
   useEffect(() => {
@@ -1237,6 +1255,9 @@ export default function App() {
   }, [view, albumSeed, playerSong]);
 
   const shellPalette = shaderPalette;
+  // Light words over a bright background disappear (an ochre cover lights the top bar up). Past this, the
+  // top bar's words go full white with a soft dark halo, which reads on bright and deep colours alike.
+  const topbarBright = paletteBrightness(shellPalette) > 0.18;
   const shellStyle = {
     '--ambient-accent': shellPalette.primary || ambientColor,
     '--hero-art': activeSong?.artwork ? `url(${JSON.stringify(activeSong.artwork)})` : 'none',
@@ -1291,6 +1312,7 @@ export default function App() {
             <Link className="nav-link" href={paths.library} title="Recently played" onClick={(event) => openLibrarySection(event, 'library-played-lately')}><Clock size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Recently played</span></Link>
             <Link className={`nav-link ${view === 'liked' ? 'is-active' : ''}`} aria-current={view === 'liked' ? 'page' : undefined} href={paths.liked} title="Favorite songs"><HeartIcon size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Favorite songs</span></Link>
             <Link className="nav-link" href={paths.library} title="Playlists" onClick={(event) => openLibrarySection(event, 'library-playlists')}><ListMusic size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Playlists</span></Link>
+            {flags.blend ? <Link className={`nav-link ${view === 'blends' || view === 'blend' ? 'is-active' : ''}`} aria-current={view === 'blends' ? 'page' : undefined} href={paths.blends} title="Blends"><Users size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Blends</span></Link> : null}
           </nav>
           <div className="header-actions">
             <button type="button" className={`session-chip${accountResolving && !chipName ? ' is-pending' : ''}`} onClick={() => setAuthOpen(true)} aria-busy={accountResolving || undefined} aria-label={chipName ? 'Open your account' : accountResolving ? 'Checking your account' : 'Sign in or create an account'}>
@@ -1308,9 +1330,9 @@ export default function App() {
       </header>
 
       <main id="main-content" ref={mainRef} tabIndex={-1} aria-label={view === 'home' ? 'Home' : view === 'library' ? 'Your listening library' : view === 'album' ? 'Album' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Blend' : isLegalView(view) ? 'Policies' : 'Discover music'} className={`content-wrap ${view !== 'discover' ? 'inner-page-wrap' : ''} ${isDetailView ? 'is-detail' : ''} ${isCollectionView ? 'is-collection' : ''}`}>
-        <div className="panel-topbar">
+        <div className="panel-topbar" data-tone={topbarBright ? 'bright' : undefined}>
             {isDetailView || isCollectionView ? <button type="button" className="topbar-back" onClick={() => goBack(view === 'liked' || view === 'playlist' ? '#library' : view === 'shared' ? '#home' : '#discover')} aria-label="Back"><ArrowLeft size={17} aria-hidden="true" /><span>Back</span></button> : null}
-            <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' || view === 'import' || view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' ? 'Blends' : view === 'blend' ? 'Blend' : view === 'blendJoin' ? 'Join a Blend' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong></nav>
+            <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' || view === 'import' || view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' ? 'Blends' : view === 'blend' ? 'Blend' : view === 'blendJoin' ? 'Join a Blend' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong>{view === 'discover' ? <InfoTour className="crumbs-info" label="About Browse" steps={BROWSE_TOUR} stage={browseScene} /> : null}</nav>
             <div className="mood-pills" role="group" aria-label="Quick picks"><span className="mood-pills-label" aria-hidden="true">Quick picks</span>{moodPrompts.map((prompt) => <button key={prompt} type="button" className="mood-pill" aria-pressed={query === prompt} onClick={() => { if (view !== 'discover') router.push(paths.discover); setQuery(query === prompt ? '' : prompt); }}><span>{prompt}</span></button>)}</div>
             <CommandPalette
               open={paletteOpen}
@@ -1383,7 +1405,7 @@ export default function App() {
         ) : view === 'import' ? (
           <ImportPage accountKey={knownAccount?.userId ?? null} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} likedIds={likedIds} onSaved={() => void loadPersonalSpace()} />
         ) : view === 'blends' ? (
-          <BlendsPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} />
+          <BlendsPage key={knownAccount?.userId ?? 'guest'} accountKey={knownAccount?.userId ?? null} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} />
         ) : view === 'blend' && blendId ? (
           <BlendPage key={`${knownAccount?.userId ?? 'guest'}:${blendId}`} blendId={blendId} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlay={(song, queue) => void playSong(song, queue)} onLike={toggleLike} />
         ) : view === 'blendJoin' && inviteCode ? (
@@ -1439,6 +1461,9 @@ export default function App() {
                 trending={home?.trending ?? []}
                 madeForYou={home?.madeForYou ?? []}
                 recommended={home?.recommended ?? []}
+                chart={home?.chart ?? null}
+                languages={homeLanguages}
+                picks={aiPicks}
                 currentSongId={playerSong?.id ?? null}
                 isPlaying={playerIsPlaying}
                 likedIds={likedIds}

@@ -24,6 +24,9 @@ import { BlendSheet } from './BlendSheet';
 import { BlendStories } from './BlendStories';
 import { BlendStage } from './BlendStage';
 import { BlendTones, MemberDiscs } from './MemberDisc';
+import { InfoTour } from '../InfoTour';
+import { BLEND_TOUR } from '../pageTours';
+import { blendScene } from '../infoScenes';
 
 interface BlendPageProps {
   readonly blendId: string;
@@ -170,7 +173,7 @@ function BlendView({ detail, currentSongId, isPlaying, likedIds, onPlay, onLike,
         <BlendStage members={detail.members} tones={tones} match={waiting ? undefined : match} group={group} />
         <div className="blend-hero__bar">
           <div className="blend-hero__copy">
-            <BlendTitle detail={detail} canRename={viewer?.userId === detail.ownerId} onRenamed={onRenamed} />
+            <div className="page-title-row"><BlendTitle detail={detail} canRename={viewer?.userId === detail.ownerId} onRenamed={onRenamed} /><InfoTour label="How this Blend works" steps={BLEND_TOUR} stage={blendScene} /></div>
             <p className="blend-hero__meta">
               {updatedToday ? <span>Updated today</span> : null}
               {!waiting ? <span>{detail.tracks.length} songs</span> : null}
