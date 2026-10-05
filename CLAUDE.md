@@ -99,6 +99,27 @@ because it looks fine.
   server process memory. Model and audio-resource failures must leave playback usable via its local
   fallback or a clear capability message.
 
+## Before you call it done
+
+Each of these shipped once looking finished; the stories are in `.planning/LEARNING-LOG.md`
+(2026-10-05), the resulting choices in `docs/decisions.md`.
+
+- **New Express router:** mount it in `apps/api/src/app.ts` and add one supertest through
+  `createApp` that hits a route. Unit tests on the service will not notice a 404.
+- **Edited `packages/shared`:** run `npm run sync:shared`; the API compiles its own copies.
+- **Edited `convex/`:** `npx convex dev --once` pushes the dev deployment and regenerates
+  `convex/_generated`. Never hand-edit `_generated`. Production deploys from the Vercel build.
+- **Changed a matcher or scorer:** bump its cache key version, or old results outlive the fix.
+- **Third-party API:** check its current shape against a working client before trusting docs or
+  memory (Spotify 2026: playlist lists lack track totals, item pages have no `snapshot_id`,
+  development mode returns 403 for playlists you don't own).
+- **No hard-coded production URLs** in redirects; derive them from config.
+- **Sign-in from a deep page** passes `redirectTo` with the current path.
+- **`motion` `animate` writes inline styles:** a target opacity in `animate` beats CSS. Put the value
+  you want in `animate`, not in the stylesheet.
+- **A user reports a failure:** read `vercel logs` for the route before theorising.
+- **Then prove it live:** request the route on the deployment, open the page, use the build.
+
 ## Verifying
 
 ```
