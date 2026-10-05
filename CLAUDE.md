@@ -122,6 +122,12 @@ owns identity and listener data.
 Conventional commits: `feat(api):`, `fix(web):`, `chore(infra):`. Short imperative subject; body only
 when the *why* needs explaining. **No AI attribution footers.**
 
+**New phone build = new version number.** Anything reaching `main` that rebuilds the APK (changes
+under `apps/mobile/`, `packages/`, or `convex/_generated/`; see `.github/workflows/mobile-apk.yml`
+`paths`) must bump `expo.version` in `apps/mobile/app.json` in the same change: patch for fixes,
+minor for features. About → Updates shows that number; without a bump a new build appears as the
+version already installed. Details in `apps/mobile/CLAUDE.md`.
+
 ## Branching
 
 `main` is always deployable and always green. Work on `feat/`, `fix/`, `chore/`, `docs/` branches.

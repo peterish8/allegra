@@ -8,6 +8,12 @@
   root `node_modules` and bundle a second React.
 - CI is at the repo root: `.github/workflows/mobile-ci.yml`, `mobile-apk.yml`, `mobile-smoke.yml`.
   `mobile-apk.yml` publishes `apk-latest` on `peterish8/allegra`, which `services/appUpdate.ts` reads.
+- **Bump the version for every build that reaches `main`.** `expo.version` in `app.json` is the
+  number About → Updates shows: the release title is stamped from it, and `appUpdate.ts` reads it back
+  from there. Whether an update is offered is decided by build time and commit, not this number, so a
+  forgotten bump still installs but reads as the same version (1.0.7 → "Update available · 1.0.7").
+  Patch for fixes, minor for features, in the same change that touches the APK's `paths`
+  (`.github/workflows/mobile-apk.yml`). `package.json`'s `version` is unused; leave it.
 - In-app updates: `components/about/UpdatePanel.tsx` observes `services/appUpdateDownload.ts`;
   native `AppUpdaterModule` and `AppUpdateWorker` persist downloads in WorkManager, validate the
   app package/signing key, and open Android's installer through the scoped update FileProvider.
