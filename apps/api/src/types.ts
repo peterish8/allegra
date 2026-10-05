@@ -59,6 +59,12 @@ export interface HomePayload {
   readonly trending: UnifiedSong[];
   readonly madeForYou: UnifiedSong[];
   readonly recommended: UnifiedSong[];
+  /** What "Top 10 today" was built from: a state's language chart, or null fields for the all-India chart. Additive, 2026-10-05. */
+  readonly chart?: {
+    readonly region: string | null;
+    readonly regionName: string | null;
+    readonly language: string | null;
+  };
 }
 
 export type ApiSuccess<T> = { readonly success: true; readonly data: T };

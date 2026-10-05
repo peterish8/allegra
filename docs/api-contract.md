@@ -89,8 +89,15 @@ provider explicitly. Gaana search results and hydrated songs use a provider-qual
 the server resolves audio from the same catalog that returned the song.
 
 ### `GET /api/home`
-`→ ApiResponse<{ trending: UnifiedSong[]; madeForYou: UnifiedSong[]; recommended: UnifiedSong[] }>`
+`?languages=tamil,english&region=TN` (both optional) `→ ApiResponse<{ trending: UnifiedSong[]; madeForYou: UnifiedSong[]; recommended: UnifiedSong[]; chart?: { region, regionName, language } }>`
 Cache 1 h. Fallback = hardcoded curated playlist IDs.
+Additive, 2026-10-05: `languages` (the listener's, parsed like suggestions) shapes all three shelves.
+`region` picks the state for "Top 10 today": an ISO 3166-2:IN code without the prefix (`TN`, `KL`;
+old codes `TS`, `OR`, `CT`, `UT` accepted), `IN` for the all-India chart, or absent/`auto` to use
+the request's Vercel geo headers when it comes from India (never stored). A state's chart is that
+state's language's top songs (`packages/shared/regions.ts`); `trending` is replaced only when the
+catalog has at least 5 of them, and then `chart` says which state and language. Songs on the chart
+are dropped from the other two shelves.
 
 ### `GET /api/artists/:name` → `ApiResponse<ArtistProfile>` · cache 6 h — added 2026-09-21
 Additive endpoint (no existing shape changed). `name` is the lead artist as shown on a song. Resolves the name through the provider's artist search (exact match preferred), then returns `ArtistProfile` from `packages/shared/types.ts`: a real `image` (500×500 photo or `null`), `isVerified`, `followerCount`, optional `bio`, `songs` (most popular first, all playable), `albums` (with cover + year) and `similar` artists. `404` when no artist matches.
@@ -445,8 +452,8 @@ Allegra catalog audio. Export-file import remains available without a Spotify co
 | GET | `/api/spotify/status` | Authenticated account: `{ configured, connected, dailyEnabled, playlists }`. Tracked playlists include Spotify ID, destination library ID, last sync time and counts. Never tokens. |
 | POST | `/api/spotify/connect` | `{ returnTo?: 'web' \| 'mobile' }`: `{ url }` for OAuth with PKCE, single-use state and read-only playlist scopes. |
 | GET | `/api/spotify/callback` | Spotify callback; consumes state once and returns to the import screen. No tokens in redirects. |
-| GET | `/api/spotify/playlists` | `{ playlists: [{ id, name, snapshotId, total }] }` for the connected account. Development-mode ownership/collaboration restrictions apply. |
-| POST | `/api/spotify/sync` | `{ playlistId }`: one bounded, leased step; `{ complete, added, skipped, reviewNeeded, libraryId }`. Repeat while incomplete. Existing source IDs are skipped; only exact catalog matches save automatically. Uncertain/unavailable matches are retried on the next scan. |
+| GET | `/api/spotify/playlists` | `{ playlists: [{ id, name, snapshotId, total, imageUrl, kind?, needsReconnect? }] }` for the connected account. The first row is always Liked Songs (`id: 'liked'`, `kind: 'liked'`, `imageUrl: null`); `needsReconnect: true` when the connection predates the `user-library-read` scope. `imageUrl` is a Spotify CDN cover (`i.scdn.co` / `mosaic.scdn.co`) or `null`. Development-mode ownership/collaboration restrictions apply. (Additive, 2026-10-05.) |
+| POST | `/api/spotify/sync` | `{ playlistId }` (a playlist ID or `'liked'`): one bounded, leased step. Liked Songs save as Allegra likes (`like` ops, `origin: 'import'`) and answer `libraryId: 'liked'`; a connection without the library scope gets `403`; `{ complete, added, skipped, reviewNeeded, libraryId }`. Repeat while incomplete. Existing source IDs are skipped; only exact catalog matches save automatically. Uncertain/unavailable matches are retried on the next scan. |
 | PATCH | `/api/spotify/settings` | `{ dailyEnabled: boolean }`: explicit opt-in to the backend daily job for previously selected playlists. |
 | POST | `/api/spotify/disconnect` | Removes stored Spotify authorization and stops scheduled transfers; existing Allegra playlists remain. |
 
