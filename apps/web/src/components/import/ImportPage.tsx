@@ -450,6 +450,8 @@ function Review({ state, dispatch, onSave, planError }: {
       {close.length > 0 ? (
         <details className="import-group" open>
           <summary>Check these ({close.length})</summary>
+          <p className="import-note">Same title and artist, but the album or length differs. Tick the ones that are right.</p>
+          {close.some((match) => !match.accepted) ? <button type="button" className="import-spotify-secondary" onClick={() => { for (const match of close) dispatch({ type: 'accept', key: match.key, accepted: true }); }}>Tick all {close.length}</button> : null}
           <ul className="import-list">
             {close.map((match) => (
               <li key={match.key} className="import-row">

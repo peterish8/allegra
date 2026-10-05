@@ -64,6 +64,9 @@ export function BlendRing({ members, pairs, onPair }: {
           </span>
         );
       })}
+      <ul className="sr-only">
+        {pairs.map((pair) => <li key={`list-${pair.a}|${pair.b}`}>{nameOf(pair.a)} and {nameOf(pair.b)}: {pair.match}%</li>)}
+      </ul>
       {members.map((member) => {
         const point = at.get(member.userId);
         return point ? (

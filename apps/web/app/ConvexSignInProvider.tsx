@@ -72,7 +72,8 @@ function SignInBridge({ children }: { readonly children: ReactNode }) {
   }, [signedIn, linked]);
 
   const signInWithGoogle = useCallback(async () => {
-    await signIn('google');
+    // Come back to the page that asked (an invite link, import), not the home page.
+    await signIn('google', { redirectTo: `${window.location.pathname}${window.location.search}` });
   }, [signIn]);
 
   const handleSignOut = useCallback(async () => {
