@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Heart, Pause, Play, Shuffle, Sparkles } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode, RefObject } from 'react';
 
@@ -96,6 +96,9 @@ function shuffled(songs: readonly UnifiedSong[]): UnifiedSong[] {
  * pressing play on, then reads outward: who they play, what they were playing, what we made for
  * them, what they love. The charts and the moods live on Browse (`DiscoverSections`).
  */
+/** How strongly the hovered cover tints the glass: a hint of colour, not a wash. */
+const HOVER_GLOW_OPACITY = 0.14;
+
 export function HomePage({
   profile, taste, recentlyPlayed, likedSongs, picks, picksReason, picksProvider,
   trending, madeForYou, recommended, faces,
@@ -121,9 +124,9 @@ export function HomePage({
     () => dedupe([featureIsResume ? recentlyPlayed : [], trending, madeForYou, recommended, picks], 30),
     [featureIsResume, recentlyPlayed, trending, madeForYou, recommended, picks]
   );
-  // Six compact cards beside the spotlight: what they reach for, padded out with what is hot.
+  // What they reach for, padded out with what is hot.
   const quickPicks = useMemo(
-    () => dedupe([recentlyPlayed.slice(1), likedSongs, picks, trending], 6),
+    () => dedupe([recentlyPlayed.slice(1), likedSongs, picks, trending], 9),
     [recentlyPlayed, likedSongs, picks, trending]
   );
 
@@ -142,90 +145,89 @@ export function HomePage({
     if (first) onPlay(first, order);
   };
 
-  // One row of four, never repeating the song already featured above it.
-  const railPicks = quickPicks.filter((song) => song.id !== feature?.id).slice(0, 4);
+  // Spotify's shortcut grid: eight things to reach for, never repeating the featured song.
+  const shortcuts = quickPicks.filter((song) => song.id !== feature?.id).slice(0, 8);
+  const [hoverArt, setHoverArt] = useState<string | null>(null);
+  const glowArt = hoverArt ?? feature?.artwork ?? null;
 
   return (
     <div className="home-page">
       <motion.section
-        className="home-spotlight"
+        className="home-hero"
         aria-labelledby="home-greeting"
         {...stagger}
         transition={{ duration: motionTokens.duration.slow, ease: motionTokens.ease.decelerate }}
       >
-        {feature ? (
-          <div className="home-spotlight-wash" style={{ backgroundImage: `url("${feature.artwork}")` }} aria-hidden="true" />
-        ) : null}
-        <div className="home-stage">
-          <div className="home-stage__copy">
-            <span className="eyebrow eyebrow-accent">{greeting()}</span>
-            <h1 id="home-greeting">{name ? `${name}, welcome back` : 'Your music, all in one place'}</h1>
-            {inRotation.length > 0 ? <p>Lately it is {inRotation.join(', ')}.</p> : null}
-          </div>
+        {/* Spotify tints its header with the tile under the pointer; here the hovered cover glows behind the glass. */}
+        <AnimatePresence initial={false}>
+          {glowArt ? (
+            <motion.div
+              key={glowArt}
+              className="home-hero__glow"
+              style={{ backgroundImage: `url("${glowArt}")` }}
+              aria-hidden="true"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: HOVER_GLOW_OPACITY }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: motionTokens.duration.slow, ease: motionTokens.ease.standard }}
+            />
+          ) : null}
+        </AnimatePresence>
+        <header className="home-hero__head">
+          <h1 id="home-greeting">{name ? `${greeting()}, ${name}` : greeting()}</h1>
+          {inRotation.length > 0 ? <p>Lately: {inRotation.join(' · ')}</p> : null}
+        </header>
 
+        <div className="home-hero__body">
           {feature ? (
-            <div className="home-stage__now">
-              <div className="home-stage__sleeve">
-                <button
-                  type="button"
-                  className="home-stage__cover"
-                  onClick={playFeature}
-                  aria-label={`${currentSongId === feature.id && isPlaying ? 'Pause' : 'Play'} ${feature.title}`}
-                >
-                  <Artwork song={feature} size="large" />
-                  <span className="home-stage__play">
-                    {currentSongId === feature.id && isPlaying
-                      ? <Pause size={20} fill="currentColor" aria-hidden="true" />
-                      : <Play size={20} fill="currentColor" aria-hidden="true" />}
-                  </span>
-                </button>
-              </div>
-              <div className="home-stage__meta">
-                {featureIsResume ? <span>Continue listening</span> : null}
+            <article className="home-pick" onPointerEnter={() => setHoverArt(null)}>
+              <button type="button" className="home-pick__art" onClick={playFeature} aria-label={`${currentSongId === feature.id && isPlaying ? 'Pause' : 'Play'} ${feature.title}`}>
+                <Artwork song={feature} size="large" />
+              </button>
+              <div className="home-pick__info">
+                <span className="home-pick__label">{featureIsResume ? 'Continue listening' : 'Top pick for you'}</span>
                 <strong title={feature.title}>{feature.title}</strong>
                 <small title={feature.artist}>{feature.artist}</small>
-                <div className="home-feature-actions">
-                  <button type="button" className="btn-primary tactile-control" onClick={playFeature}>
-                    {currentSongId === feature.id && isPlaying
-                      ? <><Pause size={15} fill="currentColor" aria-hidden="true" /> Pause</>
-                      : <><Play size={15} fill="currentColor" aria-hidden="true" /> Play</>}
-                  </button>
-                  <button type="button" className="btn-glass tactile-control" onClick={shuffleFeature} disabled={featureQueue.length < 2} aria-label="Shuffle">
-                    <Shuffle size={15} aria-hidden="true" /> <span className="home-stage__label">Shuffle</span>
-                  </button>
-                </div>
               </div>
+              <div className="home-pick__actions">
+                <button type="button" className="home-pick__play tactile-control" onClick={playFeature} aria-label={`${currentSongId === feature.id && isPlaying ? 'Pause' : 'Play'} ${feature.title}`}>
+                  {currentSongId === feature.id && isPlaying ? <Pause size={20} fill="currentColor" aria-hidden="true" /> : <Play size={20} fill="currentColor" aria-hidden="true" />}
+                </button>
+                <button type="button" className="home-pick__shuffle tactile-control" onClick={shuffleFeature} disabled={featureQueue.length < 2} aria-label="Shuffle">
+                  <Shuffle size={17} aria-hidden="true" />
+                </button>
+              </div>
+            </article>
+          ) : null}
+
+          {shortcuts.length > 0 ? (
+            <div className="home-shortcuts" role="group" aria-label="Jump back in" onPointerLeave={() => setHoverArt(null)}>
+              {shortcuts.map((song) => {
+                const current = song.id === currentSongId;
+                return (
+                  <button
+                    key={song.id}
+                    type="button"
+                    className={`home-shortcut ${current ? 'is-current' : ''}`}
+                    onClick={() => (current ? onToggle() : onPlay(song, [...shortcuts]))}
+                    onPointerEnter={() => setHoverArt(song.artwork || null)}
+                    onFocus={() => setHoverArt(song.artwork || null)}
+                    aria-label={`${current && isPlaying ? 'Pause' : 'Play'} ${song.title}`}
+                  >
+                    <Artwork song={song} size="small" />
+                    <span className="home-shortcut__copy">
+                      <strong title={song.title}>{song.title}</strong>
+                      <small title={song.artist}>{song.artist}</small>
+                    </span>
+                    <span className="home-shortcut__play" aria-hidden="true">
+                      {current && isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ) : null}
         </div>
-
-        {railPicks.length > 0 ? (
-          <div className="home-rail" role="group" aria-label="Quick picks">
-            {railPicks.map((song) => {
-              const current = song.id === currentSongId;
-              return (
-                <button
-                  key={song.id}
-                  type="button"
-                  className={`home-quick-card ${current ? 'is-current' : ''}`}
-                  onClick={() => (current ? onToggle() : onPlay(song, [...railPicks]))}
-                  aria-label={`${current && isPlaying ? 'Pause' : 'Play'} ${song.title}`}
-                >
-                  <Artwork song={song} size="small" />
-                  <span className="home-quick-copy">
-                    <strong title={song.title}>{song.title}</strong>
-                    <small title={song.artist}>{song.artist}</small>
-                  </span>
-                  <span className="home-quick-play">
-                    {current && isPlaying
-                      ? <Pause size={14} fill="currentColor" aria-hidden="true" />
-                      : <Play size={14} fill="currentColor" aria-hidden="true" />}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
       </motion.section>
 
       {profile?.isGuest && hasActivity ? (

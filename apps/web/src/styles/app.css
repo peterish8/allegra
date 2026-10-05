@@ -1306,7 +1306,6 @@ body::after,
 
   .panel-topbar .mood-pills-label { display: none; }
   .home-page { gap: 28px; }
-  .home-spotlight-lead h1 { font-size: clamp(28px, 8vw, 40px); }
   .tile { flex-basis: 148px; }
   .artist-card { flex: 0 0 140px; height: 184px; }
   .now-panel { grid-template-columns: 96px minmax(0, 1fr); }
@@ -3320,102 +3319,7 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 /* ---------- Home ---------- */
 .home-page { display: flex; min-width: 0; flex-direction: column; gap: 38px; container: browse / inline-size; animation: page-in 0.4s var(--ease-decelerate) both; }
 
-/* ---------- Spotlight: one song worth pressing play on, plus six quick picks ----------
- * Full-bleed band at the top of Home. The cover is blown up, blurred and veiled behind the
- * copy, so the page takes its colour from whatever they are about to hear. Both layers are
- * static (no transition), so nothing here animates a non-compositor property. */
-.home-spotlight {
-  --spotlight-veil: rgba(10, 11, 14, 0.62);
-  --spotlight-veil-deep: rgba(10, 11, 14, 0.9);
-  position: relative;
-  isolation: isolate;
-  /* clip, not hidden: the wash overhangs by design, and a hidden box is still a scroll
-     container, so a drag, text selection or focus inside could slide the whole stage sideways. */
-  overflow: hidden;
-  overflow: clip;
-  margin: -6px calc(var(--page-gutter, 36px) * -1) 0;
-  padding: clamp(20px, 2.6cqw, 34px) var(--page-gutter, 36px) clamp(22px, 2.8cqw, 36px);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.home-spotlight-wash {
-  position: absolute;
-  z-index: -2;
-  inset: -20%;
-  background-position: center;
-  background-size: cover;
-  background-repeat: no-repeat;
-  filter: blur(64px) saturate(1.7);
-  opacity: 0.45;
-  transform: scale(1.12);
-}
-.home-spotlight::after {
-  position: absolute;
-  z-index: -1;
-  background: linear-gradient(170deg, var(--spotlight-veil), var(--spotlight-veil-deep) 78%);
-  content: '';
-  inset: 0;
-}
-
-.home-spotlight-inner { display: grid; align-items: center; gap: clamp(18px, 2.6cqw, 36px); grid-template-columns: minmax(0, 1fr) minmax(0, 400px); }
-.home-spotlight-lead { min-width: 0; }
-.home-spotlight-lead h1 { margin: 6px 0 10px; color: var(--ink); font-size: clamp(30px, 4.2cqw, 54px); font-weight: 700; letter-spacing: -0.045em; line-height: 1.02; text-wrap: balance; }
-.home-spotlight-lead p { max-width: 52ch; margin: 0; color: var(--ink-muted); font-size: 15px; line-height: 1.5; }
-
-.home-feature { display: flex; align-items: center; gap: 16px; margin-top: 22px; }
-.home-feature-art { position: relative; display: block; width: 104px; height: 104px; flex: 0 0 104px; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface-raised); cursor: pointer; box-shadow: 0 22px 44px -20px rgba(0, 0, 0, 0.85); transition: transform var(--d-base) var(--ease-decelerate); }
-.home-feature-art .artwork { width: 100%; height: 100%; border-radius: 0; }
-@media (hover: hover) { .home-feature-art:hover { transform: translateY(-3px); }}
-.home-feature-play { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.36); color: #fff; opacity: 1; transition: opacity var(--d-fast) var(--ease-standard); }
-@media (hover: hover) and (pointer: fine) {
-  .home-feature-play { opacity: 0; }
-  .home-feature-art:hover .home-feature-play,
-  .home-feature-art:focus-visible .home-feature-play { opacity: 1; }
-}
-.home-feature-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
-.home-feature-copy > span { color: var(--ink-faint); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
-.home-feature-copy strong { overflow: hidden; color: var(--ink); font-size: 19px; font-weight: 700; letter-spacing: -0.02em; text-overflow: ellipsis; white-space: nowrap; }
-.home-feature-copy small { overflow: hidden; color: var(--ink-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.home-feature-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.home-feature-actions .tactile-control { display: inline-flex; min-height: 38px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; padding-inline: 18px; border-radius: var(--radius-pill); font-size: 13px; white-space: nowrap; }
-.home-feature-actions .tactile-control:disabled { cursor: default; opacity: 0.45; }
-
 /* Quick picks: the compact half of the band — two columns of what they reach for. */
-.home-quick { display: grid; min-width: 0; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.home-quick-card {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  padding: 0 10px 0 0;
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--ink);
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-  transition: background-color var(--d-fast) var(--ease-standard), border-color var(--d-fast) var(--ease-standard), transform var(--d-fast) var(--ease-decelerate);
-}
-@media (hover: hover) { .home-quick-card:hover { border-color: var(--border-strong); background: rgba(255, 255, 255, 0.12); transform: translateY(-2px); }}
-.home-quick-card:active { transform: scale(0.99); }
-.home-quick-card.is-current { border-color: color-mix(in srgb, var(--wave) 55%, transparent); }
-.home-quick-card .artwork { width: 48px; height: 48px; flex: 0 0 48px; border-radius: 0; }
-.home-quick-copy { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; gap: 1px; }
-.home-quick-copy strong { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.home-quick-copy small { overflow: hidden; color: var(--ink-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.home-quick-play { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border-radius: 50%; background: var(--wave); color: var(--wave-ink); opacity: 0; transition: opacity var(--d-fast) var(--ease-standard); }
-.home-quick-card:hover .home-quick-play,
-.home-quick-card:focus-visible .home-quick-play,
-.home-quick-card.is-current .home-quick-play { opacity: 1; }
-
-@container browse (max-width: 900px) {
-  .home-spotlight-inner { grid-template-columns: minmax(0, 1fr); }
-}
-@container browse (max-width: 560px) {
-  .home-quick { grid-template-columns: minmax(0, 1fr); }
-  .home-feature { flex-wrap: wrap; }
-}
 
 .home-section { display: flex; min-width: 0; flex-direction: column; gap: 14px; }
 .home-section .section-heading { margin: 0; }
@@ -3547,13 +3451,8 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 
 /* Reduced motion keeps every one of these controls — it only takes the travel out of them. */
 @media (prefers-reduced-motion: reduce) {
-  .home-feature-art,
-  .home-quick-card,
   .mood-card,
   .shelf-arrow { transition: opacity var(--d-fast) var(--ease-standard), background-color var(--d-fast) var(--ease-standard), border-color var(--d-fast) var(--ease-standard); }
-  .home-feature-art:hover,
-  .home-quick-card:hover,
-  .home-quick-card:active,
   .mood-card:hover,
   .mood-card:active,
   .shelf-arrow:hover:not(:disabled),
@@ -3807,7 +3706,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     scrollbar-width: none;
   }
   .panel-topbar .mood-pills::-webkit-scrollbar { display: none; }
-  .home-spotlight { margin-top: 0; }
   .mood-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .guest-nudge { flex-direction: column; align-items: flex-start; }
   .taste-card { padding: 20px; }
@@ -5599,44 +5497,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 
 /* Home feature frosted creative panel */
-.home-feature {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 22px;
-  align-items: center;
-  padding: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 28px;
-  background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03) 48%),
-    rgba(12, 14, 18, 0.42);
-  box-shadow: 0 28px 70px -40px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(26px) saturate(160%);
-  -webkit-backdrop-filter: blur(26px) saturate(160%);
-}
-
-.home-feature-art {
-  width: min(42vw, 168px);
-  border-radius: 20px;
-  overflow: hidden;
-  box-shadow: 0 20px 40px -24px rgba(0, 0, 0, 0.8);
-}
-
-.home-feature-copy {
-  min-width: 0;
-}
-
-@media (max-width: 640px) {
-  .home-feature {
-    grid-template-columns: 1fr;
-    gap: 14px;
-    padding: 14px;
-    border-radius: 24px;
-  }
-  .home-feature-art {
-    width: 112px;
-  }
-}
 
 /* Artist about: premium smooth scroll */
 .artist-about__sheet {
@@ -6017,127 +5877,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .bottom-nav__item::before { transition: none; }
 }
 
-/* ---------- Home stage: a curved, frosted hero ----------
- * The old hero was a full-bleed rectangle: a sharp-cornered veil with a bottom hairline. It is now a
- * contained glass stage (30px, per DESIGN.md's large-surface radius) whose wash is clipped to its own
- * curve. Inside, the feature song is a fanned stack of sleeves beside the greeting, and the six
- * quick picks become a swipeable rail underneath (a grid once there is room), the way Apple Music's
- * "Listen Now" and YouTube Music's Quick picks carousel present them. Only transform animates. */
-.home-spotlight {
-  --stage-pad: clamp(18px, 3cqw, 34px);
-  margin: 0;
-  padding: var(--stage-pad);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 30px;
-  box-shadow: 0 40px 90px -52px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  -webkit-backdrop-filter: blur(26px) saturate(150%);
-  backdrop-filter: blur(26px) saturate(150%);
-}
-
-.home-stage {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-  align-items: center;
-  gap: clamp(20px, 3.4cqw, 48px);
-}
-.home-stage__copy { min-width: 0; }
-.home-stage__copy h1 { margin: 6px 0 10px; color: var(--ink); font-size: clamp(30px, 4.4cqw, 56px); font-weight: 700; letter-spacing: -0.045em; line-height: 1.02; text-wrap: balance; }
-.home-stage__copy p { max-width: 46ch; margin: 0; color: var(--ink-muted); font-size: 15px; line-height: 1.55; }
-
-.home-stage__now { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: clamp(18px, 2.6cqw, 30px); }
-
-.home-stage__sleeve { --cover: clamp(112px, 17cqw, 188px); position: relative; width: var(--cover); height: var(--cover); flex: none; }
-.home-stage__sleeve::before,
-.home-stage__sleeve::after { position: absolute; inset: 0; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 24px; background: rgba(255, 255, 255, 0.08); content: ''; }
-.home-stage__sleeve::before { opacity: 0.65; transform: translate(-9%, 3%) rotate(-10deg); }
-.home-stage__sleeve::after { background: rgba(255, 255, 255, 0.13); opacity: 0.9; transform: translate(-4.5%, 1.5%) rotate(-6deg); }
-.home-stage__cover {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 24px;
-  background: var(--surface-raised);
-  box-shadow: 0 28px 56px -24px rgba(0, 0, 0, 0.85);
-  cursor: pointer;
-  transform: rotate(-2deg);
-  transition: transform var(--d-base) var(--ease-decelerate);
-}
-@media (hover: hover) { .home-stage__cover:hover { transform: rotate(0deg) translateY(-3px); }}
-.home-stage__cover:active { transform: rotate(-2deg) scale(0.98); }
-.home-stage__cover .artwork { width: 100%; height: 100%; border-radius: 0; }
-.home-stage__play {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  display: grid;
-  width: 46px;
-  height: 46px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--wave);
-  color: var(--wave-ink);
-  box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--wave) 60%, transparent);
-}
-
-.home-stage__meta { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
-.home-stage__meta > span { color: var(--ink-faint); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
-.home-stage__meta strong { display: -webkit-box; overflow: hidden; color: var(--ink); font-size: clamp(17px, 1.4cqw + 9px, 23px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.home-stage__meta small { overflow: hidden; color: var(--ink-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-
 /* Quick picks rail: swipe on a phone, three-up grid when the stage is wide enough. */
-.home-rail {
-  display: flex;
-  gap: 10px;
-  margin: clamp(18px, 2.6cqw, 30px) calc(var(--stage-pad) * -1) 0;
-  padding: 2px var(--stage-pad) 4px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-padding-inline: var(--stage-pad);
-  scrollbar-width: none;
-  /* Cards dissolve into the stage's side padding instead of being sliced by the card edge.
-     The fade is exactly the padding, so a card at rest is never dimmed. */
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--stage-pad), #000 calc(100% - var(--stage-pad)), transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 var(--stage-pad), #000 calc(100% - var(--stage-pad)), transparent 100%);
-}
-.home-rail::-webkit-scrollbar { display: none; }
-.home-rail .home-quick-card {
-  height: 64px;
-  flex: 0 0 clamp(214px, 26cqw, 270px);
-  padding: 0 14px 0 0;
-  border-color: rgba(255, 255, 255, 0.14);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.07);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-}
-.home-rail .home-quick-card .artwork { width: 64px; height: 64px; flex: 0 0 64px; }
-.home-rail .home-quick-copy strong { font-size: 14px; }
-.home-rail .home-quick-copy small { font-size: 12px; }
-
-@container browse (min-width: 900px) {
-  .home-rail { display: grid; margin-inline: 0; padding-inline: 0; overflow: visible; grid-template-columns: repeat(3, minmax(0, 1fr)); -webkit-mask-image: none; mask-image: none; }
-  .home-rail .home-quick-card { flex: none; }
-}
-@container browse (max-width: 720px) {
-  .home-stage { grid-template-columns: minmax(0, 1fr); gap: 20px; }
-}
-@container browse (max-width: 420px) {
-  .home-spotlight { border-radius: 26px; }
-  .home-stage__sleeve { --cover: 108px; }
-  .home-stage__now { gap: 16px; }
-  /* Play plus an icon-only Shuffle fit on one line in the narrow column. */
-  .home-stage__label { display: none; }
-  .home-feature-actions .btn-glass.tactile-control { width: 44px; padding-inline: 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .home-stage__cover { transition: none; }
-}
 
 /* Desktop mood chips: one tidy row that fades out and scrolls, instead of wrapping to a second line. */
 @media (min-width: 901px) {
@@ -7551,52 +7291,8 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .mood-sleeve.is-lead:hover .mood-sleeve__disc { transform: translateX(-52px); }
   .mood-sleeve:hover .mood-sleeve__face { transform: rotate(-4deg); }
 }
-
-/* ---------- Home stage, neater ----------
- * One cover, not a fan of ghost sleeves behind it; the veil darkens the greeting's side and lets the
- * cover's own colour glow on the side the cover sits; the two small labels are sentence case with a
- * dot of the accent; a hairline parts the greeting from the quick picks, which lift a step on hover. */
 /* Clear frosted glass: the page's moving glow shows through, blurred. No dark veil and no cover wash;
  * a faint white sheen and the lit top edge are the only paint, so text sits on the real backdrop. */
-.home-spotlight::after { background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02) 60%); }
-.home-spotlight-wash { display: none; }
-.home-stage__sleeve::before,
-.home-stage__sleeve::after { display: none; }
-.home-stage__cover { transform: none; box-shadow: 0 30px 60px -26px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.06); }
-@media (hover: hover) { .home-stage__cover:hover { transform: translateY(-3px) scale(1.015); } }
-.home-stage__cover:active { transform: scale(0.98); }
-.home-stage__play { transition: transform var(--d-base) var(--ease-spring); }
-@media (hover: hover) { .home-stage__cover:hover .home-stage__play { transform: scale(1.08); } }
-
-.home-stage__copy .eyebrow,
-.home-stage__meta > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ink-muted);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.home-stage__copy .eyebrow::before,
-.home-stage__meta > span::before { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--wave); content: ''; }
-.home-stage__copy h1 { margin: 10px 0 12px; }
-
-.home-rail { padding-top: clamp(16px, 2.2cqw, 24px); border-top: 1px solid rgba(255, 255, 255, 0.08); }
-.home-rail .home-quick-card { transition: transform var(--d-base) var(--ease-press), background-color var(--d-fast) var(--ease-standard); }
-.home-rail .home-quick-card .artwork { transition: transform var(--d-base) var(--ease-press); }
-@media (hover: hover) {
-  .home-rail .home-quick-card:hover { background: rgba(255, 255, 255, 0.1); transform: translateY(-2px); }
-  .home-rail .home-quick-card:hover .artwork { transform: scale(1.06); }
-}
-.home-rail .home-quick-card:active { transform: scale(0.985); }
-@media (prefers-reduced-motion: reduce) {
-  .home-stage__cover:hover,
-  .home-stage__cover:hover .home-stage__play,
-  .home-rail .home-quick-card:hover,
-  .home-rail .home-quick-card:hover .artwork { transform: none; }
-}
 
 /* ── Glow background: the phone's glow. Two glows in the cover's colours drift across the top third and
       melt into black, the same fade stops as the app's GlowRoom. Transform only; still when paused. ── */
@@ -7642,21 +7338,90 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .glow-room__blob { animation: none; }
 }
 
-/* ---------- Home stage, decluttered ----------
- * One greeting, one featured song with one play control, and one quiet row of four picks.
- * No divider: the gap does the separating. Shuffle is an icon; play marks appear on hover. */
-.home-rail { border-top: 0; margin-top: clamp(22px, 3cqw, 34px); }
-@container browse (min-width: 900px) {
-  .home-rail { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* ---------- Home hero: greeting, a top pick, a shortcut grid ----------
+ * Spotify's shortcut grid beside Apple Music's large "Top pick" card, no marketing copy. Every
+ * surface is clear glass: the page's glow shows through, and the cover under the pointer tints it.
+ * Only opacity and transform animate. */
+.home-hero { position: relative; isolation: isolate; display: grid; gap: clamp(16px, 2cqw, 24px); margin-bottom: clamp(8px, 1.4cqw, 18px); }
+.home-hero__glow {
+  position: absolute;
+  z-index: -1;
+  inset: 14% -6% 12%;
+  background-position: center;
+  background-size: cover;
+  filter: blur(90px) saturate(1.05);
+  pointer-events: none;
 }
-.home-rail .home-quick-card { height: 60px; border-color: transparent; background: rgba(255, 255, 255, 0.06); }
-.home-rail .home-quick-card .artwork { width: 60px; height: 60px; flex-basis: 60px; border-radius: 16px; }
-.home-stage__label { display: none; }
-.home-feature-actions .btn-glass.tactile-control { width: 44px; padding-inline: 0; }
-.home-stage__copy h1 { margin-bottom: 0; }
-.home-stage__copy p { margin-top: 12px; }
-@media (hover: hover) and (pointer: fine) {
-  .home-stage__play { opacity: 0; transition: opacity var(--d-fast) var(--ease-standard), transform var(--d-base) var(--ease-spring); }
-  .home-stage__cover:hover .home-stage__play,
-  .home-stage__cover:focus-visible .home-stage__play { opacity: 1; }
+.home-hero__head h1 { margin: 0; color: var(--ink); font-size: clamp(26px, 2.2cqw + 12px, 40px); font-weight: 700; letter-spacing: -0.035em; line-height: 1.08; }
+.home-hero__head p { margin: 6px 0 0; color: var(--ink-muted); font-size: 14px; }
+
+.home-hero__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@container browse (min-width: 760px) {
+  .home-hero__body { grid-template-columns: clamp(230px, 26cqw, 320px) minmax(0, 1fr); gap: clamp(12px, 1.4cqw, 18px); align-items: stretch; }
+}
+
+/* Clear glass shared by the pick and the tiles. */
+.home-pick,
+.home-shortcut {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025) 70%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 24px 60px -40px rgba(0, 0, 0, 0.9);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+}
+
+/* The top pick: artwork first, words second, one bright play. */
+.home-pick { position: relative; display: grid; grid-template-columns: 112px minmax(0, 1fr); grid-template-areas: 'art info' 'art actions'; gap: 4px 14px; align-items: center; padding: 12px; border-radius: 24px; }
+.home-pick__art { grid-area: art; display: block; padding: 0; overflow: hidden; border: 0; border-radius: 16px; background: none; cursor: pointer; aspect-ratio: 1; }
+.home-pick__art .artwork { width: 100%; height: 100%; border-radius: 0; transition: transform var(--d-slow) var(--ease-decelerate); }
+@media (hover: hover) { .home-pick:hover .home-pick__art .artwork { transform: scale(1.04); } }
+.home-pick__info { grid-area: info; display: flex; min-width: 0; flex-direction: column; gap: 2px; align-self: end; }
+.home-pick__label { display: inline-flex; align-items: center; gap: 6px; color: rgba(255, 255, 255, 0.72); font-size: 12px; font-weight: 600; }
+.home-pick__label::before { width: 6px; height: 6px; border-radius: 50%; background: var(--wave); content: ''; }
+.home-pick__info strong { display: -webkit-box; overflow: hidden; color: var(--ink); font-size: clamp(18px, 1cqw + 12px, 24px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.home-pick__info small { overflow: hidden; color: rgba(255, 255, 255, 0.72); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.home-pick__actions { grid-area: actions; display: flex; align-items: center; gap: 8px; align-self: start; margin-top: 8px; }
+.home-pick__play { display: grid; width: 48px; height: 48px; place-items: center; border: 0; border-radius: 50%; background: var(--wave); color: var(--wave-ink); cursor: pointer; box-shadow: 0 14px 30px -14px color-mix(in srgb, var(--wave) 80%, transparent); }
+.home-pick__shuffle { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 50%; background: rgba(255, 255, 255, 0.06); color: var(--ink); cursor: pointer; }
+.home-pick__shuffle:disabled { opacity: 0.4; cursor: default; }
+
+@container browse (min-width: 760px) {
+  /* Wide: the pick stands tall like an Apple Music Top Pick card. */
+  .home-pick { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'art' 'info' 'actions'; gap: 12px; align-content: start; padding: 12px 12px 16px; border-radius: 28px; }
+  .home-pick__art { border-radius: 20px; }
+  .home-pick__info, .home-pick__actions { padding-inline: 4px; margin-top: 0; }
+}
+
+/* Shortcuts: two columns everywhere, four rows tall beside the pick so both columns end together. */
+.home-shortcuts { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 64px; gap: 10px; }
+@container browse (min-width: 760px) {
+  .home-shortcuts { grid-template-rows: repeat(4, minmax(64px, 1fr)); grid-auto-rows: 0; gap: clamp(10px, 1.2cqw, 14px); }
+}
+.home-shortcut { position: relative; display: flex; min-width: 0; align-items: center; gap: 12px; padding: 0 12px 0 0; overflow: hidden; border-radius: 16px; color: var(--ink); text-align: left; cursor: pointer; transition: transform var(--d-base) var(--ease-press), opacity var(--d-fast) var(--ease-standard); }
+.home-shortcut { height: 100%; min-height: 0; }
+/* contain: size drops the image's own size, so the cover takes the row's height and stays square. */
+.home-shortcut .artwork { contain: size; width: auto; height: 100%; flex: none; aspect-ratio: 1; border-radius: 0; }
+.home-shortcut__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.home-shortcut__copy strong { overflow: hidden; font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.home-shortcut__copy small { overflow: hidden; color: rgba(255, 255, 255, 0.7); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.home-shortcut__play { display: grid; width: 34px; height: 34px; flex: none; place-items: center; border-radius: 50%; background: var(--wave); color: var(--wave-ink); opacity: 0; transform: translateY(4px); transition: opacity var(--d-fast) var(--ease-standard), transform var(--d-base) var(--ease-decelerate); }
+.home-shortcut:focus-visible .home-shortcut__play,
+.home-shortcut.is-current .home-shortcut__play { opacity: 1; transform: none; }
+.home-shortcut.is-current { border-color: color-mix(in srgb, var(--wave) 45%, transparent); }
+@media (hover: hover) {
+  .home-shortcut:hover { transform: translateY(-2px); }
+  .home-shortcut:hover .home-shortcut__play { opacity: 1; transform: none; }
+}
+.home-shortcut:active { transform: scale(0.985); }
+@media (prefers-reduced-motion: reduce) {
+  .home-shortcut, .home-shortcut:hover, .home-shortcut:active, .home-pick:hover .home-pick__art .artwork { transform: none; }
+  .home-shortcut__play { transform: none; }
+}
+@container browse (max-width: 759px) {
+  /* Phones: Spotify's compact 56px shortcuts; the play mark only on the song that is playing. */
+  .home-shortcuts { grid-auto-rows: 56px; gap: 8px; }
+  .home-shortcut { gap: 10px; padding-right: 8px; border-radius: 12px; }
+  .home-shortcut__play { display: none; }
+  .home-shortcut.is-current .home-shortcut__play { display: grid; width: 28px; height: 28px; }
+  .home-shortcut__copy strong { font-size: 13px; }
 }
