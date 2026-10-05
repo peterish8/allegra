@@ -110,6 +110,9 @@ Each of these shipped once looking finished; the stories are in `.planning/LEARN
 - **Edited `convex/`:** `npx convex dev --once` pushes the dev deployment and regenerates
   `convex/_generated`. Never hand-edit `_generated`. Production deploys from the Vercel build.
 - **Changed a matcher or scorer:** bump its cache key version, or old results outlive the fix.
+- **Generated playlist IDs:** exercise `parseLibraryOps` in `apps/api/src/services/spotifyTransfer.test.ts`; direct store writes can bypass its alphabet (learning log item 17).
+- **Invite parser fixtures:** use a valid code with the production generator's length and alphabet in `apps/mobile/src/hooks/useDeepLinks.test.ts` (item 19).
+- **Convex timeout failures:** rerun `npm.cmd run convex:test` without overlapping `npm.cmd run mobile:check` before increasing timeouts (item 20).
 - **Third-party API:** check its current shape against a working client before trusting docs or
   memory (Spotify 2026: playlist lists lack track totals, item pages have no `snapshot_id`,
   development mode returns 403 for playlists you don't own).

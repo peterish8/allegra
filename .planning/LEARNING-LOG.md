@@ -135,8 +135,49 @@ About → Updates offered "1.0.7" to people on 1.0.7. Now a rule in both CLAUDE.
 backdrop, not a dark veil; "less vibrant" needed a real opacity change (see 11). Asking which
 element, or sharing a screenshot before polishing, would have been faster.
 
+**17. Spotify-created playlists did not satisfy the library edit contract.** During the handoff,
+`SpotifyTransferService.sync` still generated `spotify:<playlistId>`, while `parseLibraryOps`
+accepted only letters, numbers, `_` and `-`. A direct parser check rejected the generated ID and
+accepted `spotify-<playlistId>`.
+*Cause:* the transfer called `auth.library.apply` directly; its service test used a fake that
+accepted every operation, bypassing the device request parser.
+*Fix:* **open**, recorded first in `blend/HANDOFF-2026-10-05.md`: use a valid ID and migrate any
+existing playlist rows, items, receipts and tracked destinations together. Changing the prefix
+alone could duplicate already-imported playlists.
+*Rule:* generated playlist IDs must pass `parseLibraryOps` in the transfer regression test.
+
+**18. A shared identity change broke existing deduplication checks.** An intermediate identity
+implementation used only a lead credit and failed existing API/web tests.
+*Cause:* fuzzy import matching and canonical recording identity were treated as the same rule.
+*Fix:* `packages/shared/identity.ts` normalised and sorted complete credited names, preserving
+word order inside each name, Unicode marks and recording versions; `identity.test.ts` covered
+those distinctions. The subsequent root test run passed.
+
+**19. The mobile invite test expected an invalid code to open.** The full mobile run failed in
+`src/hooks/useDeepLinks.test.ts` on `ABCD1234`; the production parser rejected it.
+*Cause:* the test fixture did not satisfy the lowercase 12-character invite alphabet.
+*Fix:* used the valid `abcdefghjkmn` fixture; the four focused deep-link tests passed. The earlier
+full-run failure log remains historical evidence, not a current release result.
+*Rule:* valid invite fixtures must satisfy the production generator's length and alphabet.
+
+**20. Concurrent validation looked like a Convex regression.** Mobile coverage ran for about
+732 seconds while root/Convex checks also ran; the standalone Convex log showed timeout failures.
+*Cause:* competing validation processes overloaded this host. The same six Convex files passed
+after the mobile run ended, without increasing their timeout.
+*Fix:* the subsequent `npm.cmd test` run passed, including 66 Convex tests in 2.67 seconds.
+*Rule:* rerun timed-out Convex checks without overlapping mobile coverage before changing timeouts.
+
+**21. The session summary no longer described the live release.** The initial handoff context
+described unfinished worker changes; the checkout already had the implementation merged and later
+fixes on `main`.
+*Cause:* another session advanced Git and the APK workflow after the earlier summary.
+*Fix:* checked `git status`, local/remote SHAs, `gh run view` and `gh release view apk-latest`
+before writing the handoff. Published 1.0.8 and the in-progress 1.0.9 release were kept distinct.
+The final check confirmed the 1.0.9 workflow succeeded and published; the handoff was updated again.
+
 **Would do differently:** before reporting a feature finished, hit it live: the route, the
-deployment, the device. Every item above passed unit tests.
+deployment, the device. Passing service tests alone did not prove the API boundary or release;
+refresh the checkout and release evidence before handing work to the next session.
 
 ---
 

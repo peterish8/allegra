@@ -1,6 +1,6 @@
 # State: Blend and Import
 
-> Superseded for phases 03-11 on 2026-10-05: all are implemented on `feat/blend-and-import`. Current status per finding: `AUDIT-2026-10-05.md`, last section.
+> Historical plan table below. The implementation from `feat/blend-and-import` was merged to `main` in `af814e0` on 2026-10-05, with later fixes. Read `AUDIT-2026-10-05.md` (last section) and `HANDOFF-2026-10-05.md` for current findings, configuration and release evidence. Remaining verification is not a new implementation task for every row marked "not started" here.
 
 Updated 2026-10-04. Status: in progress. Owner approved PLAN.md section 2 on 2026-10-04.
 

@@ -5,6 +5,17 @@ it. Newest first. Mistakes that led to some of these are in `.planning/LEARNING-
 
 ## 2026-10-05
 
+### Recording identity stays stricter than cross-catalog matching
+**Decided:** `packages/shared/identity.ts` keys a recording by its normalised title and complete
+credited artist names. Credit order may change; word order inside a name, different credited
+people, and live/remix/acoustic versions remain meaningful. Unicode combining marks are retained.
+`importMatch.ts` may use overlapping credits and duration evidence to find the same recording
+across catalogs; that rule does not replace canonical identity.
+**Why:** a lead-only identity change failed existing deduplication checks. Sorting complete names
+restored those expectations without conflating distinct artists or recording versions.
+**Changes if:** provider-independent recording identifiers become available, with an explicit
+migration for existing tally and library identities.
+
 ### Spotify transfer uses PKCE and no client secret
 **Decided:** OAuth Authorization Code with PKCE; only the public `SPOTIFY_CLIENT_ID` is configured.
 The client secret is never stored anywhere.
