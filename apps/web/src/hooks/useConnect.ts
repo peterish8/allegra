@@ -142,7 +142,7 @@ function audioSnapshot(audio: AudioPlayerState): PlayerSnapshot {
     ...(song ? { song } : {}),
     queue,
     isPlaying: audio.isPlaying,
-    positionSec: audio.audioRef.current?.currentTime ?? audio.currentTime,
+    positionSec: audio.audioRef.current?.currentTime ?? audio.playhead.get(),
     volume: audio.volume,
     shuffle: audio.shuffle,
     repeat: audio.repeat
@@ -384,9 +384,13 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
   }), [stager]);
 
   useEffect(() => {
-    const next = snapshotRef.current();
-    for (const listener of listenersRef.current) listener(next);
-  }, [audio.currentSong, audio.queue, audio.isPlaying, audio.currentTime, audio.volume, audio.shuffle, audio.repeat]);
+    const publish = (): void => {
+      const next = snapshotRef.current();
+      for (const listener of listenersRef.current) listener(next);
+    };
+    publish();
+    return audio.playhead.subscribe(publish);
+  }, [audio.currentSong, audio.queue, audio.isPlaying, audio.playhead, audio.volume, audio.shuffle, audio.repeat]);
 
   useEffect(() => {
     if (!convex || !signIn.signedIn || !signIn.available || typeof accountId !== 'string' || !accountId) {

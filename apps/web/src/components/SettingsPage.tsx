@@ -21,10 +21,12 @@ import { TactileButton } from './ui';
 import { useSettings } from '../hooks/useSettings';
 import Link from 'next/link';
 import { LEGAL_PATHS } from '@shared/legal';
+import { flags } from '../lib/flags';
+import { paths } from '../lib/routes';
 import { fetchAccountSettings, setPersonalization, fetchHealth } from '../lib/api';
 import { DEFAULT_KARAOKE_MIX, type KaraokeMix } from '../lib/karaokeMix';
 import { clearRoformerCache, detectLiveKaraokeCapabilities, roformerCacheBytes, type LiveKaraokeBackend } from '../lib/liveKaraoke';
-import { resetSettings, type KaraokeMode, type LyricsHighlight, type LyricsSize } from '../lib/settings';
+import { resetSettings, type AppBackground, type KaraokeMode, type LyricsHighlight, type LyricsSize } from '../lib/settings';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
 
 interface SettingsPageProps {
@@ -358,6 +360,18 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
       </Section>
 
       <Section id="settings-appearance" icon={<PaletteIcon size={18} />} title="Appearance" lead="The moving light behind the app.">
+        <Choice<AppBackground>
+          label="Background"
+          hint={settings.appBackground === 'glow'
+            ? 'Two glows in the playing cover’s colours across the top, fading to black. Same as the phone app.'
+            : 'The flowing light field behind everything.'}
+          value={settings.appBackground}
+          options={[
+            { value: 'shader', label: 'Shader' },
+            { value: 'glow', label: 'Glow' }
+          ]}
+          onChange={(appBackground) => update({ appBackground })}
+        />
         <Switch
           label="Animated background"
           hint="The flowing light behind the app. Off saves battery on older devices. Your device’s reduce-motion setting is always respected."
@@ -385,6 +399,11 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
           <button type="button" className="settings-switch" role="switch" aria-label="Learn from my listening" aria-checked={personalization === true} disabled={personalization === null || privacyBusy} onClick={() => void changePersonalization(!personalization)}><span className="settings-switch__thumb" aria-hidden="true" /></button>
         </Row>
         {privacyError ? <p className="auth-error" role="alert">{privacyError}</p> : null}
+        {flags.import ? (
+          <Row label="Import from Spotify or a CSV" hint="Bring your liked songs and playlists. The file stays on this device.">
+            <Link className="import-link" href={paths.import}>Import</Link>
+          </Row>
+        ) : null}
         <Row label="Policies" hint={<span className="legal-nav"><Link href={LEGAL_PATHS.privacy}>Privacy</Link><Link href={LEGAL_PATHS.terms}>Terms</Link><Link href={LEGAL_PATHS.copyright}>Copyright & complaints</Link></span>} />
         <Switch
           label="Share anonymous usage data"

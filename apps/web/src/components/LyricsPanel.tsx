@@ -24,12 +24,14 @@ import { useNarrowViewport } from '../hooks/useNarrowViewport';
 import { useSettings } from '../hooks/useSettings';
 import { followSettled, followStep, lineAt, LINE_LEAD_S, lyricClockAt } from '../lib/lyricFlow';
 import { clampLyricsOffset, withLyricsOffset, type LyricsSize } from '../lib/settings';
+import { usePlayhead, type Playhead } from '../lib/playhead';
 
 interface LyricsPanelProps {
   readonly lines: LyricLine[];
   /** English under each line, by index (translation keeps line order). Null shows the original alone. */
   readonly translations?: readonly string[] | null;
-  readonly currentTime: number;
+  /** Seconds into the song; the panel subscribes, so its parent does not re-render on each report. */
+  readonly playhead: Playhead;
   /** The song is playing: the lyric clock then runs a frame at a time between the player's time reports. */
   readonly playing?: boolean;
   readonly loading: boolean;
@@ -94,7 +96,7 @@ const LYRICS_SCALE: Record<LyricsSize, number> = { small: 0.85, medium: 1, large
 export function LyricsPanel({
   lines,
   translations = null,
-  currentTime,
+  playhead,
   playing = false,
   loading,
   error,
@@ -147,6 +149,7 @@ export function LyricsPanel({
   const [moreOpen, setMoreOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
 
+  const currentTime = usePlayhead(playhead);
   const [settings, updateSettings] = useSettings();
   const rememberOffset = settings.rememberLyricsOffset && songId !== null;
   const savedOffset = rememberOffset ? (settings.lyricsOffsets[songId] ?? 0) : 0;

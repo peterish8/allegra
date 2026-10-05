@@ -14,7 +14,7 @@ test('every static view has a path that parses back to it', () => {
 
 test('artist, playlist and shared routes round-trip awkward names', () => {
   assert.deepEqual(parseRoute(paths.artist('A. R. Rahman & Co/1')), {
-    view: 'artist', artistName: 'A. R. Rahman & Co/1', playlistId: null, sharedCode: null
+    view: 'artist', artistName: 'A. R. Rahman & Co/1', playlistId: null, sharedCode: null, blendId: null, inviteCode: null
   });
   assert.equal(parseRoute(paths.playlist('lib 42')).playlistId, 'lib 42');
   assert.equal(parseRoute(paths.shared('AbC123')).sharedCode, 'abc123');
@@ -35,4 +35,20 @@ test('old hash links redirect to real paths', () => {
   assert.equal(legacyHashToPath('#main-content'), null);
   assert.equal(legacyHashToPath('#artist'), null);
   assert.equal(legacyHashToPath(''), null);
+});
+
+test('import and blend routes exist only behind their flags', () => {
+  const on = { import: true, blend: true };
+  const off = { import: false, blend: false };
+  assert.equal(parseRoute(paths.import, on).view, 'import');
+  assert.equal(parseRoute(paths.import, off).view, 'home');
+  assert.equal(parseRoute(paths.blends, on).view, 'blends');
+  assert.equal(parseRoute(paths.blends, off).view, 'home');
+  assert.equal(parseRoute(paths.blend('k57x'), on).blendId, 'k57x');
+  assert.equal(parseRoute(paths.blend('k57x'), off).view, 'home');
+  assert.deepEqual(parseRoute(paths.blendJoin('ABCDEFGHJKMN'), on), {
+    view: 'blendJoin', artistName: null, playlistId: null, sharedCode: null, blendId: null, inviteCode: 'abcdefghjkmn'
+  });
+  assert.equal(parseRoute('/blend/join', on).view, 'blends');
+  assert.equal(parseRoute('/blend', on).view, 'blends');
 });

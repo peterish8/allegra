@@ -7595,3 +7595,47 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .home-rail .home-quick-card:hover,
   .home-rail .home-quick-card:hover .artwork { transform: none; }
 }
+
+/* ── Glow background: the phone's glow. Two glows in the cover's colours drift across the top third and
+      melt into black, the same fade stops as the app's GlowRoom. Transform only; still when paused. ── */
+.dynamic-aura.dynamic-aura--glow { background: #000; opacity: 1; }
+.glow-room {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 35vh;
+  min-height: 260px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 0%, rgba(0, 0, 0, 0.94) 45%, rgba(0, 0, 0, 0.38) 78%, transparent 100%);
+  mask-image: linear-gradient(#000 0%, rgba(0, 0, 0, 0.94) 45%, rgba(0, 0, 0, 0.38) 78%, transparent 100%);
+}
+.glow-room__blob {
+  position: absolute;
+  width: 120vw;
+  height: 120vw;
+  max-width: 1500px;
+  max-height: 1500px;
+  border-radius: 50%;
+  will-change: transform;
+  animation: glow-room-drift 20s ease-in-out infinite alternate;
+}
+.glow-room__blob--a {
+  left: -30vw;
+  top: -60vw;
+  background: radial-gradient(circle, color-mix(in srgb, var(--aura-primary) 80%, transparent) 0%, transparent 62%);
+}
+.glow-room__blob--b {
+  right: -30vw;
+  top: -45vw;
+  background: radial-gradient(circle, color-mix(in srgb, var(--aura-secondary) 70%, transparent) 0%, transparent 62%);
+  animation-duration: 26s;
+  animation-direction: alternate-reverse;
+}
+@keyframes glow-room-drift {
+  from { transform: translate3d(-8vw, 0, 0); }
+  to { transform: translate3d(14vw, 10vh, 0); }
+}
+.dynamic-aura--glow.is-paused .glow-room__blob,
+.app-shell.is-motion-paused .glow-room__blob { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .glow-room__blob { animation: none; }
+}

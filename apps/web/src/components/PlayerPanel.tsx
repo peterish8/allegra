@@ -38,6 +38,7 @@ import { usePress } from '../hooks/usePress';
 import type { LiveKaraokeController } from '../hooks/useLiveKaraoke';
 import type { RepeatMode } from '../hooks/useAudioPlayer';
 import type { Palette } from '../lib/palette';
+import { usePlayhead, type Playhead } from '../lib/playhead';
 import { tapHaptic } from '../lib/haptics';
 import { createDoubleTap } from '../lib/karaokeMix';
 import { fetchCanvasArtwork } from '../lib/api';
@@ -51,7 +52,7 @@ interface PlayerPanelProps {
   readonly mode: ImmersivePlayerMode;
   readonly song: UnifiedSong | null;
   readonly queue: UnifiedSong[];
-  readonly currentTime: number;
+  readonly playhead: Playhead;
   readonly duration: number;
   readonly isPlaying: boolean;
   readonly isBuffering?: boolean;
@@ -113,7 +114,7 @@ export function PlayerPanel({
   mode,
   song,
   queue,
-  currentTime,
+  playhead,
   duration,
   isPlaying,
   isBuffering = false,
@@ -158,7 +159,6 @@ export function PlayerPanel({
   }
   const goNext = (): void => { coverIntent.current = 1; onNext(); };
   const goPrevious = (): void => { coverIntent.current = -1; onPrevious(); };
-  const audioProgress = duration > 0 ? currentTime / duration : 0;
   const [tab, setTab] = useState<ListeningTab>(mode === 'workspace' ? 'lyrics' : 'lyrics');
   const upNext = queue.filter((item) => item.id !== song?.id).slice(0, 8);
   const related = (suggestions.length > 0 ? suggestions : upNext).slice(0, 6);
@@ -525,7 +525,7 @@ export function PlayerPanel({
                   />
                 </motion.div>
                 <div className="np-controls">
-                  <Scrubber currentTime={currentTime} duration={duration} progress={audioProgress} onSeek={onSeek} />
+                  <Scrubber playhead={playhead} duration={duration} onSeek={onSeek} />
                   {playbackError ? <p className="playback-error" role="alert">{playbackError}</p> : null}
                   <div className="np-btns">
                     {onToggleShuffle ? (
@@ -845,20 +845,20 @@ function spokenTime(seconds: number): string {
  * The right-hand label counts down (-1:19), it does not show the track length.
  */
 function Scrubber({
+  playhead,
   duration,
-  progress,
   onSeek
 }: {
-  readonly currentTime: number;
+  readonly playhead: Playhead;
   readonly duration: number;
-  readonly progress: number;
   readonly onSeek: (seconds: number) => void;
 }) {
+  const currentTime = usePlayhead(playhead);
   const [dragValue, setDragValue] = useState<number | null>(null);
   const span = Math.max(duration, 1);
   // While dragging, the labels and fill follow the finger; the audio only moves on release
   // so a drag across a long track is one range request instead of a hundred.
-  const value = clamp(dragValue ?? progress * duration, 0, span);
+  const value = clamp(dragValue ?? currentTime, 0, span);
   const remaining = Math.max(0, duration - value);
 
   const commit = (): void => {
