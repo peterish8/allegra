@@ -10,8 +10,8 @@
 
 import type * as account from "../account.js";
 import type * as auth from "../auth.js";
-import type * as blends from "../blends.js";
 import type * as authRedirect from "../authRedirect.js";
+import type * as blends from "../blends.js";
 import type * as connect from "../connect.js";
 import type * as covers from "../covers.js";
 import type * as crons from "../crons.js";
@@ -36,8 +36,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   account: typeof account;
   auth: typeof auth;
-  blends: typeof blends;
   authRedirect: typeof authRedirect;
+  blends: typeof blends;
   connect: typeof connect;
   covers: typeof covers;
   crons: typeof crons;
