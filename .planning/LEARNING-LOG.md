@@ -141,9 +141,10 @@ accepted only letters, numbers, `_` and `-`. A direct parser check rejected the 
 accepted `spotify-<playlistId>`.
 *Cause:* the transfer called `auth.library.apply` directly; its service test used a fake that
 accepted every operation, bypassing the device request parser.
-*Fix:* **open**, recorded first in `blend/HANDOFF-2026-10-05.md`: use a valid ID and migrate any
-existing playlist rows, items, receipts and tracked destinations together. Changing the prefix
-alone could duplicate already-imported playlists.
+*Fix:* **fixed 2026-10-05**: the transfer now generates `spotify-<playlistId>`, and the transfer
+test runs the generated ops through `parseLibraryOps` (it fails on the old `spotify:` form). No
+migration was needed: production Convex held 0 `spotifyPlaylists`, 0 `spotifyReceipts` and 0
+library playlists with a `spotify:` ID, because no sync had run since release.
 *Rule:* generated playlist IDs must pass `parseLibraryOps` in the transfer regression test.
 
 **18. A shared identity change broke existing deduplication checks.** An intermediate identity

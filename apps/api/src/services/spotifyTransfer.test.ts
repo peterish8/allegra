@@ -4,7 +4,7 @@ import test from 'node:test';
 import type { AuthService } from '../auth/auth.js';
 import { SpotifyStore } from '../db/spotifyStore.js';
 import type { SpotifyProvider, SpotifyTrack } from '../providers/spotify.js';
-import type { LibraryOp } from '../shared/library.js';
+import { parseLibraryOps, type LibraryOp } from '../shared/library.js';
 import type { ImportMatcher } from './importMatch.js';
 import { SpotifyTransferService } from './spotifyTransfer.js';
 
@@ -46,6 +46,8 @@ test('manual sync pages to completion and a rescan adds nothing twice', async ()
   assert.equal(adds(saved), 120);
   do steps.push(await service.sync('u', PLAYLIST)); while (!steps.at(-1)!.complete);
   assert.equal(adds(saved), 120, 'receipts stop duplicate playlist entries');
+  // The sync writes past the device parser; its ops must still be ones a device could send back.
+  assert.notEqual(parseLibraryOps(saved.slice(0, 60)), null, 'generated playlist ids pass parseLibraryOps');
 });
 
 test('daily run finishes the playlist, then skips it while the snapshot is unchanged', async () => {

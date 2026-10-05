@@ -79,7 +79,7 @@ export class SpotifyTransferService {
     const token = await this.accessToken(userId);
     const source = await provider.playlist(token, playlistId);
     if (!source) throw new SpotifyApiError(404, 'Spotify could not find that playlist.');
-    const now = Date.now(); const libraryId = `spotify:${playlistId}`;
+    const now = Date.now(); const libraryId = `spotify-${playlistId}`; // library ids allow only [A-Za-z0-9_-] (parseLibraryOps)
     if (skipUnchanged) {
       const saved = (await this.store.playlists(userId)).find(row => row.playlistId === playlistId);
       if (saved?.lastSyncedAt && saved.offset === 0 && saved.scanSnapshotId === source.snapshotId) return { complete: true, added: 0, skipped: 0, reviewNeeded: 0, libraryId };
