@@ -133,7 +133,11 @@ read:   current(now) = score / g(now)
 - Rows are comparable by stored `score` without knowing `now`, so "lowest" and "top N" are plain
   index reads (`by_userId_and_score`).
 - A write touches one row; nothing else is re-decayed.
-- `g` stays finite in float64 for about 126,000 years at H = 45 days. No rescaling job needed.
+- Input timestamps are supported from UTC 1976-01-01 through UTC 2076-01-01, inclusive. This
+  100-year horizon keeps `g(t)` finite and nonzero throughout; positive application tally amounts
+  also remain representable as current weights across the full range. Outside it, underflow or
+  overflow is possible and behavior is unspecified; do not clamp the exponent, because that changes
+  the forward-decay maths.
 - Negative amounts: `score = max(0, score + amount * g(now))`; a row at 0 is deleted.
 - Put this in `packages/shared/blendDecay.ts`:
 
@@ -146,7 +150,8 @@ export function currentWeight(score: number, nowMs: number): number;
 ```
 
 Tests: weight halves after exactly 45 days; adding at two times equals the sum of currents;
-negative never goes below 0; very old and very new timestamps stay finite.
+negative never goes below 0; factors and current weights stay finite and positive at both supported
+horizon boundaries; stored-score ordering matches current-weight ordering within the horizon.
 
 ### 4.2 Amounts (D3)
 
@@ -178,6 +183,7 @@ export function listenAmount(secondsHeard: number, songSeconds: number): number;
   title: string, artist: string, artwork: string, duration: number, // SongSnapshot fields
   score: number,             // forward-decayed (4.1)
   likeBonus: boolean,        // true while the +10 like bonus is applied, so unlike can remove it once
+  likeBonusAt?: number,      // timestamp of that +10 contribution, so a later unlike removes the same decay-scaled amount
   recentListens: number[],   // last 8 playedAt ms values, for idempotency; never longer than 8
   updatedAt: number
 }
@@ -195,6 +201,10 @@ Write rule for a listen signal `(userId, snapshot, secondsHeard, playedAt)`:
 5. New row → insert, `songCount + 1`. If `songCount > 200`: read the lowest row
    (`by_userId_and_score`, ascending, `take(1)`), delete it, `songCount - 1`.
 6. Row reaching score 0 → delete, `songCount - 1`.
+
+A native like adds `10 * g(at)` and records `likeBonusAt = at`. A later unlike subtracts
+`10 * g(likeBonusAt)` from the stored score, then clears `likeBonus` and `likeBonusAt`; using the
+unlike timestamp would subtract a different forward-decayed amount and could erase unrelated listens.
 
 All in one Convex mutation, so concurrent signals cannot overshoot the cap.
 

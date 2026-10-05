@@ -194,7 +194,7 @@ invented model result. Excludes already-liked or
 recently played recordings. `404` means there is no listening context yet. The legacy
 `/api/ai/recommendations` path is an alias for compatibility.
 
-## Library sync — additive, 2026-09-30
+## Library sync — additive, 2026-10-05
 
 Likes and playlists are the same on Allegra web and LuvLyrics (`apps/mobile`). No existing shape changed:
 the library routes above behave as before, but every one of them (and sharing, MCP, the guest merge) now
@@ -210,23 +210,36 @@ writes through library **operations** (`packages/shared/library.ts`), stored per
 | Endpoint | Auth | Body → response |
 |---|---|---|
 | `POST /api/me/library/ops` | Bearer | `{ ops: LibraryOp[], sentAt?: number }` (1–100) → `{ rev, rejected: { index, reason }[], superseded: number[], applied: number }`. `sentAt` is the device wall-clock time when it sent the batch; when it differs from server receive time by more than 2 s, each op timestamp is shifted by that clock offset while preserving its age within the batch. A malformed batch is refused whole (`400`). `reason` is `no_playlist`, `missing_name` or `bad_time`. An op older than the current state is reported by its index in `superseded`; clients should pull changes when this list is non-empty. |
-| `GET /api/me/library/changes?since=<rev>&limit=<n>` | Bearer | → `{ rev, changes: LibraryChange[], more }`. `limit` ≤ 500, default 200. Pass `rev` back as `since` and repeat while `more`. `since=0` returns current rows only; no tombstones are needed for a first sync. |
+| `GET /api/me/library/changes?since=<rev>&limit=<n>[&resync=true]` | Bearer | → `{ rev, changes: LibraryChange[], more, resync?: true }`. `limit` ≤ 500, default 200. Pass `rev` back as `since` and repeat while `more`. `since=0` returns current rows only; no tombstones are needed for a first sync. |
 
 ```
 SongRef       'saavn:<id>' | 'gaana:<id>'
 SongSnapshot  { ref, title, artist, album?, artwork (https URL or ''), duration (seconds) }
-LibraryOp     { op: 'like', ref, song?, at }  |  { op: 'unlike', ref, at }
-            | { op: 'playlist_upsert', playlistId, name?, description? (null clears), isPublic?, at }  (name needed to create)
+LibraryOp     { op: 'like', ref, song?, origin?, at }  |  { op: 'unlike', ref, at }
+            | { op: 'playlist_upsert', playlistId, name?, description? (null clears), isPublic?, origin?, at }  (name needed to create)
             | { op: 'playlist_delete', playlistId, at }
             | { op: 'playlist_add', playlistId, ref, song?, at }  |  { op: 'playlist_remove', playlistId, ref, at }
               at: ms since epoch when the listener did it.  playlistId: [A-Za-z0-9_-]{1,100}
-LibraryChange { kind: 'like', rev, ref, song?, liked, likedAt }
-            | { kind: 'playlist', rev, playlistId, name, description?, isPublic, coverUrl?, deleted, createdAt }
+LibraryChange { kind: 'like', rev, ref, song?, liked, likedAt, origin? }
+            | { kind: 'playlist', rev, playlistId, name, description?, isPublic, coverUrl?, deleted, createdAt, origin? }
             | { kind: 'playlist_item', rev, playlistId, ref, song?, deleted, addedAt }
 ```
 
+`origin?: 'import'` (additive, 2026-10-05) is set by Import on likes and on the playlists it creates.
+A later like made in the app clears it on that like; a playlist keeps it through later edits; playlist
+items carry none. Absent means native. Any other value is ignored. Older clients may ignore the field.
+
 Covers are never set through `ops`: only the website's checked upload flow sets one. A signed-in client
 can subscribe to the Convex query `library:myRev` to learn that its library changed elsewhere, then refetch.
+
+When a positive `since` predates a removal the server no longer retains, the first request omits
+`resync` and its response includes `resync: true`, starting at the first page of the full live
+library. Only after that response, clients send `resync=true` on continuation pages while `more` is
+true; the flag continues from the supplied `since` cursor while filtering tombstones, so a cursor
+still below the highest pruned revision does not restart the first page. Do not set this query
+parameter on ordinary incremental requests or on the first request. The phone gathers every page
+before replacing its synced local rows, preserves its unsent outbox edits, and saves the final `rev`
+only after reconciliation succeeds.
 
 ## Accounts, taste and sharing — additive, shipped 2026-09-21
 
@@ -263,9 +276,15 @@ fresh guest session.
 |---|---|---|
 | `GET /api/me/taste` | Bearer | → `{ topArtists: {name,score}[] (<=12), languages: {name,score}[] (<=5), signals: number, onboarded: boolean }` |
 | `POST /api/me/taste/seed` | Bearer | `{ artists: string[] (<=30), languages: string[] (<=8) }` → same as `GET`. Onboarding: strong weight, sets `onboarded: true`. |
-| `POST /api/me/taste/signal` | Bearer | `{ songId, seconds }` or `{ songRef, song?, seconds }` → `204`. How long a song was really listened to: `<10 s` counts against the artist, most of a song counts for them. |
+| `POST /api/me/taste/signal` | Bearer | `{ songId, seconds, playedAt? }` or `{ songRef, song?, seconds, playedAt? }` → `204`. `playedAt` is an ISO timestamp and is recommended; the most-played tally needs it to ignore repeated delivery. How long a song was really listened to: `<10 s` counts against the artist, most of a song counts for them. |
 
-Taste is also updated **automatically** by existing routes. Legacy songId writes resolve through the catalog; provider-aware writes include a validated `SongSnapshot`, so Gaana plays train the same account taste without a colliding bare ID. Recent rows retain the ref and snapshot for account history and recommendation seeds. A play adds +0.3 when `playDuration` is 0, else by listened time; a like adds +3; an unlike subtracts 2; a playlist add adds +2. Scores decay ×0.985 on every signal, so recent listening outweighs old. Artist credits: headline artist full weight, featured artists half. Recommendations consume this account taste context directly.
+Taste is also updated **automatically** by existing routes. Legacy songId writes resolve through the catalog; provider-aware writes include a validated `SongSnapshot`, so Gaana plays train the same account taste without a colliding bare ID. Recent rows retain the ref and snapshot for account history and recommendation seeds. The artist profile remains as described above; separately, the most-played tally stores at most 200 song identities, adds listened minutes (or −1 for a skip under 10 seconds), +10 once for a native like, and +5 for a native playlist add. Tally weights halve every 45 days. A future `playedAt` is clamped to server time; a signal older than 30 days is ignored by the tally.
+
+Listening delivery adds optional `playId` (stable playback-session ID, at most 128 characters)
+and `cumulativeSeconds` (finite 0–7200). New clients reuse the ID and original `playedAt` on retry
+and send cumulative heard seconds. The tally applies only the newly heard amount. Dedupe is
+bounded to the last 16 checkpoints per retained song; older clients retain timestamp dedupe.
+Learning preference is checked authoritatively when accepting writes and publishing a Blend.
 
 ### Sharing a playlist
 
@@ -284,7 +303,7 @@ Codes are 8 characters from `abcdefghjkmnpqrstuvwxyz23456789`.
 |---|---|---|
 | `POST /api/uploads/sign` | Bearer (owner) | `{ libraryId }` → `{ uploadUrl, coverKey }`. The browser uploads the image to the short-lived Convex upload URL, then `PATCH`es the library with its `coverKey`. `503` if Convex is not configured. |
 
-## Consent, data rights and reports — additive, 2026-10-02
+## Consent, data rights and reports — additive, 2026-10-05
 
 Additive only: no existing shape changed except that the account profile gained an optional
 `consent`. The values the policies promise (policy version, minimum age, retention periods,
@@ -301,10 +320,11 @@ report reasons) live in `packages/shared/legal.ts`.
 AccountExport {
   exportedAt, policyVersion, complete: boolean,
   profile: { userId, isGuest, createdAt, displayName?, email?, consent? },
-  settings, taste | null, recentlyPlayed,
+  settings, taste | null, tally: { title, artist, minutes }[], recentlyPlayed,
   library: { changes: LibraryChange[] (current rows only), complete: boolean },
   shares: { code, libraryId, createdAt }[],
-  devices: { name, kind, appVersion, createdAt }[]
+  devices: { name, kind, appVersion, createdAt }[],
+  blends: { name, joinedAt, members: displayName[] }[]
 }
 ```
 
@@ -312,7 +332,7 @@ AccountExport {
 The file remains usable, but must not be presented as a complete account export in that case.
 
 **Personalisation switch.** `PATCH /api/me/settings` with `{ personalization: false }` turns
-learning off for the account on every device: taste and recent listens are erased in the same
+learning off for the account on every device: taste, the most-played tally and recent listens are erased in the same
 write, and from then on `POST /api/me/recently-played`, `POST /api/me/taste/signal`, likes and
 playlist adds still succeed with the same replies but record no history and teach nothing.
 `{ personalization: true }` turns it back on. Missing means on.
@@ -320,6 +340,123 @@ playlist adds still succeed with the same replies but record no history and teac
 **Retention.** Convex erases guest profiles unused for 90 days and accounts unused for 730 days
 (`convex/account.ts`, daily). "Used" is any profile or library write; a signed-in listener who
 only reads is kept active by the API.
+
+## Import — additive, 2026-10-05
+
+Behind `IMPORT_ENABLED=true` (API) and `NEXT_PUBLIC_IMPORT_ENABLED=true` (web). With the flag off
+both routes answer the standard `404` envelope. The import file (Spotify "Download your data" ZIP or
+JSON, or a CSV) is read on the device and never uploaded; only title, artist, album and length are
+sent, in batches. Account only: a guest gets `403` with
+`"Sign in to import your library, so it follows you to every device."`
+
+| Route | Auth | Body → reply |
+|---|---|---|
+| `POST /api/import/match` | Bearer (account) | `{ tracks: { title, artist, album?, durationSec? }[] }` (1–50; title and artist 1–200 characters, album ≤ 200, `durationSec` 0–7200) → `{ results: { index, song: SongSnapshot \| null, confidence: 'exact' \| 'close' \| 'none' }[] }`. `index` is the track's position in the request. `exact`: same normalised title and lead artist, length within 5 s when both are known. `close`: same title with an overlapping artist, or a near title (bigram similarity ≥ 0.85) by the same lead artist. Only Saavn rows match. A provider failure answers `none` for that track; the batch still succeeds. Errors `400`, `401`, `403`, `429`. Rate limit: 30 requests a minute per IP (`import` bucket). Results are cached server-side for everyone (hit 30 days, miss 7 days). |
+| `POST /api/me/taste/import-seed` | Bearer (account) | `{ artists: { name (1–200), count (integer 1–100000) }[] }` (1–500) → the taste summary (as `GET /api/me/taste`). The 25 artists with the highest counts (names merged case-insensitively) each add `5 × log2(1 + count) / log2(1 + maxCount)` to the artist taste; `signals` grows by at most 25; languages are untouched. With learning off: `204`, nothing changes. Writes bucket. |
+
+Matching additionally returns optional `retryable: true` when catalog work is unavailable or
+exceeds the batch deadline. This is not a definitive miss: clients retry it with bounded backoff
+and do not checkpoint it as complete. Cache keys include matcher version, release/album evidence
+and duration. Exact matches may be preselected; ambiguous `close` matches require review.
+The request is bounded by a total deadline as well as provider timeouts.
+
+Saving an import uses `POST /api/me/library/ops` with `origin: 'import'` on each like and on each
+imported playlist's `playlist_upsert` (see Library sync). An imported playlist's id is
+`import-<first 12 hex of sha256(source + name)>`, so importing the same file again updates the same
+playlists. Imported likes and playlists never add to the most-played tally.
+Each import manifest retains its original operation timestamps and `sentAt` across retries;
+the fully serialized `{ ops, sentAt }` envelope is measured in UTF-8 bytes before sending.
+HTTP success alone is insufficient: rejected operation indexes must be reviewed before a chunk
+is acknowledged. Import files, selections, match decisions and save progress stay account-scoped
+on the device; the original export file is never uploaded.
+
+## Blend — additive, 2026-10-05
+
+Behind `BLEND_ENABLED=true` (API) and `NEXT_PUBLIC_BLEND_ENABLED=true` (web); with the flag off every
+route below answers the standard `404`. Account only: a guest gets `403` with
+`"Sign in to make a Blend. Blends need an account so your friend knows it's you."` — except the
+invite preview, which anyone with the link may read. A Blend id that is not yours answers exactly like
+one that does not exist (`404 notfound`, never `403`). Types live in `packages/shared/blendView.ts`,
+`blendTypes.ts` and `blendStories.ts`.
+
+Errors add a machine-readable `code` beside the usual envelope: `{ success: false, data: null, error, code }`.
+
+| `code` | HTTP | `error` |
+|---|---|---|
+| `full` | 409 | This Blend is full. |
+| `limit` | 409 | You're in 20 Blends, the most there can be. Leave one to join this. |
+| `expired` | 410 | This invite has expired. Ask for a new link. |
+| `notfound` | 404 | We couldn't find that Blend. The link may be wrong or the Blend may have ended. |
+| `consent` | 400 | Agree to how Blends use your listening before you blend. |
+| `invalid` | 400 | Something's missing from that request. |
+
+| Route | Body | Reply | Errors |
+|---|---|---|---|
+| `POST /api/blends` | `{ name? (1–60, default "Our Blend"), consent: { policyVersion } }` | `201 BlendCreated` = `BlendSummary & { invite: { code, url, expiresAt } }` | `limit`, `consent`, `invalid` |
+| `GET /api/blends` | — | `BlendSummary[]` (≤ 20) | — |
+| `GET /api/blends/:id` | — | `BlendDetail`; rebuilds first when the build is for an earlier UTC day or membership changed | `notfound` |
+| `POST /api/blends/:id/invite` | `{ regenerate?: boolean }` | `{ code, url, expiresAt }`: the live link, or a new one (`regenerate` expires the old) | `notfound` |
+| `GET /api/blend-invites/:code` | — (no auth needed) | `BlendInvitePreview` = `{ inviterName, memberCount, full }` | `notfound` for unknown, malformed **and expired** codes alike (lookup bucket) |
+| `POST /api/blend-invites/:code/accept` | `{ consent: { policyVersion } }` | `BlendSummary` (joining twice returns it) | `expired`, `full`, `limit`, `consent`, `notfound` |
+| `POST /api/blends/:id/leave` | — | `{ left: true }` | `notfound` |
+| `PATCH /api/blends/:id` | `{ name }` (1–60) | `BlendSummary`; owner only, anyone else gets `notfound` | `notfound`, `invalid` |
+
+```
+BlendMemberView  { userId, displayName, initials, isYou, learning }   // never a photo or email
+BlendSummary     { id, name, memberCount, members: BlendMemberView[], builtFor? }
+BlendDetail      { id, name, ownerId, members, pairs: PairMatch[], change?: ChangeReason, tracks: BlendTrack[],
+                   builtFor: 'YYYY-MM-DD', state: 'ready' | 'not_enough', stories: Story[],
+                   buildVersion?, inputVersion?, stale?, status?: 'waiting' | 'refreshing' | 'ready' | 'not_enough' }
+BlendTrack       { song: SongSnapshot (always a Saavn ref), for: userId[], kind: 'shared' | 'pick' | 'discovery' }
+PairMatch        { a, b, match (0–99), cover: { a, b } (0–1), rare, confidence: 'normal' | 'low', together, contributions }
+ChangeReason     { kind: 'up' | 'down', points, artist }
+Story            match | song | directions | artist | gift | brought        (two members, ≤ 6, in that order)
+                 groupMatch | mostInTune | leastInTune | glue                (3+ members, ≤ 4; never a song card)
+```
+
+`consent.policyVersion` must equal the current `POLICY_VERSION`. Invite codes are 12 characters from
+`abcdefghjkmnpqrstuvwxyz23456789`, valid for 7 days; `url` is `<site>/blend/join/<code>`. A Blend holds
+at most 6 members; a listener may be in at most 20. `state: 'not_enough'` means fewer
+than 10 tracks. Writes use the writes bucket. `GET /api/me/export` adds
+`blends: { name, joinedAt, members: displayName[] }[]`. Turning learning off (`PATCH /api/me/settings`)
+marks the listener's memberships `learning: false`; deleting the account leaves every Blend (the
+longest-standing member becomes owner; a Blend left empty is deleted).
+
+Blend creation accepts optional `Idempotency-Key` (6–128 characters). New clients retain one key
+for the same create attempt across response-loss retries. Replaying that account/key returns the
+original Blend; reusing it with different creation input is rejected. Legacy requests without a
+key still work. Creation result retention is bounded. Other members cannot retrieve its result.
+Membership and learning changes increment an internal input revision. Publishing requires both
+the captured input revision and build version to match, plus authoritative current learning
+preferences. A bounded durable build lease prevents duplicate provider work; it expires after a
+failed worker. One-member Blends are waiting, and waiting expiry starts when that state is entered.
+Departed-member attribution and withdrawn learned output are invalidated immediately, including
+when a rebuild fails. Private Blend responses use `Cache-Control: private, no-store`.
+
+## Spotify connection and incremental playlist transfer — additive
+
+This connection transfers playlist metadata through the official Spotify Web API; audio remains
+Allegra catalog audio. Export-file import remains available without a Spotify connection.
+
+| Method | Route | Result / behavior |
+| --- | --- | --- |
+| GET | `/api/spotify/status` | Authenticated account: `{ configured, connected, dailyEnabled, playlists }`. Tracked playlists include Spotify ID, destination library ID, last sync time and counts. Never tokens. |
+| POST | `/api/spotify/connect` | `{ returnTo?: 'web' \| 'mobile' }`: `{ url }` for OAuth with PKCE, single-use state and read-only playlist scopes. |
+| GET | `/api/spotify/callback` | Spotify callback; consumes state once and returns to the import screen. No tokens in redirects. |
+| GET | `/api/spotify/playlists` | `{ playlists: [{ id, name, snapshotId, total }] }` for the connected account. Development-mode ownership/collaboration restrictions apply. |
+| POST | `/api/spotify/sync` | `{ playlistId }`: one bounded, leased step; `{ complete, added, skipped, reviewNeeded, libraryId }`. Repeat while incomplete. Existing source IDs are skipped; only exact catalog matches save automatically. Uncertain/unavailable matches are retried on the next scan. |
+| PATCH | `/api/spotify/settings` | `{ dailyEnabled: boolean }`: explicit opt-in to the backend daily job for previously selected playlists. |
+| POST | `/api/spotify/disconnect` | Removes stored Spotify authorization and stops scheduled transfers; existing Allegra playlists remain. |
+
+Encrypted refresh tokens and PKCE verifiers stay behind the server gateway. Spotify requests have
+timeouts and respect Retry-After. Checkpoints advance only after library writes are acknowledged.
+Stable source IDs, timestamps and destination IDs make response-loss retries safe. Full source scans
+find new songs inserted at the top; transfer adds songs and preserves local edits. Daily work runs
+durably in Convex with bounded steps and a per-account/playlist lease. A daily run skips a playlist
+whose Spotify `snapshot_id` hasn't changed since its last finished scan; manual sync always rescans.
+The internal `POST /api/internal/spotify/daily` (server secret only) answers `{ more }`; Convex calls
+again while `more` is true. Account erase removes all
+connections/checkpoints. Missing configuration is an explicit unavailable state.
 
 ## Errors
 

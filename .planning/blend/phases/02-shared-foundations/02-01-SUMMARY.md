@@ -1,31 +1,36 @@
-# 02-01 Summary: identity consolidation preflight
+# 02-01 Summary: shared recording and artist identity
 
 ## Comparison before implementation
 
 | Implementation | Normalization | Callers and tests |
 |---|---|---|
-| `apps/api/src/lib/normalize.ts` `songIdentity` | Removes every parenthesized/bracketed title group; lowercases; keeps Unicode letters and digits; replaces punctuation with spaces; trims and sorts all artist tokens. The helper itself does not decode HTML. `normalizeSong` decodes provider title/artist values before storing them. | `collapseRecordings`; API recommendations (`build`, `recommend`, `uniqueSongs`); API catalog search/suggestion/home shelves; artwork lookup; mobile taste recommendations. Tests: `normalize.test.ts`, `recommendations.test.ts`, artwork tests, and mobile `luvsTaste.test.ts`. |
-| `apps/web/src/lib/songIdentity.ts` `songIdentity` | Same transformations for the same string inputs as the API helper. It does not decode HTML either. Its adjacent `baseTitle` uses the same bracket stripping and flattening. | `uniqueByIdentity`, `shouldStartRadio`; `App.tsx`, `useAudioPlayer.ts`. Test: `songIdentity.test.ts`. |
-| `apps/api/src/user/actions.ts` private `songIdentity` | Uses catalog identity (`gaana:<id>` for Gaana, otherwise `song.id`); it does not compare title or artist. | `ListenerActions.recentlyPlayed` map keyed by source/id. This is a distinct identity purpose, so replacing it with title/artist identity would change recently-played deduplication. |
-| `apps/api/src/user/taste.ts` `creditedArtists` | Splits comma, `&`, `feat.`, `ft.`, and `x`; trims; drops empty names; de-duplicates case-insensitively while preserving first spelling and order. | `applySignal`. |
-| `apps/web/src/lib/utils.ts` `creditedArtists` | Splits comma, `&`, and `feat.`; trims and drops empty names; retains duplicate names; does not split `ft.` or `x`. | `PlayerPanel.tsx`, `SearchResults.tsx`. |
-| `apps/api/src/services/recommendations.ts` private `creditedArtists` | Splits comma, `&`, `feat.`, and `ft.`; trims, lowercases, and drops empty names; does not split `x` or de-duplicate. | Recommendation artist boost and lead-artist diversification (`build`, `diversify`). |
+| API `songIdentity` in `apps/api/src/lib/normalize.ts` | Removes parenthesized and bracketed title groups; lowercases; keeps Unicode letters and digits; punctuation becomes spaces; trims title tokens and sorts artist tokens. It does not decode HTML itself. `normalizeSong` decodes provider values first. | `collapseRecordings`, catalog discovery/search, artwork lookup, recommendations and mobile taste recommendations. Covered by API normalization, recommendations, artwork and mobile taste tests. |
+| Web `songIdentity` in `apps/web/src/lib/songIdentity.ts` | Same result as the API helper for identical title/artist strings; it also strips bracket groups in its adjacent `baseTitle` helper. It does not decode HTML. | `uniqueByIdentity`, `shouldStartRadio`, `App.tsx` and `useAudioPlayer.ts`; covered by `songIdentity.test.ts`. |
+| API `songIdentity` in `apps/api/src/user/actions.ts` | Uses catalog source/id (`gaana:<id>` for Gaana, otherwise `song.id`); it does not compare title or artist. | Recently played hydration/deduplication. This remains a distinct `catalogIdentity` helper. |
+| API `creditedArtists` in `apps/api/src/user/taste.ts` | Splits comma, `&`, `feat.`, `ft.` and `x`; trims; drops empty names; de-duplicates case-insensitively while preserving the first spelling and order. | Taste signal updates. |
+| Web `creditedArtists` in `apps/web/src/lib/utils.ts` | Previously split comma, `&` and `feat.`, retained duplicates, and did not split `ft.` or `x`. | Player and search result artist presentation. |
+| Recommendations `creditedArtists` in `apps/api/src/services/recommendations.ts` | Previously split comma, `&`, `feat.` and `ft.`, lowercased names and dropped empty entries; it did not split `x` or de-duplicate. | Recommendation artist boosts and lead-artist diversification. |
 
-The two title/artist identity helpers return the same value for the same input strings. Existing API
-and web identity tests both cover film-title trailers and reordered credits; no identity difference
-was found to turn into a behavior change. Provider HTML decoding occurs upstream in API
-`normalizeSong`, rather than inside either identity helper.
+The API taste splitter is the canonical artist behavior. Web display and recommendations now use the same separators, first spelling, ordering and case-insensitive de-duplication. The source/id helper in `actions.ts` remains unchanged in behavior. Recording identity stays shared between API and web; the shared normalizer also preserves Unicode combining marks, including Indic vowel marks. Neither identity helper performs HTML decoding.
 
-## Blocker
+## Implementation
 
-The plan says to make `creditedArtists` the only artist splitter and to change the private
-`songIdentity` in `actions.ts` to title/artist identity. The code has a third active artist splitter
-in `apps/api/src/services/recommendations.ts`, omitted from `files_modified`, and the actions helper
-is source/id deduplication rather than recording identity. The splitter copies also disagree on
-`ft.`, `x`, and duplicate credits. Moving only the listed files would leave multiple active
-splitters; replacing the actions helper would alter recently-played behavior.
+- Added `packages/shared/identity.ts` with `identityKey`, `creditedArtists` and `artistKey`, plus focused node:test coverage.
+- Added the module to the shared API copy list and generated `apps/api/src/shared/identity.ts`.
+- Routed API normalization, taste, recommendation ranking and web helpers through the shared module.
+- Renamed the recently played source/id helper to `catalogIdentity` to distinguish it from recording identity.
+- Added a recommendation regression test for `x`-separated featured credits.
 
-Per the plan's stop rule, no identity source or caller was changed. Revise 02-01 to include the
-recommendation splitter and specify whether recent-history source/id deduplication remains separate;
-then define which existing splitter behavior wins for `ft.`, `x`, and repeated credits. The
-remaining phases can proceed independently.
+## Verification
+
+- `node --import tsx --test identity.test.ts` — 6 passed.
+- `node --import tsx --test src/lib/normalize.test.ts` — 10 passed.
+- `node --import tsx --test src/services/recommendations.test.ts` — 9 passed.
+- The broader typecheck, lint and test gates are recorded in the final integration summary after the parallel Blend slices are integrated.
+
+## Plan correction
+
+The original plan omitted the recommendations splitter and described the source/id helper as if it
+were recording identity. The plan was amended with those two findings and the explicit canonical
+separator/de-duplication behavior before changing callers. No recently played identity semantics
+were changed.
