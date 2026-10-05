@@ -8,7 +8,7 @@
  */
 
 /** The date the current policies took effect. Stored with each consent. */
-export const POLICY_VERSION = '2026-10-02';
+export const POLICY_VERSION = '2026-10-05';
 
 /** Accounts are for adults: under India's DPDP Act everyone below 18 is a child. */
 export const MINIMUM_AGE = 18;
@@ -71,3 +71,6 @@ export const REPORT_DETAILS_MAX = 1000;
 export const REPORT_CONTACT_MAX = 200;
 /** A closed report's contact details and message are deleted this long after it closes. */
 export const REPORT_DETAIL_RETENTION_DAYS = 365;
+
+/** Library removal markers are kept long enough for devices that have been offline to catch up. */
+export const LIBRARY_TOMBSTONE_RETENTION_DAYS = 90;

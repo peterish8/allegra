@@ -37,8 +37,11 @@ export interface PlaylistCover {
   readonly url: string;
 }
 
+/** Set on likes and playlists created by Import (declared taste from another service). Absent means native. */
+export type LibraryOrigin = 'import';
+
 export type LibraryOp =
-  | { readonly op: 'like'; readonly ref: SongRef; readonly song?: SongSnapshot; readonly at: number }
+  | { readonly op: 'like'; readonly ref: SongRef; readonly song?: SongSnapshot; readonly origin?: LibraryOrigin; readonly at: number }
   | { readonly op: 'unlike'; readonly ref: SongRef; readonly at: number }
   | {
       readonly op: 'playlist_upsert';
@@ -49,10 +52,12 @@ export type LibraryOp =
       readonly isPublic?: boolean;
       /** Server-built only (see parseLibraryOps). null removes the cover. */
       readonly cover?: PlaylistCover | null;
+      /** Marks a playlist Import creates; never cleared by later edits. */
+      readonly origin?: LibraryOrigin;
       readonly at: number;
     }
   | { readonly op: 'playlist_delete'; readonly playlistId: string; readonly at: number }
-  | { readonly op: 'playlist_add'; readonly playlistId: string; readonly ref: SongRef; readonly song?: SongSnapshot; readonly at: number }
+  | { readonly op: 'playlist_add'; readonly playlistId: string; readonly ref: SongRef; readonly song?: SongSnapshot; readonly origin?: LibraryOrigin; readonly at: number }
   | { readonly op: 'playlist_remove'; readonly playlistId: string; readonly ref: SongRef; readonly at: number };
 
 export interface LikeRow {
@@ -61,6 +66,8 @@ export interface LikeRow {
   readonly liked: boolean;
   /** When it was first liked (ms); orders Liked songs. Kept across re-likes. */
   readonly likedAt: number;
+  /** 'import' while the like came from Import; a like made in the app clears it. */
+  readonly origin?: LibraryOrigin;
   readonly updatedAt: number;
   readonly rev: number;
 }
@@ -74,6 +81,8 @@ export interface PlaylistRow {
   readonly coverUrl?: string;
   readonly createdAt: number;
   readonly deleted: boolean;
+  /** 'import' when Import created the playlist. */
+  readonly origin?: LibraryOrigin;
   readonly updatedAt: number;
   readonly rev: number;
 }
@@ -117,6 +126,8 @@ export interface LibraryWrite {
    * deleting a playlist that is gone.)
    */
   readonly applied: number;
+  /** Accepted operation indexes, including a winning rewrite of an already-present row. */
+  readonly appliedIndexes: number[];
   /** Covers no playlist uses any more; the caller deletes the stored images. */
   readonly removedCoverKeys: string[];
   /** The newest revision after this batch. */
@@ -136,7 +147,9 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
   const rejected: { index: number; reason: RejectReason }[] = [];
   const superseded: number[] = [];
   const removedCoverKeys: string[] = [];
+  const appliedIndexes: number[] = [];
   let rev = clock.rev;
+  const nextRev = (index: number): number => { appliedIndexes.push(index); return ++rev; };
 
   const likeOf = (ref: SongRef) => likes.get(ref) ?? view.like(ref);
   const playlistOf = (id: string) => playlists.get(id) ?? view.playlist(id);
@@ -162,13 +175,16 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
         if (!wins(index, at, row)) return;
         const liked = op.op === 'like';
         const song = op.op === 'like' ? (op.song ?? row?.song) : row?.song;
+        // A like says where it came from, so a native like clears an imported one; an unlike keeps it.
+        const origin = op.op === 'like' ? op.origin : row?.origin;
         likes.set(op.ref, {
           ref: op.ref,
           ...(song ? { song } : {}),
           liked,
           likedAt: liked && row?.liked ? row.likedAt : at,
+          ...(origin ? { origin } : {}),
           updatedAt: at,
-          rev: ++rev
+          rev: nextRev(index)
         });
         return;
       }
@@ -189,6 +205,8 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
           coverKey = op.cover?.key;
           coverUrl = op.cover?.url;
         }
+        // Only the import that creates a playlist marks it; later edits never clear the mark.
+        const origin = creating ? op.origin : base?.origin;
         playlists.set(op.playlistId, {
           playlistId: op.playlistId,
           name: op.name ?? base?.name ?? '',
@@ -198,8 +216,9 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
           ...(coverUrl ? { coverUrl } : {}),
           createdAt: base?.createdAt ?? at,
           deleted: false,
+          ...(origin ? { origin } : {}),
           updatedAt: at,
-          rev: ++rev
+          rev: nextRev(index)
         });
         return;
       }
@@ -216,8 +235,9 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
           isPublic: row.isPublic,
           createdAt: row.createdAt,
           deleted: true,
+          ...(row.origin ? { origin: row.origin } : {}),
           updatedAt: at,
-          rev: ++rev
+          rev: nextRev(index)
         });
         return;
       }
@@ -237,7 +257,7 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
           addedAt: row && !row.deleted ? row.addedAt : at,
           deleted: false,
           updatedAt: at,
-          rev: ++rev
+          rev: nextRev(index)
         });
         return;
       }
@@ -252,7 +272,7 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
           addedAt: row?.addedAt ?? at,
           deleted: true,
           updatedAt: at,
-          rev: ++rev
+          rev: nextRev(index)
         });
         return;
       }
@@ -266,6 +286,7 @@ export function applyLibraryOps(view: LibraryRowsView, ops: readonly LibraryOp[]
     rejected,
     superseded,
     applied: rev - clock.rev,
+    appliedIndexes,
     removedCoverKeys,
     rev
   };
@@ -429,7 +450,15 @@ function asSaavnRef(id: string): SongRef | null {
 // ── The change feed ("everything after revision N") ─────────────────────────
 
 export type LibraryChange =
-  | { readonly kind: 'like'; readonly rev: number; readonly ref: SongRef; readonly song?: SongSnapshot; readonly liked: boolean; readonly likedAt: number }
+  | {
+      readonly kind: 'like';
+      readonly rev: number;
+      readonly ref: SongRef;
+      readonly song?: SongSnapshot;
+      readonly liked: boolean;
+      readonly likedAt: number;
+      readonly origin?: LibraryOrigin;
+    }
   | {
       readonly kind: 'playlist';
       readonly rev: number;
@@ -440,6 +469,7 @@ export type LibraryChange =
       readonly coverUrl?: string;
       readonly deleted: boolean;
       readonly createdAt: number;
+      readonly origin?: LibraryOrigin;
     }
   | {
       readonly kind: 'playlist_item';
@@ -458,7 +488,15 @@ export function isTombstone(change: LibraryChange): boolean {
 
 export function toChange(row: LikeRow | PlaylistRow | PlaylistItemRow): LibraryChange {
   if ('liked' in row) {
-    return { kind: 'like', rev: row.rev, ref: row.ref, ...(row.song ? { song: row.song } : {}), liked: row.liked, likedAt: row.likedAt };
+    return {
+      kind: 'like',
+      rev: row.rev,
+      ref: row.ref,
+      ...(row.song ? { song: row.song } : {}),
+      liked: row.liked,
+      likedAt: row.likedAt,
+      ...(row.origin ? { origin: row.origin } : {})
+    };
   }
   if ('name' in row) {
     return {
@@ -470,7 +508,8 @@ export function toChange(row: LikeRow | PlaylistRow | PlaylistItemRow): LibraryC
       isPublic: row.isPublic,
       ...(row.coverUrl ? { coverUrl: row.coverUrl } : {}),
       deleted: row.deleted,
-      createdAt: row.createdAt
+      createdAt: row.createdAt,
+      ...(row.origin ? { origin: row.origin } : {})
     };
   }
   return {
@@ -524,6 +563,11 @@ function parseRef(value: unknown): SongRef | null {
   return parsed ? (`${parsed.source}:${parsed.id}` as SongRef) : null;
 }
 
+/** Only 'import' is meaningful; anything else reads as native. */
+function parseOrigin(value: unknown): LibraryOrigin | undefined {
+  return value === 'import' ? 'import' : undefined;
+}
+
 function parsePlaylistId(value: unknown): string | null {
   return typeof value === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(value) && value.length <= PLAYLIST_ID_MAX ? value : null;
 }
@@ -547,7 +591,8 @@ export function parseLibraryOps(value: unknown): LibraryOp[] | null {
         const ref = parseRef(r.ref);
         if (!ref) return null;
         const song = r.op === 'like' ? parseSnapshot(r.song, ref) : undefined;
-        ops.push(r.op === 'like' ? { op: 'like', ref, ...(song ? { song } : {}), at } : { op: 'unlike', ref, at });
+        const origin = r.op === 'like' ? parseOrigin(r.origin) : undefined;
+        ops.push(r.op === 'like' ? { op: 'like', ref, ...(song ? { song } : {}), ...(origin ? { origin } : {}), at } : { op: 'unlike', ref, at });
         break;
       }
       case 'playlist_upsert': {
@@ -562,6 +607,7 @@ export function parseLibraryOps(value: unknown): LibraryOp[] | null {
           ...(name ? { name } : {}),
           ...(description !== undefined ? { description } : {}),
           ...(typeof r.isPublic === 'boolean' ? { isPublic: r.isPublic } : {}),
+          ...(parseOrigin(r.origin) ? { origin: 'import' as const } : {}),
           at
         });
         break;
@@ -578,7 +624,8 @@ export function parseLibraryOps(value: unknown): LibraryOp[] | null {
         const ref = parseRef(r.ref);
         if (!playlistId || !ref) return null;
         const song = r.op === 'playlist_add' ? parseSnapshot(r.song, ref) : undefined;
-        ops.push(r.op === 'playlist_add' ? { op: 'playlist_add', playlistId, ref, ...(song ? { song } : {}), at } : { op: 'playlist_remove', playlistId, ref, at });
+        const origin = r.op === 'playlist_add' ? parseOrigin(r.origin) : undefined;
+        ops.push(r.op === 'playlist_add' ? { op: 'playlist_add', playlistId, ref, ...(song ? { song } : {}), ...(origin ? { origin } : {}), at } : { op: 'playlist_remove', playlistId, ref, at });
         break;
       }
       default:

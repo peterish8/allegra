@@ -9,7 +9,24 @@
  */
 import { readFile, writeFile } from 'node:fs/promises';
 
-export const SHARED_COPIES = ['songRef.ts', 'library.ts', 'legal.ts', 'wordSync.ts'];
+export const SHARED_COPIES = [
+  'songRef.ts',
+  'spotify.ts',
+  'library.ts',
+  'legal.ts',
+  'wordSync.ts',
+  'identity.ts',
+  'blendDecay.ts',
+  'importParse.ts',
+  'importZip.ts',
+  'blendTypes.ts',
+  'blendTaste.ts',
+  'blendMatch.ts',
+  'blendBuild.ts',
+  'blendStories.ts',
+  'blendLimits.ts',
+  'blendView.ts'
+];
 
 const root = new URL('../', import.meta.url);
 

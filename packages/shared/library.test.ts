@@ -302,3 +302,59 @@ test('remembered deletes are told apart from what is in the library now', () => 
     ]
   );
 });
+
+test('an imported like carries origin into its row and change; a native like has none', () => {
+  const lib = library();
+  const imported = lib.apply([{ op: 'like', ref: A, origin: 'import', at: 100 }]);
+  assert.equal(imported.likes[0]?.origin, 'import');
+  const change = toChange(imported.likes[0] as LikeRow);
+  assert.equal(change.kind === 'like' ? change.origin : undefined, 'import');
+
+  const native = lib.apply([{ op: 'like', ref: B, at: 100 }]);
+  assert.equal('origin' in (native.likes[0] as LikeRow), false);
+  assert.equal('origin' in toChange(native.likes[0] as LikeRow), false);
+});
+
+test('a later native like of an imported song clears origin: the listener liked it here', () => {
+  const lib = library();
+  lib.apply([{ op: 'like', ref: A, origin: 'import', at: 100 }]);
+  const again = lib.apply([{ op: 'like', ref: A, at: 200 }]);
+  assert.equal(again.likes[0]?.origin, undefined);
+});
+
+test('an imported playlist is marked when created; edits never clear it and items inherit nothing', () => {
+  const lib = library();
+  const created = lib.apply([
+    { op: 'playlist_upsert', playlistId: 'import-abc', name: 'Road trip', origin: 'import', at: 100 },
+    { op: 'playlist_add', playlistId: 'import-abc', ref: A, at: 100 }
+  ]);
+  assert.equal(created.playlists[0]?.origin, 'import');
+  assert.equal('origin' in (created.items[0] as PlaylistItemRow), false);
+  const renamed = lib.apply([{ op: 'playlist_upsert', playlistId: 'import-abc', name: 'Road trip 2', at: 200 }]);
+  assert.equal(renamed.playlists[0]?.origin, 'import');
+  const nativeList = lib.apply([{ op: 'playlist_upsert', playlistId: 'mine', name: 'Mine', at: 300 }]);
+  assert.equal(nativeList.playlists[0]?.origin, undefined);
+});
+
+test('playlist add origin survives parsing and accepted operation tracking', () => {
+  const parsed = parseLibraryOps([
+    { op: 'playlist_upsert', playlistId: 'imported', name: 'Imported', origin: 'import', at: 1 },
+    { op: 'playlist_add', playlistId: 'imported', ref: 'saavn:a', origin: 'import', at: 2 }
+  ]);
+  assert.ok(parsed);
+  assert.equal(parsed[1]?.op === 'playlist_add' ? parsed[1].origin : undefined, 'import');
+  const write = applyLibraryOps({ like: () => undefined, playlist: () => undefined, item: () => undefined }, parsed, { now: 3, rev: 0 });
+  assert.deepEqual(write.appliedIndexes, [0, 1]);
+});
+
+test('parsing keeps origin only when it is import', () => {
+  const ops = parseLibraryOps([
+    { op: 'like', ref: 'saavn:a', origin: 'import', at: 1 },
+    { op: 'like', ref: 'saavn:b', origin: 'spotify', at: 1 },
+    { op: 'playlist_upsert', playlistId: 'import-1', name: 'X', origin: 'import', at: 1 }
+  ]);
+  assert.ok(ops);
+  assert.equal(ops[0]?.op === 'like' ? ops[0].origin : null, 'import');
+  assert.equal('origin' in (ops[1] ?? {}), false);
+  assert.equal(ops[2]?.op === 'playlist_upsert' ? ops[2].origin : null, 'import');
+});
