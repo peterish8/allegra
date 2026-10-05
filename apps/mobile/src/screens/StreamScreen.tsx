@@ -72,6 +72,8 @@ import { CLASSIC_MINI_PLAYER_HEIGHT } from '../constants/layout';
 import { useAccount } from '../services/account/AccountProvider';
 import { getRecommendations, toPlayableAllegraSong } from '../services/account/allegraApi';
 import { onPlayReported } from '../services/sync/LibrarySync';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { STREAM_TOUR, streamScene } from '../components/allegra/infoTours';
 
 const HEADER_HEIGHT = 52;
 
@@ -591,7 +593,7 @@ const StreamScreen: React.FC = () => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Signal.wave} progressViewOffset={insets.top + 40} />}
       >
         <View style={styles.header}>
-          <Text style={styles.title} accessibilityRole="header">Stream</Text>
+          <InfoTitleRow><Text style={styles.title} accessibilityRole="header">Stream</Text><InfoTour label="About Stream" steps={STREAM_TOUR} scene={streamScene} /></InfoTitleRow>
           <View style={styles.headerActions}>
           <ConnectDropdown />
           <Tactile

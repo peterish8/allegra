@@ -15,6 +15,8 @@ import { applyImportLibraryOps, matchImportedTracks, sendImportSeed } from '../s
 import { clearMobileManifest, loadMobileManifest, saveMobileManifest, type MobileImportManifest } from '../services/import/importManifest';
 import { Glass, Signal } from '../constants/allegraTheme';
 import { SpotifySyncPanel } from '../components/import/SpotifySyncPanel';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { IMPORT_TOUR, importScene } from '../components/allegra/infoTours';
 
 type Step = 'choose' | 'preview' | 'matching' | 'review' | 'saving' | 'error' | 'done';
 const copyError = (error: MobileImportError): string => error === 'too_large'
@@ -205,8 +207,7 @@ export const ImportScreen: React.FC = () => {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Signal.bg }} edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 150, gap: 14 }}>
-        <Text accessibilityRole="header" style={{ color: Signal.ink, fontSize: 28, fontWeight: '800' }}>Bring your music</Text>
-        <Text style={{ color: Signal.inkSoft, lineHeight: 21 }}>Connect Spotify for playlist transfers, or choose a Spotify data export or CSV. Export files stay on this phone; Allegra receives only song details for matching.</Text>
+        <InfoTitleRow><Text accessibilityRole="header" style={{ color: Signal.ink, fontSize: 28, fontWeight: '800' }}>Bring your music</Text><InfoTour label="How importing works" steps={IMPORT_TOUR} scene={importScene} /></InfoTitleRow>
         <SpotifySyncPanel key={accountKey} accountKey={accountKey} token={token} />
         {checkpoint && step === 'choose' ? <View style={{ backgroundColor: Glass.fill, borderColor: Glass.hairline, borderWidth: 1, borderRadius: 18, padding: 16, gap: 10 }}><Text style={{ color: Signal.ink, fontWeight: '700' }}>Import in progress</Text><Text style={{ color: Signal.inkSoft }}>Your review choices and confirmed library batches are saved to this account on this phone.</Text>{button('Continue import', () => restore(checkpoint), true)}{button('Forget progress', () => { void clearMobileManifest(accountKey, checkpoint.fileHash); setCheckpoint(null); })}</View> : null}
         {step === 'choose' || step === 'error' ? <View style={{ backgroundColor: Glass.fill, borderColor: Glass.hairline, borderWidth: 1, borderRadius: 18, padding: 16, gap: 12 }}>
@@ -214,7 +215,7 @@ export const ImportScreen: React.FC = () => {
           {checkpoint?.stage === 'saving' && step === 'error' ? button('Resume saving', () => void startSave(checkpoint), true, busy) : null}
           {step === 'error' && bundle ? button('Continue matching', () => void match(), true, busy) : null}
           {button(busy ? 'Opening file…' : 'Choose ZIP, JSON or CSV', () => void pick(), true, busy)}
-          <Text style={{ color: Signal.inkMuted, fontSize: 12 }}>On mobile: ZIP up to 20 MB, files up to 5 MB each, archive expands to at most 30 MB.</Text>
+          <Text style={{ color: Signal.inkMuted, fontSize: 12 }}>Export files stay on this phone; Allegra receives only song details for matching. ZIP up to 20 MB, files up to 5 MB each, archive expands to at most 30 MB.</Text>
         </View> : null}
         {step === 'preview' && bundle ? <View style={{ gap: 12 }}>
           <View style={{ backgroundColor: Glass.fill, borderColor: Glass.hairline, borderWidth: 1, borderRadius: 18, padding: 16, gap: 12 }}>

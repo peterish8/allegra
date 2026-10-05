@@ -59,6 +59,8 @@ import { Glass, Signal } from '../constants/allegraTheme';
 import { TAB_BAR_CLEARANCE } from '../navigation/tabs';
 import type { RootStackParamList } from '../types/navigation';
 import type { UnifiedSong } from '../types/song';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { LUVS_TOUR, luvsScene } from '../components/allegra/infoTours';
 
 // Stands in for "no song yet" so the download hook always has something to read.
 const NO_SONG = { id: '', title: '' };
@@ -415,7 +417,7 @@ const LuvsScreen: React.FC = () => {
       </View>
 
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <Text style={styles.title} accessibilityRole="header">Luvs</Text>
+        <InfoTitleRow><Text style={styles.title} accessibilityRole="header">Luvs</Text><InfoTour label="About Luvs" steps={LUVS_TOUR} scene={luvsScene} /></InfoTitleRow>
         <View style={styles.headerActions}>
           <Tactile onPress={onReload} disabled={refreshing} pressScale={0.9} hitSlop={8} accessibilityRole="button" accessibilityLabel="Fresh lanes" accessibilityState={{ busy: refreshing }} style={styles.round}>
             <SpinningIcon name="refresh" size={19} color={Signal.ink} spinning={refreshing} />

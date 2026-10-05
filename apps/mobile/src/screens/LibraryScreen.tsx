@@ -11,7 +11,7 @@
  *   Songs      filter, sort, and an A–Z rail to jump through a long list
  *
  * Long-press any song for cover / version / info / lyrics / share / hide /
- * delete. Playlists and the download queue sit behind the header buttons.
+ * delete. Blends, Import, the download queue and Playlists are the four header icons.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, LayoutChangeEvent, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
@@ -45,6 +45,8 @@ import { useBottomClearance } from '../hooks/useBottomClearance';
 import { Song } from '../types/song';
 import { shuffled } from '../utils/shuffle';
 import { countOf } from '../utils/formatters';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { LIBRARY_TOUR, libraryScene, librarySleeves } from '../components/allegra/infoTours';
 
 const LIBRARY_QUEUE_ID = 'library';
 /** TrackRow's fixed height, so the A–Z rail can jump straight to a row. */
@@ -186,13 +188,20 @@ const LibraryScreen: React.FC = () => {
     listRef.current?.scrollToIndex({ index, animated: false, viewOffset: insets.top + 72 });
   }, [insets.top]);
 
+  // Four equal glass circles, top right: Blends, Import, Downloads, Playlists. The words live in the labels.
   const headerButtons = (
     <View style={styles.topActions}>
-      <Tactile onPress={() => setQueueOpen(true)} hitSlop={8} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Download queue" style={styles.iconButton}>
-        <Ionicons name="arrow-down" size={20} color={Signal.ink} />
+      <Tactile onPress={() => navigation.navigate('Blends')} hitSlop={5} pressScale={0.9} haptic="select" accessibilityRole="button" accessibilityLabel="Blends" style={styles.iconButton}>
+        <Ionicons name="people-outline" size={20} color={Signal.ink} />
+      </Tactile>
+      <Tactile onPress={() => navigation.navigate('Import')} hitSlop={5} pressScale={0.9} haptic="select" accessibilityRole="button" accessibilityLabel="Import from Spotify" style={styles.iconButton}>
+        <Ionicons name="cloud-download-outline" size={20} color={Signal.ink} />
+      </Tactile>
+      <Tactile onPress={() => setQueueOpen(true)} hitSlop={5} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Download queue" style={styles.iconButton}>
+        <Ionicons name="download-outline" size={20} color={Signal.ink} />
         {activeIds.length > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{activeIds.length}</Text></View> : null}
       </Tactile>
-      <Tactile onPress={() => navigation.navigate('Playlists')} hitSlop={8} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Playlists" style={styles.iconButton}>
+      <Tactile onPress={() => navigation.navigate('Playlists')} hitSlop={5} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Playlists" style={styles.iconButton}>
         <Ionicons name="albums-outline" size={20} color={Signal.ink} />
       </Tactile>
     </View>
@@ -204,17 +213,8 @@ const LibraryScreen: React.FC = () => {
       onLayout={(e: LayoutChangeEvent) => { headerH.current = e.nativeEvent.layout.height; }}
     >
       <View style={styles.topBar}>
-        <Text style={styles.title} accessibilityRole="header">Library</Text>
+        <InfoTitleRow><Text style={styles.title} accessibilityRole="header" numberOfLines={1}>Library</Text><InfoTour label="About your library" steps={LIBRARY_TOUR} scene={libraryScene} persist={librarySleeves} /></InfoTitleRow>
         {headerButtons}
-      </View>
-
-      <View style={[styles.topActions, { paddingHorizontal: Space.lg, marginBottom: Space.md }]}>
-        <Tactile onPress={() => navigation.navigate('Blends')} accessibilityRole="button" style={[styles.iconButton, { width: 'auto', paddingHorizontal: Space.md, flexDirection: 'row', gap: Space.sm }]}>
-          <Ionicons name="people-outline" size={18} color={Signal.ink} /><Text style={{ color: Signal.ink }}>Blends</Text>
-        </Tactile>
-        <Tactile onPress={() => navigation.navigate('Import')} accessibilityRole="button" style={[styles.iconButton, { width: 'auto', paddingHorizontal: Space.md, flexDirection: 'row', gap: Space.sm }]}>
-          <Ionicons name="cloud-upload-outline" size={18} color={Signal.ink} /><Text style={{ color: Signal.ink }}>Import Spotify</Text>
-        </Tactile>
       </View>
 
       {visible.length > 0 ? (
@@ -389,13 +389,13 @@ const LibraryScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bg },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Space.md + 4 },
-  topActions: { flexDirection: 'row', gap: 8 },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Space.sm, paddingHorizontal: Space.md },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   badge: { position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
   badgeText: { color: Signal.waveInk, fontSize: 10, fontWeight: '700' },
   iconButton: {
-    width: 44,
-    height: 44,
+    width: 38,
+    height: 38,
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Glass.hairline,
   },
-  title: { fontWeight: '700', fontSize: 28, color: Signal.ink },
+  title: { flexShrink: 1, fontWeight: '700', fontSize: 28, color: Signal.ink },
   hero: { marginTop: Space.lg, alignItems: 'center' },
   actions: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 10, marginTop: 6 },
   meta: { fontWeight: '400', fontSize: 13, color: Signal.inkMuted, marginTop: 10, textAlign: 'center' },

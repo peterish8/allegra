@@ -46,6 +46,8 @@ import { LanguagePickerModal } from '../components/LanguagePickerModal';
 import { useSongsStore } from '../store/songsStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { scanAudioFiles, convertAudioFileToSong } from '../services/mediaScanner';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { SETTINGS_TOUR, settingsScene, settingsDials } from '../components/allegra/infoTours';
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
@@ -239,7 +241,7 @@ const SettingsScreen: React.FC<Props> = () => {
         contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 150 + insets.bottom }}
       >
         <View style={styles.hero}>
-          <Text style={styles.heroTitle} accessibilityRole="header">Settings</Text>
+          <InfoTitleRow><Text style={styles.heroTitle} accessibilityRole="header">Settings</Text><InfoTour label="About Settings" steps={SETTINGS_TOUR} scene={settingsScene} persist={settingsDials} /></InfoTitleRow>
         </View>
 
         <View>

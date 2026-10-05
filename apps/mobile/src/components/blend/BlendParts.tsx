@@ -19,12 +19,15 @@ function hash(text: string): number {
   return value;
 }
 
+/** A member's colour: the same on their disc, their story slides and their song rows. */
+export const discColour = (userId: string): string => DISC_COLOURS[hash(userId) % DISC_COLOURS.length]!;
+
 /** Initials on a coloured disc (D11): never a photo. */
 export const MemberDisc: React.FC<{ member: Pick<BlendMemberView, 'userId' | 'displayName' | 'initials'>; size?: number }> = ({ member, size = 36 }) => (
   <View
     accessible
     accessibilityLabel={member.displayName}
-    style={[styles.disc, { width: size, height: size, borderRadius: size / 2, backgroundColor: DISC_COLOURS[hash(member.userId) % DISC_COLOURS.length] }]}
+    style={[styles.disc, { width: size, height: size, borderRadius: size / 2, backgroundColor: discColour(member.userId) }]}
   >
     <Text style={[styles.discText, { fontSize: Math.round(size * 0.36) }]}>{member.initials}</Text>
   </View>

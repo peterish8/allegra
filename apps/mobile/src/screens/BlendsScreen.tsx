@@ -17,6 +17,9 @@ import { blendStyles as s, ConsentSheet, MemberDiscs } from '../components/blend
 import { useAccount } from '../services/account/AccountProvider';
 import { createBlend, inviteUrl, listBlends } from '../services/blend/blendApi';
 import type { LibraryStackParamList } from '../types/navigation';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { Space } from '../constants/allegraTheme';
+import { BLENDS_TOUR, blendsScene, blendsLights } from '../components/allegra/infoTours';
 
 export const BlendsScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<LibraryStackParamList>>();
@@ -87,8 +90,7 @@ export const BlendsScreen: React.FC = () => {
         keyExtractor={(blend) => blend.id}
         ListHeaderComponent={
           <>
-            <Text style={s.title} accessibilityRole="header">Blends</Text>
-            <Text style={s.lead}>One playlist made from your taste and a friend&apos;s, refreshed every day.</Text>
+            <InfoTitleRow style={{ paddingHorizontal: Space.md, paddingTop: Space.md, paddingBottom: Space.sm }}><Text style={[s.title, { padding: 0, paddingHorizontal: 0, paddingTop: 0 }]} accessibilityRole="header">Blends</Text><InfoTour label="What is a Blend?" steps={BLENDS_TOUR} scene={blendsScene} persist={blendsLights} /></InfoTitleRow>
             <View style={s.panel}>
               <Pressable style={s.primary} onPress={() => setConsent(true)} accessibilityRole="button">
                 <Text style={s.primaryText}>Create a Blend</Text>
