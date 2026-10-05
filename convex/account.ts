@@ -14,6 +14,7 @@ import { v } from 'convex/values';
 import { ACCOUNT_RETENTION_DAYS, ACTIVE_TOUCH_DAYS, GUEST_RETENTION_DAYS } from '../packages/shared/legal';
 import { components, internal } from './_generated/api';
 import { internalMutation, mutation, query, type MutationCtx } from './_generated/server';
+import { leaveBlend } from './blends';
 import { roomOf } from './connect';
 import { requireSecret } from './profiles';
 
@@ -107,6 +108,52 @@ async function eraseSome(ctx: MutationCtx, userId: string): Promise<boolean> {
     .withIndex('by_userId', (q) => q.eq('userId', userId))
     .take(BATCH);
   for (const row of state) await ctx.db.delete('libraryState', row._id);
+
+  const tasteSongs = await ctx.db
+    .query('tasteSongs')
+    .withIndex('by_userId_and_score', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const row of tasteSongs) await ctx.db.delete('tasteSongs', row._id);
+  more ||= tasteSongs.length === BATCH;
+  if (tasteSongs.length < BATCH) {
+    const tasteMeta = await ctx.db
+      .query('tasteMeta')
+      .withIndex('by_userId', (q) => q.eq('userId', userId))
+      .unique();
+    if (tasteMeta) await ctx.db.delete('tasteMeta', tasteMeta._id);
+  }
+
+  // Blends: leave each one under the usual rules (hand-over, or delete when last out).
+  const memberships = await ctx.db
+    .query('blendMembers')
+    .withIndex('by_userId_and_joinedAt', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const row of memberships) await leaveBlend(ctx, row.blendId, userId);
+  more ||= memberships.length === BATCH;
+
+  const blendOperations = await ctx.db.query('blendOperations')
+    .withIndex('by_userId_and_operationId', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const row of blendOperations) await ctx.db.delete('blendOperations', row._id);
+  more ||= blendOperations.length === BATCH;
+
+  // Spotify authorization, playlist scan checkpoints and source-song receipts are personal data.
+  // Remove the credential immediately; the bounded account erase passes clean any large receipt set.
+  const spotifyConnection = await ctx.db.query('spotifyConnections')
+    .withIndex('by_userId', (q) => q.eq('userId', userId)).unique();
+  if (spotifyConnection) await ctx.db.delete('spotifyConnections', spotifyConnection._id);
+  const spotifyStates = await ctx.db.query('spotifyOAuthStates')
+    .withIndex('by_userId', (q) => q.eq('userId', userId)).take(BATCH);
+  for (const row of spotifyStates) await ctx.db.delete('spotifyOAuthStates', row._id);
+  more ||= spotifyStates.length === BATCH;
+  const spotifyPlaylists = await ctx.db.query('spotifyPlaylists')
+    .withIndex('by_userId_and_updatedAt', (q) => q.eq('userId', userId)).take(BATCH);
+  for (const row of spotifyPlaylists) await ctx.db.delete('spotifyPlaylists', row._id);
+  more ||= spotifyPlaylists.length === BATCH;
+  const spotifyReceipts = await ctx.db.query('spotifyReceipts')
+    .withIndex('by_userId_and_playlistId', (q) => q.eq('userId', userId)).take(BATCH);
+  for (const row of spotifyReceipts) await ctx.db.delete('spotifyReceipts', row._id);
+  more ||= spotifyReceipts.length === BATCH;
 
   const shares = await ctx.db
     .query('shares')

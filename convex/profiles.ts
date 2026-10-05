@@ -134,6 +134,47 @@ async function writeProfile(ctx: MutationCtx, existing: Doc<'profiles'>, data: P
     .withIndex('by_userId', (q) => q.eq('userId', user.userId))
     .unique();
   const kept = libraryOwned ? { likedSongIds: existing.likedSongIds, libraries: existing.libraries } : {};
+  const previouslyLearning = existing.settings?.personalization !== false;
+  const desiredLearning = user.settings?.personalization !== false;
+  if (previouslyLearning !== desiredLearning || !desiredLearning) {
+    // Preferences and every membership's effective learning flag move in one Convex transaction.
+    const memberships = await ctx.db.query('blendMembers')
+      .withIndex('by_userId_and_joinedAt', (q) => q.eq('userId', user.userId))
+      .take(20);
+    for (const member of memberships) {
+      const blend = await ctx.db.get('blends', member.blendId);
+      if (!blend) continue;
+      const needsFence = member.learning !== desiredLearning || (!desiredLearning && (
+        !blend.stale || blend.tracks.length > 0 || blend.pairs.length > 0 || blend.previousPairs.length > 0 ||
+        blend.previousTracks.length > 0 || blend.together !== undefined || (blend.gifts?.length ?? 0) > 0 || (blend.glue?.length ?? 0) > 0
+      ));
+      if (!needsFence) continue;
+      if (member.learning !== desiredLearning) await ctx.db.patch('blendMembers', member._id, { learning: desiredLearning });
+      await ctx.db.patch('blends', blend._id, {
+        inputVersion: (blend.inputVersion ?? 0) + 1,
+        stale: true,
+        builtFor: undefined,
+        tracks: [],
+        pairs: [],
+        previousPairs: [],
+        previousTracks: [],
+        together: undefined,
+        gifts: undefined,
+        glue: undefined,
+        buildLease: undefined
+      });
+    }
+  }
+  if (!desiredLearning) {
+    // The authoritative profile check in blends:get/saveBuild remains a second line of defense.
+    const tasteRows = await ctx.db.query('tasteSongs')
+      .withIndex('by_userId_and_identity', (q) => q.eq('userId', user.userId))
+      .take(200);
+    for (const row of tasteRows) await ctx.db.delete('tasteSongs', row._id);
+    const tasteMeta = await ctx.db.query('tasteMeta').withIndex('by_userId', (q) => q.eq('userId', user.userId)).unique();
+    if (tasteMeta) await ctx.db.delete('tasteMeta', tasteMeta._id);
+    if (tasteRows.length === 200) await ctx.scheduler.runAfter(0, internal.taste.clearRest, { userId: user.userId });
+  }
   // replace, not patch: a field the API dropped (a cleared display name) must actually go.
   await ctx.db.replace(existing._id, { ...user, ...kept, lastActiveAt: Date.now(), version: (existing.version ?? 0) + 1 });
 }

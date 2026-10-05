@@ -4,7 +4,7 @@ import presenceTest from '@convex-dev/presence/test';
 import rateLimiterTest from '@convex-dev/rate-limiter/test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { internal } from './_generated/api';
+import { api, internal } from './_generated/api';
 import schema from './schema';
 
 const modules = {
@@ -51,7 +51,10 @@ describe('closed report retention', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-04T00:00:00.000Z'));
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
 
   it('sets closedAt when a share is taken down', async () => {
     const t = backend();
@@ -138,5 +141,86 @@ describe('closed report retention', () => {
       expect((await report(t, code))?.details).toBeUndefined();
       expect((await report(t, code))?.contact).toBeUndefined();
     }
+  });
+});
+
+describe('library tombstone retention and resync', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-05T00:00:00.000Z'));
+    vi.stubEnv('CONVEX_SERVER_SECRET', 'test-secret');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it('prunes only 90-day-old tombstones by updatedAt and records the highest revision', async () => {
+    const t = backend();
+    const now = Date.now();
+    const old = now - 91 * DAY;
+    const recent = now - 89 * DAY;
+    await t.run(async (ctx) => {
+      await ctx.db.insert('libraryState', { userId: 'listener', rev: 20, prunedRev: 3 });
+      await ctx.db.insert('libraryLikes', { userId: 'listener', ref: 'saavn:old-like', liked: false, likedAt: old - 100 * DAY, updatedAt: old, rev: 12 });
+      await ctx.db.insert('libraryLikes', { userId: 'listener', ref: 'saavn:recent-unlike', liked: false, likedAt: old, updatedAt: recent, rev: 15 });
+      await ctx.db.insert('libraryLikes', { userId: 'listener', ref: 'saavn:live-like', liked: true, likedAt: old, updatedAt: old, rev: 16 });
+      await ctx.db.insert('libraryPlaylists', {
+        userId: 'listener', playlistId: 'old-playlist', name: 'Old', isPublic: false, createdAt: old,
+        deleted: true, updatedAt: old, rev: 18
+      });
+      await ctx.db.insert('libraryPlaylists', {
+        userId: 'listener', playlistId: 'live-playlist', name: 'Live', isPublic: false, createdAt: old,
+        deleted: false, updatedAt: old, rev: 19
+      });
+      await ctx.db.insert('libraryItems', {
+        userId: 'listener', playlistId: 'live-playlist', ref: 'saavn:old-item', addedAt: old,
+        deleted: true, updatedAt: old, rev: 20
+      });
+      await ctx.db.insert('libraryItems', {
+        userId: 'listener', playlistId: 'live-playlist', ref: 'saavn:recent-item', addedAt: old,
+        deleted: true, updatedAt: recent, rev: 21
+      });
+    });
+
+    expect(await t.mutation(internal.retention.pruneLibraryTombstones, {})).toEqual({ pruned: 3, done: true });
+    const remaining = await t.run(async (ctx) => ({
+      state: await ctx.db.query('libraryState').withIndex('by_userId', (q) => q.eq('userId', 'listener')).unique(),
+      likes: await ctx.db.query('libraryLikes').collect(),
+      playlists: await ctx.db.query('libraryPlaylists').collect(),
+      items: await ctx.db.query('libraryItems').collect()
+    }));
+    expect(remaining.state?.prunedRev).toBe(20);
+    expect(remaining.likes.map((row) => row.ref).sort()).toEqual(['saavn:live-like', 'saavn:recent-unlike']);
+    expect(remaining.playlists.map((row) => row.playlistId)).toEqual(['live-playlist']);
+    expect(remaining.items.map((row) => row.ref)).toEqual(['saavn:recent-item']);
+  });
+
+  it('restarts stale cursors from live revision zero and pages forward without repeating', async () => {
+    const t = backend();
+    await t.run(async (ctx) => {
+      await ctx.db.insert('libraryState', { userId: 'listener', rev: 8, prunedRev: 6 });
+      await ctx.db.insert('libraryLikes', { userId: 'listener', ref: 'saavn:live-a', liked: true, likedAt: 1, updatedAt: 1, rev: 2 });
+      await ctx.db.insert('libraryLikes', { userId: 'listener', ref: 'saavn:live-b', liked: true, likedAt: 2, updatedAt: 2, rev: 3 });
+      await ctx.db.insert('libraryLikes', { userId: 'listener', ref: 'saavn:live-c', liked: true, likedAt: 7, updatedAt: 7, rev: 7 });
+    });
+
+    const first = await t.query(api.library.changes, { secret: 'test-secret', userId: 'listener', since: 5, limit: 1 });
+    expect(first).toMatchObject({ resync: true, more: true, changes: [{ ref: 'saavn:live-a', rev: 2 }] });
+    const revisions = [...first.changes.map((change) => change.rev)];
+    let since = first.rev;
+    let more = first.more;
+    while (more) {
+      const page = await t.query(api.library.changes, { secret: 'test-secret', userId: 'listener', since, limit: 1, resync: true });
+      expect(page.resync).toBe(true);
+      revisions.push(...page.changes.map((change) => change.rev));
+      since = page.rev;
+      more = page.more;
+    }
+    expect(revisions).toEqual([2, 3, 7]);
+
+    const current = await t.query(api.library.changes, { secret: 'test-secret', userId: 'listener', since: 6, limit: 10 });
+    expect(current).toMatchObject({ changes: [{ ref: 'saavn:live-c', rev: 7 }] });
+    expect(current.resync).toBeUndefined();
   });
 });

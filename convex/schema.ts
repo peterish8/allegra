@@ -157,6 +157,38 @@ export const relatedSong = v.object({
   source: v.union(v.literal('Saavn'), v.literal('Gaana'))
 });
 
+/** One track of a day's Blend (packages/shared/blendTypes.ts BlendTrack). */
+export const blendTrack = v.object({
+  song: songSnapshot,
+  for: v.array(v.string()),
+  kind: v.union(v.literal('shared'), v.literal('pick'), v.literal('discovery'))
+});
+
+/** A pair's taste match (packages/shared/blendTypes.ts PairMatch). */
+export const pairMatch = v.object({
+  a: v.string(),
+  b: v.string(),
+  match: v.number(),
+  cover: v.object({ a: v.number(), b: v.number() }),
+  rare: v.number(),
+  confidence: v.union(v.literal('normal'), v.literal('low')),
+  together: v.string(),
+  contributions: v.array(v.object({ artist: v.string(), value: v.number() }))
+});
+
+/** The story songs of a build, kept so cards can be shown without rebuilding. */
+export const blendStorySong = v.object({
+  identity: v.string(),
+  variant: v.union(v.literal('together'), v.literal('closest')),
+  song: songSnapshot
+});
+export const blendGift = v.object({
+  fromUserId: v.string(),
+  toUserId: v.string(),
+  identity: v.string(),
+  song: songSnapshot
+});
+
 export default defineSchema({
   // Convex Auth owns `users`, `authAccounts`, `authSessions` and friends. It is the
   // identity record (who signed in with Google); `profiles` below is what they listen to.
@@ -194,6 +226,114 @@ export default defineSchema({
     .index('by_userId', ['userId'])
     .index('by_email', ['email'])
     .index('by_isGuest_and_lastActiveAt', ['isGuest', 'lastActiveAt']),
+
+  /**
+   * Derived listening data for a listener, erased with the account. At most 200 rows per user;
+   * scores are forward-decayed and the list sheds the lowest score when it reaches the cap.
+   */
+  tasteSongs: defineTable({
+    userId: v.string(),
+    identity: v.string(),
+    ref: v.string(),
+    title: v.string(),
+    artist: v.string(),
+    artwork: v.string(),
+    duration: v.number(),
+    score: v.number(),
+    likeBonus: v.boolean(),
+    /** Timestamp of the +10 contribution so unlike removes that exact decayed amount. */
+    likeBonusAt: v.optional(v.number()),
+    /** Like bonuses first introduced by the one-time seed and reversible by a later unlike. */
+    seedLikeBonusAt: v.optional(v.number()),
+    /** Playlist memberships currently represented by the aggregate playlist bonus. */
+    playlistMemberships: v.optional(v.number()),
+    /** Stable, bounded play checkpoints. At most 16 recent play IDs per song identity. */
+    recentPlayEvents: v.optional(v.array(v.object({ playId: v.string(), maxSeconds: v.number(), playedAt: v.number() }))),
+    recentListens: v.array(v.number()),
+    updatedAt: v.number()
+  })
+    .index('by_userId_and_identity', ['userId', 'identity'])
+    .index('by_userId_and_score', ['userId', 'score']),
+
+  /**
+   * A Blend: a playlist shared by 2 (later up to 6) listeners, rebuilt at most once a UTC day when
+   * a member opens it (PLAN.md D7). The build lives in the document: ≤ 50 tracks, ≤ 15 pairs.
+   */
+  blends: defineTable({
+    name: v.string(),
+    ownerId: v.string(),
+    memberCount: v.number(),
+    createdAt: v.number(),
+    builtFor: v.optional(v.string()),
+    /** Compare-and-set guard: a build saves only over the version it read. */
+    buildVersion: v.number(),
+    /** Changes to membership/privacy inputs invalidate in-flight builders independently of builds. */
+    inputVersion: v.optional(v.number()),
+    /** Durable lease suppresses duplicate daily build work; publication still checks inputVersion. */
+    buildLease: v.optional(v.object({ token: v.string(), inputVersion: v.number(), builtFor: v.string(), expiresAt: v.number() })),
+    /** Current invite is directly addressable even when bounded history is full. */
+    activeInviteId: v.optional(v.id('blendInvites')),
+    /** Membership or a member's learning setting changed since the last build. */
+    stale: v.boolean(),
+    tracks: v.array(blendTrack),
+    pairs: v.array(pairMatch),
+    previousPairs: v.array(pairMatch),
+    /** Identities in the last two builds, ≤ 100, for the freshness rule. */
+    previousTracks: v.array(v.string()),
+    /** Story inputs computed with the build (pairs only). */
+    together: v.optional(blendStorySong),
+    gifts: v.optional(v.array(blendGift)),
+    glue: v.optional(v.array(v.string())),
+    palette: v.optional(v.object({ a: v.string(), b: v.string() }))
+  }).index('by_memberCount_and_createdAt', ['memberCount', 'createdAt']),
+
+  /** A listener in a Blend. Display name is a snapshot (≤ 40 chars); no photo or email (D11). */
+  blendMembers: defineTable({
+    blendId: v.id('blends'),
+    userId: v.string(),
+    displayName: v.string(),
+    joinedAt: v.number(),
+    consent: v.object({ policyVersion: v.string(), at: v.number() }),
+    /** False: this member's part uses likes and playlists only (D12). */
+    learning: v.boolean()
+  })
+    .index('by_blendId_and_joinedAt', ['blendId', 'joinedAt'])
+    .index('by_userId_and_joinedAt', ['userId', 'joinedAt'])
+    .index('by_blendId_and_userId', ['blendId', 'userId']),
+
+  /** The join link for a Blend: 12 characters, 7 days. A regenerated link expires the old one. */
+  blendInvites: defineTable({
+    code: v.string(),
+    blendId: v.id('blends'),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number()
+  })
+    .index('by_code', ['code'])
+    .index('by_blendId', ['blendId'])
+    .index('by_blendId_and_createdAt', ['blendId', 'createdAt'])
+    .index('by_createdBy', ['createdBy'])
+    .index('by_expiresAt', ['expiresAt']),
+
+  /** Bounded replay key for create POSTs whose response may be lost after commit. */
+  blendOperations: defineTable({
+    userId: v.string(),
+    operationId: v.string(),
+    fingerprint: v.string(),
+    blendId: v.id('blends'),
+    code: v.string(),
+    expiresAt: v.number()
+  })
+    .index('by_userId_and_operationId', ['userId', 'operationId'])
+    .index('by_expiresAt', ['expiresAt']),
+
+  /** Companion row for derived tasteSongs metadata; erased after the last song row. */
+  tasteMeta: defineTable({
+    userId: v.string(),
+    songCount: v.number(),
+    seededAt: v.optional(v.number()),
+    updatedAt: v.number()
+  }).index('by_userId', ['userId']),
 
   /**
    * A complaint about a shared playlist (its name, description, cover or songs), for the grievance
@@ -247,11 +387,14 @@ export default defineSchema({
     song: v.optional(songSnapshot),
     liked: v.boolean(),
     likedAt: v.number(),
+    /** Set by Import; a like made in the app clears it. Absent means native. */
+    origin: v.optional(v.literal('import')),
     updatedAt: v.number(),
     rev: v.number()
   })
     .index('by_userId_and_ref', ['userId', 'ref'])
     .index('by_userId_and_rev', ['userId', 'rev'])
+    .index('by_liked_and_updatedAt', ['liked', 'updatedAt'])
     // The profile copy reads current likes only, newest first, so unlikes never use up its budget.
     .index('by_userId_and_liked_and_likedAt', ['userId', 'liked', 'likedAt']),
 
@@ -265,11 +408,14 @@ export default defineSchema({
     coverUrl: v.optional(v.string()),
     createdAt: v.number(),
     deleted: v.boolean(),
+    /** Set when Import created the playlist. Absent means native. */
+    origin: v.optional(v.literal('import')),
     updatedAt: v.number(),
     rev: v.number()
   })
     .index('by_userId_and_playlistId', ['userId', 'playlistId'])
     .index('by_userId_and_rev', ['userId', 'rev'])
+    .index('by_deleted_and_updatedAt', ['deleted', 'updatedAt'])
     .index('by_userId_and_deleted_and_createdAt', ['userId', 'deleted', 'createdAt']),
 
   libraryItems: defineTable({
@@ -284,12 +430,15 @@ export default defineSchema({
   })
     .index('by_userId_and_playlistId_and_ref', ['userId', 'playlistId', 'ref'])
     .index('by_userId_and_rev', ['userId', 'rev'])
+    .index('by_deleted_and_updatedAt', ['deleted', 'updatedAt'])
     .index('by_userId_and_deleted_and_addedAt', ['userId', 'deleted', 'addedAt']),
 
   /** One per listener once their library moved to rows: the newest revision. Its presence means "rows are the truth". */
   libraryState: defineTable({
     userId: v.string(),
     rev: v.number(),
+    /** Highest removed tombstone revision, so an older device cursor knows to resync. */
+    prunedRev: v.optional(v.number()),
     /**
      * How many current rows the listener has (liked / not deleted), true as of revision
      * `counts.rev`. While `counts.rev` equals `rev` the profile copy is complete, so a change can
@@ -399,5 +548,29 @@ export default defineSchema({
     expiresAt: v.number()
   })
     .index('by_jti', ['jti'])
-    .index('by_expiresAt', ['expiresAt'])
+    .index('by_expiresAt', ['expiresAt']),
+
+  /** PKCE state is single-use and short-lived; only encrypted verifier material is stored. */
+  spotifyOAuthStates: defineTable({
+    stateHash: v.string(), userId: v.string(), encryptedVerifier: v.string(), returnTo: v.union(v.literal('web'), v.literal('mobile')),
+    expiresAt: v.number()
+  }).index('by_stateHash', ['stateHash']).index('by_expiresAt', ['expiresAt']).index('by_userId', ['userId']),
+  /** One encrypted credential record per account; no token is returned by any query. */
+  spotifyConnections: defineTable({
+    userId: v.string(), spotifyUserId: v.string(), encryptedRefreshToken: v.string(), encryptedAccessToken: v.optional(v.string()),
+    accessExpiresAt: v.optional(v.number()), dailyEnabled: v.boolean(), connectedAt: v.number(), updatedAt: v.number()
+  }).index('by_userId', ['userId']).index('by_dailyEnabled_and_updatedAt', ['dailyEnabled', 'updatedAt']),
+  /** Bounded source playlist list and resumable full-scan cursor. */
+  spotifyPlaylists: defineTable({
+    userId: v.string(), playlistId: v.string(), name: v.string(), snapshotId: v.string(), total: v.number(),
+    libraryId: v.string(), offset: v.number(), scanSnapshotId: v.string(), scanTotal: v.number(), added: v.number(), skipped: v.number(),
+    reviewNeeded: v.number(), lastSyncedAt: v.optional(v.number()), leaseUntil: v.optional(v.number()), leaseToken: v.optional(v.string()),
+    enabled: v.boolean(), updatedAt: v.number()
+  }).index('by_userId_and_playlistId', ['userId', 'playlistId']).index('by_userId_and_updatedAt', ['userId', 'updatedAt'])
+    .index('by_enabled_and_updatedAt', ['enabled', 'updatedAt']),
+  /** One stable receipt per source song; incomplete/uncertain matches never get a receipt. */
+  spotifyReceipts: defineTable({
+    userId: v.string(), playlistId: v.string(), spotifyTrackId: v.string(), libraryId: v.string(), savedAt: v.number()
+  }).index('by_userId_and_playlistId_and_spotifyTrackId', ['userId', 'playlistId', 'spotifyTrackId'])
+    .index('by_userId_and_playlistId', ['userId', 'playlistId'])
 });
