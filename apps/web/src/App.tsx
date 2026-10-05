@@ -49,7 +49,7 @@ import { QueueActionsContext, type QueueActions } from './hooks/useQueueActions'
 import { collectAlbumTracks } from './lib/album';
 import { tapHaptic } from './lib/haptics';
 import { lockScroll } from './lib/scrollLock';
-import { DEFAULT_PALETTE, extractPalette, shadePalette } from './lib/palette';
+import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
 import { ApiError, applyLibraryOps, ensureSession, fetchArtist, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
 import { shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
@@ -1255,6 +1255,9 @@ export default function App() {
   }, [view, albumSeed, playerSong]);
 
   const shellPalette = shaderPalette;
+  // Light words over a bright background disappear (an ochre cover lights the top bar up). Past this, the
+  // top bar's words go full white with a soft dark halo, which reads on bright and deep colours alike.
+  const topbarBright = paletteBrightness(shellPalette) > 0.18;
   const shellStyle = {
     '--ambient-accent': shellPalette.primary || ambientColor,
     '--hero-art': activeSong?.artwork ? `url(${JSON.stringify(activeSong.artwork)})` : 'none',
@@ -1327,7 +1330,7 @@ export default function App() {
       </header>
 
       <main id="main-content" ref={mainRef} tabIndex={-1} aria-label={view === 'home' ? 'Home' : view === 'library' ? 'Your listening library' : view === 'album' ? 'Album' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Blend' : isLegalView(view) ? 'Policies' : 'Discover music'} className={`content-wrap ${view !== 'discover' ? 'inner-page-wrap' : ''} ${isDetailView ? 'is-detail' : ''} ${isCollectionView ? 'is-collection' : ''}`}>
-        <div className="panel-topbar">
+        <div className="panel-topbar" data-tone={topbarBright ? 'bright' : undefined}>
             {isDetailView || isCollectionView ? <button type="button" className="topbar-back" onClick={() => goBack(view === 'liked' || view === 'playlist' ? '#library' : view === 'shared' ? '#home' : '#discover')} aria-label="Back"><ArrowLeft size={17} aria-hidden="true" /><span>Back</span></button> : null}
             <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' || view === 'import' || view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' ? 'Blends' : view === 'blend' ? 'Blend' : view === 'blendJoin' ? 'Join a Blend' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong>{view === 'discover' ? <InfoTour className="crumbs-info" label="About Browse" steps={BROWSE_TOUR} stage={browseScene} /> : null}</nav>
             <div className="mood-pills" role="group" aria-label="Quick picks"><span className="mood-pills-label" aria-hidden="true">Quick picks</span>{moodPrompts.map((prompt) => <button key={prompt} type="button" className="mood-pill" aria-pressed={query === prompt} onClick={() => { if (view !== 'discover') router.push(paths.discover); setQuery(query === prompt ? '' : prompt); }}><span>{prompt}</span></button>)}</div>

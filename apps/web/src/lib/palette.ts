@@ -186,3 +186,20 @@ export async function extractPalette(src: string, signal?: AbortSignal): Promise
     return DEFAULT_PALETTE;
   }
 }
+
+/** WCAG relative luminance of a `#rrggbb` colour (0 black … 1 white); 0 for anything unreadable. */
+export function relativeLuminance(hex: string): number {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return 0;
+  const value = parseInt(match[1]!, 16);
+  const channel = (byte: number): number => {
+    const c = byte / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel((value >> 16) & 255) + 0.7152 * channel((value >> 8) & 255) + 0.0722 * channel(value & 255);
+}
+
+/** How bright the moving background can get: its brightest stop. Above ~0.18, light text needs help. */
+export function paletteBrightness(palette: Palette): number {
+  return Math.max(relativeLuminance(palette.primary), relativeLuminance(palette.secondary), relativeLuminance(palette.tertiary));
+}
