@@ -215,3 +215,24 @@
 .blend-ring__hit { position: absolute; top: 0; left: 0; width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
 .blend-ring__hit:hover { background: var(--hover-wash); }
 .blend-ring__hit:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ---------- Clear frosted glass, the home stage's recipe (.home-spotlight in app.css) ----------
+ * Hairline at 16% white, a lit top edge and the page's moving glow blurred behind; a faint white
+ * sheen is the only paint. Shared by every Blend and Import surface so they read as one material. */
+.import-panel,
+.blend-header,
+.blend-tile,
+.blend-join__card,
+.import-page .state-card,
+.blend-page .state-card,
+.blends-page .state-card {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 26px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02) 60%);
+  box-shadow: 0 40px 90px -52px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  -webkit-backdrop-filter: blur(26px) saturate(150%);
+  backdrop-filter: blur(26px) saturate(150%);
+}
+@media (hover: hover) { .blend-tile:hover { border-color: rgba(255, 255, 255, 0.24); } }
+/* A sheet floats over everything, so it keeps a solid veil: its text must stay readable. */
+.blend-sheet { border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 26px; background: linear-gradient(170deg, rgba(14, 15, 19, 0.9), rgba(9, 10, 13, 0.96)); -webkit-backdrop-filter: blur(26px) saturate(150%); backdrop-filter: blur(26px) saturate(150%); }

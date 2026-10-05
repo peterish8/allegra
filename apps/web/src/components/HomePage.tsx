@@ -142,6 +142,9 @@ export function HomePage({
     if (first) onPlay(first, order);
   };
 
+  // One row of four, never repeating the song already featured above it.
+  const railPicks = quickPicks.filter((song) => song.id !== feature?.id).slice(0, 4);
+
   return (
     <div className="home-page">
       <motion.section
@@ -157,11 +160,7 @@ export function HomePage({
           <div className="home-stage__copy">
             <span className="eyebrow eyebrow-accent">{greeting()}</span>
             <h1 id="home-greeting">{name ? `${name}, welcome back` : 'Your music, all in one place'}</h1>
-            <p>
-              {inRotation.length > 0
-                ? `Lately it is ${inRotation.join(', ')}. Everything below is tuned to you.`
-                : 'Tell us what you love and this page tunes itself to you, more with every song you play.'}
-            </p>
+            {inRotation.length > 0 ? <p>Lately it is {inRotation.join(', ')}.</p> : null}
           </div>
 
           {feature ? (
@@ -182,7 +181,7 @@ export function HomePage({
                 </button>
               </div>
               <div className="home-stage__meta">
-                <span>{featureIsResume ? 'Continue listening' : 'Start here'}</span>
+                {featureIsResume ? <span>Continue listening</span> : null}
                 <strong title={feature.title}>{feature.title}</strong>
                 <small title={feature.artist}>{feature.artist}</small>
                 <div className="home-feature-actions">
@@ -200,16 +199,16 @@ export function HomePage({
           ) : null}
         </div>
 
-        {quickPicks.length > 0 ? (
+        {railPicks.length > 0 ? (
           <div className="home-rail" role="group" aria-label="Quick picks">
-            {quickPicks.map((song) => {
+            {railPicks.map((song) => {
               const current = song.id === currentSongId;
               return (
                 <button
                   key={song.id}
                   type="button"
                   className={`home-quick-card ${current ? 'is-current' : ''}`}
-                  onClick={() => (current ? onToggle() : onPlay(song, [...quickPicks]))}
+                  onClick={() => (current ? onToggle() : onPlay(song, [...railPicks]))}
                   aria-label={`${current && isPlaying ? 'Pause' : 'Play'} ${song.title}`}
                 >
                   <Artwork song={song} size="small" />
