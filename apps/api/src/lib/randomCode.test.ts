@@ -22,8 +22,16 @@ test('randomCode distributes characters evenly across the alphabet', () => {
     }
   }
 
+  // Each character's count is binomial: mean 10,000, standard deviation about 98. A fixed ±3% (about
+  // 3 SD, checked for 31 characters) failed by chance on roughly 7% of runs. Six SD fails by chance
+  // about once in a few hundred million runs, and still catches the bias this guards against:
+  // skipping the rejection step makes 8 characters about 12.5% more likely, some 13 SD high.
+  const p = 1 / CODE_ALPHABET.length;
+  const draws = sampleCount * CODE_ALPHABET.length;
+  const mean = draws * p;
+  const allowed = 6 * Math.sqrt(draws * p * (1 - p));
   for (const [character, count] of counts) {
-    assert.ok(count >= sampleCount * 0.97 && count <= sampleCount * 1.03, `${character}: ${count}`);
+    assert.ok(Math.abs(count - mean) <= allowed, `${character}: ${count} (expected ${mean} ± ${Math.round(allowed)})`);
   }
 });
 
