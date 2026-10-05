@@ -203,8 +203,13 @@ export async function fetchArtistFaces(names: readonly string[], signal?: AbortS
   return request(`/api/artists/faces?names=${encodeURIComponent(names.join(','))}`, { signal });
 }
 
-export async function fetchHome(signal?: AbortSignal): Promise<HomePayload> {
-  return request('/api/home', { signal });
+/** The home shelves, in the listener's languages, with Top 10 for `region` (`auto`: where they are). */
+export async function fetchHome(signal?: AbortSignal, options: { readonly languages?: readonly string[]; readonly region?: string } = {}): Promise<HomePayload> {
+  const params = new URLSearchParams();
+  if (options.languages?.length) params.set('languages', options.languages.join(','));
+  if (options.region && options.region !== 'auto') params.set('region', options.region);
+  const query = params.toString();
+  return request(`/api/home${query ? `?${query}` : ''}`, { signal });
 }
 
 export async function fetchLyrics(song: UnifiedSong, signal?: AbortSignal): Promise<LyricsPayload> {

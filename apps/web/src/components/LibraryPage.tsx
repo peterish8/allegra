@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { paths } from '../lib/routes';
-import { ArrowUpRight, Clock3, Heart, ListMusic, Play, RefreshCw, Sparkles, Trash2, Users } from 'lucide-react';
+import { ArrowUpRight, Clock3, Heart, ListMusic, Play, RefreshCw, Trash2, Users } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -15,6 +15,8 @@ import { EmptyState, TactileButton } from './ui';
 import { BlendsShelf } from './blend/BlendsShelf';
 import { flags } from '../lib/flags';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
+import { InfoTour } from './InfoTour';
+import { LIBRARY_TOUR } from './pageTours';
 
 interface LibraryPageProps {
   readonly likedSongs: UnifiedSong[];
@@ -43,9 +45,7 @@ export function LibraryPage({ likedSongs, recentlyPlayed, likedIds, loading, err
     <motion.div className="library-page" variants={pageVariants} initial="hidden" animate="visible" transition={transition}>
       <motion.section className="inner-hero" variants={itemVariants}>
         <div>
-          <span className="eyebrow eyebrow-accent"><Sparkles size={13} aria-hidden="true" /> Your listening room</span>
-          <h1>Keep the songs <em>that found you.</em></h1>
-          <p>Your likes and recent listening stay close, ready for the next room you want to make.</p>
+          <div className="page-title-row plain-title"><h1>Library</h1><InfoTour label="About your library" steps={LIBRARY_TOUR} /></div>
         </div>
         <div className="library-stat-grid" aria-label="Library summary">
           <div className="library-stat"><Heart size={16} aria-hidden="true" /><strong>{likedSongs.length}</strong><span>kept close</span></div>

@@ -3,10 +3,10 @@ import {
   Info,
   Keyboard,
   Mic,
+  Compass,
   Music2,
   Palette as PaletteIcon,
   RotateCcw,
-  Settings as SettingsIcon,
   ShieldCheck,
   Smartphone,
   Trash2,
@@ -28,6 +28,10 @@ import { DEFAULT_KARAOKE_MIX, type KaraokeMix } from '../lib/karaokeMix';
 import { clearRoformerCache, detectLiveKaraokeCapabilities, roformerCacheBytes, type LiveKaraokeBackend } from '../lib/liveKaraoke';
 import { resetSettings, type AppBackground, type KaraokeMode, type LyricsHighlight, type LyricsSize } from '../lib/settings';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
+import { InfoTour } from './InfoTour';
+import { SETTINGS_TOUR } from './pageTours';
+import { settingsScene } from './infoScenes';
+import { INDIAN_REGIONS } from '@shared/regions';
 
 interface SettingsPageProps {
   /** Null while the account is still loading. */
@@ -236,14 +240,13 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
     >
       <motion.section className="inner-hero settings-hero" variants={itemVariants}>
         <div>
-          <span className="eyebrow eyebrow-accent"><SettingsIcon size={13} aria-hidden="true" /> Settings</span>
-          <h1>Make it <em>sound like yours.</em></h1>
-          <p>Make listening your own. Account privacy choices follow you across devices.</p>
+          <div className="page-title-row plain-title"><h1>Settings</h1><InfoTour label="About Settings" steps={SETTINGS_TOUR} stage={settingsScene} /></div>
         </div>
       </motion.section>
 
       <nav className="settings-jump" aria-label="Settings sections">
         {[
+          ['settings-browse', 'Browse'],
           ['settings-playback', 'Playback'],
           ['settings-lyrics', 'Lyrics'],
           ['settings-karaoke', 'Karaoke'],
@@ -258,6 +261,16 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
           }}>{label}</a>
         ))}
       </nav>
+
+      <Section id="settings-browse" icon={<Compass size={18} />} title="Browse" lead="What Browse shows you.">
+        <Row label="Top 10 region" hint="Top 10 today follows this state's language. Automatic uses where you are, in India." labelId="settings-chart-region">
+          <select className="settings-select" aria-labelledby="settings-chart-region" value={settings.chartRegion} onChange={(event) => update({ chartRegion: event.target.value })}>
+            <option value="auto">Automatic</option>
+            <option value="IN">All of India</option>
+            {INDIAN_REGIONS.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}
+          </select>
+        </Row>
+      </Section>
 
       <Section id="settings-playback" icon={<Music2 size={18} />} title="Playback" lead="What happens after the song you picked.">
         <Switch
