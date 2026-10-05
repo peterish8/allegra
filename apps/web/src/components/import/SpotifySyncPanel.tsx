@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowDownToLine, Pause, RotateCw } from 'lucide-react';
 import { ApiError, connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync, syncSpotifyPlaylist } from '../../lib/api';
 import type { SpotifySourcePlaylist, SpotifyStatus, SpotifySyncStep } from '@shared/spotify';
 
@@ -143,6 +144,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
     finally { setLoading(false); }
   };
 
+  const syncLabel = progress && !progress.complete ? 'Continue sync' : 'Sync new songs into Allegra';
   const lastSynced = status?.playlists.find((row) => row.id === selectedId)?.lastSyncedAt ?? null;
 
   return <section className="import-panel spotify-sync" aria-labelledby="spotify-sync-title">
@@ -158,11 +160,16 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
       {lastSynced ? <p className="import-note">Last synced {new Date(lastSynced).toLocaleString()}</p> : null}
       {progress ? <p className="import-note" aria-live="polite">{progress.added} added · {progress.skipped} skipped · {progress.reviewNeeded} need review</p> : null}
       <div className="import-actions">
-        <button className="import-spotify-primary" type="button" onClick={() => void sync()} disabled={!selectedId || loading || syncing}>{syncing ? 'Syncing…' : progress && !progress.complete ? 'Continue sync' : 'Sync new songs'}</button>
-        {syncing ? <button className="import-spotify-secondary" type="button" onClick={() => { run.current?.abort(); setMessage('Paused. Confirmed songs stay saved; continue when you are ready.'); }}>Pause</button> : null}
-        <button className="import-spotify-secondary" type="button" onClick={() => void refresh(new AbortController())} disabled={loading || syncing}>Refresh playlists</button>
+        {syncing
+          ? <button className="spotify-icon-btn" type="button" aria-label="Pause sync" title="Pause sync" onClick={() => { run.current?.abort(); setMessage('Paused. Confirmed songs stay saved; continue when you are ready.'); }}><Pause size={18} aria-hidden="true" /></button>
+          : <button className="spotify-icon-btn is-primary" type="button" aria-label={syncLabel} title={syncLabel} onClick={() => void sync()} disabled={!selectedId || loading}><ArrowDownToLine size={18} aria-hidden="true" /></button>}
+        <button className="spotify-icon-btn" type="button" aria-label="Refresh playlists" title="Refresh playlists" onClick={() => void refresh(new AbortController())} disabled={loading || syncing}><RotateCw size={17} aria-hidden="true" className={loading ? 'is-spinning' : undefined} /></button>
+        {syncing ? <span className="import-note" role="status">Syncing…</span> : null}
       </div>
       <label className="spotify-sync__toggle"><input type="checkbox" checked={status.dailyEnabled} disabled={loading} onChange={(event) => void daily(event.target.checked)} /> Check my synced playlists daily for new songs</label>
+      <p className="import-note">{status.playlists.length === 0
+        ? 'The daily check covers playlists you have synced once. Sync one to include it.'
+        : `Daily check covers ${status.playlists.length} ${status.playlists.length === 1 ? 'playlist' : 'playlists'}: ${status.playlists.map((row) => row.name).join(', ')}.`}</p>
       <button className="import-spotify-link" type="button" onClick={() => void disconnect()} disabled={loading || syncing}>Disconnect Spotify</button>
     </> : status?.configured ? <button className="import-spotify-primary" type="button" onClick={() => void connect()} disabled={loading}>{loading ? 'Opening Spotify…' : 'Connect Spotify'}</button> : null}
   </section>;

@@ -16,6 +16,7 @@ function build() {
   const provider = {
     refresh: async () => ({ accessToken: 'a', expiresIn: 3600 }),
     playlists: async () => [{ id: PLAYLIST, name: 'Road', snapshotId: state.snapshot, total: state.tracks.length }],
+    playlist: async () => ({ id: PLAYLIST, name: 'Road', snapshotId: state.snapshot, total: state.tracks.length }),
     items: async (_t: string, _p: string, offset: number, limit = 50) => ({ tracks: state.tracks.slice(offset, offset + limit), total: state.tracks.length, snapshotId: '' })
   } as unknown as SpotifyProvider;
   const saved: LibraryOp[] = [];
@@ -73,4 +74,17 @@ test('daily run stops at its time budget and asks to be called again', async () 
   await service.sync('u', PLAYLIST);
   let clock = 0;
   assert.deepEqual(await service.dailyStep('u', () => (clock += 50_000)), { more: true });
+});
+
+test('playlist counts come from the renamed items field, or the items endpoint when the list leaves them out', async () => {
+  const { SpotifyProvider } = await import('../providers/spotify.js');
+  const fetchImpl = async (input: RequestInfo | URL): Promise<Response> => {
+    const url = String(input);
+    const body = url.includes('/me/playlists')
+      ? { items: [{ id: 'a', name: 'Renamed', snapshot_id: 's', items: { total: 12 } }, { id: 'b', name: 'Missing', snapshot_id: 's' }], next: null }
+      : url.includes('/playlists/b/items') ? { total: 40 } : {};
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+  const rows = await new SpotifyProvider('client', fetchImpl).playlists('token');
+  assert.deepEqual(rows.map(row => [row.name, row.total]), [['Renamed', 12], ['Missing', 40]]);
 });

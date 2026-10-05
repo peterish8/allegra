@@ -77,8 +77,7 @@ export class SpotifyTransferService {
     const provider = this.requireProvider();
     if (!/^[A-Za-z0-9]{10,40}$/.test(playlistId)) throw new SpotifyApiError(400, 'Choose a valid Spotify playlist.');
     const token = await this.accessToken(userId);
-    const all = await provider.playlists(token);
-    const source = all.find(row => row.id === playlistId);
+    const source = await provider.playlist(token, playlistId);
     if (!source) throw new SpotifyApiError(404, 'Spotify could not find that playlist.');
     const now = Date.now(); const libraryId = `spotify:${playlistId}`;
     if (skipUnchanged) {

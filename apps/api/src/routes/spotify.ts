@@ -79,7 +79,7 @@ function constantTimeEqual(actual: string, expected: string): boolean {
 }
 function sendSpotifyError(response: Response, error: unknown): void {
   if (!(error instanceof SpotifyApiError)) { sendFailure(response, error); return; }
-  const status = error.status === 400 || error.status === 401 || error.status === 404 || error.status === 409 || error.status === 429 || error.status === 503 ? error.status : 503;
+  const status = error.status === 400 || error.status === 401 || error.status === 403 || error.status === 404 || error.status === 409 || error.status === 429 || error.status === 503 ? error.status : 503;
   if (error.retryAfter) response.setHeader('Retry-After', String(error.retryAfter));
   response.status(status).json({ success: false, data: null, error: error.message });
 }

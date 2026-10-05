@@ -26,6 +26,7 @@ export class SpotifyApiError extends Error {
 const API = 'https://api.spotify.com/v1';
 const TOKEN = 'https://accounts.spotify.com/api/token';
 const TIMEOUT_MS = 8_000;
+const COUNT_FIX_MAX = 60;
 
 export class SpotifyProvider {
   public constructor(private readonly clientId: string, private readonly fetchImpl: typeof fetch = fetch) {}
@@ -51,12 +52,39 @@ export class SpotifyProvider {
         const id = str(row.id); const name = str(row.name);
         // Spotify applies the development-mode owner/collaborator restriction server-side.
         if (id && name) {
-          out.push({ id, name: name.slice(0, 120), snapshotId: str(row.snapshot_id) ?? '', total: number(object(row.tracks).total) ?? 0 });
+          out.push({ id, name: name.slice(0, 120), snapshotId: str(row.snapshot_id) ?? '', total: playlistTotal(row) });
         }
       }
       url = typeof page.next === 'string' ? page.next : null;
     }
+    // /me/playlists now often leaves the count out or at 0 (PixelPlayer hit the same); ask the
+    // items endpoint for the real total, six at a time. A failed count stays 0 rather than failing the list.
+    const missing = out.filter(row => row.total === 0).slice(0, COUNT_FIX_MAX);
+    for (let i = 0; i < missing.length; i += 6) {
+      await Promise.all(missing.slice(i, i + 6).map(async (row) => {
+        try {
+          const data = object(await this.get(accessToken, `${API}/playlists/${encodeURIComponent(row.id)}/items?limit=1&fields=total`));
+          const total = number(data.total);
+          if (total !== undefined) out[out.indexOf(row)] = { ...row, total };
+        } catch { /* keep 0 */ }
+      }));
+    }
     return out;
+  }
+
+  /** One playlist's name, snapshot and size: what a sync step needs, without listing every playlist. */
+  public async playlist(accessToken: string, playlistId: string): Promise<SpotifyPlaylist | null> {
+    try {
+      const base = `${API}/playlists/${encodeURIComponent(playlistId)}`;
+      // The field filter keeps the reply small; if Spotify ever rejects it, the full object still has everything.
+      const row = object(await this.get(accessToken, `${base}?fields=id,name,snapshot_id,items(total),tracks(total)`)
+        .catch((error: unknown) => { if (error instanceof SpotifyApiError && error.status === 400) return this.get(accessToken, base); throw error; }));
+      const id = str(row.id); const name = str(row.name);
+      return id && name ? { id, name: name.slice(0, 120), snapshotId: str(row.snapshot_id) ?? '', total: playlistTotal(row) } : null;
+    } catch (error) {
+      if (error instanceof SpotifyApiError && error.status === 404) return null;
+      throw error;
+    }
   }
 
   public async me(accessToken: string): Promise<SpotifyProfile> {
@@ -99,7 +127,9 @@ export class SpotifyProvider {
       const payload: unknown = await response.json().catch(() => ({}));
       if (!response.ok) {
         const retry = Number(response.headers.get('retry-after'));
-        throw new SpotifyApiError(response.status, response.status === 401 ? 'Spotify authorization expired.' : `Spotify request failed (${response.status}).`, Number.isFinite(retry) ? Math.max(1, Math.min(3600, retry)) : undefined);
+        throw new SpotifyApiError(response.status, response.status === 401 ? 'Spotify authorization expired.'
+          : response.status === 403 ? 'Spotify only shares playlists you own or collaborate on while this app is in development mode.'
+          : `Spotify request failed (${response.status}).`, Number.isFinite(retry) ? Math.max(1, Math.min(3600, retry)) : undefined);
       }
       return payload;
     } catch (error) {
@@ -107,6 +137,11 @@ export class SpotifyProvider {
       throw new SpotifyApiError(503, 'Spotify is temporarily unavailable.');
     } finally { clearTimeout(timer); }
   }
+}
+
+/** Spotify renamed a playlist's `tracks` to `items` (both `{ href, total }`); read either. */
+function playlistTotal(row: Record<string, unknown>): number {
+  return number(object(row.items).total) ?? number(object(row.tracks).total) ?? 0;
 }
 
 export interface TokenResponse { readonly accessToken: string; readonly expiresIn: number; readonly refreshToken?: string }

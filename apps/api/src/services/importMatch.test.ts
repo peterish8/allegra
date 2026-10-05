@@ -111,3 +111,13 @@ test('no more than four catalog searches run at once', async () => {
   assert.ok(catalog.maxInFlight <= 4, `saw ${catalog.maxInFlight}`);
   assert.ok(catalog.maxInFlight > 1);
 });
+
+test('Spotify credit order and longer album names still match exactly when the length agrees', () => {
+  // Spotify lists the composer first; Saavn often credits only the singer.
+  assert.equal(scoreCandidate({ title: 'Tum Hi Ho', artist: 'Mithoon, Arijit Singh', album: 'Aashiqui 2', durationSec: 262 }, { ...TUM_HI_HO, duration: 262, album: 'Aashiqui 2 (Original Motion Picture Soundtrack)' }), 'exact');
+  assert.equal(scoreCandidate({ title: 'Kesariya', artist: 'Pritam, Arijit Singh', album: 'Brahmastra', durationSec: 268 }, song('s3', 'Kesariya', 'Arijit Singh', { duration: 270, album: 'Brahmastra Part One Shiva' })), 'exact');
+  // Without a length to agree on, a shared artist alone stays a suggestion.
+  assert.equal(scoreCandidate({ title: 'Tum Hi Ho', artist: 'Mithoon, Arijit Singh' }, TUM_HI_HO), 'close');
+  // A different length is a different recording.
+  assert.equal(scoreCandidate({ title: 'Tum Hi Ho', artist: 'Mithoon, Arijit Singh', durationSec: 320 }, { ...TUM_HI_HO, duration: 262 }), 'close');
+});

@@ -82,6 +82,13 @@ export function similarity(a: string, b: string): number {
   return (2 * shared) / (a.length - 1 + b.length - 1);
 }
 
+/** Same album, or one name is the other plus more words ("Brahmastra" / "Brahmastra Part One Shiva"). */
+function albumsAgree(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= 3 && ` ${long} `.includes(` ${short} `);
+}
+
 /** Pure: how well a catalog row matches an imported track. */
 export function scoreCandidate(track: ImportedTrack, song: UnifiedSong): MatchConfidence {
   if (song.source !== 'Saavn') return 'none';
@@ -95,10 +102,14 @@ export function scoreCandidate(track: ImportedTrack, song: UnifiedSong): MatchCo
     || Math.abs(track.durationSec - song.duration) <= IMPORT_MATCH.durationToleranceSec;
 
   const releaseFits = releaseEvidence(track.title) === releaseEvidence(song.title);
-  const albumFits = !track.album || !song.album || normalText(track.album) === normalText(song.album);
-  if (sameTitle && sameLead && durationFits && releaseFits && albumFits) return 'exact';
+  const albumFits = !track.album || !song.album || albumsAgree(normalText(track.album), normalText(song.album));
   const theirs = artistSet(song.artist);
   const overlap = [...artistSet(track.artist)].some((name) => theirs.has(name));
+  // Credit order differs by catalog (Spotify often lists the composer first, Saavn the singer), so a
+  // shared artist stands in for the same lead, but only when a known length agrees too.
+  const knownLength = track.durationSec !== undefined && song.duration > 0;
+  const sameArtist = sameLead || (overlap && knownLength);
+  if (sameTitle && sameArtist && durationFits && releaseFits && albumFits) return 'exact';
   if (sameTitle && overlap) return 'close';
   if (sameLead && similarity(title, candidateTitle) >= IMPORT_MATCH.closeSimilarity) return 'close';
   return 'none';
@@ -135,7 +146,7 @@ export class ImportMatcher {
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         const work = cachedLookup<CachedMatch>(this.cache, {
-          key: cacheKey('import-match-v2', identityKey(track.title, track.artist), track.album ?? '', releaseEvidence(track.title), String(track.durationSec ?? '')),
+          key: cacheKey('import-match-v3', identityKey(track.title, track.artist), track.album ?? '', releaseEvidence(track.title), String(track.durationSec ?? '')),
           hitTtlSeconds: IMPORT_MATCH.hitTtl,
           missTtlSeconds: IMPORT_MATCH.missTtl,
           load: () => this.slot(() => {

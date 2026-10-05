@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 
 import type { SpotifySourcePlaylist, SpotifyStatus, SpotifySyncStep } from '@shared/spotify';
@@ -118,6 +119,9 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
 
   const action = (label: string, onPress: () => void, primary = false, disabled = false) => <Pressable key={label} accessibilityRole="button" accessibilityState={{ disabled }} onPress={onPress} disabled={disabled} style={{ minHeight: 44, paddingHorizontal: 14, borderRadius: 999, justifyContent: 'center', backgroundColor: primary ? Signal.wave : Glass.fillLight, opacity: disabled ? 0.5 : 1 }}><Text style={{ color: primary ? Signal.waveInk : Signal.ink, textAlign: 'center', fontWeight: '700' }}>{label}</Text></Pressable>;
 
+  // Round icon buttons; the words live in the accessibility label.
+  const iconAction = (icon: React.ComponentProps<typeof Ionicons>['name'], label: string, onPress: () => void, primary = false, disabled = false) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} onPress={onPress} disabled={disabled} hitSlop={6} style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: primary ? Signal.wave : Glass.fillLight, opacity: disabled ? 0.45 : 1 }}><Ionicons name={icon} size={20} color={primary ? Signal.waveInk : Signal.ink} /></Pressable>;
+
   return <View style={{ backgroundColor: Glass.fill, borderColor: Glass.hairline, borderWidth: 1, borderRadius: 18, padding: 16, gap: 12 }}>
     <View><Text accessibilityRole="header" style={{ color: Signal.ink, fontSize: 18, fontWeight: '700' }}>Transfer from Spotify</Text><Text style={{ color: Signal.inkSoft, lineHeight: 20, marginTop: 5 }}>Connect with Spotify’s official authorization. Allegra matches playlist songs to its own catalog.</Text></View>
     {message ? <Text accessibilityRole="alert" style={{ color: Signal.accentBright }}>{message}</Text> : null}
@@ -127,9 +131,15 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
       <View style={{ gap: 7 }}>{sources.map((playlist) => <Pressable key={playlist.id} onPress={() => { setSelectedId(playlist.id); setProgress(null); }} accessibilityRole="radio" accessibilityState={{ checked: selectedId === playlist.id }} style={{ minHeight: 44, padding: 11, borderRadius: 12, backgroundColor: selectedId === playlist.id ? Glass.fillLight : 'transparent', borderWidth: 1, borderColor: selectedId === playlist.id ? Signal.wave : Glass.hairline }}><Text style={{ color: Signal.ink }}>{selectedId === playlist.id ? '● ' : '○ '}{playlist.name} · {playlist.total}</Text></Pressable>)}</View>
       {sources.length === 0 ? <Text style={{ color: Signal.inkMuted }}>No playlists are available for transfer.</Text> : null}
       {progress ? <Text accessibilityLiveRegion="polite" style={{ color: Signal.inkSoft }}>{progress.added} added · {progress.skipped} skipped · {progress.reviewNeeded} need review</Text> : null}
-      <View style={{ gap: 8 }}>{action(syncing ? 'Syncing…' : progress && !progress.complete ? 'Continue sync' : 'Sync new songs', () => void sync(), true, !selectedId || busy || syncing)}{syncing ? action('Pause', () => { active.current?.abort(); setMessage('Paused. Confirmed songs stay saved; continue when you are ready.'); }) : null}</View>
-      <Pressable onPress={() => void daily(!status.dailyEnabled)} disabled={busy || syncing} accessibilityRole="switch" accessibilityState={{ checked: status.dailyEnabled, disabled: busy || syncing }} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 }}><Text style={{ color: Signal.ink, fontSize: 18 }}>{status.dailyEnabled ? '☑' : '□'}</Text><Text style={{ color: Signal.inkSoft, flex: 1 }}>Check selected playlists daily for new songs</Text></Pressable>
-      {action(busy ? 'Working…' : 'Refresh playlists', () => { void refresh(new AbortController()); }, false, busy || syncing)}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        {syncing
+          ? iconAction('pause', 'Pause sync', () => { active.current?.abort(); setMessage('Paused. Confirmed songs stay saved; continue when you are ready.'); })
+          : iconAction('download-outline', progress && !progress.complete ? 'Continue sync' : 'Sync new songs into Allegra', () => void sync(), true, !selectedId || busy)}
+        {iconAction('refresh', 'Refresh playlists', () => { void refresh(new AbortController()); }, false, busy || syncing)}
+        {syncing || busy ? <ActivityIndicator color={Signal.inkSoft} /> : null}
+      </View>
+      <Pressable onPress={() => void daily(!status.dailyEnabled)} disabled={busy || syncing} accessibilityRole="switch" accessibilityState={{ checked: status.dailyEnabled, disabled: busy || syncing }} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 }}><Text style={{ color: Signal.ink, fontSize: 18 }}>{status.dailyEnabled ? '☑' : '□'}</Text><Text style={{ color: Signal.inkSoft, flex: 1 }}>Check my synced playlists daily for new songs</Text></Pressable>
+      <Text style={{ color: Signal.inkMuted, lineHeight: 19 }}>{status.playlists.length === 0 ? 'The daily check covers playlists you have synced once. Sync one to include it.' : `Daily check covers ${status.playlists.length} ${status.playlists.length === 1 ? 'playlist' : 'playlists'}: ${status.playlists.map((row) => row.name).join(', ')}.`}</Text>
       {action('Disconnect Spotify', disconnect, false, busy || syncing)}
     </> : status?.configured ? action(busy ? 'Opening Spotify…' : 'Connect Spotify', () => void connect(), true, busy) : null}
     {busy && !syncing ? <ActivityIndicator color={Signal.wave} /> : null}
