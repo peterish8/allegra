@@ -46,6 +46,8 @@ export function BlendPage({ blendId, currentSongId, isPlaying, likedIds, onPlay,
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [revealing, setRevealing] = useState(false);
+  /** Refresh polls run while the Blend rebuilds; each one breathes the orbs once. `done`: they gave up. */
+  const [polls, setPolls] = useState({ count: 0, done: false });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -78,6 +80,8 @@ export function BlendPage({ blendId, currentSongId, isPlaying, likedIds, onPlay,
     const tick = async () => {
       pending = true;
       tries += 1;
+      const last = tries >= 6;
+      setPolls((current) => ({ count: current.count + 1, done: last }));
       try {
         const detail = await fetchBlend(blendId, controller.signal);
         if (controller.signal.aborted) return;
@@ -113,12 +117,16 @@ export function BlendPage({ blendId, currentSongId, isPlaying, likedIds, onPlay,
     );
   }
   return (
-    <BlendView detail={load.detail} revealing={revealing} onRevealed={() => { markRevealSeen(load.detail); setRevealing(false); }} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} onRefresh={() => setAttempt(value => value + 1)} onRenamed={(name) => setLoad({ kind: 'ready', detail: { ...load.detail, name } })} />
+    <BlendView detail={load.detail} polls={polls.count} polling={!polls.done} revealing={revealing} onRevealed={() => { markRevealSeen(load.detail); setRevealing(false); }} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} onRefresh={() => { setPolls((current) => ({ ...current, done: false })); setAttempt(value => value + 1); }} onRenamed={(name) => setLoad({ kind: 'ready', detail: { ...load.detail, name } })} />
   );
 }
 
-function BlendView({ detail, revealing, onRevealed, currentSongId, isPlaying, likedIds, onPlay, onLike, onRefresh, onRenamed }: {
+function BlendView({ detail, polls, polling, revealing, onRevealed, currentSongId, isPlaying, likedIds, onPlay, onLike, onRefresh, onRenamed }: {
   readonly detail: BlendDetail;
+  /** Refresh polls so far while the Blend rebuilds. */
+  readonly polls: number;
+  /** Still polling; false once the polls gave up and a manual refresh is needed. */
+  readonly polling: boolean;
   /** Play the reveal in the hero; everything below waits for the number to land. */
   readonly revealing: boolean;
   readonly onRevealed: () => void;
@@ -135,6 +143,8 @@ function BlendView({ detail, revealing, onRevealed, currentSongId, isPlaying, li
   const [filter, setFilter] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
+  /** Left: the viewer's orb sinks back into the light, then the page goes. */
+  const [sinking, setSinking] = useState<string | null>(null);
   const [invite, setInvite] = useState<{ code: string; url: string; expiresAt: number } | null>(null);
   const [openPair, setOpenPair] = useState<PairMatch | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -154,7 +164,10 @@ function BlendView({ detail, revealing, onRevealed, currentSongId, isPlaying, li
     try {
       await leaveBlend(detail.id);
       announceBlendsChanged();
-      router.push(paths.library);
+      // Only after the server agreed: on failure the orb stays and the sheet says why.
+      setLeaving(false);
+      setSinking(viewer?.userId ?? null);
+      window.setTimeout(() => router.push(paths.library), (reduced ? motionTokens.duration.instant : motionTokens.duration.base) * 1000);
     } catch (failure) {
       setLeaveError(failure instanceof Error ? failure.message : 'That did not work. Try again.');
     }
@@ -173,7 +186,7 @@ function BlendView({ detail, revealing, onRevealed, currentSongId, isPlaying, li
     <BlendTones.Provider value={tones}>
     <motion.section className="blend-page" aria-labelledby="blend-title" variants={pageVariants} initial="hidden" animate="visible">
       <motion.header className="blend-hero" variants={itemVariants}>
-        <BlendStage key={revealKey(detail)} members={detail.members} tones={tones} match={waiting ? undefined : match} group={group} intro={revealing} onIntroDone={onRevealed} focus={filter} />
+        <BlendStage key={revealKey(detail)} members={detail.members} tones={tones} match={waiting ? undefined : match} group={group} intro={revealing} onIntroDone={onRevealed} focus={filter} onInvite={() => void openInvite()} sinking={sinking} pulse={detail.stale ? polls : 0} />
         <div className="blend-hero__bar">
           <div className="blend-hero__copy">
             <div className="page-title-row"><BlendTitle detail={detail} canRename={viewer?.userId === detail.ownerId} onRenamed={onRenamed} /><InfoTour label="How this Blend works" steps={BLEND_TOUR} stage={blendScene} /></div>
@@ -198,10 +211,14 @@ function BlendView({ detail, revealing, onRevealed, currentSongId, isPlaying, li
         </div>
       </motion.header>
       {inviteError ? <p role="alert" className="blend-sheet__error">{inviteError}</p> : null}
-      {detail.stale && !waiting ? <p role="status" className="blend-hero__note">Your Blend is waiting to refresh. <button type="button" onClick={onRefresh}>Refresh</button></p> : null}
+      {detail.stale && !waiting ? (
+        polling
+          ? <p role="status" className="blend-hero__note">Refreshing…</p>
+          : <p role="status" className="blend-hero__note">Your Blend is waiting to refresh. <button type="button" onClick={onRefresh}>Refresh</button></p>
+      ) : null}
 
       {waiting ? (
-        <div className="state-card blend-waiting"><h3>Your Blend needs a second person</h3><p>Send the link. The empty orb fills in with their colour the moment they join.</p><TactileButton variant="accent" icon={Share2} onClick={() => void openInvite()}>Send invite</TactileButton></div>
+        <p className="blend-hero__note blend-waiting">Send the link. The empty orb fills in with their colour the moment they join.</p>
       ) : detail.state === 'not_enough' ? (
         <div className="state-card"><h3>Not enough yet</h3><p>{BLEND_TEXT.notenough}</p></div>
       ) : (
