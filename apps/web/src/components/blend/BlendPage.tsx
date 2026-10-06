@@ -19,7 +19,7 @@ import { memberTones } from '../../lib/blendTones';
 import { SkeletonCard, TactileButton } from '../ui';
 import { BlendInviteSheet } from './BlendInviteSheet';
 import { BlendRing } from './BlendRing';
-import { BlendReveal, revealSeen, useBlendPalette } from './BlendReveal';
+import { markRevealSeen, revealKey, revealSeen, useBlendPalette } from './blendReveal';
 import { BlendSheet } from './BlendSheet';
 import { BlendStories } from './BlendStories';
 import { BlendStage } from './BlendStage';
@@ -111,15 +111,15 @@ export function BlendPage({ blendId, currentSongId, isPlaying, likedIds, onPlay,
     );
   }
   return (
-    <>
-      {revealing ? <BlendReveal detail={load.detail} onDone={() => setRevealing(false)} /> : null}
-      <BlendView detail={load.detail} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} onRefresh={() => setAttempt(value => value + 1)} onRenamed={(name) => setLoad({ kind: 'ready', detail: { ...load.detail, name } })} />
-    </>
+    <BlendView detail={load.detail} revealing={revealing} onRevealed={() => { markRevealSeen(load.detail); setRevealing(false); }} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} onRefresh={() => setAttempt(value => value + 1)} onRenamed={(name) => setLoad({ kind: 'ready', detail: { ...load.detail, name } })} />
   );
 }
 
-function BlendView({ detail, currentSongId, isPlaying, likedIds, onPlay, onLike, onRefresh, onRenamed }: {
+function BlendView({ detail, revealing, onRevealed, currentSongId, isPlaying, likedIds, onPlay, onLike, onRefresh, onRenamed }: {
   readonly detail: BlendDetail;
+  /** Play the reveal in the hero; everything below waits for the number to land. */
+  readonly revealing: boolean;
+  readonly onRevealed: () => void;
   readonly currentSongId: string | null;
   readonly isPlaying: boolean;
   readonly likedIds: ReadonlySet<string>;
@@ -170,7 +170,7 @@ function BlendView({ detail, currentSongId, isPlaying, likedIds, onPlay, onLike,
     <BlendTones.Provider value={tones}>
     <motion.section className="blend-page" aria-labelledby="blend-title" variants={pageVariants} initial="hidden" animate="visible">
       <motion.header className="blend-hero" variants={itemVariants}>
-        <BlendStage members={detail.members} tones={tones} match={waiting ? undefined : match} group={group} />
+        <BlendStage key={revealKey(detail)} members={detail.members} tones={tones} match={waiting ? undefined : match} group={group} intro={revealing} onIntroDone={onRevealed} />
         <div className="blend-hero__bar">
           <div className="blend-hero__copy">
             <div className="page-title-row"><BlendTitle detail={detail} canRename={viewer?.userId === detail.ownerId} onRenamed={onRenamed} /><InfoTour label="How this Blend works" steps={BLEND_TOUR} stage={blendScene} /></div>
@@ -201,7 +201,7 @@ function BlendView({ detail, currentSongId, isPlaying, likedIds, onPlay, onLike,
       ) : detail.state === 'not_enough' ? (
         <div className="state-card"><h3>Not enough yet</h3><p>{BLEND_TEXT.notenough}</p></div>
       ) : (
-        <>
+        <motion.div className="blend-body" inert={revealing} initial={false} animate={revealing ? { opacity: 0, y: reduced ? 0 : 18 } : { opacity: 1, y: 0 }} transition={{ duration: reduced ? motionTokens.duration.instant : motionTokens.duration.slow, ease: motionTokens.ease.decelerate }}>
           {/* The match already fills the hero; the cards carry the rest of the story. */}
           <BlendStories detail={{ ...detail, stories: detail.stories.filter((story) => story.kind !== 'match' && story.kind !== 'groupMatch') }} palette={palette} onPlay={(song) => onPlay(song, [song])} />
           {group ? <section className="blend-pairs" aria-label="Pairs"><BlendRing members={detail.members} pairs={detail.pairs} onPair={setOpenPair} /></section> : null}
@@ -234,7 +234,7 @@ function BlendView({ detail, currentSongId, isPlaying, likedIds, onPlay, onLike,
               />
             ))}
           </ol>
-        </>
+        </motion.div>
       )}
 
       {leaving ? (
