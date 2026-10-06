@@ -29,3 +29,11 @@ apps/web/public/models/roformer/
 .mcp.json
 /output/
 /mobile allegra.png
+# Logs, JVM crash dumps and local evidence (screenshots, recordings, UI dumps)
+*.log
+hs_err_pid*
+replay_pid*
+.planning/**/*.png
+.planning/**/*.mp4
+.planning/**/*.xml
+.planning/navigation-audit/fixed-probe/
