@@ -6,6 +6,7 @@ import { parseLanguages } from '../lib/languages.js';
 import { MAX_COVER_BYTES, isCoverContentType, looksLikeStorageId, type CoverStorage } from '../lib/covers.js';
 import { parseLibraryOps, parseSentAt, type PlaylistCover } from '../shared/library.js';
 import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
+import { isListenExit } from '../shared/listenSignal.js';
 import type { ListenerActions } from '../user/actions.js';
 import type { TasteTally } from '../user/tasteTally.js';
 import type { BlendStore } from '../user/blendStore.js';
@@ -303,7 +304,7 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
     }
   });
 
-  // How long a song was actually listened to. A few seconds counts against it, most of it counts for it.
+  // How long a song was actually listened to, and how it ended (packages/shared/listenSignal.ts).
   router.post('/me/taste/signal', async (request, response) => {
     const user = await authenticatedUser(auth, request, response);
     if (!user) return;
@@ -317,8 +318,11 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
       response.status(400).json({ success: false, data: null, error: MISSING });
       return;
     }
+    // Optional: how the listen ended. Without it the older seconds-only rule applies.
+    const exitPositionSec = typeof body.exitPositionSec === 'number' && Number.isFinite(body.exitPositionSec) && body.exitPositionSec >= 0 ? Math.min(body.exitPositionSec, 7200) : undefined;
+    const ending = isListenExit(body.exit) ? { exit: body.exit, ...(exitPositionSec === undefined ? {} : { exitPositionSec }) } : undefined;
     try {
-      await actions.listened(user, playback.id, seconds, playback.song, playback.ref, playedAt, playId);
+      await actions.listened(user, playback.id, seconds, playback.song, playback.ref, playedAt, playId, ending);
       response.status(204).end();
     } catch (error) {
       sendFailure(response, error);

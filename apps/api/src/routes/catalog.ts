@@ -5,8 +5,27 @@ import { sendFailure, sendSuccess, boundedString, nonNegativeInt, positiveInt, q
 import { parseLanguages } from '../lib/languages.js';
 import { regionByCode, type IndianRegion } from '../shared/regions.js';
 
+export const SUGGEST_CACHE_CONTROL = 'public, max-age=60, s-maxage=600, stale-while-revalidate=86400';
+
 export function catalogRouter(catalog: CatalogService): Router {
   const router = Router();
+
+  // As-you-type search. Not personal, so the edge may share it between listeners: popular prefixes
+  // ("kes", "arij") are typed by many people and answered once per region.
+  router.get('/search/suggest', async (request, response) => {
+    const query = boundedString(request.query.q);
+    if (!query) {
+      response.status(400).json({ success: false, data: null, error: "Something's missing from that request." });
+      return;
+    }
+    try {
+      const value = await catalog.suggest(query, positiveInt(request.query.limit, 8, 12));
+      response.setHeader('Cache-Control', SUGGEST_CACHE_CONTROL);
+      sendSuccess(response, value);
+    } catch (error) {
+      sendFailure(response, error);
+    }
+  });
 
   router.get('/search', async (request, response) => {
     const query = boundedString(request.query.q);

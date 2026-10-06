@@ -88,16 +88,18 @@ export class SaavnProvider {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
+  /** `timeoutMs` overrides the provider default for one call (typeahead must answer fast or not at all). */
   public async search(
     query: string,
     limit = 20,
-    page = 0
+    page = 0,
+    timeoutMs?: number
   ): Promise<ProviderResult<SaavnSong[]>> {
     return this.requestResults('search/songs', {
       query,
       limit: String(limit),
       page: String(page)
-    });
+    }, timeoutMs);
   }
 
   public async getSong(
@@ -160,12 +162,13 @@ export class SaavnProvider {
 
   private async requestResults(
     path: string,
-    params: Record<string, string>
+    params: Record<string, string>,
+    timeoutMs?: number
   ): Promise<ProviderResult<SaavnSong[]>> {
     let reason: ProviderFailureReason = 'error';
     for (const baseUrl of this.baseUrls) {
       try {
-        const response = await this.request(baseUrl, path, params);
+        const response = await this.request(baseUrl, path, params, timeoutMs);
         if (!response.ok) {
           continue;
         }
@@ -188,7 +191,8 @@ export class SaavnProvider {
   private async request(
     baseUrl: string,
     path: string,
-    params?: Record<string, string>
+    params?: Record<string, string>,
+    timeoutMs = this.timeoutMs
   ): Promise<Response> {
     const url = new URL(path.replace(/^\/+/, ''), `${baseUrl}/`);
     if (params) {
@@ -200,7 +204,7 @@ export class SaavnProvider {
     return fetchWithTimeout(
       url,
       { headers: BROWSER_HEADERS },
-      this.timeoutMs,
+      timeoutMs,
       this.fetchImpl
     );
   }

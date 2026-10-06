@@ -12,6 +12,7 @@ import { catalogRouter } from './routes/catalog.js';
 import { discoveryRouter } from './routes/discovery.js';
 import { sendFailure } from './routes/common.js';
 import { lyricsRouter } from './routes/lyrics.js';
+import { radioRouter } from './routes/radio.js';
 import { mcpRouter } from './mcp/server.js';
 import { OAuthClients } from './oauth/clients.js';
 import { oauthRouter } from './oauth/router.js';
@@ -54,6 +55,7 @@ export interface AppOptions extends Omit<ServiceOptions, 'jwtSecret'> {
     readonly mcp?: RateLimitConfig;
     readonly oauth?: RateLimitConfig;
     readonly lookup?: RateLimitConfig;
+    readonly typeahead?: RateLimitConfig;
     readonly writes?: RateLimitConfig;
     readonly plays?: RateLimitConfig;
     readonly guests?: RateLimitConfig;
@@ -133,6 +135,7 @@ export function createApp(options: AppOptions): Express {
   app.use('/api', sharedRouter(services.auth, services.catalog, services.actions, services.users));
   app.use('/api', uploadsRouter(services.auth, services.covers));
   app.use('/api', discoveryRouter(services.translation, services.recommendations, services.auth, services.catalog));
+  app.use('/api', radioRouter(services.radio, services.auth));
   const signer = new OAuthSigner(jwtSecret);
   app.use(oauthRouter({
     auth: services.auth,
@@ -171,6 +174,8 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
   const discovery = limiter(limits.discovery ?? { windowMs: 60_000, limit: 20 });
   // Search, lyrics and artist lookups each fan out to several providers.
   const lookup = limiter(limits.lookup ?? { windowMs: 60_000, limit: 90 });
+  // As-you-type search: a request per pause in typing, most answered by the edge cache before here.
+  const typeahead = limiter(limits.typeahead ?? { windowMs: 60_000, limit: 240 });
   // Each recorded play is a profile read and write. Matches the song-change cap.
   const plays = limiter(limits.plays ?? { windowMs: 60_000, limit: 30 });
   // Likes, playlists, settings, taste signals: each is a database write.
@@ -212,7 +217,12 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
       mcp(request, response, next);
       return;
     }
-    if (path.startsWith('/api/ai') || path === '/api/lyrics/translate' || path === '/api/recommendations') {
+    if (path === '/api/search/suggest') {
+      typeahead(request, response, next);
+      return;
+    }
+    // A radio fans out to the catalog like recommendations do: one per search tap, then a refill now and then.
+    if (path.startsWith('/api/ai') || path === '/api/lyrics/translate' || path === '/api/recommendations' || path.startsWith('/api/radio/')) {
       discovery(request, response, next);
       return;
     }

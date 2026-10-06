@@ -10,7 +10,7 @@ import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef
 import type { UnifiedSong } from '../types.js';
 import { opsForPlaylistCopy, refForId, snapshotOf, unifiedSongFromSnapshot } from './libraryOps.js';
 import { RECENTLY_PLAYED_LIMIT, isPersonalised, type LibraryRecord, type RecentRecord, type UserData, type UserStore } from './store.js';
-import { SIGNAL_WEIGHT, applySignal, playWeight } from './taste.js';
+import { SIGNAL_WEIGHT, applySignal, playWeight, type ListenEnding } from './taste.js';
 import type { TasteTally } from './tasteTally.js';
 
 /** Eight url-safe characters (~10^11 codes): long enough not to guess, short enough to read out loud. */
@@ -330,12 +330,12 @@ export class ListenerActions {
   }
 
   /** How long a song was actually heard: a few seconds counts against it, most of it for it. */
-  public async listened(user: UserData, songId: string, seconds: number, snapshot?: SongSnapshot, songRef?: SongRef, playedAt?: string, playId?: string): Promise<UserData> {
+  public async listened(user: UserData, songId: string, seconds: number, snapshot?: SongSnapshot, songRef?: SongRef, playedAt?: string, playId?: string, ending?: ListenEnding): Promise<UserData> {
     if (!isPersonalised(user)) return user;
     const song = (snapshot ? unifiedSongFromSnapshot(snapshot) : null) ?? await this.lookUp(songId);
     if (!song) return user;
     const ref = snapshot?.ref ?? songRef;
-    const weight = playWeight(seconds, song.duration);
+    const weight = playWeight(seconds, song.duration, ending);
     let updated: UserData | null;
     if (!ref || !playedAt) {
       updated = await this.learn(user, song, weight);

@@ -80,6 +80,26 @@ Over-fetches from the provider so `limit` is filled after collapse when possible
 The UI may expose `variants` behind a small "N other versions" control — they are
 never listed as separate top-level search hits.
 
+**Relevance order (2026-10-06):** results keep the provider's order (Saavn before Gaana). Play
+count only elects the canonical row inside a recording group; it no longer re-sorts the list, so
+`kes` leads with Kesariya rather than the most-played song containing "kes".
+
+### `GET /api/search/suggest`
+`q` (required) · `limit`=8 (max 12)
+`→ ApiResponse<{ results: UnifiedSong[]; source: 'Saavn' }>`
+As-you-type search. Same relevance order and recording collapse as `/api/search`, without the
+release correction or the Gaana fallback, with a 4 s provider deadline. Rows are playable.
+Not personal: `Cache-Control: public, max-age=60, s-maxage=600, stale-while-revalidate=86400`, so
+the edge answers popular prefixes. Own rate-limit bucket (Typeahead, below).
+
+### `GET /api/radio/:songId` · Bearer optional
+`?languages=` (guests only; a signed-in listener's setting wins)
+`→ ApiResponse<{ candidates: { song: UnifiedSong; source: 'similar' | 'artist' | 'taste'; rank: number }[]; taste: { artists: { name: string; score: number }[]; languages: string[] } | null }>`
+Candidates for a song radio: the seed's suggestions, its lead artist's top songs, and (signed in,
+personalisation on) the listener's favourite artists in the seed's language. Never the seed itself.
+The client ranks them with `packages/shared/radio.ts` while the listener skips and finishes.
+`taste` is null for guests and when personalisation is off. Personal: `no-store`.
+
 ### `GET /api/songs/:id` → `ApiResponse<UnifiedSong>` · cache 6 h
 ### `GET /api/songs?ids=a,b,c` → `ApiResponse<UnifiedSong[]>` · batch hydrate
 ### `GET /api/songs/:id/suggestions?limit=15` → `ApiResponse<UnifiedSong[]>` · cache 24 h
@@ -283,7 +303,7 @@ fresh guest session.
 |---|---|---|
 | `GET /api/me/taste` | Bearer | → `{ topArtists: {name,score}[] (<=12), languages: {name,score}[] (<=5), signals: number, onboarded: boolean }` |
 | `POST /api/me/taste/seed` | Bearer | `{ artists: string[] (<=30), languages: string[] (<=8) }` → same as `GET`. Onboarding: strong weight, sets `onboarded: true`. |
-| `POST /api/me/taste/signal` | Bearer | `{ songId, seconds, playedAt? }` or `{ songRef, song?, seconds, playedAt? }` → `204`. `playedAt` is an ISO timestamp and is recommended; the most-played tally needs it to ignore repeated delivery. How long a song was really listened to: `<10 s` counts against the artist, most of a song counts for them. |
+| `POST /api/me/taste/signal` | Bearer | `{ songId, seconds, playedAt? }` or `{ songRef, song?, seconds, playedAt? }` → `204`. `playedAt` is an ISO timestamp and is recommended; the most-played tally needs it to ignore repeated delivery. Additive 2026-10-06: optional `exit` (`'ended' \| 'skipped' \| 'paused' \| 'switched'`) and `exitPositionSec`. With `exit`, `packages/shared/listenSignal.ts` decides: heard out or left in the last 15 s counts for the artist, left inside 30 s counts against, anything between is neutral. Without it, the older rule: `<10 s` counts against the artist, most of a song counts for them. |
 
 Taste is also updated **automatically** by existing routes. Legacy songId writes resolve through the catalog; provider-aware writes include a validated `SongSnapshot`, so Gaana plays train the same account taste without a colliding bare ID. Recent rows retain the ref and snapshot for account history and recommendation seeds. The artist profile remains as described above; separately, the most-played tally stores at most 200 song identities, adds listened minutes (or −1 for a skip under 10 seconds), +10 once for a native like, and +5 for a native playlist add. Tally weights halve every 45 days. A future `playedAt` is clamped to server time; a signal older than 30 days is ignored by the tally.
 
@@ -491,7 +511,8 @@ A `429` carries `Retry-After` / `RateLimit` headers and the envelope above.
 | Plays | `POST /api/me/recently-played` | 30 |
 | Writes | non-GET `/api/me/*`, `/api/libraries*`, `/api/shared*` | 60 |
 | Lookup | `/api/search`, `/api/lyrics*`, `/api/artists*` | 90 |
-| Discovery | `/api/ai/*`, `/api/lyrics/translate`, `/api/recommendations` | 20 |
+| Typeahead | `GET /api/search/suggest` | 240 |
+| Discovery | `/api/ai/*`, `/api/lyrics/translate`, `/api/recommendations`, `/api/radio/*` | 20 |
 | Uploads | `/api/uploads/*` | 10 |
 | Guests | `POST /api/auth/guest`, `POST /api/auth/anon` (each creates a profile) | 10 |
 | Auth / OAuth | `/api/auth/*`, `/api/oauth/*` | 30 |

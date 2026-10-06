@@ -2,6 +2,7 @@ import type { AppConfig } from './config.js';
 import { ArtworkService } from './services/artwork.js';
 import { LyricsService } from './services/lyrics.js';
 import { RecommendationService } from './services/recommendations.js';
+import { RadioService } from './services/radio.js';
 import { TranslationService } from './services/translation.js';
 import { CatalogService } from './catalog/catalog.js';
 import { ConvexCoverStorage, ConvexGrantLedger, ConvexUserStore } from './db/convex.js';
@@ -103,6 +104,8 @@ export interface AppServices {
   readonly actions: ListenerActions;
   readonly translation: TranslationService;
   readonly recommendations: RecommendationService;
+  /** Candidates for a song radio; the client ranks them as the listener skips and finishes. */
+  readonly radio: RadioService;
   /** Playlist cover storage (Convex). Undefined without Convex: uploads answer 503. */
   readonly covers?: CoverStorage;
   /** Single use for MCP OAuth codes and refresh tokens. */
@@ -216,6 +219,7 @@ export function createServices(options: ServiceOptions): AppServices {
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {})
     }),
     recommendations: new RecommendationService(catalog, cache),
+    radio: new RadioService(catalog),
     ...(covers ? { covers } : {}),
     grants: convex ? new ConvexGrantLedger(convex) : new MemoryGrantLedger(),
     accountsEnabled: Boolean(convexVerifier)

@@ -1,6 +1,7 @@
 import { deriveMoodPrompts } from './moodPrompts.js';
 import type { TasteEntry, TasteProfile } from './store.js';
 import { creditedArtists } from '../shared/identity.js';
+import { LONG_TERM_WEIGHT, listenVerdict, type ListenExit } from '../shared/listenSignal.js';
 
 export { creditedArtists } from '../shared/identity.js';
 
@@ -128,8 +129,22 @@ export function applyImportSeed(taste: TasteProfile | undefined, counts: readonl
   return { artists, languages: base.languages, signals: base.signals + weights.length, onboarded: true, updatedAt: now.toISOString() };
 }
 
-/** A play counts by how much of it was heard: finished-ish is a vote for, a few seconds is a vote against. */
-export function playWeight(playedSeconds: number, songSeconds: number): number {
+/** How a listen ended, as a client that reports it says (`POST /api/me/taste/signal`). */
+export interface ListenEnding {
+  readonly exit: ListenExit;
+  readonly exitPositionSec?: number;
+}
+
+/**
+ * A play counts by how much of it was heard and how it ended. With the ending known, the shared
+ * rule applies: heard out (or left in the last 15 s) is a vote for, left inside 30 s a vote
+ * against, anything between says nothing. Older clients send seconds only and keep the rule they
+ * were built against: a few seconds is a vote against, most of a song a vote for.
+ */
+export function playWeight(playedSeconds: number, songSeconds: number, ending?: ListenEnding): number {
+  if (ending) {
+    return LONG_TERM_WEIGHT[listenVerdict({ heardSeconds: playedSeconds, exit: ending.exit, exitPositionSec: ending.exitPositionSec, durationSec: songSeconds })];
+  }
   if (playedSeconds < 10) return SIGNAL_WEIGHT.skip;
   const heard = songSeconds > 0 ? playedSeconds / songSeconds : 1;
   return heard >= 0.5 || playedSeconds >= 60 ? SIGNAL_WEIGHT.play : 0.4;

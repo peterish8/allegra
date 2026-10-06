@@ -163,6 +163,21 @@ days. Audio never comes from YouTube — see `docs/provider-integration.md` rule
 
 Each has a fake used by tests, which is why the suite runs with no network and no cloud account.
 
+## Search and song radio
+
+Search answers every keystroke: `packages/shared/typeahead.ts` shows the longest prefix already
+answered, narrowed, while `GET /api/search/suggest` (edge-cached) or, on the phone, the catalog
+directly fetches the live answer. Results keep the provider's relevance order.
+
+A search hit plays a **song radio**, never the rest of the results (Spotify's rule). The radio is
+`packages/shared/radio.ts`, pure and shared by web and phone: candidates come from the catalog's
+suggestions, `GET /api/radio/:songId` (seed artist, the listener's artists) on web and YouTube
+Music's automix on the phone, and are ranked by closeness to the seed, long-term taste and what
+happened in this session. `packages/shared/listenSignal.ts` decides what a listen meant: heard
+out or left in the last 15 s is liked, left inside 30 s is disliked. Every ending re-ranks the
+songs after the listener's own queued ones, and the same verdict teaches the server's taste
+profile. Songs queued with Play next stay ahead of any radio.
+
 ## Rules that are not negotiable
 
 1. **`docs/api-contract.md` is the contract.** Propose → update the doc → announce → adapt both sides.

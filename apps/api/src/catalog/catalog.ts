@@ -36,6 +36,8 @@ export interface SearchOptions {
 /** A corrected album name and cover are worth a month; a miss is re-asked tomorrow. */
 const RELEASE_TTL_SECONDS = 2_592_000;
 const RELEASE_MISS_TTL_SECONDS = 86_400;
+/** A typeahead answer later than this is worse than none: the listener has typed on. */
+const SUGGEST_TIMEOUT_MS = 4_000;
 
 /**
  * Originals first, edits after, each side keeping the provider's own order.
@@ -71,7 +73,8 @@ export class CatalogService {
   public async search(query: string, limit: number, page: number, options: SearchOptions = {}): Promise<CatalogSearch> {
     // v4: edits rank below originals, and the top row's album and cover are corrected
     // against the release authority when the provider only has it on a playlist.
-    const key = cacheKey('search', 'v5', query, String(limit), String(page));
+    // v6: the provider's relevance order is kept instead of re-sorting by play count.
+    const key = cacheKey('search', 'v6', query, String(limit), String(page));
     const cached = await this.cache.get<CatalogSearch>(key);
     if (cached) {
       return cached;
@@ -94,12 +97,36 @@ export class CatalogService {
       }
     }
 
-    const ordered = originalsFirst(collapseRecordings(normalizeMany(raw, source)), query).slice(0, limit);
+    const ordered = originalsFirst(collapseRecordings(normalizeMany(raw, source, 'relevance')), query).slice(0, limit);
     const value = {
       results: options.enrich === false ? ordered : await this.withCanonicalRelease(ordered),
       source
     } satisfies CatalogSearch;
     await this.cache.set(key, value, 3600);
+    return value;
+  }
+
+  /**
+   * Search as the listener types: the same relevance order as `search`, but lean. No release
+   * enrichment, a small page, a short provider deadline, and no Gaana fallback (an empty prefix is
+   * normal while typing). Playable rows, so a tap plays at once.
+   */
+  public async suggest(query: string, limit: number): Promise<CatalogSearch> {
+    const normalized = query.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+    const key = cacheKey('suggest', 'v1', normalized, String(limit));
+    const cached = await this.cache.get<CatalogSearch>(key);
+    if (cached) {
+      return cached;
+    }
+    const saavn = await this.call(this.saavnBreaker, () => this.saavn.search(normalized, Math.min(limit * 2, 20), 0, SUGGEST_TIMEOUT_MS));
+    if (!saavn.ok) {
+      throw unavailable(saavn.reason);
+    }
+    const value = {
+      results: originalsFirst(collapseRecordings(normalizeMany(saavn.data, 'Saavn', 'relevance')), normalized).slice(0, limit),
+      source: 'Saavn'
+    } satisfies CatalogSearch;
+    await this.cache.set(key, value, 600);
     return value;
   }
 
@@ -485,7 +512,12 @@ function unavailable(reason: 'timeout' | 'error' | undefined): Error {
   return reason === 'timeout' ? new TimeoutError() : new ProviderUnavailableError();
 }
 
-function normalizeMany(raw: SaavnSong[], source: 'Saavn' | 'Gaana'): UnifiedSong[] {
+/**
+ * `relevance` keeps the provider's own order (search: "kes" must lead with Kesariya, not with the
+ * most-played song that happens to contain "kes"). `popularity` ranks by play count (suggestion and
+ * artist lists, where the provider's order carries no query). Saavn rows stay ahead of Gaana's.
+ */
+function normalizeMany(raw: SaavnSong[], source: 'Saavn' | 'Gaana', order: 'relevance' | 'popularity' = 'popularity'): UnifiedSong[] {
   return raw
     .map((song) => normalizeSong(song, source))
     .filter((song): song is UnifiedSong => song !== null)
@@ -493,7 +525,7 @@ function normalizeMany(raw: SaavnSong[], source: 'Saavn' | 'Gaana'): UnifiedSong
       if (left.source !== right.source) {
         return left.source === 'Saavn' ? -1 : 1;
       }
-      return right.playCount - left.playCount;
+      return order === 'relevance' ? 0 : right.playCount - left.playCount;
     });
 }
 
