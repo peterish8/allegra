@@ -148,20 +148,45 @@ recommendations on the others.
 | `UserStore` | `ConvexUserStore`, `MemoryUserStore` (tests, and local dev without Convex) |
 | `TokenVerifier` | `GuestTokenVerifier`, `ConvexTokenVerifier`, `FirstMatchVerifier` |
 | `CacheStore` | `MemoryCacheStore` |
-| `RelationStore` | `ConvexRelationStore`, `MemoryRelationStore` (tests, and local dev without Convex) |
+| `TasteTally` | `ConvexTasteTally`, `MemoryTasteTally` (tests, and local dev without Convex) |
+
+Each has a fake used by tests, which is why the suite runs with no network and no cloud account.
 
 ## Recommendations (Quick Picks)
 
-Modelled on Echo's Quick Picks. Every play grows a per-listener **play tally** (`profile.playStats`,
-capped at 200 songs: plays, seconds ever, and seconds halving weekly). A shelf takes up to twenty
-seeds — now playing, the last five plays, this week's top five, the all-time top ten, the latest
-likes — and reads each seed's **song relation**: YouTube Music's song radio and the catalog's
-suggestions, merged and matched to catalog rows (`services/songRelations.ts`). Every seed votes for
-its neighbours, so a song many of your plays point to ranks first. Missing relations are worked out a
-few per shelf (no background jobs), so the map grows as people listen; each is refreshed after 30
-days. Audio never comes from YouTube — see `docs/provider-integration.md` rule 14.
+`GET /api/recommendations` (`services/recommendations.ts`, no model) ranks the catalog for one
+listener. `services/recommendationContext.ts` builds its input from the account:
 
-Each has a fake used by tests, which is why the suite runs with no network and no cloud account.
+- **Seeds:** now playing, the two latest plays and the two latest likes; the first four are used.
+- **Taste profile** (`user/taste.ts`): up to 60 artists and 12 languages, nudged by every play,
+  like and skip and fading a little with each new signal. The top three artists are used.
+- **Language setting:** a hard filter.
+
+The shelf blends three sources:
+
+1. The catalog's suggestions for each seed. Earlier seeds weigh more, and a song suggested by
+   several seeds ranks higher.
+2. The top songs of the favourite artists, weighted by affinity.
+3. Popular songs in the listener's languages, when the first two come up short.
+
+Liked and recently played songs are left out, and no artist gets more than two slots. The ranked
+pool is cached for 30 minutes per seed set.
+
+The website mixes these picks with recent plays, likes and trending songs on Home. A signed-in phone
+reads the same endpoint for its Stream screen.
+
+Without an account, the phone builds its own Stream home (`apps/mobile/src/services/stream/homeFeed.ts`,
+after Echo Music). It takes radios from the songs it played most, using YouTube Music's automix
+resolved to catalog audio with the catalog's suggestions as fallback (`services/stream/recommend.ts`).
+Audio never comes from YouTube; see `docs/provider-integration.md` rule 14.
+
+The **most-played tally** is separate. It lives in `convex/taste.ts`, behind `TasteTally`, and keeps
+200 songs per listener with weights that halve every 45 days. Blend and the account export read it;
+Quick Picks do not.
+
+Leftovers from an earlier design: the Convex `songRelations` table with `relations.getMany`/`put`,
+and the `playStats` profile field, are still in the schema. No code reads or writes them. Don't build
+on them; removing them needs a Convex migration.
 
 ## Rules that are not negotiable
 
