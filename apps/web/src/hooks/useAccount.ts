@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AccountProfile, TasteSummary, UnifiedSong } from '@shared/types';
+import { LISTEN_RULES, listenVerdict, type ListenVerdict } from '@shared/listenSignal';
 
 import type { Playhead } from '../lib/playhead';
 import { ensureSession, fetchProfile, fetchTaste, seedTaste, sendListenSignal, startGuestSession, updateDisplayName } from '../lib/api';
@@ -131,30 +132,40 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
 }
 
 /**
- * Tells the server how long each song was actually listened to, once it has been left. A few seconds counts
- * against a song's artist and most of it counts for them, so the taste profile follows behaviour, not just taps.
+ * Reports each song once it is left: seconds actually heard (seeks and jumps excluded) and how it
+ * ended. The server learns taste from it; `onOutcome` lets a playing radio react at once
+ * (`packages/shared/listenSignal.ts` holds the rule both use).
  */
-export function useListenTracker(song: UnifiedSong | null, playhead: Playhead, refreshTaste: () => Promise<unknown>): void {
-  const state = useRef<{ key: string | null; song: UnifiedSong | null; seconds: number; startedAt: string }>({
-    key: null, song: null, seconds: 0, startedAt: ''
+export function useListenTracker(song: UnifiedSong | null, playhead: Playhead, refreshTaste: () => Promise<unknown>, onOutcome?: (song: UnifiedSong, verdict: ListenVerdict) => void): void {
+  const state = useRef<{ key: string | null; song: UnifiedSong | null; heard: number; position: number; startedAt: string }>({
+    key: null, song: null, heard: 0, position: 0, startedAt: ''
   });
   const key = song ? `${song.source.toLowerCase()}:${song.id}` : null;
   const refreshRef = useRef(refreshTaste);
   refreshRef.current = refreshTaste;
+  const outcomeRef = useRef(onOutcome);
+  outcomeRef.current = onOutcome;
 
   useEffect(() => {
-    const heard = state.current;
-    if (heard.key !== key) {
-      if (heard.song && heard.seconds >= 1) {
-        void sendListenSignal(heard.song, heard.seconds, heard.startedAt).then(() => refreshRef.current()).catch(() => undefined);
-      }
-      // When the listen started: the server's most-played tally uses it to ignore a repeated delivery.
-      state.current = { key, song, seconds: 0, startedAt: new Date().toISOString() };
+    const left = state.current;
+    if (left.key === key) return;
+    if (left.song) {
+      const ended = left.song.duration > 0 && left.position >= left.song.duration - LISTEN_RULES.endSlackSec;
+      const ending = { exit: ended ? 'ended' as const : key ? 'skipped' as const : 'switched' as const, exitPositionSec: left.position };
+      outcomeRef.current?.(left.song, listenVerdict({ heardSeconds: left.heard, ...ending, durationSec: left.song.duration }));
+      void sendListenSignal(left.song, left.heard, left.startedAt, ending).then(() => refreshRef.current()).catch(() => undefined);
     }
+    // When the listen started: the server's most-played tally uses it to ignore a repeated delivery.
+    state.current = { key, song, heard: 0, position: 0, startedAt: new Date().toISOString() };
   }, [key, song]);
 
   useEffect(() => playhead.subscribe(() => {
-    const heard = state.current;
-    if (heard.key === key) heard.seconds = Math.max(heard.seconds, playhead.get());
+    const listen = state.current;
+    if (listen.key !== key) return;
+    const position = playhead.get();
+    const step = position - listen.position;
+    // Normal playback moves a little each tick; a seek jumps, and a jump is not listening.
+    if (step > 0 && step <= 2) listen.heard += step;
+    listen.position = position;
   }), [key, playhead]);
 }

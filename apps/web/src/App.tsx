@@ -10,7 +10,7 @@ import type { CSSProperties, MouseEvent } from 'react';
 import type { ArtistProfile, HomePayload, LyricLine, LyricsPayload, SharedPlaylist, UnifiedSong } from '@shared/types';
 import { deriveMoodPrompts } from '@shared/moodPrompts';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
-import { fromAllegraSong, parseSongRef } from '@shared/songRef';
+import { fromAllegraSong } from '@shared/songRef';
 
 import { AlbumPage } from './components/AlbumPage';
 import { ArtistPage } from './components/ArtistPage';
@@ -38,6 +38,7 @@ import type { ImmersivePlayerMode } from './components/PlayerPanel';
 import { SearchResults, artistsFromSongs } from './components/SearchResults';
 import { Artwork, EmptyState, IconButton, NoticeToast, OfflineToast, TactileButton } from './components/ui';
 import { useAccount, useListenTracker } from './hooks/useAccount';
+import { useSongRadio } from './hooks/useSongRadio';
 import { accountDisplayName, isResolvingAccount, recallAccountName, rememberAccountName } from './lib/accountState';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
 import { useLiveKaraoke } from './hooks/useLiveKaraoke';
@@ -54,7 +55,7 @@ import { lockScroll } from './lib/scrollLock';
 import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
 import { ApiError, applyLibraryOps, ensureSession, fetchArtist, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
-import { shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
+import { catalogSongId, shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
 import { resolveSnapshotForPlayback, snapshotForSong, snapshotToDisplaySong, useConnect } from './hooks/useConnect';
 import { useSnapshotArtworks } from './hooks/useSnapshotArtwork';
 import { isControllingAnotherDevice } from '../../../packages/connect/src/index';
@@ -96,15 +97,6 @@ function uniqueArtists(songs: readonly UnifiedSong[], limit: number, exclude: st
 
 function curatedSongs(songs: UnifiedSong[]): UnifiedSong[] {
   return uniqueByIdentity(songs).slice(0, 6);
-}
-
-function catalogSongId(song: UnifiedSong): string {
-  const librarySong = song as Partial<LibrarySong>;
-  const ref = librarySong.libraryRef ?? fromAllegraSong(song);
-  const parsed = ref ? parseSongRef(ref) : null;
-  if (parsed?.source === 'gaana') return `gaana:${parsed.id}`;
-  if (parsed?.source === 'saavn') return parsed.id;
-  return song.id;
 }
 
 function likedKey(song: UnifiedSong): string {
@@ -309,23 +301,15 @@ export default function App() {
   }, [connect.connectLoads]);
   const aiPicksRef = useRef<UnifiedSong[]>([]);
   const reloadPlaylists = playlists.reload;
+  /** Songs the listener queued with Play next / Add to queue: they stay in front of any radio. */
+  const userQueuedRef = useRef(new Set<string>());
+  const radio = useSongRadio(transportRef, userQueuedRef);
   // Lock screen, media keys, headset buttons and car head units, all through the same funnel.
-  const fillRadioQueue = useCallback(async (songId: string, signal?: AbortSignal): Promise<number> => {
-    try {
-      const related = await fetchSuggestions(songId, signal, 20);
-      if (signal?.aborted) return 0;
-      setSuggestions(related);
-      let added = transportRef.current.appendQueue(related);
-      if (added === 0 && aiPicksRef.current.length > 0) {
-        added = transportRef.current.appendQueue(aiPicksRef.current);
-      }
-      return added;
-    } catch {
-      if (signal?.aborted) return 0;
-      if (aiPicksRef.current.length > 0) return transportRef.current.appendQueue(aiPicksRef.current);
-      return 0;
-    }
-  }, []);
+  const fillRadioQueue = useCallback(async (signal?: AbortSignal): Promise<number> => {
+    const added = await radio.fill(signal);
+    if (added > 0 || signal?.aborted) return added;
+    return transportRef.current.appendQueue(aiPicksRef.current);
+  }, [radio]);
 
   const skipNextSmart = useCallback((): void => {
     if (remotePlayback) {
@@ -337,7 +321,7 @@ export default function App() {
     if (!song) return;
     const next = player.skipNext();
     if (!next && radioActiveRef.current) {
-      void fillRadioQueue(catalogSongId(song)).then((added) => {
+      void fillRadioQueue().then((added) => {
         if (added > 0) player.skipNext();
       });
       return;
@@ -346,7 +330,7 @@ export default function App() {
     const live = player.queue;
     const index = live.findIndex((item) => item.id === next.id);
     const remaining = index >= 0 ? live.length - index - 1 : 0;
-    if (remaining < 3) void fillRadioQueue(catalogSongId(next));
+    if (remaining < 3) void fillRadioQueue();
   }, [connect.control, fillRadioQueue, remotePlayback]);
 
   useMediaSession({
@@ -494,7 +478,14 @@ export default function App() {
   const account = useAccount(signIn.signedIn, () => {
     void loadPersonalSpace();
   });
-  useListenTracker(audio.currentSong ?? null, audio.playhead, account.refresh);
+  useListenTracker(audio.currentSong ?? null, audio.playhead, account.refresh, radio.outcome);
+  useEffect(() => {
+    const song = transportRef.current.currentSong;
+    if (song) {
+      userQueuedRef.current.delete(song.id);
+      radio.started(song);
+    }
+  }, [audio.currentSong?.id, radio]);
 
   // Guest, account, or not known yet. Convex hands back a returning Google session some moments after the
   // page loads, and the profile a moment after that; showing "Guest" for that stretch made a signed-in
@@ -794,7 +785,13 @@ export default function App() {
   // and its ref, so an edit made while the queue moved still lands on the right song.
   const queueEditable = remotePlayback ? connectView?.queueEditable ?? false : true;
   const removeQueued = (index: number): void => {
-    if (!remotePlayback) { audio.replaceUpcoming(playingNext.filter((_, at) => at !== index)); return; }
+    if (!remotePlayback) {
+      const removed = playingNext[index];
+      audio.replaceUpcoming(playingNext.filter((_, at) => at !== index));
+      // Taking a radio pick out is "less like this".
+      if (removed && !userQueuedRef.current.has(removed.id)) radio.outcome(removed, 'early-skip');
+      return;
+    }
     const queued = connectView?.queue[index];
     if (queued) connect.control({ kind: 'queue_remove', index, ref: queued.ref });
   };
@@ -1027,8 +1024,12 @@ export default function App() {
     })();
   };
 
-  const playSong = async (song: UnifiedSong, queue: UnifiedSong[] = displaySongs): Promise<void> => {
-    if (await connect.playRemote(song, queue)) {
+  /**
+   * `fromSearch`: a search hit plays its song radio (Spotify's rule), never the rest of the
+   * results; with "keep playing similar songs" off it plays that one song.
+   */
+  const playSong = async (song: UnifiedSong, queue: UnifiedSong[] = displaySongs, fromSearch = Boolean(query.trim()) && queue === displaySongs): Promise<void> => {
+    if (await connect.playRemote(song, fromSearch ? [song] : queue)) {
       setPlayerMode('mini');
       tapHaptic();
       return;
@@ -1043,21 +1044,29 @@ export default function App() {
       }
       playable = matched;
     }
-    // Active search → always radio. Title hits are remasters/remixes of the same
-    // song; Next should pull similar-vibe tracks, not the next cover variant.
-    const fromSearch = Boolean(query.trim()) && queue === displaySongs;
-    const radio = settings.autoplaySimilar && (fromSearch || shouldStartRadio(playable, queue));
-    radioActiveRef.current = radio;
+    const startRadio = settings.autoplaySimilar && (fromSearch || shouldStartRadio(playable, queue));
+    radioActiveRef.current = startRadio;
+    if (startRadio) radio.start(playable);
+    else radio.stop();
     const playableQueue = queue.map((item) => item.id === song.id ? playable : item).filter((item) => Boolean(item.streamUrl));
-    audio.selectSong(playable, radio ? [playable] : uniqueByIdentity(playableQueue));
+    // A new context replaces the old one; the listener's own queued songs stay next.
+    const player = transportRef.current;
+    const at = player.queue.findIndex((item) => item.id === player.currentSong?.id);
+    const context = startRadio || fromSearch ? [playable] : uniqueByIdentity(playableQueue);
+    const inContext = new Set(context.map((item) => item.id));
+    const mine = (at >= 0 ? player.queue.slice(at + 1) : []).filter((item) => userQueuedRef.current.has(item.id) && !inContext.has(item.id));
+    const cut = context.findIndex((item) => item.id === playable.id) + 1;
+    audio.selectSong(playable, cut > 0 ? [...context.slice(0, cut), ...mine, ...context.slice(cut)] : [playable, ...mine, ...context]);
     // Stay on the current surface — the persistent mini player appears in-place.
     setPlayerMode('mini');
     // Same cap as the server keeps (RECENTLY_PLAYED_LIMIT): 25 recent listens.
     setRecentlyPlayed((current) => [playable, ...current.filter((item) => item.id !== playable.id)].slice(0, 25));
     void recordRecentlyPlayed(playable, 0).catch(() => undefined);
     tapHaptic();
-    if (radio) void fillRadioQueue(catalogSongId(playable));
+    if (startRadio) void fillRadioQueue();
   };
+
+  const playFromSearch = (song: UnifiedSong): Promise<void> => playSong(song, [song], true);
 
   // Play next / Add to queue, on whichever device is playing. With nothing playing, the song starts.
   const queueSong = async (song: UnifiedSong, next: boolean): Promise<void> => {
@@ -1085,7 +1094,11 @@ export default function App() {
     const player = transportRef.current;
     const at = player.queue.findIndex((item) => item.id === player.currentSong?.id);
     const rest = (at >= 0 ? player.queue.slice(at + 1) : []).filter((item) => item.id !== playable.id);
-    player.replaceUpcoming(next ? [playable, ...rest] : [...rest, playable]);
+    userQueuedRef.current.add(playable.id);
+    // Spotify's "Next in queue": after the other songs the listener queued, ahead of any radio.
+    const mine = rest.filter((item) => userQueuedRef.current.has(item.id));
+    const others = rest.filter((item) => !userQueuedRef.current.has(item.id));
+    player.replaceUpcoming(next ? [playable, ...rest] : [...mine, playable, ...others]);
   };
   // One stable object: every song row reads this context, and the player re-renders several times a second.
   const queueSongRef = useRef(queueSong);
@@ -1100,7 +1113,7 @@ export default function App() {
     const remaining = index >= 0 ? audio.queue.length - index - 1 : 0;
     if (remaining >= 3) return undefined;
     const controller = new AbortController();
-    void fillRadioQueue(catalogSongId(song), controller.signal);
+    void fillRadioQueue(controller.signal);
     return () => controller.abort();
   }, [audio.currentSong?.id, audio.queue.length, fillRadioQueue]);
 
@@ -1122,6 +1135,7 @@ export default function App() {
     const key = likedKey(song);
     const wasLiked = likedIds.has(key);
     const nextLiked = !wasLiked;
+    if (nextLiked && song.id === audio.currentSong?.id) radio.love(song);
     setPersonalActionError(null);
     setLikedIds((current) => {
       const next = new Set(current);
@@ -1346,6 +1360,7 @@ export default function App() {
               activeQuery={query.trim()}
               recent={recentlyPlayed}
               onPlaySong={(song, queue) => playSong(song, queue)}
+              onPlayFromSearch={(song) => { void playFromSearch(song); }}
               onOpenArtist={openArtist}
               onNavigate={(path) => { router.push(path); }}
               onSearchAll={(value) => { if (view !== 'discover') router.push(paths.discover); setQuery(value); }}
@@ -1681,7 +1696,7 @@ export default function App() {
                             <Artwork song={song} size="small" />
                             <span className="am-queue-copy">
                               <strong>{song.title}</strong>
-                              <small>{song.artist}</small>
+                              <small>{song.artist}{radio.reasonFor(song.id) ? ` · ${radio.reasonFor(song.id)}` : ''}</small>
                             </span>
                             <span className="am-queue-time">{formatTime(song.duration)}</span>
                           </button>

@@ -5,6 +5,9 @@ import type { ImportedTrack } from '@shared/importParse';
 import type { LibraryChange, LibraryOp } from '@shared/library';
 import { fromAllegraSong, type SongRef, type SongSnapshot } from '@shared/songRef';
 import type { SpotifySourcePlaylist, SpotifyStatus, SpotifySyncStep } from '@shared/spotify';
+import type { ListenExit } from '@shared/listenSignal';
+import type { RadioTaste } from '@shared/radio';
+import { TYPEAHEAD_LIMIT } from '@shared/typeahead';
 
 export interface LibraryRecord {
   readonly id: string;
@@ -191,6 +194,21 @@ async function requestWithoutBody(path: string, init?: RequestInit): Promise<voi
 
 export async function searchSongs(query: string, signal?: AbortSignal, page = 0): Promise<{ results: UnifiedSong[]; source: 'Saavn' | 'Gaana' }> {
   return request(`/api/search?q=${encodeURIComponent(query)}&limit=20&page=${page}`, { signal });
+}
+
+/** As-you-type search: lean, relevance-ordered, edge-cached. */
+export async function suggestSongs(query: string, signal?: AbortSignal): Promise<UnifiedSong[]> {
+  return (await request<{ results: UnifiedSong[] }>(`/api/search/suggest?q=${encodeURIComponent(query)}&limit=${TYPEAHEAD_LIMIT}`, { signal })).results;
+}
+
+export interface RadioPool {
+  readonly candidates: { readonly song: UnifiedSong; readonly source: 'similar' | 'artist' | 'taste'; readonly rank: number }[];
+  readonly taste: RadioTaste | null;
+}
+
+/** Candidates for a song radio; `packages/shared/radio.ts` ranks them as the listener reacts. */
+export async function fetchRadio(songId: string, signal?: AbortSignal): Promise<RadioPool> {
+  return request(`/api/radio/${encodeURIComponent(songId)}`, { signal });
 }
 
 /** Provider profile for an artist: real photo, followers, top songs, albums, similar artists. */
@@ -663,14 +681,14 @@ export async function seedTaste(artists: readonly string[], languages: readonly 
   return request('/api/me/taste/seed', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ artists, languages }) });
 }
 
-/** How long a song was really listened to; the server counts it for or against the song's artist. */
-export async function sendListenSignal(song: UnifiedSong, seconds: number, playedAt: string): Promise<void> {
+/** How long a song was really listened to and how it ended; the server counts it for or against the song's artist. */
+export async function sendListenSignal(song: UnifiedSong, seconds: number, playedAt: string, ending?: { readonly exit: ListenExit; readonly exitPositionSec: number }): Promise<void> {
   const playback = snapshotForAccount(song);
   if (!playback) return;
   await requestWithoutBody('/api/me/taste/signal', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ songRef: playback.ref, song: playback.snapshot, seconds: Math.round(seconds), cumulativeSeconds: Math.round(seconds), playId: `${playback.snapshot.ref}:${playedAt}`.slice(0, 128), playedAt })
+    body: JSON.stringify({ songRef: playback.ref, song: playback.snapshot, seconds: Math.round(seconds), cumulativeSeconds: Math.round(seconds), playId: `${playback.snapshot.ref}:${playedAt}`.slice(0, 128), playedAt, ...(ending ? { exit: ending.exit, exitPositionSec: Math.round(ending.exitPositionSec) } : {}) })
   });
 }
 

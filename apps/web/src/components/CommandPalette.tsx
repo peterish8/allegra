@@ -6,15 +6,18 @@ import type { KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { UnifiedSong } from '@shared/types';
+import { PrefixCache, TYPEAHEAD_DEBOUNCE_MS, matchesQuery } from '@shared/typeahead';
 
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { searchSongs } from '../lib/api';
+import { suggestSongs } from '../lib/api';
 import { motionTokens, spring } from '../motion';
 
 /**
  * Global command palette, after Watermelon's "Command Search": the search pill morphs into a sheet
  * (shared layoutId), results are grouped into sections, and a highlight slides between rows.
- * Songs are searched live, so Enter plays what you typed without leaving the page.
+ * Songs are searched on every keystroke: the longest prefix already answered shows at once,
+ * narrowed to what still matches, and the live answer replaces it. Enter plays what you typed
+ * without leaving the page, as a song radio.
  */
 
 interface CommandPaletteProps {
@@ -25,6 +28,8 @@ interface CommandPaletteProps {
   readonly activeQuery: string;
   readonly recent: readonly UnifiedSong[];
   readonly onPlaySong: (song: UnifiedSong, queue: UnifiedSong[]) => void;
+  /** A search hit: plays the song and starts its radio. */
+  readonly onPlayFromSearch: (song: UnifiedSong) => void;
   readonly onOpenArtist: (name: string) => void;
   readonly onNavigate: (path: string) => void;
   readonly onSearchAll: (query: string) => void;
@@ -42,9 +47,11 @@ interface CommandItem {
 }
 
 const SHEET_ID = 'command-palette';
-const SEARCH_DEBOUNCE_MS = 220;
+/** Typeahead answers for the whole visit, so backspacing and retyping never waits. */
+const answers = new PrefixCache<UnifiedSong>();
+const songText = (song: UnifiedSong): string => `${song.title} ${song.artist}`;
 
-export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onPlaySong, onOpenArtist, onNavigate, onSearchAll, onClearSearch }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onPlaySong, onPlayFromSearch, onOpenArtist, onNavigate, onSearchAll, onClearSearch }: CommandPaletteProps) {
   const reduced = useReducedMotion();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UnifiedSong[]>([]);
@@ -103,10 +110,17 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     return undefined;
   }, [open]);
 
-  // Live song search, debounced, with the previous request cancelled.
+  // Every keystroke: answer from what is known now, then ask the network (previous request cancelled).
   useEffect(() => {
-    if (!open || trimmed.length < 2) {
+    if (!open || !trimmed) {
       setResults([]);
+      setSearching(false);
+      setFailed(false);
+      return undefined;
+    }
+    const known = answers.instant(trimmed, songText);
+    if (known) setResults([...known.items]);
+    if (known?.exact) {
       setSearching(false);
       setFailed(false);
       return undefined;
@@ -114,10 +128,11 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     const controller = new AbortController();
     setSearching(true);
     const timer = window.setTimeout(() => {
-      searchSongs(trimmed, controller.signal)
-        .then((response) => {
+      suggestSongs(trimmed, controller.signal)
+        .then((songs) => {
           if (controller.signal.aborted) return;
-          setResults(response.results.slice(0, 20));
+          answers.set(trimmed, songs);
+          setResults(songs);
           setFailed(false);
         })
         .catch(() => {
@@ -129,7 +144,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
         .finally(() => {
           if (!controller.signal.aborted) setSearching(false);
         });
-    }, SEARCH_DEBOUNCE_MS);
+    }, TYPEAHEAD_DEBOUNCE_MS);
     return () => {
       controller.abort();
       window.clearTimeout(timer);
@@ -146,9 +161,11 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
       list.push({ id: 'all', section: 'Search', title: `Search “${trimmed}”`, hint: 'All results', icon: <ArrowRight size={16} />, run: () => onSearchAll(trimmed) });
     }
 
-    const songs = results.slice(0, 5);
-    songs.forEach((song) => {
-      list.push({ id: `song-${song.id}`, section: 'Songs', title: song.title, hint: song.artist, icon: <Disc3 size={16} />, ...(song.artwork ? { art: song.artwork } : {}), run: () => onPlaySong(song, results) });
+    // Songs you played that match lead (no network wait), then the catalog's answer.
+    const played = trimmed ? recent.filter((song) => matchesQuery(songText(song), trimmed)).slice(0, 2) : [];
+    const playedIds = new Set(played.map((song) => song.id));
+    [...played, ...results.filter((song) => !playedIds.has(song.id))].slice(0, 5).forEach((song) => {
+      list.push({ id: `song-${song.id}`, section: 'Songs', title: song.title, hint: song.artist, icon: <Disc3 size={16} />, ...(song.artwork ? { art: song.artwork } : {}), run: () => onPlayFromSearch(song) });
     });
 
     // Credited names across the results; the one you typed comes first, so "arijit" offers Arijit Singh.
@@ -191,7 +208,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
       if (!needle || item.title.toLowerCase().includes(needle)) list.push(item);
     });
     return list;
-  }, [trimmed, results, recent, activeQuery, go, onSearchAll, onPlaySong, onOpenArtist, onClearSearch]);
+  }, [trimmed, results, recent, activeQuery, go, onSearchAll, onPlaySong, onPlayFromSearch, onOpenArtist, onClearSearch]);
 
   const sections = useMemo(() => {
     const map = new Map<string, CommandItem[]>();
@@ -344,7 +361,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
                         })}
                       </div>
                     ))}
-                    {trimmed.length >= 2 && !searching && results.length === 0 ? (
+                    {trimmed && !searching && results.length === 0 ? (
                       <p className="cmdk-empty">{failed ? 'Search is unavailable right now. Try again in a moment.' : `No songs found for “${trimmed}”.`}</p>
                     ) : null}
                   </div>
