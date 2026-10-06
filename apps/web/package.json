@@ -26,6 +26,7 @@
     "next": "^16.3.5",
     "onnxruntime-web": "^1.30.0",
     "postcss": "^8.5.6",
+    "qrcode": "^1.5.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "tailwindcss": "^4.3.3"
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@eslint/js": "^9.35.0",
     "@types/node": "^24.5.0",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "eslint": "^9.35.0",

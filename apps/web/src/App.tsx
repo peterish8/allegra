@@ -1443,7 +1443,10 @@ export default function App() {
             if (currentRef !== anchor.song.ref) {
               const match = await resolveSnapshotForPlayback(anchor.song).catch(() => null);
               if (!match) return false;
-              await playSong(match, [match]);
+              // The room owns what plays next: no local radio or queue behind the room's song.
+              radioActiveRef.current = false;
+              radio.stop();
+              audio.selectSong(match, [match]);
             }
             await audio.seek(positionSec);
             if (anchor.playing) await audio.requestPlayback(true);
