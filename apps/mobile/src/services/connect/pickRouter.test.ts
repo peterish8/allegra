@@ -214,7 +214,7 @@ describe('a song picked on the phone that plays here', () => {
     expect(idle.fake.sent).toEqual([]);
   });
 
-  it('plays at once in a Listen Together room', () => {
+  it('plays at once in a LuvLink room', () => {
     const room = setup(view(), { heldLocally: () => true });
     expect(room.router.route(pickOf([streamed]))).toBe(false);
     expect(room.fake.sent).toEqual([]);

@@ -189,6 +189,32 @@ describe('account erase', () => {
     expect(extras.shares).toHaveLength(100);
   });
 
+  it('exports LuvLink membership and removes the hosted room and authored queue on account erasure', async () => {
+    const t = backend();
+    const userId = await seedAccount(t, 'luvlink-erasure');
+    const host = t.withIdentity({ subject: `${userId}|luvlink-account-test` });
+    const room = await host.mutation(api.luvLink.createRoom, { displayName: 'LuvLink Host' });
+    await host.mutation(api.luvLink.addQueueItem, {
+      roomId: room.roomId, commandId: 'account-erase-queue-001', song: { ref: 'saavn:erase', title: 'Forget me', artist: 'Privacy', artwork: '', duration: 120 }, next: false
+    });
+    const exported = await t.query(api.account.extras, { secret, userId });
+    expect(exported.luvLinks).toEqual([expect.objectContaining({ roomId: room.roomId, role: 'host' })]);
+    expect(exported.complete).toBe(true);
+
+    await t.mutation(api.account.erase, { secret, userId });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const stored = await t.run(async (ctx) => ({
+      member: await ctx.db.query('luvLinkMembers').withIndex('by_userId_and_joinedAtMs', q => q.eq('userId', userId)).take(10),
+      queue: await ctx.db.query('luvLinkQueue').withIndex('by_addedByUserId', q => q.eq('addedByUserId', userId)).take(10),
+      room: await ctx.db.get(room.roomId),
+      invites: await ctx.db.query('luvLinkInvites').withIndex('by_roomId_and_generation', q => q.eq('roomId', room.roomId)).take(10)
+    }));
+    expect(stored.member).toHaveLength(0);
+    expect(stored.queue).toHaveLength(0);
+    expect(stored.room?.status).toBe('closed');
+    expect(stored.invites.every(invite => invite.revokedAtMs !== undefined)).toBe(true);
+  });
+
   it('refuses a caller without the server secret', async () => {
     const t = backend();
     const asha = await seedAccount(t, 'asha');

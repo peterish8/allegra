@@ -9,7 +9,7 @@
  *       open Now Playing on the current song (optionally with a sheet up, or
  *       switched to lyrics: on an open player that is the lyrics button's path)
  *   lyricflow://together?code=<room>
- *       a Listen together invite: opens the room sheet with the code filled in
+ *       a LuvLink invite: opens the room sheet with the code filled in
  *   lyricflow://style?playerBackground=aura&miniPlayerBackground=glass&appBackground=glow&fps=1
  *       set how the app looks (utils/styleLink: only known values are read)
  *   lyricflow://diagnose
@@ -27,7 +27,7 @@ import { searchOfficial } from '../services/stream/officialSearch';
 import { StreamService } from '../services/stream/StreamService';
 import { usePlayerStore } from '../store/playerStore';
 import { diag, enableDiagnostics } from '../utils/diag';
-import { useListenTogetherStore } from '../store/listenTogetherStore';
+import { useLuvLinkStore } from '../store/luvLinkStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { styleUpdates } from '../utils/styleLink';
 import type { PlayerSheetName } from '../types/navigation';
@@ -35,6 +35,13 @@ import type { PlayerSheetName } from '../types/navigation';
 const SHEETS: PlayerSheetName[] = ['menu', 'together', 'queue', 'timer'];
 
 export const parseDeepLink = (url: string): { action: string; params: Record<string, string> } | null => {
+  const luvLinkInvite = /^https:\/\/(?:allegravibe\.vercel\.app|allegra\.music)\/luvlink\/join\/([^/?#]+)(?:[?#].*)?$/i.exec(url.trim());
+  if (luvLinkInvite) {
+    try {
+      const code = decodeURIComponent(luvLinkInvite[1]).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      return code.length >= 4 && code.length <= 12 ? { action: 'luvlink/join', params: { code } } : null;
+    } catch { return null; }
+  }
   const webInvite = /^https:\/\/(?:allegravibe\.vercel\.app|allegra\.music)\/blend\/join\/([^/?#]+)(?:[?#].*)?$/i.exec(url.trim());
   if (webInvite) {
     try { const code = decodeURIComponent(webInvite[1]); return isBlendInviteCode(code) ? { action: 'blend/join', params: { code } } : null; } catch { return null; }
@@ -73,6 +80,11 @@ const handle = async (url: string | null) => {
     openMainTab({ screen: 'Library', params: { screen: 'BlendJoin', params: { code: link.params.code } } });
     return;
   }
+  if (link.action === 'luvlink/join' && link.params.code) {
+    useLuvLinkStore.setState({ pendingOwnedInviteCode: link.params.code });
+    navigationRef.navigate('LuvLink');
+    return;
+  }
   if (link.action === 'play' && link.params.q) {
     const found = await searchOfficial(link.params.q, 5).catch(() => []);
     diag('link', `play "${link.params.q}" -> ${found.length} results${found[0] ? `, first "${found[0].title}" by ${found[0].artist}` : ''}`);
@@ -85,12 +97,12 @@ const handle = async (url: string | null) => {
   if (link.action === 'player' || link.action === 'together') {
     const songId = usePlayerStore.getState().currentSongId;
     const code = (link.params.code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (link.action === 'together' && code) useListenTogetherStore.setState({ inviteCode: code });
+    if (link.action === 'together' && code) useLuvLinkStore.setState({ inviteCode: code });
     const requested = link.action === 'together' ? 'together' : link.params.sheet;
     const sheet = SHEETS.find(s => s === requested);
     const lyrics = link.action === 'player' && link.params.lyrics === '1';
     if (songId) navigationRef.navigate('NowPlaying', { songId, sheet, ...(lyrics ? { lyrics } : {}) });
-    else if (link.action === 'together') useListenTogetherStore.getState().announce('Play a song, then open Listen together to join');
+    else if (link.action === 'together') useLuvLinkStore.getState().announce('Play a song, then open LuvLink to join');
     return;
   }
   if (link.action.startsWith('open/')) {

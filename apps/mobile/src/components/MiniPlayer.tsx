@@ -38,6 +38,8 @@ const PILL_RADIUS = 22;
 import Artwork from './allegra/Artwork';
 import { Signal } from '../constants/allegraTheme';
 import { useConnect } from '../services/connect/ConnectProvider';
+import { handleOwnedLuvLinkNext, handleOwnedLuvLinkPrevious, handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
+import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
 
 // Tallest the classic bar's blurred artwork ever needs to be — the full-expand
 // stage is 0.915 of the screen, with headroom so the image is never the thing
@@ -494,11 +496,13 @@ export const MiniPlayer: React.FC = () => {
 
   const skipForward = useCallback(async (e?: any) => {
     e?.stopPropagation();
+    if (await handleOwnedLuvLinkNext()) return;
     await usePlayerStore.getState().nextInPlaylist();
   }, []);
 
-  const skipBackward = useCallback((e?: any) => {
+  const skipBackward = useCallback(async (e?: any) => {
     e?.stopPropagation();
+    if (await handleOwnedLuvLinkPrevious()) return;
     if (positionSV.value > 3 && player) {
         isSeeking.value = true;
         positionSV.value = 0;
@@ -689,12 +693,15 @@ export const MiniPlayer: React.FC = () => {
   // as "tapping the line did nothing".
   const handleClassicLyricSeek = useCallback(async (time: number) => {
     if (!player) return;
+    if (await handleOwnedLuvLinkSeek(time)) return;
     isSeeking.value = true;
     positionSV.value = time;
 
     const wasPlaying = usePlayerStore.getState().isPlaying;
     try {
       await player.seekTo(time);
+      await notifyOwnedLuvLinkUserSeek(time);
+      notifyLuvLinkUserSeek(time);
       if (wasPlaying) player.play();
     } finally {
       if (seekLockTimeout.current) clearTimeout(seekLockTimeout.current);

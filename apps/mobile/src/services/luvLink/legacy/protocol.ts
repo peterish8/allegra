@@ -1,5 +1,5 @@
 /**
- * Listen Together wire protocol — Echo Music's / Metrolist's, message for
+ * LuvLink wire protocol — Echo Music's / Metrolist's, message for
  * message (echo/listentogether/Protocol.kt). Carried as protobuf envelopes
  * (codec.ts); these are the decoded shapes: snake_case fields, times in ms.
  * Speaking the same protocol means a LuvLyrics room works with Echo listeners.

@@ -1,6 +1,6 @@
 /**
- * Settings → Listen together: Echo Music's ListenTogetherSettings, in the
- * Settings kit. Every row changes how rooms behave (services/listenTogether):
+ * Settings → LuvLink: Echo Music's LuvLinkSettings, in the
+ * Settings kit. Every row changes how rooms behave (services/luvLink):
  *
  *   Your name            what others see; locked while you're in a room (Echo)
  *   Let people in        auto-approve join requests (host only, as in Echo)
@@ -13,17 +13,17 @@
 import React, { useEffect, useState } from 'react';
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Glass, Radius, Signal } from '../../constants/allegraTheme';
-import { isServerUrl, useListenTogetherStore } from '../../store/listenTogetherStore';
+import { isServerUrl, useLuvLinkStore } from '../../store/luvLinkStore';
 import { usePlayerStore } from '../../store/playerStore';
-import { KNOWN_SERVERS } from '../../services/listenTogether/client';
+import { KNOWN_SERVERS } from '../../services/luvLink/legacy/client';
 import { navigationRef } from '../../utils/navigationService';
 import * as Haptics from '../../utils/haptics';
 import { Action, Choice, Row, Section, Switch } from './SettingsKit';
 
 type ServerMode = 'echo' | 'custom';
 
-export const ListenTogetherSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent) => void; onNotice: (text: string) => void }> = ({ onLayout, onNotice }) => {
-  const s = useListenTogetherStore();
+export const LuvLinkSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent) => void; onNotice: (text: string) => void }> = ({ onLayout, onNotice }) => {
+  const s = useLuvLinkStore();
   const inRoom = s.room !== null;
   const songId = usePlayerStore(p => p.currentSongId);
 
@@ -58,7 +58,7 @@ export const ListenTogetherSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent
   };
 
   return (
-    <Section id="together" summary={inRoom ? 'In a room now' : 'Not in a room'} icon="people-outline" title="Listen together" lead="Rooms where friends hear the same song, in time." onLayout={onLayout}>
+    <Section id="together" summary={inRoom ? 'In a room now' : 'Not in a room'} icon="people-outline" title="LuvLink" lead="Rooms where friends hear the same song, in time." onLayout={onLayout}>
       <Row label="Your name" hint={inRoom ? 'You can change it after you leave the room' : 'What others in a room see'} stack>
         <TextInput
           value={name}
@@ -72,7 +72,7 @@ export const ListenTogetherSettings: React.FC<{ onLayout?: (e: LayoutChangeEvent
           maxLength={32}
           returnKeyType="done"
           style={[styles.input, inRoom && styles.inputLocked]}
-          accessibilityLabel="Your name in Listen together"
+          accessibilityLabel="Your name in LuvLink"
         />
       </Row>
 
@@ -187,4 +187,4 @@ const styles = StyleSheet.create({
   serverRow: { flexDirection: 'row', paddingBottom: 14 },
 });
 
-export default ListenTogetherSettings;
+export default LuvLinkSettings;

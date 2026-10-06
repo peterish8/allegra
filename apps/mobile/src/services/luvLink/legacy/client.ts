@@ -1,16 +1,16 @@
 /**
- * Listen Together connection — a port of Echo Music's ListenTogetherClient:
+ * LuvLink connection — a port of Echo Music's LuvLinkClient:
  * one WebSocket to the room server, protobuf envelopes (codec.ts), a 25s ping, reconnect with
  * exponential backoff (1s → 2min, 15 tries) that resumes the room through the
  * session token, and a pending create/join that runs once the socket opens.
  *
- * It keeps room state in `listenTogetherStore` and hands playback events to
+ * It keeps room state in `luvLinkStore` and hands playback events to
  * whoever subscribes (sync.ts drives the player from them).
  */
 import { AppState } from 'react-native';
-import { fetchJson } from '../net/fetchWithTimeout';
+import { fetchJson } from '../../net/fetchWithTimeout';
 import { decodeFrame, encodeFrame } from './codec';
-import { isServerUrl, useListenTogetherStore } from '../../store/listenTogetherStore';
+import { isServerUrl, useLuvLinkStore } from '../../../store/luvLinkStore';
 import {
   BufferCompletePayload,
   BufferWaitPayload,
@@ -42,7 +42,7 @@ const PING_INTERVAL_MS = 25_000;
 /** A saved session older than this is not worth resuming (Echo: 10 min). */
 const SESSION_GRACE_PERIOD_MS = 10 * 60 * 1000;
 
-export type ListenTogetherEvent =
+export type LuvLinkEvent =
   | { kind: 'room_created'; roomCode: string }
   | { kind: 'join_approved'; payload: JoinApprovedPayload }
   | { kind: 'reconnected'; payload: ReconnectedPayload }
@@ -54,16 +54,16 @@ export type ListenTogetherEvent =
   | { kind: 'room_settings_changed' }
   | { kind: 'left' };
 
-type Listener = (event: ListenTogetherEvent) => void;
+type Listener = (event: LuvLinkEvent) => void;
 
 const listeners = new Set<Listener>();
-export const onListenTogetherEvent = (listener: Listener): (() => void) => {
+export const onLuvLinkEvent = (listener: Listener): (() => void) => {
   listeners.add(listener);
   return () => { listeners.delete(listener); };
 };
-const emit = (event: ListenTogetherEvent) => {
+const emit = (event: LuvLinkEvent) => {
   listeners.forEach(l => {
-    try { l(event); } catch (e) { if (__DEV__) console.warn('[ListenTogether] listener failed', e); }
+    try { l(event); } catch (e) { if (__DEV__) console.warn('[LuvLink] listener failed', e); }
   });
 };
 
@@ -77,14 +77,14 @@ let pendingAction: { kind: 'create'; username: string } | { kind: 'join'; roomCo
 /** Set by leave/disconnect so a closing socket doesn't try to come back. */
 let intentionalClose = false;
 
-const store = () => useListenTogetherStore.getState();
-const patch = (p: Partial<ReturnType<typeof store>>) => useListenTogetherStore.setState(p);
+const store = () => useLuvLinkStore.getState();
+const patch = (p: Partial<ReturnType<typeof store>>) => useLuvLinkStore.setState(p);
 
 /** The servers Settings offers: Echo's published one, or the Metrolist default. */
 export const KNOWN_SERVERS = [{ name: 'Metrolist server', url: FALLBACK_SERVER }] as const;
 
 const resolveServer = async (): Promise<string> => {
-  // Settings → Listen together → Server. Takes effect on the next connection.
+  // Settings → LuvLink → Server. Takes effect on the next connection.
   const chosen = store().serverUrl;
   if (chosen && isServerUrl(chosen)) return chosen;
   if (serverUrl) return serverUrl;
@@ -172,7 +172,7 @@ const handleMessage = (data: ArrayBuffer) => {
   try {
     msg = decodeFrame(new Uint8Array(data));
   } catch (e) {
-    if (__DEV__) console.warn('[ListenTogether] bad frame', e);
+    if (__DEV__) console.warn('[LuvLink] bad frame', e);
     return;
   }
   const p = msg.payload;
@@ -364,7 +364,7 @@ const handleMessage = (data: ArrayBuffer) => {
       } else if (pl.code === 'room_not_found' || /not found|invalid/i.test(pl.message ?? '')) {
         patch({ pendingJoinCode: null });
       }
-      store().announce(pl.message || 'Listen together: something went wrong');
+      store().announce(pl.message || 'LuvLink: something went wrong');
       break;
     }
     default:
@@ -520,7 +520,7 @@ export const rejectSuggestion = (suggestionId: string): void => {
 };
 
 /** Resume a saved room at launch, and reconnect promptly when the app returns. */
-export const startListenTogetherClient = (): (() => void) => {
+export const startLuvLinkClient = (): (() => void) => {
   const resume = () => {
     const { session, connection } = store();
     if (session && Date.now() - session.startedAt > SESSION_GRACE_PERIOD_MS) {
@@ -534,8 +534,8 @@ export const startListenTogetherClient = (): (() => void) => {
     }
   };
   // Persisted state may still be loading from AsyncStorage.
-  const hydrated = useListenTogetherStore.persist.hasHydrated();
-  const unsubHydrate = hydrated ? () => {} : useListenTogetherStore.persist.onFinishHydration(resume);
+  const hydrated = useLuvLinkStore.persist.hasHydrated();
+  const unsubHydrate = hydrated ? () => {} : useLuvLinkStore.persist.onFinishHydration(resume);
   if (hydrated) resume();
   const sub = AppState.addEventListener('change', s => { if (s === 'active') resume(); });
   return () => {

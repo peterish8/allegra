@@ -1,14 +1,16 @@
 import { paths } from '../lib/routes';
 import { ArrowRight, Clock, Compass, Disc3, Heart, House, Library, ListMusic, Search, Settings, User } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { UnifiedSong } from '@shared/types';
+import type { PerformanceAttempt } from '@shared/performanceTrace';
 
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { searchSongs } from '../lib/api';
+import { webPerformanceTrace } from '../lib/performanceTrace';
 import { motionTokens, spring } from '../motion';
 
 /**
@@ -56,8 +58,19 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
   const listRef = useRef<HTMLDivElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const wasOpen = useRef(false);
+  const traceGenerationRef = useRef(0);
+  const traceAttemptRef = useRef<PerformanceAttempt | null>(null);
+  const completedAttemptRef = useRef<PerformanceAttempt | null>(null);
+  const committedAttemptRef = useRef<PerformanceAttempt | null>(null);
+  const preserveTraceOnCloseRef = useRef(false);
 
   const trimmed = query.trim();
+
+  const close = useCallback((): void => {
+    const attempt = traceAttemptRef.current;
+    if (attempt && !preserveTraceOnCloseRef.current) webPerformanceTrace?.finish(attempt, 'aborted');
+    onClose();
+  }, [onClose]);
 
   useFocusTrap(open, sheetRef);
 
@@ -97,11 +110,19 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     }
     if (wasOpen.current) {
       wasOpen.current = false;
+      const attempt = traceAttemptRef.current;
+      if (attempt && !preserveTraceOnCloseRef.current) webPerformanceTrace?.finish(attempt, 'aborted');
+      preserveTraceOnCloseRef.current = false;
       const timer = window.setTimeout(() => triggerRef.current?.focus(), 0);
       return () => window.clearTimeout(timer);
     }
     return undefined;
   }, [open]);
+
+  useEffect(() => () => {
+    const attempt = traceAttemptRef.current;
+    if (attempt) webPerformanceTrace?.finish(attempt, 'aborted');
+  }, []);
 
   // Live song search, debounced, with the previous request cancelled.
   useEffect(() => {
@@ -113,10 +134,17 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     }
     const controller = new AbortController();
     setSearching(true);
+    const attempt = traceAttemptRef.current;
     const timer = window.setTimeout(() => {
+      if (attempt) webPerformanceTrace?.record(attempt, 'search.dispatched');
+      const requestStartedAt = performance.now();
       searchSongs(trimmed, controller.signal)
         .then((response) => {
           if (controller.signal.aborted) return;
+          if (attempt && webPerformanceTrace?.record(attempt, 'catalog.completed', {
+            durationMs: performance.now() - requestStartedAt,
+            resultCount: response.results.length,
+          })) completedAttemptRef.current = attempt;
           setResults(response.results.slice(0, 20));
           setFailed(false);
         })
@@ -124,6 +152,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
           if (!controller.signal.aborted) {
             setResults([]);
             setFailed(true);
+            if (attempt) webPerformanceTrace?.finish(attempt, 'search-failure');
           }
         })
         .finally(() => {
@@ -135,6 +164,14 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
       window.clearTimeout(timer);
     };
   }, [open, trimmed]);
+
+  useLayoutEffect(() => {
+    const attempt = traceAttemptRef.current;
+    if (!open || !attempt || completedAttemptRef.current !== attempt || committedAttemptRef.current === attempt) return;
+    if (!webPerformanceTrace?.record(attempt, 'results.committed', { resultCount: results.length })) return;
+    committedAttemptRef.current = attempt;
+    if (results.length === 0) webPerformanceTrace.finish(attempt, 'empty', { resultCount: 0 });
+  }, [open, results, searching, failed]);
 
   const go = useCallback((path: string) => () => onNavigate(path), [onNavigate]);
 
@@ -210,9 +247,13 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
 
   const choose = useCallback((item: CommandItem | undefined) => {
     if (!item) return;
-    onClose();
+    const attempt = traceAttemptRef.current;
+    const selectedSearchSong = item.id.startsWith('song-') && trimmed.length >= 2 && results.some((song) => `song-${song.id}` === item.id);
+    if (attempt && (selectedSearchSong || item.id === 'all')) preserveTraceOnCloseRef.current = true;
+    else if (attempt) webPerformanceTrace?.finish(attempt, 'aborted');
+    close();
     item.run();
-  }, [onClose]);
+  }, [close, results, trimmed]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.key === 'ArrowDown') {
@@ -227,8 +268,18 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     } else if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      onClose();
+      close();
     }
+  };
+
+  const onQueryChange = (value: string): void => {
+    const attempt = webPerformanceTrace?.beginAttempt('web.search-to-play', ++traceGenerationRef.current, { scenario: 'online' }) ?? null;
+    traceAttemptRef.current = attempt;
+    completedAttemptRef.current = null;
+    committedAttemptRef.current = null;
+    preserveTraceOnCloseRef.current = false;
+    if (attempt) webPerformanceTrace?.record(attempt, 'query.changed');
+    setQuery(value);
   };
 
   const morph = reduced ? { duration: motionTokens.duration.instant } : spring.sheet;
@@ -278,7 +329,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: motionTokens.duration.base, ease: motionTokens.ease.standard }}
-                onClick={onClose}
+                onClick={close}
               />
               <motion.div
                 ref={sheetRef}
@@ -296,7 +347,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
                   <input
                     ref={inputRef}
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => onQueryChange(event.target.value)}
                     placeholder="Search songs, artists…"
                     role="combobox"
                     aria-expanded="true"
@@ -307,7 +358,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
                   />
                   {searching ? <span className="cmdk-spinner" aria-label="Searching" /> : null}
                   <kbd>Esc</kbd>
-                  <button type="button" className="cmdk-cancel" onClick={onClose}>Cancel</button>
+                  <button type="button" className="cmdk-cancel" onClick={close}>Cancel</button>
                 </div>
 
                 <motion.div

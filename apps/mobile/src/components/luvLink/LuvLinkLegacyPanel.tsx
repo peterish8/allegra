@@ -1,5 +1,5 @@
 /**
- * The Listen Together room, as a sheet over Now Playing — Echo Music's
+ * The LuvLink room, as a sheet over Now Playing — Echo Music's
  * dialog: start a room or join one by code; inside, the code to share, who's
  * listening, join requests, suggestions and the host's controls.
  */
@@ -10,11 +10,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from '../../utils/haptics';
 import { Signal } from '../../constants/allegraTheme';
-import { useListenTogetherStore } from '../../store/listenTogetherStore';
+import { useLuvLinkStore } from '../../store/luvLinkStore';
 import { StreamService } from '../../services/stream/StreamService';
 import { resolveToCatalog } from '../../services/ytmusic/resolver';
 import { searchMusic } from '../../services/MultiSourceSearchService';
-import { TrackInfo } from '../../services/listenTogether/protocol';
+import { TrackInfo } from '../../services/luvLink/legacy/protocol';
 import {
   approveJoin,
   approveSuggestion,
@@ -28,7 +28,7 @@ import {
   rejectSuggestion,
   requestSync,
   transferHost,
-} from '../../services/listenTogether/client';
+} from '../../services/luvLink/legacy/client';
 
 const tap = () => Haptics.selectionAsync().catch(() => {});
 
@@ -64,15 +64,15 @@ const queueSuggestion = async (track: TrackInfo) => {
     q => searchMusic(q),
   ).catch(() => null);
   if (match) StreamService.playNext(match);
-  else useListenTogetherStore.getState().announce(`Couldn’t find “${track.title}”`);
+  else useLuvLinkStore.getState().announce(`Couldn’t find “${track.title}”`);
 };
 
 const Lobby: React.FC = () => {
-  const saved = useListenTogetherStore(s => s.username);
-  const autoApprove = useListenTogetherStore(s => s.autoApprove);
-  const connection = useListenTogetherStore(s => s.connection);
-  const pendingJoinCode = useListenTogetherStore(s => s.pendingJoinCode);
-  const invite = useListenTogetherStore(s => s.inviteCode);
+  const saved = useLuvLinkStore(s => s.username);
+  const autoApprove = useLuvLinkStore(s => s.autoApprove);
+  const connection = useLuvLinkStore(s => s.connection);
+  const pendingJoinCode = useLuvLinkStore(s => s.pendingJoinCode);
+  const invite = useLuvLinkStore(s => s.inviteCode);
   const [name, setName] = useState(saved);
   const [code, setCode] = useState(invite ?? '');
   const ready = name.trim().length > 0;
@@ -116,7 +116,7 @@ const Lobby: React.FC = () => {
         />
         <Button label="Join" disabled={!ready || code.length < 4} onPress={() => joinRoom(code, name)} />
       </View>
-      <Toggle label="Let people in without asking" hint="When you host, join requests are approved at once" value={autoApprove} onChange={v => useListenTogetherStore.getState().setAutoApprove(v)} />
+      <Toggle label="Let people in without asking" hint="When you host, join requests are approved at once" value={autoApprove} onChange={v => useLuvLinkStore.getState().setAutoApprove(v)} />
       {connection === 'connecting' ? <Text style={styles.status}>Connecting…</Text> : null}
       {connection === 'error' ? <Text style={styles.status}>Couldn’t reach the room server.</Text> : null}
     </View>
@@ -124,13 +124,13 @@ const Lobby: React.FC = () => {
 };
 
 const Room: React.FC = () => {
-  const room = useListenTogetherStore(s => s.room)!;
-  const role = useListenTogetherStore(s => s.role);
-  const me = useListenTogetherStore(s => s.userId);
-  const connection = useListenTogetherStore(s => s.connection);
-  const requests = useListenTogetherStore(s => s.joinRequests);
-  const suggestions = useListenTogetherStore(s => s.suggestions);
-  const buffering = useListenTogetherStore(s => s.bufferingUsers);
+  const room = useLuvLinkStore(s => s.room)!;
+  const role = useLuvLinkStore(s => s.role);
+  const me = useLuvLinkStore(s => s.userId);
+  const connection = useLuvLinkStore(s => s.connection);
+  const requests = useLuvLinkStore(s => s.joinRequests);
+  const suggestions = useLuvLinkStore(s => s.suggestions);
+  const buffering = useLuvLinkStore(s => s.bufferingUsers);
   const [managing, setManaging] = useState<string | null>(null);
   const isHost = role === 'host';
   const host = room.users.find(u => u.user_id === room.host_id);
@@ -142,7 +142,7 @@ const Room: React.FC = () => {
   };
   const copyCode = () => {
     Clipboard.setStringAsync(room.room_code).catch(() => {});
-    useListenTogetherStore.getState().announce('Room code copied');
+    useLuvLinkStore.getState().announce('Room code copied');
   };
   const status =
     connection === 'connected' ? (isHost ? 'You’re hosting' : `Following ${host?.username ?? 'the host'}`)
@@ -239,8 +239,8 @@ const Room: React.FC = () => {
   );
 };
 
-export const ListenTogetherPanel: React.FC = () => {
-  const inRoom = useListenTogetherStore(s => s.room !== null);
+export const LuvLinkPanel: React.FC = () => {
+  const inRoom = useLuvLinkStore(s => s.room !== null);
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {inRoom ? <Room /> : <Lobby />}
@@ -296,4 +296,4 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end', marginTop: 4, marginBottom: 4 },
 });
 
-export default ListenTogetherPanel;
+export default LuvLinkPanel;

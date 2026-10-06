@@ -1289,7 +1289,7 @@ export const completeV2 = mutation({
     // A refusal needs no reservation: a device may fail a command it never began.
     const reserved = command.reservationToken !== undefined;
     if (reserved ? command.reservationToken !== reservationToken : outcome.ok) fail('reservation_mismatch');
-    if (!outcome.ok && !isFailureCode(outcome.code)) fail('invalid_command');
+    if (outcome.ok === false && !isFailureCode(outcome.code)) fail('invalid_command');
     const hasPatch = patch !== undefined && Object.values(patch).some((value) => value !== undefined);
     if (patch && hasPatch) assertStatePatch(patch);
 
@@ -1303,7 +1303,7 @@ export const completeV2 = mutation({
         return completed(player?.rev ?? 0);
       }
     }
-    if (!outcome.ok) {
+    if (outcome.ok === false) {
       await failCommand(ctx, command, outcome.code as FailureCode, outcome.error);
       return completed(player?.rev ?? 0);
     }

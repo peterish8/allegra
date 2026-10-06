@@ -35,7 +35,7 @@ import { usePlayerStore } from '../store/playerStore';
 import { AppBackground, LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, LyricsHighlight, MiniPlayerBackground, PlayerBackground, isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
 import { CustomAlert } from '../components/CustomAlert';
 import { Toast } from '../components/Toast';
-import ListenTogetherSettings from '../components/settings/ListenTogetherSettings';
+import LuvLinkSettings from '../components/settings/LuvLinkSettings';
 import AllegraAccountSettings from '../components/settings/AllegraAccountSettings';
 import { Colors } from '../constants/colors';
 import { SettingsStrings } from '../constants/uiStrings';
@@ -255,7 +255,7 @@ const SettingsScreen: React.FC<Props> = () => {
                 { key: 'lyrics', label: 'Lyrics' },
                 { key: 'nav', label: 'Navigation' },
                 { key: 'discover', label: 'Discover' },
-                { key: 'together', label: 'Listen together' },
+                { key: 'together', label: 'LuvLink' },
                 { key: 'library', label: 'Library & data' },
                 { key: 'about', label: 'About' },
               ]}
@@ -413,7 +413,7 @@ const SettingsScreen: React.FC<Props> = () => {
           ) : null}
         </Section>
 
-        <ListenTogetherSettings onLayout={at('together')} onNotice={setNotice} />
+        <LuvLinkSettings onLayout={at('together')} onNotice={setNotice} />
 
         <Section id="library" summary={summaries.library} icon="folder-open-outline" title="Library and data" lead="Your songs, backups and clean-up." onLayout={at('library')}>
           <Action label="Add songs from this phone" hint="Find music files already on your device." onPress={handleImportLocalAudio} />

@@ -162,6 +162,68 @@ async function eraseSome(ctx: MutationCtx, userId: string): Promise<boolean> {
   for (const row of shares) await ctx.db.delete('shares', row._id);
   more ||= shares.length === BATCH;
 
+  // LuvLink sessions are short-lived, but account erasure also removes room membership,
+  // host-owned invites and queue attribution immediately. Other participants keep their room.
+  const luvLinkMembers = await ctx.db.query('luvLinkMembers')
+    .withIndex('by_userId_and_joinedAtMs', (q) => q.eq('userId', userId))
+    .take(BATCH);
+  for (const membership of luvLinkMembers) {
+    const room = await ctx.db.get(membership.roomId);
+    if (room) {
+      const picks = await ctx.db.query('luvLinkRecommendations').withIndex('by_roomId', (q) => q.eq('roomId', room._id)).unique();
+      if (picks) await ctx.db.delete(picks._id);
+      if (membership.role === 'host') {
+        await ctx.db.patch(room._id, { status: 'closed', closedAtMs: Date.now(), revision: room.revision + 1 });
+        const invites = await ctx.db.query('luvLinkInvites')
+          .withIndex('by_roomId_and_generation', (q) => q.eq('roomId', room._id)).take(8);
+        for (const invite of invites) await ctx.db.patch(invite._id, { revokedAtMs: Date.now() });
+      } else {
+        await ctx.db.patch(room._id, { memberCount: Math.max(1, room.memberCount - 1), revision: room.revision + 1, suggestionRevision: room.suggestionRevision + 1 });
+        if (room.leaderUserId === userId) {
+          const leaderEpoch = room.leaderEpoch + 1;
+          await ctx.db.patch(room._id, { leaderUserId: room.hostUserId, leaderEpoch, handoffFromUserId: undefined });
+          const playback = await ctx.db.query('luvLinkPlayback').withIndex('by_roomId', (q) => q.eq('roomId', room._id)).unique();
+          if (playback) {
+            const now = Date.now();
+            const positionSec = playback.song ? Math.max(0, Math.min(playback.song.duration, playback.positionSec + (playback.playing ? Math.max(0, now - playback.effectiveAtMs) / 1000 * playback.playbackRate : 0))) : 0;
+            await ctx.db.patch(playback._id, { leaderUserId: room.hostUserId, leaderEpoch, sequence: playback.sequence + 1, playing: false, positionSec, serverAtMs: now, effectiveAtMs: now });
+          }
+        }
+      }
+    }
+    await ctx.db.delete(membership._id);
+  }
+  more ||= luvLinkMembers.length === BATCH;
+
+  const luvLinkReceipts = await ctx.db.query('luvLinkReceipts')
+    .withIndex('by_userId', (q) => q.eq('userId', userId)).take(BATCH);
+  for (const row of luvLinkReceipts) await ctx.db.delete(row._id);
+  more ||= luvLinkReceipts.length === BATCH;
+  const luvLinkReady = await ctx.db.query('luvLinkReady')
+    .withIndex('by_userId', (q) => q.eq('userId', userId)).take(BATCH);
+  for (const row of luvLinkReady) await ctx.db.delete(row._id);
+  more ||= luvLinkReady.length === BATCH;
+
+  const luvLinkQueue = await ctx.db.query('luvLinkQueue')
+    .withIndex('by_addedByUserId', (q) => q.eq('addedByUserId', userId))
+    .take(BATCH);
+  const changedRooms = new Set<string>();
+  for (const entry of luvLinkQueue) {
+    await ctx.db.delete(entry._id);
+    changedRooms.add(entry.roomId);
+  }
+  for (const id of changedRooms) {
+    const roomId = ctx.db.normalizeId('luvLinkRooms', id);
+    if (!roomId) continue;
+    const room = await ctx.db.get(roomId);
+    if (room) {
+      await ctx.db.patch(roomId, { queueRevision: room.queueRevision + 1, suggestionRevision: room.suggestionRevision + 1 });
+      const picks = await ctx.db.query('luvLinkRecommendations').withIndex('by_roomId', (q) => q.eq('roomId', roomId)).unique();
+      if (picks) await ctx.db.delete(picks._id);
+    }
+  }
+  more ||= luvLinkQueue.length === BATCH;
+
   const devices = await ctx.db
     .query('devices')
     .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', userId))
@@ -244,7 +306,7 @@ export const extras = query({
   args: { secret: v.string(), userId: v.string() },
   handler: async (ctx, args) => {
     requireSecret(args.secret);
-    const [shares, devices] = await Promise.all([
+    const [shares, devices, luvLinkMemberships] = await Promise.all([
       ctx.db
         .query('shares')
         .withIndex('by_owner_library', (q) => q.eq('ownerId', args.userId))
@@ -252,12 +314,16 @@ export const extras = query({
       ctx.db
         .query('devices')
         .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', args.userId))
-        .take(51)
+        .take(51),
+      ctx.db.query('luvLinkMembers')
+        .withIndex('by_userId_and_joinedAtMs', (q) => q.eq('userId', args.userId))
+        .take(101)
     ]);
     return {
-      complete: shares.length <= 100 && devices.length <= 50,
+      complete: shares.length <= 100 && devices.length <= 50 && luvLinkMemberships.length <= 100,
       shares: shares.slice(0, 100).map((share) => ({ code: share.code, libraryId: share.libraryId, createdAt: share.createdAt })),
-      devices: devices.slice(0, 50).map((device) => ({ name: device.name, kind: device.kind, appVersion: device.appVersion, createdAt: device.createdAt }))
+      devices: devices.slice(0, 50).map((device) => ({ name: device.name, kind: device.kind, appVersion: device.appVersion, createdAt: device.createdAt })),
+      luvLinks: luvLinkMemberships.slice(0, 100).map((membership) => ({ roomId: membership.roomId, role: membership.role, joinedAtMs: membership.joinedAtMs }))
     };
   }
 });

@@ -21,7 +21,7 @@ import type { Pick } from './pickRouter';
 export interface PlaybackIntentBinding {
   readonly session: ConnectSession;
   readonly deviceId: string;
-  /** A Listen Together room owns playback here. */
+  /** A LuvLink room owns playback here. */
   readonly heldLocally: () => boolean;
   /** The pick router: true when it took the pick (it plays elsewhere, or will once decided). */
   readonly routePick: (pick: Pick) => boolean;
