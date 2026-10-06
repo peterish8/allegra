@@ -411,24 +411,24 @@ export const MiniPlayer: React.FC = () => {
   };
 
   // Content fills the shell (styles.classicContent has flex:1); shell owns the
-  // animated height. Rounded top corners on half/full; always clip to it.
+  // animated height and always clips to it.
   const animatedClassicShellStyle = useAnimatedStyle(() => {
     const e = expansionProgress.value;
-    const halfR = interpolate(e, [0, 0.35, 1], [pillMode ? PILL_RADIUS : 0, 16, 28], Extrapolation.CLAMP);
+    // The classic bar is a plain rectangle at every stage (the listener asked for
+    // a classic bar: no rounded corners collapsed, half or full).
+    if (!pillMode) {
+      return {
+        height: classicHeightForProgress(),
+        overflow: 'hidden' as const,
+      };
+    }
+    const halfR = interpolate(e, [0, 0.35, 1], [PILL_RADIUS, 16, 28], Extrapolation.CLAMP);
     const fullR = interpolate(classicFullProgress.value, [0, 1], [0, 6], Extrapolation.CLAMP);
     // Whole pixels only: a rounded corner + overflow:hidden makes Android rebuild
     // the clip path whenever the radius changes. Reanimated diffs the style object
     // per prop, so quantising means most frames don't touch it at all. Sub-pixel
     // radius is not visible either way.
     const r = Math.round(halfR + fullR);
-    if (!pillMode) {
-      return {
-        height: classicHeightForProgress(),
-        borderTopLeftRadius: r,
-        borderTopRightRadius: r,
-        overflow: 'hidden' as const,
-      };
-    }
     // Pill: inset like the tab bar and rounded all round while collapsed; the
     // sides and bottom corners open out as it grows into the sheet.
     const side = Math.round(pillInset * (1 - Math.min(1, e * 2)));
