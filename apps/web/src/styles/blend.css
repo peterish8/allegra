@@ -436,6 +436,22 @@
 .spotify-sync__go { display: inline-flex; flex: 1; align-items: center; justify-content: center; gap: 8px; min-height: 52px; font-weight: 800; }
 .spotify-sync__run { display: flex; flex: 1; flex-direction: column; gap: 4px; }
 .spotify-sync__run strong { font-size: 14px; }
+.spotify-sync__ticker { position: relative; display: block; overflow: hidden; min-height: 17px; color: var(--ink-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+.spotify-sync__ticker > span { display: block; overflow: hidden; text-overflow: ellipsis; }
+/* The crate: the picked sources as a small fanned stack. Sleeves move by transform only. */
+.spotify-crate { position: relative; flex: none; width: 64px; height: 56px; }
+.spotify-crate::before { position: absolute; inset: 6px 4px 6px 14px; border: 1.5px dashed rgba(255, 255, 255, 0.18); border-radius: 12px; content: ""; opacity: 0; transition: opacity var(--d-fast) var(--ease-standard); }
+.spotify-crate.is-empty::before { opacity: 1; }
+.spotify-crate__slot,
+.spotify-crate__sleeve { position: absolute; top: 6px; right: 4px; width: 44px; height: 44px; }
+.spotify-crate__slot { pointer-events: none; }
+.spotify-crate__sleeve { transform-origin: 50% 100%; }
+.spotify-crate__sleeve .spotify-source__cover { width: 44px; height: 44px; border-radius: 8px; }
+.spotify-crate__count { position: absolute; top: 0; right: 0; z-index: 5; display: grid; min-width: 20px; height: 20px; padding: 0 5px; place-items: center; border-radius: 999px; background: var(--wave); color: var(--wave-ink); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* A cover in flight between a row and the crate, laid over the page and removed on landing. */
+.cover-flight { position: fixed; z-index: 90; margin: 0; pointer-events: none; transform-origin: 0 0; will-change: transform; }
+.import-ticker { position: relative; overflow: hidden; min-height: 18px; margin: 0; color: var(--ink-muted); font-size: 13px; white-space: nowrap; }
+.import-ticker > span { display: block; overflow: hidden; text-overflow: ellipsis; }
 .spotify-sync__toggle span { display: flex; flex-direction: column; }
 .spotify-sync__toggle small { color: var(--ink-muted); font-size: 12px; }
 .import-spotify-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }

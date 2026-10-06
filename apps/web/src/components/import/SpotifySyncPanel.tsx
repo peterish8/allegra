@@ -7,12 +7,17 @@
  * on Blends; connecting from either brings you back to the page you started on.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
-import { ArrowDownToLine, Check, CheckCheck, Heart, Link2, Pause, RotateCw } from 'lucide-react';
+import type { MouseEvent } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { ArrowDownToLine, Check, CheckCheck, Link2, Pause, RotateCw } from 'lucide-react';
 import { ApiError, connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync, syncSpotifyPlaylist } from '../../lib/api';
 import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus, type SpotifySyncStep } from '@shared/spotify';
-import { motionTokens } from '../../motion';
+import { useCoverFlight } from '../../hooks/useCoverFlight';
+import { useThrottled } from '../../hooks/useThrottled';
+import { crateIds, spotifyTickerText } from '../../lib/importCrate';
+import { LIVE_SUMMARY_MS, motionTokens, swapVariants, TICKER_PER_SECOND } from '../../motion';
 import { ProgressBar } from '../ui';
+import { SourceCover, SpotifyCrate } from './SpotifyCrate';
 
 const RETURN_KEY = 'allegra:spotify-return';
 const MAX_STEPS = 100;
@@ -38,8 +43,6 @@ const readPlaylists = (value: unknown): readonly SpotifySourcePlaylist[] => {
   if (!rows.every((row) => typeof row === 'object' && row !== null && typeof (row as SpotifySourcePlaylist).id === 'string' && typeof (row as SpotifySourcePlaylist).name === 'string' && typeof (row as SpotifySourcePlaylist).snapshotId === 'string' && Number.isInteger((row as SpotifySourcePlaylist).total))) throw new Error('Spotify returned an invalid playlist list.');
   return rows as SpotifySourcePlaylist[];
 };
-/** Only Spotify's own https image hosts reach an <img>. */
-const safeCover = (url: string | null | undefined): string | null => (url && /^https:\/\/[a-z0-9.-]+\.(scdn\.co|spotifycdn\.com)\//i.test(url) ? url : null);
 const songCount = (total: number): string => `${total} ${total === 1 ? 'song' : 'songs'}`;
 const ago = (at: number): string => {
   const minutes = Math.round((Date.now() - at) / 60_000);
@@ -143,6 +146,29 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
   const songTotal = queue.reduce((sum, row) => sum + row.total, 0);
   const tracked = useMemo(() => new Map(status?.playlists.map((row) => [row.id, row.lastSyncedAt]) ?? []), [status]);
   const doneCount = [...runs.values()].filter((row) => row.state === 'done').length;
+  const byId = useMemo(() => new Map(sources.map((row) => [row.id, row])), [sources]);
+  const finished = useMemo(() => new Set([...runs].filter(([, row]) => row.state === 'done').map(([id]) => id)), [runs]);
+  const queueIds = useMemo(() => queue.map((row) => row.id), [queue]);
+  const crate = useMemo(() => crateIds(selected, queueIds, finished, syncing), [selected, queueIds, finished, syncing]);
+  const runningId = syncing ? [...runs].find(([, row]) => row.state === 'syncing')?.[0] ?? null : null;
+  const running = runningId ? runs.get(runningId) : undefined;
+  const processed = [...runs.values()].reduce((sum, row) => sum + ('step' in row && row.step ? row.step.added + row.step.skipped + row.step.reviewNeeded : 0), 0);
+  // What is happening, as it happens: the visual ticker at most TICKER_PER_SECOND, screen readers every LIVE_SUMMARY_MS.
+  const ticker = useThrottled(runningId && running && 'step' in running ? spotifyTickerText(byId.get(runningId)?.name ?? '', running.step) : '', 1000 / TICKER_PER_SECOND);
+  const summary = useThrottled(syncing ? `Transferring ${Math.min(doneCount + 1, queue.length)} of ${queue.length}. Matched ${processed} of ${songTotal} songs.` : '', LIVE_SUMMARY_MS);
+  const slot = useRef<HTMLSpanElement>(null);
+  const fly = useCoverFlight(!reduced);
+
+  /** The tapped row's cover flies into the crate, or back out of it to the row. */
+  const flyCover = (id: string, event: MouseEvent<HTMLButtonElement>): void => {
+    const cover = event.currentTarget.querySelector('.spotify-source__cover');
+    const target = slot.current;
+    if (!cover || !target) return;
+    const row = cover.getBoundingClientRect();
+    const crateRect = target.getBoundingClientRect();
+    if (selected.has(id)) fly(id, cover, crateRect, row);
+    else fly(id, cover, row, crateRect);
+  };
 
   const toggle = (id: string): void => {
     setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
@@ -261,7 +287,6 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
               : state?.state === 'done' ? `${state.step?.added ?? 0} added${state.step?.reviewNeeded ? ` · ${state.step.reviewNeeded} not exact, skipped` : ''}`
               : state?.state === 'failed' ? state.message
               : `${songCount(playlist.total)}${last ? ` · synced ${ago(last)}` : liked ? ' · saved as likes' : ''}`;
-            const cover = safeCover(playlist.imageUrl);
             return (
               <motion.li key={playlist.id} {...enter(index)}>
                 <button
@@ -270,11 +295,9 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
                   role={reconnect ? undefined : 'checkbox'}
                   aria-checked={reconnect ? undefined : on}
                   disabled={syncing || loading}
-                  onClick={reconnect ? () => void connect() : () => toggle(playlist.id)}
+                  onClick={reconnect ? () => void connect() : (event) => { flyCover(playlist.id, event); toggle(playlist.id); }}
                 >
-                  {liked ? <span className="spotify-source__cover is-liked" aria-hidden="true"><Heart size={20} fill="currentColor" /></span>
-                    : cover ? <img className="spotify-source__cover" src={cover} alt="" width={52} height={52} loading="lazy" />
-                    : <span className="spotify-source__cover is-blank" aria-hidden="true">{playlist.name.slice(0, 1).toUpperCase()}</span>}
+                  <SourceCover playlist={playlist} size={52} />
                   <span className="spotify-source__text">
                     <span className="spotify-source__name">{playlist.name}</span>
                     <span className={`spotify-source__meta${state?.state === 'failed' ? ' is-error' : ''}`}>{meta}</span>
@@ -290,10 +313,17 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
           {sources.length === 0 && !loading ? <li className="import-note">Nothing on Spotify to transfer yet.</li> : null}
         </ul>
         <div className="spotify-sync__dock">
+          <SpotifyCrate sources={byId} ids={crate} liftId={runningId} transferring={syncing} reduced={reduced} slotRef={slot} />
           {syncing ? <>
-            <div className="spotify-sync__run" aria-live="polite">
-              <strong>Transferring {Math.min(doneCount + 1, queue.length)} of {queue.length}</strong>
+            <div className="spotify-sync__run">
+              <strong aria-hidden="true">Transferring {Math.min(doneCount + 1, queue.length)} of {queue.length}</strong>
+              <span className="spotify-sync__ticker" aria-hidden="true">
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {ticker ? <motion.span key={ticker} variants={reduced ? undefined : swapVariants} initial={reduced ? { opacity: 0 } : 'hidden'} animate={reduced ? { opacity: 1 } : 'visible'} exit={reduced ? { opacity: 0 } : 'exit'}>{ticker}</motion.span> : null}
+                </AnimatePresence>
+              </span>
               <ProgressBar className="is-thin" value={doneCount} max={queue.length} label="Transfer progress" quiet />
+              <span className="sr-only" aria-live="polite">{summary}</span>
             </div>
             <button className="spotify-icon-btn" type="button" aria-label="Pause transfer" title="Pause transfer" onClick={pause}><Pause size={18} aria-hidden="true" /></button>
           </> : <button className="import-spotify-primary spotify-sync__go" type="button" onClick={() => void transfer()} disabled={queue.length === 0 || loading}>
