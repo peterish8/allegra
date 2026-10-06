@@ -17,6 +17,7 @@ import type { ConvexReactClient } from 'convex/react';
 
 import { shareableArtwork } from '@shared/artwork';
 import { isTombstone, type LibraryChange, type LibraryOp } from '@shared/library';
+import type { ListenExit } from '@shared/listenSignal';
 import { matchKey, parseSongRef, songRef, toAllegraId, type SongRef, type SongSnapshot } from '@shared/songRef';
 
 import * as db from '../../database/syncQueries';
@@ -189,7 +190,7 @@ export function recordPlayStarted(ref: SongRef, song: SongSnapshot, playedAt: st
 }
 
 /** A completed listen: update shared history and teach Quick picks the final heard duration. */
-export function recordPlay(ref: SongRef, seconds: number, song: SongSnapshot, playedAt = new Date().toISOString()): void {
+export function recordPlay(ref: SongRef, seconds: number, song: SongSnapshot, playedAt = new Date().toISOString(), ending?: { readonly exit: ListenExit; readonly exitPositionSec: number }): void {
   if (!session) return;
   const songId = toAllegraId(ref);
   if (song.ref !== ref || seconds < 5) return;
@@ -199,6 +200,7 @@ export function recordPlay(ref: SongRef, seconds: number, song: SongSnapshot, pl
     ...(songId ? { songId } : {}),
     seconds: Math.round(seconds),
     playedAt,
+    ...(ending ? { exit: ending.exit, exitPositionSec: Math.round(ending.exitPositionSec) } : {}),
   })
     .then(() => syncSoon(FLUSH_DELAY_MS))
     .catch(error => log('play record failed', error));
@@ -380,6 +382,7 @@ async function flush(current: Session, includeLibrary: boolean): Promise<{ reado
         ...(play.song ? { song: play.song } : {}),
         seconds: play.seconds,
         playedAt: play.playedAt,
+        ...(play.exit ? { exit: play.exit, exitPositionSec: play.exitPositionSec ?? play.seconds } : {}),
       });
       if (taste.outcome === 'offline') return { ok: false, skippedPull: false };
       if (taste.outcome === 'refused') log('taste signal refused', play.songId);

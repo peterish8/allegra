@@ -1,3 +1,5 @@
+import { LISTEN_RULES, type ListenExit } from '@shared/listenSignal';
+
 export interface HeardSong {
   readonly id: string;
   readonly title: string;
@@ -8,6 +10,13 @@ export interface HeardSong {
   readonly coverRemoteUri?: string;
   readonly duration?: number;
   readonly originId?: string;
+}
+
+/** How a listen ended (`packages/shared/listenSignal.ts` reads it). */
+export interface ListenEnding {
+  readonly exit: ListenExit;
+  readonly heardSeconds: number;
+  readonly exitPositionSec: number;
 }
 
 export interface PlaybackObservation {
@@ -32,13 +41,21 @@ const MAX_POSITION_STEP_SEC = 2.5;
 
 /** Counts only forward audio progress between nearby playing status updates. */
 export function createListenTracker(
-  onHeard: (song: HeardSong, seconds: number, startedAt: string) => void,
+  onHeard: (song: HeardSong, seconds: number, startedAt: string, ending: ListenEnding) => void,
   onRecent: (song: HeardSong, startedAt: string) => void = () => undefined,
+  /** Every listen as it ends, however short: a two-second skip is the clearest "not this". */
+  onLeft: (song: HeardSong, ending: ListenEnding) => void = () => undefined,
 ) {
   let current: ListenSession | null = null;
 
-  const finish = (): void => {
-    if (current && current.seconds >= 5) onHeard(current.song, current.seconds, current.startedAt);
+  const finish = (exit: ListenExit = 'switched'): void => {
+    if (current) {
+      const { song, seconds, lastPositionSec } = current;
+      const ended = (song.duration ?? 0) > 0 && lastPositionSec >= (song.duration ?? 0) - LISTEN_RULES.endSlackSec;
+      const ending: ListenEnding = { exit: ended ? 'ended' : exit, heardSeconds: seconds, exitPositionSec: lastPositionSec };
+      onLeft(song, ending);
+      if (seconds >= 5) onHeard(song, seconds, current.startedAt, ending);
+    }
     current = null;
   };
 
@@ -51,10 +68,10 @@ export function createListenTracker(
         finish();
         return;
       }
-      if (current && current.song.id !== song.id) finish();
+      if (current && current.song.id !== song.id) finish('skipped');
 
       if (!isPlaying) {
-        finish();
+        finish('paused');
         return;
       }
 

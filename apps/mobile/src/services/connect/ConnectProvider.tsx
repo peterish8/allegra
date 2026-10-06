@@ -16,6 +16,7 @@ import {
   type TransferResult,
 } from '../../../../../packages/connect/src/index';
 import { shareableArtwork } from '@shared/artwork';
+import { listenVerdict } from '@shared/listenSignal';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import { setPlaylistSelectionRouter, usePlayerStore } from '../../store/playerStore';
 import { usePositionStore } from '../../store/positionStore';
@@ -26,7 +27,7 @@ import { runWhenIdle } from '../bootPhases';
 import { recordPlay, recordPlayStarted, refFor } from '../sync/LibrarySync';
 import { backfillCatalogLinks, setCatalogBackfillToken } from '../sync/catalogBackfill';
 import { createListenTracker, type HeardSong } from '../sync/listenTracker';
-import { setStreamQueueRouter } from '../stream/StreamService';
+import { setStreamQueueRouter, StreamService } from '../stream/StreamService';
 import { toStreamSong } from '../stream/streamSong';
 import { onBeforeSignOut } from '../account/signOutHooks';
 import { createMobilePlayerPort, knownRefOf, snapshotOfSong, snapshotWithRef } from './mobilePlayerPort';
@@ -321,12 +322,12 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
       artwork: shareableArtwork(song.artwork, song.coverRemoteUri),
       duration: Math.max(0, song.duration ?? 0),
     });
-    const tracker = createListenTracker((song, seconds, startedAt) => {
+    const tracker = createListenTracker((song, seconds, startedAt, ending) => {
       if (!signedInRef.current) return;
       const started = startWrites.get(song.id);
       const resolve = started ?? refFor(song).then(ref => ref ? { ref, snapshot: snapshotFor(song, ref) } : null);
       resolve.then(value => {
-        if (value) recordPlay(value.ref, seconds, value.snapshot, startedAt);
+        if (value) recordPlay(value.ref, seconds, value.snapshot, startedAt, ending);
       }).catch(() => undefined).finally(() => {
         if (started && startWrites.get(song.id) === started) startWrites.delete(song.id);
       });
@@ -339,6 +340,9 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
         return { ref, snapshot };
       }).catch(() => null);
       startWrites.set(song.id, write);
+    }, (song, ending) => {
+      // A playing search radio reacts at once, signed in or not.
+      StreamService.radioOutcome(song.id, listenVerdict({ ...ending, durationSec: song.duration }));
     });
     const observe = (): void => {
       const player = usePlayerStore.getState();

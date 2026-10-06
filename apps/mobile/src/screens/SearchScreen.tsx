@@ -38,6 +38,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useSearchHistoryStore } from '../store/searchHistoryStore';
 import { useDownloadQueueStore } from '../store/downloadQueueStore';
 import { Playlist, Song, UnifiedSong } from '../types/song';
+import { PrefixCache, TYPEAHEAD_DEBOUNCE_MS } from '@shared/typeahead';
 import { searchMusic } from '../services/MultiSourceSearchService';
 import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
 import type { YTPageItem } from '../services/ytmusic/browse';
@@ -63,7 +64,9 @@ type Scope = 'All' | 'On this phone' | 'Online';
 const SCOPES: Scope[] = ['All', 'On this phone', 'Online'];
 
 const LOCAL_DEBOUNCE_MS = 120;
-const ONLINE_DEBOUNCE_MS = 350;
+/** Catalog answers for the session, so typing on (or backspacing) shows something at once. */
+const onlineAnswers = new PrefixCache<UnifiedSong>();
+const songText = (song: UnifiedSong): string => `${song.title} ${song.artist}`;
 /** In "All", each side shows this many before "See all". */
 const PREVIEW = 4;
 
@@ -127,25 +130,35 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     return () => clearTimeout(t);
   }, [q, searchSongs]);
 
-  // ── Online: the catalog, after a pause ─────────────────────────────────
+  // ── Online: the catalog, on every keystroke ────────────────────────────
+  // The longest prefix already answered shows at once, narrowed; the live answer replaces it.
+  // Songs paint as soon as they land; artists fill in on their own.
   useEffect(() => {
     const seq = ++onlineSeq.current;
     setOnlineBusy(false);
     if (!q) { setOnline(null); setArtists([]); return; }
     // Scoped to the phone: keep the last catalog answer, don't fetch.
     if (scope === 'On this phone') return;
+    const known = onlineAnswers.instant(q, songText);
+    if (known) setOnline([...known.items]);
+    if (known?.exact) return;
     setOnlineBusy(true);
-    const t = setTimeout(async () => {
-      const [found, people] = await Promise.all([
-        searchMusic(q).catch(() => [] as UnifiedSong[]),
-        YTMusicClient.searchArtists(q).catch(() => [] as YTArtistResult[]),
-      ]);
-      if (seq !== onlineSeq.current) return; // a newer query won
-      setOnline(found);
-      setArtists(people.slice(0, 8));
-      setOnlineBusy(false);
-    }, ONLINE_DEBOUNCE_MS);
-    return () => clearTimeout(t);
+    const controller = new AbortController();
+    const t = setTimeout(() => {
+      searchMusic(q, undefined, undefined, { signal: controller.signal, relevance: true }).catch(() => [] as UnifiedSong[]).then(found => {
+        if (seq !== onlineSeq.current) return; // a newer query won
+        if (found.length > 0) onlineAnswers.set(q, found);
+        setOnline(found);
+        setOnlineBusy(false);
+      });
+      YTMusicClient.searchArtists(q).catch(() => [] as YTArtistResult[]).then(people => {
+        if (seq === onlineSeq.current) setArtists(people.slice(0, 8));
+      });
+    }, TYPEAHEAD_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
   }, [q, scope]);
 
   const matchingPlaylists = useMemo(() => {
@@ -176,6 +189,8 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
       const libIndex = librarySongs.findIndex(s => s.id === song.id);
       if (libIndex !== -1) player.setPlaylistQueue('library', librarySongs, libIndex);
       else player.setPlaylistQueue('search', list, index);
+      // Online, what follows becomes this song's radio; offline the library carries on.
+      if (useSettingsStore.getState().autoQueueRefill ?? true) StreamService.startRadio(song).catch(() => {});
     }
     if (!playInMiniPlayerOnly || alreadyOn) openPlayerSheet(song.id);
   }, [commit, librarySongs, playInMiniPlayerOnly]);
@@ -184,7 +199,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     Haptics.selectionAsync().catch(() => {});
     commit();
     Keyboard.dismiss();
-    StreamService.play(list, index);
+    StreamService.playFromSearch(list[index]);
   }, [commit]);
 
   const save = useCallback((song: UnifiedSong) => {

@@ -76,4 +76,21 @@ describe('createListenTracker', () => {
     observe(tracker, 'short', 4.5, false, 4_600);
     expect(heard).toEqual([]);
   });
+
+  it('says how each song ended, and reports even a two-second skip to onLeft', () => {
+    const left: Array<[string, string, number]> = [];
+    const heard: string[] = [];
+    const tracker = createListenTracker(
+      (_track, _seconds, _startedAt, ending) => heard.push(ending.exit),
+      undefined,
+      (track, ending) => left.push([track.id, ending.exit, Math.round(ending.exitPositionSec)]),
+    );
+    const at = (id: string, positionSec: number, ms: number) => tracker.observe({ song: { id, title: id, artist: 'A', duration: 20 }, positionSec, isPlaying: true, at: ms });
+    at('quick', 0, 0);
+    at('quick', 2, 2_000);
+    for (let t = 0; t <= 19; t += 1) at('whole', t, 3_000 + t * 1_000);
+    at('next', 0, 23_000);
+    expect(left).toEqual([['quick', 'skipped', 2], ['whole', 'ended', 19]]);
+    expect(heard).toEqual(['ended']);
+  });
 });

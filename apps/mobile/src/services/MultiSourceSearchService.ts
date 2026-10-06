@@ -122,7 +122,7 @@ async function searchGaana(query: string): Promise<UnifiedSong[]> {
  * LAYER 1: JIOSAAVN (The Official Source)
  * ============================================================================
  */
-async function searchSaavn(query: string): Promise<UnifiedSong[]> {
+async function searchSaavn(query: string, signal?: AbortSignal): Promise<UnifiedSong[]> {
   try {
     if (__DEV__) console.log(`[Saavn] Searching: ${query}`);
     const searchUrl = `${SAAVN_API}/search/songs?query=${encodeURIComponent(query)}&limit=20`;
@@ -132,6 +132,7 @@ async function searchSaavn(query: string): Promise<UnifiedSong[]> {
     const response = await Promise.race([
         fetch(searchUrl, {
             headers: BROWSER_HEADERS,
+            signal,
         }),
         timeoutPromise
     ]) as Response;
@@ -158,15 +159,18 @@ async function searchSaavn(query: string): Promise<UnifiedSong[]> {
 }
 
 /**
- * Main Search Interface
- * Now exclusively uses Saavn for reliability
+ * Main search: Saavn, with Gaana when Saavn has nothing.
+ * `relevance` keeps the provider's order (as-you-type search: "kes" must lead with Kesariya, not
+ * the most-played song containing "kes"); otherwise results rank by authenticity and popularity.
+ * `signal` cancels a search the listener has typed past.
  */
-export async function searchMusic(query: string, artistName?: string, onProgress?: (status: string) => void): Promise<UnifiedSong[]> {
+export async function searchMusic(query: string, artistName?: string, onProgress?: (status: string) => void, options: { readonly signal?: AbortSignal; readonly relevance?: boolean } = {}): Promise<UnifiedSong[]> {
   if (__DEV__) console.log(`[SearchEngine] 🚀 Searching JioSaavn. Query: "${query}"`);
   onProgress?.('Searching JioSaavn...');
 
   try {
-      let results = await searchSaavn(query);
+      let results = await searchSaavn(query, options.signal);
+      if (options.signal?.aborted) return [];
       
       // FALLBACK TO GAANA
       if (results.length === 0) {
@@ -184,6 +188,7 @@ export async function searchMusic(query: string, artistName?: string, onProgress
         );
       }
 
+      if (options.relevance) return results;
       // Sort by popularity and authenticity
       return results.sort((a, b) => {
           if (a.isAuthentic !== b.isAuthentic) return a.isAuthentic ? -1 : 1; 
