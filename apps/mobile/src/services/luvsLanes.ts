@@ -3,8 +3,8 @@
  * across); going down a lane digs deeper into that taste (swipe up).
  *
  *   For you            the Luvs engine's own feed (engine + taste weaving)
- *   <artist>           radio from one of your seeds, one lane per favourite
- *                      artist (luvsTaste.tasteSeeds, one seed per artist)
+ *   <artist>           only that artist: their own songs plus the songs by them in
+ *                      their radio, one lane per favourite artist (luvsTaste.tasteSeeds)
  *   Chill / Energy     your personal mood mixes (Stream's moodMix)
  *
  * A lane grows as you go down it: when you near its end, the radio of the
@@ -34,6 +34,21 @@ export const DEEPEN_AHEAD = 3;
 
 const lead = (artist: string | undefined): string =>
   (artist ?? '').split(/,|&| feat\.? | ft\.? | x /i)[0]?.trim() ?? '';
+
+const words = (s: string): string => s.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/**
+ * Whether a credit line names this artist. Any credited artist counts (a feature by them stays), and a
+ * longer form of the name matches ("Anirudh" ↔ "Anirudh Ravichander"); a different artist never does.
+ */
+export const creditsArtist = (credits: string | undefined, name: string): boolean => {
+  const want = words(name);
+  if (!want) return false;
+  return (credits ?? '').split(/,|&|·| feat\.? | ft\.? | x | and | with /i).some(part => {
+    const have = words(part);
+    return !!have && (have === want || have.startsWith(`${want} `) || want.startsWith(`${have} `));
+  });
+};
 
 const songKey = (s: Pick<UnifiedSong, 'title' | 'artist'>): string =>
   `${s.title.trim().toLowerCase()}|${(s.artist ?? '').trim().toLowerCase()}`;
@@ -100,19 +115,31 @@ export const warmAround = (
 
 export interface LaneSources {
   recommend: (seed: UnifiedSong, limit: number) => Promise<UnifiedSong[]>;
+  /** The artist's own songs; each `round` asks a different search, so a deep lane keeps finding more. */
+  artistSongs: (artist: string, round: number, limit: number) => Promise<UnifiedSong[]>;
   moodMix: (mood: string, limit: number) => Promise<UnifiedSong[]>;
 }
 
 /** A lane's first songs (For you comes from the engine, not from here). */
 export const loadLane = async (spec: LaneSpec, sources: LaneSources): Promise<UnifiedSong[]> => {
-  if (spec.kind === 'artist' && spec.seed) return freshSongs([spec.seed], await sources.recommend(spec.seed, 14).catch(() => []));
+  if (spec.kind === 'artist' && spec.seed) return artistMore(spec.title, [spec.seed], spec.seed, sources);
   if (spec.kind === 'mood' && spec.mood) return freshSongs([], await sources.moodMix(spec.mood, 14).catch(() => []));
   return [];
 };
 
-/** More of the same taste: the radio of the song the listener is on. */
-export const deepenLane = async (songs: UnifiedSong[], depth: number, sources: LaneSources): Promise<UnifiedSong[]> => {
+/** An artist lane's next songs: theirs from the radio of `from`, then their own, never anyone else's. */
+const artistMore = async (artist: string, lane: UnifiedSong[], from: UnifiedSong, sources: LaneSources): Promise<UnifiedSong[]> => {
+  const [radio, own] = await Promise.all([
+    sources.recommend(from, 25).catch(() => [] as UnifiedSong[]),
+    sources.artistSongs(artist, Math.floor(lane.length / 10), 14).catch(() => [] as UnifiedSong[]),
+  ]);
+  return freshSongs(lane, [...own, ...radio].filter(song => creditsArtist(song.artist, artist)));
+};
+
+/** More of the same taste: the radio of the song the listener is on (an artist lane stays that artist). */
+export const deepenLane = async (spec: LaneSpec, songs: UnifiedSong[], depth: number, sources: LaneSources): Promise<UnifiedSong[]> => {
   const from = songs[Math.min(depth, songs.length - 1)];
   if (!from) return [];
+  if (spec.kind === 'artist') return artistMore(spec.title, songs, from, sources);
   return freshSongs(songs, await sources.recommend(from, 12).catch(() => []));
 };

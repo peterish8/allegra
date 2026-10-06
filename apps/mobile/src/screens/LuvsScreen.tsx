@@ -37,7 +37,7 @@ import { luvsBufferManager } from '../services/LuvsBufferManager';
 import { luvsEngine } from '../services/luvsEngine';
 import { hookOffsetSeconds } from '../services/luvsHook';
 import { tasteSeeds } from '../services/luvsTaste';
-import { FOR_YOU, LaneSources, MAX_ARTIST_LANES, deepenLane, laneSpecs, loadLane, needsDeepening, warmAround } from '../services/luvsLanes';
+import { FOR_YOU, LaneSources, MAX_ARTIST_LANES, creditsArtist, deepenLane, laneSpecs, loadLane, needsDeepening, warmAround } from '../services/luvsLanes';
 import { recommendFor, defaultDeps } from '../services/stream/recommend';
 import { personalMoodMix } from '../services/stream/moodMix';
 import { resolveMany } from '../services/ytmusic/resolver';
@@ -67,6 +67,8 @@ const NO_SONG = { id: '', title: '' };
 
 /** Under this many seconds on a card counts as a skip for the recommender. */
 const SKIP_THRESHOLD_SECONDS = 3;
+/** Searches for an artist lane's own songs, a different one each time the lane grows. */
+const ARTIST_QUERIES: ((artist: string) => string)[] = [a => `${a} songs`, a => `${a} hits`, a => `${a} latest songs`, a => `${a} best songs`, a => a];
 let hintSeen = false;
 
 const leadOf = (artist: string | undefined) => (artist ?? '').split(/,|&| feat\.? /i)[0]?.trim() ?? '';
@@ -122,6 +124,11 @@ const LuvsScreen: React.FC = () => {
     const preferred = [...languages].filter(l => l.weight > 0).sort((a, b) => b.weight - a.weight).map(l => l.language);
     return {
       recommend: (seed, limit) => recommendFor(seed, limit),
+      artistSongs: async (artist, round, limit) => {
+        const query = ARTIST_QUERIES[round % ARTIST_QUERIES.length](artist);
+        const yt = (await YTMusicClient.searchSongs(query).catch(() => [])).filter(song => song.artists.some(name => creditsArtist(name, artist)));
+        return resolveMany(yt, defaultDeps.searchCatalog, limit);
+      },
       moodMix: async (mood, limit) => {
         const seeds = tasteSeeds(useStreamHistoryStore.getState().plays, useSongsStore.getState().songs, Date.now(), 6);
         const yt = await personalMoodMix(mood, { artists: seeds.map(s => leadOf(s.artist)).filter(Boolean), languages: preferred }, q => YTMusicClient.searchSongs(q), limit * 2);
@@ -247,7 +254,7 @@ const LuvsScreen: React.FC = () => {
       return;
     }
     useLuvsLanesStore.getState().setGrowing(lane.id, true);
-    deepenLane(lane.songs, depth, sources)
+    deepenLane(lane, lane.songs, depth, sources)
       .then(more => useLuvsLanesStore.getState().appendLaneSongs(lane.id, more))
       .catch(() => useLuvsLanesStore.getState().setGrowing(lane.id, false));
   }, [lane, depth, sources, feedLoading]);
