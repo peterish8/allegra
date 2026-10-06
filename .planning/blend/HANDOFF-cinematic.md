@@ -8,7 +8,7 @@ Read `CLAUDE.md`, `docs/architecture.md` and `.planning/blend/cinematic-plan.md`
 | # | Work | Branch | PR | State |
 | --- | --- | --- | --- | --- |
 | 1 | Motion tokens + transform-only `ProgressBar` | `feat/cinematic-tokens-progress` | peterish8/allegra#5 | **Merged** to main (CI green) |
-| 2 | Blend reveal plays inside the hero (no overlay) | `feat/blend-reveal-in-hero` | opened with this file | Open. Local typecheck + lint pass; full `npm test` was run before push (see PR body). Merge once CI is green |
+| 2 | Blend reveal plays inside the hero (no overlay) | `feat/blend-reveal-in-hero` | peterish8/allegra#7 | Open. Local typecheck + lint pass; full `npm test` was run before push (see PR body). Merge once CI is green |
 | — | Android tab flicker fix (other laptop session), v1.1.1 | `fix/mobile-android-tab-flicker` | peterish8/allegra#6 | Open. Merge once CI is green (it rebuilds the APK) |
 | 3 | Lens emphasis + track list swap | — | — | Not started |
 | 4 | Spotify crate, cover flight, ticker (web, then mobile) | — | — | Not started |
