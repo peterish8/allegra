@@ -1,4 +1,7 @@
-import { decodeFeedCache, encodeFeedCache, FEED_CACHE_MAX_AGE_MS } from './feedCache';
+const mockGetItem = jest.fn();
+jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: { getItem: (k: string) => mockGetItem(k), setItem: jest.fn() } }));
+
+import { decodeFeedCache, encodeFeedCache, FEED_CACHE_MAX_AGE_MS, preloadFeedCache, preloadedFeedCache } from './feedCache';
 import type { HomeFeed } from './homeFeed';
 import type { HomePage } from '../ytmusic/browse';
 
@@ -29,5 +32,18 @@ describe('feedCache', () => {
     expect(decodeFeedCache('{not json', NOW)).toBeNull();
     expect(decodeFeedCache(JSON.stringify({ savedAt: NOW, feed: { quickPicks: 'x' } }), NOW)).toBeNull();
     expect(decodeFeedCache(null, NOW)).toBeNull();
+  });
+});
+
+describe('launch read', () => {
+  it('reads the kept page once at launch and hands it over without waiting afterwards', async () => {
+    mockGetItem.mockResolvedValue(encodeFeedCache(feed, home, Date.now()));
+    expect(preloadedFeedCache()).toBeUndefined();
+    const first = preloadFeedCache();
+    const second = preloadFeedCache();
+    expect(second).toBe(first);
+    await first;
+    expect(mockGetItem).toHaveBeenCalledTimes(1);
+    expect(preloadedFeedCache()?.feed?.quickPicks[0]?.id).toBe('s1');
   });
 });

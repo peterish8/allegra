@@ -75,6 +75,24 @@ export async function readFeedCache(now = Date.now()): Promise<FeedCache | null>
   }
 }
 
+let launchRead: { promise: Promise<FeedCache | null>; value: FeedCache | null | undefined } | null = null;
+
+/**
+ * Starts reading the kept page at launch, alongside the first-frame work (App.tsx), so Stream can draw it on its
+ * first frame instead of placeholders. Never throws; a second call reuses the first read.
+ */
+export function preloadFeedCache(): Promise<FeedCache | null> {
+  if (!launchRead) {
+    const read: { promise: Promise<FeedCache | null>; value: FeedCache | null | undefined } = { promise: readFeedCache(), value: undefined };
+    read.promise.then(value => { read.value = value; });
+    launchRead = read;
+  }
+  return launchRead.promise;
+}
+
+/** The launch read's page once it has finished; undefined while it is still reading (or never started). */
+export const preloadedFeedCache = (): FeedCache | null | undefined => launchRead?.value;
+
 /** Keeps the page as it is now (both halves; a half that has not loaded keeps what was cached). Never throws. */
 export async function writeFeedCache(feed: HomeFeed | null, home: HomePage | null, now = Date.now()): Promise<void> {
   try {
