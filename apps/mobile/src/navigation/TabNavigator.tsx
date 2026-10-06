@@ -1,5 +1,5 @@
 import React from 'react';
-import { Easing, View } from 'react-native';
+import { Easing, Platform, View } from 'react-native';
 import { createBottomTabNavigator, type BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CommonActions, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -49,13 +49,17 @@ const STACK_OPTIONS = {
 const BLEND_HEADER = { headerShown: true, headerStyle: { backgroundColor: Signal.bg }, headerTintColor: Signal.ink, headerShadowVisible: false } as const;
 
 /**
- * The tab cross-fade: the default is 150ms on a linear curve; this is the token's fast duration on
- * a decelerating curve, so the new page is there at once and settles. Runs on the native driver.
+ * iOS keeps the token-based fade. Android switches native scenes immediately:
+ * the fade's animated activityState can leave an old scene attached and flash it
+ * over the destination. Omit transitionSpec too, or bottom-tabs still animates.
  */
 const TAB_FADE = {
   animation: 'timing',
   config: { duration: Motion.duration.fast, easing: Easing.bezier(0, 0, 0.2, 1) },
 } as const;
+const TAB_TRANSITION = Platform.OS === 'android'
+  ? { animation: 'none' as const }
+  : { animation: 'fade' as const, transitionSpec: TAB_FADE };
 
 /**
  * Drilling into a playlist keeps the tab bar and mini player, because the detail
@@ -164,11 +168,8 @@ export const TabNavigator: React.FC = () => {
         tabBar={navBarStyle === 'modern-pill' ? renderModernPillTabBar : renderCustomTabBar}
         screenOptions={{
           headerShown: false,
-          // Pages cross-fade over the dark room instead of cutting (or flashing
-          // the light default behind a screen that's still mounting).
-          animation: 'fade',
-          transitionSpec: TAB_FADE,
-          // A tab you left stops rendering once its fade-out ends (react-native-screens freeze) and
+          ...TAB_TRANSITION,
+          // A tab you left stops rendering once it becomes inactive and
           // picks up the latest state when you come back. Hidden tabs used to re-render on every
           // player, download and library change.
           freezeOnBlur: true,
