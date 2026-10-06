@@ -8,7 +8,7 @@ import type { Ref } from 'react';
 
 import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist } from '@shared/spotify';
 
-import { crateStack } from '../../lib/importCrate';
+import { crateStack } from '@shared/importCrate';
 import { motionTokens } from '../../motion';
 
 /** Only Spotify's own https image hosts reach an <img>. */
