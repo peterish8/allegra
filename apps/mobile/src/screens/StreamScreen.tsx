@@ -53,7 +53,7 @@ import { tasteSeeds } from '../services/luvsTaste';
 import { leadArtist } from '../services/ytmusic/browse';
 import { recommendFor } from '../services/stream/recommend';
 import { buildHomeFeed, HomeFeed } from '../services/stream/homeFeed';
-import { readFeedCache, writeFeedCache } from '../services/stream/feedCache';
+import { preloadFeedCache, preloadedFeedCache, writeFeedCache } from '../services/stream/feedCache';
 import { StreamService } from '../services/stream/StreamService';
 import { streamIdFor } from '../services/stream/streamSong';
 import { useSongsStore } from '../store/songsStore';
@@ -110,8 +110,9 @@ const StreamScreen: React.FC = () => {
   const account = useAccount();
   const isFocused = useIsFocused();
 
-  const [feed, setFeed] = useState<HomeFeed | null>(null);
-  const [loading, setLoading] = useState(true);
+  // The page kept from last time, already read during launch: the first frame shows it, not placeholders.
+  const [feed, setFeed] = useState<HomeFeed | null>(() => preloadedFeedCache()?.feed ?? null);
+  const [loading, setLoading] = useState(() => !preloadedFeedCache()?.feed);
   const [refreshing, setRefreshing] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   // A newer build was found in the background: mark About, where the update is.
@@ -130,7 +131,10 @@ const StreamScreen: React.FC = () => {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
   const lastTabPress = useRef(0);
+  // A tap on the Stream tab is "take me home": any search or mood view clears and the page goes to the top.
+  const backHome = useRef<() => void>(() => {});
   useEffect(() => navigation.addListener('tabPress', () => {
+    backHome.current();
     const now = Date.now();
     if (isDoubleTap(lastTabPress.current, now)) {
       lastTabPress.current = 0;
@@ -151,7 +155,7 @@ const StreamScreen: React.FC = () => {
   }, [navigation]);
 
   // YouTube Music's own home (Echo's feed): mood chips and shelves.
-  const [ytHome, setYtHome] = useState<HomePage | null>(null);
+  const [ytHome, setYtHome] = useState<HomePage | null>(() => preloadedFeedCache()?.home ?? null);
   const [ytChip, setYtChip] = useState<HomeChip | null>(null);
   const [chipShelves, setChipShelves] = useState<Shelf[] | null>(null);
   const [artists, setArtists] = useState<YTPageItem<'artist'>[]>([]);
@@ -165,7 +169,7 @@ const StreamScreen: React.FC = () => {
   const freshHome = useRef(false);
   useEffect(() => {
     let alive = true;
-    readFeedCache().then(cached => {
+    preloadFeedCache().then(cached => {
       if (!alive || !cached) return;
       if (cached.feed && !freshFeed.current) {
         setFeed(cached.feed);
@@ -403,6 +407,12 @@ const StreamScreen: React.FC = () => {
   const washArt = currentSong?.coverImageUri ?? feed?.keepListening[0]?.highResArt ?? feed?.quickPicks[0]?.highResArt;
   const palette = useArtworkPalette(washArt);
   const searchActive = results !== null || searching;
+  backHome.current = () => {
+    const showingSearch = query.length > 0 || results !== null || mood !== null || ytChip !== null;
+    if (showingSearch) { clearSearch(); Keyboard.dismiss(); }
+    // From a search, or a tap while already on Stream: back to the top of the home page at once.
+    if (showingSearch || isFocused) scrollRef.current?.scrollTo({ y: 0, animated: false });
+  };
 
   const track = (s: UnifiedSong): TrackItem => ({
     key: streamIdFor(s),
