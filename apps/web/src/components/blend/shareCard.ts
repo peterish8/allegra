@@ -5,7 +5,7 @@
 import type { Story } from '@shared/blendStories';
 import type { BlendDetail } from '@shared/blendView';
 
-import { orbReach, orbSeat } from '../../lib/blendOrbs';
+import { orbReach, orbSeat } from '@shared/blendOrbs';
 import { artistName, storyText, wrapText } from '../../lib/blendText';
 import type { Palette } from '../../lib/palette';
 
