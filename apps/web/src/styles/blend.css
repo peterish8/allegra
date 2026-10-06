@@ -256,6 +256,7 @@
 }
 .blend-stage { --orb: clamp(150px, 28vw, 260px); position: relative; display: grid; height: calc(var(--orb) * 1.3); place-items: center; }
 .blend-stage.is-group { --orb: clamp(130px, 22vw, 210px); height: calc(var(--orb) * 1.6); }
+.blend-stage.is-waiting { height: calc(var(--orb) * 1.3 + 24px); }
 .blend-stage__orbs { position: absolute; inset: 0; pointer-events: none; }
 .blend-orb {
   position: absolute;
@@ -280,13 +281,15 @@
   --dy: 0;
   /* --focus is the lens emphasis: 1, or slightly larger for the person picked. */
   --focus: 1;
-  transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb)), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb))) scale(var(--focus));
+  /* --sink: px a leaving orb has sunk back into the light. */
+  --sink: 0;
+  transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb)), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb) + var(--sink) * 1px)) scale(var(--focus));
   animation: blend-drift var(--d-drift) var(--ease-standard) infinite alternate;
   animation-delay: calc(var(--lag) * var(--d-drift) * -0.5);
 }
 @keyframes blend-drift {
-  from { transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb)), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb))) scale(var(--focus)); }
-  to { transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb) + 10px), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb) - 12px)) scale(calc(var(--focus) * 1.05)); }
+  from { transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb)), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb) + var(--sink) * 1px)) scale(var(--focus)); }
+  to { transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb) + 10px), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb) - 12px + var(--sink) * 1px)) scale(calc(var(--focus) * 1.05)); }
 }
 /* The friend who has not joined yet: an outline holding their place, breathing. */
 .blend-orb.is-ghost {
@@ -299,11 +302,16 @@
   animation: blend-ghost var(--d-drift) var(--ease-standard) infinite alternate;
 }
 @keyframes blend-ghost {
-  from { opacity: 0.45; transform: translate(calc(var(--x) * var(--orb)), 0) rotate(0deg); }
-  to { opacity: 1; transform: translate(calc(var(--x) * var(--orb)), 0) rotate(40deg); }
+  from { opacity: 0.35; transform: translate(calc(var(--x) * var(--orb)), 0) rotate(0deg); }
+  to { opacity: 0.6; transform: translate(calc(var(--x) * var(--orb)), 0) rotate(40deg); }
 }
+/* Waiting: the invite sits right under the ghost orb, the headline in the stage. */
+.blend-stage__headline { margin: 0; color: #fff; font-size: clamp(20px, 3.4vw, 28px); font-weight: 800; letter-spacing: -0.02em; text-align: center; }
+.blend-stage__invite { position: absolute; top: 50%; left: 50%; z-index: 2; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: var(--wave); color: var(--wave-ink); font: inherit; font-size: 14px; font-weight: 800; white-space: nowrap; cursor: pointer; transform: translate(calc(var(--x) * var(--orb) - 50%), calc(var(--orb) * 0.44 - 8px)); transition: opacity var(--d-fast) var(--ease-standard); }
+.blend-stage__invite:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+@media (hover: hover) { .blend-stage__invite:hover { opacity: 0.88; } }
 /* The light where tastes overlap: a pre-blurred pool whose opacity follows the match. */
-.blend-stage__glow { position: absolute; top: 50%; left: 50%; width: calc(var(--orb) * 1.5); height: calc(var(--orb) * 1.5); margin: calc(var(--orb) * -0.75) 0 0 calc(var(--orb) * -0.75); border-radius: 50%; background: radial-gradient(circle closest-side, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.08) 55%, transparent); pointer-events: none; }
+.blend-stage__glow { --x: 0; transform: translateX(calc(var(--x) * var(--orb))); position: absolute; top: 50%; left: 50%; width: calc(var(--orb) * 1.5); height: calc(var(--orb) * 1.5); margin: calc(var(--orb) * -0.75) 0 0 calc(var(--orb) * -0.75); border-radius: 50%; background: radial-gradient(circle closest-side, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.08) 55%, transparent); pointer-events: none; }
 .blend-stage__skip { position: absolute; top: 0; right: 0; z-index: 2; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); transition: opacity var(--d-fast) var(--ease-standard); }
 .blend-stage__skip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 @media (hover: hover) { .blend-stage__skip:hover { opacity: 0.85; } }
@@ -368,6 +376,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .blend-orb, .blend-orb.is-ghost { animation: none; }
+  .blend-orb.is-ghost { opacity: 0.5; }
   .blend-round:hover, .blend-round.is-play:hover, .blend-round:active { transform: none; }
 }
 @media (max-width: 560px) {
