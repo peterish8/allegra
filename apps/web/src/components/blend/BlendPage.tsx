@@ -1,4 +1,4 @@
-import { Heart, LogOut, Pencil, Play, Share2 } from 'lucide-react';
+import { Heart, ImageDown, LogOut, Pencil, Play, Share2 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { CSSProperties, Ref } from 'react';
 import Link from 'next/link';
@@ -16,6 +16,7 @@ import { BLEND_TEXT, blendTrackSong, changeText, artistName, learningOffText } f
 import { paths } from '../../lib/routes';
 import { exitUp, itemVariants, motionTokens, pageVariants, swapVariants } from '../../motion';
 import { memberTones } from '../../lib/blendTones';
+import { DEFAULT_PALETTE } from '../../lib/palette';
 import { SkeletonCard, TactileButton } from '../ui';
 import { BlendInviteSheet } from './BlendInviteSheet';
 import { BlendRing } from './BlendRing';
@@ -23,6 +24,7 @@ import { markRevealSeen, revealKey, revealSeen, useBlendPalette } from './blendR
 import { BlendSheet } from './BlendSheet';
 import { BlendStories } from './BlendStories';
 import { BlendStage } from './BlendStage';
+import { MatchCardSheet } from './MatchCardSheet';
 import { BlendTones, MemberDiscs } from './MemberDisc';
 import { InfoTour } from '../InfoTour';
 import { BLEND_TOUR } from '../pageTours';
@@ -146,6 +148,7 @@ function BlendView({ detail, polls, polling, revealing, onRevealed, currentSongI
   const [invite, setInvite] = useState<{ code: string; url: string; expiresAt: number } | null>(null);
   const [openPair, setOpenPair] = useState<PairMatch | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [cardOpen, setCardOpen] = useState(false);
   const viewer = detail.members.find((member) => member.isYou);
   const group = detail.members.length > 2;
   const pair = detail.pairs[0];
@@ -202,6 +205,7 @@ function BlendView({ detail, polls, polling, revealing, onRevealed, currentSongI
               </button>
             ) : null}
             <button type="button" className="blend-round" aria-label="Invite someone" title="Invite" onClick={() => void openInvite()}><Share2 size={18} aria-hidden="true" /></button>
+            {!waiting && match !== undefined && detail.state === 'ready' ? <button type="button" className="blend-round" aria-label="Share your match card" title="Match card" onClick={() => setCardOpen(true)}><ImageDown size={18} aria-hidden="true" /></button> : null}
             <button type="button" className="blend-round" aria-label="Leave this Blend" title="Leave" onClick={() => setLeaving(true)}><LogOut size={18} aria-hidden="true" /></button>
           </div>
         </div>
@@ -273,6 +277,7 @@ function BlendView({ detail, polls, polling, revealing, onRevealed, currentSongI
         </BlendSheet>
       ) : null}
       {invite ? <BlendInviteSheet blendId={detail.id} invite={invite} onClose={() => setInvite(null)} /> : null}
+      {cardOpen && match !== undefined ? <MatchCardSheet detail={detail} tones={tones} palette={palette ?? DEFAULT_PALETTE} match={match} onClose={() => setCardOpen(false)} /> : null}
       {openPair ? <PairSheet pair={openPair} detail={detail} onClose={() => setOpenPair(null)} /> : null}
     </motion.section>
     </BlendTones.Provider>

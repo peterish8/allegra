@@ -369,6 +369,9 @@
 .blend-lens__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); }
 .blend-lens__option:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
+/* The match card preview: the 9:16 image the share sheet sends. */
+.match-card__frame { display: grid; place-items: center; }
+.match-card__preview { display: block; width: min(100%, 240px); height: auto; aspect-ratio: 9 / 16; border-radius: 18px; }
 /* Each song carries a stripe of whose taste it came from. */
 .blend-track { position: relative; padding-left: 16px; }
 .blend-track::before { position: absolute; top: 12px; bottom: 12px; left: 4px; width: 3px; border-radius: 3px; background: var(--stripe); content: ""; }
