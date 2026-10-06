@@ -6,6 +6,7 @@ import type { CSSProperties } from 'react';
 
 import type { BlendMemberView } from '@shared/blendView';
 
+import { orbApart, orbReach, orbSeat } from '../../lib/blendOrbs';
 import { motionTokens, revealTokens, spring } from '../../motion';
 import { MatchNumber } from './MatchNumber';
 
@@ -73,14 +74,11 @@ export function BlendStage({ members, tones, match, group, intro = false, onIntr
   }, [phase, finish]);
 
   // 0 when tastes are identical, 1 when they share nothing: how far apart the orbs sit.
-  const apart = match === undefined ? 0.6 : 1 - Math.min(99, Math.max(0, match)) / 100;
-  const reach = 0.16 + 0.5 * apart;
+  const apart = orbApart(match);
+  const reach = orbReach(match);
   const seats = waiting ? 2 : members.length;
   const angle = (index: number): number => (index / seats) * Math.PI * 2 - Math.PI / 2;
-  const at = (index: number): { x: number; y: number } => {
-    if (seats === 2) return { x: index === 0 ? -reach : reach, y: 0 };
-    return { x: Math.cos(angle(index)) * reach, y: Math.sin(angle(index)) * reach * 0.8 };
-  };
+  const at = (index: number): { x: number; y: number } => orbSeat(index, seats, reach);
   // Extra distance, in orb widths, an orb travels in from during the intro.
   const travel = (index: number): { dx: number; dy: number } => {
     const extra = Math.max(0, revealTokens.farReach - reach);
