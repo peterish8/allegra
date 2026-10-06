@@ -14,7 +14,7 @@ import { ApiError, connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fet
 import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus, type SpotifySyncStep } from '@shared/spotify';
 import { useCoverFlight } from '../../hooks/useCoverFlight';
 import { useThrottled } from '../../hooks/useThrottled';
-import { crateIds, spotifyTickerText } from '../../lib/importCrate';
+import { crateIds, spotifyTickerText } from '@shared/importCrate';
 import { LIVE_SUMMARY_MS, motionTokens, swapVariants, TICKER_PER_SECOND } from '../../motion';
 import { ProgressBar } from '../ui';
 import { SourceCover, SpotifyCrate } from './SpotifyCrate';

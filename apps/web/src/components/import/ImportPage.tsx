@@ -17,7 +17,7 @@ import { ImportPlanError, planImportOps, saveImportResumable } from '@shared/imp
 import { SpotifySyncPanel } from './SpotifySyncPanel';
 import { paths } from '../../lib/routes';
 import { useThrottled } from '../../hooks/useThrottled';
-import { latestFoundText } from '../../lib/importCrate';
+import { latestFoundText } from '@shared/importCrate';
 import { itemVariants, LIVE_SUMMARY_MS, pageVariants, swapVariants, TICKER_PER_SECOND } from '../../motion';
 import { ProgressBar, TactileButton } from '../ui';
 import { InfoTour } from '../InfoTour';
