@@ -18,7 +18,7 @@ import { ArrivalCount } from './ArrivalCount';
 import { SpotifySyncPanel } from './SpotifySyncPanel';
 import { paths } from '../../lib/routes';
 import { useThrottled } from '../../hooks/useThrottled';
-import { latestFoundText } from '../../lib/importCrate';
+import { latestFoundText } from '@shared/importCrate';
 import { announceLibraryArrival } from '../../lib/libraryArrival';
 import { itemVariants, LIVE_SUMMARY_MS, pageVariants, swapVariants, TICKER_PER_SECOND } from '../../motion';
 import { ProgressBar, TactileButton } from '../ui';

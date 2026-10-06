@@ -87,6 +87,8 @@ export const Motion = {
     slow: 400,
     cinematic: 700,
     crossfade: 900, // canvas video <-> artwork swap
+    flight: 280, // a cover flying from its row into the transfer crate
+    deal: 320, // a finished sleeve dealt out of the crate
   },
   ease: {
     standard: Easing.bezier(0.4, 0, 0.2, 1),
@@ -104,5 +106,7 @@ export const Motion = {
   },
   /** A tapped control confirms within this window, independent of any IO. */
   ackMs: 120,
+  /** The transfer ticker: at most this many visual updates a second; screen readers every summaryMs. */
+  ticker: { perSecond: 4, summaryMs: 2000 },
   pressScale: 0.94,
 } as const;

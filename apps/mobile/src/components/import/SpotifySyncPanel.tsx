@@ -7,16 +7,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeOutUp, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus, type SpotifySyncStep } from '@shared/spotify';
+import { crateIds, spotifyTickerText } from '@shared/importCrate';
 import { connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync, SpotifyApiError, syncSpotifyPlaylist } from '../../services/spotify/spotifyApi';
 import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
 import { Glass, Motion, Radius, Signal, Space } from '../../constants/allegraTheme';
-import { Artwork } from '../allegra/Artwork';
+import { useThrottled } from '../../hooks/useThrottled';
 import { RiseIn, Tactile } from '../allegra/motion';
+import { type Box, FlyingCover, SourceCover, SpotifyCrate } from './SpotifyCrate';
 
 const apiMessage = (error: unknown): string => error instanceof SpotifyApiError && error.status === 401
   ? 'Your Spotify connection needs attention. Reconnect to continue.'
@@ -67,13 +68,6 @@ const Progress: React.FC<{ value: number }> = ({ value }) => {
   );
 };
 
-/** Spotify's Liked Songs tile, in Allegra's own warm-to-blue, with the heart. */
-const LikedCover: React.FC = () => (
-  <LinearGradient colors={[Signal.accentDeep, Signal.accent, Signal.vibeBlue]} start={{ x: 0, y: 1 }} end={{ x: 1, y: 0 }} style={styles.cover}>
-    <Ionicons name="heart" size={22} color={Signal.ink} />
-  </LinearGradient>
-);
-
 const SourceRow: React.FC<{
   readonly playlist: SpotifySourcePlaylist;
   readonly index: number;
@@ -83,7 +77,9 @@ const SourceRow: React.FC<{
   readonly locked: boolean;
   readonly onToggle: () => void;
   readonly onReconnect: () => void;
-}> = ({ playlist, index, selected, run, lastSyncedAt, locked, onToggle, onReconnect }) => {
+  /** The cover's view, measured when it flies to the crate. */
+  readonly coverRef: (view: View | null) => void;
+}> = ({ playlist, index, selected, run, lastSyncedAt, locked, onToggle, onReconnect, coverRef }) => {
   const liked = playlist.kind === 'liked';
   const reconnect = liked && playlist.needsReconnect === true;
   const processed = run && 'step' in run && run.step ? run.step.added + run.step.skipped + run.step.reviewNeeded : 0;
@@ -105,7 +101,7 @@ const SourceRow: React.FC<{
         accessibilityLabel={`${playlist.name}, ${reconnect ? 'reconnect Spotify to include' : songCount(playlist.total)}`}
         style={[styles.row, selected && styles.rowOn]}
       >
-        {liked ? <LikedCover /> : <Artwork uri={playlist.imageUrl ?? null} title={playlist.name} size={COVER} style={styles.cover} />}
+        <View ref={coverRef} collapsable={false}><SourceCover playlist={playlist} size={COVER} /></View>
         <View style={styles.rowText}>
           <Text style={styles.rowTitle} numberOfLines={1}>{playlist.name}</Text>
           <Text style={[styles.rowMeta, run?.state === 'failed' && styles.rowMetaError]} numberOfLines={1}>{meta}</Text>
@@ -201,6 +197,28 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
   };
   const toggleAll = (): void => { setSelected(allOn ? new Set() : new Set(selectable.map((row) => row.id))); setRuns(new Map()); };
 
+  const reduce = useReducedMotion();
+  const panelRef = useRef<View>(null);
+  const slotRef = useRef<View>(null);
+  const covers = useRef(new Map<string, View>());
+  const flightSeq = useRef(0);
+  const [flights, setFlights] = useState<readonly { readonly id: string; readonly key: number; readonly from: Box; readonly to: Box }[]>([]);
+  const landed = useCallback((key: number) => setFlights((current) => current.filter((flight) => flight.key !== key)), []);
+  /** The tapped row's cover flies into the crate, or back out to its row. A new tap on the same row replaces its flight. */
+  const flyCover = (id: string, intoCrate: boolean): void => {
+    if (reduce) return;
+    const box = (view: View | null | undefined): Promise<Box | null> => new Promise((resolve) => {
+      if (!view) { resolve(null); return; }
+      view.measureInWindow((x, y, width, height) => resolve(width > 0 ? { x, y, width, height } : null));
+    });
+    void Promise.all([box(covers.current.get(id)), box(slotRef.current), box(panelRef.current)]).then(([cover, slot, panel]) => {
+      if (!cover || !slot || !panel) return;
+      const local = (b: Box): Box => ({ ...b, x: b.x - panel.x, y: b.y - panel.y });
+      const key = ++flightSeq.current;
+      setFlights((current) => [...current.filter((flight) => flight.id !== id), { id, key, from: local(intoCrate ? cover : slot), to: local(intoCrate ? slot : cover) }]);
+    });
+  };
+
   /** Every ticked source in list order, one bounded step at a time. A failed source is marked and the run moves on. */
   const transfer = async (): Promise<void> => {
     if (!token || syncing || queue.length === 0) return;
@@ -272,9 +290,19 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
 
   const tracked = useMemo(() => new Map(status?.playlists.map((row) => [row.id, row.lastSyncedAt]) ?? []), [status]);
   const doneCount = [...runs.values()].filter((run) => run.state === 'done').length;
+  const byId = useMemo(() => new Map(sources.map((row) => [row.id, row])), [sources]);
+  const finished = useMemo(() => new Set([...runs].filter(([, run]) => run.state === 'done').map(([id]) => id)), [runs]);
+  const queueIds = useMemo(() => queue.map((row) => row.id), [queue]);
+  const crate = useMemo(() => crateIds(selected, queueIds, finished, syncing), [selected, queueIds, finished, syncing]);
+  const runningId = syncing ? [...runs].find(([, run]) => run.state === 'syncing')?.[0] ?? null : null;
+  const running = runningId ? runs.get(runningId) : undefined;
+  const processed = [...runs.values()].reduce((sum, run) => sum + ('step' in run && run.step ? run.step.added + run.step.skipped + run.step.reviewNeeded : 0), 0);
+  // The work as it happens: the visual ticker at most ticker.perSecond, TalkBack every ticker.summaryMs.
+  const ticker = useThrottled(runningId && running && 'step' in running ? spotifyTickerText(byId.get(runningId)?.name ?? '', running.step) : '', 1000 / Motion.ticker.perSecond);
+  const summary = useThrottled(syncing ? `Transferring ${Math.min(doneCount + 1, queue.length)} of ${queue.length}. Matched ${processed} of ${songTotal} songs.` : '', Motion.ticker.summaryMs);
 
   return (
-    <View style={styles.panel}>
+    <View ref={panelRef} collapsable={false} style={styles.panel}>
       <View style={styles.head}>
         <View style={styles.brand}><Ionicons name="musical-notes" size={18} color={Signal.waveInk} /></View>
         <View style={{ flex: 1 }}>
@@ -313,18 +341,23 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
                   run={runs.get(playlist.id)}
                   lastSyncedAt={tracked.get(playlist.id) ?? null}
                   locked={syncing || busy}
-                  onToggle={() => toggle(playlist.id)}
+                  onToggle={() => { flyCover(playlist.id, !selected.has(playlist.id)); toggle(playlist.id); }}
                   onReconnect={() => void connect()}
+                  coverRef={(view) => { if (view) covers.current.set(playlist.id, view); else covers.current.delete(playlist.id); }}
                 />
               ))}
               {sources.length === 0 && !busy ? <Text style={styles.sub}>Nothing on Spotify to transfer yet.</Text> : null}
             </View>
 
             <View style={styles.dock}>
+              <SpotifyCrate sources={byId} ids={crate} liftId={runningId} transferring={syncing} slotRef={slotRef} />
               {syncing ? (
                 <>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.dockTitle} accessibilityLiveRegion="polite">Transferring {Math.min(doneCount + 1, queue.length)} of {queue.length}</Text>
+                  <View style={{ flex: 1 }} accessible accessibilityLabel={summary} accessibilityLiveRegion="polite">
+                    <Text style={styles.dockTitle}>Transferring {Math.min(doneCount + 1, queue.length)} of {queue.length}</Text>
+                    <View style={styles.ticker} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+                      {ticker ? <Animated.Text key={ticker} numberOfLines={1} style={styles.tickerText} entering={reduce ? undefined : FadeInDown.duration(Motion.duration.base)} exiting={reduce ? undefined : FadeOutUp.duration(Motion.duration.fast)}>{ticker}</Animated.Text> : null}
+                    </View>
                     <Progress value={queue.length ? doneCount / queue.length : 0} />
                   </View>
                   <Tactile onPress={pause} accessibilityRole="button" accessibilityLabel="Pause transfer" style={styles.iconButton}><Ionicons name="pause" size={18} color={Signal.ink} /></Tactile>
@@ -352,6 +385,10 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
             <Text style={styles.primaryText}>{busy ? 'Opening Spotify…' : 'Connect Spotify'}</Text>
           </Tactile>
         ) : <ActivityIndicator color={Signal.wave} />}
+      {flights.map((flight) => {
+        const playlist = byId.get(flight.id);
+        return playlist ? <FlyingCover key={flight.key} playlist={playlist} from={flight.from} to={flight.to} flightKey={flight.key} onLanded={landed} /> : null;
+      })}
     </View>
   );
 };
@@ -374,7 +411,6 @@ const styles = StyleSheet.create({
   list: { gap: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, minHeight: 68, paddingVertical: 8, paddingHorizontal: 8, borderRadius: Radius.well, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent' },
   rowOn: { backgroundColor: Glass.fillLight, borderColor: Glass.hairlineStrong },
-  cover: { width: COVER, height: COVER, borderRadius: Radius.thumb, alignItems: 'center', justifyContent: 'center' },
   rowText: { flex: 1, minWidth: 0, gap: 3 },
   rowTitle: { color: Signal.ink, fontSize: 15, fontWeight: '700' },
   rowMeta: { color: Signal.inkMuted, fontSize: 12 },
@@ -385,6 +421,8 @@ const styles = StyleSheet.create({
   trackFill: { ...StyleSheet.absoluteFillObject, backgroundColor: Signal.wave, borderRadius: 2 },
   dock: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, marginTop: Space.xs },
   dockTitle: { color: Signal.ink, fontSize: 14, fontWeight: '700' },
+  ticker: { height: 17, overflow: 'hidden' },
+  tickerText: { color: Signal.inkMuted, fontSize: 12 },
   primary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Space.xs, minHeight: 52, paddingHorizontal: Space.md, borderRadius: Radius.pill, backgroundColor: Signal.wave },
   primaryText: { color: Signal.waveInk, fontSize: 15, fontWeight: '800', flexShrink: 1 },
   wide: { alignSelf: 'stretch' },
