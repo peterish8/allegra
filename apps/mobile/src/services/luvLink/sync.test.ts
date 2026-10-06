@@ -28,7 +28,7 @@ jest.mock('../../playback/positionBus', () => ({ positionSV: { value: 12 }, dura
 jest.mock('../../database/queries', () => ({ getSongById: jest.fn().mockResolvedValue(null) }));
 jest.mock('../../store/songsStore', () => ({ useSongsStore: { getState: () => ({ songs: [] }) } }));
 jest.mock('../stream/StreamService', () => ({
-  StreamService: { catalogFor: jest.fn(() => undefined) },
+  StreamService: { catalogFor: jest.fn(() => undefined), startRadio: jest.fn().mockResolvedValue(0) },
   setStreamQueueRouter: jest.fn(() => jest.fn()),
 }));
 jest.mock('../stream/streamSong', () => ({ toStreamSong: (song: unknown) => song }));
@@ -161,6 +161,24 @@ describe('first-party LuvLink playback', () => {
     expect(reportOwnedLuvLinkReady).not.toHaveBeenCalled();
     expect(commitOwnedLuvLinkPlayback).not.toHaveBeenCalled();
     usePlayerStore.setState({ loadSong: originalLoadSong });
+  });
+
+  it('keeps the room song playing where it is when the room ends', () => {
+    const setPlaylistQueue = jest.fn();
+    const originalSetQueue = usePlayerStore.getState().setPlaylistQueue;
+    const old = { id: 'saavn:track-old', originId: 'saavn:track-old', title: 'Old', artist: 'Artist', duration: 180 } as never;
+    usePlayerStore.setState({ currentSong: old, currentSongId: 'saavn:track-old', currentPlaylistId: 'solo', playlistQueue: [old], currentQueueIndex: 0 });
+    setRoom(room('listen'), anchor());
+    stop = startOwnedLuvLinkSync();
+    readyPlayer(true);
+    usePlayerStore.setState({ setPlaylistQueue });
+
+    useLuvLinkStore.getState().setOwnedRoomId(null);
+
+    expect(setPlaylistQueue).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().currentSongId).toBe('saavn:track-1');
+    expect(jest.requireMock('../stream/StreamService').StreamService.startRadio).toHaveBeenCalledWith(expect.objectContaining({ id: 'saavn:track-1' }));
+    usePlayerStore.setState({ setPlaylistQueue: originalSetQueue });
   });
 
   it('keeps controller-only members out of audio resolution and readiness', () => {

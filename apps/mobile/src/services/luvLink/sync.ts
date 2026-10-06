@@ -11,6 +11,7 @@ import { toStreamSong } from '../stream/streamSong';
 import { resolveToCatalog } from '../ytmusic/resolver';
 import { searchMusic } from '../MultiSourceSearchService';
 import { usePlaybackModesStore } from '../../store/playbackModesStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import { acknowledgeOwnedLuvLinkPlaybackIntent, acknowledgeOwnedLuvLinkSpeakerHandoff, addOwnedLuvLinkQueueItem, commitOwnedLuvLinkPlayback, ownedQueueEntryForSong, projectedOwnedLuvLinkPosition, reportOwnedLuvLinkReady, routeOwnedLuvLinkCatalogPick, type PlaybackCommit } from './client';
 
 const state = () => useLuvLinkStore.getState();
@@ -50,12 +51,18 @@ function restoreSoloQueue(): void {
   if (!saved) return;
   soloQueue = null;
   const current = player();
+  if (usePlaybackModesStore.getState().repeatMode !== saved.repeatMode) usePlaybackModesStore.getState().setRepeatMode(saved.repeatMode);
+  // The room's song carries on exactly where it is (never swapped for the song from before the
+  // room); what follows becomes its radio, as the player menu's Radio does.
+  if (current.currentPlaylistId === 'luv-link' && current.currentSong) {
+    if (useSettingsStore.getState().autoQueueRefill ?? true) StreamService.startRadio(current.currentSong).catch(() => undefined);
+    return;
+  }
   const sameQueue = current.currentPlaylistId === saved.playlistId
     && (current.playlistQueue ?? []).map(song => song.id).join('\0') === (saved.songs ?? []).map(song => song.id).join('\0');
   if (!sameQueue && saved.songs?.length) {
     current.setPlaylistQueue(saved.playlistId ?? 'queue', saved.songs, Math.max(0, Math.min(saved.index, saved.songs.length - 1)), false);
   }
-  if (usePlaybackModesStore.getState().repeatMode !== saved.repeatMode) usePlaybackModesStore.getState().setRepeatMode(saved.repeatMode);
 }
 
 function isCurrent(userId: string, sequence: number, generation: number): boolean {
