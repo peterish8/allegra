@@ -73,10 +73,14 @@ import { CLASSIC_MINI_PLAYER_HEIGHT } from '../constants/layout';
 import { useAccount } from '../services/account/AccountProvider';
 import { getRecommendations, toPlayableAllegraSong } from '../services/account/allegraApi';
 import { onPlayReported } from '../services/sync/LibrarySync';
+import { PrefixCache, TYPEAHEAD_DEBOUNCE_MS } from '@shared/typeahead';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { STREAM_TOUR, streamScene } from '../components/allegra/infoTours';
 
 const HEADER_HEIGHT = 52;
+/** Search answers for the session, so typing on (or backspacing) shows something at once. */
+const searchAnswers = new PrefixCache<UnifiedSong>();
+const songText = (song: UnifiedSong): string => `${song.title} ${song.artist}`;
 
 const MOODS = [
   { label: 'Chill', query: 'chill lofi' },
@@ -276,23 +280,36 @@ const StreamScreen: React.FC = () => {
     setRefreshing(false);
   }, [loadFeed, loadAccountPicks]);
 
-  const runSearch = useCallback(async (text?: string, moodLabel: string | null = null) => {
+  // `live`: a keystroke search. It keeps the keyboard up and the rows showing until new ones land.
+  const runSearch = useCallback(async (text?: string, moodLabel: string | null = null, live = false) => {
     const q = (text ?? query).trim();
     if (!q) return;
     // A mood chip searches its own query without writing it into the field.
-    if (text !== undefined && !moodLabel) setQuery(text);
+    if (text !== undefined && !moodLabel && !live) setQuery(text);
     setMood(moodLabel);
-    Keyboard.dismiss();
+    if (!live) Keyboard.dismiss();
     const seq = ++searchSeq.current;
-    setSearching(true);
-    setResults([]);
-    setArtists([]);
+    // The longest prefix already answered shows at once, narrowed; the live answer replaces it.
+    const known = moodLabel ? null : searchAnswers.instant(q, songText);
+    setResults(prev => (known ? [...known.items] : live && prev ? prev : []));
+    if (!live) setArtists([]);
     if (!moodLabel) YTMusicClient.searchArtists(q).then(a => { if (seq === searchSeq.current) setArtists(a); }).catch(() => {});
+    if (known?.exact) { setSearching(false); return; }
+    setSearching(true);
     const found = await searchOfficial(q).catch(() => []);
+    if (found.length > 0) searchAnswers.set(q, found);
     if (seq !== searchSeq.current) return; // a newer search won
     setResults(found);
     setSearching(false);
   }, [query]);
+
+  // Results follow the typing (Spotify's rule); the keyboard's Search answers at once.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) return;
+    const t = setTimeout(() => { runSearch(q, null, true).catch(() => undefined); }, TYPEAHEAD_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps -- runSearch changes with query
 
   const clearSearch = useCallback(() => {
     searchSeq.current++;
@@ -310,6 +327,12 @@ const StreamScreen: React.FC = () => {
   const play = useCallback((list: UnifiedSong[], index: number) => {
     Haptics.selectionAsync().catch(() => {});
     StreamService.play(list, index);
+  }, []);
+
+  const playHit = useCallback((song: UnifiedSong) => {
+    Haptics.selectionAsync().catch(() => {});
+    Keyboard.dismiss();
+    StreamService.playFromSearch(song);
   }, []);
 
   const playLocal = useCallback((list: Song[], index: number) => {
@@ -483,7 +506,8 @@ const StreamScreen: React.FC = () => {
             <SongRow
               key={streamIdFor(song)}
               item={track(song)}
-              onPress={() => play(results ?? [], i)}
+              // A search hit plays with its own song radio after it, not the rest of the results.
+              onPress={() => (mood ? play(results ?? [], i) : playHit(song))}
               onLongPress={() => queueNext(song)}
               onSave={() => save(song)}
             />
@@ -619,7 +643,11 @@ const StreamScreen: React.FC = () => {
           <TextInput
             ref={searchRef}
             value={query}
-            onChangeText={setQuery}
+            onChangeText={text => {
+              setQuery(text);
+              // Emptied by backspacing: back to the feed, as the clear button does.
+              if (!text.trim() && !mood) { searchSeq.current++; setResults(null); setArtists([]); setSearching(false); }
+            }}
             onSubmitEditing={() => runSearch()}
             placeholder="Songs, artists, albums"
             placeholderTextColor={Signal.inkFaint}
