@@ -81,30 +81,25 @@ function subscribeRoom(id: RoomId): void {
   const playback = allegraConvex.watchQuery(fn.getPlayback, { roomId: id });
   const presence = allegraConvex.watchQuery(fn.getPresence, { roomId: id });
   let cancelled = false;
+  // localQueryResult() is undefined until the server first answers: keep the store's empty
+  // defaults until then. Storing undefined crashed the room screen right after creating a room.
   const updateRoom = (): void => {
     if (cancelled) return;
     try {
       const nextRoom = room.localQueryResult();
+      if (nextRoom === undefined) return;
       if (nextRoom === null) {
         state().setOwnedRoomId(null);
         state().announce('This LuvLink has ended or your access changed.');
         return;
       }
-      useLuvLinkStore.setState({ ownedRoom: nextRoom as LuvLinkRoomSnapshot, ownedConnection: 'connected' });
-    } catch { /* The initial query is pending, or Convex will report its error on a later update. */ }
+      useLuvLinkStore.setState({ ownedRoom: nextRoom, ownedConnection: 'connected' });
+    } catch { /* Convex reports the error on a later update. */ }
   };
-  const updateMembers = (): void => {
-    try {
-      const next = members.localQueryResult() as LuvLinkMemberSnapshot[];
-      useLuvLinkStore.setState(current => ({
-        ownedMembers: next,
-        ownedUserId: current.ownedUserId,
-      }));
-    } catch { /* pending */ }
-  };
-  const updateQueue = (): void => { try { useLuvLinkStore.setState({ ownedQueue: queue.localQueryResult() as LuvLinkQueueSnapshot }); } catch { /* pending */ } };
-  const updatePlayback = (): void => { try { useLuvLinkStore.setState({ ownedPlayback: playback.localQueryResult() as LuvLinkPlaybackAnchor | null }); } catch { /* pending */ } };
-  const updatePresence = (): void => { try { useLuvLinkStore.setState({ ownedPresence: presence.localQueryResult() as string[] }); } catch { /* pending */ } };
+  const updateMembers = (): void => { try { const next = members.localQueryResult(); if (next !== undefined) useLuvLinkStore.setState({ ownedMembers: next }); } catch { /* reported later */ } };
+  const updateQueue = (): void => { try { const next = queue.localQueryResult(); if (next !== undefined) useLuvLinkStore.setState({ ownedQueue: next }); } catch { /* reported later */ } };
+  const updatePlayback = (): void => { try { const next = playback.localQueryResult(); if (next !== undefined) useLuvLinkStore.setState({ ownedPlayback: next }); } catch { /* reported later */ } };
+  const updatePresence = (): void => { try { const next = presence.localQueryResult(); if (next !== undefined) useLuvLinkStore.setState({ ownedPresence: next }); } catch { /* reported later */ } };
   const off = [
     room.onUpdate(updateRoom), members.onUpdate(updateMembers), queue.onUpdate(updateQueue), playback.onUpdate(updatePlayback), presence.onUpdate(updatePresence),
   ];
@@ -235,7 +230,7 @@ export function watchOwnedLuvLinkGroupPicks(onUpdate: (picks: OwnedLuvLinkGroupP
   let stopped = false;
   const update = () => {
     if (stopped || state().ownedRoomId !== id) return;
-    try { onUpdate(watch.localQueryResult() as OwnedLuvLinkGroupPicks); } catch { /* Initial query is pending. */ }
+    try { const picks = watch.localQueryResult(); if (picks !== undefined) onUpdate(picks); } catch { /* reported later */ }
   };
   const unsubscribe = watch.onUpdate(update);
   update();
