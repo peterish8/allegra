@@ -26,7 +26,7 @@ const PLAYER_PARTS: Record<string, string> = {
   'contexts/PlayerContext.tsx': "this phone's player events, and its lock-screen and headset buttons",
   'widget/widgetTaskHandler.tsx': "the home-screen widget's buttons on this phone's own player",
   'playback/recovery.ts': "reloads this phone's song after a playback error",
-  'services/luvLink/sync.ts': 'a LuvLink room, which owns playback while it is open',
+  'services/luvLink/legacy/sync.ts': 'an Echo LuvLink room, which owns playback while it is open',
 };
 
 const ROUTING_IMPORT = /from '[^']*(?:services\/connect\/|\.\/)(?:playbackIntents|pickRouter)'/;
