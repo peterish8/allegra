@@ -474,6 +474,11 @@
 .nav-link:has(> .nav-arrival) { isolation: isolate; }
 .nav-arrival { position: absolute; z-index: -1; inset: -6px; border-radius: 999px; background: radial-gradient(closest-side, color-mix(in srgb, var(--wave) 42%, transparent), transparent); opacity: 0; pointer-events: none; animation: nav-arrival var(--d-atmosphere) var(--ease-standard) 1; }
 @keyframes nav-arrival { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+/* A transfer running while you are elsewhere: a chip with the way back. */
+.import-chip { display: inline-flex; align-items: center; gap: 10px; align-self: flex-start; min-height: 36px; margin: 0 0 12px; padding: 0 14px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: none; transition: opacity var(--d-fast) var(--ease-standard); }
+.import-chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.import-chip__spinner { width: 14px; height: 14px; border: 2px solid color-mix(in srgb, var(--wave) 35%, transparent); border-top-color: var(--wave); border-radius: 50%; animation: spotify-spin var(--d-spin) linear infinite; }
+@media (prefers-reduced-motion: reduce) { .import-chip__spinner { animation: none; } }
 .spotify-sync__toggle span { display: flex; flex-direction: column; }
 .spotify-sync__toggle small { color: var(--ink-muted); font-size: 12px; }
 .import-spotify-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }

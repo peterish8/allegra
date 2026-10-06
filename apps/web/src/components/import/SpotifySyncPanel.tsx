@@ -11,12 +11,12 @@ import type { MouseEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowDownToLine, Check, CheckCheck, Link2, Pause, RotateCw } from 'lucide-react';
 import Link from 'next/link';
-import { ApiError, connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync, syncSpotifyPlaylist } from '../../lib/api';
-import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus, type SpotifySyncStep } from '@shared/spotify';
+import { ApiError, connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync } from '../../lib/api';
+import { spotifyTransfer, spotifyTransferDeps, useSpotifyTransfer } from '../../lib/spotifyTransfer';
+import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus } from '@shared/spotify';
 import { useCoverFlight } from '../../hooks/useCoverFlight';
 import { useThrottled } from '../../hooks/useThrottled';
 import { crateIds, spotifyTickerText } from '@shared/importCrate';
-import { announceLibraryArrival } from '../../lib/libraryArrival';
 import { paths } from '../../lib/routes';
 import { LIVE_SUMMARY_MS, motionTokens, swapVariants, TICKER_PER_SECOND } from '../../motion';
 import { ProgressBar } from '../ui';
@@ -24,17 +24,12 @@ import { ArrivalCount } from './ArrivalCount';
 import { SourceCover, SpotifyCrate } from './SpotifyCrate';
 
 const RETURN_KEY = 'allegra:spotify-return';
-const MAX_STEPS = 100;
 
 const errorText = (error: unknown): string => {
   if (error instanceof ApiError && error.status === 401) return 'Your Spotify connection needs attention. Reconnect to continue.';
   if (error instanceof ApiError && error.status === 429) return `Spotify asked us to slow down. Try again${error.retryAfterSeconds === undefined ? ' in a moment' : ` in ${Math.ceil(error.retryAfterSeconds)} seconds`}.`;
   return error instanceof Error ? error.message : 'Spotify could not be reached. Try again.';
 };
-const isSyncStep = (value: unknown): value is SpotifySyncStep => typeof value === 'object' && value !== null
-  && typeof (value as SpotifySyncStep).complete === 'boolean'
-  && Number.isInteger((value as SpotifySyncStep).added) && Number.isInteger((value as SpotifySyncStep).skipped)
-  && Number.isInteger((value as SpotifySyncStep).reviewNeeded) && typeof (value as SpotifySyncStep).libraryId === 'string';
 const readStatus = (value: unknown): SpotifyStatus => {
   if (typeof value !== 'object' || value === null) throw new Error('Spotify returned an invalid status response.');
   const status = value as SpotifyStatus;
@@ -59,21 +54,18 @@ const ago = (at: number): string => {
 /** The arrival's Open Library takes focus, so the keyboard lands on what comes next. */
 const focusOnMount = (node: HTMLAnchorElement | null): void => { node?.focus({ preventScroll: true }); };
 
-type RowRun = { readonly state: 'waiting' } | { readonly state: 'syncing' | 'done'; readonly step: SpotifySyncStep | null } | { readonly state: 'failed'; readonly message: string };
 
 export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string | null }) {
   const reduced = useReducedMotion() ?? false;
   const [status, setStatus] = useState<SpotifyStatus | null>(null);
   const [sources, setSources] = useState<readonly SpotifySourcePlaylist[]>([]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [runs, setRuns] = useState<ReadonlyMap<string, RowRun>>(new Map());
+  // The run itself lives in lib/spotifyTransfer: leaving this page never cancels it.
+  const job = useSpotifyTransfer();
+  const { runs, syncing, arrival } = job;
   const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
   const [needsReconnect, setNeedsReconnect] = useState(false);
-  /** A transfer where every source finished: the songs' arrival replaces the status line. */
-  const [arrival, setArrival] = useState<{ readonly added: number; readonly notExact: number } | null>(null);
-  const run = useRef<AbortController | null>(null);
   const statusRequest = useRef<AbortController | null>(null);
   const generation = useRef(0);
 
@@ -95,6 +87,8 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
         const available = new Set(playlists.filter((row) => !row.needsReconnect).map((row) => row.id));
         // Keep what is still ticked; on first load, tick what was transferred before so a re-run picks up new songs.
         setSelected((ticked) => {
+          const running = spotifyTransfer.getState();
+          if (running.syncing) return new Set(running.order);
           const kept = [...ticked].filter((id) => available.has(id));
           return new Set(kept.length > 0 ? kept : next.playlists.map((tracked) => tracked.id).filter((id) => available.has(id)));
         });
@@ -108,14 +102,15 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
   }, [accountKey]);
 
   useEffect(() => {
-    generation.current += 1; run.current?.abort(); run.current = null; statusRequest.current?.abort(); statusRequest.current = null;
-    setStatus(null); setSources([]); setSelected(new Set()); setRuns(new Map()); setSyncing(false); setMessage(''); setArrival(null); setNeedsReconnect(false);
+    generation.current += 1; statusRequest.current?.abort(); statusRequest.current = null;
+    spotifyTransfer.useAccount(accountKey);
+    setStatus(null); setSources([]); setSelected(new Set()); setMessage(''); setNeedsReconnect(false);
     if (!accountKey) return;
     const controller = new AbortController();
     void refresh(controller);
-    const onVisible = (): void => { if (document.visibilityState === 'visible' && !run.current) void refresh(new AbortController()); };
+    const onVisible = (): void => { if (document.visibilityState === 'visible' && !spotifyTransfer.getState().syncing) void refresh(new AbortController()); };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { controller.abort(); document.removeEventListener('visibilitychange', onVisible); generation.current += 1; run.current?.abort(); statusRequest.current?.abort(); statusRequest.current = null; };
+    return () => { controller.abort(); document.removeEventListener('visibilitychange', onVisible); generation.current += 1; statusRequest.current?.abort(); statusRequest.current = null; };
   }, [accountKey, refresh]);
 
   // The OAuth callback lands on /import with ?spotify=connected|cancelled|failed. If the connect began on another page
@@ -151,7 +146,12 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
 
   const selectable = useMemo(() => sources.filter((row) => !row.needsReconnect), [sources]);
   const allOn = selectable.length > 0 && selectable.every((row) => selected.has(row.id));
-  const queue = useMemo(() => sources.filter((row) => selected.has(row.id)), [sources, selected]);
+  // While a run goes, the queue is the run's own order (the page may have been reopened since).
+  const queue = useMemo(() => {
+    if (!syncing) return sources.filter((row) => selected.has(row.id));
+    const byOrder = new Map(sources.map((row) => [row.id, row]));
+    return job.order.map((id) => byOrder.get(id)).filter((row): row is SpotifySourcePlaylist => row !== undefined);
+  }, [sources, selected, syncing, job.order]);
   const songTotal = queue.reduce((sum, row) => sum + row.total, 0);
   const tracked = useMemo(() => new Map(status?.playlists.map((row) => [row.id, row.lastSyncedAt]) ?? []), [status]);
   const doneCount = [...runs.values()].filter((row) => row.state === 'done').length;
@@ -180,61 +180,26 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
   };
 
   const toggle = (id: string): void => {
-    setArrival(null);
     setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-    setRuns((current) => { if (!current.has(id)) return current; const next = new Map(current); next.delete(id); return next; });
+    spotifyTransfer.forget(id);
   };
-  const toggleAll = (): void => { setArrival(null); setSelected(allOn ? new Set() : new Set(selectable.map((row) => row.id))); setRuns(new Map()); };
+  const toggleAll = (): void => { setSelected(allOn ? new Set() : new Set(selectable.map((row) => row.id))); spotifyTransfer.clear(); };
 
-  /** Every ticked source in list order, one bounded step at a time. A failed source is marked and the run moves on. */
-  const transfer = async (): Promise<void> => {
-    if (syncing || queue.length === 0) return;
-    const controller = new AbortController(); run.current?.abort(); run.current = controller;
-    const order = queue.map((row) => row.id);
-    const set = (id: string, next: RowRun): void => setRuns((current) => new Map(current).set(id, next));
-    setRuns(new Map(order.map((id) => [id, { state: 'waiting' } as const])));
-    setSyncing(true); setMessage(''); setArrival(null);
-    let added = 0; let notExact = 0; let finished = 0;
-    try {
-      for (const id of order) {
-        let latest: SpotifySyncStep | null = null;
-        set(id, { state: 'syncing', step: null });
-        try {
-          for (let step = 0; step < MAX_STEPS; step += 1) {
-            const response: unknown = await syncSpotifyPlaylist(id, controller.signal);
-            if (!isSyncStep(response)) throw new Error('Spotify returned an invalid sync progress response.');
-            latest = response;
-            if (controller.signal.aborted) return;
-            set(id, { state: latest.complete ? 'done' : 'syncing', step: latest });
-            if (latest.complete) break;
-          }
-          if (!latest?.complete) { set(id, { state: 'failed', message: 'Still going. Transfer again to finish it.' }); continue; }
-          added += latest.added; notExact += latest.reviewNeeded; finished += 1;
-        } catch (error) {
-          if (controller.signal.aborted) return;
-          // Authorization and rate limits stop the whole run; anything else stays on its own row.
-          if (error instanceof ApiError && (error.status === 401 || error.status === 429)) { setMessage(errorText(error)); if (error.status === 401) setNeedsReconnect(true); set(id, { state: 'failed', message: 'Stopped here' }); return; }
-          set(id, { state: 'failed', message: errorText(error) });
-        }
-      }
-      if (finished === order.length && added > 0) {
-        setArrival({ added, notExact });
-        announceLibraryArrival();
-      } else setMessage(finished === 0 ? 'Nothing transferred. Check the rows above and try again.'
-        : `${added} ${added === 1 ? 'song' : 'songs'} added from ${finished} ${finished === 1 ? 'source' : 'sources'}.${notExact ? ` ${notExact} had no exact match and were left out; the next transfer tries them again.` : ''}`);
-      const next = await fetchSpotifyStatus(controller.signal).then(readStatus).catch(() => null);
-      if (next && !controller.signal.aborted) setStatus(next);
-    } finally {
-      if (run.current === controller) run.current = null;
-      setSyncing(false);
-    }
+  /** Every ticked source in list order, run as a background job: you can leave this page while it goes. */
+  const transfer = (): void => {
+    if (!accountKey || syncing || queue.length === 0) return;
+    setMessage('');
+    void spotifyTransfer.start(accountKey, queue.map((row) => ({ id: row.id, name: row.name })), spotifyTransferDeps(errorText));
   };
+  const pause = (): void => spotifyTransfer.pause();
 
-  const pause = (): void => {
-    run.current?.abort();
-    setRuns((current) => new Map([...current].filter(([, row]) => row.state === 'done' || row.state === 'failed')));
-    setMessage('Paused. Songs already added stay saved; transfer again to carry on.');
-  };
+  // A run that ended (here or while you were on another page) refreshes what was transferred when.
+  useEffect(() => {
+    if (job.finishedAt === 0 || !accountKey) return undefined;
+    const controller = new AbortController();
+    void fetchSpotifyStatus(controller.signal).then(readStatus).then(setStatus).catch(() => undefined);
+    return () => controller.abort();
+  }, [job.finishedAt, accountKey]);
 
   const daily = async (enabled: boolean): Promise<void> => {
     if (!status) return;
@@ -254,7 +219,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
     try {
       const result: unknown = await disconnectSpotify();
       if (typeof result !== 'object' || result === null || (result as { disconnected?: unknown }).disconnected !== true) throw new Error('Spotify did not confirm disconnecting.');
-      run.current?.abort(); setStatus((current) => current ? { ...current, connected: false, dailyEnabled: false, playlists: [] } : current); setSources([]); setSelected(new Set()); setRuns(new Map()); setArrival(null); setMessage('Spotify is disconnected. Your Allegra playlists remain.');
+      spotifyTransfer.pause(); spotifyTransfer.dismiss(); spotifyTransfer.clear(); setStatus((current) => current ? { ...current, connected: false, dailyEnabled: false, playlists: [] } : current); setSources([]); setSelected(new Set()); setMessage('Spotify is disconnected. Your Allegra playlists remain.');
     }
     catch (error) { setMessage(errorText(error)); if (error instanceof ApiError && error.status === 401) setNeedsReconnect(true); }
     finally { setLoading(false); }
@@ -274,7 +239,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
       </div>
       {status?.connected ? <button className="spotify-icon-btn" type="button" aria-label="Refresh playlists" title="Refresh playlists" onClick={() => void refresh(new AbortController())} disabled={loading || syncing}><RotateCw size={17} aria-hidden="true" className={loading && !syncing ? 'is-spinning' : undefined} /></button> : null}
     </header>
-    {message ? <p role="status" aria-live="polite" className="import-note spotify-sync__message">{message}</p> : null}
+    {message || job.message ? <p role="status" aria-live="polite" className="import-note spotify-sync__message">{message || job.message}</p> : null}
     {arrival ? (
       <div className="import-arrival">
         <ArrivalCount value={arrival.added} noun={`${arrival.added === 1 ? 'song' : 'songs'} now in Allegra`} />
@@ -282,7 +247,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
         <Link className="import-link" href={paths.library} ref={focusOnMount}>Open Library</Link>
       </div>
     ) : null}
-    {needsReconnect && status?.connected ? <button className="import-spotify-primary" type="button" onClick={() => void connect()} disabled={loading || syncing}><Link2 size={16} aria-hidden="true" /> Reconnect Spotify</button> : null}
+    {(needsReconnect || job.needsReconnect) && status?.connected ? <button className="import-spotify-primary" type="button" onClick={() => void connect()} disabled={loading || syncing}><Link2 size={16} aria-hidden="true" /> Reconnect Spotify</button> : null}
     {!accountKey ? <p role="status" className="import-note">Sign in to connect Spotify.</p>
       : status?.configured === false ? <p role="status" className="import-note">Spotify connection is not available yet. You can still import a Spotify export or CSV on the Import page.</p>
       : status?.connected ? <>

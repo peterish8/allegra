@@ -62,6 +62,7 @@ import { useStreamHistoryStore } from '../store/streamHistoryStore';
 import { useUpdateStore } from '../store/updateStore';
 import AddListSheet from '../components/stream/AddListSheet';
 import { DownloadsTray } from '../components/stream/DownloadsTray';
+import { ImportTray } from '../components/import/ImportTray';
 import { libraryKeys, matchKey } from '../utils/downloadState';
 import { useLuvsPreferencesStore } from '../store/luvsPreferencesStore';
 import { useDownloadQueueStore } from '../store/downloadQueueStore';
@@ -341,7 +342,10 @@ const StreamScreen: React.FC = () => {
     setToast('Playing next');
   }, []);
 
-  const openDownloads = useCallback(() => {
+  const openImport = useCallback(() => {
+    navigation.navigate('Library', { screen: 'Import' });
+  }, [navigation]);
+    const openDownloads = useCallback(() => {
     // Downloads are the Library tab now.
     navigation.navigate('Library', { screen: 'LibraryHome' });
   }, [navigation]);
@@ -637,6 +641,7 @@ const StreamScreen: React.FC = () => {
         </View>
 
         <DownloadsTray onPress={openDownloads} />
+        <ImportTray onPress={openImport} />
 
         <View style={styles.chips}>
           <MoodChips moods={ytChips.length > 0 ? ytChips.map(c => c.title) : MOOD_LABELS} selected={mood} onSelect={selectMood} />
