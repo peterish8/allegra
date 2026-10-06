@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   storyThumb: { width: 40, height: 40, borderRadius: 8, borderWidth: 1.5, borderColor: Signal.bg },
   storyTitle: { color: Signal.ink, fontSize: 16, fontWeight: '700' },
   storySub: { color: Signal.inkMuted, fontSize: 12, marginTop: 2 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.xs, paddingHorizontal: Space.md, marginTop: Space.md, marginBottom: Space.xs },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Space.xs, paddingHorizontal: Space.md, marginTop: Space.md, marginBottom: Space.xs },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 14, borderRadius: Radius.pill, backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline, maxWidth: 180 },
   chipOn: { backgroundColor: Signal.ink, borderColor: Signal.ink },
   chipDot: { width: 8, height: 8, borderRadius: 4 },
