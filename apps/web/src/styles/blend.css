@@ -413,7 +413,7 @@
 .story-card__eyebrow { color: rgba(255, 255, 255, 0.7); letter-spacing: 0; text-transform: none; font-weight: 600; }
 .story-card__detail { color: rgba(255, 255, 255, 0.74); }
 .story-card__share, .story-card__play { background: rgba(255, 255, 255, 0.1); }
-.blend-lens { align-self: flex-start; }
+.blend-lens { align-self: center; }
 .blend-body { display: flex; flex-direction: column; gap: 20px; }
 
 /* ---------- Spotify sources: covers, multi-select, per-row progress ---------- */

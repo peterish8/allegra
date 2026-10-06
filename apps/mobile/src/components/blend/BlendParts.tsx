@@ -11,7 +11,9 @@ import type { BlendDetail, BlendMemberView } from '@shared/blendView';
 
 import { Glass, Radius, Signal, Space } from '../../constants/allegraTheme';
 
-const DISC_COLOURS = [Signal.wave, Signal.accent, Signal.vibeBlue, Signal.accentBright, Signal.inkSoft, Signal.accentDeep];
+// The website's member tones in the same order (apps/web/src/lib/blendTones.ts), so a listener has
+// one colour on both. All six are bright: the initials on a disc are dark ink, and orbs glow.
+const DISC_COLOURS = [Signal.wave, '#6fc1ff', '#ee6b5f', '#b8a6ff', '#7fdcc0', '#ffc56b'];
 
 function hash(text: string): number {
   let value = 0;

@@ -6,7 +6,7 @@ import type { CSSProperties } from 'react';
 
 import type { BlendMemberView } from '@shared/blendView';
 
-import { orbApart, orbReach, orbSeat } from '../../lib/blendOrbs';
+import { orbApart, orbReach, orbSeat } from '@shared/blendOrbs';
 import { motionTokens, revealTokens, spring } from '../../motion';
 import { MatchNumber } from './MatchNumber';
 
