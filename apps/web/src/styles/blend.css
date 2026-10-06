@@ -278,13 +278,15 @@
   --travel: 0;
   --dx: 0;
   --dy: 0;
-  transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb)), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb)));
+  /* --focus is the lens emphasis: 1, or slightly larger for the person picked. */
+  --focus: 1;
+  transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb)), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb))) scale(var(--focus));
   animation: blend-drift var(--d-drift) var(--ease-standard) infinite alternate;
   animation-delay: calc(var(--lag) * var(--d-drift) * -0.5);
 }
 @keyframes blend-drift {
-  from { transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb)), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb))) scale(1); }
-  to { transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb) + 10px), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb) - 12px)) scale(1.05); }
+  from { transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb)), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb))) scale(var(--focus)); }
+  to { transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb) + 10px), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb) - 12px)) scale(calc(var(--focus) * 1.05)); }
 }
 /* The friend who has not joined yet: an outline holding their place, breathing. */
 .blend-orb.is-ghost {

@@ -12,7 +12,11 @@ import { MatchNumber } from './MatchNumber';
 type Phase = 'intro' | 'skipped' | 'settled';
 
 /** Motion animates CSS custom properties; its target type only names standard ones. */
-const orbTarget = (opacity: number, travel: number): TargetAndTransition => ({ opacity, '--travel': travel } as TargetAndTransition);
+const orbTarget = (opacity: number, travel: number, focus = 1): TargetAndTransition => ({ opacity, '--travel': travel, '--focus': focus } as TargetAndTransition);
+
+/** Lens emphasis: the picked person's orb grows a little, everyone else's dims. */
+const FOCUS_SCALE = 1.06;
+const DIMMED = 0.5;
 
 /**
  * The Blend as light: one glowing orb per member, overlapping more the closer their taste.
@@ -24,14 +28,18 @@ const orbTarget = (opacity: number, travel: number): TargetAndTransition => ({ o
  * counts up inside it. Skip (or Escape) jumps to the settled frame. Travel is a custom property
  * read by the orb's own transform, so the orbs stay in one blending group the whole way.
  * Reduced motion: no travel; the orbs and number fade in.
+ *
+ * `focus` is the lens: that member's orb scales up slightly and the others dim. Scale is a custom
+ * property for the same reason as travel; reduced motion keeps only the dimming.
  */
-export function BlendStage({ members, tones, match, group, intro = false, onIntroDone }: {
+export function BlendStage({ members, tones, match, group, intro = false, onIntroDone, focus = null }: {
   readonly members: readonly BlendMemberView[];
   readonly tones: ReadonlyMap<string, string>;
   readonly match: number | undefined;
   readonly group: boolean;
   readonly intro?: boolean;
   readonly onIntroDone?: () => void;
+  readonly focus?: string | null;
 }) {
   const reduced = useReducedMotion() ?? false;
   const waiting = members.length < 2;
@@ -85,13 +93,18 @@ export function BlendStage({ members, tones, match, group, intro = false, onIntr
   const travelling = playing && !reduced;
   // The overlap's light: brighter the closer the tastes.
   const glow = match === undefined || waiting ? 0 : 0.25 + 0.55 * (1 - apart);
-  const orbTransition: Transition = phase === 'skipped' || !travelling
-    ? { duration: phase === 'skipped' ? 0 : motionTokens.duration.base, ease: motionTokens.ease.standard }
+  const orbTransition: Transition = !travelling
+    ? { duration: motionTokens.duration.base, ease: motionTokens.ease.standard }
     : { opacity: { duration: motionTokens.duration.base, ease: motionTokens.ease.standard }, default: { ...spring.hero, delay: revealTokens.travelDelay } };
+  // Skip lands the final frame at once. A running animation ignores a new transition when its
+  // target is unchanged, so skipping remounts the orbs and glow already at rest instead.
+  const skipped = phase === 'skipped';
+  const run = skipped ? 'rest' : 'run';
 
   return (
     <div className={`blend-stage${group ? ' is-group' : ''}${playing ? ' is-intro' : ''}`}>
       <motion.span
+        key={run}
         className="blend-stage__glow"
         aria-hidden="true"
         initial={{ opacity: travelling ? 0 : glow }}
@@ -102,13 +115,15 @@ export function BlendStage({ members, tones, match, group, intro = false, onIntr
         {members.map((member, index) => {
           const { x, y } = at(index);
           const { dx, dy } = travel(index);
+          const dimmed = focus !== null && focus !== member.userId;
+          const grown = focus === member.userId && !reduced ? FOCUS_SCALE : 1;
           return (
             <motion.span
-              key={member.userId}
+              key={`${member.userId}:${run}`}
               className="blend-orb"
               style={{ '--tone': tones.get(member.userId), '--x': x, '--y': y, '--dx': dx, '--dy': dy, '--lag': index } as CSSProperties}
-              initial={orbTarget(playing ? 0 : 1, travelling ? 1 : 0)}
-              animate={orbTarget(1, 0)}
+              initial={skipped ? orbTarget(dimmed ? DIMMED : 1, 0, grown) : orbTarget(playing ? 0 : 1, travelling ? 1 : 0)}
+              animate={orbTarget(dimmed ? DIMMED : 1, 0, grown)}
               transition={orbTransition}
             />
           );

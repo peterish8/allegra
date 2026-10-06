@@ -1,6 +1,6 @@
 import { Heart, LogOut, Pencil, Play, Share2 } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
-import type { CSSProperties } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import type { CSSProperties, Ref } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -14,7 +14,7 @@ import { announceBlendsChanged } from '../../hooks/useBlends';
 import { ApiError, fetchBlend, fetchBlendInvite, leaveBlend, renameBlend } from '../../lib/api';
 import { BLEND_TEXT, blendTrackSong, changeText, artistName, learningOffText } from '../../lib/blendText';
 import { paths } from '../../lib/routes';
-import { itemVariants, motionTokens, pageVariants } from '../../motion';
+import { exitUp, itemVariants, motionTokens, pageVariants, swapVariants } from '../../motion';
 import { memberTones } from '../../lib/blendTones';
 import { SkeletonCard, TactileButton } from '../ui';
 import { BlendInviteSheet } from './BlendInviteSheet';
@@ -170,7 +170,7 @@ function BlendView({ detail, revealing, onRevealed, currentSongId, isPlaying, li
     <BlendTones.Provider value={tones}>
     <motion.section className="blend-page" aria-labelledby="blend-title" variants={pageVariants} initial="hidden" animate="visible">
       <motion.header className="blend-hero" variants={itemVariants}>
-        <BlendStage key={revealKey(detail)} members={detail.members} tones={tones} match={waiting ? undefined : match} group={group} intro={revealing} onIntroDone={onRevealed} />
+        <BlendStage key={revealKey(detail)} members={detail.members} tones={tones} match={waiting ? undefined : match} group={group} intro={revealing} onIntroDone={onRevealed} focus={filter} />
         <div className="blend-hero__bar">
           <div className="blend-hero__copy">
             <div className="page-title-row"><BlendTitle detail={detail} canRename={viewer?.userId === detail.ownerId} onRenamed={onRenamed} /><InfoTour label="How this Blend works" steps={BLEND_TOUR} stage={blendScene} /></div>
@@ -218,9 +218,12 @@ function BlendView({ detail, revealing, onRevealed, currentSongId, isPlaying, li
             })}
           </div>
           <ol className="blend-tracks">
+            {/* Lens swap: rows not theirs lift away, theirs close up; a new tap retargets mid-swap. */}
+            <AnimatePresence mode="popLayout" initial={false}>
             {tracks.map((track, index) => (
               <BlendTrackRow
                 key={track.song.ref}
+                reduced={reduced}
                 track={track}
                 index={index}
                 detail={detail}
@@ -233,6 +236,7 @@ function BlendView({ detail, revealing, onRevealed, currentSongId, isPlaying, li
                 onLike={() => { const song = songs[index]; if (song) onLike(song); }}
               />
             ))}
+            </AnimatePresence>
           </ol>
         </motion.div>
       )}
@@ -298,7 +302,10 @@ function BlendTitle({ detail, canRename, onRenamed }: { readonly detail: BlendDe
   );
 }
 
-function BlendTrackRow({ track, index, detail, tones, song, active, isPlaying, liked, onPlay, onLike }: {
+function BlendTrackRow({ ref, reduced, track, index, detail, tones, song, active, isPlaying, liked, onPlay, onLike }: {
+  /** AnimatePresence's popLayout measures the leaving row through this. */
+  readonly ref?: Ref<HTMLLIElement>;
+  readonly reduced: boolean;
   readonly track: BlendTrack;
   readonly index: number;
   readonly detail: BlendDetail;
@@ -315,7 +322,17 @@ function BlendTrackRow({ track, index, detail, tones, song, active, isPlaying, l
   const colours = holders.map((member) => tones.get(member.userId) ?? 'transparent');
   const stripe = colours.length === 0 ? 'rgba(255, 255, 255, 0.18)' : colours.length === 1 ? colours[0] : `linear-gradient(180deg, ${colours.join(', ')})`;
   return (
-    <li className={`blend-track${active ? ' is-current' : ''} is-${track.kind}`} style={{ '--stripe': stripe } as CSSProperties}>
+    <motion.li
+      ref={ref}
+      className={`blend-track${active ? ' is-current' : ''} is-${track.kind}`}
+      style={{ '--stripe': stripe } as CSSProperties}
+      layout={reduced ? false : 'position'}
+      variants={swapVariants}
+      initial={reduced ? { opacity: 0 } : 'hidden'}
+      animate="visible"
+      exit={reduced ? { opacity: 0, transition: { duration: motionTokens.duration.instant } } : exitUp}
+      transition={{ layout: { duration: motionTokens.duration.base, ease: motionTokens.ease.standard } }}
+    >
       <span className="blend-track__index" aria-hidden="true">{index + 1}</span>
       <button type="button" className="blend-track__main" onClick={onPlay} aria-label={`Play ${song.title} by ${song.artist}`} aria-current={active && isPlaying ? 'true' : undefined}>
         {song.artwork ? <img className="blend-track__art" src={song.artwork} alt="" width={44} height={44} loading="lazy" /> : <span className="blend-track__art" />}
@@ -327,7 +344,7 @@ function BlendTrackRow({ track, index, detail, tones, song, active, isPlaying, l
       <button type="button" className={`blend-track__like${liked ? ' is-active' : ''}`} onClick={onLike} aria-pressed={liked} aria-label={liked ? `Unlike ${song.title}` : `Like ${song.title}`}>
         <Heart size={16} fill={liked ? 'currentColor' : 'none'} aria-hidden="true" />
       </button>
-    </li>
+    </motion.li>
   );
 }
 
