@@ -48,6 +48,7 @@ import { PlaylistsContext, usePlaylists } from './hooks/usePlaylists';
 import { QueueActionsContext, type QueueActions } from './hooks/useQueueActions';
 import { collectAlbumTracks } from './lib/album';
 import { tapHaptic } from './lib/haptics';
+import { useLibraryArrival } from './lib/libraryArrival';
 import { lockScroll } from './lib/scrollLock';
 import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
@@ -112,6 +113,8 @@ function likedKey(song: UnifiedSong): string {
 
 export default function App() {
   const reduced = useReducedMotion();
+  // Songs just landed (an import finished): the Library nav glows once per arrival.
+  const libraryArrivals = useLibraryArrival();
   // Gates swipe-up-to-expand on the mini player: no equivalent gesture affordance
   // on desktop, so the drag only engages on the phone layout (see app.css's
   // matching `@media (max-width: 900px)` breakpoint).
@@ -1307,7 +1310,7 @@ export default function App() {
           <nav className="desktop-nav" aria-label="Primary navigation">
             <Link className={`nav-link ${view === 'home' || view === 'shared' ? 'is-active' : ''}`} aria-current={view === 'home' ? 'page' : undefined} href={paths.home} title="Home"><House size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Home</span></Link>
             <Link className={`nav-link ${view === 'discover' || view === 'album' || view === 'artist' ? 'is-active' : ''}`} aria-current={view === 'discover' ? 'page' : undefined} href={paths.discover} title="Browse"><Compass size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Browse</span></Link>
-            <Link className={`nav-link ${view === 'library' || view === 'playlist' ? 'is-active' : ''}`} aria-current={view === 'library' ? 'page' : undefined} href={paths.library} title="Your library"><LibraryIcon size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Your library</span></Link>
+            <Link className={`nav-link ${view === 'library' || view === 'playlist' ? 'is-active' : ''}`} aria-current={view === 'library' ? 'page' : undefined} href={paths.library} title="Your library">{libraryArrivals > 0 ? <span key={libraryArrivals} className="nav-arrival" aria-hidden="true" /> : null}<LibraryIcon size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Your library</span></Link>
             <span className="nav-divider" role="separator" />
             <Link className="nav-link" href={paths.library} title="Recently played" onClick={(event) => openLibrarySection(event, 'library-played-lately')}><Clock size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Recently played</span></Link>
             <Link className={`nav-link ${view === 'liked' ? 'is-active' : ''}`} aria-current={view === 'liked' ? 'page' : undefined} href={paths.liked} title="Favorite songs"><HeartIcon size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Favorite songs</span></Link>
@@ -1523,6 +1526,7 @@ export default function App() {
           <Compass size={22} strokeWidth={1.7} aria-hidden="true" /><span>Browse</span>
         </Link>
         <Link className={`bottom-nav__item${view === 'library' || view === 'playlist' || view === 'liked' ? ' is-active' : ''}`} href={paths.library} aria-current={view === 'library' ? 'page' : undefined}>
+          {libraryArrivals > 0 ? <span key={libraryArrivals} className="nav-arrival" aria-hidden="true" /> : null}
           <LibraryIcon size={22} strokeWidth={1.7} aria-hidden="true" /><span>Library</span>
         </Link>
         <button type="button" className={`bottom-nav__item${paletteOpen ? ' is-active' : ''}`} aria-haspopup="dialog" onClick={() => setPaletteOpen(true)}>

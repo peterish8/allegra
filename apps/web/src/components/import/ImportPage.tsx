@@ -14,10 +14,12 @@ import { runMatching } from '@shared/importRun';
 import { checkpointFromState, clearCheckpoint, loadLatestCheckpoint, loadProgress, saveCheckpoint, saveProgress, stateFromCheckpoint, type ImportCheckpoint } from '../../lib/importProgressStore';
 import { importReducer, INITIAL_IMPORT, selectedTracks, type ImportState, type MatchedTrack } from '../../lib/importReducer';
 import { ImportPlanError, planImportOps, saveImportResumable } from '@shared/importPlan';
+import { ArrivalCount } from './ArrivalCount';
 import { SpotifySyncPanel } from './SpotifySyncPanel';
 import { paths } from '../../lib/routes';
 import { useThrottled } from '../../hooks/useThrottled';
 import { latestFoundText } from '../../lib/importCrate';
+import { announceLibraryArrival } from '../../lib/libraryArrival';
 import { itemVariants, LIVE_SUMMARY_MS, pageVariants, swapVariants, TICKER_PER_SECOND } from '../../motion';
 import { ProgressBar, TactileButton } from '../ui';
 import { InfoTour } from '../InfoTour';
@@ -376,22 +378,7 @@ function Step({ state, dispatch, onFile, onMatch, onCancel, onSave, checkpoint, 
       );
 
     case 'done':
-      return (
-        <div className="import-panel">
-          <p className="import-lead">Done.</p>
-          <ul className="import-counts">
-            <li><strong>{state.added}</strong> liked songs added</li>
-            <li><strong>{state.already}</strong> already in your library</li>
-            <li><strong>{state.playlists}</strong> playlists</li>
-            <li><strong>{state.unmatched}</strong> not found</li>
-          </ul>
-          <div className="import-actions">
-            <Link className="import-link" href={paths.liked}>Open Liked songs</Link>
-            <Link className="import-link" href={paths.library}>Open playlists</Link>
-            <TactileButton variant="ghost" onClick={() => dispatch({ type: 'reset' })}>Import another file</TactileButton>
-          </div>
-        </div>
-      );
+      return <Done state={state} dispatch={dispatch} />;
 
     case 'error':
       return (
@@ -405,6 +392,31 @@ function Step({ state, dispatch, onFile, onMatch, onCancel, onSave, checkpoint, 
         </div>
       );
   }
+}
+
+/** The import's arrival: what landed counts up, then the way into it. Nothing to celebrate when nothing was added. */
+function Done({ state, dispatch }: { readonly state: Extract<ImportState, { step: 'done' }>; readonly dispatch: Dispatch }) {
+  const open = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (state.added > 0) announceLibraryArrival();
+    // The keyboard lands on what comes next.
+    open.current?.focus({ preventScroll: true });
+  }, [state.added]);
+  return (
+    <div className="import-panel import-arrival">
+      {state.added > 0 ? <ArrivalCount value={state.added} noun={`liked ${state.added === 1 ? 'song' : 'songs'} now in Allegra`} /> : <p className="import-lead">Everything was already in your library.</p>}
+      <ul className="import-counts">
+        <li><strong>{state.already}</strong> already in your library</li>
+        <li><strong>{state.playlists}</strong> playlists</li>
+        <li><strong>{state.unmatched}</strong> not found</li>
+      </ul>
+      <div className="import-actions">
+        <Link className="import-link" href={paths.liked} ref={open}>Open Liked songs</Link>
+        <Link className="import-link" href={paths.library}>Open playlists</Link>
+        <TactileButton variant="ghost" onClick={() => dispatch({ type: 'reset' })}>Import another file</TactileButton>
+      </div>
+    </div>
+  );
 }
 
 function Matching({ done, total, results, onCancel }: { readonly done: number; readonly total: number; readonly results: ReadonlyMap<string, MatchedTrack>; readonly onCancel: () => void }) {
