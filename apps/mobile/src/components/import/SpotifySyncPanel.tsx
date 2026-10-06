@@ -10,9 +10,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import Animated, { FadeInDown, FadeOutUp, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
-import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus, type SpotifySyncStep } from '@shared/spotify';
+import type { SpotifySourcePlaylist, SpotifyStatus } from '@shared/spotify';
+import type { RowRun } from '@shared/spotifyTransfer';
 import { crateIds, spotifyTickerText } from '@shared/importCrate';
-import { connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync, SpotifyApiError, syncSpotifyPlaylist } from '../../services/spotify/spotifyApi';
+import { connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync, SpotifyApiError } from '../../services/spotify/spotifyApi';
+import { spotifyTransfer, spotifyTransferDeps, useSpotifyTransfer } from '../../services/spotify/spotifyTransfer';
 import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
 import { Glass, Motion, Radius, Signal, Space } from '../../constants/allegraTheme';
 import { useThrottled } from '../../hooks/useThrottled';
@@ -25,11 +27,8 @@ const apiMessage = (error: unknown): string => error instanceof SpotifyApiError 
     ? `Spotify asked us to slow down. Try again${error.retryAfterSeconds === undefined ? ' in a moment' : ` in ${Math.ceil(error.retryAfterSeconds)} seconds`}.`
     : error instanceof Error ? error.message : 'Spotify could not be reached. Try again.';
 
-/** One row's part in the current run. */
-type RowRun = { readonly state: 'waiting' } | { readonly state: 'syncing' | 'done'; readonly step: SpotifySyncStep | null } | { readonly state: 'failed'; readonly message: string };
 
 const COVER = 52;
-const MAX_STEPS = 100;
 
 const songCount = (total: number): string => `${total} ${total === 1 ? 'song' : 'songs'}`;
 const ago = (at: number): string => {
@@ -120,12 +119,12 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
   const [status, setStatus] = useState<SpotifyStatus | null>(null);
   const [sources, setSources] = useState<readonly SpotifySourcePlaylist[]>([]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [runs, setRuns] = useState<ReadonlyMap<string, RowRun>>(new Map());
+  // The run itself lives in services/spotify/spotifyTransfer: leaving this screen never cancels it.
+  const job = useSpotifyTransfer();
+  const { runs, syncing } = job;
   const [busy, setBusy] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
   const [needsReconnect, setNeedsReconnect] = useState(false);
-  const active = useRef<AbortController | null>(null);
   const statusRequest = useRef<AbortController | null>(null);
   const generation = useRef(0);
 
@@ -147,6 +146,8 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
         const available = new Set(result.playlists.filter((row) => !row.needsReconnect).map((row) => row.id));
         // Keep what is still ticked; on first load, tick what was transferred before so a re-run picks up new songs.
         setSelected((current) => {
+          const running = spotifyTransfer.getState();
+          if (running.syncing) return new Set(running.order);
           const kept = [...current].filter((id) => available.has(id));
           return new Set(kept.length > 0 ? kept : next.playlists.map((tracked) => tracked.id).filter((id) => available.has(id)));
         });
@@ -159,12 +160,13 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
   }, [accountKey, token]);
 
   useFocusEffect(useCallback(() => {
-    generation.current += 1; active.current?.abort(); active.current = null; statusRequest.current?.abort(); statusRequest.current = null;
-    setStatus(null); setSources([]); setSelected(new Set()); setRuns(new Map()); setSyncing(false); setMessage(''); setNeedsReconnect(false);
+    generation.current += 1; statusRequest.current?.abort(); statusRequest.current = null;
+    spotifyTransfer.useAccount(accountKey);
+    setStatus(null); setSources([]); setSelected(new Set()); setMessage(''); setNeedsReconnect(false);
     if (!accountKey || !token) return undefined;
     const controller = new AbortController();
     void refresh(controller);
-    return () => { controller.abort(); generation.current += 1; active.current?.abort(); active.current = null; statusRequest.current?.abort(); statusRequest.current = null; };
+    return () => { controller.abort(); generation.current += 1; statusRequest.current?.abort(); statusRequest.current = null; };
   }, [accountKey, token, refresh]));
 
   const connect = async (): Promise<void> => {
@@ -176,7 +178,7 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
       // The auth session closes the tab when the API redirects to lyricflow://open/import?spotify=…
       const session = await WebBrowser.openAuthSessionAsync(result.url, 'lyricflow://open/import');
       if (flowGeneration !== generation.current) return;
-      setNeedsReconnect(false);
+      setNeedsReconnect(false); spotifyTransfer.dismiss();
       void refresh(new AbortController()); // clears the message synchronously, so the outcome is set after
       const outcome = session.type === 'success' ? new URL(session.url).searchParams.get('spotify') : null;
       if (outcome === 'cancelled') setMessage('Spotify connection was cancelled.');
@@ -188,14 +190,19 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
 
   const selectable = useMemo(() => sources.filter((row) => !row.needsReconnect), [sources]);
   const allOn = selectable.length > 0 && selectable.every((row) => selected.has(row.id));
-  const queue = useMemo(() => sources.filter((row) => selected.has(row.id)), [sources, selected]);
+  // While a run goes, the queue is the run's own order (the screen may have been reopened since).
+  const queue = useMemo(() => {
+    if (!syncing) return sources.filter((row) => selected.has(row.id));
+    const byOrder = new Map(sources.map((row) => [row.id, row]));
+    return job.order.map((id) => byOrder.get(id)).filter((row): row is SpotifySourcePlaylist => row !== undefined);
+  }, [sources, selected, syncing, job.order]);
   const songTotal = queue.reduce((sum, row) => sum + row.total, 0);
 
   const toggle = (id: string): void => {
     setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-    setRuns((current) => { if (!current.has(id)) return current; const next = new Map(current); next.delete(id); return next; });
+    spotifyTransfer.forget(id);
   };
-  const toggleAll = (): void => { setSelected(allOn ? new Set() : new Set(selectable.map((row) => row.id))); setRuns(new Map()); };
+  const toggleAll = (): void => { setSelected(allOn ? new Set() : new Set(selectable.map((row) => row.id))); spotifyTransfer.clear(); };
 
   const reduce = useReducedMotion();
   const panelRef = useRef<View>(null);
@@ -219,52 +226,21 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
     });
   };
 
-  /** Every ticked source in list order, one bounded step at a time. A failed source is marked and the run moves on. */
-  const transfer = async (): Promise<void> => {
-    if (!token || syncing || queue.length === 0) return;
-    const controller = new AbortController(); active.current?.abort(); active.current = controller;
-    const order = queue.map((row) => row.id);
-    const set = (id: string, run: RowRun): void => setRuns((current) => new Map(current).set(id, run));
-    setRuns(new Map(order.map((id) => [id, { state: 'waiting' } as const])));
-    setSyncing(true); setMessage('');
-    let added = 0; let notExact = 0; let finished = 0; let likedDone = false;
-    try {
-      for (const id of order) {
-        let latest: SpotifySyncStep | null = null;
-        set(id, { state: 'syncing', step: null });
-        try {
-          for (let step = 0; step < MAX_STEPS; step += 1) {
-            latest = await syncSpotifyPlaylist(token, id, controller.signal);
-            if (controller.signal.aborted) return;
-            set(id, { state: latest.complete ? 'done' : 'syncing', step: latest });
-            if (latest.complete) break;
-          }
-          if (!latest?.complete) { set(id, { state: 'failed', message: 'Still going. Transfer again to finish it.' }); continue; }
-          added += latest.added; notExact += latest.reviewNeeded; finished += 1;
-          if (id === SPOTIFY_LIKED_ID) likedDone = true;
-        } catch (error) {
-          if (controller.signal.aborted) return;
-          // Authorization and rate limits stop the whole run; anything else stays on its own row.
-          if (error instanceof SpotifyApiError && (error.status === 401 || error.status === 429)) { setMessage(apiMessage(error)); if (error.status === 401) setNeedsReconnect(true); set(id, { state: 'failed', message: 'Stopped here' }); return; }
-          set(id, { state: 'failed', message: apiMessage(error) });
-        }
-      }
-      setMessage(finished === 0 ? 'Nothing transferred. Check the rows above and try again.'
-        : `${added} ${added === 1 ? 'song' : 'songs'} added from ${finished} ${finished === 1 ? 'source' : 'sources'}.${notExact ? ` ${notExact} had no exact match and were left out; the next transfer tries them again.` : ''}`);
-      if (likedDone || added > 0) useOnlineLibraryStore.getState().load().catch(() => undefined);
-      const statusNow = await fetchSpotifyStatus(token, controller.signal).catch(() => null);
-      if (statusNow && !controller.signal.aborted) setStatus(statusNow);
-    } finally {
-      if (active.current === controller) active.current = null;
-      setSyncing(false);
-    }
+  /** Every ticked source in list order, run as a background job: you can leave this screen while it goes. */
+  const transfer = (): void => {
+    if (!token || !accountKey || syncing || queue.length === 0) return;
+    setMessage('');
+    void spotifyTransfer.start(accountKey, queue.map((row) => ({ id: row.id, name: row.name })), spotifyTransferDeps(token, apiMessage));
   };
+  const pause = (): void => spotifyTransfer.pause();
 
-  const pause = (): void => {
-    active.current?.abort();
-    setRuns((current) => new Map([...current].filter(([, run]) => run.state === 'done' || run.state === 'failed')));
-    setMessage('Paused. Songs already added stay saved; transfer again to carry on.');
-  };
+  // A run that ended (here or while you were elsewhere) refreshes what was transferred when.
+  useEffect(() => {
+    if (job.finishedAt === 0 || !token) return;
+    const controller = new AbortController();
+    void fetchSpotifyStatus(token, controller.signal).then(setStatus).catch(() => undefined);
+    return () => controller.abort();
+  }, [job.finishedAt, token]);
 
   const daily = async (enabled: boolean): Promise<void> => {
     if (!token || !status) return;
@@ -281,14 +257,17 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
       { text: 'Disconnect', style: 'destructive', onPress: () => {
         setBusy(true); setMessage('');
         void disconnectSpotify(token).then(() => {
-          active.current?.abort(); setStatus((current) => current ? { ...current, connected: false, dailyEnabled: false, playlists: [] } : current);
-          setSources([]); setSelected(new Set()); setRuns(new Map()); setMessage('Spotify is disconnected. Your Allegra playlists remain.');
+          spotifyTransfer.pause(); spotifyTransfer.dismiss(); spotifyTransfer.clear(); setStatus((current) => current ? { ...current, connected: false, dailyEnabled: false, playlists: [] } : current);
+          setSources([]); setSelected(new Set()); setMessage('Spotify is disconnected. Your Allegra playlists remain.');
         }).catch((error: unknown) => setMessage(apiMessage(error))).finally(() => setBusy(false));
       } }
     ]);
   };
 
   const tracked = useMemo(() => new Map(status?.playlists.map((row) => [row.id, row.lastSyncedAt]) ?? []), [status]);
+  const shownMessage = message || (job.arrival
+    ? `${job.arrival.added.toLocaleString('en-US')} ${job.arrival.added === 1 ? 'song' : 'songs'} now in Allegra.${job.arrival.notExact ? ` ${job.arrival.notExact} had no exact match and were left out; the next transfer tries them again.` : ''}`
+    : job.message);
   const doneCount = [...runs.values()].filter((run) => run.state === 'done').length;
   const byId = useMemo(() => new Map(sources.map((row) => [row.id, row])), [sources]);
   const finished = useMemo(() => new Set([...runs].filter(([, run]) => run.state === 'done').map(([id]) => id)), [runs]);
@@ -316,8 +295,8 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
         ) : null}
       </View>
 
-      {message ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.message}>{message}</Text> : null}
-      {needsReconnect && status?.connected ? <Tactile onPress={() => void connect()} disabled={busy || syncing} accessibilityRole="button" style={[styles.primary, styles.wide]}><Ionicons name="link" size={18} color={Signal.waveInk} /><Text style={styles.primaryText}>Reconnect Spotify</Text></Tactile> : null}
+      {shownMessage ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.message}>{shownMessage}</Text> : null}
+      {(needsReconnect || job.needsReconnect) && status?.connected ? <Tactile onPress={() => void connect()} disabled={busy || syncing} accessibilityRole="button" style={[styles.primary, styles.wide]}><Ionicons name="link" size={18} color={Signal.waveInk} /><Text style={styles.primaryText}>Reconnect Spotify</Text></Tactile> : null}
 
       {!accountKey ? <Text style={styles.sub}>Loading your account…</Text>
         : status?.configured === false ? <Text style={styles.sub}>Spotify connection is not available yet. The export and CSV options remain below.</Text>
