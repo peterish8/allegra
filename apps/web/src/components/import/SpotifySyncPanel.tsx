@@ -10,13 +10,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowDownToLine, Check, CheckCheck, Link2, Pause, RotateCw } from 'lucide-react';
+import Link from 'next/link';
 import { ApiError, connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync, syncSpotifyPlaylist } from '../../lib/api';
 import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus, type SpotifySyncStep } from '@shared/spotify';
 import { useCoverFlight } from '../../hooks/useCoverFlight';
 import { useThrottled } from '../../hooks/useThrottled';
 import { crateIds, spotifyTickerText } from '@shared/importCrate';
+import { announceLibraryArrival } from '../../lib/libraryArrival';
+import { paths } from '../../lib/routes';
 import { LIVE_SUMMARY_MS, motionTokens, swapVariants, TICKER_PER_SECOND } from '../../motion';
 import { ProgressBar } from '../ui';
+import { ArrivalCount } from './ArrivalCount';
 import { SourceCover, SpotifyCrate } from './SpotifyCrate';
 
 const RETURN_KEY = 'allegra:spotify-return';
@@ -52,6 +56,9 @@ const ago = (at: number): string => {
   return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
 };
 
+/** The arrival's Open Library takes focus, so the keyboard lands on what comes next. */
+const focusOnMount = (node: HTMLAnchorElement | null): void => { node?.focus({ preventScroll: true }); };
+
 type RowRun = { readonly state: 'waiting' } | { readonly state: 'syncing' | 'done'; readonly step: SpotifySyncStep | null } | { readonly state: 'failed'; readonly message: string };
 
 export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string | null }) {
@@ -64,6 +71,8 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
   const [needsReconnect, setNeedsReconnect] = useState(false);
+  /** A transfer where every source finished: the songs' arrival replaces the status line. */
+  const [arrival, setArrival] = useState<{ readonly added: number; readonly notExact: number } | null>(null);
   const run = useRef<AbortController | null>(null);
   const statusRequest = useRef<AbortController | null>(null);
   const generation = useRef(0);
@@ -100,7 +109,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
 
   useEffect(() => {
     generation.current += 1; run.current?.abort(); run.current = null; statusRequest.current?.abort(); statusRequest.current = null;
-    setStatus(null); setSources([]); setSelected(new Set()); setRuns(new Map()); setSyncing(false); setMessage(''); setNeedsReconnect(false);
+    setStatus(null); setSources([]); setSelected(new Set()); setRuns(new Map()); setSyncing(false); setMessage(''); setArrival(null); setNeedsReconnect(false);
     if (!accountKey) return;
     const controller = new AbortController();
     void refresh(controller);
@@ -171,10 +180,11 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
   };
 
   const toggle = (id: string): void => {
+    setArrival(null);
     setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
     setRuns((current) => { if (!current.has(id)) return current; const next = new Map(current); next.delete(id); return next; });
   };
-  const toggleAll = (): void => { setSelected(allOn ? new Set() : new Set(selectable.map((row) => row.id))); setRuns(new Map()); };
+  const toggleAll = (): void => { setArrival(null); setSelected(allOn ? new Set() : new Set(selectable.map((row) => row.id))); setRuns(new Map()); };
 
   /** Every ticked source in list order, one bounded step at a time. A failed source is marked and the run moves on. */
   const transfer = async (): Promise<void> => {
@@ -183,7 +193,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
     const order = queue.map((row) => row.id);
     const set = (id: string, next: RowRun): void => setRuns((current) => new Map(current).set(id, next));
     setRuns(new Map(order.map((id) => [id, { state: 'waiting' } as const])));
-    setSyncing(true); setMessage('');
+    setSyncing(true); setMessage(''); setArrival(null);
     let added = 0; let notExact = 0; let finished = 0;
     try {
       for (const id of order) {
@@ -207,7 +217,10 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
           set(id, { state: 'failed', message: errorText(error) });
         }
       }
-      setMessage(finished === 0 ? 'Nothing transferred. Check the rows above and try again.'
+      if (finished === order.length && added > 0) {
+        setArrival({ added, notExact });
+        announceLibraryArrival();
+      } else setMessage(finished === 0 ? 'Nothing transferred. Check the rows above and try again.'
         : `${added} ${added === 1 ? 'song' : 'songs'} added from ${finished} ${finished === 1 ? 'source' : 'sources'}.${notExact ? ` ${notExact} had no exact match and were left out; the next transfer tries them again.` : ''}`);
       const next = await fetchSpotifyStatus(controller.signal).then(readStatus).catch(() => null);
       if (next && !controller.signal.aborted) setStatus(next);
@@ -241,7 +254,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
     try {
       const result: unknown = await disconnectSpotify();
       if (typeof result !== 'object' || result === null || (result as { disconnected?: unknown }).disconnected !== true) throw new Error('Spotify did not confirm disconnecting.');
-      run.current?.abort(); setStatus((current) => current ? { ...current, connected: false, dailyEnabled: false, playlists: [] } : current); setSources([]); setSelected(new Set()); setRuns(new Map()); setMessage('Spotify is disconnected. Your Allegra playlists remain.');
+      run.current?.abort(); setStatus((current) => current ? { ...current, connected: false, dailyEnabled: false, playlists: [] } : current); setSources([]); setSelected(new Set()); setRuns(new Map()); setArrival(null); setMessage('Spotify is disconnected. Your Allegra playlists remain.');
     }
     catch (error) { setMessage(errorText(error)); if (error instanceof ApiError && error.status === 401) setNeedsReconnect(true); }
     finally { setLoading(false); }
@@ -262,6 +275,13 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
       {status?.connected ? <button className="spotify-icon-btn" type="button" aria-label="Refresh playlists" title="Refresh playlists" onClick={() => void refresh(new AbortController())} disabled={loading || syncing}><RotateCw size={17} aria-hidden="true" className={loading && !syncing ? 'is-spinning' : undefined} /></button> : null}
     </header>
     {message ? <p role="status" aria-live="polite" className="import-note spotify-sync__message">{message}</p> : null}
+    {arrival ? (
+      <div className="import-arrival">
+        <ArrivalCount value={arrival.added} noun={`${arrival.added === 1 ? 'song' : 'songs'} now in Allegra`} />
+        {arrival.notExact ? <p className="import-note">{arrival.notExact} had no exact match and were left out; the next transfer tries them again.</p> : null}
+        <Link className="import-link" href={paths.library} ref={focusOnMount}>Open Library</Link>
+      </div>
+    ) : null}
     {needsReconnect && status?.connected ? <button className="import-spotify-primary" type="button" onClick={() => void connect()} disabled={loading || syncing}><Link2 size={16} aria-hidden="true" /> Reconnect Spotify</button> : null}
     {!accountKey ? <p role="status" className="import-note">Sign in to connect Spotify.</p>
       : status?.configured === false ? <p role="status" className="import-note">Spotify connection is not available yet. You can still import a Spotify export or CSV on the Import page.</p>
