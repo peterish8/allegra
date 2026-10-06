@@ -116,18 +116,8 @@
 .blend-join__card p { margin: 0; max-width: 44ch; color: var(--ink-muted); }
 .blend-join__disc-skeleton { display: block; width: 72px; height: 72px; border-radius: 50%; }
 
-/* ── Reveal ───────────────────────────────────────────────────────────── */
+/* ── Match number ─────────────────────────────────────────────────── */
 
-.blend-reveal { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; overflow: hidden; background: var(--bg-deep); }
-.blend-reveal__shader { position: absolute; inset: 0; opacity: 0.9; }
-.blend-reveal__skip { position: absolute; top: 16px; right: 16px; z-index: 2; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 0; border-radius: var(--radius-pill, 999px); background: rgba(0, 0, 0, 0.4); color: #fff; cursor: pointer; }
-.blend-reveal__skip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.blend-reveal__stage { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 16px; text-align: center; }
-.blend-reveal__discs { display: flex; gap: 8px; }
-.blend-reveal__label { margin: 0; color: rgba(255, 255, 255, 0.82); font-size: 13px; letter-spacing: var(--tracking-meta); text-transform: uppercase; }
-.blend-reveal .match-number { color: #fff; font-size: clamp(72px, 18vw, 140px); font-weight: 800; letter-spacing: var(--tracking-display); line-height: 1; }
-.blend-reveal__after { display: flex; flex-direction: column; align-items: center; gap: 14px; }
-.blend-reveal__line { margin: 0; max-width: 34ch; color: #fff; font-size: 16px; }
 .match-number { font-variant-numeric: tabular-nums; }
 
 /* ── Blend page ───────────────────────────────────────────────────────── */
@@ -284,13 +274,17 @@
       color-mix(in srgb, var(--tone) 34%, transparent) 72%,
       transparent 100%);
   mix-blend-mode: screen;
-  transform: translate(calc(var(--x) * var(--orb)), calc(var(--y) * var(--orb)));
+  /* --travel runs 1 → 0 during the reveal, carrying the orb in from --dx/--dy further out. */
+  --travel: 0;
+  --dx: 0;
+  --dy: 0;
+  transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb)), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb)));
   animation: blend-drift var(--d-drift) var(--ease-standard) infinite alternate;
   animation-delay: calc(var(--lag) * var(--d-drift) * -0.5);
 }
 @keyframes blend-drift {
-  from { transform: translate(calc(var(--x) * var(--orb)), calc(var(--y) * var(--orb))) scale(1); }
-  to { transform: translate(calc(var(--x) * var(--orb) + 10px), calc(var(--y) * var(--orb) - 12px)) scale(1.05); }
+  from { transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb)), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb))) scale(1); }
+  to { transform: translate(calc((var(--x) + var(--dx) * var(--travel)) * var(--orb) + 10px), calc((var(--y) + var(--dy) * var(--travel)) * var(--orb) - 12px)) scale(1.05); }
 }
 /* The friend who has not joined yet: an outline holding their place, breathing. */
 .blend-orb.is-ghost {
@@ -306,6 +300,11 @@
   from { opacity: 0.45; transform: translate(calc(var(--x) * var(--orb)), 0) rotate(0deg); }
   to { opacity: 1; transform: translate(calc(var(--x) * var(--orb)), 0) rotate(40deg); }
 }
+/* The light where tastes overlap: a pre-blurred pool whose opacity follows the match. */
+.blend-stage__glow { position: absolute; top: 50%; left: 50%; width: calc(var(--orb) * 1.5); height: calc(var(--orb) * 1.5); margin: calc(var(--orb) * -0.75) 0 0 calc(var(--orb) * -0.75); border-radius: 50%; background: radial-gradient(circle closest-side, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.08) 55%, transparent); pointer-events: none; }
+.blend-stage__skip { position: absolute; top: 0; right: 0; z-index: 2; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); transition: opacity var(--d-fast) var(--ease-standard); }
+.blend-stage__skip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@media (hover: hover) { .blend-stage__skip:hover { opacity: 0.85; } }
 .blend-stage__center { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; text-shadow: 0 2px 24px rgba(0, 0, 0, 0.35); }
 .blend-stage__match { color: #fff; font-size: clamp(54px, 9vw, 104px); font-weight: 800; letter-spacing: -0.055em; line-height: 0.95; font-variant-numeric: tabular-nums; }
 .blend-stage__label { color: rgba(255, 255, 255, 0.82); font-size: 14px; font-weight: 600; }
@@ -401,6 +400,7 @@
 .story-card__detail { color: rgba(255, 255, 255, 0.74); }
 .story-card__share, .story-card__play { background: rgba(255, 255, 255, 0.1); }
 .blend-lens { align-self: flex-start; }
+.blend-body { display: flex; flex-direction: column; gap: 20px; }
 
 /* ---------- Spotify sources: covers, multi-select, per-row progress ---------- */
 .spotify-sync__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }

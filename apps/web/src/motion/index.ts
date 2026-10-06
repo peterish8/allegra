@@ -131,7 +131,9 @@ export const revealTokens = {
   /** Seconds before the orbs start travelling. */
   travelDelay: 0.08,
   /** Seconds before the match number starts counting. */
-  numberDelay: 0.4
+  numberDelay: 0.4,
+  /** Milliseconds after which the reveal counts as finished even if a frame never came. */
+  maxMs: 3000
 } as const;
 
 /** The operational-transparency ticker: at most this many visual updates a second. */
