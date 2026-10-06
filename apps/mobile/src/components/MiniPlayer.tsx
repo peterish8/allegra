@@ -421,6 +421,8 @@ export const MiniPlayer: React.FC = () => {
     if (!pillMode) {
       return {
         height: classicHeightForProgress(),
+        // Square on every corner, said outright so no rounding carried over from elsewhere shows.
+        borderRadius: 0,
         overflow: 'hidden' as const,
       };
     }
@@ -980,7 +982,7 @@ const styles = StyleSheet.create({
     height: CLASSIC_TRANSPORT_H,
     paddingHorizontal: 16,
     // Room for the top-edge scrubber track
-    paddingTop: 12,
+    paddingTop: 8,
     width: '100%',
   },
   // Top seam of the transport row (= top of shell when collapsed). `bottom + height`
@@ -1066,9 +1068,9 @@ const styles = StyleSheet.create({
   },
 
   coverThumbnail: {
-    width: 48,
-    height: 48,
-    borderRadius: 6,
+    width: 40,
+    height: 40,
+    borderRadius: 4,
     marginRight: 12,
   },
   info: {
