@@ -1,0 +1,60 @@
+# LuvLink implementation checklist
+
+Status vocabulary: `TODO`, `IN_PROGRESS`, `IMPLEMENTED`, `VERIFIED`, `BLOCKED`. `IMPLEMENTED` means code exists; only `VERIFIED` means the named check was run and passed. Update evidence and exact failures at each meaningful slice. Current status and evidence are in [HANDOFF.md](HANDOFF.md).
+
+## Cross-cutting and migration
+
+| ID | Status | Scope / exact files | Evidence / next verification |
+|---|---|---|---|
+| DOC-01 | VERIFIED | Durable continuation docs: `.planning/luvlink/{PLAN,CHECKLIST,HANDOFF}.md` | Created 2026-10-06; review against live worktree at each checkpoint. |
+| DOC-02 | IMPLEMENTED | Keep historical research and link hub: `.planning/listen-together/JAM-ENHANCEMENT-PLAN.md` | Pointer appended; verify linked paths and historical body retained. |
+| REN-01 | IN_PROGRESS | Mobile internal/user rename: `apps/mobile/src/services/luvLink/`, `components/luvLink/`, `components/settings/LuvLink*`, `store/luvLinkStore.ts`, mobile screens/hooks/navigation | New panels/settings resolve. Audit `rg -n -i 'listen together|listenTogether|listen-together' apps/mobile/src`; retain required persisted/protocol keys and old route aliases. |
+| REN-02 | IN_PROGRESS | Web/API/Convex/shared labels/docs: `apps/web/src/`, `apps/api/src/`, `convex/`, `packages/shared/`, `docs/` | Backend worker added LuvLink contract/backend and route parser; web room UI absent. Audit every user-facing menu/settings/toast/accessibility string. |
+| MIG-01 | IN_PROGRESS | Echo compatibility and explicit transport discriminator: mobile legacy service, store and deep links; `packages/shared/luvLink.ts`; `docs/luvlink-contract.md` | Preserve AsyncStorage key `'luvlyrics-listen-together'`, protobuf field values and `lyricflow://together?code=...`. Confirm legacy codes remain on Echo, first-party invites are Convex only; no dual transport. |
+| INV-01 | IN_PROGRESS | New HTTPS invite and mobile deep links: `apps/web/src/lib/routes.ts`, web app route, mobile `useDeepLinks.ts`, linking config and LuvLink panel | Implement `/luvlink/join/<CODE>` cold/warm app launch, auth return, revoke/expiry; test legacy URI alongside it. Keep credentials out of persisted plaintext. |
+
+## Mobile client/player
+
+| ID | Status | Scope / exact files | Evidence / next verification |
+|---|---|---|---|
+| MOB-01 | IMPLEMENTED | First-party adapter: `apps/mobile/src/services/luvLink/client.ts`, `apps/mobile/src/store/luvLinkStore.ts` | Adapter exists with separate room/member/queue/playback watches and clock sample. Audit API types against contract; self user ID handling, presence heartbeat/secure token/disconnect, watch cancellation, clock sample limiting and error reporting remain. |
+| MOB-02 | IN_PROGRESS | First-party app lifecycle/root integration: `apps/mobile/src/components/luvLink/LuvLinkHost.tsx`, account/signout hooks, store/client | Start/stop watches on room/auth lifecycle; cancel awaits on leave/signout; explicit presence disconnect. Restore solo queue/base speed without pausing unrelated audio. |
+| MOB-03 | IN_PROGRESS | Legacy sync P0: `apps/mobile/src/services/luvLink/legacy/sync.ts`, `sync.test.ts` | Strict local exact-recording match and timeout pause/no ready implemented; negative duration test added. Rerun suite. Need fresh snapshot + clock on resume; no stale async playback side effect; all pending markers cleared on timeout/cancel. |
+| MOB-04 | IN_PROGRESS | First-party sync: `apps/mobile/src/services/luvLink/{client,sync}.ts`, shared timing helper, player/native queue seam | Dedicated `sync.test.ts` passed 4 tests for barrier, controller-only, speaker ack, and natural-end CAS. Cross-review found and fixed four remote queue replacements that could route `requestPlayback(false)` back as user intent. Added a regression test; rerun. App resume/background proof pending. |
+| MOB-05 | IN_PROGRESS | Explicit user seek/control seam: `hooks/useNowPlayingLogic.ts`, lyric/miniplayer seek paths, remote notification/command paths, LuvLink sync | Only explicit local user intent publishes seek. Remote correction, notification and inbound control must be deduplicated and never rebroadcast. Debounce thumb move; one command at gesture end. |
+| MOB-06 | IMPLEMENTED | Readiness: `apps/mobile/src/services/luvLink/sync.ts`, native load and speaker ack callbacks | Paused resolve/load, duration and loaded-ID readiness, barrier ready report, speaker status ack, controller-only no-load, timeout stays paused. First-party barrier tests are pending. |
+| MOB-07 | IMPLEMENTED | Queue/player callers: `store/playerStore.ts`, `StreamService.ts`, Connect router, `PlayerContext.tsx`, Now Playing/MiniPlayer | Central room router claims player selection/control before local fallback. Native room queues use `luv-link`, radio refill skips, and natural end routes through leader intent. Current generic router tests pass; full native/emulator proof pending. |
+| MOB-08 | IMPLEMENTED | Connect coexistence: `apps/mobile/src/services/connect/ConnectProvider.tsx`, `pickRouter.ts`, owned room state | First-party room activates `roomActive/canPlay` policy. Keep account presence and interruption handling; don't expose another user's device list. Controller permission is not leader authority. |
+| MOB-09 | IN_PROGRESS | First-party UI and settings: `components/luvLink/LuvLinkPanel.tsx`, `components/settings/LuvLinkSettings.tsx`, `screens/LuvLinkScreen.tsx`, navigation and `useDeepLinks.ts` | Create/join, members, queue contribution/edit, share/QR and controls coded. New standalone route allows settings and HTTPS invite join without current song; typecheck/deep-link tests and native render/accessibility review remain. |
+| MOB-10 | TODO | Speaker mode and output handoff: mobile panel, sync and native/player integration | Only elected output opens local audio. Transfer is acknowledged and leader epoch fenced. Controller-only participants still follow all authoritative anchors. No private Connect device list leak. |
+| MOB-11 | TODO | Foreground/background reliability: Android native module/service and mobile lifecycle | First-party transport cannot depend on a JS timer while suspended. Evaluate bounded native responsibility using session/room tags and existing player ownership. Implement only if native path is viable; never introduce a second queue authority. Physical/background proof required for claims. |
+
+## Backend, web, shared protocol and data lifecycle
+
+| ID | Status | Scope / exact files | Evidence / next verification |
+|---|---|---|---|
+| BE-01 | IMPLEMENTED | Shared contract: `docs/luvlink-contract.md`, `packages/shared/luvLink.ts` | Backend status says types/helpers exist; reconcile exact API and security semantics with source and mobile adapter. |
+| BE-02 | IMPLEMENTED | Convex room/backend: `convex/schema.ts`, `convex/luvLink.ts`, `convex/crons.ts`, generated `convex/_generated/api.d.ts` | Backend status reports auth, limits, commands, queue, playback epochs, barrier and presence. Re-run `npx tsc --noEmit -p convex/tsconfig.json`, Convex tests and authorized `npx convex dev --once` after current changes. |
+| BE-03 | VERIFIED | Auth/permissions/transport correctness: `convex/luvLink.ts`, tests, contract | Convex suite 80/80 incl. barrier replacement across three track changes and stale leader/sequence fences (2026-10-06). |
+| BE-04 | IN_PROGRESS | Presence and resource efficiency: Convex Presence functions/component, indexes, scheduled cleanup | Separate presence invalidation; bounded heartbeat; no per-second writes; track bounded query subscriptions/read fan-out/clock costs. Validate hourly expiry batch continuation and offline grace. |
+| BE-05 | IN_PROGRESS | Retention/account export/erase: `convex/account.ts`, `apps/api/src/{db/convex.ts,routes/account.ts,user/store.ts}` | Account export added, erasure changes present per backend report. Add tests for authored queue attribution, memberships/receipts/readiness removal and hosted room close; verify privacy contract. |
+| WEB-01 | IN_PROGRESS | URL/router parsing: `apps/web/src/lib/routes.ts`, `apps/web/src/App.tsx` | Basic parser paths exist; authenticate and route room/join pages without breaking current redirects or audio element. Verify old URLs. |
+| WEB-02 | IMPLEMENTED | Web LuvLink UI (not implemented): `apps/web/src/components/luvLink/LuvLinkPage.tsx`, `apps/web/src/App.tsx`, current nav/player | `LuvLinkPage.tsx` create/join/room, queue, speaker controls, local QR invite. Not rendered in a browser this pass. |
+| WEB-03 | TODO | Web playback adapter and readiness: `apps/web/src/hooks/useAudioPlayer.ts`, LuvLink route/page, existing layout-owned audio element | Anchor only on track/play/pause/committed seek + bounded leader checkpoint, never per-second writes. Follower projects locally; speaker controller never loads. Autoplay failure shows explicit tap-to-listen. |
+| REC-01 | IMPLEMENTED | P3 group suggestions: `packages/shared/blendBuild.ts`, room ranking/cache/build functions, mobile/web shelves | Backend, web shelf and mobile shelf (consent, refresh, add) exist; Convex picks test passes. Not device-checked. |
+| OPS-01 | IMPLEMENTED | Resource/security/release rollout: Convex limits/retention, feature flags, docs and tests | `LUVLINK_CREATION_DISABLED=true` stops new rooms only; tested. No production rollout performed. |
+
+## Verification and handoff gates
+
+| ID | Status | Scope / exact files | Evidence / next verification |
+|---|---|---|---|
+| TEST-01 | IN_PROGRESS | Focused mobile legacy/client/store/sync | Legacy/store command passed 3 suites/37 tests in 64.577s. First-party sync passed 1 suite/4 tests in 180.508s. Queue replacement regression test is new and pending. |
+| TEST-02 | IN_PROGRESS | Mobile/root gates: scoped `npm.cmd run typecheck --prefix apps/mobile`, then root lint/test and `npm.cmd run mobile:check` | Mobile typecheck passed before latest standalone route and suppression changes; rerun. Parent reports root test suites green (API/shared 142, infrastructure 20, Convex 78), configured DEV Convex `--once`, root TS and lint green. Full mobile command remains pending. |
+| TEST-03 | TODO | Native/emulator checks: Android service if changed | `adb devices` now shows `emulator-5554 device`. Run available build/instrumented tests; emulator cannot establish physical two-device audible alignment/background behavior. |
+| TEST-04 | BLOCKED | Physical two-device/background acceptance | No physical phones currently identified; prior `adb devices` had no device, now only emulator. Two-device, screen-off, network switch, audio latency and measured audible drift remain unverified until two capable devices are available. |
+| TEST-05 | TODO | Browser and local API flow | No rendered verification. User requires visible Codex IAB only using CUA `createBrowserTab('iab',url,{visible:true})`. Never use Opera/Chrome/Edge as fallback. Test signed-in create/join, invite, queue and autoplay; route parse or HTTP 200 alone is not UX proof. |
+| TEST-06 | VERIFIED | Backend focused and dev verification | Parent reports Convex 78 tests green and configured development Convex `--once` green. This is parent-provided evidence; no production target. See backend status for exact logs. |
+| TEST-07 | TODO | Final integration/diff audit | `git diff --check`; full `rg` rename inventory across product surfaces; inspect all diffs/status and test output; update all statuses and precise limitations. |
+| SAFE-01 | VERIFIED | Deployment and repository safety | No production deployment, publish, push or merge has been authorized. Configured DEV Convex codegen/dev validation is allowed by repository workflow and has been used; no prod target. |
+| QLT-01 | IN_PROGRESS | Ponytail/Unslop quality pass and user steering: mobile feature code, plan/status docs | Use existing player/queue routers, installed QR package and current UI theme. Remove duplicate routes/dead state only when call closure proves safe. Keep security, ready barrier, accessibility, migration behavior and explicit requested features. Web verification must use Codex IAB only. |
+
