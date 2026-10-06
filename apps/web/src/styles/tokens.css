@@ -111,6 +111,9 @@
   --d-base: 240ms;
   --d-panel: 300ms;
   --d-slow: 420ms;
+  /* A cover flying into the transfer crate, and a finished sleeve dealt out of it. */
+  --d-flight: 280ms;
+  --d-deal: 320ms;
   --d-spin: 900ms;
   --d-shimmer: 1400ms;
   /* One song's backdrop colours dissolving into the next. */

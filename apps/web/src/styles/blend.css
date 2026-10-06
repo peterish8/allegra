@@ -46,7 +46,9 @@
 .import-spotify-primary:disabled,
 .import-spotify-secondary:disabled,
 .import-spotify-link:disabled { opacity: .55; cursor: default; }
-.import-progress { width: 100%; height: 8px; accent-color: var(--wave); }
+.progress-bar { position: relative; display: block; width: 100%; height: 6px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, 0.1); }
+.progress-bar > span { position: absolute; inset: 0; border-radius: inherit; background: var(--wave); transform: scaleX(var(--p, 0)); transform-origin: left center; transition: transform var(--d-slow) var(--ease-decelerate); }
+@media (prefers-reduced-motion: reduce) { .progress-bar > span { transition: opacity var(--d-fast) var(--ease-standard); } }
 .import-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; color: var(--ink-muted); font-size: 13px; }
 .import-counts strong { display: block; color: var(--ink); font-size: 22px; }
 .import-link { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: var(--radius-pill, 999px); background: var(--active-wash); color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; transition: opacity var(--d-fast) var(--ease-standard); }
@@ -429,8 +431,7 @@
 .spotify-source.is-on .spotify-source__mark { animation: spotify-check var(--d-base) var(--ease-spring); }
 .spotify-source__mark .is-spinning { color: var(--wave); animation: spotify-spin var(--d-spin) linear infinite; }
 @keyframes spotify-check { from { transform: scale(0.6); } to { transform: scale(1); } }
-.spotify-progress { position: relative; display: block; height: 3px; margin-top: 4px; overflow: hidden; border-radius: 2px; background: rgba(255, 255, 255, 0.12); }
-.spotify-progress > span { position: absolute; inset: 0; border-radius: 2px; background: var(--wave); transform: scaleX(var(--p, 0)); transform-origin: left center; transition: transform var(--d-slow) var(--ease-decelerate); }
+.progress-bar.is-thin { height: 3px; margin-top: 4px; background: rgba(255, 255, 255, 0.12); }
 .spotify-sync__dock { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
 .spotify-sync__go { display: inline-flex; flex: 1; align-items: center; justify-content: center; gap: 8px; min-height: 52px; font-weight: 800; }
 .spotify-sync__run { display: flex; flex: 1; flex-direction: column; gap: 4px; }
@@ -443,7 +444,6 @@
   .spotify-source:active, .spotify-sync__all:active { transform: none; }
   .spotify-source.is-on .spotify-source__mark { animation: none; }
   .spotify-source__mark .is-spinning { animation: none; }
-  .spotify-progress > span { transition: none; }
 }
 
 /* ---------- Joining from an invite link: a popup over the player and phone nav, under sign-in (120) ---------- */

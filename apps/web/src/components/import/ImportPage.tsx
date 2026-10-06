@@ -16,8 +16,8 @@ import { importReducer, INITIAL_IMPORT, selectedTracks, type ImportState, type M
 import { ImportPlanError, planImportOps, saveImportResumable } from '@shared/importPlan';
 import { SpotifySyncPanel } from './SpotifySyncPanel';
 import { paths } from '../../lib/routes';
-import { itemVariants, pageVariants } from '../../motion';
-import { TactileButton } from '../ui';
+import { itemVariants, LIVE_SUMMARY_MS, pageVariants } from '../../motion';
+import { ProgressBar, TactileButton } from '../ui';
 import { InfoTour } from '../InfoTour';
 import { IMPORT_TOUR } from '../pageTours';
 import { importScene } from '../infoScenes';
@@ -33,7 +33,6 @@ const COPY = {
   saveFailed: 'Saving paused because the connection dropped. Songs already saved stay saved; carry on to add the rest.'
 } as const;
 
-const LIVE_EVERY_MS = 2000;
 const SEED_ARTISTS = 25;
 
 interface ImportPageProps {
@@ -368,7 +367,7 @@ function Step({ state, dispatch, onFile, onMatch, onCancel, onSave, checkpoint, 
       return (
         <div className="import-panel">
           <p className="import-lead">Saving {state.saved} of {state.total}</p>
-          <progress className="import-progress" max={Math.max(1, state.total)} value={state.saved} aria-label="Saving to your library" />
+          <ProgressBar value={state.saved} max={state.total} label="Saving to your library" />
           <p className="import-note">Large libraries take a few minutes. You can keep listening meanwhile. If you leave, this import can be resumed from this account on this device.</p>
           <div className="import-actions"><TactileButton variant="ghost" onClick={onCancel}>Pause saving</TactileButton></div>
         </div>
@@ -412,7 +411,7 @@ function Matching({ done, total, onCancel }: { readonly done: number; readonly t
   const last = useRef(0);
   useEffect(() => {
     const now = Date.now();
-    if (now - last.current >= LIVE_EVERY_MS || done === total) {
+    if (now - last.current >= LIVE_SUMMARY_MS || done === total) {
       last.current = now;
       setSpoken(`Matched ${done} of ${total}`);
     }
@@ -420,7 +419,7 @@ function Matching({ done, total, onCancel }: { readonly done: number; readonly t
   return (
     <div className="import-panel">
       <p className="import-lead" aria-hidden="true">Matched {done} of {total}</p>
-      <progress className="import-progress" max={Math.max(1, total)} value={done} aria-label="Finding your songs" />
+      <ProgressBar value={done} max={total} label="Finding your songs" quiet />
       <p className="sr-only" aria-live="polite">{spoken}</p>
       <p className="import-note">Your progress is saved on this device, so you can close the tab and pick the same file later.</p>
       <div className="import-actions">

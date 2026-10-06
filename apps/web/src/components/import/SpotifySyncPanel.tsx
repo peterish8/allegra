@@ -7,12 +7,12 @@
  * on Blends; connecting from either brings you back to the page you started on.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { ArrowDownToLine, Check, CheckCheck, Heart, Link2, Pause, RotateCw } from 'lucide-react';
 import { ApiError, connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync, syncSpotifyPlaylist } from '../../lib/api';
 import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus, type SpotifySyncStep } from '@shared/spotify';
 import { motionTokens } from '../../motion';
+import { ProgressBar } from '../ui';
 
 const RETURN_KEY = 'allegra:spotify-return';
 const MAX_STEPS = 100;
@@ -278,7 +278,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
                   <span className="spotify-source__text">
                     <span className="spotify-source__name">{playlist.name}</span>
                     <span className={`spotify-source__meta${state?.state === 'failed' ? ' is-error' : ''}`}>{meta}</span>
-                    {state?.state === 'syncing' && playlist.total > 0 ? <span className="spotify-progress" aria-hidden="true"><span style={{ '--p': fraction } as CSSProperties} /></span> : null}
+                    {state?.state === 'syncing' && playlist.total > 0 ? <ProgressBar className="is-thin" value={fraction} max={1} label={`${playlist.name} progress`} quiet /> : null}
                   </span>
                   <span className="spotify-source__mark" aria-hidden="true">
                     {reconnect ? <RotateCw size={18} /> : state?.state === 'syncing' ? <RotateCw size={18} className="is-spinning" /> : <Check size={16} strokeWidth={3} />}
@@ -293,7 +293,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
           {syncing ? <>
             <div className="spotify-sync__run" aria-live="polite">
               <strong>Transferring {Math.min(doneCount + 1, queue.length)} of {queue.length}</strong>
-              <span className="spotify-progress"><span style={{ '--p': queue.length ? doneCount / queue.length : 0 } as CSSProperties} /></span>
+              <ProgressBar className="is-thin" value={doneCount} max={queue.length} label="Transfer progress" quiet />
             </div>
             <button className="spotify-icon-btn" type="button" aria-label="Pause transfer" title="Pause transfer" onClick={pause}><Pause size={18} aria-hidden="true" /></button>
           </> : <button className="import-spotify-primary spotify-sync__go" type="button" onClick={() => void transfer()} disabled={queue.length === 0 || loading}>
