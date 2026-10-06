@@ -7,6 +7,7 @@ import { PlayheadStore, type Playhead } from '../lib/playhead';
 import { withUpcoming } from '../../../../packages/connect/src/index';
 import { songIdentity, uniqueByIdentity } from '../lib/songIdentity';
 import { clamp } from '../lib/utils';
+import { activeWebSearchAttempt, hasSelectedPlaybackProgress, matchesSelectedPlaybackSource, webPerformanceTrace } from '../lib/performanceTrace';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
@@ -107,6 +108,10 @@ export function useAudioPlayer(): AudioPlayerState {
       setError(null);
     } catch {
       if (generation !== playbackGenerationRef.current || !playbackIntentRef.current) return;
+      const attempt = activeWebSearchAttempt();
+      if (attempt && matchesSelectedPlaybackSource(attempt, currentSongRef.current?.id ?? '')) {
+        webPerformanceTrace?.finish(attempt, 'playback-failure');
+      }
       setError('Playback needs a tap to begin. Try the play button again.');
       setIsPlaying(false);
       setIsBuffering(false);
@@ -351,6 +356,16 @@ export function useAudioPlayer(): AudioPlayerState {
     const onTimeUpdate = (): void => {
       const time = audio.currentTime;
       setCurrentTime(time);
+      if (webPerformanceTrace && !audio.paused && !audio.seeking
+        && audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+        && !audio.muted && audio.volume > 0) {
+        const attempt = activeWebSearchAttempt();
+        const songId = currentSongRef.current?.id ?? '';
+        if (hasSelectedPlaybackProgress(attempt, songId, time)
+          && webPerformanceTrace.record(attempt, 'playback.observed')) {
+          webPerformanceTrace.finish(attempt, 'success');
+        }
+      }
       // A timeupdate means the playhead moved, so any earlier stall is over.
       if (!audio.paused && audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) setIsBuffering(false);
       // Some streams stop short of `ended`; move on when within a frame of the end.
@@ -364,6 +379,11 @@ export function useAudioPlayer(): AudioPlayerState {
     const onPlay = (): void => {
       isPlayingRef.current = true;
       setIsPlaying(true);
+      if (webPerformanceTrace) {
+        const attempt = activeWebSearchAttempt();
+        const songId = currentSongRef.current?.id ?? '';
+        if (matchesSelectedPlaybackSource(attempt, songId)) webPerformanceTrace.record(attempt, 'media.play');
+      }
     };
     const onPause = (): void => {
       isPlayingRef.current = false;
@@ -374,12 +394,41 @@ export function useAudioPlayer(): AudioPlayerState {
     const onError = (): void => {
       setIsBuffering(false);
       if (!currentSongRef.current) return;
+      if (webPerformanceTrace) {
+        const attempt = activeWebSearchAttempt();
+        if (matchesSelectedPlaybackSource(attempt, currentSongRef.current.id)) {
+          webPerformanceTrace.record(attempt, 'media.error');
+          webPerformanceTrace.finish(attempt, 'playback-failure');
+        }
+      }
       setError('This track could not be loaded. Try another song.');
       setIsPlaying(false);
     };
     // `waiting` is the only honest signal that sound has stopped for lack of data.
-    const onWaiting = (): void => { if (playbackIntentRef.current) setIsBuffering(true); };
-    const onPlaying = (): void => setIsBuffering(false);
+    const onWaiting = (): void => {
+      if (playbackIntentRef.current) setIsBuffering(true);
+      if (webPerformanceTrace) {
+        const attempt = activeWebSearchAttempt();
+        const songId = currentSongRef.current?.id ?? '';
+        if (matchesSelectedPlaybackSource(attempt, songId)) webPerformanceTrace.record(attempt, 'media.waiting');
+      }
+    };
+    const onPlaying = (): void => {
+      setIsBuffering(false);
+      if (webPerformanceTrace) {
+        const attempt = activeWebSearchAttempt();
+        const songId = currentSongRef.current?.id ?? '';
+        if (matchesSelectedPlaybackSource(attempt, songId)) webPerformanceTrace.record(attempt, 'media.playing');
+      }
+    };
+    const onCanPlay = (): void => {
+      setIsBuffering(false);
+      if (webPerformanceTrace) {
+        const attempt = activeWebSearchAttempt();
+        const songId = currentSongRef.current?.id ?? '';
+        if (matchesSelectedPlaybackSource(attempt, songId)) webPerformanceTrace.record(attempt, 'media.ready');
+      }
+    };
 
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -389,7 +438,7 @@ export function useAudioPlayer(): AudioPlayerState {
     audio.addEventListener('error', onError);
     audio.addEventListener('waiting', onWaiting);
     audio.addEventListener('playing', onPlaying);
-    audio.addEventListener('canplay', onPlaying);
+    audio.addEventListener('canplay', onCanPlay);
     return () => {
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
@@ -399,7 +448,7 @@ export function useAudioPlayer(): AudioPlayerState {
       audio.removeEventListener('error', onError);
       audio.removeEventListener('waiting', onWaiting);
       audio.removeEventListener('playing', onPlaying);
-      audio.removeEventListener('canplay', onPlaying);
+      audio.removeEventListener('canplay', onCanPlay);
     };
   }, [advanceToNext]);
 

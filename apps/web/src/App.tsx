@@ -4,10 +4,11 @@ import { ArrowLeft, ArrowUpToLine, ChevronRight, Download, House, Heart as Heart
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
 
 import type { ArtistProfile, HomePayload, LyricLine, LyricsPayload, SharedPlaylist, UnifiedSong } from '@shared/types';
+import type { PerformanceAttempt } from '@shared/performanceTrace';
 import { deriveMoodPrompts } from '@shared/moodPrompts';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import { fromAllegraSong } from '@shared/songRef';
@@ -64,6 +65,7 @@ import type { LibrarySong } from './lib/libraryRows';
 import { legacyHashToPath, parseRoute, paths } from './lib/routes';
 import { flags } from './lib/flags';
 import { pickTopResult } from './lib/topResult';
+import { activeWebSearchAttempt, associateSelectedPlaybackSource, webPerformanceTrace } from './lib/performanceTrace';
 import { formatTime, titleAccent } from './lib/utils';
 import { PlayheadStore, type Playhead } from './lib/playhead';
 import { itemVariants, motionTokens, pageVariants, spring } from './motion';
@@ -116,6 +118,8 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const mainRef = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState('');
+  const pendingSearchCommitRef = useRef<{ readonly attempt: PerformanceAttempt; readonly query: string; readonly resultCount: number } | null>(null);
+  const committedSearchAttemptRef = useRef<PerformanceAttempt | null>(null);
   const [songs, setSongs] = useState<UnifiedSong[]>([]);
   const [featured, setFeatured] = useState<UnifiedSong[]>([]);
   const [home, setHome] = useState<HomePayload | null>(null);
@@ -416,14 +420,22 @@ export default function App() {
   }, [openAlbum, artistName, router]);
 
   const loadSearch = useCallback(async (value: string, signal?: AbortSignal): Promise<void> => {
+    const attempt = activeWebSearchAttempt();
+    if (attempt) webPerformanceTrace?.record(attempt, 'search.dispatched');
+    const requestStartedAt = attempt ? performance.now() : 0;
     setSearching(true);
     setSearchError(null);
     try {
       const response = await searchSongs(value, signal);
+      if (attempt && webPerformanceTrace?.record(attempt, 'catalog.completed', {
+        durationMs: performance.now() - requestStartedAt,
+        resultCount: response.results.length,
+      })) pendingSearchCommitRef.current = { attempt, query: value, resultCount: response.results.length };
       if (value === DEFAULT_QUERY) setFeatured(response.results);
       else setSongs(response.results);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (attempt) webPerformanceTrace?.finish(attempt, 'search-failure');
       setSearchError(error instanceof Error ? error.message : 'Something went wrong. Try again.');
     } finally {
       setSearching(false);
@@ -618,6 +630,20 @@ export default function App() {
       controller.abort();
     };
   }, [loadSearch, query]);
+
+  useLayoutEffect(() => {
+    const pending = pendingSearchCommitRef.current;
+    if (!pending || pending.query !== query.trim()) return;
+    if (activeWebSearchAttempt() !== pending.attempt) {
+      pendingSearchCommitRef.current = null;
+      return;
+    }
+    if (committedSearchAttemptRef.current === pending.attempt) return;
+    if (!webPerformanceTrace?.record(pending.attempt, 'results.committed', { resultCount: pending.resultCount })) return;
+    committedSearchAttemptRef.current = pending.attempt;
+    pendingSearchCommitRef.current = null;
+    if (pending.resultCount === 0) webPerformanceTrace.finish(pending.attempt, 'empty', { resultCount: 0 });
+  }, [query, songs]);
 
   useEffect(() => {
     const onOffline = (): void => setOffline(true);
@@ -1033,7 +1059,10 @@ export default function App() {
    * results; with "keep playing similar songs" off it plays that one song.
    */
   const playSong = async (song: UnifiedSong, queue: UnifiedSong[] = displaySongs, fromSearch = Boolean(query.trim()) && queue === displaySongs): Promise<void> => {
+    const attempt = activeWebSearchAttempt();
+    if (attempt) webPerformanceTrace?.record(attempt, 'result.selected');
     if (await connect.playRemote(song, fromSearch ? [song] : queue)) {
+      if (attempt) webPerformanceTrace?.finish(attempt, 'remote-routed');
       setPlayerMode('mini');
       tapHaptic();
       return;
@@ -1043,6 +1072,7 @@ export default function App() {
       const snapshot = snapshotForSong(playable);
       const matched = snapshot ? await resolveSnapshotForPlayback(snapshot).catch(() => null) : null;
       if (!matched) {
+        if (attempt) webPerformanceTrace?.finish(attempt, 'playback-failure');
         setPersonalActionError('Couldn’t find this song online, so it can’t play on this device.');
         return;
       }
@@ -1060,6 +1090,11 @@ export default function App() {
     const inContext = new Set(context.map((item) => item.id));
     const mine = (at >= 0 ? player.queue.slice(at + 1) : []).filter((item) => userQueuedRef.current.has(item.id) && !inContext.has(item.id));
     const cut = context.findIndex((item) => item.id === playable.id) + 1;
+    if (attempt) {
+      const startPosition = audio.currentSong?.id === playable.id ? audio.audioRef.current?.currentTime ?? 0 : 0;
+      associateSelectedPlaybackSource(attempt, playable.id, startPosition);
+      webPerformanceTrace?.record(attempt, 'playback.commanded');
+    }
     audio.selectSong(playable, cut > 0 ? [...context.slice(0, cut), ...mine, ...context.slice(cut)] : [playable, ...mine, ...context]);
     // Stay on the current surface — the persistent mini player appears in-place.
     setPlayerMode('mini');

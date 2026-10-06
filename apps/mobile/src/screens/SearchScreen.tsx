@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Keyboard,
   Pressable,
   ScrollView,
@@ -40,6 +41,8 @@ import { useDownloadQueueStore } from '../store/downloadQueueStore';
 import { Playlist, Song, UnifiedSong } from '../types/song';
 import { PrefixCache, TYPEAHEAD_DEBOUNCE_MS } from '@shared/typeahead';
 import { searchMusic } from '../services/MultiSourceSearchService';
+import { androidPerformance } from '../services/performanceTrace';
+import type { PerformanceAttempt } from '@shared/performanceTrace';
 import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
 import type { YTPageItem } from '../services/ytmusic/browse';
 
@@ -109,9 +112,58 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
   const [toast, setToast] = useState<string | null>(null);
   const localSeq = useRef(0);
   const onlineSeq = useRef(0);
+  const localGeneration = useRef(0);
+  const onlineGeneration = useRef(0);
+  const measuredQuery = useRef('');
+  const measuredScope = useRef<Scope>('All');
+  const localAttempt = useRef<PerformanceAttempt | null>(null);
+  const onlineAttempt = useRef<PerformanceAttempt | null>(null);
+  const localResultsAttempt = useRef<PerformanceAttempt | null>(null);
+  const onlineResultsAttempt = useRef<PerformanceAttempt | null>(null);
+  const localCommittedAttempt = useRef<PerformanceAttempt | null>(null);
+  const onlineCommittedAttempt = useRef<PerformanceAttempt | null>(null);
+  const onlineSearchFailed = useRef(false);
 
   const palette = useArtworkPalette(currentCover);
   const q = query.trim();
+
+  const startSearch = useCallback((nextQuery: string, nextScope: Scope = scope) => {
+    setQuery(nextQuery);
+    setScope(nextScope);
+    if (!androidPerformance.trace.enabled) return;
+
+    const nextText = nextQuery.trim();
+    const queryChanged = nextText !== measuredQuery.current;
+    const scopeChanged = nextScope !== measuredScope.current;
+    measuredQuery.current = nextText;
+    measuredScope.current = nextScope;
+    if (!queryChanged && !scopeChanged) return;
+
+    if (queryChanged) localResultsAttempt.current = null;
+    onlineResultsAttempt.current = null;
+    if (queryChanged && nextText) {
+      const attempt = androidPerformance.beginSearchAttempt('local', ++localGeneration.current);
+      localAttempt.current = attempt;
+      androidPerformance.record(attempt, 'query.changed');
+    } else if (queryChanged) {
+      androidPerformance.finish(localAttempt.current, 'aborted');
+      localAttempt.current = null;
+    }
+
+    if (nextText && nextScope !== 'On this phone') {
+      const attempt = androidPerformance.beginSearchAttempt('online', ++onlineGeneration.current);
+      onlineAttempt.current = attempt;
+      onlineSearchFailed.current = false;
+      if (queryChanged) androidPerformance.record(attempt, 'query.changed');
+    } else {
+      androidPerformance.finish(onlineAttempt.current, 'aborted');
+      onlineAttempt.current = null;
+    }
+  }, [scope]);
+
+  const changeScope = useCallback((nextScope: Scope) => {
+    startSearch(query, nextScope);
+  }, [query, startSearch]);
 
   // Opening Search from the ••• menu means "I want to type": focus the field.
   useFocusEffect(useCallback(() => {
@@ -123,12 +175,45 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
     const seq = ++localSeq.current;
     if (!q) { setLocal([]); return; }
+    const attempt = localAttempt.current;
     const t = setTimeout(async () => {
-      const found = await searchSongs(q).catch(() => [] as Song[]);
-      if (seq === localSeq.current) setLocal(found);
+      androidPerformance.record(attempt, 'search.dispatched');
+      const startedAt = androidPerformance.trace.enabled ? performance.now() : 0;
+      let failed = false;
+      const found = await searchSongs(q).catch(() => {
+        failed = true;
+        return [] as Song[];
+      });
+      if (attempt) {
+        androidPerformance.record(attempt, 'catalog.completed', {
+          resultCount: found.length,
+          ...(androidPerformance.trace.enabled ? { durationMs: Math.max(0, performance.now() - startedAt) } : {}),
+        });
+      }
+      if (seq === localSeq.current) {
+        if (failed) {
+          androidPerformance.finish(attempt, 'search-failure');
+          localResultsAttempt.current = null;
+        } else {
+          localResultsAttempt.current = attempt;
+        }
+        setLocal(found);
+      }
     }, LOCAL_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [q, searchSongs]);
+
+  useEffect(() => {
+    const attempt = localResultsAttempt.current;
+    if (!androidPerformance.trace.enabled || !q || !attempt || localCommittedAttempt.current === attempt) return;
+    if (!androidPerformance.record(attempt, 'results.committed', { resultCount: local.length })) return;
+    localCommittedAttempt.current = attempt;
+    const frame = requestAnimationFrame(() => {
+      if (!androidPerformance.record(attempt, 'results.presented', { resultCount: local.length })) return;
+      if (local.length === 0) androidPerformance.finish(attempt, 'empty', { resultCount: 0 });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [local, q]);
 
   // ── Online: the catalog, on every keystroke ────────────────────────────
   // The longest prefix already answered shows at once, narrowed; the live answer replaces it.
@@ -139,19 +224,36 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     if (!q) { setOnline(null); setArtists([]); return; }
     // Scoped to the phone: keep the last catalog answer, don't fetch.
     if (scope === 'On this phone') return;
+    const attempt = onlineAttempt.current;
     const known = onlineAnswers.instant(q, songText);
     if (known) setOnline([...known.items]);
-    if (known?.exact) return;
+    if (known?.exact) {
+      if (attempt && androidPerformance.record(attempt, 'catalog.completed', { durationMs: 0, resultCount: known.items.length, cache: 'warm' })) {
+        onlineResultsAttempt.current = attempt;
+      }
+      return;
+    }
     setOnlineBusy(true);
     const controller = new AbortController();
     const t = setTimeout(() => {
-      searchMusic(q, undefined, undefined, { signal: controller.signal, relevance: true }).catch(() => [] as UnifiedSong[]).then(found => {
+      androidPerformance.record(attempt, 'search.dispatched');
+      const startedAt = androidPerformance.trace.enabled ? performance.now() : 0;
+      const elapsed = () => (androidPerformance.trace.enabled ? { durationMs: Math.max(0, performance.now() - startedAt) } : {});
+      let failed = false;
+      searchMusic(q, undefined, undefined, { signal: controller.signal, relevance: true }).catch(() => {
+        failed = true;
+        return [] as UnifiedSong[];
+      }).then(found => {
+        androidPerformance.record(attempt, 'catalog.completed', { resultCount: found.length, ...elapsed() });
         if (seq !== onlineSeq.current) return; // a newer query won
         if (found.length > 0) onlineAnswers.set(q, found);
+        onlineSearchFailed.current = failed;
+        onlineResultsAttempt.current = attempt;
         setOnline(found);
         setOnlineBusy(false);
       });
       YTMusicClient.searchArtists(q).catch(() => [] as YTArtistResult[]).then(people => {
+        androidPerformance.record(attempt, 'artists.completed', { resultCount: people.length, ...elapsed() });
         if (seq === onlineSeq.current) setArtists(people.slice(0, 8));
       });
     }, TYPEAHEAD_DEBOUNCE_MS);
@@ -174,6 +276,20 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     return online.filter(s => !have.has(`${norm(s.title)}|${norm(s.artist)}`));
   }, [online, local]);
 
+  useEffect(() => {
+    const attempt = onlineResultsAttempt.current;
+    if (!androidPerformance.trace.enabled || !q || !online || !attempt || onlineCommittedAttempt.current === attempt) return;
+    if (!androidPerformance.record(attempt, 'results.committed', { resultCount: onlineFresh.length })) return;
+    onlineCommittedAttempt.current = attempt;
+    const frame = requestAnimationFrame(() => {
+      if (!androidPerformance.record(attempt, 'results.presented', { resultCount: onlineFresh.length })) return;
+      if (onlineFresh.length === 0) {
+        androidPerformance.finish(attempt, onlineSearchFailed.current ? 'search-failure' : 'empty', { resultCount: 0 });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [online, onlineFresh, q]);
+
   // ── Actions ────────────────────────────────────────────────────────────
   const commit = useCallback(() => { if (q) remember(q); }, [q, remember]);
 
@@ -185,10 +301,18 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     const player = usePlayerStore.getState();
     const alreadyOn = player.currentSongId === song.id;
     if (!alreadyOn) {
+      const attempt = localResultsAttempt.current;
+      const observingPlayback = androidPerformance.selectPlayback('local', attempt, song.id);
+      if (observingPlayback) androidPerformance.playbackCommanded(attempt);
       // The whole library is the queue, so next/auto-next keep going.
       const libIndex = librarySongs.findIndex(s => s.id === song.id);
       if (libIndex !== -1) player.setPlaylistQueue('library', librarySongs, libIndex);
       else player.setPlaylistQueue('search', list, index);
+      if (observingPlayback) {
+        const currentId = usePlayerStore.getState().currentSongId;
+        if (currentId === player.currentSongId) androidPerformance.finish(attempt, 'remote-routed');
+        else if (currentId !== song.id) androidPerformance.finish(attempt, 'aborted');
+      }
       // Online, what follows becomes this song's radio; offline the library carries on.
       if (useSettingsStore.getState().autoQueueRefill ?? true) StreamService.startRadio(song).catch(() => {});
     }
@@ -199,7 +323,18 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     Haptics.selectionAsync().catch(() => {});
     commit();
     Keyboard.dismiss();
-    StreamService.playFromSearch(list[index]);
+    const song = list[index];
+    const playerBefore = usePlayerStore.getState();
+    const selectedId = streamIdFor(song);
+    const attempt = playerBefore.currentSongId === selectedId ? null : onlineResultsAttempt.current;
+    const observingPlayback = androidPerformance.selectPlayback('online', attempt, selectedId);
+    if (observingPlayback) androidPerformance.playbackCommanded(attempt);
+    StreamService.playFromSearch(song);
+    if (observingPlayback) {
+      const currentId = usePlayerStore.getState().currentSongId;
+      if (currentId === playerBefore.currentSongId) androidPerformance.finish(attempt, 'remote-routed');
+      else if (currentId !== selectedId) androidPerformance.finish(attempt, 'aborted');
+    }
   }, [commit]);
 
   const save = useCallback((song: UnifiedSong) => {
@@ -207,6 +342,27 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     addToDownloads([song]);
     setToast(`Saving “${song.title}” to Downloads`);
   }, [addToDownloads]);
+
+  const showTraceActions = useCallback(() => {
+    const count = androidPerformance.trace.exportRecords().length;
+    Alert.alert('Local performance trace', `${count} bounded records in memory`, [
+      {
+        text: 'Clear',
+        onPress: () => {
+          androidPerformance.clearSnapshot();
+          setToast('Local performance trace cleared');
+        },
+      },
+      {
+        text: 'Dump to device log',
+        onPress: () => {
+          const written = androidPerformance.dumpSnapshotToLog();
+          setToast(`Emitted ${written} trace records to local Android logcat`);
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, []);
 
   const queueNext = useCallback((song: UnifiedSong) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -222,16 +378,15 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
 
   const searchFor = useCallback((text: string, nextScope: Scope = 'All') => {
     Haptics.selectionAsync().catch(() => {});
-    setQuery(text);
-    setScope(nextScope);
+    startSearch(text, nextScope);
     remember(text);
     Keyboard.dismiss();
-  }, [remember]);
+  }, [remember, startSearch]);
 
   const clearField = useCallback(() => {
-    setQuery('');
+    startSearch('', scope);
     inputRef.current?.focus();
-  }, []);
+  }, [scope, startSearch]);
 
   const localTrack = (s: Song): TrackItem => ({
     key: s.id, title: s.title, artist: s.artist, artwork: s.coverImageUri, isCurrent: currentSongId === s.id,
@@ -326,7 +481,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
               title="On this phone"
               subtitle={local.length ? `${local.length} ${local.length === 1 ? 'song' : 'songs'} · plays offline` : undefined}
               action={scope === 'All' && local.length > PREVIEW ? 'See all' : undefined}
-              onAction={() => setScope('On this phone')}
+              onAction={() => changeScope('On this phone')}
             />
             {local.length === 0 ? (
               <Text style={styles.empty}>
@@ -371,7 +526,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
               title="Online"
               subtitle={onlineBusy ? 'Searching the catalog…' : online ? `${onlineFresh.length} to stream` : undefined}
               action={scope === 'All' && onlineFresh.length > PREVIEW * 2 ? 'See all' : undefined}
-              onAction={() => setScope('Online')}
+              onAction={() => changeScope('Online')}
             />
             {onlineBusy && onlineFresh.length === 0 ? (
               <ActivityIndicator color={Signal.wave} style={styles.spinner} />
@@ -405,7 +560,15 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
         contentContainerStyle={{ paddingTop: insets.top + Space.xs, paddingBottom: bottomClearance }}
       >
         <View style={styles.header}>
-          <InfoTitleRow><Text style={styles.title} accessibilityRole="header">Search</Text><InfoTour label="About Search" steps={SEARCH_TOUR} scene={searchScene} /></InfoTitleRow>
+          <InfoTitleRow>
+            <Text style={styles.title} accessibilityRole="header">Search</Text>
+            <InfoTour label="About Search" steps={SEARCH_TOUR} scene={searchScene} />
+            {androidPerformance.trace.enabled ? (
+              <Pressable onPress={showTraceActions} accessibilityRole="button" accessibilityLabel="Local performance trace" style={styles.traceButton}>
+                <Text style={styles.traceButtonLabel}>Trace</Text>
+              </Pressable>
+            ) : null}
+          </InfoTitleRow>
         </View>
 
         <View style={styles.search}>
@@ -413,7 +576,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
           <TextInput
             ref={inputRef}
             value={query}
-            onChangeText={setQuery}
+            onChangeText={text => startSearch(text)}
             onSubmitEditing={commit}
             placeholder="Songs, artists, playlists"
             placeholderTextColor={Signal.inkFaint}
@@ -431,7 +594,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
 
         {q ? (
           <View style={styles.chips}>
-            <MoodChips moods={SCOPES} selected={scope} onSelect={s => setScope((s as Scope | null) ?? 'All')} />
+            <MoodChips moods={SCOPES} selected={scope} onSelect={s => changeScope((s as Scope | null) ?? 'All')} />
           </View>
         ) : null}
 
@@ -461,6 +624,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bg },
   header: { height: 52, justifyContent: 'center', paddingHorizontal: GUTTER },
   title: { fontSize: 28, fontWeight: '700', color: Signal.ink },
+  traceButton: { paddingHorizontal: Space.xs, paddingVertical: Space.xs },
+  traceButtonLabel: { color: Signal.inkMuted, fontSize: 12, fontWeight: '600' },
   search: {
     flexDirection: 'row',
     alignItems: 'center',

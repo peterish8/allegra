@@ -7,6 +7,7 @@ import { usePositionStore } from '../store/positionStore';
 import { shouldPreservePlayingStateDuringSeek, shouldAdoptNativePlayingState } from './playerStatusGuard';
 import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
+import { androidPerformance } from '../services/performanceTrace';
 import { usePlaybackModesStore } from '../store/playbackModesStore';
 import { PlaybackLoss, recoverPlayback } from '../playback/recovery';
 import { forgetEngineQueue, nativeQueue, notifyQueueLow } from '../playback/nativeQueue';
@@ -101,6 +102,13 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const { position, duration, isPlaying, playWhenReady, suppressed } = event;
       const store = usePlayerStore.getState();
 
+      if (androidPerformance.trace.enabled) {
+        androidPerformance.observeNativePlayback(
+          { position, isPlaying, playWhenReady, isBuffering: event.isBuffering, suppressed },
+          store.currentSongId,
+        );
+      }
+
       if (!isSeeking.value) {
         positionSV.value = position;
       }
@@ -149,6 +157,9 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // The status already says paused; pick the song up where it stopped.
     const errorSub = NativeAudioPlayer.addListener('onPlaybackError', (event: { reason?: PlaybackLoss; position?: number }) => {
       if (!event?.reason) return;
+      if (androidPerformance.trace.enabled) {
+        androidPerformance.playbackFailed(usePlayerStore.getState().currentSongId);
+      }
       // The service is gone and its queue with it: the next load hands the engine the screen's queue again.
       if (event.reason === 'released') forgetEngineQueue();
       recoverPlayback(event.reason, event.position).catch(() => {});
