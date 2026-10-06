@@ -1,7 +1,7 @@
 import { FileArchive, FileSpreadsheet, LogIn, Search, Upload } from 'lucide-react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
-import { useCallback, useEffect, useId, useReducer, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 
 import { creditedArtists, identityKey } from '@shared/identity';
 import { playlistIdentity } from '@shared/importParse';
@@ -16,7 +16,9 @@ import { importReducer, INITIAL_IMPORT, selectedTracks, type ImportState, type M
 import { ImportPlanError, planImportOps, saveImportResumable } from '@shared/importPlan';
 import { SpotifySyncPanel } from './SpotifySyncPanel';
 import { paths } from '../../lib/routes';
-import { itemVariants, LIVE_SUMMARY_MS, pageVariants } from '../../motion';
+import { useThrottled } from '../../hooks/useThrottled';
+import { latestFoundText } from '../../lib/importCrate';
+import { itemVariants, LIVE_SUMMARY_MS, pageVariants, swapVariants, TICKER_PER_SECOND } from '../../motion';
 import { ProgressBar, TactileButton } from '../ui';
 import { InfoTour } from '../InfoTour';
 import { IMPORT_TOUR } from '../pageTours';
@@ -358,7 +360,7 @@ function Step({ state, dispatch, onFile, onMatch, onCancel, onSave, checkpoint, 
     }
 
     case 'matching':
-      return <Matching done={state.done} total={state.total} onCancel={onCancel} />;
+      return <Matching done={state.done} total={state.total} results={state.results} onCancel={onCancel} />;
 
     case 'review':
       return <Review state={state} dispatch={dispatch} onSave={onSave} planError={planError} />;
@@ -405,7 +407,10 @@ function Step({ state, dispatch, onFile, onMatch, onCancel, onSave, checkpoint, 
   }
 }
 
-function Matching({ done, total, onCancel }: { readonly done: number; readonly total: number; readonly onCancel: () => void }) {
+function Matching({ done, total, results, onCancel }: { readonly done: number; readonly total: number; readonly results: ReadonlyMap<string, MatchedTrack>; readonly onCancel: () => void }) {
+  const reduced = useReducedMotion() ?? false;
+  // Show the work: the latest real match, at most TICKER_PER_SECOND. Visual only; the summary below speaks.
+  const found = useThrottled(useMemo(() => latestFoundText(results.values()), [results]), 1000 / TICKER_PER_SECOND);
   // Screen readers hear progress at most every 2 s, not on every batch.
   const [spoken, setSpoken] = useState(`Matched 0 of ${total}`);
   const last = useRef(0);
@@ -420,6 +425,11 @@ function Matching({ done, total, onCancel }: { readonly done: number; readonly t
     <div className="import-panel">
       <p className="import-lead" aria-hidden="true">Matched {done} of {total}</p>
       <ProgressBar value={done} max={total} label="Finding your songs" quiet />
+      <p className="import-ticker" aria-hidden="true">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {found ? <motion.span key={found} variants={reduced ? undefined : swapVariants} initial={reduced ? { opacity: 0 } : 'hidden'} animate={reduced ? { opacity: 1 } : 'visible'} exit={reduced ? { opacity: 0 } : 'exit'}>{found}</motion.span> : null}
+        </AnimatePresence>
+      </p>
       <p className="sr-only" aria-live="polite">{spoken}</p>
       <p className="import-note">Your progress is saved on this device, so you can close the tab and pick the same file later.</p>
       <div className="import-actions">
