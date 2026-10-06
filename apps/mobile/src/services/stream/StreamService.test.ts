@@ -16,7 +16,7 @@ jest.mock('../NativeAudioPlayer', () => ({
 }));
 const mockRecordPlay = jest.fn();
 jest.mock('../../store/streamHistoryStore', () => ({
-  useStreamHistoryStore: { getState: () => ({ recordPlay: mockRecordPlay }) },
+  useStreamHistoryStore: { getState: () => ({ recordPlay: mockRecordPlay, plays: [] }) },
 }));
 const mockAddToQueue = jest.fn();
 jest.mock('../../store/downloadQueueStore', () => ({
@@ -177,5 +177,16 @@ describe('shouldRefillQueue (Echo’s auto load more)', () => {
   it('keeps a queue handed over by another device going, when the listener has it on', () => {
     expect(shouldRefillQueue({ ...base, playlistId: 'connect' })).toBe(true);
     expect(shouldRefillQueue({ ...base, playlistId: 'connect', enabled: false })).toBe(false);
+  });
+});
+
+describe('StreamService.playFromSearch', () => {
+  it('follows a search hit with its radio even when the song change asks first', async () => {
+    const by = (id: string, artist: string): UnifiedSong => ({ ...track(id), artist });
+    mockGetRecommendations.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve([by('b', 'B'), by('c', 'C'), by('d', 'D')]), 5)));
+    StreamService.playFromSearch(track('a'));
+    await StreamService.onSongChanged('stream:saavn:a');
+    for (let i = 0; i < 20; i += 1) await new Promise(resolve => setTimeout(resolve, 0));
+    expect(usePlayerStore.getState().playlistQueue?.map(s => s.id)).toEqual(['stream:saavn:a', 'stream:saavn:b', 'stream:saavn:c', 'stream:saavn:d']);
   });
 });

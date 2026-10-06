@@ -145,7 +145,7 @@ export const StreamService = {
     radio = session;
     radioHeard.clear();
     radioLoad = gather(session, song);
-    fire(radioLoad.then(() => extendRadio(toStreamSong(song).id, true)));
+    fire(settled(radioLoad).then(() => extendRadio(toStreamSong(song).id)));
   },
 
   /** How a song ended (the listen tracker): the radio learns and re-ranks what follows. */
@@ -276,6 +276,10 @@ function warmNextLyrics(): void {
 
 const RADIO_THRESHOLD = 2; // extend when this few songs remain after the current one
 let radioInFlight = false;
+/** A top-up asked for while one was running: run once it finishes, so a search hit's radio is never dropped. */
+let radioAgain: { songId: string; force: boolean } | null = null;
+/** Longest wait for the radio's first candidates before queueing what is there (a hung source never blocks it). */
+const RADIO_WAIT_MS = 10_000;
 
 /** A shared room's queue belongs to its host: never topped up here. */
 const NOT_OURS = new Set(['listen-together', 'luv-link-legacy', 'luv-link']);
@@ -319,7 +323,11 @@ async function extendRadio(songId: string, force = false): Promise<void> {
   const state = usePlayerStore.getState();
   if (state.currentPlaylistId === 'luv-link') return;
   const queue = state.playlistQueue;
-  if (!queue || radioInFlight) return;
+  if (!queue) return;
+  if (radioInFlight) {
+    radioAgain = { songId, force: force || (radioAgain?.force ?? false) };
+    return;
+  }
   const idx = queue.findIndex(s => s.id === songId);
   if (idx < 0) return;
   const refill = shouldRefillQueue({
@@ -358,6 +366,9 @@ async function extendRadio(songId: string, force = false): Promise<void> {
     // No suggestions this time: the queue ends (or repeats) as it would have.
   } finally {
     radioInFlight = false;
+    const again = radioAgain;
+    radioAgain = null;
+    if (again) fire(extendRadio(again.songId, again.force));
   }
 }
 
@@ -392,14 +403,18 @@ function gather(session: RadioSession<UnifiedSong>, from: UnifiedSong): Promise<
   });
 }
 
+/** `load`, or RADIO_WAIT_MS, whichever comes first. */
+const settled = (load: Promise<void>): Promise<void> =>
+  Promise.race([load, new Promise<void>(resolve => setTimeout(resolve, RADIO_WAIT_MS))]);
+
 /** What follows `seed`: ranked by the search radio when one runs, else the automix as before. */
 async function radioPicks(seed: UnifiedSong, queue: readonly Song[]): Promise<UnifiedSong[]> {
   const session = activeRadio();
   if (!session) return recommendFor(seed);
-  await radioLoad;
+  await settled(radioLoad);
   if (session.needsMore) {
     radioLoad = gather(session, session.refillSeed);
-    await radioLoad;
+    await settled(radioLoad);
   }
   const queued = queue.flatMap(s => catalog.get(s.id)?.id ?? []);
   return session.next(RADIO_UPCOMING, { exclude: queued }).map(pick => pick.song);
