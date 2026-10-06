@@ -160,6 +160,28 @@ export function EmptyState({ title, copy, action }: { readonly title: string; re
   );
 }
 
+/**
+ * A determinate progress track. The fill is scaled, never resized, so it stays on the compositor;
+ * `label` names it for assistive tech, `quiet` hides it when a nearby live region already speaks.
+ */
+export function ProgressBar({ value, max, label, quiet = false, className = '' }: { readonly value: number; readonly max: number; readonly label: string; readonly quiet?: boolean; readonly className?: string }) {
+  const total = Math.max(1, max);
+  const clamped = Math.min(total, Math.max(0, value));
+  return (
+    <span
+      className={`progress-bar ${className}`}
+      role={quiet ? undefined : 'progressbar'}
+      aria-hidden={quiet ? true : undefined}
+      aria-label={quiet ? undefined : label}
+      aria-valuemin={quiet ? undefined : 0}
+      aria-valuemax={quiet ? undefined : total}
+      aria-valuenow={quiet ? undefined : clamped}
+    >
+      <span style={{ ['--p' as string]: clamped / total }} />
+    </span>
+  );
+}
+
 export function OfflineToast({ visible }: { readonly visible: boolean }) {
   return visible ? <div className="offline-toast" role="status">You are offline. Playback stays ready for when you return.</div> : null;
 }

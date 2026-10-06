@@ -7,7 +7,11 @@ export const motionTokens = {
     base: 0.24,
     panel: 0.24,
     slow: 0.4,
-    cinematic: 0.7
+    cinematic: 0.7,
+    /** A cover flying from its row into the transfer crate. */
+    flight: 0.28,
+    /** A finished sleeve dealt out of the crate. */
+    deal: 0.32
   },
   ease: {
     standard: [0.4, 0, 0.2, 1] as const,
@@ -116,3 +120,21 @@ export const swapVariants: Variants = {
 
 /** A tapped control confirms within this window, independent of any network call. */
 export const ACK_MS = 120;
+
+/**
+ * The Blend reveal, played in the hero itself: orbs start far apart and spring to the distance
+ * the match gives them; the number starts counting once the overlap has begun to form.
+ */
+export const revealTokens = {
+  /** How far apart (in orb widths, each side) the orbs begin. */
+  farReach: 0.95,
+  /** Seconds before the orbs start travelling. */
+  travelDelay: 0.08,
+  /** Seconds before the match number starts counting. */
+  numberDelay: 0.4
+} as const;
+
+/** The operational-transparency ticker: at most this many visual updates a second. */
+export const TICKER_PER_SECOND = 4;
+/** Screen readers hear a progress summary at most this often. */
+export const LIVE_SUMMARY_MS = 2000;
