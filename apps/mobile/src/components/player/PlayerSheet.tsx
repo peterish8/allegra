@@ -1,6 +1,6 @@
 /**
  * Sheets that rise over Now Playing: the sleep timer, the ••• menu, details,
- * Listen together. Frosted glass, springs up from the bottom, tap outside or
+ * LuvLink. Frosted glass, springs up from the bottom, tap outside or
  * pick something to close. (The queue is Up next, `UpNextPanel`.)
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -68,7 +68,7 @@ interface PlayerSheetProps {
   visible: boolean;
   /** Leave out for a sheet that starts straight with its content (the ••• menu). */
   title?: string;
-  /** Room for a long list (the menu, Listen together): up to 88% of the screen. */
+  /** Room for a long list (the menu, LuvLink): up to 88% of the screen. */
   tall?: boolean;
   onClose: () => void;
   children: React.ReactNode;

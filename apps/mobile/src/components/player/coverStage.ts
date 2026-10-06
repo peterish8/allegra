@@ -43,7 +43,7 @@ export const playingFromLabel = (
     case 'search':
       return 'Search';
     case 'listen-together':
-      return 'Listen together';
+      return 'LuvLink';
     case 'forgotten-favorites':
       return 'Forgotten favourites';
     default:

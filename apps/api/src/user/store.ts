@@ -83,6 +83,7 @@ export interface AccountExtras {
   readonly complete: boolean;
   readonly shares: readonly { readonly code: string; readonly libraryId: string; readonly createdAt: string }[];
   readonly devices: readonly { readonly name: string; readonly kind: string; readonly appVersion: string; readonly createdAt: number }[];
+  readonly luvLinks: readonly { readonly roomId: string; readonly role: 'host' | 'member'; readonly joinedAtMs: number }[];
 }
 
 /** A playlist someone shared. It points at the owner's playlist, so it stays live. */
@@ -214,7 +215,7 @@ export class MemoryUserStore implements UserStore {
     const shares = [...this.shares.values()]
       .filter((share) => share.ownerId === userId)
       .map((share) => ({ code: share.code, libraryId: share.libraryId, createdAt: share.createdAt }));
-    return { shares, devices: [], complete: true };
+    return { shares, devices: [], luvLinks: [], complete: true };
   }
 
   public async erase(userId: string): Promise<void> {

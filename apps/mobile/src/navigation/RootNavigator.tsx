@@ -15,10 +15,11 @@ import { navTheme, SCREEN_BG, stackContentStyle } from './theme';
 // Import navigators and screens
 import TabNavigator from './TabNavigator';
 import NowPlayingScreen from '../screens/NowPlayingScreen';
+import LuvLinkScreen from '../screens/LuvLinkScreen';
 import LyricsEditorScreen from '../screens/LyricsEditorScreen';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { MoreMenuHost } from '../components/MoreMenu';
-import { ListenTogetherHost } from '../components/listenTogether/ListenTogetherHost';
+import { LuvLinkHost } from '../components/luvLink/LuvLinkHost';
 import { BackgroundDownloader } from '../components/BackgroundDownloader';
 import { VoiceSearchCard } from '../components/VoiceSearchCard';
 import { PerformanceHUD } from '../components/PerformanceHUD';
@@ -84,6 +85,7 @@ export const RootNavigator: React.FC = () => {
               contentStyle: { backgroundColor: 'transparent' },
             }}
           />
+          <Stack.Screen name="LuvLink" component={LuvLinkScreen} />
           <Stack.Screen
             name="EditLyrics"
             component={LyricsEditorScreen}
@@ -111,8 +113,8 @@ export const RootNavigator: React.FC = () => {
         {showMiniPlayer && <ConnectMiniPlayer />}
         {/* After the pill, so the ••• menu opens over it. */}
         <MoreMenuHost />
-        {/* Listen together: runs the room sync, shows join requests anywhere. */}
-        <ListenTogetherHost />
+        {/* LuvLink: runs the room sync, shows join requests anywhere. */}
+        <LuvLinkHost />
         <ConnectDeviceSheet />
         {/* Where a pick went: "<device> is offline, so this plays here", and "Play on this phone?". */}
         <ConnectNoticeHost />

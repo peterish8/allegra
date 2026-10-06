@@ -29,6 +29,25 @@ let pausedLoadSongId: string | null = null;
 
 type PlaylistSelectionRouter = (input: { readonly playlistId: string; readonly songs: readonly Song[]; readonly startIndex: number }) => boolean;
 let playlistSelectionRouter: PlaylistSelectionRouter | null = null;
+type OwnedRoomRouter = {
+  select: PlaylistSelectionRouter;
+  playback: (playing: boolean) => boolean;
+  next: (automatic: boolean) => boolean;
+  previous: () => boolean;
+};
+let ownedRoomRouter: OwnedRoomRouter | null = null;
+let ownedRoomRoutingDisabled = 0;
+
+export function setOwnedRoomRouter(router: OwnedRoomRouter | null): () => void {
+  ownedRoomRouter = router;
+  return () => { if (ownedRoomRouter === router) ownedRoomRouter = null; };
+}
+
+export function withoutOwnedRoomRouting<T>(action: () => T): T {
+  ownedRoomRoutingDisabled += 1;
+  try { return action(); }
+  finally { ownedRoomRoutingDisabled -= 1; }
+}
 
 /**
  * Lets Connect take a song the listener picks before this phone plays it. The router answers true
@@ -362,6 +381,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setIsPlaying: (playing: boolean) => set({ isPlaying: playing }),
 
   requestPlayback: (playing: boolean) => {
+    if (ownedRoomRoutingDisabled === 0 && ownedRoomRouter?.playback(playing)) return;
     if (playing) pausedLoadSongId = null;
     if (nativeOwnsPlaybackState) {
       // Fire and let the player report back. playWhenReady flips synchronously
@@ -545,6 +565,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setPlaylistQueue: (playlistId: string, songs: Song[], startIndex: number, autoplay = true, options) => {
     if (autoplay && !options?.here && playlistId !== 'connect' && playlistId !== 'listen-together') {
       try {
+        if (ownedRoomRouter?.select({ playlistId, songs, startIndex })) return;
+      } catch { return; }
+      try {
         if (playlistSelectionRouter?.({ playlistId, songs, startIndex })) return;
       } catch { /* Keep local playback available if Connect routing cannot build a command. */ }
     }
@@ -634,6 +657,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const state = get();
     const queue = state.playlistQueue;
     if (!queue || index < 0 || index >= queue.length || index === state.currentQueueIndex) return;
+    if (ownedRoomRoutingDisabled === 0 && ownedRoomRouter?.select({ playlistId: state.currentPlaylistId ?? 'queue', songs: queue, startIndex: index })) return;
     if (!usesNativeQueue()) {
       state.setPlaylistQueue(state.currentPlaylistId ?? 'queue', queue, index);
       return;
@@ -648,6 +672,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   nextInPlaylist: async (automatic = false) => {
+    if (ownedRoomRoutingDisabled === 0 && ownedRoomRouter?.next(automatic)) return;
     const state = get();
 
     // Android: the engine owns what plays next. The screen moves at once (it knows the order: its mirror is
@@ -718,6 +743,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   previousInPlaylist: () => {
+    if (ownedRoomRoutingDisabled === 0 && ownedRoomRouter?.previous()) return;
     const state = get();
 
     // Android: Echo's rule, applied by the engine - past 3 s (or with nothing before it) the song starts over,

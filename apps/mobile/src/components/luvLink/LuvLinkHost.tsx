@@ -1,5 +1,5 @@
 /**
- * Mounted once at the root: runs the Listen Together client and player sync
+ * Mounted once at the root: runs the LuvLink client and player sync
  * for the whole app, and surfaces what can't wait for the room sheet — a
  * join request (Let in / Decline, like Echo's notification) and room news.
  */
@@ -11,24 +11,40 @@ import Frosted from '../allegra/Frosted';
 import { Toast } from '../Toast';
 import { Signal } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
-import { useListenTogetherStore } from '../../store/listenTogetherStore';
-import { approveJoin, rejectJoin, startListenTogetherClient } from '../../services/listenTogether/client';
-import { startListenTogetherSync } from '../../services/listenTogether/sync';
+import { useLuvLinkStore } from '../../store/luvLinkStore';
+import { useAccount } from '../../services/account/AccountProvider';
+import { onBeforeSignOut } from '../../services/account/signOutHooks';
+import { leaveOwnedLuvLink, startOwnedLuvLinkClient } from '../../services/luvLink/client';
+import { startOwnedLuvLinkSync } from '../../services/luvLink/sync';
+import { approveJoin, rejectJoin, startLuvLinkClient } from '../../services/luvLink/legacy/client';
+import { startLuvLinkSync } from '../../services/luvLink/legacy/sync';
 
-export const ListenTogetherHost: React.FC = () => {
+export const LuvLinkHost: React.FC = () => {
+  const account = useAccount();
   const insets = useSafeAreaInsets();
-  const request = useListenTogetherStore(s => (s.role === 'host' ? s.joinRequests[0] : undefined));
-  const notice = useListenTogetherStore(s => s.notice);
+  const request = useLuvLinkStore(s => (s.role === 'host' ? s.joinRequests[0] : undefined));
+  const notice = useLuvLinkStore(s => s.notice);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
 
   useEffect(() => {
-    const stopSync = startListenTogetherSync();
-    const stopClient = startListenTogetherClient();
+    const stopSync = startLuvLinkSync();
+    const stopClient = startLuvLinkClient();
     return () => {
       stopSync();
       stopClient();
     };
   }, []);
+
+  useEffect(() => {
+    const userId = account.signedIn ? account.profile?.userId : null;
+    if (!userId) return;
+    const stop = startOwnedLuvLinkClient(userId);
+    const stopSync = startOwnedLuvLinkSync();
+    const unregisterSignOut = onBeforeSignOut(async () => {
+      if (useLuvLinkStore.getState().ownedRoomId) await leaveOwnedLuvLink();
+    });
+    return () => { unregisterSignOut(); stopSync(); stop(); };
+  }, [account.signedIn, account.profile?.userId]);
 
   useEffect(() => {
     if (notice) setToast(notice);
@@ -84,4 +100,4 @@ const styles = StyleSheet.create({
   btnPrimaryText: { color: Signal.waveInk },
 });
 
-export default ListenTogetherHost;
+export default LuvLinkHost;

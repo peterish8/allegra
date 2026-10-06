@@ -3,6 +3,8 @@ import { Alert } from 'react-native';
 import { usePlayer } from '../contexts/PlayerContext';
 import { diag } from '../utils/diag';
 import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeResumePosition, usesNativeQueue } from '../store/playerStore';
+import { handleOwnedLuvLinkNext, handleOwnedLuvLinkPrevious, handleOwnedLuvLinkSeek, handleOwnedLuvLinkToggle, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
+import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
 import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
 import { useSongsStore } from '../store/songsStore';
 import { useArtHistoryStore } from '../store/artHistoryStore';
@@ -160,22 +162,29 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
   // Playback controls (the button's own press animation lives in NowPlayingControls)
   const togglePlay = () => {
     if (!player) return;
-    requestPlayback(!usePlayerStore.getState().isPlaying);
+    void handleOwnedLuvLinkToggle().then(handled => {
+      if (!handled) requestPlayback(!usePlayerStore.getState().isPlaying);
+    });
   };
 
   const skipForward = async () => {
+    if (await handleOwnedLuvLinkNext()) return;
     await usePlayerStore.getState().nextInPlaylist();
   };
 
   const skipBackward = async () => {
+    if (await handleOwnedLuvLinkPrevious()) return;
     if (!player) return;
     // On Android the engine applies the rule (past 3 s a song starts over); the store's previous handles both.
     if (!usesNativeQueue() && positionSV.value > 3) {
+      if (await handleOwnedLuvLinkSeek(0)) return;
       isSeeking.value = true;
       positionSV.value = 0;
       // seekTo pauses on iOS — restart-track must not silently stop playback.
       const wasPlaying = usePlayerStore.getState().isPlaying;
       await player.seekTo(0);
+      await notifyOwnedLuvLinkUserSeek(0);
+      notifyLuvLinkUserSeek(0);
       if (wasPlaying) requestPlayback(true);
       isSeeking.value = false;
     } else {
@@ -185,8 +194,11 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
 
   const handleScrub = useCallback(async (seconds: number) => {
     if (player) {
+      if (await handleOwnedLuvLinkSeek(seconds)) return;
       const wasPlaying = usePlayerStore.getState().isPlaying;
       await player.seekTo(seconds);
+      await notifyOwnedLuvLinkUserSeek(seconds);
+      notifyLuvLinkUserSeek(seconds);
       // requestPlayback (not player.play) so the store stays in sync and the
       // post-seek status blip is recognised as stale.
       if (wasPlaying) requestPlayback(true);
@@ -196,10 +208,13 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
   // Stable: it is a prop of every lyric line, and a new one each render re-rendered them all.
   const handleLyricTap = useCallback(async (timestamp: number) => {
     if (!player) return;
+    if (await handleOwnedLuvLinkSeek(timestamp)) return;
     isSeeking.value = true;
     positionSV.value = timestamp;
     try {
       await player.seekTo(timestamp);
+      await notifyOwnedLuvLinkUserSeek(timestamp);
+      notifyLuvLinkUserSeek(timestamp);
       // Tapping a lyric always starts playback (existing behaviour), but it must go
       // through the store or the button shows "play" while audio is running.
       requestPlayback(true);

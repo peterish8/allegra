@@ -72,6 +72,7 @@ export function accountRouter(auth: AuthService, users: UserStore, tally: TasteT
         library,
         shares: extras.shares,
         devices: extras.devices,
+        luvLinks: extras.luvLinks,
         blends: blendRows.map((blend) => ({
           name: blend.name,
           joinedAt: new Date(blend.joinedAt).toISOString(),

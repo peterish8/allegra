@@ -22,6 +22,7 @@ import type { RelatedArtist } from './components/ArtistPage';
 import { LibraryPage } from './components/LibraryPage';
 import { ImportPage } from './components/import/ImportPage';
 import { BlendJoinPage } from './components/blend/BlendJoinPage';
+import { LuvLinkPage } from './components/luvLink/LuvLinkPage';
 import { BlendPage } from './components/blend/BlendPage';
 import { BlendsPage } from './components/blend/BlendsPage';
 import { DynamicAura } from './components/DynamicAura';
@@ -146,7 +147,7 @@ export default function App() {
   const [aiPicksProvider, setAiPicksProvider] = useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
-  const { view, artistName, playlistId, sharedCode, blendId, inviteCode } = useMemo(() => parseRoute(pathname), [pathname]);
+  const { view, artistName, playlistId, sharedCode, blendId, inviteCode, luvLinkRoomId } = useMemo(() => parseRoute(pathname), [pathname]);
   const [shared, setShared] = useState<SharedPlaylist | null>(null);
   const [sharedLoading, setSharedLoading] = useState(false);
   const [sharedError, setSharedError] = useState<string | null>(null);
@@ -235,6 +236,9 @@ export default function App() {
   const playhead: Playhead = remotePlayback ? remotePlayhead : audio.playhead;
   const playerDuration = remotePlayback ? (remoteSong?.duration ?? 0) : audio.duration;
   const playerIsPlaying = remotePlayback && connectView ? connectView.isPlaying : audio.isPlaying;
+  const stopLuvLinkOutput = useCallback(async () => {
+    if (!remotePlayback && audio.audioRef.current && !audio.audioRef.current.paused) await audio.requestPlayback(false);
+  }, [remotePlayback, audio.requestPlayback]);
   const playerIsBuffering = remotePlayback ? false : audio.isBuffering;
   const playerError = remotePlayback ? connectView?.lastError ?? null : audio.error;
   const playerVolume = remotePlayback && connectView ? connectView.volume : audio.volume;
@@ -1331,6 +1335,7 @@ export default function App() {
             <Link className={`nav-link ${view === 'liked' ? 'is-active' : ''}`} aria-current={view === 'liked' ? 'page' : undefined} href={paths.liked} title="Favorite songs"><HeartIcon size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Favorite songs</span></Link>
             <Link className="nav-link" href={paths.library} title="Playlists" onClick={(event) => openLibrarySection(event, 'library-playlists')}><ListMusic size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Playlists</span></Link>
             {flags.blend ? <Link className={`nav-link ${view === 'blends' || view === 'blend' ? 'is-active' : ''}`} aria-current={view === 'blends' ? 'page' : undefined} href={paths.blends} title="Blends"><Users size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Blends</span></Link> : null}
+            <Link className={`nav-link ${view === 'luvLink' ? 'is-active' : ''}`} aria-current={view === 'luvLink' ? 'page' : undefined} href={paths.luvLink} title="LuvLink"><Waves size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">LuvLink</span></Link>
           </nav>
           <div className="header-actions">
             <button type="button" className={`session-chip${accountResolving && !chipName ? ' is-pending' : ''}`} onClick={() => setAuthOpen(true)} aria-busy={accountResolving || undefined} aria-label={chipName ? 'Open your account' : accountResolving ? 'Checking your account' : 'Sign in or create an account'}>
@@ -1347,11 +1352,11 @@ export default function App() {
           </div>
       </header>
 
-      <main id="main-content" ref={mainRef} tabIndex={-1} aria-label={view === 'home' ? 'Home' : view === 'library' ? 'Your listening library' : view === 'album' ? 'Album' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Blend' : isLegalView(view) ? 'Policies' : 'Discover music'} className={`content-wrap ${view !== 'discover' ? 'inner-page-wrap' : ''} ${isDetailView ? 'is-detail' : ''} ${isCollectionView ? 'is-collection' : ''}`}>
+      <main id="main-content" ref={mainRef} tabIndex={-1} aria-label={view === 'luvLink' ? 'LuvLink' : view === 'home' ? 'Home' : view === 'library' ? 'Your listening library' : view === 'album' ? 'Album' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Blend' : isLegalView(view) ? 'Policies' : 'Discover music'} className={`content-wrap ${view !== 'discover' ? 'inner-page-wrap' : ''} ${isDetailView ? 'is-detail' : ''} ${isCollectionView ? 'is-collection' : ''}`}>
           <ImportChip hidden={view === 'import' || view === 'blends'} />
         <div className="panel-topbar" data-tone={topbarBright ? 'bright' : undefined}>
             {isDetailView || isCollectionView ? <button type="button" className="topbar-back" onClick={() => goBack(view === 'liked' || view === 'playlist' ? '#library' : view === 'shared' ? '#home' : '#discover')} aria-label="Back"><ArrowLeft size={17} aria-hidden="true" /><span>Back</span></button> : null}
-            <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' || view === 'import' || view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' ? 'Blends' : view === 'blend' ? 'Blend' : view === 'blendJoin' ? 'Join a Blend' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong>{view === 'discover' ? <InfoTour className="crumbs-info" label="About Browse" steps={BROWSE_TOUR} stage={browseScene} /> : null}</nav>
+            <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' || view === 'import' || view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'luvLink' ? 'LuvLink' : view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' ? 'Blends' : view === 'blend' ? 'Blend' : view === 'blendJoin' ? 'Join a Blend' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong>{view === 'discover' ? <InfoTour className="crumbs-info" label="About Browse" steps={BROWSE_TOUR} stage={browseScene} /> : null}</nav>
             <div className="mood-pills" role="group" aria-label="Quick picks"><span className="mood-pills-label" aria-hidden="true">Quick picks</span>{moodPrompts.map((prompt) => <button key={prompt} type="button" className="mood-pill" aria-pressed={query === prompt} onClick={() => { if (view !== 'discover') router.push(paths.discover); setQuery(query === prompt ? '' : prompt); }}><span>{prompt}</span></button>)}</div>
             <CommandPalette
               open={paletteOpen}
@@ -1430,6 +1435,21 @@ export default function App() {
           <BlendPage key={`${knownAccount?.userId ?? 'guest'}:${blendId}`} blendId={blendId} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlay={(song, queue) => void playSong(song, queue)} onLike={toggleLike} />
         ) : view === 'blendJoin' && inviteCode ? (
           <BlendJoinPage key={`${knownAccount?.userId ?? 'guest'}:${inviteCode}`} code={inviteCode} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} />
+        ) : view === 'luvLink' ? (
+          <LuvLinkPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} displayName={knownAccount ? accountDisplayName(knownAccount) : 'Listener'} userId={knownAccount?.userId ?? null} inviteCode={inviteCode} roomId={luvLinkRoomId} currentSong={playerSong ? snapshotForSong(playerSong) : null} currentSongKey={playerSong?.id ?? null} isPlaying={playerIsPlaying} positionSec={audio.audioRef.current?.currentTime ?? 0} audioElement={audio.audioRef.current} onSignIn={() => setAuthOpen(true)} onStopOutput={stopLuvLinkOutput} onApplyPlayback={async (anchor, positionSec) => {
+            if (remotePlayback) return false;
+            if (!anchor.song) { await audio.requestPlayback(false); return true; }
+            const currentRef = audio.currentSong ? snapshotForSong(audio.currentSong)?.ref : null;
+            if (currentRef !== anchor.song.ref) {
+              const match = await resolveSnapshotForPlayback(anchor.song).catch(() => null);
+              if (!match) return false;
+              await playSong(match, [match]);
+            }
+            await audio.seek(positionSec);
+            if (anchor.playing) await audio.requestPlayback(true);
+            else await audio.requestPlayback(false);
+            return !anchor.playing || audio.audioRef.current?.paused === false;
+          }} />
         ) : view === 'settings' ? (
           <SettingsPage
             account={account.profile && !accountResolving ? { isGuest: account.profile.isGuest, name: account.profile.displayName ?? null, email: account.profile.email ?? null } : null}

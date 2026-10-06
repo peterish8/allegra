@@ -279,7 +279,7 @@ const IosPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
     if (shouldAdvance) {
       endHandledForSongIdRef.current = activeSongId;
-      store.setIsPlaying(true);
+      if (store.currentPlaylistId !== 'luv-link') store.setIsPlaying(true);
       store.nextInPlaylist(true).catch(() => {});
       return;
     }

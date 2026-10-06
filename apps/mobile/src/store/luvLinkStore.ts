@@ -1,18 +1,19 @@
 /**
- * Listen Together state (Echo's ListenTogetherClient flows, as one store).
+ * LuvLink state (Echo's LuvLinkClient flows, as one store).
  * The client writes it; the player menu, the room sheet and the join-request
  * card read it. Persisted: the name, the session (for reconnecting after the
- * app restarts) and Echo's Listen together settings — auto-approve, blocked
+ * app restarts) and Echo's LuvLink settings — auto-approve, blocked
  * people, host volume sync, smart resync and the server.
  */
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { LuvLinkMemberSnapshot, LuvLinkPlaybackAnchor, LuvLinkQueueSnapshot, LuvLinkRoomSnapshot } from '@shared/luvLink';
 import type {
   JoinRequestPayload,
   RoomState,
   SuggestionReceivedPayload,
-} from '../services/listenTogether/protocol';
+} from '../services/luvLink/legacy/protocol';
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 export type RoomRole = 'none' | 'host' | 'guest';
@@ -25,7 +26,7 @@ export interface StoredSession {
   startedAt: number;
 }
 
-interface ListenTogetherState {
+interface LuvLinkState {
   connection: ConnectionState;
   role: RoomRole;
   userId: string | null;
@@ -40,6 +41,22 @@ interface ListenTogetherState {
   /** One-line news for a toast ("Room ABC123 created", "Maya joined"). */
   notice: { id: number; text: string } | null;
   rttMs: number | null;
+
+  // First-party Convex room state. Only the room id is persisted; invite codes are credentials
+  // and stay in memory after create/regenerate, while legacy Echo sessions keep their old key.
+  ownedRoomId: string | null;
+  ownedRoom: LuvLinkRoomSnapshot | null;
+  ownedMembers: LuvLinkMemberSnapshot[];
+  ownedPresence: string[];
+  ownedQueue: LuvLinkQueueSnapshot;
+  ownedPlayback: LuvLinkPlaybackAnchor | null;
+  ownedCode: string | null;
+  /** An invite opened by a URL, kept in memory until the user joins or dismisses it. */
+  pendingOwnedInviteCode: string | null;
+  ownedConnection: 'idle' | 'connecting' | 'connected' | 'error';
+  ownedUserId: string | null;
+  clockOffsetMs: number;
+  wallMinusMonotonicMs: number;
 
   // persisted
   username: string;
@@ -62,6 +79,7 @@ interface ListenTogetherState {
   setSmartResync: (on: boolean) => void;
   setServerUrl: (url: string) => void;
   announce: (text: string) => void;
+  setOwnedRoomId: (roomId: string | null) => void;
 }
 
 /** A usable room server address: ws:// or wss://, nothing else. */
@@ -69,7 +87,7 @@ export const isServerUrl = (url: string): boolean => /^wss?:\/\/[^\s/]+/i.test(u
 
 let noticeId = 0;
 
-export const useListenTogetherStore = create<ListenTogetherState>()(
+export const useLuvLinkStore = create<LuvLinkState>()(
   persist(
     set => ({
       connection: 'disconnected',
@@ -83,6 +101,19 @@ export const useListenTogetherStore = create<ListenTogetherState>()(
       inviteCode: null,
       notice: null,
       rttMs: null,
+
+      ownedRoomId: null,
+      ownedRoom: null,
+      ownedMembers: [],
+      ownedPresence: [],
+      ownedQueue: { revision: 0, entries: [] },
+      ownedPlayback: null,
+      ownedCode: null,
+      pendingOwnedInviteCode: null,
+      ownedConnection: 'idle',
+      ownedUserId: null,
+      clockOffsetMs: 0,
+      wallMinusMonotonicMs: 0,
 
       username: '',
       autoApprove: false,
@@ -104,6 +135,20 @@ export const useListenTogetherStore = create<ListenTogetherState>()(
       setSmartResync: on => set({ smartResync: on }),
       setServerUrl: url => set({ serverUrl: isServerUrl(url) ? url.trim() : '' }),
       announce: text => set({ notice: { id: ++noticeId, text } }),
+      setOwnedRoomId: ownedRoomId => set(ownedRoomId ? { ownedRoomId, ownedConnection: 'connecting' } : {
+        ownedRoomId: null,
+        ownedRoom: null,
+        ownedMembers: [],
+        ownedPresence: [],
+        ownedQueue: { revision: 0, entries: [] },
+        ownedPlayback: null,
+        ownedCode: null,
+        pendingOwnedInviteCode: null,
+        ownedConnection: 'idle',
+        ownedUserId: null,
+        clockOffsetMs: 0,
+        wallMinusMonotonicMs: 0,
+      }),
     }),
     {
       name: 'luvlyrics-listen-together',
@@ -116,6 +161,7 @@ export const useListenTogetherStore = create<ListenTogetherState>()(
         syncHostVolume: s.syncHostVolume,
         smartResync: s.smartResync,
         serverUrl: s.serverUrl,
+        ownedRoomId: s.ownedRoomId,
       }),
     },
   ),

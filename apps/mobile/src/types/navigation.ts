@@ -13,6 +13,8 @@ export type PlayerSheetName = 'menu' | 'together' | 'queue' | 'timer';
 export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
   NowPlaying: { songId: string; lyrics?: boolean; sheet?: PlayerSheetName };
+  /** Create or join a LuvLink room without needing a track in the player. */
+  LuvLink: undefined;
   /** Lyrics editor for a song saved on the phone. */
   EditLyrics: { songId: string };
   LuvsVault: undefined; // Luvs liked songs vault

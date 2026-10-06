@@ -99,6 +99,11 @@ export class ConvexUserStore implements UserStore {
         typeof device.name === 'string' && typeof device.kind === 'string' && typeof device.appVersion === 'string' && typeof device.createdAt === 'number'
           ? [{ name: device.name, kind: device.kind, appVersion: device.appVersion, createdAt: device.createdAt }]
           : []
+      ),
+      luvLinks: rows(record.luvLinks).flatMap((link) =>
+        typeof link.roomId === 'string' && (link.role === 'host' || link.role === 'member') && typeof link.joinedAtMs === 'number'
+          ? [{ roomId: link.roomId, role: link.role, joinedAtMs: link.joinedAtMs }]
+          : []
       )
     };
   }

@@ -20,7 +20,7 @@ import { listenVerdict } from '@shared/listenSignal';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import { setPlaylistSelectionRouter, usePlayerStore } from '../../store/playerStore';
 import { usePositionStore } from '../../store/positionStore';
-import { useListenTogetherStore } from '../../store/listenTogetherStore';
+import { useLuvLinkStore } from '../../store/luvLinkStore';
 import { positionSV } from '../../playback/positionBus';
 import { useAccount, allegraConvex } from '../account/AccountProvider';
 import { runWhenIdle } from '../bootPhases';
@@ -28,6 +28,7 @@ import { recordPlay, recordPlayStarted, refFor } from '../sync/LibrarySync';
 import { backfillCatalogLinks, setCatalogBackfillToken } from '../sync/catalogBackfill';
 import { createListenTracker, type HeardSong } from '../sync/listenTracker';
 import { setStreamQueueRouter, StreamService } from '../stream/StreamService';
+import { routeOwnedLuvLinkCatalogPick } from '../luvLink/client';
 import { toStreamSong } from '../stream/streamSong';
 import { onBeforeSignOut } from '../account/signOutHooks';
 import { createMobilePlayerPort, knownRefOf, snapshotOfSong, snapshotWithRef } from './mobilePlayerPort';
@@ -129,7 +130,7 @@ function mobileDeviceName(): string {
 
 export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const account = useAccount();
-  const roomActive = useListenTogetherStore(state => state.room !== null);
+  const roomActive = useLuvLinkStore(state => state.room !== null || state.ownedRoomId !== null);
   const tokenRef = useRef<string | null>(account.token);
   tokenRef.current = account.token;
   // A cover another device could not send is looked up in the account catalog with this token.
@@ -227,10 +228,17 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
         },
       });
       disposeRouter = () => router.dispose();
-      stopSelectionRouter = setPlaylistSelectionRouter(pick => router.route(pick));
+      stopSelectionRouter = setPlaylistSelectionRouter(pick => {
+        return router.route(pick);
+      });
       stopIntents = bindPlaybackIntents({ session: live, deviceId: id, heldLocally, routePick: pick => router.route(pick) });
       // Play next, and the rest of an album arriving behind its first song, go where the music is.
       stopQueueRouter = setStreamQueueRouter((songs, next) => {
+        if (useLuvLinkStore.getState().ownedRoomId) {
+          const selected = songs[0];
+          if (selected) void routeOwnedLuvLinkCatalogPick(selected, next).catch(error => useLuvLinkStore.getState().announce(error instanceof Error ? error.message : 'Could not add this pick to LuvLink.'));
+          return true;
+        }
         const route = decidePlaybackRoute({ view: live.view(), deviceId: id, heldLocally: heldLocally(), staleOk: true });
         if (route.kind !== 'remote') return false;
         const [song, ...more] = songs.flatMap(item => snapshotOfSong(toStreamSong(item)) ?? []).slice(0, 50);

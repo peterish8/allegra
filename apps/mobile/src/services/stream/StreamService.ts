@@ -52,29 +52,28 @@ const radioHeard = new Set<string>();
 const RADIO_UPCOMING = 10;
 
 type QueueRouter = (songs: UnifiedSong[], next: boolean) => boolean;
-let queueRouter: QueueRouter | null = null;
+const queueRouters = new Set<QueueRouter>();
 
 /**
  * Lets Connect send "play next" and queue additions to the device that is playing. The router
  * answers true when it took them; this phone's own queue is then left alone.
  */
 export function setStreamQueueRouter(router: QueueRouter | null): () => void {
-  queueRouter = router;
-  return () => { if (queueRouter === router) queueRouter = null; };
+  if (router) queueRouters.add(router);
+  return () => { if (router) queueRouters.delete(router); };
 }
 
 function routed(songs: UnifiedSong[], next: boolean): boolean {
-  try {
-    return queueRouter?.(songs, next) ?? false;
-  } catch {
-    // Keep the phone's own queue working if Connect cannot build the command.
-    return false;
+  for (const router of queueRouters) {
+    try { if (router(songs, next)) return true; }
+    catch { /* A later router may still own this command. */ }
   }
+  return false;
 }
 
 export const StreamService = {
   /** Replace the queue with `songs` and start playing at `index`. */
-  play(songs: UnifiedSong[], index = 0): void {
+  play(songs: UnifiedSong[], index = 0, autoplay = true): void {
     radio = null;
     const playable = dedupeStreamable(songs);
     if (playable.length === 0) return;
@@ -82,7 +81,7 @@ export const StreamService = {
     const startIndex = Math.max(0, target ? playable.findIndex(s => s.id === target.id && s.source === target.source) : 0);
     remember(playable);
     const queue = playable.map(s => toStreamSong(s));
-    usePlayerStore.getState().setPlaylistQueue(STREAM_QUEUE_ID, queue, startIndex);
+    usePlayerStore.getState().setPlaylistQueue(STREAM_QUEUE_ID, queue, startIndex, autoplay);
   },
 
   /** Adds songs right after the current one (or starts playback when idle). */
@@ -279,7 +278,7 @@ const RADIO_THRESHOLD = 2; // extend when this few songs remain after the curren
 let radioInFlight = false;
 
 /** A shared room's queue belongs to its host: never topped up here. */
-const NOT_OURS = new Set(['listen-together']);
+const NOT_OURS = new Set(['listen-together', 'luv-link-legacy', 'luv-link']);
 
 /**
  * Whether a queue should be topped up now (Echo Music's "auto load more"). A Stream radio always keeps going; any
@@ -318,6 +317,7 @@ function seedFor(song: Song): UnifiedSong {
  */
 async function extendRadio(songId: string, force = false): Promise<void> {
   const state = usePlayerStore.getState();
+  if (state.currentPlaylistId === 'luv-link') return;
   const queue = state.playlistQueue;
   if (!queue || radioInFlight) return;
   const idx = queue.findIndex(s => s.id === songId);

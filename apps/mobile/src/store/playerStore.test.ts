@@ -22,6 +22,8 @@ import {
   beginAudioLoad,
   endAudioLoad,
   setNativeOwnsPlaybackState,
+  setOwnedRoomRouter,
+  withoutOwnedRoomRouting,
   setPlaylistSelectionRouter,
   liveMiniPlayerHides,
 } from './playerStore';
@@ -160,6 +162,48 @@ describe('Connect song selection routing', () => {
     usePlayerStore.getState().setPlaylistQueue('connect', [selected], 0, false);
     usePlayerStore.getState().setPlaylistQueue('search', [selected], 0, false);
     expect(route).not.toHaveBeenCalled();
+  });
+});
+
+describe('owned room control routing', () => {
+  afterEach(() => setOwnedRoomRouter(null));
+
+  it('claims player, queue and track commands before any solo action', async () => {
+    const song = { id: 'local-song', title: 'Local', artist: 'Artist', audioUri: 'file:///song' } as Song;
+    const route = {
+      select: jest.fn(() => true),
+      playback: jest.fn(() => true),
+      next: jest.fn(() => true),
+      previous: jest.fn(() => true),
+    };
+    const stop = setOwnedRoomRouter(route);
+    usePlayerStore.setState({ currentSong: song, currentSongId: song.id, playlistQueue: [song, { ...song, id: 'second' }], currentQueueIndex: 0, currentPlaylistId: 'library', isPlaying: false });
+
+    usePlayerStore.getState().requestPlayback(true);
+    await usePlayerStore.getState().nextInPlaylist();
+    usePlayerStore.getState().previousInPlaylist();
+    usePlayerStore.getState().setPlaylistQueue('search', [song], 0, true);
+    usePlayerStore.getState().skipToQueueIndex(1);
+
+    expect(route.playback).toHaveBeenCalledWith(true);
+    expect(route.next).toHaveBeenCalledWith(false);
+    expect(route.previous).toHaveBeenCalledTimes(1);
+    expect(route.select).toHaveBeenCalledTimes(2);
+    expect(usePlayerStore.getState().currentSongId).toBe(song.id);
+    expect(usePlayerStore.getState().isPlaying).toBe(false);
+    stop();
+  });
+
+  it('lets authoritative remote corrections bypass the user-command router', () => {
+    const route = { select: jest.fn(() => true), playback: jest.fn(() => true), next: jest.fn(() => true), previous: jest.fn(() => true) };
+    setOwnedRoomRouter(route);
+    playerControls.play = jest.fn();
+
+    withoutOwnedRoomRouting(() => usePlayerStore.getState().requestPlayback(true));
+
+    expect(route.playback).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().isPlaying).toBe(true);
+    expect(playerControls.play).toHaveBeenCalledTimes(1);
   });
 });
 

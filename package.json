@@ -12,7 +12,7 @@
     "mock": "node mocks/server.mjs",
     "contract-test": "node tests/contract/contract-smoke.mjs",
     "infra:test": "node --test tests/infra/infra-files.test.mjs tests/infra/mobile-release-notes.test.mjs",
-    "convex:test": "node --import tsx --test tests/convex/authRedirect.test.ts && vitest run convex/connect.test.ts convex/account.test.ts convex/retention.test.ts convex/taste.test.ts convex/library.test.ts convex/blends.test.ts",
+    "convex:test": "node --import tsx --test tests/convex/authRedirect.test.ts && vitest run --maxWorkers=1 convex/connect.test.ts convex/account.test.ts convex/retention.test.ts convex/taste.test.ts convex/library.test.ts convex/blends.test.ts convex/luvLink.test.ts",
     "sync:shared": "node scripts/sync-shared.mjs",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",

@@ -574,5 +574,112 @@ export default defineSchema({
   spotifyReceipts: defineTable({
     userId: v.string(), playlistId: v.string(), spotifyTrackId: v.string(), libraryId: v.string(), savedAt: v.number()
   }).index('by_userId_and_playlistId_and_spotifyTrackId', ['userId', 'playlistId', 'spotifyTrackId'])
-    .index('by_userId_and_playlistId', ['userId', 'playlistId'])
+    .index('by_userId_and_playlistId', ['userId', 'playlistId']),
+
+  // LuvLink v1 uses independent bounded documents: membership changes do not invalidate queue
+  // or playback subscribers, and ephemeral presence never lives in these tables.
+  luvLinkRooms: defineTable({
+    hostUserId: v.string(),
+    leaderUserId: v.string(),
+    leaderEpoch: v.number(),
+    mode: v.union(v.literal('listen'), v.literal('speaker')),
+    status: v.union(v.literal('active'), v.literal('closed')),
+    protocolVersion: v.number(),
+    revision: v.number(),
+    queueRevision: v.number(),
+    suggestionRevision: v.number(),
+    memberCount: v.number(),
+    createdAtMs: v.number(),
+    expiresAtMs: v.number(),
+    closedAtMs: v.optional(v.number()),
+    handoffFromUserId: v.optional(v.string())
+  }).index('by_expiresAtMs', ['expiresAtMs']).index('by_hostUserId_and_status', ['hostUserId', 'status']),
+
+  luvLinkMembers: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    userId: v.string(),
+    displayName: v.string(),
+    role: v.union(v.literal('host'), v.literal('member')),
+    mode: v.union(v.literal('listen'), v.literal('speaker')),
+    canControl: v.boolean(),
+    canSuggest: v.boolean(),
+    joinedAtMs: v.number()
+  }).index('by_roomId_and_userId', ['roomId', 'userId']).index('by_roomId_and_joinedAtMs', ['roomId', 'joinedAtMs']).index('by_userId_and_joinedAtMs', ['userId', 'joinedAtMs']),
+
+  luvLinkInvites: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    codeHash: v.string(),
+    generation: v.number(),
+    createdAtMs: v.number(),
+    expiresAtMs: v.number(),
+    revokedAtMs: v.optional(v.number())
+  }).index('by_codeHash', ['codeHash']).index('by_roomId_and_generation', ['roomId', 'generation']).index('by_expiresAtMs', ['expiresAtMs']),
+
+  luvLinkPlayback: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    leaderUserId: v.string(),
+    leaderEpoch: v.number(),
+    sequence: v.number(),
+    trackEpoch: v.number(),
+    queueEntryId: v.union(v.string(), v.null()),
+    intent: v.union(v.literal('control'), v.literal('natural_end'), v.literal('checkpoint')),
+    intentByUserId: v.string(),
+    outputAppliedSequence: v.number(),
+    barrierPending: v.boolean(),
+    song: v.union(songSnapshot, v.null()),
+    positionSec: v.number(),
+    serverAtMs: v.number(),
+    playing: v.boolean(),
+    effectiveAtMs: v.number(),
+    playbackRate: v.number()
+  }).index('by_roomId', ['roomId']),
+
+  luvLinkQueue: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    entryId: v.string(),
+    order: v.number(),
+    song: songSnapshot,
+    addedByUserId: v.string(),
+    addedByName: v.string(),
+    createdAtMs: v.number()
+  }).index('by_roomId_and_order', ['roomId', 'order']).index('by_roomId_and_entryId', ['roomId', 'entryId']).index('by_addedByUserId', ['addedByUserId']),
+
+  luvLinkRecommendations: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    revision: v.number(),
+    picks: v.array(v.object({ song: songSnapshot, forUserIds: v.array(v.string()), kind: v.union(v.literal('shared'), v.literal('pick')) })),
+    builtAtMs: v.number()
+  }).index('by_roomId', ['roomId']),
+
+  luvLinkReceipts: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    commandId: v.string(),
+    userId: v.string(),
+    kind: v.string(),
+    result: v.object({ revision: v.number(), entryId: v.optional(v.string()) }),
+    createdAtMs: v.number()
+  }).index('by_roomId_and_commandId', ['roomId', 'commandId']).index('by_roomId_and_createdAtMs', ['roomId', 'createdAtMs']).index('by_userId', ['userId']),
+
+  luvLinkReady: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    trackEpoch: v.number(),
+    userId: v.string(),
+    ready: v.boolean(),
+    updatedAtMs: v.number()
+  }).index('by_roomId_and_trackEpoch_and_userId', ['roomId', 'trackEpoch', 'userId']).index('by_roomId_and_trackEpoch', ['roomId', 'trackEpoch']).index('by_userId', ['userId']),
+
+  luvLinkBarriers: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    trackEpoch: v.number(),
+    leaderEpoch: v.number(),
+    sequence: v.number(),
+    song: songSnapshot,
+    queueEntryId: v.union(v.string(), v.null()),
+    intent: v.union(v.literal('control'), v.literal('natural_end')),
+    intentByUserId: v.string(),
+    positionSec: v.number(),
+    playbackRate: v.number(),
+    deadlineAtMs: v.number(),
+    status: v.union(v.literal('pending'), v.literal('completed'), v.literal('cancelled'))
+  }).index('by_roomId', ['roomId']).index('by_deadlineAtMs_and_status', ['deadlineAtMs', 'status'])
 });

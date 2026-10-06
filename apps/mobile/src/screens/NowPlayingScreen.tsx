@@ -44,7 +44,7 @@ import { sleepLabel, useSleepTimerStore } from '../store/sleepTimerStore';
 import PlayerMenu, { PlayerMenuAction } from '../components/player/PlayerMenu';
 import { SongDetails, TempoPitch } from '../components/player/PlayerExtras';
 import AmbientMode from '../components/player/AmbientMode';
-import ListenTogetherPanel from '../components/listenTogether/ListenTogetherPanel';
+import LuvLinkPanel from '../components/luvLink/LuvLinkPanel';
 import LyricsPicker from '../components/player/LyricsPicker';
 import { Toast } from '../components/Toast';
 import { StreamService } from '../services/stream/StreamService';
@@ -52,7 +52,7 @@ import { isStreamSongId } from '../services/stream/streamSong';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { refetchCurrent, setAsRingtone, shareSong, shuffleUpcoming } from '../services/player/playerMenuActions';
 import { usePlaybackModesStore } from '../store/playbackModesStore';
-import { useListenTogetherStore } from '../store/listenTogetherStore';
+import { useLuvLinkStore } from '../store/luvLinkStore';
 import { parseSongRef } from '@shared/songRef';
 import ConnectRemotePlayer from '../components/connect/ConnectRemotePlayer';
 import { useConnect } from '../services/connect/ConnectProvider';
@@ -570,8 +570,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   }, [currentSong, toggleLike, say]);
   const repeatOne = usePlaybackModesStore(s => s.repeatOne);
   const setRepeatOne = usePlaybackModesStore(s => s.setRepeatOne);
-  const roomOpen = useListenTogetherStore(s => s.room !== null);
-  const listeners = useListenTogetherStore(s => s.room?.users.length ?? 0);
+  const roomOpen = useLuvLinkStore(s => s.room !== null);
+  const listeners = useLuvLinkStore(s => s.room?.users.length ?? 0);
   const connect = useConnect();
   const openConnectDevices = connect.openDevices;
 
@@ -823,8 +823,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
             />
           ) : null}
         </PlayerSheet>
-        <PlayerSheet visible={sheet === 'together'} title="Listen together" tall onClose={closeSheet}>
-          <ListenTogetherPanel />
+        <PlayerSheet visible={sheet === 'together'} title="LuvLink" tall onClose={closeSheet}>
+          <LuvLinkPanel />
         </PlayerSheet>
 
         {ambient && currentSong ? (

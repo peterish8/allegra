@@ -114,7 +114,7 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
                   : !device.isOnline
                     ? 'Offline'
                     : !device.canPlay
-                      ? 'In a Listen Together room'
+                      ? 'In a LuvLink room'
                       : 'Ready';
               return (
                 <Pressable

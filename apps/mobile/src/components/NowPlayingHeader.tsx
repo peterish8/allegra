@@ -1,6 +1,6 @@
 /**
  * Apple Music has no header bar on Now Playing — just a grabber at the top.
- * Tap it (or swipe the screen down) to go back. While a Listen together room
+ * Tap it (or swipe the screen down) to go back. While a LuvLink room
  * is open, a small chip beside it shows how many are listening; while another
  * device plays over Connect, one says which device it is.
  */
@@ -16,7 +16,7 @@ interface NowPlayingHeaderProps {
   animatedStyle: React.ComponentProps<typeof Animated.View>['style'];
   controlsVisible: boolean;
   onGoBack: () => void;
-  /** Listeners in the Listen together room, or null when not in one. */
+  /** Listeners in the LuvLink room, or null when not in one. */
   together?: number | null;
   onTogetherPress?: () => void;
   /** Connect: the device that is playing, or null when this phone plays. */

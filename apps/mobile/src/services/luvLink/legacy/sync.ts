@@ -1,5 +1,5 @@
 /**
- * Listen Together ↔ the player — Echo Music's ListenTogetherManager on
+ * LuvLink ↔ the player — Echo Music's LuvLinkManager on
  * LuvLyrics' player.
  *
  * Whoever may control the room (the host, or everyone when the host allows
@@ -13,26 +13,26 @@
  * state apply together. Play/pause/seek within 2–3s of where we already are
  * are ignored, as in Echo, so small drift doesn't stutter.
  */
-import { playerControls, usePlayerStore } from '../../store/playerStore';
-import { useSongsStore } from '../../store/songsStore';
-import { useListenTogetherStore } from '../../store/listenTogetherStore';
-import { positionSV, durationSV } from '../../playback/positionBus';
-import { Song } from '../../types/song';
-import { searchMusic } from '../MultiSourceSearchService';
-import { resolveToCatalog } from '../ytmusic/resolver';
-import { StreamService } from '../stream/StreamService';
-import { isStreamSongId } from '../stream/streamSong';
-import { youtubeIdFor } from '../player/playerMenuActions';
+import { playerControls, usePlayerStore } from '../../../store/playerStore';
+import { useSongsStore } from '../../../store/songsStore';
+import { useLuvLinkStore } from '../../../store/luvLinkStore';
+import { positionSV, durationSV } from '../../../playback/positionBus';
+import { Song } from '../../../types/song';
+import { searchMusic } from '../../MultiSourceSearchService';
+import { resolveToCatalog } from '../../ytmusic/resolver';
+import { StreamService } from '../../stream/StreamService';
+import { isStreamSongId } from '../../stream/streamSong';
+import { youtubeIdFor } from '../../player/playerMenuActions';
 import {
   canControl,
-  onListenTogetherEvent,
+  onLuvLinkEvent,
   requestSync,
   sendBufferReady,
   sendPlaybackAction,
-  ListenTogetherEvent,
+  LuvLinkEvent,
 } from './client';
 import { PlaybackActionPayload, PlaybackActions, TrackInfo } from './protocol';
-import { NativeAudioPlayer } from '../NativeAudioPlayer';
+import { NativeAudioPlayer } from '../../NativeAudioPlayer';
 
 const POSITION_TOLERANCE_MS = 2000;
 const PLAYBACK_POSITION_TOLERANCE_MS = 3000;
@@ -41,6 +41,9 @@ const HEARTBEAT_MS = 10_000;
 /** Echo asks for a fresh sync this long after a guest reconnects. */
 const SMART_RESYNC_DELAY_MS = 1000;
 const LOAD_TIMEOUT_MS = 12_000;
+let activeLoadTimeoutMs = LOAD_TIMEOUT_MS;
+/** Echo supplies wall-clock anchors without a clock exchange; never extrapolate an old one indefinitely. */
+const MAX_LEGACY_ANCHOR_AGE_MS = 12_000;
 
 // ── Bookkeeping ────────────────────────────────────────────────────────────
 /** While we apply a remote change, our own store updates must not be broadcast. */
@@ -63,7 +66,7 @@ let pending: { trackId: string; playing: boolean; positionMs: number } | null = 
 const trackIdBySong = new Map<string, string>();
 const songIdByTrack = new Map<string, string>();
 
-const room = () => useListenTogetherStore.getState();
+const room = () => useLuvLinkStore.getState();
 const inRoom = () => room().room !== null;
 const player = () => usePlayerStore.getState();
 const positionMs = () => Math.round(Math.max(0, positionSV.value) * 1000);
@@ -104,7 +107,7 @@ const broadcastTrack = async (song: Song, alsoPlay: boolean): Promise<void> => {
   if (!inRoom() || player().currentSongId !== song.id) return; // skipped meanwhile
   lastSyncedTrackId = song.id;
   lastSyncedPlaying = false;
-  sendAction({ action: PlaybackActions.CHANGE_TRACK, track_info: info, queue_title: 'Listen together' });
+  sendAction({ action: PlaybackActions.CHANGE_TRACK, track_info: info, queue_title: 'LuvLink' });
   if (alsoPlay && player().isPlaying) {
     lastSyncedPlaying = true;
     sendAction({ action: PlaybackActions.PLAY, position: positionMs() });
@@ -118,44 +121,54 @@ const announceCurrent = () => {
   broadcastTrack(song, true).catch(() => {});
 };
 
-let lastPositionMs = 0;
-let lastPositionAt = 0;
-let lastPositionSong: string | null = null;
+/** Only scrub and lyric gestures call this. Remote seeks and corrections never echo back. */
+export const notifyLuvLinkUserSeek = (positionSec: number): void => {
+  if (!Number.isFinite(positionSec) || !inRoom() || !canControl() || isMuted()) return;
+  sendAction({ action: PlaybackActions.SEEK, position: Math.max(0, Math.round(positionSec * 1000)) });
+};
 
-/** Seeks don't pass through the store, so spot them as a jump in position. */
-const watchForSeeks = () => {
-  const now = Date.now();
-  const pos = positionMs();
-  const songId = player().currentSongId;
-  if (songId === lastPositionSong && lastPositionAt > 0 && !isMuted()) {
-    const expected = lastPositionMs + (player().isPlaying ? now - lastPositionAt : 0);
-    if (Math.abs(pos - expected) > 2500 && canControl() && inRoom()) {
-      sendAction({ action: PlaybackActions.SEEK, position: pos });
-    }
+const positionFromLegacyAnchor = (state: { is_playing: boolean; position: number; last_update: number }): number | null => {
+  if (!state.is_playing) return state.position;
+  const ageMs = Date.now() - state.last_update;
+  if (!Number.isFinite(ageMs) || ageMs < -3000 || ageMs > MAX_LEGACY_ANCHOR_AGE_MS) {
+    requestSync();
+    return null;
   }
-  lastPositionMs = pos;
-  lastPositionAt = now;
-  lastPositionSong = songId;
+  return state.position + Math.max(0, ageMs);
 };
 
 // ── Guest side ─────────────────────────────────────────────────────────────
-const norm = (s: string | undefined | null) => (s ?? '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').replace(/[^a-z0-9\u0080-￿]+/g, ' ').trim();
+const norm = (s: string | undefined | null) => (s ?? '')
+  .normalize('NFKC')
+  .toLowerCase()
+  .replace(/\[(?:official\s+)?(?:music\s+)?video\]|\((?:official\s+)?(?:music\s+)?video\)|\[(?:official\s+)?audio\]|\((?:official\s+)?audio\)|\[lyrics?\]|\(lyrics?\)/g, ' ')
+  .replace(/[^a-z0-9\u0080-￿]+/g, ' ')
+  .trim();
+
+const leadCredit = (artist: string | undefined | null) => norm((artist ?? '').split(/,|&|\bfeat(?:uring)?\.?/i)[0]);
 
 /** A copy on the phone plays instantly and offline — prefer it. */
 const localCopyOf = (track: TrackInfo): Song | undefined => {
   const title = norm(track.title);
-  const artist = norm(track.artist.split(/,|&/)[0]);
-  return useSongsStore.getState().songs.find(s => s.audioUri && norm(s.title) === title && norm(s.artist).includes(artist));
+  const artist = leadCredit(track.artist);
+  const durationSec = track.duration > 0 ? track.duration / 1000 : 0;
+  if (!title || !artist || durationSec <= 0) return undefined;
+  return useSongsStore.getState().songs.find(song => {
+    if (!song.audioUri || norm(song.title) !== title || leadCredit(song.artist) !== artist) return false;
+    return song.duration > 0 && Math.abs(song.duration - durationSec) <= 2.5;
+  });
 };
 
 /** Starts `track` playing through our player; resolves to its song id. */
-const startTrack = async (track: TrackInfo): Promise<string | null> => {
+const startTrack = async (track: TrackInfo, gen: number): Promise<string | null> => {
+  if (gen !== generation) return null;
   const known = songIdByTrack.get(track.id);
   if (known && player().currentSongId === known) return known;
 
   const local = localCopyOf(track);
   if (local) {
-    player().setPlaylistQueue('listen-together', [local], 0);
+    if (gen !== generation) return null;
+    player().setPlaylistQueue('luv-link-legacy', [local], 0, false);
     songIdByTrack.set(track.id, local.id);
     trackIdBySong.set(local.id, track.id);
     return local.id;
@@ -164,7 +177,8 @@ const startTrack = async (track: TrackInfo): Promise<string | null> => {
   if (isStreamSongId(track.id)) {
     const meta = StreamService.catalogFor(track.id);
     if (meta) {
-      StreamService.play([meta], 0);
+      if (gen !== generation) return null;
+      StreamService.play([meta], 0, false);
       songIdByTrack.set(track.id, track.id);
       trackIdBySong.set(track.id, track.id);
       return player().currentSongId;
@@ -182,8 +196,8 @@ const startTrack = async (track: TrackInfo): Promise<string | null> => {
     },
     q => searchMusic(q),
   ).catch(() => null);
-  if (!match) return null;
-  StreamService.play([match], 0);
+  if (!match || gen !== generation) return null;
+  StreamService.play([match], 0, false);
   const id = player().currentSongId;
   if (id) {
     songIdByTrack.set(track.id, id);
@@ -193,21 +207,23 @@ const startTrack = async (track: TrackInfo): Promise<string | null> => {
 };
 
 const waitForLoad = async (songId: string, gen: number): Promise<boolean> => {
-  const until = Date.now() + LOAD_TIMEOUT_MS;
+  const until = Date.now() + activeLoadTimeoutMs;
   while (Date.now() < until) {
     if (gen !== generation) return false;
     if (player().loadedAudioId === songId && durationSV.value > 0) return true;
     await new Promise(r => setTimeout(r, 100));
   }
-  return player().loadedAudioId === songId;
+  return player().loadedAudioId === songId && durationSV.value > 0;
 };
 
-const applyPendingIfReady = () => {
+const applyPendingIfReady = async () => {
   if (!pending || bufferCompleteFor !== pending.trackId) return;
   const { playing, positionMs: target } = pending;
+  const gen = generation;
   holdSync(1200);
   const tolerance = playing && player().isPlaying ? PLAYBACK_POSITION_TOLERANCE_MS : POSITION_TOLERANCE_MS;
-  if (Math.abs(positionMs() - target) > tolerance) seekMs(target);
+  if (Math.abs(positionMs() - target) > tolerance) await playerControls.seekTo(target / 1000);
+  if (gen !== generation || !pending || pending.trackId !== bufferingTrackId) return;
   setPlaying(playing);
   pending = null;
   bufferingTrackId = null;
@@ -223,8 +239,8 @@ const applyTrack = async (track: TrackInfo, playing: boolean, position: number, 
   const gen = ++generation;
   bufferingTrackId = track.id;
   bufferCompleteFor = null;
-  holdSync(LOAD_TIMEOUT_MS);
-  const songId = await startTrack(track);
+  holdSync(activeLoadTimeoutMs);
+  const songId = await startTrack(track, gen);
   if (gen !== generation) return;
   if (!songId) {
     room().announce(`Couldn’t find “${track.title}” to play`);
@@ -233,10 +249,18 @@ const applyTrack = async (track: TrackInfo, playing: boolean, position: number, 
   }
   const ready = await waitForLoad(songId, gen);
   if (gen !== generation) return;
+  if (!ready) {
+    pending = null;
+    bufferingTrackId = null;
+    bufferCompleteFor = null;
+    room().announce(`Couldn’t load “${track.title}” on this device. It will stay paused.`);
+    return;
+  }
   // Loaded: shorten the load-time hold to the settle window (holdSync only extends).
   muteBroadcastUntil = Date.now() + 1500;
-  if (bypassBuffer || !ready) {
-    seekMs(position);
+  if (bypassBuffer) {
+    await playerControls.seekTo(position / 1000);
+    if (gen !== generation) return;
     setPlaying(playing);
     pending = null;
     bufferingTrackId = null;
@@ -245,7 +269,7 @@ const applyTrack = async (track: TrackInfo, playing: boolean, position: number, 
   setPlaying(false);
   pending = { trackId: track.id, playing, positionMs: position };
   sendBufferReady(track.id);
-  applyPendingIfReady();
+  void applyPendingIfReady();
 };
 
 const onCurrentTrack = (trackId: string | undefined | null): boolean => {
@@ -258,8 +282,8 @@ const handlePlayback = (action: PlaybackActionPayload) => {
   const now = Date.now();
   switch (action.action) {
     case PlaybackActions.PLAY: {
-      const base = action.position ?? 0;
-      const adjusted = action.server_time ? base + Math.max(0, now - action.server_time) : base;
+      // Legacy ping has no server timestamp, so do not treat server_time as a calibrated clock.
+      const adjusted = action.position ?? 0;
       if (bufferingTrackId) {
         if (pending) pending = { ...pending, playing: true, positionMs: adjusted };
         applyPendingIfReady();
@@ -353,29 +377,26 @@ function onHostVolume(volume: number) {
   sendAction({ action: PlaybackActions.SET_VOLUME, volume: v });
 }
 
-const followsRoom = () => inRoom() && !canControl();
+const followsRoom = () => inRoom() && room().role === 'guest';
 
-const handleEvent = (event: ListenTogetherEvent) => {
+const handleEvent = (event: LuvLinkEvent) => {
   switch (event.kind) {
     case 'room_created':
       lastSyncedTrackId = player().currentSongId;
       lastSyncedPlaying = player().isPlaying;
       announceCurrent();
       startHeartbeat();
-      startSeekWatch();
       return;
     case 'join_approved': {
-      startSeekWatch();
       const s = event.payload.state;
       applyHostVolume(s.volume);
       if (s.current_track) {
-        const elapsed = s.is_playing ? Math.max(0, Date.now() - s.last_update) : 0;
-        applyTrack(s.current_track, s.is_playing, s.position + elapsed, false).catch(() => {});
+        const at = positionFromLegacyAnchor(s);
+        if (at !== null) applyTrack(s.current_track, s.is_playing, at, false).catch(() => {});
       }
       return;
     }
     case 'reconnected': {
-      startSeekWatch();
       if (event.payload.is_host) {
         startHeartbeat();
         const local = player().currentSongId;
@@ -385,8 +406,8 @@ const handleEvent = (event: ListenTogetherEvent) => {
         const s = event.payload.state;
         applyHostVolume(s.volume);
         if (s.current_track) {
-          const elapsed = s.is_playing ? Math.max(0, Date.now() - s.last_update) : 0;
-          applyTrack(s.current_track, s.is_playing, s.position + elapsed, true).catch(() => {});
+          const at = positionFromLegacyAnchor(s);
+          if (at !== null) applyTrack(s.current_track, s.is_playing, at, true).catch(() => {});
         }
         // Echo's smart resync: the state carried by the reconnect can be a
         // moment old, so ask the host for a fresh one once settled.
@@ -400,8 +421,8 @@ const handleEvent = (event: ListenTogetherEvent) => {
       if (!followsRoom()) return;
       const s = event.payload;
       if (!s.current_track) return;
-      const at = s.is_playing ? s.position + Math.max(0, Date.now() - s.last_update) : s.position;
-      applyTrack(s.current_track, s.is_playing, at, true).catch(() => {});
+      const at = positionFromLegacyAnchor(s);
+      if (at !== null) applyTrack(s.current_track, s.is_playing, at, true).catch(() => {});
       return;
     }
     case 'playback':
@@ -415,11 +436,14 @@ const handleEvent = (event: ListenTogetherEvent) => {
       }
       return;
     case 'user_joined':
-      if (room().role === 'host') announceCurrent();
+      // Join approval carries a room snapshot. Re-broadcasting CHANGE_TRACK here
+      // makes every established listener reload its stream for each newcomer.
       return;
     case 'host_changed':
       if (room().role === 'host') {
-        announceCurrent();
+        const current = room().room?.current_track;
+        if (current && !onCurrentTrack(current.id)) announceCurrent();
+        else if (player().isPlaying) sendAction({ action: PlaybackActions.PLAY, position: positionMs() });
         startHeartbeat();
       }
       return;
@@ -427,7 +451,6 @@ const handleEvent = (event: ListenTogetherEvent) => {
       return;
     case 'left':
       stopHeartbeat();
-      stopSeekWatch();
       pending = null;
       bufferingTrackId = null;
       generation++;
@@ -451,27 +474,10 @@ function stopHeartbeat() {
   heartbeat = null;
 }
 
-// ── Seek watch ─────────────────────────────────────────────────────────────
-// A 1s tick that notices our own seeks. It only exists while a room is open:
-// started by the events that put us in one, ended by leaving (or by the tick
-// itself finding the room gone), so an app that never joins a room never
-// wakes the JS thread for it.
-let seekWatch: ReturnType<typeof setInterval> | null = null;
-function startSeekWatch() {
-  if (seekWatch) return;
-  seekWatch = setInterval(() => {
-    if (!inRoom()) { stopSeekWatch(); return; }
-    watchForSeeks();
-  }, 1000);
-}
-function stopSeekWatch() {
-  if (seekWatch) clearInterval(seekWatch);
-  seekWatch = null;
-}
-
 /** Mounted once (RootNavigator). Returns a teardown. */
-export const startListenTogetherSync = (): (() => void) => {
-  const offEvents = onListenTogetherEvent(handleEvent);
+export const startLuvLinkSync = (options: { loadTimeoutMs?: number } = {}): (() => void) => {
+  activeLoadTimeoutMs = Math.max(1, options.loadTimeoutMs ?? LOAD_TIMEOUT_MS);
+  const offEvents = onLuvLinkEvent(handleEvent);
 
   // Broadcast our own changes while we may control the room.
   const offStore = usePlayerStore.subscribe((state, prev) => {
@@ -491,8 +497,6 @@ export const startListenTogetherSync = (): (() => void) => {
     }
   });
 
-  // The room may already be open (session resume, hot reload).
-  if (inRoom()) startSeekWatch();
   const volumeSub = NativeAudioPlayer.addListener('onVolumeChanged', (e: { volume?: number }) => {
     if (typeof e?.volume === 'number') onHostVolume(e.volume);
   });
@@ -501,7 +505,17 @@ export const startListenTogetherSync = (): (() => void) => {
     offEvents();
     offStore();
     volumeSub.remove();
-    stopSeekWatch();
     stopHeartbeat();
+    generation++;
+    bufferingTrackId = null;
+    bufferCompleteFor = null;
+    pending = null;
+    lastSyncedTrackId = null;
+    lastSyncedPlaying = null;
+    lastSyncActionTime = 0;
+    muteBroadcastUntil = 0;
+    ignoreIncomingUntil = 0;
+    trackIdBySong.clear();
+    songIdByTrack.clear();
   };
 };
