@@ -1,14 +1,12 @@
 import { Heart, LoaderCircle, Mic, Pause, Play, Send, SkipForward, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react';
 
-import { getDjSlashSuggestions, parseDjSlashCommand } from '@shared/dj';
-import type { DjCloudProvider, DjGoal, DjProvider, DjSessionState, DjTrackContext, DjTurnRequest, DjTurnResponse } from '@shared/dj';
+import { getDjSlashSuggestions } from '@shared/dj';
+import type { DjProvider } from '@shared/dj';
 import type { UnifiedSong } from '@shared/types';
 
 import { useAudioAnalyser } from '../hooks/useAudioAnalyser';
-import { usePlaylistsContext } from '../hooks/usePlaylists';
-import { requestDjTurn } from '../lib/api';
-import { requestLocalDjTurn } from '../lib/djLocal';
+import { useDjSession } from '../hooks/useDjSession';
 import { Artwork } from './ui';
 
 interface SpeechRecognitionResultLike { readonly transcript: string }
@@ -33,26 +31,9 @@ interface DjPageProps {
   readonly isLive: boolean;
   readonly isRemote: boolean;
   readonly isCurrentLiked: boolean;
-  readonly recent: readonly UnifiedSong[];
-  readonly likedSongs: readonly UnifiedSong[];
-  readonly nextSongs: readonly UnifiedSong[];
   readonly audioRef: RefObject<HTMLAudioElement | null>;
   readonly onToggle: () => void;
-  readonly onSkip: () => void;
   readonly onLike: (song: UnifiedSong) => void;
-  readonly onApplyPlan: (turn: DjTurnResponse) => boolean;
-  readonly onStartPlan: (turn: DjTurnResponse) => void;
-}
-
-const EMPTY_SESSION: DjSessionState = { vibe: '', energy: 3, language: null, constraints: [] };
-
-function contextSong(song: UnifiedSong): DjTrackContext {
-  return {
-    id: song.id,
-    title: song.title,
-    artist: song.artist,
-    ...(song.language ? { language: song.language } : {})
-  };
 }
 
 function toneFor(vibe: string, energy: number): string {
@@ -63,38 +44,18 @@ function toneFor(vibe: string, energy: number): string {
 }
 
 export function DjPage({
-  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, recent, likedSongs, nextSongs,
-  audioRef, onToggle, onSkip, onLike, onApplyPlan, onStartPlan,
+  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, audioRef, onToggle, onLike,
 }: DjPageProps) {
-  const playlists = usePlaylistsContext();
-  const [provider, setProvider] = useState<DjProvider>('openai');
-  const [model, setModel] = useState('gpt-4o-mini');
-  const [apiKey, setApiKey] = useState('');
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const dj = useDjSession();
+  const {
+    provider, model, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist,
+    turn, reasons, working, status, emotion, nextSongs,
+    setStatus, setEmotion, setDraftName, setProvider, setModel, setApiKey, setSettingsOpen,
+  } = dj;
   const [prompt, setPrompt] = useState('');
-  const [session, setSession] = useState<DjSessionState>(EMPTY_SESSION);
-  const [goal, setGoal] = useState<DjGoal>('mix');
-  const [songLimit, setSongLimit] = useState(8);
-  const [draft, setDraft] = useState<{ readonly song: UnifiedSong; readonly reason: string }[]>([]);
-  const [draftName, setDraftName] = useState('A little mix');
-  const [savingPlaylist, setSavingPlaylist] = useState(false);
-  const [history, setHistory] = useState<DjTurnRequest['history'][number][]>([]);
-  const [skipped, setSkipped] = useState<UnifiedSong[]>([]);
-  const [turn, setTurn] = useState<DjTurnResponse | null>(null);
-  const [reasons, setReasons] = useState<Record<string, string>>({});
-  const [working, setWorking] = useState(false);
-  const [emotion, setEmotion] = useState<'idle' | 'listening' | 'thinking' | 'curious' | 'happy' | 'error'>('idle');
-  const [status, setStatus] = useState('');
   const stageRef = useRef<HTMLElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const analyser = useAudioAnalyser(audioRef, isPlaying);
-
-  useEffect(() => {
-    if (provider === 'openai') setModel('gpt-4o-mini');
-    else if (provider === 'openrouter') setModel('openai/gpt-4o-mini');
-    else if (provider === 'gemini') setModel('gemini-3.8-flash');
-    else setModel('Qwen3 0.6B (on-device)');
-  }, [provider]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -126,12 +87,6 @@ export function DjPage({
   }, [analyser, isPlaying]);
 
   useEffect(() => () => recognitionRef.current?.stop(), []);
-
-  useEffect(() => {
-    if (emotion !== 'curious') return undefined;
-    const timer = window.setTimeout(() => setEmotion(current => current === 'curious' ? 'idle' : current), 1100);
-    return () => window.clearTimeout(timer);
-  }, [emotion]);
 
   const toggleVoice = useCallback((): void => {
     if (recognitionRef.current) {
@@ -168,121 +123,13 @@ export function DjPage({
     setEmotion('listening');
     setStatus('Listening…');
     recognition.start();
-  }, []);
+  }, [setEmotion, setStatus]);
 
-  const send = useCallback(async (override?: string, options?: { readonly goal?: DjGoal; readonly songLimit?: number }): Promise<void> => {
-    const message = (override ?? prompt).trim();
-    if (!message || working) return;
-    const selectedGoal = options?.goal ?? goal;
-    const selectedSongLimit = options?.songLimit ?? songLimit;
-    if (provider !== 'local' && !apiKey.trim()) {
-      setSettingsOpen(true);
-      setStatus('Add your AI key to start a DJ conversation.');
-      return;
-    }
-    if (provider !== 'local' && !model.trim()) {
-      setSettingsOpen(true);
-      setStatus('Choose a model that supports tool calling.');
-      return;
-    }
-    setWorking(true);
-    setEmotion('thinking');
-    setStatus('Reading your set and looking through the catalog…');
-    try {
-      const common = {
-        goal: selectedGoal,
-        songLimit: selectedGoal === 'mix' ? Math.min(selectedSongLimit, 8) : selectedSongLimit,
-        message,
-        history: history.slice(-8),
-        current: currentSong ? contextSong(currentSong) : null,
-        queue: nextSongs.slice(0, 8).map(contextSong),
-        draft: draft.map(({ song }) => contextSong(song)),
-        draftName,
-        recent: recent.slice(0, 8).map(contextSong),
-        liked: likedSongs.slice(0, 8).map(contextSong),
-        skipped: skipped.slice(0, 8).map(contextSong),
-        session
-      };
-      const result = provider === 'local'
-        ? await requestLocalDjTurn({ ...common, draft, onProgress: setStatus })
-        : await requestDjTurn({ ...common, provider: provider as DjCloudProvider, apiKey: apiKey.trim(), model: model.trim() });
-      setTurn(result);
-      setSession(result.session);
-      setHistory((items) => [...items, { role: 'user' as const, content: message }, { role: 'assistant' as const, content: result.reply }].slice(-8));
-      if (result.queue.length > 0) {
-        setReasons((current) => ({ ...current, ...Object.fromEntries(result.queue.map((item) => [item.song.id, item.reason])) }));
-      }
-      if (selectedGoal === 'playlist') {
-        const removed = new Set(result.removeTrackIds);
-        const remaining = draft.filter(({ song }) => !removed.has(song.id));
-        const nextDraft = result.draftOperation === 'replace' ? [...result.queue]
-          : result.draftOperation === 'extend' ? [...remaining, ...result.queue]
-            : remaining;
-        setDraft(nextDraft.slice(0, selectedSongLimit));
-        if (result.playlistName) setDraftName(result.playlistName);
-        setStatus(result.reply);
-        setEmotion(result.reaction === 'excited' || result.reaction === 'dreamy' ? 'happy' : 'idle');
-      } else if (result.operation === 'replace_upcoming' || result.operation === 'insert') {
-        setDraft([...result.queue]);
-        if (currentSong && !isRemote && onApplyPlan(result)) {
-          setStatus(result.reply);
-          setEmotion(result.reaction === 'excited' || result.reaction === 'dreamy' ? 'happy' : 'idle');
-        } else {
-          setStatus(isRemote ? 'Your set is ready. Switch playback to this device to use it.' : 'Your set is ready when you are. Press Play to start it.');
-          setEmotion('happy');
-        }
-      } else {
-        setStatus(result.reply);
-        setEmotion(result.reaction === 'confused' ? 'error' : 'idle');
-      }
-      setPrompt('');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'The DJ could not finish that request. Try again.');
-      setEmotion('error');
-    } finally {
-      setWorking(false);
-    }
-  }, [apiKey, currentSong, draft, draftName, goal, history, isRemote, likedSongs, model, nextSongs, onApplyPlan, provider, prompt, recent, session, skipped, songLimit, working]);
-
-  const submitPrompt = useCallback((): void => {
-    const value = prompt.trim();
-    const parsed = parseDjSlashCommand(value);
-    if (!parsed) {
-      if (value.startsWith('/')) { setStatus('Unknown shortcut. Type / to see the DJ commands.'); return; }
-      void send(value);
-      return;
-    }
-
-    const { command, remainder } = parsed;
-    setPrompt('');
-    setEmotion('idle');
-    if (command.action === 'settings') { setSettingsOpen(true); setStatus('Choose your AI provider or set up a key below.'); return; }
-    if (command.action === 'help') { setStatus('Try /late-night, /tamil, /energy, /focus, /similar, /keep, /mix, /playlist, /size, or /settings.'); return; }
-    if (command.action === 'size') {
-      if (!parsed.size) { setPrompt('/size '); setStatus('Choose a song count from the suggestions.'); return; }
-      const minimum = goal === 'playlist' ? 5 : 1;
-      const maximum = goal === 'playlist' ? 30 : 8;
-      const selectedSongLimit = Math.max(minimum, Math.min(maximum, parsed.size));
-      setSongLimit(selectedSongLimit);
-      if (remainder) { void send(remainder, { songLimit: selectedSongLimit }); return; }
-      setStatus(`I’ll line up ${selectedSongLimit} songs.`);
-      return;
-    }
-    if (command.action === 'goal' && command.goal) {
-      const selectedSongLimit = command.goal === 'mix' ? Math.min(songLimit, 8) : Math.max(songLimit, 10);
-      setGoal(command.goal);
-      setSongLimit(selectedSongLimit);
-      if (remainder) { void send(remainder, { goal: command.goal, songLimit: selectedSongLimit }); return; }
-      setStatus(command.goal === 'playlist' ? 'Playlist draft ready. Tell me the mood or first song.' : 'Live mix ready. What are we feeling?');
-      return;
-    }
-    if (command.action === 'prompt') void send([command.prompt, remainder].filter(Boolean).join(' '));
-  }, [goal, prompt, send, songLimit]);
-
-  const skipAndTeach = (): void => {
-    if (currentSong) setSkipped((items) => [currentSong, ...items.filter((item) => item.id !== currentSong.id)].slice(0, 8));
-    setEmotion('curious');
-    onSkip();
+  const submitPrompt = (): void => {
+    void dj.submitPrompt(prompt).then((outcome) => {
+      if (outcome.prefill !== undefined) setPrompt(outcome.prefill);
+      else if (outcome.clear) setPrompt('');
+    });
   };
 
   const needsStart = Boolean(goal === 'mix' && turn && turn.operation !== 'keep' && turn.queue.length > 0 && (!currentSong || isRemote));
@@ -294,26 +141,6 @@ export function DjPage({
   const tone = toneFor(session.vibe, session.energy);
   const commandSuggestions = getDjSlashSuggestions(prompt, goal);
   const currentIsPaused = Boolean(currentSong && !isPlaying);
-
-  const savePlaylist = useCallback(async (): Promise<void> => {
-    if (draft.length === 0 || savingPlaylist) return;
-    setSavingPlaylist(true);
-    setStatus('Saving your playlist…');
-    try {
-      const library = await playlists.create(draftName.trim() || 'A little mix');
-      if (!library) throw new Error(playlists.actionError ?? 'That playlist could not be created.');
-      const saved = await playlists.addSongs(library.id, draft.map(({ song }) => song));
-      if (!saved) {
-        await playlists.remove(library.id);
-        throw new Error(playlists.actionError ?? 'The playlist could not be saved. Your draft is still here to retry.');
-      }
-      setStatus(`Saved “${draftName.trim() || 'A little mix'}” to your playlists.`);
-      setEmotion('happy');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'The playlist could not be saved.');
-      setEmotion('error');
-    } finally { setSavingPlaylist(false); }
-  }, [draft, draftName, playlists, savingPlaylist]);
 
   return (
     <div className="dj-page">
@@ -405,7 +232,7 @@ export function DjPage({
           <div className="dj-current-actions">
             <button type="button" className={`dj-icon-button${isCurrentLiked ? ' is-liked' : ''}`} aria-label={isCurrentLiked ? 'Unlike this song' : 'Love this song'} onClick={() => onLike(currentSong)}><Heart size={18} fill={isCurrentLiked ? 'currentColor' : 'none'} /></button>
             <button type="button" className="dj-icon-button" aria-label={isPlaying ? 'Pause' : 'Play'} onClick={onToggle}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button>
-            <button type="button" className="dj-icon-button" aria-label="Skip this song" onClick={skipAndTeach}><SkipForward size={19} fill="currentColor" /></button>
+            <button type="button" className="dj-icon-button" aria-label="Skip this song" onClick={dj.skipAndTeach}><SkipForward size={19} fill="currentColor" /></button>
           </div>
         </article>
       ) : null}
@@ -413,7 +240,7 @@ export function DjPage({
       {isRemote ? <p className="dj-note" role="status">Switch playback to this device to use your DJ’s queue.</p> : null}
 
       {needsStart && turn && !isRemote ? (
-        <button type="button" className="dj-primary dj-start-set" onClick={() => onStartPlan(turn)}><Play size={16} fill="currentColor" /> Start this set</button>
+        <button type="button" className="dj-primary dj-start-set" onClick={() => dj.startPlan(turn)}><Play size={16} fill="currentColor" /> Start this set</button>
       ) : null}
 
       {goal === 'playlist' ? (
@@ -426,11 +253,11 @@ export function DjPage({
                 <span className="dj-queue-index">{String(index + 1).padStart(2, '0')}</span>
                 <Artwork song={song} size="small" />
                 <span className="dj-queue-copy"><strong>{song.title}</strong><small>{song.artist}</small>{reason ? <em>{reason}</em> : null}</span>
-                <button type="button" className="dj-remove-track" onClick={() => setDraft((items) => items.filter((item) => item.song.id !== song.id))} aria-label={`Remove ${song.title}`}><X size={16} /></button>
+                <button type="button" className="dj-remove-track" onClick={() => dj.removeFromDraft(song.id)} aria-label={`Remove ${song.title}`}><X size={16} /></button>
               </div>
             ))}
           </div>
-          {draft.length > 0 ? <button type="button" className="dj-primary dj-save-playlist" onClick={() => void savePlaylist()} disabled={savingPlaylist}><Sparkles size={16} /> {savingPlaylist ? 'Saving…' : 'Save playlist'}</button> : null}
+          {draft.length > 0 ? <button type="button" className="dj-primary dj-save-playlist" onClick={() => void dj.savePlaylist()} disabled={savingPlaylist}><Sparkles size={16} /> {savingPlaylist ? 'Saving…' : 'Save playlist'}</button> : null}
         </section>
       ) : displayTracks.length > 0 ? (
         <section className="dj-queue-section" aria-label="Your next songs">

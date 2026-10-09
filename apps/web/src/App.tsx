@@ -50,6 +50,7 @@ import { useMediaSession } from './hooks/useMediaSession';
 import { useNarrowViewport } from './hooks/useNarrowViewport';
 import { useSettings } from './hooks/useSettings';
 import { PlaylistsContext, usePlaylists } from './hooks/usePlaylists';
+import { DjSessionContext, useDjSessionState } from './hooks/useDjSession';
 import { QueueActionsContext, type QueueActions } from './hooks/useQueueActions';
 import { collectAlbumTracks } from './lib/album';
 import { tapHaptic } from './lib/haptics';
@@ -1238,6 +1239,23 @@ export default function App() {
   queueSongRef.current = queueSong;
   const queueActions = useMemo<QueueActions>(() => ({ add: (song, next) => { void queueSongRef.current(song, next); } }), []);
 
+  // One DJ session for the whole app, so leaving /dj keeps the conversation. Everything it does to playback goes through the handlers above.
+  const djNextSongs = useMemo(() => playingNext.slice(0, 8), [playingNext]);
+  const dj = useDjSessionState({
+    playlists,
+    currentSong: playerSong,
+    isRemote: remotePlayback,
+    recent: recentlyPlayed,
+    likedSongs,
+    nextSongs: djNextSongs,
+    onApplyPlan: applyDjPlan,
+    onStartPlan: startDjPlan,
+    onReorder: reorderDjUpcoming,
+    onRemove: removeDjUpcoming,
+    onPlayFrom: playDjFrom,
+    onSkip: skipNextSmart
+  });
+
   // Keep radio topped up so end-of-track advance always has a distinct next.
   useEffect(() => {
     const song = audio.currentSong;
@@ -1447,6 +1465,7 @@ export default function App() {
   return (
     <PlaylistsContext.Provider value={playlists}>
     <QueueActionsContext.Provider value={queueActions}>
+    <DjSessionContext.Provider value={dj}>
     <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme="dark" data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
       {immersiveOpen ? null : (
         <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={shaderPalette} variant={settings.appBackground} />
@@ -1509,15 +1528,9 @@ export default function App() {
             isLive={djLive}
             isRemote={remotePlayback}
             isCurrentLiked={playerSong ? likedIds.has(likedKey(playerSong)) : false}
-            recent={recentlyPlayed}
-            likedSongs={likedSongs}
-            nextSongs={audio.queue.filter((song) => song.id !== playerSong?.id).slice(0, 6)}
             audioRef={audio.audioRef}
             onToggle={togglePlayer}
-            onSkip={skipNextSmart}
             onLike={toggleLike}
-            onApplyPlan={applyDjPlan}
-            onStartPlan={startDjPlan}
           />
         ) : view === 'home' ? (
           <HomePage
@@ -1959,6 +1972,7 @@ export default function App() {
       <OfflineToast visible={offline} />
       <NoticeToast notice={connect.notice} onDone={connect.dismissNotice} />
     </div>
+    </DjSessionContext.Provider>
     </QueueActionsContext.Provider>
     </PlaylistsContext.Provider>
   );
