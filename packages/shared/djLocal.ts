@@ -91,6 +91,25 @@ function pick<T extends string>(value: unknown, allowed: readonly T[]): T | null
   return allowed.find((item) => item === lowered) ?? null;
 }
 
+/** The message with one word taken out, so a language named in the request is searched as a language, not as title text. */
+function withoutWord(message: string, word: string | null): string {
+  if (!word) return message;
+  return message.replace(new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), ' ');
+}
+
+/**
+ * Add the language to the searches as its own query, shaped by the energy of the set, so the
+ * catalog is asked for that language even when the model's queries never named it. A turn that
+ * searches for nothing (removals, questions) is left alone.
+ */
+function withLanguageQuery(queries: readonly string[], language: string | null, energy: number): string[] {
+  const name = language?.trim().toLowerCase();
+  if (!name || queries.length === 0) return queries.slice(0, 4);
+  const query = `${name} ${energy <= 2 ? 'melodies' : energy >= 4 ? 'hits' : 'songs'}`;
+  if (queries.some((item) => item.trim().toLowerCase() === query)) return queries.slice(0, 4);
+  return [...queries.slice(0, 3), query];
+}
+
 /** What the request itself says, with no model involved. It is also the floor when the model's output is unusable. */
 export function heuristicDjLocalIntent(context: DjLocalIntentContext): DjLocalIntent {
   const message = context.message.replace(/^\/[a-z-]+\s*/i, '').trim() || context.message.trim();
@@ -107,7 +126,9 @@ export function heuristicDjLocalIntent(context: DjLocalIntentContext): DjLocalIn
     : /\b(calm|chill|soft|slow|sleep|late night|relax|easygoing|mellow|quiet)/.test(lower) ? -1 : 0;
   const energy = Math.max(1, Math.min(5, (Number.isInteger(session.energy) ? session.energy : 3) + energyStep));
 
-  const topic = message.replace(/\b(please|play|give me|make me|can you|could you|i want|some)\b/gi, ' ')
+  const clearsLanguage = /\b(any language|all languages)\b/.test(lower);
+  const finalLanguage = language ?? (clearsLanguage ? null : session.language);
+  const topic = withoutWord(message.replace(/\b(please|play|give me|make me|can you|could you|i want|some)\b/gi, ' '), language)
     .replace(/\s+/g, ' ').trim().slice(0, 120);
   const queries: string[] = [];
   if (!explainOnly) {
@@ -116,7 +137,6 @@ export function heuristicDjLocalIntent(context: DjLocalIntentContext): DjLocalIn
       const keepsLanguage = Boolean(language) || !session.language || lower.includes(session.language.toLowerCase());
       queries.push(keepsLanguage ? topic : `${session.language} ${topic}`);
     }
-    if (language && topic.toLowerCase() !== `${language} songs`) queries.push(`${language} songs`);
     if (queries.length === 0 && session.vibe) queries.push(session.vibe);
   }
 
@@ -132,7 +152,7 @@ export function heuristicDjLocalIntent(context: DjLocalIntentContext): DjLocalIn
     language,
     addConstraints: noMatch?.[1] ? [`no ${noMatch[1]} songs`] : [],
     removeConstraints: [],
-    searchQueries: [...new Set(queries)].slice(0, 4),
+    searchQueries: withLanguageQuery([...new Set(queries)], finalLanguage, energy),
     strategy: goal === 'playlist' && draft.length > 0 && !fresh ? 'extend' : 'replace',
     removeTrackIds: [],
     playlistName: null,
@@ -156,6 +176,10 @@ export function resolveDjLocalIntent(output: string, context: DjLocalIntentConte
   const language = requestedAction === 'set' ? text(raw.language, 40) ?? base.language : null;
   const languageAction = requestedAction === 'set' && !language ? 'keep' : requestedAction;
 
+  const finalLanguage = languageAction === 'set' ? language
+    : languageAction === 'clear' ? null
+      : context.session.language;
+
   const insertValue = typeof raw.insertAfter === 'string' ? Number(raw.insertAfter) : raw.insertAfter;
   const insertAfter = typeof insertValue === 'number' && Number.isInteger(insertValue) && insertValue >= 0 && insertValue <= 7
     ? insertValue : null;
@@ -177,7 +201,9 @@ export function resolveDjLocalIntent(output: string, context: DjLocalIntentConte
     language,
     addConstraints: strings(raw.addConstraints, 8, 100),
     removeConstraints: strings(raw.removeConstraints, 8, 100),
-    searchQueries: modelQueries.length > 0 ? modelQueries : needsSongs ? base.searchQueries : [],
+    searchQueries: modelQueries.length > 0
+      ? withLanguageQuery(modelQueries, finalLanguage, energy)
+      : needsSongs ? base.searchQueries : [],
     strategy: pick(raw.strategy, ['replace', 'extend'] as const) ?? base.strategy,
     removeTrackIds,
     playlistName: text(raw.playlistName, 100),
@@ -212,10 +238,36 @@ function containsArtist(songs: readonly DjTrackContext[], key: string): boolean 
   return Boolean(key) && songs.some((song) => artistKey(song) === key);
 }
 
-function overlapScore(song: UnifiedSong, queries: readonly string[]): number {
-  const haystack = normalized(`${song.title} ${song.artist}`);
-  const terms = [...new Set(queries.flatMap((query) => normalized(query).split(' ')))].filter((term) => term.length > 2);
-  return terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0);
+/** +4 when a word of the request is a word of the artist's name: the listener asked for them. */
+function artistQueryScore(song: UnifiedSong, queries: readonly string[]): number {
+  const names = new Set(normalized(song.artist).split(' '));
+  const terms = queries.flatMap((query) => normalized(query).split(' ')).filter((term) => term.length > 2);
+  return terms.some((term) => names.has(term)) ? 4 : 0;
+}
+
+/**
+ * A title that merely repeats two or more consecutive words of the request ("Late Night" for
+ * "late night tamil melodies"), written spaced or run together. Such a song matched the words,
+ * not the mood the words describe.
+ */
+function titleEchoesQuery(song: UnifiedSong, queries: readonly string[]): boolean {
+  const title = ` ${normalized(song.title)} `;
+  return queries.some((query) => {
+    const words = normalized(query).split(' ').filter(Boolean);
+    return words.slice(1).some((word, index) => {
+      const first = words[index] ?? '';
+      return (first.length > 3 || word.length > 3)
+        && (title.includes(` ${first} ${word} `) || title.includes(` ${first}${word} `));
+    });
+  });
+}
+
+function displayArtist(song: UnifiedSong): string {
+  return (song.artist.split(/[,/&]/)[0] ?? song.artist).trim() || song.artist;
+}
+
+function capitalized(value: string): string {
+  return value.charAt(0).toLocaleUpperCase() + value.slice(1);
 }
 
 function songContext(song: UnifiedSong): DjTrackContext {
@@ -261,6 +313,7 @@ export function rankDjLocalCandidates(options: {
 
     const context = songContext(song);
     const artist = artistKey(context);
+    const name = displayArtist(song);
     const likedArtist = containsArtist(options.liked, artist);
     const recentArtist = containsArtist(options.recent, artist);
     const skippedArtist = containsArtist(options.skipped, artist);
@@ -268,14 +321,22 @@ export function rankDjLocalCandidates(options: {
     const languageMatch = Boolean(options.language && song.language
       && normalized(song.language).includes(normalized(options.language)));
     const languageMismatch = Boolean(options.language && song.language && !languageMatch);
-    const score = 40 - item.queryIndex * 10 + overlapScore(song, options.queries) * 2
+    const artistNamed = artistQueryScore(song, options.queries) > 0;
+    const echo = !artistNamed && !likedArtist && !recentArtist && !sameAsCurrent
+      && titleEchoesQuery(song, options.queries);
+    const score = 40 - item.queryIndex * 10 + artistQueryScore(song, options.queries)
       + (likedArtist ? 12 : 0) + (recentArtist ? 5 : 0) + (sameAsCurrent ? 3 : 0)
-      - (skippedArtist ? 30 : 0) - (languageMismatch ? 24 : 0) + (languageMatch ? 14 : 0);
-    const reason = languageMatch ? `Matches your ${options.language} preference.`
-      : likedArtist ? `An artist you have liked before.`
-        : recentArtist ? `An artist from your recent listening.`
-          : `Found in the catalog for “${options.queries[item.queryIndex] ?? 'your request'}”.`;
-    return [{ item, artist, score, reason, nameKey }];
+      - (skippedArtist ? 30 : 0) - (languageMismatch ? 24 : 0) + (languageMatch ? 14 : 0)
+      - (echo ? 15 : 0);
+    // Only reasons that are true of this song, strongest first. The fallback names no language and no taste.
+    const reasons = [
+      ...(likedArtist ? [`You've liked ${name} before.`] : []),
+      ...(sameAsCurrent ? ['Same artist as what\'s playing.'] : []),
+      ...(recentArtist ? [`${name} is in your recent plays.`] : []),
+      ...(languageMatch && options.language ? [`A ${capitalized(options.language)} pick, as asked.`] : []),
+      ...(artistNamed ? [`You asked for ${name}.`] : [])
+    ];
+    return [{ item, artist, score, reasons, fallback: `${name} came up when I searched for that.`, alternate: `More from ${name} in the same search.`, nameKey }];
   }).sort((a, b) => b.score - a.score || a.item.queryIndex - b.item.queryIndex);
 
   const picks = [...existing];
@@ -285,15 +346,37 @@ export function rankDjLocalCandidates(options: {
     artistCounts.set(key, (artistCounts.get(key) ?? 0) + 1);
   }
   const remaining = [...ranked];
+  const hasRoom = ({ artist }: { readonly artist: string }): boolean => (artistCounts.get(artist) ?? 0) < 2;
   while (picks.length < cap && remaining.length > 0) {
-    let index = remaining.findIndex(({ artist }) => (artistCounts.get(artist) ?? 0) < 2);
+    const previous = picks[picks.length - 1]?.reason ?? '';
+    let index = remaining.findIndex(hasRoom);
     if (index < 0) index = 0;
-    const [picked] = remaining.splice(index, 1);
-    if (!picked) break;
-    picks.push({ song: picked.item.song, reason: picked.reason });
-    usedIds.add(picked.item.song.id);
-    usedNames.add(picked.nameKey);
-    artistCounts.set(picked.artist, (artistCounts.get(picked.artist) ?? 0) + 1);
+    let chosen = remaining[index];
+    if (!chosen) break;
+    let reason = chosen.reasons.find((item) => item !== previous);
+    if (reason === undefined) {
+      // The next pick would repeat the last reason: prefer a near-equal song whose top reason differs.
+      let seen = 0;
+      for (let ahead = index + 1; ahead < remaining.length && seen < 3; ahead += 1) {
+        const candidate = remaining[ahead];
+        if (!candidate || !hasRoom(candidate)) continue;
+        seen += 1;
+        if (chosen.score - candidate.score > 5) break;
+        const top = candidate.reasons[0] ?? candidate.fallback;
+        if (top !== previous) {
+          index = ahead;
+          chosen = candidate;
+          reason = top;
+          break;
+        }
+      }
+      reason ??= chosen.fallback !== previous ? chosen.fallback : chosen.alternate;
+    }
+    remaining.splice(index, 1);
+    picks.push({ song: chosen.item.song, reason });
+    usedIds.add(chosen.item.song.id);
+    usedNames.add(chosen.nameKey);
+    artistCounts.set(chosen.artist, (artistCounts.get(chosen.artist) ?? 0) + 1);
   }
   return picks.slice(0, cap);
 }
