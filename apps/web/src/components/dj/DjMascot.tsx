@@ -13,7 +13,7 @@ export interface DjMascotProps {
   readonly emotion: DjMascotEmotion;
   /** The mascot's colours: the playing cover's palette, or the vibe's tone colours when nothing plays. */
   readonly palette: Palette;
-  /** True while music plays: notes and bubbles rise out of the orb. */
+  /** True while music plays: faint song marks drift up behind the orb. */
   readonly playing: boolean;
   /** How it dances while music plays (stage only). */
   readonly vibe?: DjDanceVibe;
@@ -65,22 +65,20 @@ function Tint({ slots, className }: { readonly slots: Slots; readonly className:
 }
 
 /**
- * Notes and bubbles that rise out of the orb while music plays, as if it were singing. Each has its own
- * lane (--n-x, -1..1 of the orb's width), drift, size and start delay, so the stream never looks like a
- * repeating pattern. The glyphs are text; the bubbles are empty rings.
+ * Faint song marks that drift up behind the orb while music plays: a few thin notes and soft motes of
+ * light, slow and barely there. Each has its own lane (--n-x, -1..1 of the orb's width), drift, size and
+ * start delay, so the stream never repeats visibly.
  */
-const NOTES: readonly { readonly kind: 'note' | 'bubble'; readonly glyph: string; readonly style: CSSProperties }[] = [
-  { kind: 'note', glyph: '♪', style: { '--n-x': -0.32, '--n-drift': 1, '--n-size': 1, '--n-delay': 0 } as CSSProperties },
-  { kind: 'bubble', glyph: '', style: { '--n-x': 0.18, '--n-drift': -1, '--n-size': 0.7, '--n-delay': 0.55 } as CSSProperties },
-  { kind: 'note', glyph: '♫', style: { '--n-x': 0.46, '--n-drift': -1, '--n-size': 0.9, '--n-delay': 1.2 } as CSSProperties },
-  { kind: 'bubble', glyph: '', style: { '--n-x': -0.12, '--n-drift': 1, '--n-size': 0.5, '--n-delay': 1.75 } as CSSProperties },
-  { kind: 'note', glyph: '♩', style: { '--n-x': 0.04, '--n-drift': 1, '--n-size': 0.8, '--n-delay': 2.4 } as CSSProperties },
-  { kind: 'bubble', glyph: '', style: { '--n-x': -0.5, '--n-drift': -1, '--n-size': 0.85, '--n-delay': 3 } as CSSProperties }
+const NOTES: readonly { readonly kind: 'note' | 'mote'; readonly glyph: string; readonly style: CSSProperties }[] = [
+  { kind: 'note', glyph: '♪', style: { '--n-x': -0.36, '--n-drift': 1, '--n-size': 1, '--n-delay': 0 } as CSSProperties },
+  { kind: 'mote', glyph: '', style: { '--n-x': 0.22, '--n-drift': -1, '--n-size': 0.8, '--n-delay': 0.3 } as CSSProperties },
+  { kind: 'note', glyph: '♫', style: { '--n-x': 0.42, '--n-drift': -1, '--n-size': 0.85, '--n-delay': 0.55 } as CSSProperties },
+  { kind: 'mote', glyph: '', style: { '--n-x': -0.14, '--n-drift': 1, '--n-size': 0.6, '--n-delay': 0.8 } as CSSProperties }
 ];
 
 /**
- * The DJ: a clear-glass orb tinted by the playing song. While music plays, notes and bubbles in the
- * song's colours rise out of it, as if it were singing. It shows the song's colours only, never its artwork.
+ * The DJ: a clear-glass orb tinted by the playing song. While music plays, faint song marks in its
+ * colours drift up behind it. It shows the song's colours only, never its artwork.
  *
  * Plain DOM and CSS; every transform lives on its own layer so none fight: roam (translate), dance
  * (rotate, hop on beats), kick (scale on beats). The notes ride on the roam layer, so they come out of

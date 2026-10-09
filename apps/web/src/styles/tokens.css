@@ -115,9 +115,9 @@
   --d-flight: 280ms;
   --d-deal: 320ms;
   --d-spin: 900ms;
-  /* Notes rising out of the DJ mascot while music plays: one note's climb, calm and lively. */
-  --d-note-rise: 4.2s;
-  --d-note-rise-lively: 2.8s;
+  /* Faint song marks drifting up behind the DJ mascot: one mark's climb, calm and lively. */
+  --d-note-rise: 9s;
+  --d-note-rise-lively: 7s;
   --d-shimmer: 1400ms;
   /* One song's backdrop colours dissolving into the next. */
   --d-atmosphere: 1300ms;

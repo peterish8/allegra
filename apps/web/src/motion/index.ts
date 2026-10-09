@@ -12,9 +12,9 @@ export const motionTokens = {
     flight: 0.28,
     /** A finished sleeve dealt out of the crate. */
     deal: 0.32,
-    /** One note rising out of the DJ mascot, calm and lively (mirror --d-note-rise, --d-note-rise-lively). */
-    noteRise: 4.2,
-    noteRiseLively: 2.8,
+    /** One faint song mark drifting up behind the DJ mascot, calm and lively (mirror --d-note-rise, --d-note-rise-lively). */
+    noteRise: 9,
+    noteRiseLively: 7,
     /*
      * The DJ mascot hops like a ball. Seconds in the air (a quick hop, an easy one, a lazy one), the
      * crouch before takeoff, and the rests between hops. The landing bounce is `spring.bounce`.
