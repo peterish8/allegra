@@ -1528,6 +1528,7 @@ export default function App() {
             isLive={djLive}
             isRemote={remotePlayback}
             isCurrentLiked={playerSong ? likedIds.has(likedKey(playerSong)) : false}
+            palette={playerSong ? palette : null}
             audioRef={audio.audioRef}
             onToggle={togglePlayer}
             onLike={toggleLike}

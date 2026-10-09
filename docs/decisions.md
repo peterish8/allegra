@@ -3,6 +3,25 @@
 Choices that are easy to undo by accident. Each says what was decided, why, and what would change
 it. Newest first. Mistakes that led to some of these are in `.planning/LEARNING-LOG.md`.
 
+## 2026-10-09
+
+### The DJ is an orb that becomes a record
+**Decided:** the DJ page has no stage fill. The mascot (`components/dj/DjMascot.tsx`) is a clear-glass
+orb with two white eyes; while music plays it turns into a record that spins once every 12 s, and the
+eyes stay on a layer that does not turn. It shows only the playing song's colours (a soft gradient on
+the label, a dark shade of the palette on the vinyl, a slow-breathing pool of the same colour behind
+the stage), never the artwork. With nothing playing it uses the vibe's darkened tone colours. A change
+of colour cross-fades between two colour slots by opacity. The whole mascot hops like a ball across the
+stage (crouch, arc, landing squash, wobble); the vibe sets how often, how far and how high. Every DJ
+panel (prompt pill, current track, queue, settings) uses the Home cards' clear-glass recipe.
+**Why:** the old cream slab clashed with the dark, cover-tinted site; the owner asked for a mascot that
+is distinctive, alive and tinted by the music, without bright glows. Only the spin is slow.
+**Rules it adds:** every transform sits on its own layer (roam > dance > kick > disc); motion is
+written to custom properties from the audio and hop loops, never to React state; reduced motion keeps
+the mascot still and centred and turns beats into glow opacity.
+**Changes if:** the DJ gets a second visual form (plan 01-06 reuses this component at 44 px) or the
+mascot starts to cost frames on a phone.
+
 ## 2026-10-05
 
 ### Recording identity stays stricter than cross-catalog matching
