@@ -7,9 +7,11 @@ import type { UnifiedSong } from '@shared/types';
 
 import { useAudioAnalyser } from '../hooks/useAudioAnalyser';
 import { useDjSession } from '../hooks/useDjSession';
+import { djDanceVibe, djMotionFor, djTonePalette, type DjRoamMode } from '../lib/djDance';
 import type { Palette } from '../lib/palette';
 import { DjMascot } from './dj/DjMascot';
 import { useDjPulse } from './dj/useDjPulse';
+import { useDjRoam } from './dj/useDjRoam';
 import { Artwork } from './ui';
 
 interface SpeechRecognitionResultLike { readonly transcript: string }
@@ -117,6 +119,11 @@ export function DjPage({
     return nextSongs.slice(0, 8).map((song) => ({ song, reason: reasons[song.id] ?? '' }));
   }, [draft, goal, needsStart, nextSongs, reasons, turn]);
   const tone = toneFor(session.vibe, session.energy);
+  const vibe = djDanceVibe(tone, session.energy);
+  const playing = Boolean(currentSong && isPlaying);
+  const roamMode: DjRoamMode = working ? 'still' : emotion === 'listening' ? 'listen' : 'roam';
+  const motion = useMemo(() => djMotionFor(vibe, playing, roamMode), [playing, roamMode, vibe]);
+  useDjRoam(stageRef, motion);
   const commandSuggestions = getDjSlashSuggestions(prompt, goal);
 
   return (
@@ -127,7 +134,7 @@ export function DjPage({
         aria-label="Your DJ companion"
         data-tone={tone}
         ref={stageRef}
-        style={{ '--dj-bass': '0', '--dj-energy': '0', '--dj-onset': '0' } as CSSProperties}
+        style={{ '--dj-bass': '0', '--dj-energy': '0', '--dj-onset': '0', '--dj-roam-x': '0', '--dj-roam-y': '0', '--dj-sway': '0' } as CSSProperties}
       >
         <div
           className="dj-mascot-stage"
@@ -147,9 +154,9 @@ export function DjPage({
           <DjMascot
             size="stage"
             emotion={working ? 'thinking' : emotion}
-            palette={palette}
-            cover={currentSong?.artwork ?? null}
-            playing={Boolean(currentSong && isPlaying)}
+            palette={palette ?? djTonePalette(tone)}
+            playing={playing}
+            vibe={vibe}
           />
         </div>
 

@@ -13,7 +13,10 @@ export const motionTokens = {
     /** A finished sleeve dealt out of the crate. */
     deal: 0.32,
     /** One turn of the DJ mascot's record (mirrors --d-record-spin). */
-    recordSpin: 1.8
+    recordSpin: 12,
+    /** One lap of the DJ mascot's wander (mirrors --d-roam-slow / --d-roam-fast). */
+    roamSlow: 14,
+    roamFast: 7
   },
   ease: {
     standard: [0.4, 0, 0.2, 1] as const,

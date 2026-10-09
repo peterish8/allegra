@@ -7838,31 +7838,62 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   }
 }
 
-/* ---------- DJ mascot: a clear-glass orb that becomes a spinning record ---------- */
-/* Colours come from the playing cover (inline --m-a / --m-b); without one, the page's darkened tone. */
+/* ---------- DJ mascot: a clear-glass orb that becomes a slowly turning record ---------- */
+/* Colours are the playing song's (inline --m-a/--m-b/--m-c on each colour slot), never its artwork.
+   Layer order, so transforms never fight: roam (translate) > dance (rotate, hop) > kick (scale) >
+   record disc (spin). The eyes sit above the disc and do not turn with it. */
 .dj-m {
-  --m-a: var(--dj-core, #b9772f);
-  --m-b: var(--dj-soft, #7a5a33);
   --m-p: 0;
   --m-look: 1;
+  --m-hop: 0px;
+  --m-glow-base: .3;
   position: relative; display: block; flex: none; aspect-ratio: 1; pointer-events: none;
 }
-.dj-m--stage { width: min(78cqh, 92cqw, 560px); }
+.dj-m[data-vibe='calm'] { --m-glow-base: .26; }
+.dj-m[data-vibe='bouncy'] { --m-glow-base: .36; }
+.dj-m--stage {
+  /* The mascot fills about two thirds of the stage and wanders in the room that is left. */
+  --m-size: min(68cqh, 92cqw, 520px);
+  --m-rx: max(0px, min(28cqw, calc(50cqw - var(--m-size) / 2 - 6px)));
+  --m-ry: max(0px, calc((100cqh - var(--m-size)) / 2 - 4px));
+  width: var(--m-size);
+}
+.dj-m--stage[data-playing='true'][data-vibe='steady'] { --m-hop: 2cqh; }
+.dj-m--stage[data-playing='true'][data-vibe='bouncy'] { --m-hop: 5cqh; }
 .dj-m--mini { --m-look: .2; width: 44px; }
-/* A beat kicks the whole mascot. One transform on one layer. */
-.dj-m-kick { position: absolute; inset: 0; transform: scale(calc(1 + var(--dj-onset, 0) * .04)); }
+
+/* A colour slot: two of every coloured layer, one visible, so a change of colour is an opacity cross-fade. */
+.dj-m-slot { position: absolute; inset: 0; opacity: 0; transition: opacity var(--d-atmosphere) var(--ease-standard); }
+.dj-m-slot[data-on='true'] { opacity: 1; }
+.dj-m-slot > span { position: absolute; inset: 0; border-radius: 50%; }
+
+/* The stage's own light: a large soft pool of the song's colour behind everything. Slow breath and drift. */
+.dj-m-stage-glow { position: absolute; top: 50%; left: 50%; width: 100cqw; height: 100cqh; translate: -50% -50%; }
+.dj-m-stage-glow .dj-m-slot > span {
+  border-radius: 0;
+  background: radial-gradient(ellipse 46% 56% at 50% 50%, color-mix(in srgb, var(--m-a) 30%, transparent), color-mix(in srgb, var(--m-b) 14%, transparent) 54%, transparent 76%);
+  animation: dj-m-breathe calc(var(--d-drift) * .8) var(--ease-standard) infinite alternate;
+}
+
+/* Wander, sway and hop. Each is one property on one layer, written from custom properties. */
+.dj-m-roam, .dj-m-dance, .dj-m-kick { position: absolute; inset: 0; }
+.dj-m--stage .dj-m-roam { translate: calc(var(--m-rx) * var(--dj-roam-x, 0)) calc(var(--m-ry) * var(--dj-roam-y, 0)); }
+.dj-m--stage .dj-m-dance { rotate: calc(var(--dj-sway, 0) * 1deg); translate: 0 calc(var(--dj-onset, 0) * var(--m-hop) * -1); }
+/* A beat kicks the whole mascot. */
+.dj-m-kick { transform: scale(calc(1 + var(--dj-onset, 0) * .04)); }
 .dj-m[data-playing='true'] .dj-m-kick { will-change: transform; }
 
-/* The cover's light, behind the glass. Quiet at rest, up to .55 on bass. */
+/* The song's light, behind the glass. Quiet at rest, never above .55 on bass. */
 .dj-m-glow {
-  position: absolute; inset: -6%; border-radius: 50%;
-  background: radial-gradient(circle at 50% 56%, var(--m-a) 0%, color-mix(in srgb, var(--m-b) 55%, transparent) 50%, transparent 74%);
-  opacity: calc(.3 + var(--dj-bass, 0) * .25);
+  position: absolute; inset: -6%;
+  opacity: min(.55, calc(var(--m-glow-base) + var(--dj-bass, 0) * .25));
   animation: dj-m-drift var(--d-drift) var(--ease-standard) infinite alternate;
 }
+.dj-m-light { background: radial-gradient(circle at 50% 56%, var(--m-a) 0%, color-mix(in srgb, var(--m-b) 55%, transparent) 50%, transparent 74%); }
 .dj-m[data-emotion='sleeping'] .dj-m-glow { opacity: .18; }
-/* Thinking: a thin ring of the cover colour breathes around the orb. Opacity only. */
-.dj-m-ring { position: absolute; inset: -2%; border: 1px solid color-mix(in srgb, var(--m-a) 70%, white); border-radius: 50%; opacity: 0; }
+/* Thinking: a thin ring of the song's colour breathes around the orb. Opacity only. */
+.dj-m-ring { position: absolute; inset: -2%; opacity: 0; }
+.dj-m-ring-line { border: 1px solid color-mix(in srgb, var(--m-a) 70%, white); }
 .dj-m[data-emotion='thinking'] .dj-m-ring { animation: dj-m-think var(--d-atmosphere) var(--ease-standard) infinite alternate; }
 
 /* The glass: the same recipe as the Home cards. */
@@ -7875,8 +7906,8 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 .dj-m--mini .dj-m-orb, .dj-m--mini .dj-m-record { -webkit-backdrop-filter: blur(10px) saturate(150%); backdrop-filter: blur(10px) saturate(150%); }
 .dj-m-sheen { position: absolute; inset: 0; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .1), transparent 46%); }
-.dj-m-fill {
-  position: absolute; inset: 0;
+.dj-m-slot > .dj-m-fill {
+  border-radius: 0;
   background: linear-gradient(to top, color-mix(in srgb, var(--m-a) 30%, transparent), color-mix(in srgb, var(--m-b) 10%, transparent));
   transform: translateY(calc((1 - var(--m-p)) * 100%));
   transition: transform var(--d-slow) var(--ease-standard);
@@ -7890,33 +7921,45 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   transition: opacity var(--d-slow) var(--ease-standard), transform var(--d-slow) var(--ease-standard);
 }
 .dj-m[data-playing='true'] .dj-m-record { opacity: 1; transform: none; }
-/* The platter turns on its own layer. Paused (not removed) when music stops, so it fades out where it stopped. */
+/* The vinyl: a dark shade of the song's own colour, grooves a lighter ring of the same hue. */
+.dj-m-body {
+  background: radial-gradient(circle, color-mix(in srgb, var(--m-a) 38%, #000) 0%, color-mix(in srgb, var(--m-a) 26%, #000) 100%);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--m-a) 55%, transparent);
+  opacity: .86;
+}
+/* The platter turns on its own layer, barely. Paused (not removed) when music stops, so it fades out where it stopped. */
 .dj-m-disc {
   position: absolute; inset: 0; border-radius: 50%;
-  background:
-    repeating-radial-gradient(circle at 50% 50%, rgba(255, 255, 255, .09) 0 1px, transparent 1px 4px),
-    conic-gradient(from 20deg, transparent 0 8%, rgba(255, 255, 255, .13) 14%, transparent 22% 58%, rgba(255, 255, 255, .09) 64%, transparent 72%),
-    radial-gradient(circle, color-mix(in srgb, var(--m-b) 16%, transparent), transparent 74%);
   animation: dj-m-spin var(--d-record-spin) linear infinite paused;
 }
 .dj-m[data-playing='true'] .dj-m-disc { animation-play-state: running; }
+.dj-m-grooves {
+  background:
+    repeating-radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--m-a) 60%, white) 0 1px, transparent 1px 4px),
+    conic-gradient(from 20deg, transparent 0 8%, color-mix(in srgb, var(--m-a) 40%, white) 14%, transparent 22% 58%, color-mix(in srgb, var(--m-a) 40%, white) 64%, transparent 72%);
+  opacity: .16;
+}
+/* The label: only the song's colours, a soft gradient. No artwork, nothing readable. */
 .dj-m-label {
   position: absolute; top: 31%; left: 31%; width: 38%; height: 38%; overflow: hidden; border-radius: 50%;
-  background: linear-gradient(135deg, var(--m-a), var(--m-b));
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .22), 0 0 0 4px rgba(255, 255, 255, .05);
 }
-.dj-m-label img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.dj-m-label-fill {
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, .16), transparent 58%),
+    linear-gradient(135deg, var(--m-a), var(--m-b) 58%, var(--m-c));
+}
 
-/* The eyes never rotate with the record: they sit above it, smaller, over the label. */
+/* The eyes never turn with the record: they sit above it, smaller, centred on the label. */
 .dj-m-eyes {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 9%;
   translate: calc(var(--dj-look-x, 0px) * var(--m-look)) calc(var(--dj-look-y, 0px) * var(--m-look));
   transition: translate var(--d-base) var(--ease-decelerate), transform var(--d-slow) var(--ease-standard), rotate var(--d-base) var(--ease-standard);
 }
-.dj-m[data-playing='true'] .dj-m-eyes { transform: scale(.6); }
+.dj-m[data-playing='true'] .dj-m-eyes { transform: scale(.72); }
 .dj-m-eye {
   flex: none; width: 16%; height: 23%; border-radius: 53% 47% 49% 51% / 47% 51% 49% 53%;
-  background: #fffefa; box-shadow: 0 0 16px rgba(255, 255, 255, .4);
+  background: #fffefa; box-shadow: 0 0 14px rgba(255, 255, 255, .35), 0 2px 8px rgba(0, 0, 0, .3);
   rotate: 8deg; transform-origin: center 56%;
   animation: dj-m-blink calc(var(--d-drift) * .65) var(--ease-standard) infinite;
   transition: rotate var(--d-base) var(--ease-standard), translate var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-standard), opacity var(--d-base) var(--ease-standard);
@@ -7937,14 +7980,21 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 @keyframes dj-m-spin { to { transform: rotate(360deg); } }
 @keyframes dj-m-blink { 0%, 91%, 100% { scale: 1 1; } 94% { scale: 1 .06; } 97% { scale: 1 1; } }
 @keyframes dj-m-drift { from { translate: -2% 1%; } to { translate: 2% -2%; } }
+@keyframes dj-m-breathe {
+  from { opacity: .55; transform: translate(-2%, 1%) scale(1); }
+  to { opacity: .85; transform: translate(2%, -1%) scale(1.06); }
+}
 @keyframes dj-m-think { from { opacity: 0; } to { opacity: .6; } }
 
-/* Reduced motion collapses to opacity. Beats lift the glow instead of the scale; the swap between
-   orb and record stays a cross-fade; nothing turns, drifts or blinks. */
+/* Reduced motion collapses to opacity. The mascot stays centred and still: no wander, sway, hop, spin,
+   blink or drift. Beats lift the glow instead of the scale; the vibe shows in the glow's level and
+   colour; the swap between orb and record, and every change of colour, is a cross-fade. */
 @media (prefers-reduced-motion: reduce) {
+  .dj-m--stage .dj-m-roam, .dj-m--stage .dj-m-dance { translate: none; rotate: none; }
   .dj-m-kick { transform: none; will-change: auto; }
-  .dj-m-glow { animation: none; opacity: min(.55, calc(.3 + var(--dj-bass, 0) * .15 + var(--dj-onset, 0) * .15)); }
+  .dj-m-glow { animation: none; opacity: min(.55, calc(var(--m-glow-base) + var(--dj-bass, 0) * .15 + var(--dj-onset, 0) * .15)); }
   .dj-m[data-emotion='sleeping'] .dj-m-glow { opacity: .18; }
+  .dj-m-stage-glow .dj-m-slot > span { animation: none; }
   .dj-m-disc, .dj-m-eye { animation: none; }
   .dj-m-record { transform: none; transition: opacity var(--d-slow) var(--ease-standard); }
   .dj-m-fill { transition: none; }
