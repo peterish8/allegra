@@ -11,7 +11,9 @@ export const motionTokens = {
     /** A cover flying from its row into the transfer crate. */
     flight: 0.28,
     /** A finished sleeve dealt out of the crate. */
-    deal: 0.32
+    deal: 0.32,
+    /** One turn of the DJ mascot's record (mirrors --d-record-spin). */
+    recordSpin: 1.8
   },
   ease: {
     standard: [0.4, 0, 0.2, 1] as const,

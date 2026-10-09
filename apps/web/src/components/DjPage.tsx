@@ -7,6 +7,7 @@ import type { UnifiedSong } from '@shared/types';
 
 import { useAudioAnalyser } from '../hooks/useAudioAnalyser';
 import { useDjSession } from '../hooks/useDjSession';
+import { useDjPulse } from './dj/useDjPulse';
 import { Artwork } from './ui';
 
 interface SpeechRecognitionResultLike { readonly transcript: string }
@@ -57,34 +58,7 @@ export function DjPage({
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const analyser = useAudioAnalyser(audioRef, isPlaying);
 
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage || !isPlaying) return undefined;
-    let frame = 0;
-    let baseline = 0.025;
-    let pulse = 0;
-    let lastOnset = 0;
-    const sample = (now: number): void => {
-      const level = analyser.readLevel();
-      baseline += (level - baseline) * 0.025;
-      const onset = level > Math.max(0.095, baseline * 1.48) && now - lastOnset > 360;
-      if (onset) {
-        pulse = Math.min(0.9, Math.max(pulse, level * 2.4));
-        lastOnset = now;
-      } else {
-        pulse *= 0.91;
-      }
-      stage.style.setProperty('--dj-audio-energy', String(Math.min(1, level * 2.6)));
-      stage.style.setProperty('--dj-onset', String(pulse));
-      frame = window.requestAnimationFrame(sample);
-    };
-    frame = window.requestAnimationFrame(sample);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      stage.style.setProperty('--dj-audio-energy', '0');
-      stage.style.setProperty('--dj-onset', '0');
-    };
-  }, [analyser, isPlaying]);
+  useDjPulse(stageRef, analyser, isPlaying);
 
   useEffect(() => () => recognitionRef.current?.stop(), []);
 
@@ -152,7 +126,7 @@ export function DjPage({
         data-emotion={working ? 'thinking' : emotion}
         data-paused={currentIsPaused ? 'true' : 'false'}
         ref={stageRef}
-        style={{ '--dj-audio-energy': '0', '--dj-onset': '0' } as CSSProperties}
+        style={{ '--dj-bass': '0', '--dj-energy': '0', '--dj-onset': '0' } as CSSProperties}
       >
         <div
           className={`dj-mascot-stage${currentSong && isPlaying ? ' is-vibing' : ''}`}

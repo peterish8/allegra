@@ -115,6 +115,8 @@
   --d-flight: 280ms;
   --d-deal: 320ms;
   --d-spin: 900ms;
+  /* One turn of the DJ's record. Linear, so it reads as a platter and not as a gesture. */
+  --d-record-spin: 1800ms;
   --d-shimmer: 1400ms;
   /* One song's backdrop colours dissolving into the next. */
   --d-atmosphere: 1300ms;
