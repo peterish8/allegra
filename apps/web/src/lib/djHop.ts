@@ -2,13 +2,13 @@ import { motionTokens, spring } from '../motion';
 import type { DjMotion } from './djDance';
 
 /**
- * The DJ mascot as a ball: it crouches, jumps to a new spot along an arc, lands with a squash and a
- * wobble, rests, and goes again. Pure and clock-free (the caller feeds `dt`), so it can be checked
- * without a browser.
+ * The DJ mascot floats: it glides to a new spot on an eased path, bobbing softly the whole time, and
+ * now and then (`motion.hopChance`) it hops there instead, like a ball: a crouch, an arc, a squash and a
+ * wobble on landing. Pure and clock-free (the caller feeds `dt`), so it can be checked without a browser.
  *
  * All values are unitless and meant for CSS custom properties:
- *  - `x`, `y`: where it stands, as fractions of the stage's roam box (-1..1; y grows downward, toward the prompt).
- *  - `lift`: how high above the floor it is, as a fraction of its own height (0 on the ground).
+ *  - `x`, `y`: where it is, as fractions of the stage's roam box (-1..1; y grows downward, toward the prompt).
+ *  - `lift`: how high above its spot it is, as a fraction of its own height (0 on the ground).
  *  - `squash`: negative when crushed against the floor, positive when stretched in flight.
  *  - `sway`: degrees of lean or wobble.
  */
@@ -18,25 +18,29 @@ export interface HopPose {
   readonly lift: number;
   readonly squash: number;
   readonly sway: number;
+  /** True while it is in the air on a hop (not while floating). */
+  readonly airborne: boolean;
 }
 
 export interface Hopper {
   readonly step: (dt: number, motion: DjMotion) => HopPose;
 }
 
-type Phase = 'rest' | 'crouch' | 'air' | 'land';
+type Phase = 'rest' | 'glide' | 'crouch' | 'air' | 'land';
 
 /** The prompt sits below the stage; listening parks the mascot at the bottom middle of its box. */
 const LISTEN_SPOT = { x: 0, y: 0.9 } as const;
-/** The floor of the roam box: a hop never lands higher than this, so the arc has room above it. */
+/** The floor of the roam box: a move never ends higher than this, so a hop's arc has room above it. */
 const FLOOR_TOP = -0.1;
-/** A new spot must be at least this far from the old one, or it is not a hop to somewhere. */
+/** A new spot must be at least this far from the old one, or it is not a move to somewhere. */
 const MIN_TRAVEL = 0.25;
 const CROUCH_SQUASH = -0.16;
 const STRETCH = 0.14;
 const LANDING_SQUASH = -0.24;
 /** Degrees of wobble thrown into a landing, in the direction of travel. */
 const WOBBLE = 6;
+/** Degrees of lean into a glide, at its middle. */
+const GLIDE_LEAN = 3;
 /** A second hop in place follows its landing after this long, and is this much smaller and quicker. */
 const DOUBLE_DELAY = 0.12;
 const DOUBLE_SCALE = 0.6;
@@ -60,6 +64,9 @@ function integrate(state: Spring1, dt: number): void {
 
 const settled = (state: Spring1): boolean => Math.abs(state.value) < 0.01 && Math.abs(state.velocity) < 0.4;
 
+/** Slow at both ends, like something floating rather than pushed. */
+const easeInOut = (u: number): number => u * u * (3 - 2 * u);
+
 export function createHopper(rand: () => number = Math.random): Hopper {
   const between = (range: readonly [number, number]): number => range[0] + (range[1] - range[0]) * rand();
 
@@ -73,9 +80,13 @@ export function createHopper(rand: () => number = Math.random): Hopper {
   let toX = 0;
   let toY = 0;
   let flight = motionTokens.duration.hopEasy;
+  let glide: number = motionTokens.duration.floatEasy;
   let apex = 0;
   let double = false;
   let lift = 0;
+  let lean = 0;
+  let bobClock = 0;
+  let bob = 0;
   const squash: Spring1 = { value: 0, velocity: 0 };
   const wobble: Spring1 = { value: 0, velocity: 0 };
   let tilt = 0;
@@ -101,11 +112,43 @@ export function createHopper(rand: () => number = Math.random): Hopper {
     clock = 0;
   };
 
+  /** Floating is the usual move; a hop is the occasional one. Listening always floats down to the prompt. */
+  const startMove = (motion: DjMotion): void => {
+    if (motion.mode === 'roam' && rand() < motion.hopChance) {
+      startCrouch();
+      return;
+    }
+    aim(motion);
+    phase = 'glide';
+    clock = 0;
+    glide = between(motion.glide);
+  };
+
   const step = (dtRaw: number, motion: DjMotion): HopPose => {
     const dt = Math.max(0, Math.min(0.1, dtRaw));
     tilt += (motion.tilt - tilt) * (1 - Math.exp(-dt / TILT_EASE));
 
-    if (phase === 'crouch') {
+    // The bob runs under everything while roaming, and eases out when thinking or listening.
+    bobClock += dt;
+    const bobTarget = motion.mode === 'roam' ? motion.bob : 0;
+    bob += (bobTarget - bob) * (1 - Math.exp(-dt / TILT_EASE));
+    const bobLift = bob * (0.5 - 0.5 * Math.cos((2 * Math.PI * bobClock) / motionTokens.duration.floatBob));
+
+    if (phase === 'glide') {
+      clock += dt;
+      const u = Math.min(1, clock / glide);
+      const eased = easeInOut(u);
+      x = fromX + (toX - fromX) * eased;
+      y = fromY + (toY - fromY) * eased;
+      lean = Math.sign(toX - fromX) * GLIDE_LEAN * Math.sin(Math.PI * u);
+      if (u >= 1) {
+        x = toX;
+        y = toY;
+        lean = 0;
+        phase = 'rest';
+        restLeft = between(motion.rest);
+      }
+    } else if (phase === 'crouch') {
       clock += dt;
       const t = Math.min(1, clock / motionTokens.duration.crouch);
       squash.value = CROUCH_SQUASH * t * (2 - t);
@@ -156,12 +199,12 @@ export function createHopper(rand: () => number = Math.random): Hopper {
         const arrived = motion.mode === 'listen' && Math.hypot(x - LISTEN_SPOT.x, y - LISTEN_SPOT.y) < 0.02;
         if (motion.mode !== 'still' && !arrived) {
           restLeft -= dt;
-          if (restLeft <= 0) startCrouch();
+          if (restLeft <= 0) startMove(motion);
         }
       }
     }
 
-    return { x, y, lift, squash: squash.value, sway: wobble.value + tilt };
+    return { x, y, lift: lift + bobLift, squash: squash.value, sway: wobble.value + lean + tilt, airborne: phase === 'air' };
   };
 
   return { step };

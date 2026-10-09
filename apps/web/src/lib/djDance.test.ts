@@ -23,19 +23,24 @@ describe('djDanceVibe', () => {
 });
 
 describe('djMotionFor', () => {
-  it('hops quicker and rests less for bouncy than for calm', () => {
+  it('is livelier for bouncy than for calm: hops more often, drifts further, bobs more', () => {
     const bouncy = djMotionFor('bouncy', true, 'roam');
     const calm = djMotionFor('calm', true, 'roam');
-    assert.ok(bouncy.rest[1] < calm.rest[0], 'bouncy never rests as long as calm does at the least');
+    assert.ok(bouncy.hopChance > calm.hopChance);
     assert.ok(bouncy.height > calm.height);
     assert.ok(bouncy.reach > calm.reach);
+    assert.ok(bouncy.bob > calm.bob);
   });
 
-  it('hops in the air for well under a second whatever the vibe, so it never glides', () => {
-    for (const vibe of ['calm', 'steady', 'bouncy', 'dreamy'] as const) {
-      assert.ok(djMotionFor(vibe, true, 'roam').flight[1] < 1);
+  it('mostly floats whatever the vibe: hops are the exception, glides are slow, hops are quick', () => {
+    for (const playing of [true, false]) {
+      for (const vibe of ['calm', 'steady', 'bouncy', 'dreamy'] as const) {
+        const motion = djMotionFor(vibe, playing, 'roam');
+        assert.ok(motion.hopChance <= 0.3, `${vibe} hops only sometimes`);
+        assert.ok(motion.glide[0] >= 1.5, `${vibe} glides slowly`);
+        assert.ok(motion.flight[1] < 1, `${vibe} hops are quick`);
+      }
     }
-    assert.ok(djMotionFor('calm', false, 'roam').flight[1] < 1);
   });
 
   it('rests longer when nothing plays', () => {

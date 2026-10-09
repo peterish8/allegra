@@ -115,8 +115,9 @@
   --d-flight: 280ms;
   --d-deal: 320ms;
   --d-spin: 900ms;
-  /* One turn of the DJ's record: a lazy drift, barely turning. Linear, so it reads as a platter. */
-  --d-record-spin: 12s;
+  /* Notes rising out of the DJ mascot while music plays: one note's climb, calm and lively. */
+  --d-note-rise: 4.2s;
+  --d-note-rise-lively: 2.8s;
   --d-shimmer: 1400ms;
   /* One song's backdrop colours dissolving into the next. */
   --d-atmosphere: 1300ms;

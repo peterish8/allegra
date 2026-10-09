@@ -13,7 +13,7 @@ export interface DjMascotProps {
   readonly emotion: DjMascotEmotion;
   /** The mascot's colours: the playing cover's palette, or the vibe's tone colours when nothing plays. */
   readonly palette: Palette;
-  /** True while music plays: the orb becomes a spinning record. */
+  /** True while music plays: notes and bubbles rise out of the orb. */
   readonly playing: boolean;
   /** How it dances while music plays (stage only). */
   readonly vibe?: DjDanceVibe;
@@ -65,13 +65,27 @@ function Tint({ slots, className }: { readonly slots: Slots; readonly className:
 }
 
 /**
- * The DJ: a clear-glass orb tinted by the playing song that becomes a slowly turning record while
- * music plays. It shows the song's colours only, never its artwork.
+ * Notes and bubbles that rise out of the orb while music plays, as if it were singing. Each has its own
+ * lane (--n-x, -1..1 of the orb's width), drift, size and start delay, so the stream never looks like a
+ * repeating pattern. The glyphs are text; the bubbles are empty rings.
+ */
+const NOTES: readonly { readonly kind: 'note' | 'bubble'; readonly glyph: string; readonly style: CSSProperties }[] = [
+  { kind: 'note', glyph: '♪', style: { '--n-x': -0.32, '--n-drift': 1, '--n-size': 1, '--n-delay': 0 } as CSSProperties },
+  { kind: 'bubble', glyph: '', style: { '--n-x': 0.18, '--n-drift': -1, '--n-size': 0.7, '--n-delay': 0.55 } as CSSProperties },
+  { kind: 'note', glyph: '♫', style: { '--n-x': 0.46, '--n-drift': -1, '--n-size': 0.9, '--n-delay': 1.2 } as CSSProperties },
+  { kind: 'bubble', glyph: '', style: { '--n-x': -0.12, '--n-drift': 1, '--n-size': 0.5, '--n-delay': 1.75 } as CSSProperties },
+  { kind: 'note', glyph: '♩', style: { '--n-x': 0.04, '--n-drift': 1, '--n-size': 0.8, '--n-delay': 2.4 } as CSSProperties },
+  { kind: 'bubble', glyph: '', style: { '--n-x': -0.5, '--n-drift': -1, '--n-size': 0.85, '--n-delay': 3 } as CSSProperties }
+];
+
+/**
+ * The DJ: a clear-glass orb tinted by the playing song. While music plays, notes and bubbles in the
+ * song's colours rise out of it, as if it were singing. It shows the song's colours only, never its artwork.
  *
  * Plain DOM and CSS; every transform lives on its own layer so none fight: roam (translate), dance
- * (rotate, hop on beats), kick (scale on beats), then the record's spin. The audio and the wander
- * reach it only through custom properties an ancestor sets (`useDjPulse`, `useDjRoam`), so nothing
- * re-renders per frame. The eyes sit on a layer that does not spin with the record, over its label.
+ * (rotate, hop on beats), kick (scale on beats). The notes ride on the roam layer, so they come out of
+ * wherever the mascot is but ignore its squash. The audio and the wander reach it only through custom
+ * properties an ancestor sets (`useDjPulse`, `useDjRoam`), so nothing re-renders per frame.
  */
 export function DjMascot({ size, emotion, palette, playing, vibe = 'steady', progress }: DjMascotProps) {
   const slots = useColourSlots(palette);
@@ -88,6 +102,11 @@ export function DjMascot({ size, emotion, palette, playing, vibe = 'steady', pro
     >
       {size === 'stage' ? <div className="dj-m-stage-glow"><Tint slots={slots} className="dj-m-halo" /></div> : null}
       <div className="dj-m-roam">
+        {size === 'stage' ? (
+          <div className="dj-m-notes" style={slotStyle(palette)}>
+            {NOTES.map((note, index) => <span key={index} className={`dj-m-note dj-m-note--${note.kind}`} style={note.style}>{note.glyph}</span>)}
+          </div>
+        ) : null}
         <div className="dj-m-dance">
           <div className="dj-m-kick">
             <div className="dj-m-glow"><Tint slots={slots} className="dj-m-light" /></div>
@@ -95,13 +114,6 @@ export function DjMascot({ size, emotion, palette, playing, vibe = 'steady', pro
             <div className="dj-m-orb">
               <span className="dj-m-sheen" />
               {progress !== undefined ? <Tint slots={slots} className="dj-m-fill" /> : null}
-            </div>
-            <div className="dj-m-record">
-              <Tint slots={slots} className="dj-m-body" />
-              <div className="dj-m-disc">
-                <Tint slots={slots} className="dj-m-grooves" />
-                <span className="dj-m-label"><Tint slots={slots} className="dj-m-label-fill" /></span>
-              </div>
             </div>
             <div className="dj-m-eyes">
               <span className="dj-m-eye dj-m-eye--left" />

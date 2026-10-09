@@ -12,8 +12,9 @@ export const motionTokens = {
     flight: 0.28,
     /** A finished sleeve dealt out of the crate. */
     deal: 0.32,
-    /** One turn of the DJ mascot's record (mirrors --d-record-spin). */
-    recordSpin: 12,
+    /** One note rising out of the DJ mascot, calm and lively (mirror --d-note-rise, --d-note-rise-lively). */
+    noteRise: 4.2,
+    noteRiseLively: 2.8,
     /*
      * The DJ mascot hops like a ball. Seconds in the air (a quick hop, an easy one, a lazy one), the
      * crouch before takeoff, and the rests between hops. The landing bounce is `spring.bounce`.
@@ -25,7 +26,15 @@ export const motionTokens = {
     restQuick: 0.25,
     restEasy: 0.8,
     restLazy: 1.8,
-    restIdle: 3.6
+    restIdle: 3.6,
+    /*
+     * Mostly the mascot floats: an eased glide to a new spot (quick, easy, lazy) and a soft bob of
+     * this period. Hops are the occasional exception.
+     */
+    floatQuick: 1.6,
+    floatEasy: 2.6,
+    floatLazy: 4,
+    floatBob: 3.4
   },
   ease: {
     standard: [0.4, 0, 0.2, 1] as const,

@@ -6,6 +6,7 @@ import '../src/styles/tokens.css';
 import '../src/styles/global.css';
 import '../src/styles/components.css';
 import '../src/styles/app.css';
+import '../src/styles/dj-mascot.css';
 import '../src/styles/coverflow.css';
 import '../src/styles/blend.css';
 

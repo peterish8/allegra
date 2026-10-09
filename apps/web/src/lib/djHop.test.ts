@@ -24,23 +24,36 @@ function run(seconds: number, motion: ReturnType<typeof djMotionFor>, seed = 7):
   return poses;
 }
 
-/** Times a hop leaves the floor. */
-function takeoffs(poses: readonly HopPose[]): number {
+/** Hops: times it leaves the ground (a double hop counts twice). */
+function hops(poses: readonly HopPose[]): number {
   let count = 0;
-  for (let i = 1; i < poses.length; i += 1) if (poses[i]!.lift > 0 && poses[i - 1]!.lift === 0) count += 1;
+  for (let i = 1; i < poses.length; i += 1) if (poses[i]!.airborne && !poses[i - 1]!.airborne) count += 1;
   return count;
 }
 
+/** Floating moves: stretches of travel with no squash at all. */
+function moved(poses: readonly HopPose[]): number {
+  return Math.max(...poses.map((p) => p.x)) - Math.min(...poses.map((p) => p.x));
+}
+
 describe('createHopper', () => {
-  it('travels across the stage within six seconds of bouncy music', () => {
-    const poses = run(6, djMotionFor('bouncy', true, 'roam'));
-    const xs = poses.map((p) => p.x);
-    assert.ok(Math.max(...xs) - Math.min(...xs) > 0.3, 'it moved sideways');
+  it('floats across the stage within eight seconds, bobbing as it goes', () => {
+    const poses = run(8, djMotionFor('steady', true, 'roam'));
+    assert.ok(moved(poses) > 0.2, 'it drifted sideways');
+    const lifts = poses.map((p) => p.lift);
+    assert.ok(Math.max(...lifts) > 0.02, 'it bobs');
   });
 
-  it('squashes on landing and stretches in the air', () => {
-    const poses = run(6, djMotionFor('bouncy', true, 'roam'));
-    const squash = poses.map((p) => p.squash);
+  it('hops only sometimes: most moves are floats', () => {
+    const poses = run(120, djMotionFor('bouncy', true, 'roam'));
+    const count = hops(poses);
+    assert.ok(count >= 1, 'it does hop now and then');
+    assert.ok(count <= 20, `not always hopping: ${count} hops in two minutes`);
+  });
+
+  it('squashes on landing and stretches in the air when it does hop', () => {
+    const always = { ...djMotionFor('bouncy', true, 'roam'), hopChance: 1 };
+    const squash = run(6, always).map((p) => p.squash);
     assert.ok(Math.min(...squash) < -0.15, 'crushed against the floor');
     assert.ok(Math.max(...squash) > 0.1, 'stretched in flight');
   });
@@ -54,15 +67,14 @@ describe('createHopper', () => {
     }
   });
 
-  it('hops more often for bouncy than for calm, and calm still hops', () => {
-    const bouncy = takeoffs(run(30, djMotionFor('bouncy', true, 'roam')));
-    const calm = takeoffs(run(30, djMotionFor('calm', true, 'roam')));
-    assert.ok(calm >= 2, 'calm hops');
-    assert.ok(bouncy > calm * 1.5, `bouncy ${bouncy} vs calm ${calm}`);
+  it('hops more often for bouncy than for calm', () => {
+    const bouncy = hops(run(120, djMotionFor('bouncy', true, 'roam')));
+    const calm = hops(run(120, djMotionFor('calm', true, 'roam')));
+    assert.ok(bouncy > calm, `bouncy ${bouncy} vs calm ${calm}`);
   });
 
   it('wobbles when it lands and settles again', () => {
-    const poses = run(12, djMotionFor('steady', true, 'roam'));
+    const poses = run(12, { ...djMotionFor('steady', true, 'roam'), hopChance: 1 });
     assert.ok(Math.max(...poses.map((p) => Math.abs(p.sway))) > 2, 'a wobble');
     const hopper = createHopper(seeded(1));
     const quiet = djMotionFor('calm', false, 'still');
@@ -85,7 +97,7 @@ describe('createHopper', () => {
     assert.ok(pose.sway < -5, 'leaning');
   });
 
-  it('hops down to the prompt when listening and stays there', () => {
+  it('floats down to the prompt when listening and stays there', () => {
     const hopper = createHopper(seeded(9));
     const listening = djMotionFor('bouncy', true, 'listen');
     let pose = hopper.step(FRAME, listening);

@@ -1,0 +1,60 @@
+/*
+ * The DJ mascot sings: while music plays, notes and bubbles in the song's colours rise out of the orb
+ * (DjMascot's NOTES). There is no record any more; the orb stays as it is, eyes full size.
+ * Loaded after app.css, so these rules replace the record-era ones of the same specificity.
+ */
+.dj-m[data-playing='true'] .dj-m-orb { opacity: 1; }
+.dj-m[data-playing='true'] .dj-m-eyes { transform: none; }
+/* A beat lifts it only a touch: it floats, it does not bounce. */
+.dj-m--stage[data-playing='true'][data-vibe='steady'] { --m-hop: .8cqh; }
+.dj-m--stage[data-playing='true'][data-vibe='bouncy'] { --m-hop: 1.6cqh; }
+
+.dj-m-notes {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  opacity: 0; transition: opacity var(--d-slow) var(--ease-standard);
+}
+.dj-m[data-playing='true'] .dj-m-notes { opacity: 1; }
+
+/* Each note starts low beside the orb in its own lane and climbs above it, drifting and fading. */
+.dj-m-note {
+  position: absolute; top: 70%; left: calc(50% + var(--n-x) * 62%);
+  margin-left: calc(var(--m-size) * -.03);
+  font-size: calc(var(--m-size) * .12 * var(--n-size)); line-height: 1; font-weight: 600;
+  color: color-mix(in srgb, var(--m-a) 28%, white);
+  text-shadow: 0 0 calc(var(--m-size) * .03) color-mix(in srgb, var(--m-a) 70%, transparent);
+  opacity: 0;
+  animation: dj-m-note-rise var(--d-note-rise) var(--ease-standard) infinite paused;
+  animation-delay: calc(var(--d-note-rise) * var(--n-delay) / 4.2);
+}
+.dj-m[data-playing='true'] .dj-m-note { animation-play-state: running; }
+.dj-m[data-vibe='bouncy'] .dj-m-note {
+  animation-duration: var(--d-note-rise-lively);
+  animation-delay: calc(var(--d-note-rise-lively) * var(--n-delay) / 4.2);
+}
+
+/* A bubble: an empty ring with a highlight, the same colours. */
+.dj-m-note--bubble {
+  width: calc(var(--m-size) * .1 * var(--n-size)); aspect-ratio: 1; border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--m-a) 45%, white);
+  background: radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .45), transparent 46%);
+  box-shadow: 0 0 calc(var(--m-size) * .025) color-mix(in srgb, var(--m-a) 50%, transparent);
+}
+
+@keyframes dj-m-note-rise {
+  0% { opacity: 0; transform: translate(0, 0) scale(.55) rotate(0deg); }
+  14% { opacity: 1; }
+  50% { transform: translate(calc(var(--n-drift) * var(--m-size) * .06), calc(var(--m-size) * -.4)) scale(1) rotate(calc(var(--n-drift) * 10deg)); }
+  80% { opacity: .7; }
+  100% { opacity: 0; transform: translate(calc(var(--n-drift) * var(--m-size) * -.02), calc(var(--m-size) * -.82)) scale(1.08) rotate(calc(var(--n-drift) * -6deg)); }
+}
+@keyframes dj-m-note-glow { from { opacity: .15; } to { opacity: .75; } }
+
+/* Reduced motion: the notes stay where they start and glow softly in turn. Opacity only. */
+@media (prefers-reduced-motion: reduce) {
+  .dj-m-note, .dj-m[data-vibe='bouncy'] .dj-m-note {
+    transform: none;
+    animation: dj-m-note-glow var(--d-note-rise) var(--ease-standard) infinite alternate paused;
+    animation-delay: calc(var(--d-note-rise) * var(--n-delay) / 4.2);
+  }
+  .dj-m[data-playing='true'] .dj-m-note { animation-play-state: running; }
+}
