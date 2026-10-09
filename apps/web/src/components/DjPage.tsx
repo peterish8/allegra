@@ -134,7 +134,7 @@ export function DjPage({
         aria-label="Your DJ companion"
         data-tone={tone}
         ref={stageRef}
-        style={{ '--dj-bass': '0', '--dj-energy': '0', '--dj-onset': '0', '--dj-roam-x': '0', '--dj-roam-y': '0', '--dj-sway': '0' } as CSSProperties}
+        style={{ '--dj-bass': '0', '--dj-energy': '0', '--dj-onset': '0', '--dj-roam-x': '0', '--dj-roam-y': '0', '--dj-lift': '0', '--dj-squash': '0', '--dj-sway': '0' } as CSSProperties}
       >
         <div
           className="dj-mascot-stage"

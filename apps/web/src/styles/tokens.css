@@ -117,9 +117,6 @@
   --d-spin: 900ms;
   /* One turn of the DJ's record: a lazy drift, barely turning. Linear, so it reads as a platter. */
   --d-record-spin: 12s;
-  /* One lap of the DJ mascot's wander around its stage: slow for calm music, fast for hype. */
-  --d-roam-slow: 14s;
-  --d-roam-fast: 7s;
   --d-shimmer: 1400ms;
   /* One song's backdrop colours dissolving into the next. */
   --d-atmosphere: 1300ms;

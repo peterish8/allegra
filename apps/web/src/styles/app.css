@@ -7840,8 +7840,9 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 
 /* ---------- DJ mascot: a clear-glass orb that becomes a slowly turning record ---------- */
 /* Colours are the playing song's (inline --m-a/--m-b/--m-c on each colour slot), never its artwork.
-   Layer order, so transforms never fight: roam (translate) > dance (rotate, hop) > kick (scale) >
-   record disc (spin). The eyes sit above the disc and do not turn with it. */
+   Layer order, so transforms never fight: roam (where it stands, how high it is) > dance (squash,
+   wobble, hop on a beat) > kick (scale on a beat) > record disc (a very slow spin). The eyes sit above
+   the disc and do not turn with it. The mascot hops like a ball; only the record turns slowly. */
 .dj-m {
   --m-p: 0;
   --m-look: 1;
@@ -7859,7 +7860,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   width: var(--m-size);
 }
 .dj-m--stage[data-playing='true'][data-vibe='steady'] { --m-hop: 2cqh; }
-.dj-m--stage[data-playing='true'][data-vibe='bouncy'] { --m-hop: 5cqh; }
+.dj-m--stage[data-playing='true'][data-vibe='bouncy'] { --m-hop: 4cqh; }
 .dj-m--mini { --m-look: .2; width: 44px; }
 
 /* A colour slot: two of every coloured layer, one visible, so a change of colour is an opacity cross-fade. */
@@ -7875,10 +7876,21 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   animation: dj-m-breathe calc(var(--d-drift) * .8) var(--ease-standard) infinite alternate;
 }
 
-/* Wander, sway and hop. Each is one property on one layer, written from custom properties. */
+/* Hop, squash, wobble: each one property on one layer, written every frame from custom properties
+   (useDjRoam). The arc's height is capped by the room above, so it never clips on the stage's top. */
 .dj-m-roam, .dj-m-dance, .dj-m-kick { position: absolute; inset: 0; }
-.dj-m--stage .dj-m-roam { translate: calc(var(--m-rx) * var(--dj-roam-x, 0)) calc(var(--m-ry) * var(--dj-roam-y, 0)); }
-.dj-m--stage .dj-m-dance { rotate: calc(var(--dj-sway, 0) * 1deg); translate: 0 calc(var(--dj-onset, 0) * var(--m-hop) * -1); }
+.dj-m--stage .dj-m-roam {
+  translate:
+    calc(var(--m-rx) * var(--dj-roam-x, 0))
+    calc(var(--m-ry) * var(--dj-roam-y, 0) - min(var(--m-size) * var(--dj-lift, 0), (2 + var(--dj-roam-y, 0)) * var(--m-ry)));
+}
+/* Squash and stretch pivot on the floor, so a landing flattens the ball against it. */
+.dj-m--stage .dj-m-dance {
+  transform-origin: 50% 96%;
+  scale: calc(1 - var(--dj-squash, 0) * .6) calc(1 + var(--dj-squash, 0));
+  rotate: calc(var(--dj-sway, 0) * 1deg);
+  translate: 0 calc(var(--dj-onset, 0) * var(--m-hop) * -1);
+}
 /* A beat kicks the whole mascot. */
 .dj-m-kick { transform: scale(calc(1 + var(--dj-onset, 0) * .04)); }
 .dj-m[data-playing='true'] .dj-m-kick { will-change: transform; }
@@ -7986,11 +7998,11 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 @keyframes dj-m-think { from { opacity: 0; } to { opacity: .6; } }
 
-/* Reduced motion collapses to opacity. The mascot stays centred and still: no wander, sway, hop, spin,
+/* Reduced motion collapses to opacity. The mascot stays centred and still: no hop, squash, wobble, spin,
    blink or drift. Beats lift the glow instead of the scale; the vibe shows in the glow's level and
    colour; the swap between orb and record, and every change of colour, is a cross-fade. */
 @media (prefers-reduced-motion: reduce) {
-  .dj-m--stage .dj-m-roam, .dj-m--stage .dj-m-dance { translate: none; rotate: none; }
+  .dj-m--stage .dj-m-roam, .dj-m--stage .dj-m-dance { translate: none; rotate: none; scale: none; }
   .dj-m-kick { transform: none; will-change: auto; }
   .dj-m-glow { animation: none; opacity: min(.55, calc(var(--m-glow-base) + var(--dj-bass, 0) * .15 + var(--dj-onset, 0) * .15)); }
   .dj-m[data-emotion='sleeping'] .dj-m-glow { opacity: .18; }

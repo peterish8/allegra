@@ -4,28 +4,27 @@ import type { Palette } from './palette';
 /** How the mascot moves while music plays. Chosen from the session's tone and planned energy. */
 export type DjDanceVibe = 'calm' | 'steady' | 'bouncy' | 'dreamy';
 
-/** What the mascot is doing right now: wandering, holding still to think, or drifting toward the prompt. */
+/** What the mascot is doing right now: hopping about, holding still to think, or heading for the prompt. */
 export type DjRoamMode = 'roam' | 'still' | 'listen';
 
-/** One target pose of the wander. The roam loop eases its live values toward these, so changes never snap. */
+/** What the mascot is doing: hopping about, holding still to think, or heading for the prompt to listen. */
 export interface DjMotion {
-  /** Seconds for one lap of the path. */
-  readonly period: number;
-  /** Reach of the path as a fraction of the stage's roam box, 0..1. */
-  readonly ampX: number;
-  readonly ampY: number;
-  /** The vertical path runs at this multiple of the horizontal one (2 draws a figure eight). */
-  readonly yRatio: number;
-  /** Extra vertical offset, -1 (top of the roam box) .. 1 (bottom, toward the prompt). */
-  readonly yOffset: number;
-  /** Sway in degrees either side of upright, and seconds per sway. */
-  readonly sway: number;
-  readonly swayPeriod: number;
-  /** A fixed lean, degrees. */
+  readonly mode: DjRoamMode;
+  /** Seconds of rest between hops, [shortest, longest]. */
+  readonly rest: readonly [number, number];
+  /** Seconds in the air for one hop, [quickest, slowest]. */
+  readonly flight: readonly [number, number];
+  /** Apex of a hop as a fraction of the mascot's own height. */
+  readonly height: number;
+  /** How far across the stage a hop may land, 0..1 of the roam box. */
+  readonly reach: number;
+  /** Chance that a landing leads straight into a second, smaller hop. */
+  readonly doubleHop: number;
+  /** A fixed lean in degrees. */
   readonly tilt: number;
 }
 
-const { roamSlow, roamFast } = motionTokens.duration;
+const d = motionTokens.duration;
 
 /** The vibe of a turn: coral or high energy bounces, violet dreams, blue or low energy floats, the rest walks. */
 export function djDanceVibe(tone: string, energy: number): DjDanceVibe {
@@ -35,27 +34,27 @@ export function djDanceVibe(tone: string, energy: number): DjDanceVibe {
   return 'steady';
 }
 
+/*
+ * Always ball-like, never a glide: even the calmest vibe hops in half a second. What changes with the
+ * vibe is how often it hops, how far, how high, and how likely it is to bounce twice.
+ */
 const PLAYING: Readonly<Record<DjDanceVibe, DjMotion>> = {
-  // Slow float, gentle sway, long loop.
-  calm: { period: roamSlow, ampX: 0.8, ampY: 0.7, yRatio: 1, yOffset: 0, sway: 4, swayPeriod: roamSlow / 2, tilt: 0 },
-  // A walking pace across the stage, a light rock.
-  steady: { period: roamSlow * 0.75, ampX: 1, ampY: 0.5, yRatio: 2, yOffset: 0, sway: 3, swayPeriod: roamSlow / 4, tilt: 0 },
-  // Quick laps, wide swings, a bouncy sway.
-  bouncy: { period: roamFast, ampX: 1, ampY: 0.85, yRatio: 3, yOffset: 0, sway: 8, swayPeriod: roamFast / 3, tilt: 0 },
-  // A slow figure-eight glide with a lazy tilt.
-  dreamy: { period: roamSlow, ampX: 0.9, ampY: 0.9, yRatio: 2, yOffset: 0, sway: 10, swayPeriod: roamSlow, tilt: 0 }
+  calm: { mode: 'roam', rest: [d.restLazy, d.restIdle], flight: [d.hopEasy, d.hopLazy], height: 0.17, reach: 0.5, doubleHop: 0.1, tilt: 0 },
+  steady: { mode: 'roam', rest: [d.restEasy, d.restLazy], flight: [d.hopQuick, d.hopEasy], height: 0.24, reach: 0.75, doubleHop: 0.25, tilt: 0 },
+  bouncy: { mode: 'roam', rest: [d.restQuick, d.restEasy], flight: [d.hopQuick, d.hopEasy], height: 0.3, reach: 1, doubleHop: 0.45, tilt: 0 },
+  dreamy: { mode: 'roam', rest: [d.restEasy, d.restLazy], flight: [d.hopEasy, d.hopLazy], height: 0.2, reach: 0.6, doubleHop: 0.2, tilt: 0 }
 };
 
-/** Not playing: an idle wander, slow, with no dance moves. */
-const IDLE: DjMotion = { period: roamSlow, ampX: 0.6, ampY: 0.5, yRatio: 1, yOffset: 0, sway: 0, swayPeriod: roamSlow, tilt: 0 };
+/** Not playing: the occasional lazy hop. */
+const IDLE: DjMotion = { mode: 'roam', rest: [d.restLazy, d.restIdle], flight: [d.hopEasy, d.hopLazy], height: 0.14, reach: 0.5, doubleHop: 0.05, tilt: 0 };
 
 /**
- * Where the mascot should be heading. Thinking holds it near the middle, leaning; listening lets it
- * drift down toward the prompt. Otherwise playing music dances in the session's vibe and silence idles.
+ * Where the mascot should be heading. Thinking holds it where it is, leaning; listening sends it down
+ * to the prompt and keeps it there. Otherwise playing music hops in the session's vibe and silence idles.
  */
 export function djMotionFor(vibe: DjDanceVibe, playing: boolean, mode: DjRoamMode): DjMotion {
-  if (mode === 'still') return { ...IDLE, ampX: 0, ampY: 0, tilt: -6 };
-  if (mode === 'listen') return { ...IDLE, ampX: 0, ampY: 0, yOffset: 0.9 };
+  if (mode === 'still') return { ...IDLE, mode, tilt: -6 };
+  if (mode === 'listen') return { ...IDLE, mode, doubleHop: 0 };
   return playing ? PLAYING[vibe] : IDLE;
 }
 

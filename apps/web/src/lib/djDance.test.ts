@@ -23,28 +23,32 @@ describe('djDanceVibe', () => {
 });
 
 describe('djMotionFor', () => {
-  it('idles without dance moves when nothing plays, whatever the vibe', () => {
+  it('hops quicker and rests less for bouncy than for calm', () => {
+    const bouncy = djMotionFor('bouncy', true, 'roam');
+    const calm = djMotionFor('calm', true, 'roam');
+    assert.ok(bouncy.rest[1] < calm.rest[0], 'bouncy never rests as long as calm does at the least');
+    assert.ok(bouncy.height > calm.height);
+    assert.ok(bouncy.reach > calm.reach);
+  });
+
+  it('hops in the air for well under a second whatever the vibe, so it never glides', () => {
     for (const vibe of ['calm', 'steady', 'bouncy', 'dreamy'] as const) {
-      assert.equal(djMotionFor(vibe, false, 'roam').sway, 0);
+      assert.ok(djMotionFor(vibe, true, 'roam').flight[1] < 1);
     }
+    assert.ok(djMotionFor('calm', false, 'roam').flight[1] < 1);
   });
 
-  it('laps faster for bouncy than for calm', () => {
-    assert.ok(djMotionFor('bouncy', true, 'roam').period < djMotionFor('calm', true, 'roam').period);
-  });
-
-  it('draws a figure eight for dreamy', () => {
-    assert.equal(djMotionFor('dreamy', true, 'roam').yRatio, 2);
+  it('rests longer when nothing plays', () => {
+    assert.ok(djMotionFor('bouncy', false, 'roam').rest[0] > djMotionFor('bouncy', true, 'roam').rest[1]);
   });
 
   it('holds still and leans while thinking, and heads for the prompt while listening', () => {
     const thinking = djMotionFor('bouncy', true, 'still');
-    assert.equal(thinking.ampX, 0);
-    assert.equal(thinking.ampY, 0);
+    assert.equal(thinking.mode, 'still');
     assert.ok(thinking.tilt < 0);
     const listening = djMotionFor('bouncy', true, 'listen');
-    assert.equal(listening.ampX, 0);
-    assert.ok(listening.yOffset > 0);
+    assert.equal(listening.mode, 'listen');
+    assert.equal(listening.doubleHop, 0);
   });
 });
 
