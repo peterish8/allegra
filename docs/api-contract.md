@@ -65,6 +65,54 @@ export interface LyricsPayload {
 Empty results → `success: true` with `results: []`, **not** an error.
 Cache 1 h. Budget: <800 ms cold, <200 ms cached.
 
+### Proposed change — `POST /api/ai/dj/turn`
+The cloud BYOK providers are `openai`, `openrouter`, and `gemini`. The caller sends the selected
+provider's `apiKey`, `model`, task `goal` (`mix` or `playlist`), a bounded `songLimit` (1–30), the
+current `message`, up to 8 prior `{role, content}` messages, and small session context: the active
+track, up to 8 upcoming/recent/liked/skipped summaries, up to 30 editable draft-track summaries and
+the draft name, plus `{vibe, energy, language, constraints}`. The API relays the key and this limited context to the
+selected provider over HTTPS for this request only; it does not persist either. The provider is
+allowlisted by the server, the key is never accepted in a URL, and all requests are rate limited by
+the Discovery bucket. Gemini uses Google's OpenAI-compatible chat-completions endpoint and its
+Gemini API key. A local model runs inside each client and does not call this endpoint; it can call
+the existing bounded catalog search path, but its inference and prompt stay on that device.
+
+The cloud provider may call only `get_session_context`, `search_catalog`, and `commit_dj_plan`.
+The first returns the supplied bounded session context. Search returns metadata for real playable
+catalog rows. Commit submits a validated intent, response, reaction, and catalog IDs returned by
+searches made during this turn. The API rejects IDs not returned by its own catalog tool and returns
+the corresponding real `UnifiedSong` records with one reason per song. Queue mode is limited to 8
+tracks; playlist mode can return up to the user's selected limit of 30. Playlist mode never applies
+the draft to the playback queue. The response shape is:
+
+```ts
+type DjTurn = {
+  reply: string;
+  session: { vibe: string; energy: number; language: string | null; constraints: string[] };
+  goal: 'mix' | 'playlist';
+  playlistName: string | null;
+  draftOperation: 'replace' | 'extend' | 'keep' | 'remove';
+  removeTrackIds: string[];
+  operation: 'replace_upcoming' | 'insert' | 'keep';
+  insertAfter: number | null;
+  reaction: 'neutral' | 'curious' | 'excited' | 'dreamy' | 'confused';
+  queue: { song: UnifiedSong; reason: string }[];
+};
+```
+
+The client owns session memory and queue application. For `mix`, `replace_upcoming` preserves the
+current song and replaces only upcoming DJ picks; `insert` adds the first returned song after
+`insertAfter` queued tracks; `keep` leaves the player queue untouched (for example, an explanation
+request). Starting a new set only begins playback after an explicit user action. For `playlist`,
+the client keeps an editable draft, lets the user remove or refine tracks, and saves the named,
+confirmed result through the existing playlist service in one action. Refinement may replace the
+draft, append catalog-backed tracks, preserve it, or remove only IDs from the submitted draft.
+Provider failures return
+friendly API errors and never include the upstream response body or the submitted key.
+
+This endpoint does not use the signed-in account token and does not save listening history. The
+client sends only the small context above, never the full library or account profile.
+
 **Recording collapse (2026-09-21):** the provider lists one row per release, so the
 same song can appear ~20 times with different compilation covers. Search groups by
 recording identity (title without bracketed trailers + sorted artists), elects one

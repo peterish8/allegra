@@ -6,6 +6,7 @@ import type { LibraryChange, LibraryOp } from '@shared/library';
 import { fromAllegraSong, type SongRef, type SongSnapshot } from '@shared/songRef';
 import type { SpotifySourcePlaylist, SpotifyStatus, SpotifySyncStep } from '@shared/spotify';
 import type { ListenExit } from '@shared/listenSignal';
+import type { DjTurnRequest, DjTurnResponse } from '@shared/dj';
 import type { RadioTaste } from '@shared/radio';
 import { TYPEAHEAD_LIMIT } from '@shared/typeahead';
 
@@ -511,6 +512,15 @@ export async function translateLyrics(
 export async function fetchAiRecommendations(currentSongId?: string, signal?: AbortSignal): Promise<{ songs: UnifiedSong[]; provider: string; reasoning: string }> {
   const query = currentSongId ? `?songId=${encodeURIComponent(currentSongId)}` : '';
   return request(`/api/ai/recommendations${query}`, { signal });
+}
+
+export async function requestDjTurn(input: DjTurnRequest, signal?: AbortSignal): Promise<DjTurnResponse> {
+  return request('/api/ai/dj/turn', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+    signal
+  });
 }
 
 function isApiResponse<T>(value: unknown): value is ApiResponse<T> {

@@ -50,6 +50,15 @@
       "@sentry/react-native/expo",
       "expo-sqlite",
       "expo-audio",
+      "expo-build-properties",
+      [
+        "llama.rn",
+        {
+          "enableEntitlements": true,
+          "forceCxx20": true,
+          "enableOpenCL": false
+        }
+      ],
       [
         "expo-image-picker",
         {
