@@ -1,13 +1,8 @@
 /*
  * The DJ mascot sings: while music plays, notes and bubbles in the song's colours rise out of the orb
  * (DjMascot's NOTES). There is no record any more; the orb stays as it is, eyes full size.
- * Loaded after app.css, so these rules replace the record-era ones of the same specificity.
+ * Loaded after app.css. The orb, eyes, glow and roam live in app.css.
  */
-.dj-m[data-playing='true'] .dj-m-orb { opacity: 1; }
-.dj-m[data-playing='true'] .dj-m-eyes { transform: none; }
-/* A beat lifts it only a touch: it floats, it does not bounce. */
-.dj-m--stage[data-playing='true'][data-vibe='steady'] { --m-hop: .8cqh; }
-.dj-m--stage[data-playing='true'][data-vibe='bouncy'] { --m-hop: 1.6cqh; }
 
 .dj-m-notes {
   position: absolute; inset: 0; z-index: 2; pointer-events: none;
