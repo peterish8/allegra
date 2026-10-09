@@ -136,7 +136,7 @@ export function createApp(options: AppOptions): Express {
   app.use('/api', sharedRouter(services.auth, services.catalog, services.actions, services.users));
   app.use('/api', uploadsRouter(services.auth, services.covers));
   app.use('/api', discoveryRouter(services.translation, services.recommendations, services.auth, services.catalog));
-  app.use('/api', djRouter(services.catalog));
+  app.use('/api', djRouter(services.catalog, options.fetchImpl));
   app.use('/api', radioRouter(services.radio, services.auth));
   const signer = new OAuthSigner(jwtSecret);
   app.use(oauthRouter({

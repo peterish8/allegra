@@ -40,7 +40,9 @@ interface DjRequest {
   readonly session: SessionState;
 }
 
-export function djRouter(catalog: CatalogService): Router {
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
+export function djRouter(catalog: CatalogService, fetchImpl: FetchLike = fetch): Router {
   const router = Router();
   router.post('/ai/dj/turn', async (request, response) => {
     let controller: AbortController | undefined;
@@ -53,7 +55,7 @@ export function djRouter(catalog: CatalogService): Router {
       }
       controller = new AbortController();
       timeout = setTimeout(() => controller?.abort(), MAX_TURN_MS);
-      const data = await runDjTurn(catalog, input, controller.signal);
+      const data = await runDjTurn(catalog, input, controller.signal, fetchImpl);
       response.status(200).json({ success: true, data });
     } catch (error) {
       if (controller?.signal.aborted) {
@@ -171,7 +173,7 @@ function parseHistory(value: unknown): DjRequest['history'] | null {
   return history;
 }
 
-async function runDjTurn(catalog: CatalogService, input: DjRequest, signal: AbortSignal) {
+async function runDjTurn(catalog: CatalogService, input: DjRequest, signal: AbortSignal, fetchImpl: FetchLike) {
   const endpoint = input.provider === 'openai'
     ? 'https://api.openai.com/v1/chat/completions'
     : input.provider === 'gemini'
@@ -187,20 +189,22 @@ async function runDjTurn(catalog: CatalogService, input: DjRequest, signal: Abor
   let searchCount = 0;
 
   for (let callIndex = 0; callIndex < MAX_MODEL_CALLS; callIndex += 1) {
-    const response = await fetch(endpoint, {
+    const response = await fetchImpl(endpoint, {
       method: 'POST',
       signal,
       headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         model: input.model,
         messages,
-        tools: toolDefinitions,
+        tools: input.provider === 'gemini' ? geminiToolDefinitions : toolDefinitions,
         tool_choice: 'auto',
         temperature: 0.35,
-        max_tokens: 1_800
+        max_tokens: 1_800,
+        // Gemini thinks by default; a DJ turn needs a quick plan, not a long chain of thought.
+        ...(input.provider === 'gemini' ? { reasoning_effort: 'low' } : {})
       })
     });
-    if (!response.ok) throw providerError(response.status);
+    if (!response.ok) throw providerError(response.status, await errorText(response));
     const payload = asRecord(await response.json());
     const choices = Array.isArray(payload.choices) ? payload.choices : [];
     const choice = asRecord(choices[0]);
@@ -434,7 +438,16 @@ function parsePlan(args: Record<string, unknown>, input: DjRequest, candidates: 
   };
 }
 
-function providerError(status: number): DjProviderError {
+async function errorText(response: Response): Promise<string> {
+  try { return (await response.text()).slice(0, 2_000); }
+  catch { return ''; }
+}
+
+function providerError(status: number, body = ''): DjProviderError {
+  // Gemini answers a bad key with 400 INVALID_ARGUMENT rather than 401.
+  if (status === 400 && /API_KEY_INVALID|API key not valid|API key expired/i.test(body)) {
+    return new DjProviderError(401, 'That provider did not accept this key. Check the key and try again.');
+  }
   if (status === 401 || status === 403) return new DjProviderError(401, 'That provider did not accept this key. Check the key and try again.');
   if (status === 429) return new DjProviderError(429, 'The AI provider is at its request limit. Wait a moment and try again.');
   if (status === 400 || status === 404) return new DjProviderError(400, 'That model could not use the DJ tools. Check the model name and try again.');
@@ -514,3 +527,27 @@ const toolDefinitions = [
     }
   }
 ] as const;
+
+/**
+ * Gemini's OpenAI-compatible endpoint reads tool parameters as an OpenAPI subset: it has no
+ * `strict`, `additionalProperties` or string length keywords, and writes "or null" as `nullable`.
+ * Validation still happens in parsePlan, so dropping these loses nothing.
+ */
+function geminiSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(geminiSchema);
+  if (typeof value !== 'object' || value === null) return value;
+  const schema = value as Record<string, unknown>;
+  const anyOf = Array.isArray(schema.anyOf) ? schema.anyOf as Record<string, unknown>[] : null;
+  if (anyOf && anyOf.length === 2 && anyOf.some((option) => option.type === 'null')) {
+    const other = anyOf.find((option) => option.type !== 'null') ?? {};
+    return { ...(geminiSchema(other) as Record<string, unknown>), nullable: true };
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(schema)) {
+    if (key === 'strict' || key === 'additionalProperties' || key === 'minLength' || key === 'maxLength') continue;
+    out[key] = geminiSchema(item);
+  }
+  return out;
+}
+
+const geminiToolDefinitions = geminiSchema(toolDefinitions);
