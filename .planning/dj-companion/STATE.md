@@ -5,7 +5,7 @@ from earlier sessions sits on it; commit or stash that first, then execute 01-01
 
 | Plan | Wave | Status | Commit | Notes |
 |---|---|---|---|---|
-| 01-01 | 1 | not started | | |
+| 01-01 | 1 | done (task 3 test caveat) | 19b2dea, 4d052fa, c5d7cc5 | Mobile `connectRouting.test.ts` fails on base: `screens/DjScreen.tsx` starts audio without Connect routing (from 79aa320); decide in phase 02. API `app.profile.test.ts` Gaana test also fails on base. See SUMMARY. |
 | 01-02 | 1 | not started | | |
 | 01-03 | 2 | not started | | |
 | 01-04 | 3 | not started | | |
