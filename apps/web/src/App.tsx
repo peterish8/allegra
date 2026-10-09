@@ -317,6 +317,8 @@ export default function App() {
   const reloadPlaylists = playlists.reload;
   /** Songs the listener queued with Play next / Add to queue: they stay in front of any radio. */
   const userQueuedRef = useRef(new Set<string>());
+  /** Songs the DJ planned. They are also in userQueuedRef (so they stay ahead of radio); this set tells them apart from the listener's own. */
+  const djPlannedRef = useRef(new Set<string>());
   const radio = useSongRadio(transportRef, userQueuedRef);
   // Lock screen, media keys, headset buttons and car head units, all through the same funnel.
   const fillRadioQueue = useCallback(async (signal?: AbortSignal): Promise<number> => {
@@ -505,6 +507,7 @@ export default function App() {
     const song = transportRef.current.currentSong;
     if (song) {
       userQueuedRef.current.delete(song.id);
+      djPlannedRef.current.delete(song.id);
       radio.started(song);
     }
   }, [audio.currentSong?.id, radio]);
@@ -1124,15 +1127,24 @@ export default function App() {
     const planned = turn.queue.map(({ song }) => song).filter((song) => song.id !== current.id && Boolean(song.streamUrl));
     if (planned.length === 0) return false;
     let next: UnifiedSong[];
+    let picks: UnifiedSong[];
     if (turn.operation === 'insert') {
       const index = Math.min(Math.max(0, turn.insertAfter ?? 0), upcoming.length);
       next = [...upcoming.slice(0, index), ...planned, ...upcoming.slice(index)];
+      picks = planned;
     } else {
-      const pinned = upcoming.filter((song) => userQueuedRef.current.has(song.id));
+      // Earlier DJ picks are replaced; only what the listener queued themselves stays in front.
+      const pinned = upcoming.filter((song) => userQueuedRef.current.has(song.id) && !djPlannedRef.current.has(song.id));
       const seen = new Set([current.id, ...pinned.map((song) => song.id)]);
-      next = [...pinned, ...planned.filter((song) => !seen.has(song.id) && Boolean(seen.add(song.id)))];
+      picks = planned.filter((song) => !seen.has(song.id) && Boolean(seen.add(song.id)));
+      next = [...pinned, ...picks];
+      for (const id of djPlannedRef.current) userQueuedRef.current.delete(id);
+      djPlannedRef.current.clear();
     }
-    for (const song of planned) userQueuedRef.current.add(song.id);
+    for (const song of picks) {
+      userQueuedRef.current.add(song.id);
+      djPlannedRef.current.add(song.id);
+    }
     radioActiveRef.current = false;
     radio.stop();
     player.replaceUpcoming(next);
@@ -1140,10 +1152,10 @@ export default function App() {
     return true;
   };
 
-  const startDjPlan = (turn: DjTurnResponse): void => {
+  const startDjPlan = (turn: DjTurnResponse, fromId?: string): void => {
     if (remotePlayback || turn.operation === 'keep' || turn.queue.length === 0) return;
     const songs = turn.queue.map(({ song }) => song).filter((song) => Boolean(song.streamUrl));
-    const first = songs[0];
+    const first = (fromId ? songs.find((song) => song.id === fromId) : undefined) ?? songs[0];
     if (!first) return;
     radioActiveRef.current = false;
     radio.stop();
@@ -1153,6 +1165,38 @@ export default function App() {
     setRecentlyPlayed((current) => [first, ...current.filter((item) => item.id !== first.id)].slice(0, 25));
     void recordRecentlyPlayed(first, 0).catch(() => undefined);
     tapHaptic();
+  };
+
+  // Queue controls for the DJ's own picks. They act on this device only; the listener's queued songs stay put.
+  const reorderDjUpcoming = (ids: readonly string[]): boolean => {
+    if (remotePlayback) return false;
+    const slots: number[] = [];
+    const picks = new Map<string, UnifiedSong>();
+    playingNext.forEach((song, index) => {
+      if (!djPlannedRef.current.has(song.id)) return;
+      slots.push(index);
+      picks.set(song.id, song);
+    });
+    if (slots.length === 0) return false;
+    const ordered = ids.filter((id, at) => picks.has(id) && ids.indexOf(id) === at).map((id) => picks.get(id) as UnifiedSong);
+    const named = new Set(ordered.map((song) => song.id));
+    const sequence = [...ordered, ...[...picks.values()].filter((song) => !named.has(song.id))];
+    const next = [...playingNext];
+    slots.forEach((slot, at) => { next[slot] = sequence[at] as UnifiedSong; });
+    audio.replaceUpcoming(next);
+    return true;
+  };
+  const removeDjUpcoming = (id: string): boolean => {
+    if (remotePlayback || !djPlannedRef.current.has(id)) return false;
+    audio.replaceUpcoming(playingNext.filter((song) => song.id !== id));
+    djPlannedRef.current.delete(id);
+    userQueuedRef.current.delete(id);
+    return true;
+  };
+  const playDjFrom = (song: UnifiedSong, list: readonly UnifiedSong[]): boolean => {
+    if (remotePlayback || song.id === playerSong?.id) return false;
+    void playSong(song, [...list]);
+    return true;
   };
 
   // Play next / Add to queue, on whichever device is playing. With nothing playing, the song starts.
@@ -1182,6 +1226,8 @@ export default function App() {
     const at = player.queue.findIndex((item) => item.id === player.currentSong?.id);
     const rest = (at >= 0 ? player.queue.slice(at + 1) : []).filter((item) => item.id !== playable.id);
     userQueuedRef.current.add(playable.id);
+    // Queued by hand, so it is the listener's own now, not a DJ pick.
+    djPlannedRef.current.delete(playable.id);
     // Spotify's "Next in queue": after the other songs the listener queued, ahead of any radio.
     const mine = rest.filter((item) => userQueuedRef.current.has(item.id));
     const others = rest.filter((item) => !userQueuedRef.current.has(item.id));
