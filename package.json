@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "desktop:build:x86": "cargo build --manifest-path apps/desktop/Cargo.toml --target i686-pc-windows-msvc --release",
     "dev:mobile": "npm --prefix apps/mobile start",
     "mock": "node mocks/server.mjs",
     "contract-test": "node tests/contract/contract-smoke.mjs",
