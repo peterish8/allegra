@@ -7,6 +7,8 @@ import type { UnifiedSong } from '@shared/types';
 
 import { useAudioAnalyser } from '../hooks/useAudioAnalyser';
 import { useDjSession } from '../hooks/useDjSession';
+import type { Palette } from '../lib/palette';
+import { DjMascot } from './dj/DjMascot';
 import { useDjPulse } from './dj/useDjPulse';
 import { Artwork } from './ui';
 
@@ -32,6 +34,8 @@ interface DjPageProps {
   readonly isLive: boolean;
   readonly isRemote: boolean;
   readonly isCurrentLiked: boolean;
+  /** Colours of the playing cover; `null` when nothing plays (the mascot then uses the tone colours). */
+  readonly palette?: Palette | null;
   readonly audioRef: RefObject<HTMLAudioElement | null>;
   readonly onToggle: () => void;
   readonly onLike: (song: UnifiedSong) => void;
@@ -45,7 +49,7 @@ function toneFor(vibe: string, energy: number): string {
 }
 
 export function DjPage({
-  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, audioRef, onToggle, onLike,
+  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, palette = null, audioRef, onToggle, onLike,
 }: DjPageProps) {
   const dj = useDjSession();
   const {
@@ -114,22 +118,19 @@ export function DjPage({
   }, [draft, goal, needsStart, nextSongs, reasons, turn]);
   const tone = toneFor(session.vibe, session.energy);
   const commandSuggestions = getDjSlashSuggestions(prompt, goal);
-  const currentIsPaused = Boolean(currentSong && !isPlaying);
 
   return (
     <div className="dj-page">
       <h1 className="sr-only">Your DJ</h1>
       <section
-        className={`dj-hero${isPlaying ? ' is-playing' : ''}${working ? ' is-thinking' : ''}`}
+        className="dj-hero"
         aria-label="Your DJ companion"
         data-tone={tone}
-        data-emotion={working ? 'thinking' : emotion}
-        data-paused={currentIsPaused ? 'true' : 'false'}
         ref={stageRef}
         style={{ '--dj-bass': '0', '--dj-energy': '0', '--dj-onset': '0' } as CSSProperties}
       >
         <div
-          className={`dj-mascot-stage${currentSong && isPlaying ? ' is-vibing' : ''}`}
+          className="dj-mascot-stage"
           aria-hidden="true"
           onPointerMove={(event) => {
             const bounds = event.currentTarget.getBoundingClientRect();
@@ -143,10 +144,13 @@ export function DjPage({
             stageRef.current?.style.setProperty('--dj-look-y', '0px');
           }}
         >
-          <div className="dj-aura dj-aura--wide" />
-          <div className="dj-aura dj-aura--soft" />
-          <div className="dj-aura dj-aura--core" />
-          <div className="dj-mascot-eyes"><span className="dj-mascot-eye dj-mascot-eye--left" /><span className="dj-mascot-eye dj-mascot-eye--right" /></div>
+          <DjMascot
+            size="stage"
+            emotion={working ? 'thinking' : emotion}
+            palette={palette}
+            cover={currentSong?.artwork ?? null}
+            playing={Boolean(currentSong && isPlaying)}
+          />
         </div>
 
         <form className="dj-compose" onSubmit={(event) => { event.preventDefault(); submitPrompt(); }}>

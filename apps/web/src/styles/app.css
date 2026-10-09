@@ -7510,20 +7510,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .dj-hero { position: relative; isolation: isolate; display: grid; min-height: clamp(360px, 38vw, 500px); place-items: center; overflow: hidden; border-radius: 30px; background: radial-gradient(ellipse 46% 78% at 50% 52%, rgba(255, 171, 99, .13), transparent 77%), radial-gradient(ellipse 65% 90% at 50% 100%, rgba(227, 121, 114, .07), transparent 76%); }
 .dj-hero::before { position: absolute; z-index: -1; inset: 0; background: radial-gradient(ellipse 48% 70% at 50% 55%, rgba(255, 188, 111, .12), rgba(248, 135, 104, .045) 52%, transparent 78%); content: ''; filter: blur(24px); pointer-events: none; }
 .dj-mascot-stage { position: absolute; inset: 0; z-index: 0; display: grid; place-items: center; overflow: hidden; }
-.dj-mascot { position: relative; display: grid; width: clamp(260px, 34vw, 390px); aspect-ratio: 1; place-items: center; animation: dj-mascot-roam 8.6s ease-in-out infinite; will-change: transform; }
-.dj-mascot-halo { position: absolute; inset: -9%; border-radius: 50%; background: radial-gradient(ellipse at 50% 56%, rgba(255, 196, 117, .56), rgba(255, 150, 105, .28) 37%, rgba(199, 128, 187, .13) 57%, transparent 76%); filter: blur(13px); opacity: .9; }
-.dj-mascot-head { position: relative; display: block; width: 75%; height: 72%; border-radius: 48% 52% 48% 52% / 54% 47% 53% 46%; background: radial-gradient(ellipse at 50% 46%, rgba(255, 221, 163, .42), rgba(255, 175, 103, .28) 38%, rgba(255, 143, 119, .1) 69%, transparent 82%); filter: blur(1px); }
-.dj-mascot-eye { position: absolute; top: 43%; width: 20px; height: 30px; border-radius: 46% 54% 48% 52%; background: #fffaf0; box-shadow: 0 0 12px rgba(255, 255, 255, .46), 0 0 30px rgba(255, 238, 205, .66); }
-.dj-mascot-eye--left { left: 35%; transform: rotate(7deg); }
-.dj-mascot-eye--right { right: 35%; transform: rotate(-6deg); }
-.dj-mascot-smile { position: absolute; top: 61%; left: 44%; width: 12%; height: 8%; border-bottom: 2px solid rgba(255, 250, 240, .9); border-radius: 0 0 50% 50%; opacity: .9; }
-.dj-mascot-stage.is-vibing .dj-mascot { animation: dj-mascot-vibe 4.1s ease-in-out infinite; }
-.dj-mascot-stage.is-vibing .dj-mascot-head { animation: dj-mascot-nod 1.55s ease-in-out infinite; }
-.dj-mascot-stage.is-vibing .dj-mascot-halo { animation: dj-halo-breathe 2.6s ease-in-out infinite alternate; }
-@keyframes dj-mascot-roam { 0%, 100% { transform: translate(0, 0) rotate(-2deg); } 19% { transform: translate(15px, -10px) rotate(3deg); } 42% { transform: translate(-11px, -17px) rotate(-4deg); } 66% { transform: translate(-17px, 7px) rotate(2deg); } 84% { transform: translate(9px, 13px) rotate(-1deg); } }
-@keyframes dj-mascot-vibe { 0%, 100% { transform: translate(0, 0) rotate(-3deg) scale(1); } 20% { transform: translate(13px, -9px) rotate(4deg) scale(1.025); } 43% { transform: translate(-10px, -16px) rotate(-5deg) scale(.99); } 67% { transform: translate(-16px, 6px) rotate(3deg) scale(1.02); } 85% { transform: translate(8px, 12px) rotate(-1deg) scale(1); } }
-@keyframes dj-mascot-nod { 0%, 100% { transform: translateY(0) rotate(-2deg); } 28% { transform: translateY(5px) rotate(3deg); } 62% { transform: translateY(-3px) rotate(-1deg); } }
-@keyframes dj-halo-breathe { from { opacity: .65; transform: scale(.96); } to { opacity: 1; transform: scale(1.04); } }
 .dj-eyebrow { display: inline-flex; align-items: center; gap: 7px; color: var(--accent-bright, #ffaaa0); font-size: 11px; font-weight: 700; letter-spacing: .14em; }
 .dj-primary { min-height: 48px; padding: 0 21px; border: 0; border-radius: 999px; background: var(--wave); color: #15170c; font: inherit; font-weight: 700; cursor: pointer; transition: transform var(--d-fast) var(--ease-tactile, var(--ease-standard)), opacity var(--d-fast) var(--ease-standard); }
 .dj-primary--compact { min-height: 38px; padding: 0 16px; font-size: 12px; }
@@ -7571,8 +7557,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .dj-seed-card:hover { border-color: color-mix(in srgb, var(--wave) 34%, var(--border)); background: var(--surface-hover); }
 @media (max-width: 760px) {
   .dj-hero { min-height: clamp(300px, 78vw, 390px); }
-  .dj-mascot { width: min(76vw, 340px); }
-  .dj-mascot-eye { width: 17px; height: 26px; }
   .dj-section-heading { align-items: flex-start; }
   .dj-section-heading > p { max-width: 130px; font-size: 11px; }
   .dj-set-actions { flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
@@ -7582,15 +7566,14 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .dj-seed-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .dj-mascot, .dj-mascot-head, .dj-mascot-halo { animation: none !important; }
   .dj-primary { transition: none; }
 }
 
 /* The DJ is one ambient companion card: no separate mascot silhouette or marketing panel. */
 .dj-page { display: grid; width: min(100%, 1180px); gap: 18px; margin: 0 auto; padding: clamp(12px, 2vw, 24px); }
 .dj-hero {
-  --dj-core: #ff9a35;
-  --dj-soft: #ffd47e;
+  --dj-core: #b9772f;
+  --dj-soft: #7a5a33;
   --dj-pale: #fff1d4;
   --dj-audio-energy: 0;
   --dj-onset: 0;
@@ -7599,35 +7582,15 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   color: #201b18; background: radial-gradient(ellipse 48% 54% at 50% 51%, color-mix(in srgb, var(--dj-core) 22%, transparent), transparent 74%), radial-gradient(ellipse 68% 74% at 50% 51%, color-mix(in srgb, var(--dj-soft) 28%, transparent), transparent 79%), #fbf9f5;
   box-shadow: 0 24px 70px rgba(91, 62, 35, .07); transition: background 700ms ease, border-color 700ms ease;
 }
-.dj-hero[data-tone="violet"] { --dj-core: #9275ef; --dj-soft: #b9cbff; --dj-pale: #e9e0ff; }
-.dj-hero[data-tone="blue"] { --dj-core: #54bbdc; --dj-soft: #a8dff0; --dj-pale: #e0f7fb; }
-.dj-hero[data-tone="coral"] { --dj-core: #ff7055; --dj-soft: #ffbd80; --dj-pale: #ffe8ce; }
+.dj-hero[data-tone="violet"] { --dj-core: #6f5cb8; --dj-soft: #46508f; --dj-pale: #e9e0ff; }
+.dj-hero[data-tone="blue"] { --dj-core: #3f87a6; --dj-soft: #2f5f7a; --dj-pale: #e0f7fb; }
+.dj-hero[data-tone="coral"] { --dj-core: #b95443; --dj-soft: #8a5238; --dj-pale: #ffe8ce; }
 .dj-hero-copy { position: relative; z-index: 2; width: min(100%, 650px); text-align: center; }
 .dj-status-line { display: inline-flex; align-items: center; gap: 8px; color: #938b81; font-size: 10px; font-weight: 700; letter-spacing: .14em; }
 .dj-status-line i { width: 7px; height: 7px; border-radius: 50%; background: var(--dj-core); box-shadow: 0 0 12px color-mix(in srgb, var(--dj-core) 70%, transparent); }
 .dj-hero-copy h2 { margin: 13px 0 8px; color: #211c18; font-size: clamp(27px, 4vw, 42px); font-weight: 560; letter-spacing: -.055em; line-height: 1.08; }
 .dj-hero-copy p { min-height: 20px; margin: 0 auto; color: #81796f; font-size: 13px; line-height: 1.55; }
 .dj-mascot-stage { position: absolute; z-index: 0; inset: 0; display: grid; place-items: center; overflow: hidden; pointer-events: none; }
-.dj-aura { position: absolute; width: min(94%, 900px); aspect-ratio: 1.65; border-radius: 50%; opacity: .94; filter: blur(38px); transform: translateY(8px); }
-.dj-aura--wide { background: radial-gradient(ellipse, color-mix(in srgb, var(--dj-pale) 90%, white) 0%, color-mix(in srgb, var(--dj-soft) 78%, transparent) 48%, transparent 76%); }
-.dj-aura--soft { width: min(75%, 680px); opacity: .78; background: radial-gradient(ellipse, color-mix(in srgb, var(--dj-soft) 78%, transparent), transparent 72%); transform: translate(3%, 20px); filter: blur(30px); }
-.dj-aura--core { width: min(48%, 460px); opacity: .8; background: radial-gradient(ellipse, var(--dj-core) 0%, color-mix(in srgb, var(--dj-core) 48%, transparent) 52%, transparent 78%); transform: translate(-1%, 28px); filter: blur(27px); }
-.dj-mascot-eyes { position: absolute; top: 34%; left: 50%; display: flex; align-items: center; gap: clamp(26px, 3.3vw, 44px); transform: translate(-50%, -50%) translateY(calc(var(--dj-onset) * -7px)); transition: transform 120ms ease-out; }
-.dj-mascot-eye { display: block; width: clamp(68px, 7.6vw, 96px); height: clamp(92px, 10.5vw, 130px); border-radius: 53% 47% 49% 51% / 47% 51% 49% 53%; background: #fffefa; box-shadow: 0 5px 18px rgba(146, 103, 55, .14), 0 0 34px rgba(255, 255, 255, .96); transform-origin: center 56%; animation: dj-soft-blink 5.8s ease-in-out infinite; }
-.dj-mascot-eye--left { transform: rotate(10deg); }
-.dj-mascot-eye--right { height: clamp(84px, 9.4vw, 116px); margin-top: 14px; transform: rotate(13deg); animation-delay: .075s; }
-.dj-hero.is-playing .dj-aura--wide { animation: dj-aura-breathe 4.4s ease-in-out infinite; }
-.dj-hero.is-playing .dj-aura--soft { animation: dj-aura-breathe 3.7s ease-in-out infinite reverse; }
-.dj-hero.is-playing .dj-mascot-eyes { animation: dj-gentle-roam 10s ease-in-out infinite; }
-.dj-hero[data-paused="true"] .dj-aura { opacity: .76; filter: blur(43px); }
-.dj-hero[data-emotion="listening"] .dj-mascot-eyes { transform: translate(-50%, -50%) translateY(18px); }
-.dj-hero[data-emotion="thinking"] .dj-aura { animation: dj-think-wave 3.4s ease-in-out infinite alternate; }
-.dj-hero[data-emotion="thinking"] .dj-mascot-eyes { transform: translate(-50%, -50%) rotate(-4deg); animation: none; }
-.dj-hero[data-emotion="thinking"] .dj-mascot-eye--right { transform: rotate(18deg) translateY(3px); }
-.dj-hero[data-emotion="happy"] .dj-aura--core { opacity: .9; }
-.dj-hero[data-emotion="happy"] .dj-mascot-eyes { transform: translate(-50%, -50%) translateY(-9px); }
-.dj-hero[data-emotion="error"] .dj-mascot-eye--left { transform: rotate(15deg) scaleY(.82); }
-.dj-hero[data-emotion="error"] .dj-mascot-eye--right { transform: rotate(-8deg) scaleY(.94) translateY(2px); }
 .dj-hero.is-thinking .dj-hero-copy h2 { opacity: .76; }
 .dj-compose { position: absolute; z-index: 3; right: clamp(22px, 4vw, 48px); bottom: clamp(20px, 3.4vw, 40px); width: min(48%, 500px); margin: 0; }
 .dj-vibe-chips { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -7677,10 +7640,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .dj-queue-copy em { overflow: hidden; color: var(--ink-faint); font-size: 10px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .dj-pick-mark { flex: 0 0 auto; color: var(--wave); opacity: .68; }
 .dj-spin { animation: dj-rotate 1s linear infinite; }
-@keyframes dj-soft-blink { 0%, 91%, 100% { scale: 1 1; } 94% { scale: 1 .06; } 97% { scale: 1 1; } }
-@keyframes dj-aura-breathe { 0%, 100% { opacity: .72; scale: 1; } 50% { opacity: .9; scale: calc(1.02 + var(--dj-audio-energy) * .025); } }
-@keyframes dj-gentle-roam { 0%, 100% { translate: 0 0; rotate: 0deg; } 28% { translate: 4px -3px; rotate: 1deg; } 56% { translate: -4px -2px; rotate: -1deg; } 78% { translate: -2px 3px; rotate: .5deg; } }
-@keyframes dj-think-wave { from { scale: .98; opacity: .62; } to { scale: 1.04; opacity: .82; } }
 @keyframes dj-mic-pulse { to { box-shadow: 0 0 0 5px rgba(220, 117, 104, .16); } }
 @keyframes dj-rotate { to { transform: rotate(360deg); } }
 @media (max-width: 840px) {
@@ -7688,12 +7647,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .dj-hero { min-height: 640px; padding: 20px 14px; border-radius: 25px; }
   .dj-hero-copy h2 { font-size: 29px; }
   .dj-hero-copy p { max-width: 330px; font-size: 11px; }
-  .dj-aura { width: 120%; }
-  .dj-aura--soft { width: 96%; }
-  .dj-aura--core { width: 70%; }
-  .dj-mascot-eyes { top: 39%; gap: clamp(22px, 7vw, 34px); }
-  .dj-mascot-eye { width: clamp(64px, 18vw, 82px); height: clamp(88px, 24vw, 108px); }
-  .dj-mascot-eye--right { height: clamp(80px, 22vw, 98px); }
   .dj-compose { right: 14px; bottom: 18px; left: 14px; width: auto; }
   .dj-goal-tabs { margin: 0 auto 10px; }
   .dj-vibe-chips { justify-content: center; gap: 6px; }
@@ -7706,7 +7659,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .dj-current-actions { margin-left: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .dj-hero *, .dj-hero::before { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  .dj-hero::before { animation: none; transition: none; }
 }
 
 .dj-goal-tabs { display: flex; width: fit-content; gap: 4px; margin: 0 0 12px auto; padding: 4px; border: 1px solid rgba(117, 96, 72, .12); border-radius: 14px; background: rgba(245, 243, 239, .8); }
@@ -7739,10 +7692,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     radial-gradient(ellipse 59% 76% at 34% 52%, color-mix(in srgb, var(--dj-soft) 28%, transparent), transparent 80%),
     #fbf9f5;
 }
-.dj-aura { left: 2%; top: 50%; width: min(76%, 760px); transform: translate(-14%, calc(-50% + 8px)); }
-.dj-aura--soft { left: 4%; width: min(58%, 580px); transform: translate(-10%, calc(-50% + 20px)); }
-.dj-aura--core { left: 5%; width: min(40%, 400px); transform: translate(-10%, calc(-50% + 28px)); }
-.dj-mascot-eyes { top: 50%; left: 34%; }
 .dj-compose {
   width: min(44%, 500px); padding: 14px;
   border: 1px solid rgba(255, 255, 255, .86); border-radius: 27px;
@@ -7774,10 +7723,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 @media (max-width: 840px) {
   .dj-hero { background-image: radial-gradient(ellipse 62% 42% at 50% 38%, color-mix(in srgb, var(--dj-core) 22%, transparent), transparent 76%), radial-gradient(ellipse 92% 57% at 50% 38%, color-mix(in srgb, var(--dj-soft) 28%, transparent), transparent 80%), #fbf9f5; }
-  .dj-aura { left: 50%; top: 39%; width: 120%; transform: translate(-50%, calc(-50% + 8px)); }
-  .dj-aura--soft { left: 50%; top: 39%; width: 96%; transform: translate(-50%, calc(-50% + 20px)); }
-  .dj-aura--core { left: 50%; top: 39%; width: 70%; transform: translate(-50%, calc(-50% + 28px)); }
-  .dj-mascot-eyes { top: 39%; left: 50%; }
   .dj-compose { right: 12px; bottom: 12px; left: 12px; width: auto; padding: 12px; border-radius: 23px; }
   .dj-vibe-chips button { min-height: 40px; }
   .dj-inline-reply { text-align: center; }
@@ -7799,10 +7744,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   background: radial-gradient(ellipse 48% 54% at 50% 52%, color-mix(in srgb, var(--dj-core) 22%, transparent), transparent 74%), radial-gradient(ellipse 68% 74% at 50% 52%, color-mix(in srgb, var(--dj-soft) 28%, transparent), transparent 79%), #fbf9f5;
   box-shadow: 0 20px 56px rgba(91, 62, 35, .08);
 }
-.dj-aura { left: 50%; top: 50%; width: min(94%, 900px); transform: translate(-50%, calc(-50% + 8px)); }
-.dj-aura--soft { left: 50%; top: 50%; width: min(75%, 680px); transform: translate(-50%, calc(-50% + 20px)); }
-.dj-aura--core { left: 50%; top: 50%; width: min(48%, 460px); transform: translate(-50%, calc(-50% + 28px)); }
-.dj-mascot-eyes { top: 50%; left: 50%; }
 .dj-compose {
   position: relative; inset: auto; grid-column: 1; grid-row: 2; justify-self: center; width: 100%; max-width: 900px;
   margin: 0; padding: 0; overflow: visible; border: 0; border-radius: 0; background: transparent;
@@ -7820,10 +7761,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 @media (max-width: 840px) {
   .dj-hero { grid-template-columns: minmax(0, 1fr); gap: 14px; min-height: 0; padding: 0; }
   .dj-mascot-stage { grid-column: 1; grid-row: 1; min-height: clamp(250px, 72vw, 380px); aspect-ratio: 1.22; border-radius: 28px; }
-  .dj-aura { left: 50%; top: 50%; width: 120%; transform: translate(-50%, calc(-50% + 8px)); }
-  .dj-aura--soft { left: 50%; top: 50%; width: 96%; transform: translate(-50%, calc(-50% + 20px)); }
-  .dj-aura--core { left: 50%; top: 50%; width: 70%; transform: translate(-50%, calc(-50% + 28px)); }
-  .dj-mascot-eyes { top: 50%; left: 50%; }
   .dj-compose { position: relative; inset: auto; grid-column: 1; grid-row: 2; width: auto; max-width: none; margin: 0 4px; padding: 0; }
   .dj-input-wrap { min-height: 60px; border-radius: 20px; }
   .dj-command-menu { top: calc(100% + 9px); right: 0; bottom: auto; left: 0; width: 100%; max-height: min(210px, 32vh); }
@@ -7846,28 +7783,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .dj-inline-reply { color: rgba(255, 255, 255, .78); }
 @media (prefers-reduced-transparency: reduce) { .dj-command-menu { background: #1d1f20; -webkit-backdrop-filter: none; backdrop-filter: none; } }
 
-/* The glow behaves like a soft pet: its silhouette follows the active mood and playback. */
-.dj-mascot-eyes { animation: dj-gentle-roam 11s ease-in-out infinite; }
-.dj-aura--wide, .dj-aura--soft, .dj-aura--core { border-radius: var(--dj-pet-shape-a, 63% 37% 55% 45% / 50% 44% 56% 50%); transition: border-radius 900ms ease, filter 900ms ease, opacity 900ms ease; }
-.dj-aura--wide { --dj-pet-shape-a: 63% 37% 55% 45% / 50% 44% 56% 50%; --dj-pet-shape-b: 43% 57% 40% 60% / 47% 57% 43% 53%; animation: dj-pet-morph 11s ease-in-out infinite; }
-.dj-aura--soft { --dj-pet-shape-a: 48% 52% 62% 38% / 56% 42% 58% 44%; --dj-pet-shape-b: 62% 38% 44% 56% / 45% 58% 42% 55%; animation: dj-pet-morph 14s ease-in-out infinite reverse; }
-.dj-aura--core { --dj-pet-shape-a: 55% 45% 46% 54% / 52% 44% 56% 48%; --dj-pet-shape-b: 42% 58% 58% 42% / 45% 55% 45% 55%; }
-.dj-hero[data-tone="violet"] .dj-aura--wide { --dj-pet-shape-a: 51% 49% 42% 58% / 58% 44% 56% 42%; --dj-pet-shape-b: 42% 58% 59% 41% / 45% 58% 42% 55%; }
-.dj-hero[data-tone="blue"] .dj-aura--wide { --dj-pet-shape-a: 47% 53% 55% 45% / 42% 54% 46% 58%; --dj-pet-shape-b: 60% 40% 44% 56% / 58% 42% 58% 42%; }
-.dj-hero[data-tone="coral"] .dj-aura--wide { --dj-pet-shape-a: 67% 33% 48% 52% / 49% 61% 39% 51%; --dj-pet-shape-b: 39% 61% 62% 38% / 57% 44% 56% 43%; }
-.dj-hero.is-playing .dj-aura--wide { animation: dj-pet-morph 8s ease-in-out infinite, dj-aura-breathe 4.4s ease-in-out infinite; }
-.dj-hero.is-playing .dj-aura--soft { animation: dj-pet-morph 10s ease-in-out infinite reverse, dj-aura-breathe 3.7s ease-in-out infinite reverse; }
-.dj-hero[data-emotion="thinking"] .dj-aura--wide { animation: dj-pet-morph 3.6s ease-in-out infinite alternate, dj-think-wave 3.6s ease-in-out infinite alternate; }
-.dj-hero[data-emotion="thinking"] .dj-aura--soft { animation: dj-pet-morph 4.8s ease-in-out infinite alternate-reverse; }
-.dj-hero[data-emotion="thinking"] .dj-mascot-eyes { animation: none; }
-.dj-hero[data-emotion="listening"] .dj-mascot-eyes { animation-duration: 16s; }
-.dj-hero[data-emotion="happy"] .dj-aura--core { animation: dj-happy-pulse .78s ease-in-out 2; }
-.dj-hero[data-emotion="happy"] .dj-mascot-eyes { animation-duration: 3.8s; }
-@keyframes dj-pet-morph {
-  0%, 100% { border-radius: var(--dj-pet-shape-a); rotate: -3deg; }
-  50% { border-radius: var(--dj-pet-shape-b); rotate: 4deg; }
-}
-@keyframes dj-happy-pulse { 0%, 100% { scale: 1; } 48% { scale: 1.12; } }
 
 /* A quiet glass pill keeps the composer secondary to the mascot. */
 .dj-compose { width: min(100%, 620px); max-width: 620px; }
@@ -7900,16 +7815,9 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 
 /* The mascot notices a nearby pointer and gently follows it with its eyes. */
 .dj-mascot-stage { pointer-events: auto; cursor: default; }
-.dj-mascot-eyes { translate: var(--dj-look-x, 0px) var(--dj-look-y, 0px); transition: translate 240ms cubic-bezier(.2,.75,.25,1); }
-.dj-hero[data-emotion="listening"] .dj-mascot-eyes { translate: var(--dj-look-x, 0px) calc(var(--dj-look-y, 0px) + 4px); }
-.dj-mascot-stage:hover .dj-aura--core { scale: 1.08; opacity: .62; }
-.dj-aura--core { transition: scale 420ms ease, opacity 420ms ease, border-radius 900ms ease, filter 900ms ease; }
-.dj-hero[data-emotion="curious"] .dj-mascot-eye--left { rotate: -9deg; scale: 1 .88; }
-.dj-hero[data-emotion="curious"] .dj-mascot-eye--right { translate: 3px -3px; }
-.dj-hero[data-emotion="curious"] .dj-aura--core { scale: 1.1; filter: blur(30px) brightness(1.08); }
 
 @media (prefers-reduced-motion: reduce) {
-  .dj-input-wrap, .dj-mascot-eyes, .dj-aura--core { transition-duration: .01ms; }
+  .dj-input-wrap { transition-duration: .01ms; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .dj-input-wrap { background: rgba(34, 35, 36, .94); -webkit-backdrop-filter: none; backdrop-filter: none; }
@@ -7919,6 +7827,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   height: clamp(280px, min(48vw, calc(100svh - var(--dock, 96px) - 220px)), 960px);
   min-height: 0;
   aspect-ratio: auto;
+  container-type: size;
 }
 @media (max-width: 840px) {
   .dj-hero { gap: 12px; }
@@ -7927,6 +7836,125 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     min-height: 0;
     aspect-ratio: auto;
   }
+}
+
+/* ---------- DJ mascot: a clear-glass orb that becomes a spinning record ---------- */
+/* Colours come from the playing cover (inline --m-a / --m-b); without one, the page's darkened tone. */
+.dj-m {
+  --m-a: var(--dj-core, #b9772f);
+  --m-b: var(--dj-soft, #7a5a33);
+  --m-p: 0;
+  --m-look: 1;
+  position: relative; display: block; flex: none; aspect-ratio: 1; pointer-events: none;
+}
+.dj-m--stage { width: min(78cqh, 92cqw, 560px); }
+.dj-m--mini { --m-look: .2; width: 44px; }
+/* A beat kicks the whole mascot. One transform on one layer. */
+.dj-m-kick { position: absolute; inset: 0; transform: scale(calc(1 + var(--dj-onset, 0) * .04)); }
+.dj-m[data-playing='true'] .dj-m-kick { will-change: transform; }
+
+/* The cover's light, behind the glass. Quiet at rest, up to .55 on bass. */
+.dj-m-glow {
+  position: absolute; inset: -6%; border-radius: 50%;
+  background: radial-gradient(circle at 50% 56%, var(--m-a) 0%, color-mix(in srgb, var(--m-b) 55%, transparent) 50%, transparent 74%);
+  opacity: calc(.3 + var(--dj-bass, 0) * .25);
+  animation: dj-m-drift var(--d-drift) var(--ease-standard) infinite alternate;
+}
+.dj-m[data-emotion='sleeping'] .dj-m-glow { opacity: .18; }
+/* Thinking: a thin ring of the cover colour breathes around the orb. Opacity only. */
+.dj-m-ring { position: absolute; inset: -2%; border: 1px solid color-mix(in srgb, var(--m-a) 70%, white); border-radius: 50%; opacity: 0; }
+.dj-m[data-emotion='thinking'] .dj-m-ring { animation: dj-m-think var(--d-atmosphere) var(--ease-standard) infinite alternate; }
+
+/* The glass: the same recipe as the Home cards. */
+.dj-m-orb, .dj-m-record {
+  position: absolute; inset: 0; overflow: hidden; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: linear-gradient(160deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .025) 70%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 24px 60px -40px rgba(0, 0, 0, .9);
+  -webkit-backdrop-filter: blur(22px) saturate(150%); backdrop-filter: blur(22px) saturate(150%);
+}
+.dj-m--mini .dj-m-orb, .dj-m--mini .dj-m-record { -webkit-backdrop-filter: blur(10px) saturate(150%); backdrop-filter: blur(10px) saturate(150%); }
+.dj-m-sheen { position: absolute; inset: 0; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .1), transparent 46%); }
+.dj-m-fill {
+  position: absolute; inset: 0;
+  background: linear-gradient(to top, color-mix(in srgb, var(--m-a) 30%, transparent), color-mix(in srgb, var(--m-b) 10%, transparent));
+  transform: translateY(calc((1 - var(--m-p)) * 100%));
+  transition: transform var(--d-slow) var(--ease-standard);
+}
+
+/* Orb <-> record: a cross-fade, the record flattening in as it appears. */
+.dj-m-orb { transition: opacity var(--d-slow) var(--ease-standard); }
+.dj-m[data-playing='true'] .dj-m-orb { opacity: 0; }
+.dj-m-record {
+  opacity: 0; transform: scaleY(.92);
+  transition: opacity var(--d-slow) var(--ease-standard), transform var(--d-slow) var(--ease-standard);
+}
+.dj-m[data-playing='true'] .dj-m-record { opacity: 1; transform: none; }
+/* The platter turns on its own layer. Paused (not removed) when music stops, so it fades out where it stopped. */
+.dj-m-disc {
+  position: absolute; inset: 0; border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle at 50% 50%, rgba(255, 255, 255, .09) 0 1px, transparent 1px 4px),
+    conic-gradient(from 20deg, transparent 0 8%, rgba(255, 255, 255, .13) 14%, transparent 22% 58%, rgba(255, 255, 255, .09) 64%, transparent 72%),
+    radial-gradient(circle, color-mix(in srgb, var(--m-b) 16%, transparent), transparent 74%);
+  animation: dj-m-spin var(--d-record-spin) linear infinite paused;
+}
+.dj-m[data-playing='true'] .dj-m-disc { animation-play-state: running; }
+.dj-m-label {
+  position: absolute; top: 31%; left: 31%; width: 38%; height: 38%; overflow: hidden; border-radius: 50%;
+  background: linear-gradient(135deg, var(--m-a), var(--m-b));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .22), 0 0 0 4px rgba(255, 255, 255, .05);
+}
+.dj-m-label img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* The eyes never rotate with the record: they sit above it, smaller, over the label. */
+.dj-m-eyes {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 9%;
+  translate: calc(var(--dj-look-x, 0px) * var(--m-look)) calc(var(--dj-look-y, 0px) * var(--m-look));
+  transition: translate var(--d-base) var(--ease-decelerate), transform var(--d-slow) var(--ease-standard), rotate var(--d-base) var(--ease-standard);
+}
+.dj-m[data-playing='true'] .dj-m-eyes { transform: scale(.6); }
+.dj-m-eye {
+  flex: none; width: 16%; height: 23%; border-radius: 53% 47% 49% 51% / 47% 51% 49% 53%;
+  background: #fffefa; box-shadow: 0 0 16px rgba(255, 255, 255, .4);
+  rotate: 8deg; transform-origin: center 56%;
+  animation: dj-m-blink calc(var(--d-drift) * .65) var(--ease-standard) infinite;
+  transition: rotate var(--d-base) var(--ease-standard), translate var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-standard), opacity var(--d-base) var(--ease-standard);
+}
+.dj-m-eye--right { height: 20%; margin-top: 1.5%; rotate: 11deg; animation-delay: var(--d-instant); }
+.dj-m--mini .dj-m-eye { box-shadow: none; }
+
+.dj-m[data-emotion='listening'] .dj-m-eyes { translate: calc(var(--dj-look-x, 0px) * var(--m-look)) calc(var(--dj-look-y, 0px) * var(--m-look) + 4%); }
+.dj-m[data-emotion='thinking'] .dj-m-eyes { rotate: -4deg; }
+.dj-m[data-emotion='thinking'] .dj-m-eye--right { rotate: 18deg; translate: 0 6%; }
+.dj-m[data-emotion='curious'] .dj-m-eye--left { rotate: -9deg; transform: scaleY(.88); }
+.dj-m[data-emotion='curious'] .dj-m-eye--right { translate: 6% -6%; }
+.dj-m[data-emotion='happy'] .dj-m-eyes { translate: calc(var(--dj-look-x, 0px) * var(--m-look)) calc(var(--dj-look-y, 0px) * var(--m-look) - 6%); }
+.dj-m[data-emotion='error'] .dj-m-eye--left { rotate: 15deg; transform: scaleY(.82); }
+.dj-m[data-emotion='error'] .dj-m-eye--right { rotate: -8deg; transform: scaleY(.94); translate: 0 2%; }
+.dj-m[data-emotion='sleeping'] .dj-m-eye { animation: none; scale: 1 .1; opacity: .75; }
+
+@keyframes dj-m-spin { to { transform: rotate(360deg); } }
+@keyframes dj-m-blink { 0%, 91%, 100% { scale: 1 1; } 94% { scale: 1 .06; } 97% { scale: 1 1; } }
+@keyframes dj-m-drift { from { translate: -2% 1%; } to { translate: 2% -2%; } }
+@keyframes dj-m-think { from { opacity: 0; } to { opacity: .6; } }
+
+/* Reduced motion collapses to opacity. Beats lift the glow instead of the scale; the swap between
+   orb and record stays a cross-fade; nothing turns, drifts or blinks. */
+@media (prefers-reduced-motion: reduce) {
+  .dj-m-kick { transform: none; will-change: auto; }
+  .dj-m-glow { animation: none; opacity: min(.55, calc(.3 + var(--dj-bass, 0) * .15 + var(--dj-onset, 0) * .15)); }
+  .dj-m[data-emotion='sleeping'] .dj-m-glow { opacity: .18; }
+  .dj-m-disc, .dj-m-eye { animation: none; }
+  .dj-m-record { transform: none; transition: opacity var(--d-slow) var(--ease-standard); }
+  .dj-m-fill { transition: none; }
+  .dj-m-eyes, .dj-m-eye { transition: opacity var(--d-base) var(--ease-standard); }
+  .dj-m-eyes { translate: none; }
+  .dj-m[data-emotion='listening'] .dj-m-eyes { translate: 0 4%; }
+  .dj-m[data-emotion='happy'] .dj-m-eyes { translate: 0 -6%; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .dj-m-orb, .dj-m-record { background: rgba(32, 34, 38, .72); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 /* The DJ nav mark stays in Allegra's monochrome rail until the pointer wakes it. */
