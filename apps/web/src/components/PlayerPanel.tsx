@@ -41,6 +41,7 @@ import type { Palette } from '../lib/palette';
 import { usePlayhead, type Playhead } from '../lib/playhead';
 import { tapHaptic } from '../lib/haptics';
 import { createDoubleTap } from '../lib/karaokeMix';
+import { countLyricsTap, highlightLabel, NO_TAPS, otherHighlight, type TapRun } from '../lib/lyricsTaps';
 import { fetchCanvasArtwork } from '../lib/api';
 import { creditedArtists, formatTime, clamp } from '../lib/utils';
 import { motionTokens, spring } from '../motion';
@@ -183,7 +184,26 @@ export function PlayerPanel({
   // show/hide: hiding the lyrics leaves the cover and controls centred on their own. The phone's
   // "workspace" mode (lyrics take over, cover fades out) only applies to the stacked layout.
   const [lyricsHidden, setLyricsHidden] = useState(false);
-  const [{ playerBlackBackground }] = useSettings();
+  const [{ playerBlackBackground, lyricsHighlight }, updateSettings] = useSettings();
+  // Three quick taps on the Lyrics tab switch letter by letter ↔ line by line, as on the phone app.
+  const lyricsTapsRef = useRef<TapRun>(NO_TAPS);
+  const [highlightNote, setHighlightNote] = useState('');
+  const [noteShown, setNoteShown] = useState(false);
+  useEffect(() => {
+    if (!noteShown) return undefined;
+    const timer = window.setTimeout(() => setNoteShown(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [noteShown, highlightNote]);
+  const tapLyricsTab = (): void => {
+    const { run, triple } = countLyricsTap(lyricsTapsRef.current, performance.now());
+    lyricsTapsRef.current = run;
+    if (!triple) return;
+    const next = otherHighlight(lyricsHighlight);
+    updateSettings({ lyricsHighlight: next });
+    tapHaptic(14);
+    setHighlightNote(highlightLabel(next));
+    setNoteShown(true);
+  };
   // The top bar's right-hand slot: the lyrics panel renders its ⋯ actions there on wide screens.
   const [topActionsSlot, setTopActionsSlot] = useState<HTMLDivElement | null>(null);
   // A song with no lyrics (the lookup finished, found nothing, and did not fail) puts the lyrics away by
@@ -368,7 +388,8 @@ export function PlayerPanel({
                   role="tab"
                   aria-selected={visibleTab === 'lyrics'}
                   aria-label="Lyrics"
-                  onClick={() => selectTab('lyrics')}
+                  title="Lyrics · triple-tap to switch letter by letter and line by line"
+                  onClick={() => { selectTab('lyrics'); tapLyricsTab(); }}
                 >
                   <Waves size={14} aria-hidden="true" /> Lyrics
                 </button>
@@ -392,6 +413,8 @@ export function PlayerPanel({
                 >
                   <Sparkles size={14} aria-hidden="true" /> Related
                 </button>
+                {/* Says which style a triple tap switched to, then fades. */}
+                <span className={`lyrics-style-note${noteShown ? ' is-shown' : ''}`} role="status" aria-live="polite">{highlightNote}</span>
               </div>
               <div className="listening-top__spacer" ref={setTopActionsSlot} />
             </div>
