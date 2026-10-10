@@ -1,34 +1,28 @@
-import { Heart, LoaderCircle, Mic, Pause, Play, Send, SkipForward, Sparkles, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { Cpu, Ear, KeyRound, LoaderCircle, Mic, Play, Send, Settings2, Sparkles, Undo2 } from 'lucide-react';
+import { useReducedMotion } from 'motion/react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 
 import { getDjSlashSuggestions } from '@shared/dj';
-import type { DjProvider } from '@shared/dj';
 import type { UnifiedSong } from '@shared/types';
 
 import { useAudioAnalyser } from '../hooks/useAudioAnalyser';
-import { useDjSession } from '../hooks/useDjSession';
-import { djDanceVibe, djMotionFor, djTonePalette, type DjRoamMode } from '../lib/djDance';
+import { DJ_READY_STATUS, useDjSession, type DjEmotion, type DjPick } from '../hooks/useDjSession';
+import { MIC_BLOCKED_COPY, MIC_INSECURE_COPY, useDjVoice } from '../hooks/useDjVoice';
+import { LOCAL_VOICE_MB } from '../lib/djWhisper';
+import { djTonePalette, djToneFor } from '../lib/djDance';
+import { djDanceVibe, type DjMascotMode } from '../lib/djMascotMotion';
+import { djSuggestions } from '../lib/djSession';
 import type { Palette } from '../lib/palette';
-import { DjMascot } from './dj/DjMascot';
-import { useDjPulse } from './dj/useDjPulse';
-import { useDjRoam } from './dj/useDjRoam';
-import { Artwork } from './ui';
-
-interface SpeechRecognitionResultLike { readonly transcript: string }
-interface SpeechRecognitionLike {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  onresult: ((event: { readonly results: ArrayLike<ArrayLike<SpeechRecognitionResultLike>> }) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-}
-interface SpeechWindow extends Window {
-  SpeechRecognition?: new () => SpeechRecognitionLike;
-  webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-}
+import { DjBubble } from './dj/DjBubble';
+import { DjCrate } from './dj/DjCrate';
+import { DjMascot, DjTint } from './dj/DjMascot';
+import { DjNowPlaying } from './dj/DjNowPlaying';
+import { DjSessionChips } from './dj/DjSessionChips';
+import { DjSettingsSheet } from './dj/DjSettingsSheet';
+import { DJ_TOUR, djScene } from './dj/DjTour';
+import { InfoTour } from './InfoTour';
+import { useDjMascot } from './dj/useDjMascot';
+import { useDjStageShape } from './dj/useDjStageShape';
 
 interface DjPageProps {
   readonly currentSong: UnifiedSong | null;
@@ -36,229 +30,414 @@ interface DjPageProps {
   readonly isLive: boolean;
   readonly isRemote: boolean;
   readonly isCurrentLiked: boolean;
-  /** Colours of the playing cover; `null` when nothing plays (the mascot then uses the tone colours). */
+  /** Colours of the playing cover; `null` when nothing plays (the DJ then uses its tone colours). */
   readonly palette?: Palette | null;
+  /** Recently played songs, newest first: the starter suggestions read their language. */
+  readonly recent: readonly UnifiedSong[];
+  /** The app's search, as a small icon in the stage's corner. A song picked there is one the DJ notices. */
+  readonly searchSlot?: ReactNode;
   readonly audioRef: RefObject<HTMLAudioElement | null>;
   readonly onToggle: () => void;
   readonly onLike: (song: UnifiedSong) => void;
 }
 
-function toneFor(vibe: string, energy: number): string {
-  if (energy >= 4 || /hype|upbeat|energetic|workout/i.test(vibe)) return 'coral';
-  if (/late|night|dream|melanchol|romantic/i.test(vibe)) return 'violet';
-  if (/focus|calm|chill|easy/i.test(vibe)) return 'blue';
-  return 'amber';
+const INITIAL_VARS = {
+  '--dj-bass': '0', '--dj-energy': '0', '--dj-voice': '0', '--dj-onset': '0',
+  '--dj-roam-x': '0', '--dj-roam-y': '0', '--dj-lift': '0', '--dj-squash': '0', '--dj-sway': '0',
+  '--dj-look-x': '0', '--dj-look-y': '0', '--dj-blink': '0', '--dj-nod': '0'
+} as CSSProperties;
+
+function greeting(hour: number, song: UnifiedSong | null): string {
+  const part = hour < 5 ? 'Up late' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  if (song) return `${part}. Liking “${song.title}”? Ask me for more like it, or for something else entirely.`;
+  return `${part}. Tell me a mood, a moment or a song, and I’ll line up the next few.`;
+}
+
+function mascotModeFor(working: boolean, emotion: DjEmotion, playing: boolean): DjMascotMode {
+  if (working) return 'think';
+  if (emotion === 'listening') return 'listen';
+  return playing ? 'groove' : 'idle';
 }
 
 export function DjPage({
-  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, palette = null, audioRef, onToggle, onLike,
+  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, palette = null, recent, searchSlot, audioRef, onToggle, onLike,
 }: DjPageProps) {
   const dj = useDjSession();
   const {
     provider, model, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist,
-    turn, reasons, working, status, emotion, nextSongs,
-    setStatus, setEmotion, setDraftName, setProvider, setModel, setApiKey, setSettingsOpen,
+    turn, reasons, working, status, emotion, nextSongs, history, undoable, offer,
+    setStatus, setEmotion, setDraftName, setProvider, setModel, setApiKey, setSettingsOpen, setGoal,
   } = dj;
   const [prompt, setPrompt] = useState('');
-  const stageRef = useRef<HTMLElement | null>(null);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  const mascotRef = useRef<HTMLDivElement | null>(null);
+  const heroRef = useRef<HTMLElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const composeRef = useRef<HTMLFormElement | null>(null);
+  const outlineRef = useRef<SVGPathElement | null>(null);
+  useDjStageShape(heroRef, stageRef, composeRef, outlineRef);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const gearRef = useRef<HTMLButtonElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const voice = useDjVoice();
+  const hearing = Boolean(voice?.listening || voice?.transcribing);
+  const reduced = useReducedMotion() ?? false;
   const analyser = useAudioAnalyser(audioRef, isPlaying);
+  const [hour] = useState(() => new Date().getHours());
 
-  useDjPulse(stageRef, analyser, isPlaying);
+  const tone = djToneFor(session.vibe, session.energy);
+  const vibe = djDanceVibe(tone, session.energy);
+  const playing = Boolean(currentSong && isPlaying);
+  const songPalette = palette ?? djTonePalette(tone);
+  const react = useDjMascot(pageRef, mascotRef, analyser, { mode: mascotModeFor(working, hearing ? 'listening' : emotion, playing), vibe, playing });
 
-  useEffect(() => () => recognitionRef.current?.stop(), []);
+  // A voice problem (blocked mic, no voice in this browser) is said by the DJ, once.
+  const voiceError = voice?.error ?? null;
+  useEffect(() => {
+    if (!voiceError) return;
+    setStatus(voiceError);
+    setEmotion('error');
+  }, [setEmotion, setStatus, voiceError]);
 
-  const toggleVoice = useCallback((): void => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-      setEmotion('idle');
-      return;
-    }
-    const speechWindow = window as SpeechWindow;
-    const Constructor = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
-    if (!Constructor) {
-      setStatus('Voice input is not available in this browser. Type your request instead.');
-      setEmotion('error');
-      return;
-    }
-    const recognition = new Constructor();
-    recognition.lang = 'en-IN';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event) => {
-      const transcript = event.results[event.results.length - 1]?.[0]?.transcript?.trim();
-      if (transcript) setPrompt(transcript);
+  // The DJ shows how a turn went with its whole body: a hop when it worked, a head shake when it did not.
+  const lastEmotion = useRef(emotion);
+  useEffect(() => {
+    if (lastEmotion.current === emotion) return;
+    lastEmotion.current = emotion;
+    if (emotion === 'happy') react('joy');
+    else if (emotion === 'error') react('shake');
+  }, [emotion, react]);
+
+  // The AI settings sheet is a floating panel: Esc and a press outside close it, and focus goes back to the gear.
+  useEffect(() => {
+    if (!settingsOpen) return undefined;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      setSettingsOpen(false);
+      gearRef.current?.focus();
     };
-    recognition.onerror = () => {
-      setStatus('I could not hear that. Try again or type your request.');
-      setEmotion('error');
-      recognitionRef.current = null;
+    const onPress = (event: PointerEvent): void => {
+      const target = event.target as Node | null;
+      if (!target || sheetRef.current?.contains(target) || gearRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest('[data-dj-opens-settings]')) return;
+      const focusWasInside = Boolean(sheetRef.current?.contains(document.activeElement));
+      setSettingsOpen(false);
+      if (focusWasInside) gearRef.current?.focus();
     };
-    recognition.onend = () => {
-      recognitionRef.current = null;
-      setEmotion('idle');
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onPress);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPress);
     };
-    recognitionRef.current = recognition;
-    setEmotion('listening');
-    setStatus('Listening…');
-    recognition.start();
-  }, [setEmotion, setStatus]);
+  }, [settingsOpen, setSettingsOpen]);
 
-  const submitPrompt = (): void => {
-    void dj.submitPrompt(prompt).then((outcome) => {
+  const openSettings = (): void => {
+    setSettingsOpen(true);
+    window.requestAnimationFrame(() => {
+      sheetRef.current?.querySelector<HTMLElement>('select, input, button')?.focus();
+    });
+  };
+  const toggleSettings = (): void => {
+    if (settingsOpen) setSettingsOpen(false);
+    else openSettings();
+  };
+
+  const submit = (value: string): void => {
+    void dj.submitPrompt(value).then((outcome) => {
       if (outcome.prefill !== undefined) setPrompt(outcome.prefill);
       else if (outcome.clear) setPrompt('');
     });
   };
 
   const needsStart = Boolean(goal === 'mix' && turn && turn.operation !== 'keep' && turn.queue.length > 0 && (!currentSong || isRemote));
-  const displayTracks = useMemo(() => {
-    if (goal === 'playlist') return draft;
-    if (needsStart && turn) return turn.queue;
-    return nextSongs.slice(0, 8).map((song) => ({ song, reason: reasons[song.id] ?? '' }));
+  const needsSetup = provider !== 'local' && !apiKey.trim() && history.length === 0;
+
+  // "Ready when you are" is only true until the set starts, whichever control starts it.
+  useEffect(() => {
+    if (status === DJ_READY_STATUS && !needsStart) setStatus(turn?.reply ?? '');
+  }, [needsStart, setStatus, status, turn]);
+
+  // What the queue box lists. A started mix lists the DJ's own picks still waiting in the queue; with no
+  // DJ turn (an album queue) it lists what is coming up, and nothing in it can be moved.
+  const crate = useMemo<{ readonly items: readonly DjPick[]; readonly editable: boolean }>(() => {
+    if (goal === 'playlist') return { items: draft, editable: true };
+    if (needsStart && turn) return { items: turn.queue, editable: true };
+    const upcoming = nextSongs.slice(0, 8);
+    if (!turn) return { items: upcoming.map((song) => ({ song, reason: reasons[song.id] ?? '' })), editable: false };
+    return {
+      items: upcoming.filter((song) => reasons[song.id] !== undefined).map((song) => ({ song, reason: reasons[song.id] ?? '' })),
+      editable: true
+    };
   }, [draft, goal, needsStart, nextSongs, reasons, turn]);
-  const tone = toneFor(session.vibe, session.energy);
-  const vibe = djDanceVibe(tone, session.energy);
-  const playing = Boolean(currentSong && isPlaying);
-  const roamMode: DjRoamMode = working ? 'still' : emotion === 'listening' ? 'listen' : 'roam';
-  const motion = useMemo(() => djMotionFor(vibe, playing, roamMode), [playing, roamMode, vibe]);
-  useDjRoam(stageRef, motion);
+
   const commandSuggestions = getDjSlashSuggestions(prompt, goal);
+  const starters = useMemo(() => djSuggestions(currentSong, recent.slice(0, 12), hour), [currentSong, hour, recent]);
+  // Under the console: the Mix / energy dial and just two ideas, so the row stays one line.
+  const showStarters = !prompt && !working && !hearing;
+
+  const playPick = (song: UnifiedSong): void => {
+    if (song.id === currentSong?.id) {
+      onToggle();
+      return;
+    }
+    if (goal === 'playlist') dj.playFrom(song, draft.map((pick) => pick.song));
+    else if (needsStart && turn) dj.startPlan(turn, song.id);
+    else dj.playFrom(song, crate.items.map((pick) => pick.song));
+  };
+  const reorderPicks = (ids: readonly string[]): boolean | void => {
+    if (goal === 'playlist') dj.reorderDraft(ids);
+    else if (needsStart) dj.reorderTurn(ids);
+    else return dj.reorder(ids);
+    return undefined;
+  };
+  const removePick = (id: string): void => {
+    if (goal === 'playlist') dj.removeFromDraft(id);
+    else if (needsStart) dj.removeFromTurn(id);
+    else dj.removePick(id);
+  };
+
+  const chooseLocal = (): void => {
+    setProvider('local');
+    setSettingsOpen(false);
+    setStatus('I’ll think on this device. The first request downloads my model once, about 390 MB.');
+    inputRef.current?.focus();
+  };
+
+  const voiceLine = !voice ? null
+    : voice.localProgress !== null ? (voice.localProgress >= 100 ? 'Almost ready, warming up my ears…' : `Getting my ears ready · ${voice.localProgress}%`)
+      : voice.needsLocalDownload ? `Here I listen on your device, so nothing you say leaves it. That needs a one-time ${LOCAL_VOICE_MB} MB download.`
+        : voice.transcribing ? 'Writing that down…'
+          : voice.listening ? (voice.transcript || (voice.micState === 'prompt' || voice.micState === 'unknown' ? 'Your browser is asking to use the microphone. Choose Allow, then speak.' : 'Listening…'))
+            : null;
+  const bubbleText = voiceLine ?? (status || (needsSetup ? 'Hi, I’m your DJ. Before we start, how should I think?' : greeting(hour, currentSong)));
+  const bubbleActions = voice?.needsLocalDownload ? (
+    <>
+      <button type="button" className="dj-chip-button dj-chip-button--accent" onClick={() => void voice.downloadLocal()}><Mic size={14} aria-hidden="true" />Download · {LOCAL_VOICE_MB} MB</button>
+      <button type="button" className="dj-chip-button" onClick={voice.dismissDownload}>Not now</button>
+    </>
+  ) : status === MIC_BLOCKED_COPY || status === MIC_INSECURE_COPY ? (
+    <>
+      {status === MIC_BLOCKED_COPY ? <button type="button" className="dj-chip-button dj-chip-button--accent" onClick={() => { setStatus(''); voice?.listen(); }}><Mic size={14} aria-hidden="true" />Try again</button> : null}
+      <button type="button" className="dj-chip-button" data-dj-opens-settings="" onClick={openSettings}><Settings2 size={14} aria-hidden="true" />Voice settings</button>
+    </>
+  ) : voiceLine ? null : needsSetup && !status ? (
+    <>
+      <button type="button" className="dj-chip-button" onClick={chooseLocal}><Cpu size={14} aria-hidden="true" />On this device · free</button>
+      <button type="button" className="dj-chip-button" data-dj-opens-settings="" onClick={openSettings}><KeyRound size={14} aria-hidden="true" />Use my AI key</button>
+    </>
+  ) : offer && status && !working && undoable === 0 ? (
+    <button type="button" className="dj-chip-button" onClick={() => submit(offer.prompt)}><Sparkles size={14} aria-hidden="true" />{offer.label}</button>
+  ) : undoable > 0 && !working ? (
+    <button type="button" className="dj-chip-button" onClick={dj.undoPlan}><Undo2 size={14} aria-hidden="true" />Undo, keep my old queue</button>
+  ) : needsStart && turn && !isRemote ? (
+    <button type="button" className="dj-chip-button dj-chip-button--accent" onClick={() => dj.startPlan(turn)}><Play size={13} fill="currentColor" aria-hidden="true" />Start this set</button>
+  ) : null;
+
+  const showNow = Boolean(currentSong && goal === 'mix');
+  const nowRow = currentSong && showNow ? (
+    <DjNowPlaying
+      song={currentSong}
+      playing={isPlaying}
+      liked={isCurrentLiked}
+      live={isLive}
+      reason={reasons[currentSong.id] ?? ''}
+      palette={songPalette}
+      onToggle={onToggle}
+      onLike={() => onLike(currentSong)}
+      onSkip={dj.skipAndTeach}
+    />
+  ) : null;
 
   return (
-    <div className="dj-page">
+    <div className="dj-page" ref={pageRef} data-tone={tone} style={{ ...INITIAL_VARS, '--dj-a': songPalette.primary, '--dj-b': songPalette.secondary } as CSSProperties}>
       <h1 className="sr-only">Your DJ</h1>
-      <section
-        className="dj-hero"
-        aria-label="Your DJ companion"
-        data-tone={tone}
-        ref={stageRef}
-        style={{ '--dj-bass': '0', '--dj-energy': '0', '--dj-onset': '0', '--dj-roam-x': '0', '--dj-roam-y': '0', '--dj-lift': '0', '--dj-squash': '0', '--dj-sway': '0' } as CSSProperties}
-      >
-        <div
-          className="dj-mascot-stage"
-          aria-hidden="true"
-          onPointerMove={(event) => {
-            const bounds = event.currentTarget.getBoundingClientRect();
-            const x = Math.max(-1, Math.min(1, ((event.clientX - bounds.left) / bounds.width - 0.5) * 2));
-            const y = Math.max(-1, Math.min(1, ((event.clientY - bounds.top) / bounds.height - 0.5) * 2));
-            stageRef.current?.style.setProperty('--dj-look-x', `${Math.round(x * 12)}px`);
-            stageRef.current?.style.setProperty('--dj-look-y', `${Math.round(y * 8)}px`);
-          }}
-          onPointerLeave={() => {
-            stageRef.current?.style.setProperty('--dj-look-x', '0px');
-            stageRef.current?.style.setProperty('--dj-look-y', '0px');
-          }}
-        >
-          <DjMascot
-            size="stage"
-            emotion={working ? 'thinking' : emotion}
-            palette={palette ?? djTonePalette(tone)}
-            playing={playing}
-            vibe={vibe}
-          />
-        </div>
-
-        <form className="dj-compose" onSubmit={(event) => { event.preventDefault(); submitPrompt(); }}>
-          <div className="dj-input-wrap">
-            <input
-              value={prompt}
-              onFocus={() => { if (!working) setEmotion('listening'); }}
-              onBlur={() => { if (!working && (emotion === 'listening' || emotion === 'curious')) setEmotion('idle'); }}
-              onChange={(event) => { setPrompt(event.target.value); setStatus(''); }}
-              maxLength={500}
-              placeholder="Ask for a mood, a song, or type / for shortcuts…"
-              aria-label="Tell your DJ what you want to hear"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={commandSuggestions.length > 0}
-              aria-haspopup="listbox"
-              aria-controls={commandSuggestions.length ? 'dj-command-menu' : undefined}
+      <div className="dj-layout">
+        <section className="dj-hero" aria-label="Your DJ companion" ref={heroRef}>
+          <DjTint palette={songPalette} className="dj-stage-wash" />
+          <svg className="dj-hero-edge" aria-hidden="true" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="dj-hero-edge-light" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#fff" stopOpacity=".26" />
+                <stop offset=".55" stopColor="#fff" stopOpacity=".12" />
+                <stop offset="1" stopColor="#fff" stopOpacity=".2" />
+              </linearGradient>
+            </defs>
+            <path ref={outlineRef} />
+          </svg>
+          <div className="dj-mascot-stage" ref={stageRef}>
+            <DjMascot
+              ref={mascotRef}
+              size="stage"
+              emotion={working ? 'thinking' : emotion}
+              palette={songPalette}
+              playing={playing}
+              vibe={vibe}
             />
-            <button type="button" className={`dj-mic-button${emotion === 'listening' && status === 'Listening…' ? ' is-listening' : ''}`} onClick={toggleVoice} aria-label="Speak your request">
-              <Mic size={17} />
-            </button>
-            <button type="submit" className="dj-send-button" disabled={working || !prompt.trim()} aria-label="Ask the DJ">
-              {working ? <LoaderCircle size={18} className="dj-spin" /> : <Send size={17} />}
-            </button>
-            {commandSuggestions.length ? (
-              <div className="dj-command-menu" id="dj-command-menu" role="listbox" aria-label="DJ shortcuts">
-                {commandSuggestions.map((suggestion) => (
-                  <button key={suggestion.command} type="button" role="option" aria-selected="false" onMouseDown={(event) => event.preventDefault()} onClick={() => { setPrompt(suggestion.command); setStatus(''); setEmotion('curious'); }}>
-                    <span><strong>{suggestion.label}</strong><small>{suggestion.detail}</small></span><code>{suggestion.command}</code>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          {status ? <p className="dj-inline-reply" role="status">{status}</p> : null}
-          {settingsOpen ? (
-            <div className="dj-provider-panel">
-              <div className="dj-provider-heading"><strong>Your AI provider</strong><button type="button" onClick={() => setSettingsOpen(false)} aria-label="Close AI setup"><X size={15} /></button></div>
-              <div className="dj-provider-fields">
-                <label>Provider<select value={provider} onChange={(event) => setProvider(event.target.value as DjProvider)}><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option><option value="gemini">Gemini</option><option value="local">On-device · Qwen3</option></select></label>
-                {provider !== 'local' ? <>
-                  <label>Model<input value={model} onChange={(event) => setModel(event.target.value)} maxLength={160} placeholder="Tool-calling model ID" /></label>
-                  <label className="dj-key-field">API key<input type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} maxLength={512} placeholder={`Paste your ${provider === 'gemini' ? 'Gemini' : provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'} key`} /></label>
-                </> : <p>Qwen3 0.6B runs in your browser. The model downloads once and stays in this browser’s cache; about 390 MB. Catalog search still needs a connection.</p>}
-              </div>
-              {provider !== 'local' ? <p>Your key is sent for each request only and is not saved by Allegra. Your request and a short list of listening context go to the selected provider.</p> : null}
-              {apiKey ? <button type="button" className="dj-clear-key" onClick={() => setApiKey('')}>Forget key</button> : null}
+            <DjBubble text={bubbleText} working={working || Boolean(voice?.transcribing) || voice?.localProgress !== null && voice?.localProgress !== undefined} reduced={reduced} actions={bubbleActions} />
+            <div className="dj-stage-info"><InfoTour label="How your DJ works" steps={DJ_TOUR} stage={djScene} /></div>
+            <div className="dj-stage-tools">
+              {voice && voice.engine !== 'none' ? (
+                <button
+                  type="button"
+                  className={`dj-tool-button dj-wake-button${voice.wakeOn ? ' is-on' : ''}`}
+                  onClick={() => voice.setWake(!voice.wakeOn)}
+                  aria-pressed={voice.wakeOn}
+                  aria-label="Hey DJ: listen for my voice"
+                  title={voice.wakeAvailable ? (voice.wakeOn ? '“Hey DJ” is on. Say “Hey DJ, play …”' : 'Turn on “Hey DJ”') : '“Hey DJ” needs voice on this device: pick it in the settings'}
+                >
+                  <Ear size={17} />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                ref={gearRef}
+                className="dj-tool-button"
+                onClick={toggleSettings}
+                aria-label="DJ settings"
+                aria-haspopup="dialog"
+                aria-expanded={settingsOpen}
+                aria-controls="dj-settings-sheet"
+              >
+                <Settings2 size={17} />
+              </button>
+              {searchSlot}
+              {settingsOpen ? (
+                <DjSettingsSheet
+                  ref={sheetRef}
+                  provider={provider}
+                  model={model}
+                  apiKey={apiKey}
+                  onProvider={setProvider}
+                  onModel={setModel}
+                  onApiKey={setApiKey}
+                  voice={voice}
+                  onClose={() => { setSettingsOpen(false); gearRef.current?.focus(); }}
+                />
+              ) : null}
             </div>
-          ) : null}
-        </form>
-      </section>
-
-      {currentSong ? (
-        <article className="dj-current">
-          <Artwork song={currentSong} size="small" />
-          <div className="dj-current-copy"><span>{isLive ? 'RIGHT NOW' : 'CURRENT TRACK'}</span><strong>{currentSong.title}</strong><small>{currentSong.artist}</small></div>
-          <div className="dj-current-actions">
-            <button type="button" className={`dj-icon-button${isCurrentLiked ? ' is-liked' : ''}`} aria-label={isCurrentLiked ? 'Unlike this song' : 'Love this song'} onClick={() => onLike(currentSong)}><Heart size={18} fill={isCurrentLiked ? 'currentColor' : 'none'} /></button>
-            <button type="button" className="dj-icon-button" aria-label={isPlaying ? 'Pause' : 'Play'} onClick={onToggle}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button>
-            <button type="button" className="dj-icon-button" aria-label="Skip this song" onClick={dj.skipAndTeach}><SkipForward size={19} fill="currentColor" /></button>
           </div>
-        </article>
-      ) : null}
 
-      {isRemote ? <p className="dj-note" role="status">Switch playback to this device to use your DJ’s queue.</p> : null}
+          <form className="dj-compose" ref={composeRef} onSubmit={(event) => { event.preventDefault(); submit(prompt); }}>
+            <div className="dj-input-wrap" data-busy={working || hearing ? 'true' : 'false'}>
+              <span className="dj-input-ring" aria-hidden="true"><i /></span>
+              <Sparkles className="dj-input-mark" size={16} aria-hidden="true" />
+              <input
+                ref={inputRef}
+                value={hearing ? voice?.transcript ?? '' : prompt}
+                readOnly={hearing}
+                onFocus={() => { if (!working) setEmotion('listening'); }}
+                onBlur={() => { if (!working && (emotion === 'listening' || emotion === 'curious')) setEmotion('idle'); }}
+                onChange={(event) => { setPrompt(event.target.value); if (status && !working) setStatus(''); react('nod'); }}
+                maxLength={500}
+                placeholder={hearing ? 'Listening…' : 'Ask your DJ anything'}
+                aria-label="Tell your DJ what you want to hear"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={commandSuggestions.length > 0}
+                aria-haspopup="listbox"
+                aria-controls={commandSuggestions.length ? 'dj-command-menu' : undefined}
+              />
+              <button
+                type="button"
+                className={`dj-mic-button${hearing ? ' is-listening' : ''}`}
+                onClick={() => {
+                  if (!voice || voice.engine === 'none') {
+                    setStatus('Voice isn’t available in this browser. Type your request instead.');
+                    setEmotion('error');
+                  } else if (voice.listening) voice.stop();
+                  else {
+                    voice.stopSpeaking();
+                    voice.listen();
+                  }
+                }}
+                aria-label={hearing ? 'Stop listening' : 'Speak your request'}
+                aria-pressed={hearing}
+              >
+                <Mic size={17} />
+              </button>
+              <button type="submit" className="dj-send-button" disabled={working || !prompt.trim()} aria-label="Ask the DJ">
+                {working ? <LoaderCircle size={18} className="dj-spin" /> : <Send size={16} />}
+              </button>
+              {commandSuggestions.length ? (
+                <div className="dj-command-menu" id="dj-command-menu" role="listbox" aria-label="DJ shortcuts">
+                  {commandSuggestions.map((suggestion) => (
+                    <button key={suggestion.command} type="button" role="option" aria-selected="false" onMouseDown={(event) => event.preventDefault()} onClick={() => { setPrompt(suggestion.command); setStatus(''); setEmotion('curious'); }}>
+                      <span><strong>{suggestion.label}</strong><small>{suggestion.detail}</small></span><code>{suggestion.command}</code>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
 
-      {needsStart && turn && !isRemote ? (
-        <button type="button" className="dj-primary dj-start-set" onClick={() => dj.startPlan(turn)}><Play size={16} fill="currentColor" /> Start this set</button>
-      ) : null}
-
-      {goal === 'playlist' ? (
-        <section className="dj-queue-section dj-playlist-draft" aria-label="Editable playlist draft">
-          <div className="dj-subheading"><div><h3>Your draft</h3><span>{draft.length} of {songLimit} songs</span></div>{draft.length ? <label className="dj-draft-name"><span className="sr-only">Playlist name</span><input value={draftName} onChange={(event) => setDraftName(event.target.value)} maxLength={100} aria-label="Playlist name" /></label> : null}</div>
-          {draft.length === 0 ? <p className="dj-empty-draft">Tell your DJ a mood or a few songs to make a playlist draft.</p> : null}
-          <div className="dj-queue">
-            {displayTracks.map(({ song, reason }, index) => (
-              <div className="dj-queue-row" key={`${song.id}:${index}`}>
-                <span className="dj-queue-index">{String(index + 1).padStart(2, '0')}</span>
-                <Artwork song={song} size="small" />
-                <span className="dj-queue-copy"><strong>{song.title}</strong><small>{song.artist}</small>{reason ? <em>{reason}</em> : null}</span>
-                <button type="button" className="dj-remove-track" onClick={() => dj.removeFromDraft(song.id)} aria-label={`Remove ${song.title}`}><X size={16} /></button>
-              </div>
-            ))}
-          </div>
-          {draft.length > 0 ? <button type="button" className="dj-primary dj-save-playlist" onClick={() => void dj.savePlaylist()} disabled={savingPlaylist}><Sparkles size={16} /> {savingPlaylist ? 'Saving…' : 'Save playlist'}</button> : null}
+            <div className="dj-compose-row">
+              <DjSessionChips
+                session={session}
+                goal={goal}
+                draftCount={draft.length}
+                onEnergy={dj.setEnergy}
+                onRemoveConstraint={dj.removeConstraint}
+                onClearLanguage={dj.clearLanguage}
+                onToggleGoal={() => setGoal(goal === 'mix' ? 'playlist' : 'mix')}
+              />
+              {showStarters ? (
+                <ul className="dj-starters" aria-label="Try asking">
+                  {starters.slice(0, 2).map((chip) => (
+                    <li key={chip.label}><button type="button" className="dj-starter" onClick={() => submit(chip.prompt)}>{chip.label}</button></li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </form>
         </section>
-      ) : displayTracks.length > 0 ? (
-        <section className="dj-queue-section" aria-label="Your next songs">
-          <div className="dj-subheading"><h3>Coming up</h3><span>{displayTracks.length} catalog picks</span></div>
-          <div className="dj-queue">
-            {displayTracks.map(({ song, reason }, index) => (
-              <div className="dj-queue-row" key={`${song.id}:${index}`}>
-                <span className="dj-queue-index">{String(index + 1).padStart(2, '0')}</span>
-                <Artwork song={song} size="small" />
-                <span className="dj-queue-copy"><strong>{song.title}</strong><small>{song.artist}</small>{reason ? <em>{reason}</em> : null}</span>
-                <Sparkles size={15} className="dj-pick-mark" aria-hidden="true" />
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
+
+        {isRemote ? <p className="dj-note" role="status">Switch playback to this device to use your DJ’s queue.</p> : null}
+
+        {goal === 'playlist' ? (
+          <DjCrate
+            items={crate.items}
+            editable
+            reduced={reduced}
+            label="Editable playlist draft"
+            header={(
+              <>
+                <div className="dj-crate-title"><h3>Your draft</h3><span>{draft.length} of {songLimit} songs</span></div>
+                {draft.length > 0 ? <>
+                  <label className="dj-draft-name"><span className="sr-only">Playlist name</span><input value={draftName} onChange={(event) => setDraftName(event.target.value)} maxLength={100} aria-label="Playlist name" /></label>
+                  <button type="button" className="dj-primary dj-crate-action" onClick={() => void dj.savePlaylist()} disabled={savingPlaylist}><Sparkles size={14} /> {savingPlaylist ? 'Saving…' : 'Save playlist'}</button>
+                </> : null}
+              </>
+            )}
+            empty={<p className="dj-crate-empty">Tell your DJ a mood or a few songs to start a playlist draft.</p>}
+            onPlay={playPick}
+            onReorder={reorderPicks}
+            onRemove={removePick}
+          />
+        ) : crate.items.length > 0 || nowRow ? (
+          <DjCrate
+            items={crate.items}
+            editable={crate.editable}
+            reduced={reduced}
+            label={needsStart ? 'Your DJ’s set' : 'Now playing and coming up'}
+            lead={nowRow}
+            header={(
+              <>
+                <div className="dj-crate-title">
+                  <h3>{needsStart ? 'Your set' : 'Coming up'}</h3>
+                  <span>{crate.items.length} {crate.items.length === 1 ? 'song' : 'songs'}{turn && crate.editable ? ' · picked by your DJ' : ''}</span>
+                </div>
+                {needsStart && turn && !isRemote ? (
+                  <button type="button" className="dj-primary dj-crate-action" onClick={() => dj.startPlan(turn)}><Play size={14} fill="currentColor" /> Start this set</button>
+                ) : null}
+              </>
+            )}
+            empty={<p className="dj-crate-empty">Nothing lined up yet. Ask your DJ and its picks land here, each with the reason it chose them.</p>}
+            onPlay={playPick}
+            onReorder={reorderPicks}
+            onRemove={removePick}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }
