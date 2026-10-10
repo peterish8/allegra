@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { parseDjSlashCommand } from '@shared/dj';
-import type { DjCloudProvider, DjGoal, DjProvider, DjSessionState, DjTrackContext, DjTurnRequest, DjTurnResponse } from '@shared/dj';
+import type { DjCloudProvider, DjExploration, DjGoal, DjProvider, DjSessionState, DjSetShape, DjTrackContext, DjTurnRequest, DjTurnResponse } from '@shared/dj';
+import { leadArtist, readArtistRules } from '@shared/djLocal';
 import type { UnifiedSong } from '@shared/types';
 
 import { requestDjTurn } from '../lib/api';
@@ -18,6 +19,7 @@ import {
   sessionWithEnergy,
   sessionWithoutConstraint,
   sessionWithoutLanguage,
+  withExcludedArtists,
   writeDjMemory,
   writeDjProviderChoice,
   type DjMemory,
@@ -114,6 +116,16 @@ export interface DjSession {
   readonly setEnergy: (energy: number) => void;
   readonly removeConstraint: (constraint: string) => void;
   readonly clearLanguage: () => void;
+  /** Artists ruled out for this session; every turn hard-filters them. */
+  readonly excludeArtists: readonly string[];
+  /** Rules an artist out for the rest of the session ("Less like this artist"). */
+  readonly avoidArtist: (artist: string) => void;
+  readonly allowArtist: (name: string) => void;
+  readonly exploration: DjExploration;
+  readonly setExploration: (exploration: DjExploration) => void;
+  /** The planned shape of the next set; a plan, never measured energy. */
+  readonly shape: DjSetShape;
+  readonly setShape: (shape: DjSetShape) => void;
   readonly playFrom: (song: UnifiedSong, list: readonly UnifiedSong[]) => boolean;
   readonly setStatus: (status: string) => void;
   readonly setEmotion: (emotion: DjEmotion | ((current: DjEmotion) => DjEmotion)) => void;
@@ -197,6 +209,9 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
   const [skipped, setSkipped] = useState<UnifiedSong[]>([]);
   const [turn, setTurn] = useState<DjTurnResponse | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>(() => ({ ...(memory?.reasons ?? {}) }));
+  const [excludeArtists, setExcludeArtists] = useState<readonly string[]>(() => [...(memory?.excludeArtists ?? [])]);
+  const [exploration, setExploration] = useState<DjExploration>(memory?.exploration ?? 'balanced');
+  const [shape, setShape] = useState<DjSetShape>(memory?.shape ?? 'steady');
   const [undoable, setUndoable] = useState(0);
   const [offers, setOffers] = useState<readonly DjOffer[]>([]);
   /** The turn in flight. A newer request aborts it; a result for any other id is stale and dropped. */
@@ -226,8 +241,8 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
     const storage = sessionStore();
     if (!storage) return;
     const recentReasons = Object.fromEntries(Object.entries(reasons).slice(-60));
-    writeDjMemory(storage, { session, history, goal, songLimit, draft, draftName, reasons: recentReasons });
-  }, [draft, draftName, goal, history, reasons, session, songLimit]);
+    writeDjMemory(storage, { session, history, goal, songLimit, draft, draftName, reasons: recentReasons, excludeArtists, exploration, shape });
+  }, [draft, draftName, excludeArtists, exploration, goal, history, reasons, session, shape, songLimit]);
 
   useEffect(() => {
     if (emotion !== 'curious') return undefined;
@@ -273,13 +288,23 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
     setOffers([]);
     setEmotion('thinking');
     setStatus(selectedGoal === 'playlist' ? 'Finding tracks for your playlist…' : 'Finding tracks that match your request…');
+    // What this request says about artists, read the same way on both paths. An explicit "only X" or
+    // "more from X" lifts an earlier "no X"; a new "no X" joins the session's ruled-out list.
+    const currentContext = currentSong ? contextSong(currentSong) : null;
+    const rules = readArtistRules(text.toLowerCase(), currentContext);
+    const asked = rules.only ?? text.toLowerCase().match(/\bmore (?:from|by) ([\p{L}][\p{L}\p{N} .'&-]{1,40})/u)?.[1]?.trim() ?? null;
+    const kept = asked ? excludeArtists.filter((name) => !asked.includes(name) && !name.includes(asked)) : excludeArtists;
+    const turnExclusions = withExcludedArtists(kept, rules.exclude);
     try {
       const common = {
+        excludeArtists: turnExclusions,
+        exploration,
+        shape,
         goal: selectedGoal,
         songLimit: selectedGoal === 'mix' ? Math.min(selectedSongLimit, 8) : selectedSongLimit,
         message: text,
         history: history.slice(-8),
-        current: currentSong ? contextSong(currentSong) : null,
+        current: currentContext,
         queue: nextSongs.slice(0, 8).map(contextSong),
         draft: draft.map(({ song }) => contextSong(song)),
         draftName,
@@ -288,13 +313,16 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
         skipped: skipped.slice(0, 8).map(contextSong),
         session
       };
-      const result = provider === 'local'
+      const local = provider === 'local'
         ? await requestLocalDjTurn({ ...common, draft, onProgress: (line) => { if (isCurrent()) setStatus(line); }, signal: controller.signal })
-        : await requestDjTurn({ ...common, provider: provider as DjCloudProvider, apiKey: apiKey.trim(), model: model.trim() }, controller.signal);
+        : null;
+      const result: DjTurnResponse = local ?? await requestDjTurn({ ...common, provider: provider as DjCloudProvider, apiKey: apiKey.trim(), model: model.trim() }, controller.signal);
       // Stopped, or overtaken by a newer request: this answer is stale and changes nothing.
       if (!isCurrent()) return false;
       setTurn(result);
       setSession(result.session);
+      // The on-device path may rule out more (its model reads the request too); the cloud path keeps ours.
+      setExcludeArtists(withExcludedArtists(turnExclusions, local?.excludeArtists ?? []));
       setHistory((items) => [...items, { role: 'user' as const, content: text }, { role: 'assistant' as const, content: result.reply }].slice(-8));
       if (result.queue.length > 0) {
         setReasons((current) => ({ ...current, ...Object.fromEntries(result.queue.map((item) => [item.song.id, item.reason])) }));
@@ -347,7 +375,7 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
         setWorking(false);
       }
     }
-  }, [apiKey, draft, draftName, goal, history, model, provider, session, skipped, songLimit]);
+  }, [apiKey, draft, draftName, excludeArtists, exploration, goal, history, model, provider, session, shape, skipped, songLimit]);
 
   /**
    * Carries out an app request on the spot, and keeps it in the conversation so the model knows. It may
@@ -473,6 +501,12 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
   const setEnergy = useCallback((energy: number): void => setSession((current) => sessionWithEnergy(current, energy)), []);
   const removeConstraint = useCallback((constraint: string): void => setSession((current) => sessionWithoutConstraint(current, constraint)), []);
   const clearLanguage = useCallback((): void => setSession((current) => sessionWithoutLanguage(current)), []);
+  const avoidArtist = useCallback((artist: string): void => {
+    const name = leadArtist(artist);
+    setExcludeArtists((current) => withExcludedArtists(current, [name]));
+    setStatus(`Got it. No more ${name} this session.`);
+  }, []);
+  const allowArtist = useCallback((name: string): void => setExcludeArtists((current) => current.filter((item) => item !== name)), []);
   const reorder = useCallback((ids: readonly string[]): boolean => inputsRef.current.onReorder(ids), []);
   const removePick = useCallback((id: string): boolean => inputsRef.current.onRemove(id), []);
   const playFrom = useCallback((song: UnifiedSong, list: readonly UnifiedSong[]): boolean => inputsRef.current.onPlayFrom(song, list), []);
@@ -483,12 +517,14 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
     turn, reasons, working, status, emotion, nextSongs, undoable, undoPlan, offers, cancel, notePick,
     send, submitPrompt, savePlaylist, skipAndTeach, removeFromDraft, startPlan, reorder, removePick, playFrom,
     reorderTurn, removeFromTurn, reorderDraft, setEnergy, removeConstraint, clearLanguage,
+    excludeArtists, avoidArtist, allowArtist, exploration, setExploration, shape, setShape,
     setStatus, setEmotion, setGoal, setSongLimit, setDraftName, setProvider, setModel, setApiKey, setSettingsOpen
   }), [
     provider, model, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist, history, skipped,
     turn, reasons, working, status, emotion, nextSongs, undoable, undoPlan, offers, cancel, notePick,
     send, submitPrompt, savePlaylist, skipAndTeach, removeFromDraft, startPlan, reorder, removePick, playFrom,
     reorderTurn, removeFromTurn, reorderDraft, setEnergy, removeConstraint, clearLanguage,
+    excludeArtists, avoidArtist, allowArtist, exploration, shape,
     setProvider, setModel
   ]);
 }

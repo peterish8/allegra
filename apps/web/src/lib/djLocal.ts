@@ -1,4 +1,4 @@
-import type { DjGoal, DjLocalIntent, DjSessionState, DjTrackContext, DjTurnResponse } from '@shared/dj';
+import type { DjExploration, DjGoal, DjLocalIntent, DjSessionState, DjSetShape, DjTrackContext, DjTurnResponse } from '@shared/dj';
 import type { DjLocalPick } from '@shared/djLocal';
 import { applyDjLocalSession, resolveDjLocalIntent, rankDjLocalCandidates } from '@shared/djLocal';
 
@@ -75,7 +75,8 @@ function promptForIntent(input: {
     playlistDraft: input.draft.map(({ song }) => ({ id: song.id, title: song.title, artist: song.artist })),
     playlistName: input.draftName,
     instructions: [
-      'Return keys: reply, vibe, energy, operation, insertAfter, languageAction, language, addConstraints, removeConstraints, searchQueries, strategy, removeTrackIds, playlistName, reaction.',
+      'Return keys: reply, vibe, energy, operation, insertAfter, languageAction, language, addConstraints, removeConstraints, searchQueries, strategy, removeTrackIds, playlistName, reaction, excludeArtists, onlyArtist.',
+      'excludeArtists lists artist names the user rules out ("no songs by X", "not the same artist" means the current artist). onlyArtist is one artist name when the user asks for only that artist, otherwise null.',
       'operation is replace_upcoming, insert, or keep. insertAfter is 0 through 7 only for insert, otherwise null.',
       'Use 1 to 4 concise catalog search queries when songs are needed. Never output song IDs for new recommendations.',
       'strategy is replace or extend. For playlist removals, return only exact IDs from playlistDraft in removeTrackIds. Keep a draft song unless the user clearly asks to remove it.',
@@ -114,9 +115,13 @@ export async function requestLocalDjTurn(input: {
   readonly skipped: readonly DjTrackContext[];
   readonly draft: readonly DjLocalPick[];
   readonly draftName: string;
+  /** Artists the session already rules out (from earlier requests or "Less like this artist"). */
+  readonly excludeArtists?: readonly string[];
+  readonly exploration?: DjExploration;
+  readonly shape?: DjSetShape;
   readonly onProgress: (message: string) => void;
   readonly signal?: AbortSignal;
-}): Promise<DjTurnResponse> {
+}): Promise<DjTurnResponse & { readonly excludeArtists: readonly string[] }> {
   let modelText = '';
   try {
     input.onProgress('Loading Allegra’s on-device DJ…');
@@ -132,23 +137,35 @@ export async function requestLocalDjTurn(input: {
     if (input.signal?.aborted) throw new DOMException('The request was cancelled.', 'AbortError');
     input.onProgress('Searching the catalog from your request…');
   }
+  if (input.signal?.aborted) throw new DOMException('The request was cancelled.', 'AbortError');
   const intent = resolveDjLocalIntent(modelText, input);
+  const excludeArtists = [...new Set([...(input.excludeArtists ?? []), ...intent.excludeArtists])];
+  const shape = input.shape ?? 'steady';
 
-  const queries = intent.searchQueries.slice(0, 4);
-  const searchResults = await Promise.all(queries.map(async (query, queryIndex) => {
+  // A planned shape adds one calmer and one livelier search around the set's language or vibe, so the
+  // set can be ordered by which search found each song. It is labelled a plan; nothing is measured.
+  const session = applyDjLocalSession(intent, input.session);
+  const around = intent.onlyArtist ?? session.language ?? session.vibe ?? '';
+  const lanes: { readonly query: string; readonly lane: 'calm' | 'lively' }[] = shape !== 'steady' && intent.searchQueries.length > 0 && around
+    ? [{ query: `${around} soft melodies`, lane: 'calm' }, { query: `${around} upbeat hits`, lane: 'lively' }]
+    : [];
+  const queries = [
+    ...intent.searchQueries.slice(0, 4 - lanes.length).map((query) => ({ query, lane: undefined })),
+    ...lanes
+  ];
+  const searchResults = await Promise.all(queries.map(async ({ query, lane }, queryIndex) => {
     try {
       const result = await searchSongs(query, input.signal);
-      return result.results.map((song) => ({ song, queryIndex }));
+      return result.results.map((song) => ({ song, queryIndex, ...(lane ? { lane } : {}) }));
     } catch {
       return [];
     }
   }));
   if (input.signal?.aborted) throw new DOMException('The request was cancelled.', 'AbortError');
 
-  const session = applyDjLocalSession(intent, input.session);
   const ranked = rankDjLocalCandidates({
     candidates: searchResults.flat(),
-    queries,
+    queries: queries.map(({ query }) => query),
     goal: input.goal,
     songLimit: input.songLimit,
     language: session.language,
@@ -158,15 +175,22 @@ export async function requestLocalDjTurn(input: {
     skipped: input.skipped,
     draft: input.draft,
     strategy: intent.strategy,
-    removeTrackIds: intent.removeTrackIds
+    removeTrackIds: intent.removeTrackIds,
+    excludeArtists,
+    onlyArtist: intent.onlyArtist,
+    exploration: input.exploration ?? 'balanced',
+    shape
   });
   const existingIds = new Set(input.draft.map(({ song }) => song.id));
   const queue = input.goal === 'playlist' && intent.strategy === 'extend'
     ? ranked.filter(({ song }) => !existingIds.has(song.id))
     : ranked;
+  // Searched but nothing fit: say so plainly instead of "Looking for…".
+  const searchedForNothing = queries.length > 0 && queue.length === 0 && intent.removeTrackIds.length === 0;
 
   return {
-    reply: intent.reply,
+    excludeArtists,
+    reply: searchedForNothing ? 'I couldn’t find songs in the catalog that fit that. Try it another way?' : intent.reply,
     session,
     goal: input.goal,
     playlistName: input.goal === 'playlist' ? intent.playlistName || input.draftName || session.vibe || 'A little mix' : null,

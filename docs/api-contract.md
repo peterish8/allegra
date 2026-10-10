@@ -70,7 +70,12 @@ The cloud BYOK providers are `openai`, `openrouter`, and `gemini`. The caller se
 provider's `apiKey`, `model`, task `goal` (`mix` or `playlist`), a bounded `songLimit` (1–30), the
 current `message`, up to 8 prior `{role, content}` messages, and small session context: the active
 track, up to 8 upcoming/recent/liked/skipped summaries, up to 30 editable draft-track summaries and
-the draft name, plus `{vibe, energy, language, constraints}`. The API relays the key and this limited context to the
+the draft name, plus `{vibe, energy, language, constraints}`. Three optional fields shape the set
+(added 2026-10-11; an older client that omits them gets the old behaviour): `excludeArtists`
+(up to 12 names the listener ruled out), `exploration` (`familiar` | `balanced` | `discover`,
+default `balanced`) and `shape` (`steady` | `build` | `wind` | `dynamic`, default `steady`; a
+planned order, never measured energy). Any committed song credited, as whole words, to an
+excluded artist, or with no stream, is dropped; if none are left the turn becomes a `keep`. The API relays the key and this limited context to the
 selected provider over HTTPS for this request only; it does not persist either. The provider is
 allowlisted by the server, the key is never accepted in a URL, and requests are rate limited by
 their own per-client bucket, 20 a minute, separate from the Discovery bucket. Gemini uses Google's OpenAI-compatible chat-completions endpoint and its

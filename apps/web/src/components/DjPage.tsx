@@ -455,10 +455,16 @@ export function DjPage({
                 session={session}
                 goal={goal}
                 draftCount={draft.length}
+                shape={dj.shape}
+                exploration={dj.exploration}
+                excludeArtists={dj.excludeArtists}
                 onEnergy={dj.setEnergy}
                 onRemoveConstraint={dj.removeConstraint}
                 onClearLanguage={dj.clearLanguage}
                 onGoal={chooseGoal}
+                onShape={dj.setShape}
+                onExploration={dj.setExploration}
+                onAllowArtist={dj.allowArtist}
               />
               {showStarters ? (
                 <ul className="dj-starters" aria-label="Try asking">

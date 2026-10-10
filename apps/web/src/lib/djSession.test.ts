@@ -7,19 +7,23 @@ import { applyDjLocalSession, heuristicDjLocalIntent } from '@shared/djLocal';
 import {
   DJ_PROVIDER_STORAGE_KEY,
   applySlashCommand,
+  DJ_EXPLORATIONS,
   DJ_MEMORY_STORAGE_KEY,
+  DJ_SHAPES,
   defaultModelFor,
   djEnergyWord,
   djOffersAfterSet,
   djOutcome,
   djSuggestions,
   moveId,
+  nextOption,
   orderByIds,
   readDjMemory,
   readDjProviderChoice,
   sessionWithEnergy,
   sessionWithoutConstraint,
   sessionWithoutLanguage,
+  withExcludedArtists,
   writeDjMemory,
   writeDjProviderChoice
 } from './djSession.ts';
@@ -198,7 +202,8 @@ test('session memory round-trips and never stores a key', () => {
   writeDjMemory(storage, {
     session: { vibe: 'late night', energy: 2, language: 'telugu', constraints: ['no sad songs'] },
     history: [{ role: 'user', content: 'late night' }],
-    goal: 'playlist', songLimit: 12, draft: [{ song: SONG, reason: 'Same singer' }], draftName: 'Night', reasons: { s1: 'Same singer' }
+    goal: 'playlist', songLimit: 12, draft: [{ song: SONG, reason: 'Same singer' }], draftName: 'Night', reasons: { s1: 'Same singer' },
+    excludeArtists: ['anirudh'], exploration: 'discover', shape: 'wind'
   });
   const raw = storage.data.get(DJ_MEMORY_STORAGE_KEY) ?? '';
   assert.ok(!/key/i.test(raw.replace(/"songLimit"/, '')));
@@ -206,6 +211,25 @@ test('session memory round-trips and never stores a key', () => {
   assert.equal(memory?.session.language, 'telugu');
   assert.equal(memory?.draft[0]?.song.id, 's1');
   assert.equal(memory?.goal, 'playlist');
+  assert.deepEqual(memory?.excludeArtists, ['anirudh']);
+  assert.equal(memory?.exploration, 'discover');
+  assert.equal(memory?.shape, 'wind');
+});
+
+test('older memory without the set options reads with safe defaults', () => {
+  const memory = readDjMemory(fakeStorage({
+    [DJ_MEMORY_STORAGE_KEY]: JSON.stringify({ session: { vibe: '', energy: 3 }, exploration: 'wild', shape: 3, excludeArtists: ['Anirudh', 7, ' '] })
+  }));
+  assert.equal(memory?.exploration, 'balanced');
+  assert.equal(memory?.shape, 'steady');
+  assert.deepEqual(memory?.excludeArtists, ['anirudh']);
+});
+
+test('ruled-out artists are lower case, unique and capped; options cycle', () => {
+  assert.deepEqual(withExcludedArtists(['anirudh'], ['Anirudh', ' Sid Sriram ', 'x']), ['anirudh', 'sid sriram']);
+  assert.equal(withExcludedArtists([], Array.from({ length: 20 }, (_, index) => `artist ${index}`)).length, 12);
+  assert.equal(nextOption(DJ_SHAPES, 'dynamic'), 'steady');
+  assert.equal(nextOption(DJ_EXPLORATIONS, 'familiar'), 'balanced');
 });
 
 test('malformed session memory reads as nothing remembered, bad songs are dropped', () => {

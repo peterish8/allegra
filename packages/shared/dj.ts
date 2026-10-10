@@ -6,6 +6,13 @@ export type DjReaction = 'neutral' | 'curious' | 'excited' | 'dreamy' | 'confuse
 export type DjQueueOperation = 'replace_upcoming' | 'insert' | 'keep';
 export type DjGoal = 'mix' | 'playlist';
 export type DjDraftOperation = 'replace' | 'extend' | 'keep' | 'remove';
+/**
+ * The planned shape of the next set, chosen by the listener. It is a plan the DJ searches and orders
+ * by (calmer and livelier searches), never a measurement of the songs' energy.
+ */
+export type DjSetShape = 'steady' | 'build' | 'wind' | 'dynamic';
+/** How far the DJ strays from what the listener already plays and likes. */
+export type DjExploration = 'familiar' | 'balanced' | 'discover';
 
 export type DjSlashCommandAction = 'goal' | 'prompt' | 'settings' | 'size' | 'help';
 
@@ -111,6 +118,12 @@ export interface DjTurnRequest {
   readonly liked: readonly DjTrackContext[];
   readonly skipped: readonly DjTrackContext[];
   readonly session: DjSessionState;
+  /** Artists the listener ruled out for this session (or for good, with taste memory on). Optional. */
+  readonly excludeArtists?: readonly string[];
+  /** How far to stray from the listener's usual artists. Optional; the server assumes 'balanced'. */
+  readonly exploration?: DjExploration;
+  /** The planned shape of the set. Optional; the server assumes 'steady'. */
+  readonly shape?: DjSetShape;
 }
 
 export interface DjTurnResponse {
@@ -143,4 +156,8 @@ export interface DjLocalIntent {
   readonly removeTrackIds: readonly string[];
   readonly playlistName: string | null;
   readonly reaction: DjReaction;
+  /** Artists the request rules out ("no songs by X", "not the same artist"). Hard-filtered, never ranked. */
+  readonly excludeArtists: readonly string[];
+  /** "Only Anirudh", "all Arijit songs": the set keeps to this artist and the per-artist cap is lifted. */
+  readonly onlyArtist: string | null;
 }

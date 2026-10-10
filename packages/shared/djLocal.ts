@@ -1,9 +1,11 @@
-import type { DjGoal, DjLocalIntent, DjSessionState, DjTrackContext } from './dj.js';
+import type { DjExploration, DjGoal, DjLocalIntent, DjSessionState, DjSetShape, DjTrackContext } from './dj.js';
 import type { UnifiedSong } from './types.js';
 
 export interface DjLocalCandidate {
   readonly song: UnifiedSong;
   readonly queryIndex: number;
+  /** Which planned-shape search found it: the calmer one, the livelier one, or neither. */
+  readonly lane?: 'calm' | 'lively';
 }
 
 export interface DjLocalPick {
@@ -110,11 +112,50 @@ function withLanguageQuery(queries: readonly string[], language: string | null, 
   return [...queries.slice(0, 3), query];
 }
 
+/** Words that start a mood or a set, never an artist's name ("only tamil songs", "just something calm"). */
+const NOT_A_NAME = new Set([
+  ...LANGUAGES, 'songs', 'song', 'music', 'tracks', 'the', 'some', 'something', 'hits', 'melodies', 'calm', 'chill',
+  'sad', 'happy', 'love', 'romantic', 'party', 'upbeat', 'old', 'new', 'latest', 'my', 'mine', 'this', 'that', 'these',
+  'more', 'one', 'a', 'an', 'slow', 'fast', 'soft', 'loud', 'quiet', 'good', 'nice', 'best', 'top', 'classic', 'classics'
+]);
+
+function nameOrNull(raw: string | undefined): string | null {
+  const name = (raw ?? '').replace(/\s+/g, ' ').trim();
+  const first = name.split(' ')[0] ?? '';
+  if (name.length < 2 || NOT_A_NAME.has(first)) return null;
+  return name;
+}
+
+/** The first artist of a credit line ("A, B & C" → "A"). */
+export function leadArtist(artist: string): string {
+  return (artist.split(/[,/&]| and /)[0] ?? artist).trim() || artist;
+}
+
+/**
+ * Who the request rules out, and whether it asks for one artist only. Names are kept as typed (lower
+ * case); matching later is by normalised substring, so "anirudh" rules out "Anirudh Ravichander".
+ */
+export function readArtistRules(lower: string, current: DjTrackContext | null): { readonly exclude: string[]; readonly only: string | null } {
+  const exclude: string[] = [];
+  if (current && /\b(different artists?|not the same (?:artist|singer)|other artists?|someone else|another artist|new artists?)\b/.test(lower)) {
+    exclude.push(leadArtist(current.artist).toLowerCase());
+  }
+  for (const match of lower.matchAll(/\b(?:no|without|nothing|not|skip|less)\s+(?:more\s+)?(?:songs?\s+|tracks?\s+|music\s+)?(?:by|from)\s+([\p{L}][\p{L}\p{N} .'&-]{1,40}?)(?=$|[,.;!?]|\s+(?:and|but|please|for|songs?|tracks?|anymore|today|tonight)\b)/gu)) {
+    const name = nameOrNull(match[1]);
+    if (name) exclude.push(name);
+  }
+  const onlyMatch = lower.match(/\b(?:only|just|all)\s+(?:the\s+)?([\p{L}][\p{L}\p{N} .'&-]{1,40}?)(?:\s+(?:songs?|tracks?|music))?(?=$|[,.;!?]|\s+(?:please|for|next|now|tonight)\b)/u)
+    ?? lower.match(/^(?:play\s+)?([\p{L}][\p{L}\p{N} .'&-]{1,40}?)\s+only\b/u);
+  return { exclude: [...new Set(exclude)], only: nameOrNull(onlyMatch?.[1]) };
+}
+
 /** What the request itself says, with no model involved. It is also the floor when the model's output is unusable. */
 export function heuristicDjLocalIntent(context: DjLocalIntentContext): DjLocalIntent {
   const message = context.message.replace(/^\/[a-z-]+\s*/i, '').trim() || context.message.trim();
   const lower = message.toLowerCase();
   const { goal, session, current, draft } = context;
+  const rules = readArtistRules(lower, current);
+  const avoidsCurrentArtist = Boolean(current && rules.exclude.includes(leadArtist(current.artist).toLowerCase()));
 
   const explainOnly = /^(why|what|who|how|explain|tell me)\b/.test(lower) && !/\b(play|add|find|more|queue)\b/.test(lower);
   const similar = /\b(like this|similar|more like|something like)\b/.test(lower);
@@ -132,8 +173,10 @@ export function heuristicDjLocalIntent(context: DjLocalIntentContext): DjLocalIn
     .replace(/\s+/g, ' ').trim().slice(0, 120);
   const queries: string[] = [];
   if (!explainOnly) {
-    if (similar && current) queries.push(`${current.title} ${current.artist}`, current.artist);
-    if (topic) {
+    if (rules.only) queries.push(rules.only, `${rules.only} songs`);
+    // "Like this, but not the same artist": search by the song, not by the artist it must avoid.
+    if (similar && current) queries.push(...(avoidsCurrentArtist ? [current.title] : [`${current.title} ${current.artist}`, current.artist]));
+    if (topic && !rules.only) {
       const keepsLanguage = Boolean(language) || !session.language || lower.includes(session.language.toLowerCase());
       queries.push(keepsLanguage ? topic : `${session.language} ${topic}`);
     }
@@ -156,7 +199,9 @@ export function heuristicDjLocalIntent(context: DjLocalIntentContext): DjLocalIn
     strategy: goal === 'playlist' && draft.length > 0 && !fresh ? 'extend' : 'replace',
     removeTrackIds: [],
     playlistName: null,
-    reaction: 'curious'
+    reaction: 'curious',
+    excludeArtists: rules.exclude,
+    onlyArtist: rules.only
   };
 }
 
@@ -207,7 +252,10 @@ export function resolveDjLocalIntent(output: string, context: DjLocalIntentConte
     strategy: pick(raw.strategy, ['replace', 'extend'] as const) ?? base.strategy,
     removeTrackIds,
     playlistName: text(raw.playlistName, 100),
-    reaction: pick(raw.reaction, ['neutral', 'curious', 'excited', 'dreamy', 'confused'] as const) ?? base.reaction
+    reaction: pick(raw.reaction, ['neutral', 'curious', 'excited', 'dreamy', 'confused'] as const) ?? base.reaction,
+    // What the request says outranks the model: its exclusions always stand, the model may add more.
+    excludeArtists: [...new Set([...base.excludeArtists, ...strings(raw.excludeArtists, 8, 80).map((name) => name.toLowerCase())])],
+    onlyArtist: base.onlyArtist ?? text(raw.onlyArtist, 80)
   };
 }
 
@@ -274,6 +322,59 @@ function songContext(song: UnifiedSong): DjTrackContext {
   return { id: song.id, title: song.title, artist: song.artist, ...(song.language ? { language: song.language } : {}) };
 }
 
+/** Taste weights per exploration level: liked artist, recent artist, same artist as playing, an artist new to the listener. */
+const EXPLORATION_WEIGHTS: Readonly<Record<DjExploration, { readonly liked: number; readonly recent: number; readonly current: number; readonly fresh: number }>> = {
+  familiar: { liked: 20, recent: 10, current: 5, fresh: 0 },
+  balanced: { liked: 12, recent: 5, current: 3, fresh: 0 },
+  discover: { liked: -4, recent: -8, current: -6, fresh: 8 }
+};
+
+/**
+ * True when one of the names appears, as whole words, in the song's credit line: "anirudh" matches
+ * "Anirudh Ravichander", "a r rahman" matches "A. R. Rahman", and "ani" matches nothing.
+ */
+function creditedTo(song: UnifiedSong, names: readonly string[]): boolean {
+  const credit = ` ${normalized(song.artist)} `;
+  return names.some((name) => {
+    const key = normalized(name);
+    return key.length > 1 && credit.includes(` ${key} `);
+  });
+}
+
+/** Orders a set by its planned shape, using which search found each song (calmer, livelier, or neither). */
+function shapeOrder<T extends { readonly lane?: 'calm' | 'lively' }>(items: readonly T[], shape: DjSetShape): T[] {
+  if (shape === 'steady') return [...items];
+  const rank = (item: T): number => (item.lane === 'calm' ? 0 : item.lane === 'lively' ? 2 : 1);
+  if (shape === 'build') return [...items].sort((a, b) => rank(a) - rank(b));
+  if (shape === 'wind') return [...items].sort((a, b) => rank(b) - rank(a));
+  // Dynamic: lively and calm take turns, the rest fill in between.
+  const lively = items.filter((item) => item.lane === 'lively');
+  const calm = items.filter((item) => item.lane === 'calm');
+  const rest = items.filter((item) => item.lane === undefined);
+  const out: T[] = [];
+  while (lively.length || calm.length || rest.length) {
+    const next = [lively.shift(), calm.shift(), rest.shift()].filter((item): item is T => item !== undefined);
+    out.push(...next);
+  }
+  return out;
+}
+
+/** Moves songs so the same lead artist never plays twice in a row, when another order allows it. */
+function spaceArtists<T extends { readonly song: UnifiedSong }>(items: readonly T[], before: UnifiedSong | null): T[] {
+  const out = [...items];
+  const keyOf = (song: UnifiedSong): string => artistKey(songContext(song));
+  for (let index = 0; index < out.length; index += 1) {
+    const previous = index === 0 ? before : out[index - 1]?.song ?? null;
+    const item = out[index];
+    if (!item || !previous || keyOf(item.song) !== keyOf(previous)) continue;
+    const swap = out.findIndex((other, at) => at > index && keyOf(other.song) !== keyOf(previous));
+    if (swap < 0) continue;
+    const moved = out.splice(swap, 1)[0];
+    if (moved) out.splice(index, 0, moved);
+  }
+  return out;
+}
+
 /** Rank catalog search results with bounded, explainable taste signals; never invent a track. */
 export function rankDjLocalCandidates(options: {
   readonly candidates: readonly DjLocalCandidate[];
@@ -288,8 +389,17 @@ export function rankDjLocalCandidates(options: {
   readonly draft: readonly DjLocalPick[];
   readonly strategy: DjLocalIntent['strategy'];
   readonly removeTrackIds: readonly string[];
+  /** Artists ruled out by the request or the session: never picked. */
+  readonly excludeArtists?: readonly string[];
+  /** "Only X": keep to this artist; the two-per-artist cap is lifted. */
+  readonly onlyArtist?: string | null;
+  readonly exploration?: DjExploration;
+  readonly shape?: DjSetShape;
 }): DjLocalPick[] {
   const cap = Math.max(1, Math.min(options.songLimit, options.goal === 'mix' ? 8 : 30));
+  const weights = EXPLORATION_WEIGHTS[options.exploration ?? 'balanced'];
+  const exclude = options.excludeArtists ?? [];
+  const only = options.onlyArtist ?? null;
   const removed = new Set(options.removeTrackIds);
   const existing = options.goal === 'playlist' && options.strategy === 'extend'
     ? options.draft.filter(({ song }) => !removed.has(song.id))
@@ -308,8 +418,11 @@ export function rankDjLocalCandidates(options: {
   const ranked = [...byId.values()].flatMap((item) => {
     const { song } = item;
     const nameKey = normalized(`${song.title} ${song.artist}`);
-    if (!song.id || !song.title || !song.artist || excludedIds.has(song.id)
+    // Hard filters: no stream, already used, ruled out by name, or outside an "only X" request.
+    if (!song.id || !song.title || !song.artist || !song.streamUrl || excludedIds.has(song.id)
       || usedIds.has(song.id) || usedNames.has(nameKey)) return [];
+    if (exclude.length > 0 && creditedTo(song, exclude)) return [];
+    if (only && !creditedTo(song, [only])) return [];
 
     const context = songContext(song);
     const artist = artistKey(context);
@@ -318,6 +431,7 @@ export function rankDjLocalCandidates(options: {
     const recentArtist = containsArtist(options.recent, artist);
     const skippedArtist = containsArtist(options.skipped, artist);
     const sameAsCurrent = Boolean(options.current && artist && artist === artistKey(options.current));
+    const fresh = !likedArtist && !recentArtist && !sameAsCurrent;
     const languageMatch = Boolean(options.language && song.language
       && normalized(song.language).includes(normalized(options.language)));
     const languageMismatch = Boolean(options.language && song.language && !languageMatch);
@@ -325,28 +439,32 @@ export function rankDjLocalCandidates(options: {
     const echo = !artistNamed && !likedArtist && !recentArtist && !sameAsCurrent
       && titleEchoesQuery(song, options.queries);
     const score = 40 - item.queryIndex * 10 + artistQueryScore(song, options.queries)
-      + (likedArtist ? 12 : 0) + (recentArtist ? 5 : 0) + (sameAsCurrent ? 3 : 0)
+      + (likedArtist ? weights.liked : 0) + (recentArtist ? weights.recent : 0) + (sameAsCurrent ? weights.current : 0)
+      + (fresh ? weights.fresh : 0)
       - (skippedArtist ? 30 : 0) - (languageMismatch ? 24 : 0) + (languageMatch ? 14 : 0)
       - (echo ? 15 : 0);
     // Only reasons that are true of this song, strongest first. The fallback names no language and no taste.
     const reasons = [
-      ...(likedArtist ? [`You've liked ${name} before.`] : []),
-      ...(sameAsCurrent ? ['Same artist as what\'s playing.'] : []),
-      ...(recentArtist ? [`${name} is in your recent plays.`] : []),
+      ...(only ? [`You asked for ${name}.`] : []),
+      ...(likedArtist && weights.liked > 0 ? [`You've liked ${name} before.`] : []),
+      ...(sameAsCurrent && weights.current > 0 ? ['Same artist as what\'s playing.'] : []),
+      ...(recentArtist && weights.recent > 0 ? [`${name} is in your recent plays.`] : []),
+      ...(fresh && weights.fresh > 0 ? [`${name} isn't in your recent plays or likes.`] : []),
       ...(languageMatch && options.language ? [`A ${capitalized(options.language)} pick, as asked.`] : []),
-      ...(artistNamed ? [`You asked for ${name}.`] : [])
+      ...(artistNamed && !only ? [`You asked for ${name}.`] : [])
     ];
     return [{ item, artist, score, reasons, fallback: `${name} came up when I searched for that.`, alternate: `More from ${name} in the same search.`, nameKey }];
   }).sort((a, b) => b.score - a.score || a.item.queryIndex - b.item.queryIndex);
 
-  const picks = [...existing];
+  const picks: (DjLocalPick & { readonly lane?: 'calm' | 'lively' })[] = [...existing];
   const artistCounts = new Map<string, number>();
   for (const { song } of existing) {
     const key = artistKey(songContext(song));
     artistCounts.set(key, (artistCounts.get(key) ?? 0) + 1);
   }
   const remaining = [...ranked];
-  const hasRoom = ({ artist }: { readonly artist: string }): boolean => (artistCounts.get(artist) ?? 0) < 2;
+  // An explicit "only X" outranks variety: no per-artist cap then.
+  const hasRoom = ({ artist }: { readonly artist: string }): boolean => only !== null || (artistCounts.get(artist) ?? 0) < 2;
   while (picks.length < cap && remaining.length > 0) {
     const previous = picks[picks.length - 1]?.reason ?? '';
     let index = remaining.findIndex(hasRoom);
@@ -373,10 +491,15 @@ export function rankDjLocalCandidates(options: {
       reason ??= chosen.fallback !== previous ? chosen.fallback : chosen.alternate;
     }
     remaining.splice(index, 1);
-    picks.push({ song: chosen.item.song, reason });
+    picks.push({ song: chosen.item.song, reason, ...(chosen.item.lane ? { lane: chosen.item.lane } : {}) });
     usedIds.add(chosen.item.song.id);
     usedNames.add(chosen.nameKey);
     artistCounts.set(chosen.artist, (artistCounts.get(chosen.artist) ?? 0) + 1);
   }
-  return picks.slice(0, cap);
+  // The new picks take the planned shape, then no artist plays twice in a row where avoidable. Songs
+  // already in the draft keep their place.
+  const fresh = picks.slice(existing.length, cap);
+  const before = existing.at(-1)?.song ?? null;
+  const ordered = only ? shapeOrder(fresh, options.shape ?? 'steady') : spaceArtists(shapeOrder(fresh, options.shape ?? 'steady'), before);
+  return [...existing, ...ordered.map(({ song, reason }) => ({ song, reason }))].slice(0, cap);
 }

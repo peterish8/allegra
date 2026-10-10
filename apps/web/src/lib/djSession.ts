@@ -1,4 +1,4 @@
-import type { DjGoal, DjProvider, DjSessionState, DjSlashCommand, DjTurnResponse } from '@shared/dj';
+import type { DjExploration, DjGoal, DjProvider, DjSessionState, DjSetShape, DjSlashCommand, DjTurnResponse } from '@shared/dj';
 import type { UnifiedSong } from '@shared/types';
 
 /** The only DJ setting that is stored: which provider and model. The API key is never written anywhere. */
@@ -258,6 +258,37 @@ export interface DjMemory {
   readonly draft: readonly { readonly song: UnifiedSong; readonly reason: string }[];
   readonly draftName: string;
   readonly reasons: Readonly<Record<string, string>>;
+  /** Artists ruled out for this session ("no songs by X", "Less like this artist"). */
+  readonly excludeArtists: readonly string[];
+  readonly exploration: DjExploration;
+  readonly shape: DjSetShape;
+}
+
+export const DJ_EXPLORATIONS: readonly { readonly value: DjExploration; readonly label: string; readonly hint: string }[] = [
+  { value: 'familiar', label: 'Familiar', hint: 'Leans on artists you play and like' },
+  // "Mixed", not "Balanced": the energy control beside it already says Balanced.
+  { value: 'balanced', label: 'Mixed', hint: 'Mixes artists you know with new ones' },
+  { value: 'discover', label: 'Discover', hint: 'Prefers artists you haven’t played or liked' }
+];
+
+/** A planned order for the set, from calmer and livelier searches. Never measured energy. */
+export const DJ_SHAPES: readonly { readonly value: DjSetShape; readonly label: string; readonly hint: string }[] = [
+  { value: 'steady', label: 'Steady', hint: 'Planned shape: keeps one level' },
+  { value: 'build', label: 'Build up', hint: 'Planned shape: calmer first, livelier last' },
+  { value: 'wind', label: 'Wind down', hint: 'Planned shape: livelier first, calmer last' },
+  { value: 'dynamic', label: 'Dynamic', hint: 'Planned shape: calmer and livelier take turns' }
+];
+
+/** The next option in a short list, wrapping around (for one-button cycling controls). */
+export function nextOption<T>(options: readonly { readonly value: T }[], current: T): T {
+  const index = options.findIndex((option) => option.value === current);
+  return (options[(index + 1) % options.length] ?? options[0]!).value;
+}
+
+/** Adds names to the session's ruled-out artists: lower case, no repeats, newest kept, at most 12. */
+export function withExcludedArtists(current: readonly string[], names: readonly string[]): string[] {
+  const added = names.map((name) => name.trim().toLowerCase()).filter((name) => name.length > 1);
+  return [...new Set([...current, ...added])].slice(-12);
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -308,7 +339,10 @@ export function readDjMemory(storage: Pick<Storage, 'getItem'>): DjMemory | null
     const goal: DjGoal = parsed.goal === 'playlist' ? 'playlist' : 'mix';
     const songLimit = typeof parsed.songLimit === 'number' ? Math.min(30, Math.max(1, Math.round(parsed.songLimit))) : 8;
     const draftName = isString(parsed.draftName) && parsed.draftName.trim() ? parsed.draftName.slice(0, 100) : 'A little mix';
-    return { session, history, goal, songLimit, draft, draftName, reasons };
+    const excludeArtists = withExcludedArtists([], Array.isArray(parsed.excludeArtists) ? parsed.excludeArtists.filter(isString).map((name) => name.slice(0, 80)) : []);
+    const exploration = DJ_EXPLORATIONS.find(({ value }) => value === parsed.exploration)?.value ?? 'balanced';
+    const shape = DJ_SHAPES.find(({ value }) => value === parsed.shape)?.value ?? 'steady';
+    return { session, history, goal, songLimit, draft, draftName, reasons, excludeArtists, exploration, shape };
   } catch {
     return null;
   }

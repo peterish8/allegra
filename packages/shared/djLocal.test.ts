@@ -148,6 +148,86 @@ test('no lead artist fills more than two slots', () => {
   for (const [artist, count] of counts) assert.ok(count <= 2, `${artist} has ${count} picks`);
 });
 
+test('"like this, but not the same artist" searches by the song and rules the artist out', () => {
+  const intent = heuristicDjLocalIntent({ ...context, message: 'something like this but not the same artist' });
+  assert.deepEqual(intent.excludeArtists, ['a. r. rahman']);
+  assert.ok(intent.searchQueries.includes('Kadhal Rojave'));
+  assert.ok(!intent.searchQueries.some((query) => /rahman/i.test(query)), `queries were ${intent.searchQueries.join(' | ')}`);
+});
+
+test('"no songs by X" rules X out; "only X" and "all X songs" keep to X; moods and languages are not names', () => {
+  assert.deepEqual(heuristicDjLocalIntent({ ...context, message: 'chill songs, no songs by Anirudh tonight' }).excludeArtists, ['anirudh']);
+  assert.equal(heuristicDjLocalIntent({ ...context, message: 'only Anirudh please' }).onlyArtist, 'anirudh');
+  assert.equal(heuristicDjLocalIntent({ ...context, message: 'all Arijit Singh songs' }).onlyArtist, 'arijit singh');
+  assert.equal(heuristicDjLocalIntent({ ...context, message: 'only tamil songs' }).onlyArtist, null);
+  assert.equal(heuristicDjLocalIntent({ ...context, message: 'just something calm' }).onlyArtist, null);
+  const only = heuristicDjLocalIntent({ ...context, message: 'only Anirudh please' });
+  assert.ok(only.searchQueries.includes('anirudh'));
+});
+
+test('the model can add exclusions but never drop the ones the request made', () => {
+  const intent = resolveDjLocalIntent('{"excludeArtists":["Sid Sriram"]}', { ...context, message: 'no songs by Anirudh' });
+  assert.deepEqual(intent.excludeArtists, ['anirudh', 'sid sriram']);
+});
+
+function rank(overrides: Partial<Parameters<typeof rankDjLocalCandidates>[0]> & Pick<Parameters<typeof rankDjLocalCandidates>[0], 'candidates'>) {
+  return rankDjLocalCandidates({
+    queries: ['tamil songs'], goal: 'mix', songLimit: 8, language: null, current: null,
+    recent: [], liked: [], skipped: [], draft: [], strategy: 'replace', removeTrackIds: [],
+    ...overrides
+  });
+}
+
+const POOL: DjLocalCandidate[] = [
+  { song: song({ id: 'a1', title: 'One', artist: 'Anirudh Ravichander' }), queryIndex: 0 },
+  { song: song({ id: 'a2', title: 'Two', artist: 'Anirudh Ravichander, Dhee' }), queryIndex: 0 },
+  { song: song({ id: 'a3', title: 'Three', artist: 'Anirudh Ravichander' }), queryIndex: 0 },
+  { song: song({ id: 's1', title: 'Four', artist: 'Sid Sriram' }), queryIndex: 0 },
+  { song: song({ id: 'h1', title: 'Five', artist: 'Harini' }), queryIndex: 0 },
+  { song: song({ id: 'x1', title: 'Six', artist: 'Silent One', streamUrl: '' }), queryIndex: 0 }
+];
+
+test('hard filters: an excluded artist and a song with no stream are never picked', () => {
+  const ids = rank({ candidates: POOL, excludeArtists: ['anirudh'] }).map(({ song: picked }) => picked.id);
+  assert.deepEqual([...ids].sort(), ['h1', 's1']);
+});
+
+test('"only X" keeps to X and lifts the two-per-artist cap', () => {
+  const picks = rank({ candidates: POOL, onlyArtist: 'anirudh' });
+  assert.equal(picks.length, 3);
+  assert.ok(picks.every(({ song: picked }) => /anirudh/i.test(picked.artist)));
+  assert.equal(picks[0]?.reason, 'You asked for Anirudh Ravichander.');
+  assert.ok(picks.every(({ reason }) => reason.includes('Anirudh Ravichander')), picks.map((pick) => pick.reason).join(' | '));
+});
+
+test('no artist plays twice in a row when another order allows it', () => {
+  const picks = rank({ candidates: POOL });
+  for (let index = 1; index < picks.length; index += 1) {
+    const lead = (artist: string): string => artist.split(',')[0] ?? artist;
+    assert.notEqual(lead(picks[index]!.song.artist), lead(picks[index - 1]!.song.artist), picks.map((pick) => pick.song.id).join(','));
+  }
+});
+
+test('discover leans away from liked artists and says why a new one was picked', () => {
+  const liked = [{ id: 'l', title: 'Old', artist: 'Anirudh Ravichander' }];
+  const familiar = rank({ candidates: POOL, liked, exploration: 'familiar' });
+  const discover = rank({ candidates: POOL, liked, exploration: 'discover' });
+  assert.match(familiar[0]!.song.artist, /Anirudh/);
+  assert.doesNotMatch(discover[0]!.song.artist, /Anirudh/);
+  assert.ok(discover.some(({ reason }) => /isn't in your recent plays or likes/.test(reason)));
+  assert.ok(!discover.some(({ reason }) => /You've liked/.test(reason)), 'discover never sells a pick as one you liked');
+});
+
+test('a planned shape orders the set by which search found each song', () => {
+  const laned: DjLocalCandidate[] = [
+    { song: song({ id: 'up1', title: 'Up', artist: 'P' }), queryIndex: 1, lane: 'lively' },
+    { song: song({ id: 'mid', title: 'Mid', artist: 'Q' }), queryIndex: 0 },
+    { song: song({ id: 'down1', title: 'Down', artist: 'R' }), queryIndex: 2, lane: 'calm' }
+  ];
+  assert.deepEqual(rank({ candidates: laned, shape: 'build' }).map(({ song: picked }) => picked.id), ['down1', 'mid', 'up1']);
+  assert.deepEqual(rank({ candidates: laned, shape: 'wind' }).map(({ song: picked }) => picked.id), ['up1', 'mid', 'down1']);
+});
+
 test('a language in the session reaches the catalog searches on the model path', () => {
   const intent = resolveDjLocalIntent(
     '{"searchQueries":["late night tamil melodies"],"languageAction":"set","language":"tamil"}',

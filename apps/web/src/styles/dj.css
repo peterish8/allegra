@@ -229,6 +229,11 @@
 .dj-mode-option[aria-checked='true'] { color: #15170c; background: var(--ink); }
 .dj-mode-option[aria-checked='false']:hover { color: var(--ink); background: var(--dj-hover); }
 .dj-mode-option:active { transform: scale(.96); }
+/* Secondary: the set's planned shape and how far it explores, two words that each cycle. */
+.dj-set-options .dj-mode-option { color: var(--ink); }
+.dj-set-options .dj-mode-option:hover { background: var(--dj-hover); }
+.dj-set-options .dj-mode-option + .dj-mode-option { border-left: 1px solid rgba(255, 255, 255, .12); border-radius: 0 999px 999px 0; }
+.dj-set-options .dj-mode-option:first-child { border-radius: 999px 0 0 999px; }
 
 /* Secondary: energy as five rising bars (hit areas 24 × 28) and the word for the chosen level. */
 .dj-energy { gap: 6px; padding: 3px 12px 3px 6px; }

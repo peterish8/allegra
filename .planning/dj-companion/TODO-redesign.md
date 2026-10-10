@@ -97,19 +97,29 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` dropped (with
 - [x] `[B]` **Queue safety.** A plan always lands on the live queue (`applyDjPlan` reads the player at
   apply time, protects the current song and the listener's own songs). Undo only runs while the
   upcoming list is exactly what the set made; an edited queue is left alone.
-- [ ] `[B]` **Typed action validation.** One validator for every DJ action (from the parser or a
+- [ ] `[B]` **Typed action validation.** (Partly covered: both paths now refuse songs with no stream
+  or by an excluded artist; the single shared validator is still to do.) One validator for every DJ action (from the parser or a
   model plan): catalog IDs only from this turn's searches, playable stream required, current song and
   the listener's own queued songs protected. Unit-tested.
-- [ ] `[B]` **Hard filters in ranking:** no unplayable streams, no excluded artists, no duplicates,
-  no songs that break explicit constraints ("no ⟨artist⟩", "not the same artist").
-- [ ] `[B]` **Explicit request beats diversity.** "Only Anirudh", "all Arijit songs" lifts the
+- [x] `[B]` **Hard filters in ranking:** no unplayable streams, no excluded artists, no duplicates,
+  no songs that break explicit constraints ("no ⟨artist⟩", "not the same artist"). On-device:
+  `rankDjLocalCandidates` (whole-word credit match, tested). Cloud: the API drops a committed song
+  with no stream or by an excluded artist; if none are left the turn becomes `keep`
+  (`app.dj.test.ts`). Exclusions live in the session (sessionStorage), show as removable
+  "No ⟨artist⟩" chips, and an explicit "only X" / "more from X" lifts an earlier "no X".
+- [x] `[B]` **Explicit request beats diversity.** "Only Anirudh", "all Arijit songs" lifts the
   two-per-artist cap.
-- [ ] `[B]` **Sequencing.** No same artist back to back; the planned energy shape (below) orders the set.
-- [ ] `[B]` **Set shape (plan 01-05).** Build up · Steady · Wind down · Dynamic. It shapes the searches
-  per slot (calmer/livelier queries) and is labelled "planned shape", never "measured energy".
-- [ ] `[B]` **Exploration control:** Familiar · Balanced · Discover, changing the taste weights
-  (Discover lowers known-artist boosts and prefers artists not in recent/liked).
-- [ ] `[B]` **Feedback that means different things:**
+- [x] `[B]` **Sequencing.** No same artist back to back where another order allows it; the planned
+  shape orders the set first.
+- [x] `[B]` **Set shape (plan 01-05).** Steady · Build up · Wind down · Dynamic, one cycling word
+  in the secondary pill beside energy, tooltip "Planned shape: …". On-device it adds one calmer and
+  one livelier search and orders by which search found each song; the cloud model gets the plan
+  in its prompt and context. Never "measured energy".
+- [x] `[B]` **Exploration control:** Familiar · Mixed · Discover (middle level renamed from
+  "Balanced": the energy word beside it already says Balanced). Changes the taste weights; Discover
+  never sells a pick as "you've liked".
+- [~] `[B]` **Feedback that means different things:** (`avoidArtist` exists in the session and
+  feeds the exclusions; the queue-row overflow menu and the persistent "Never" are not built.)
   - Skip = this song, right now (session only, as today).
   - Less like this = avoid this artist for the session.
   - Never play this artist = persistent exclusion (see memory below).
@@ -118,9 +128,9 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` dropped (with
 - [ ] `[B]` **Long-term taste (opt-in).** Preferred languages, artists, exclusions, exploration level.
   Off until the listener turns it on; inspect, reset, export and delete in settings. (Where it is
   stored: owner decision Q1.)
-- [ ] `[B]` **Cloud tools only where data is real.** Add `get_user_taste` (only when taste is on) and
-  pass exclusions/shape to the model; no feature tools that would return nothing. Contract doc
-  updated first.
+- [~] `[B]` **Cloud tools only where data is real.** Exclusions, exploration and shape now reach the
+  model (optional request fields, contract doc updated 2026-10-11). `get_user_taste` waits for
+  long-term taste.
 - [ ] `[S]` **Playlist draft:** total duration ("about 42 min", from real `duration` seconds) and a
   per-row "Swap" that asks for one replacement.
 

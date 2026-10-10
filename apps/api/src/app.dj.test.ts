@@ -80,6 +80,20 @@ test('a Gemini key runs a full DJ turn through the OpenAI-compatible endpoint', 
   assert.equal(captured[0]?.body.reasoning_effort, 'low');
 });
 
+test('a committed song by an excluded artist is dropped, and the model is told who is ruled out', async () => {
+  const captured: Captured[] = [];
+  const reply = await request(app(geminiFetch(captured))).post('/api/ai/dj/turn')
+    .send({ ...turn, excludeArtists: ['anirudh'], exploration: 'discover', shape: 'build' });
+
+  assert.equal(reply.status, 200, JSON.stringify(reply.body));
+  // The scripted model commits the first result, Anirudh's: filtered, so nothing changes.
+  assert.equal(reply.body.data.queue.length, 0);
+  assert.equal(reply.body.data.operation, 'keep');
+  const context = (captured[1]?.body.messages as { role: string; content?: string }[]).find((message) => message.role === 'tool');
+  assert.match(context?.content ?? '', /"excludeArtists":\["anirudh"\]/);
+  assert.match(context?.content ?? '', /"plannedShape":"build"/);
+});
+
 test('Gemini gets tool schemas it accepts', async () => {
   const captured: Captured[] = [];
   await request(app(geminiFetch(captured))).post('/api/ai/dj/turn').send(turn);

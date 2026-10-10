@@ -42,7 +42,14 @@ interface DjRequest {
   readonly liked: ContextSong[];
   readonly skipped: ContextSong[];
   readonly session: SessionState;
+  /** Artists the listener ruled out; any committed song credited to one is dropped. */
+  readonly excludeArtists: string[];
+  readonly exploration: Exploration;
+  readonly shape: SetShape;
 }
+
+type Exploration = 'familiar' | 'balanced' | 'discover';
+type SetShape = 'steady' | 'build' | 'wind' | 'dynamic';
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -127,8 +134,26 @@ function parseRequest(value: unknown): DjRequest | null {
       energy: numberBetween(sessionValue.energy, 1, 5) ?? 3,
       language: nullableBounded(sessionValue.language, 40),
       constraints: parseStrings(sessionValue.constraints, 8, 100)
-    }
+    },
+    // Optional and forgiving: an old client sends none of these and gets the old behaviour.
+    excludeArtists: parseStrings(body.excludeArtists, 12, 80),
+    exploration: body.exploration === 'familiar' || body.exploration === 'discover' ? body.exploration : 'balanced',
+    shape: body.shape === 'build' || body.shape === 'wind' || body.shape === 'dynamic' ? body.shape : 'steady'
   };
+}
+
+/** Lower case, letters and digits only: "A. R. Rahman" → "a r rahman". */
+function plain(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+/** A song credited (as whole words) to one of the ruled-out names. */
+function creditedToAny(song: Pick<UnifiedSong, 'artist'>, names: readonly string[]): boolean {
+  const credit = ` ${plain(song.artist)} `;
+  return names.some((name) => {
+    const key = plain(name);
+    return key.length > 1 && credit.includes(` ${key} `);
+  });
 }
 
 function bounded(value: unknown, max: number): string | null {
@@ -285,7 +310,10 @@ async function runDjTurn(catalog: CatalogService, input: DjRequest, signal: Abor
           recentlyPlayed: input.recent,
           liked: input.liked,
           skipped: input.skipped,
-          session: input.session
+          session: input.session,
+          excludeArtists: input.excludeArtists,
+          exploration: input.exploration,
+          plannedShape: input.shape
         }));
         toolIndex += 1;
         continue;
@@ -422,8 +450,12 @@ function parsePlan(args: Record<string, unknown>, input: DjRequest, candidates: 
     const song = id ? candidates.get(id) : undefined;
     if (!id || !reason || !song || id === currentId || used.has(id)) return null;
     used.add(id);
+    // Hard filters the model cannot talk its way past: a ruled-out artist or a song with no stream.
+    if (!song.streamUrl || creditedToAny(song, input.excludeArtists)) continue;
     queue.push({ song, reason });
   }
+  // Everything it picked was filtered out: change nothing rather than claim a set that isn't there.
+  const nothingLeft = rawSongs.length > 0 && queue.length === 0;
 
   const removed = new Set(removeConstraints.map((item) => item.toLocaleLowerCase()));
   const constraints = [...new Set([
@@ -437,14 +469,14 @@ function parsePlan(args: Record<string, unknown>, input: DjRequest, candidates: 
     constraints
   };
   return {
-    reply,
+    reply: nothingLeft ? 'None of those picks could play here, so I left things as they were. Try it another way?' : reply,
     session: nextSession,
     goal: input.goal,
     playlistName: input.goal === 'playlist' ? suggestedPlaylistName || input.draftName || vibe : null,
-    draftOperation: input.goal === 'playlist' ? draftOperation as DraftOperation : 'keep',
-    removeTrackIds,
-    operation: operation as Operation,
-    insertAfter: operation === 'insert' ? insertAfter : null,
+    draftOperation: input.goal === 'playlist' && !nothingLeft ? draftOperation as DraftOperation : 'keep',
+    removeTrackIds: nothingLeft ? [] : removeTrackIds,
+    operation: nothingLeft ? 'keep' as const : operation as Operation,
+    insertAfter: operation === 'insert' && !nothingLeft ? insertAfter : null,
     reaction: reaction as Reaction,
     queue
   };
@@ -478,8 +510,13 @@ function systemPrompt(input: DjRequest): string {
     input.goal === 'playlist'
       ? `This is an editable playlist draft, not a playback queue. Keep operation=keep. Return at most ${input.songLimit} newly searched songs. Set draftOperation=replace for a fresh draft, extend to add new songs while preserving the draft, remove to remove only existing draft items, and keep for a title-only or explanation change. For removals, use only exact IDs from get_session_context.draft in removeTrackIds. Preserve the title unless the user asks to rename it. Give reasons based only on the catalog and supplied taste context.`
       : `This is a live mix. Return at most ${input.songLimit} songs for the upcoming queue.`,
+    'Never pick a song credited to an artist in excludeArtists; those songs are dropped after you commit. Avoid the same artist twice in a row unless the user asked for one artist only, and then keep to that artist.',
+    `Exploration is ${input.exploration}: familiar leans on liked and recent artists, discover prefers artists the listener has not played or liked, balanced mixes both.`,
+    input.shape === 'steady'
+      ? 'Keep the set at a steady energy.'
+      : `The listener planned the set's shape as ${input.shape === 'build' ? 'building up (calmer first, livelier last)' : input.shape === 'wind' ? 'winding down (livelier first, calmer last)' : 'dynamic (alternate calmer and livelier)'}. Order songs by that plan from catalog facts and the searches that found them; never claim measured energy.`,
     'Return a warm, concise reply in the user’s language. Never claim an action succeeded before it is applied by the player.',
-    `Current task and session: ${JSON.stringify({ goal: input.goal, songLimit: input.songLimit, draftName: input.draftName, draft: input.draft, session })}`
+    `Current task and session: ${JSON.stringify({ goal: input.goal, songLimit: input.songLimit, draftName: input.draftName, draft: input.draft, session, excludeArtists: input.excludeArtists, exploration: input.exploration, plannedShape: input.shape })}`
   ].join('\n');
 }
 
