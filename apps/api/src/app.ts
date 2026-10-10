@@ -11,6 +11,7 @@ import { authRouter } from './routes/auth.js';
 import { catalogRouter } from './routes/catalog.js';
 import { discoveryRouter } from './routes/discovery.js';
 import { djRouter } from './routes/dj.js';
+import { djVoiceRouter } from './routes/djVoice.js';
 import { sendFailure } from './routes/common.js';
 import { lyricsRouter } from './routes/lyrics.js';
 import { radioRouter } from './routes/radio.js';
@@ -104,6 +105,8 @@ export function createApp(options: AppOptions): Express {
   const jwtSecret = options.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only';
   const services = options.services ?? createServices({ ...options, jwtSecret });
 
+  // A spoken request (a few seconds of WAV) is bigger than any other body; only this route takes it.
+  app.use('/api/ai/dj/transcribe', express.json({ limit: '1mb' }));
   app.use(express.json({ limit: '32kb' }));
 
   app.get('/api/health', (_request, response) => {
@@ -137,6 +140,7 @@ export function createApp(options: AppOptions): Express {
   app.use('/api', uploadsRouter(services.auth, services.covers));
   app.use('/api', discoveryRouter(services.translation, services.recommendations, services.auth, services.catalog));
   app.use('/api', djRouter(services.catalog, options.fetchImpl));
+  app.use('/api', djVoiceRouter(options.fetchImpl));
   app.use('/api', radioRouter(services.radio, services.auth));
   const signer = new OAuthSigner(jwtSecret);
   app.use(oauthRouter({

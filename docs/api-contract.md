@@ -113,6 +113,30 @@ friendly API errors and never include the upstream response body or the submitte
 This endpoint does not use the signed-in account token and does not save listening history. The
 client sends only the small context above, never the full library or account profile.
 
+### `POST /api/ai/dj/transcribe` and `POST /api/ai/dj/speak` (added 2026-10-10)
+The DJ's ears and voice with the listener's own key. The free paths need no server: the browser's
+speech recognition, Whisper running on the device, and the browser's own speech synthesis. These two
+routes exist only so a key never sits in the browser bundle; like the turn endpoint, the key is used
+for this one request and is never stored, logged, or accepted in a URL. Rate limited by the API bucket.
+
+```ts
+// transcribe: a short spoken request, as a 16-bit mono WAV (base64, at most ~700 KB decoded).
+// The route alone accepts a body up to 1 MB; every other route keeps the 32 KB limit.
+type TranscribeRequest = { provider: 'openai' | 'groq'; apiKey: string; model?: string; audio: string };
+type TranscribeData = { text: string };            // ApiResponse<TranscribeData>
+
+// speak: one reply, at most 600 characters, returned as base64 MP3.
+type SpeakRequest = { provider: 'openai' | 'elevenlabs'; apiKey: string; model?: string; voice?: string; text: string };
+type SpeakData = { audio: string; mime: 'audio/mpeg' };  // ApiResponse<SpeakData>
+```
+
+Defaults when `model`/`voice` are omitted: OpenAI transcription `gpt-transcribe`, Groq
+`whisper-large-v3-turbo`; OpenAI speech `gpt-4o-mini-tts` with voice `coral`, ElevenLabs
+`eleven_flash_v2_5` with the premade voice `JBFqnCBsd6RMkjVDRZzb`. `model` and `voice` are plain
+identifiers (letters, digits, `._:-/`). A provider refusal becomes plain copy: 401 for a rejected
+key, 429 for a limit, 400 for an unknown model or voice, 502 otherwise, 504 after 20 s. The
+provider's own error text never reaches the client.
+
 **Recording collapse (2026-09-21):** the provider lists one row per release, so the
 same song can appear ~20 times with different compilation covers. Search groups by
 recording identity (title without bracketed trailers + sorted artists), elects one
