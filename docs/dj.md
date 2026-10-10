@@ -665,7 +665,7 @@ The system prompt makes these rules explicit: never invent songs or IDs; preserv
 | model files | browser cache (transformers.js) | Qwen, Moonshine or Whisper, Kokoro |
 
 - **No key is ever stored.** The brain key, ears key and voice key all live in React state only and are cleared on reload. The settings sheet says so: "Keys are sent with each request only and are never saved by Allegra."
-- **Free paths send nothing to Allegra.** On-device recognition, Moonshine/Whisper and Kokoro run in the browser. Browser Web Speech (not on-device) uses the browser vendor's service; Allegra never receives the audio. Local DJ turns call only the existing catalog search.
+- **On-device means inference and microphone audio stay on the device.** On-device recognition, Moonshine (Whisper as fallback) and Kokoro run in the browser. Catalog searches still go through Allegra's music service. Browser Web Speech (not on-device) uses the browser vendor's service; Allegra never receives the audio.
 - **Cloud paths** send the request, the small context, or the audio to the chosen provider through the API, for that one request.
 - The DJ routes don't use the account token and save no listening history.
 

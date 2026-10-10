@@ -3,14 +3,14 @@ import type { DjLocalPick } from '@shared/djLocal';
 import { applyDjLocalSession, resolveDjLocalIntent, rankDjLocalCandidates } from '@shared/djLocal';
 
 import { searchSongs } from './api';
+import { createProgressTracker, type ModelProgressEvent } from './modelProgress';
 
 const MODEL_ID = 'onnx-community/Qwen3-0.6B-ONNX';
 
 type ChatMessage = { readonly role: 'system' | 'user'; readonly content: string };
 type GeneratedText = string | readonly { readonly role?: string; readonly content?: string }[];
 type Generator = (messages: readonly ChatMessage[], options: { readonly max_new_tokens: number; readonly do_sample: false }) => Promise<readonly { readonly generated_text?: GeneratedText }[]>;
-type ModelProgress = { readonly status?: string; readonly progress?: number; readonly file?: string };
-type PipelineOptions = { readonly device: 'webgpu' | 'wasm'; readonly dtype: 'q4f16' | 'q4'; readonly progress_callback: (event: ModelProgress) => void };
+type PipelineOptions = { readonly device: 'webgpu' | 'wasm'; readonly dtype: 'q4f16' | 'q4'; readonly progress_callback: (event: ModelProgressEvent) => void };
 
 let generatorPromise: Promise<Generator> | null = null;
 
@@ -24,13 +24,11 @@ async function getGenerator(onProgress: (message: string) => void): Promise<Gene
         device: hasWebGpu ? 'webgpu' : 'wasm',
         dtype: hasWebGpu ? 'q4f16' : 'q4',
         progress_callback: (event) => {
-          if (event.status === 'progress' && typeof event.progress === 'number') {
-            onProgress(`Downloading the local DJ model · ${Math.round(event.progress)}%`);
-          } else if (event.status === 'initiate' || event.status === 'download') {
-            onProgress('Downloading the local DJ model…');
-          }
+          track(event);
+          if (event.status === 'initiate' || event.status === 'download') onProgress('Downloading the local DJ model…');
         }
       };
+      const track = createProgressTracker((percent) => onProgress(`Downloading the local DJ model · ${percent}%`));
       const load = async (pipelineOptions: PipelineOptions): Promise<Generator> =>
         await pipeline('text-generation', MODEL_ID, pipelineOptions) as unknown as Generator;
       try {

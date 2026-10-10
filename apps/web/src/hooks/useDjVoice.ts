@@ -55,6 +55,7 @@ interface SpeechWindow extends Window {
 
 export type DjEarsChoice = 'auto' | 'browser' | 'local' | DjEarsCloudProvider;
 export type DjVoiceChoice = 'off' | 'browser' | 'kokoro' | DjVoiceCloudProvider;
+export type DjTalkChoice = 'spoken' | 'always';
 /** Where the microphone stands: not asked yet, allowed, blocked, or impossible on this page. */
 export type DjMicState = 'unknown' | 'prompt' | 'granted' | 'denied' | 'insecure' | 'none';
 /** What `listen()` will actually use right now. */
@@ -66,6 +67,8 @@ export interface DjVoiceSettings {
   readonly voice: DjVoiceChoice;
   readonly voiceModel: string;
   readonly voiceName: string;
+  /** 'spoken': reply aloud only after a spoken request. 'always': every reply. */
+  readonly talk: DjTalkChoice;
 }
 
 export interface DjVoice {
@@ -105,7 +108,7 @@ export interface DjVoice {
   readonly downloadSpeech: () => Promise<void>;
   readonly speaking: boolean;
   /** Says a DJ reply out loud with the chosen voice (nothing when the voice is off). */
-  readonly speak: (text: string) => void;
+  readonly speak: (text: string, options?: { readonly force?: boolean }) => void;
   readonly stopSpeaking: () => void;
 }
 
@@ -127,7 +130,9 @@ const FOLLOW_UP_MS = 6000;
 const RESTART_GAP_MS = 600;
 /** Local "Hey DJ": an utterance longer than this is music or talk in the room, not a wake phrase. */
 const WAKE_MAX_MS = 4500;
-const DEFAULT_SETTINGS: DjVoiceSettings = { ears: 'auto', earsModel: '', voice: 'browser', voiceModel: '', voiceName: '' };
+const DEFAULT_SETTINGS: DjVoiceSettings = { ears: 'auto', earsModel: '', voice: 'browser', voiceModel: '', voiceName: '', talk: 'spoken' };
+/** With talk 'spoken', a reply is voiced only if a spoken request arrived this recently. */
+const SPOKEN_REPLY_WINDOW_MS = 60_000;
 const EARS_CHOICES: readonly DjEarsChoice[] = ['auto', 'browser', 'local', 'openai', 'groq'];
 const VOICE_CHOICES: readonly DjVoiceChoice[] = ['off', 'browser', 'kokoro', 'openai', 'elevenlabs'];
 
@@ -162,7 +167,8 @@ function readSettings(): DjVoiceSettings {
       earsModel: text(record.earsModel),
       voice: VOICE_CHOICES.includes(record.voice as DjVoiceChoice) ? record.voice as DjVoiceChoice : 'browser',
       voiceModel: text(record.voiceModel),
-      voiceName: text(record.voiceName)
+      voiceName: text(record.voiceName),
+      talk: record.talk === 'always' ? 'always' : 'spoken'
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -354,9 +360,14 @@ export function useDjVoiceState({ onCommand, onDuck }: DjVoiceOptions): DjVoice 
   const startWakeRef = useRef<() => void>(() => undefined);
   const busyRef = useRef(false);
 
+  const lastSpokenAtRef = useRef(0);
+
   const deliver = useCallback((raw: string): void => {
     const request = raw.replace(WAKE, '').trim();
-    if (request.length > 1) commandRef.current(request);
+    if (request.length > 1) {
+      lastSpokenAtRef.current = Date.now();
+      commandRef.current(request);
+    }
   }, []);
 
   /** Writes down recorded audio with the local or cloud ears. */
@@ -536,6 +547,7 @@ export function useDjVoiceState({ onCommand, onDuck }: DjVoiceOptions): DjVoice 
         if (wake && wake.index !== undefined) {
           const request = text.slice(wake.index + wake[0].length).trim();
           if (request.length > 1) {
+            lastSpokenAtRef.current = Date.now();
             commandRef.current(request);
           } else {
             followUntilRef.current = Date.now() + FOLLOW_UP_MS;
@@ -545,6 +557,7 @@ export function useDjVoiceState({ onCommand, onDuck }: DjVoiceOptions): DjVoice 
           }
         } else if (Date.now() < followUntilRef.current && text) {
           followUntilRef.current = 0;
+          lastSpokenAtRef.current = Date.now();
           commandRef.current(text);
         }
       }
@@ -587,8 +600,10 @@ export function useDjVoiceState({ onCommand, onDuck }: DjVoiceOptions): DjVoice 
           const wake = text.match(WAKE);
           if (wake && wake.index !== undefined) {
             const request = text.slice(wake.index + wake[0].length).trim();
-            if (request.length > 1) commandRef.current(request);
-            else {
+            if (request.length > 1) {
+              lastSpokenAtRef.current = Date.now();
+              commandRef.current(request);
+            } else {
               wakeAbortRef.current = null;
               void listenWithRecorder('local');
               return;
@@ -707,9 +722,10 @@ export function useDjVoiceState({ onCommand, onDuck }: DjVoiceOptions): DjVoice 
     finishSpeaking();
   }, [finishSpeaking]);
 
-  const speak = useCallback((raw: string): void => {
+  const speak = useCallback((raw: string, options?: { readonly force?: boolean }): void => {
     const text = raw.replace(/[“”"]/g, '').trim().slice(0, 600);
     if (!text || settings.voice === 'off') return;
+    if (!options?.force && settings.talk === 'spoken' && Date.now() - lastSpokenAtRef.current > SPOKEN_REPLY_WINDOW_MS) return;
     stopSpeaking();
     const run = speakRun.current;
     const begin = (): void => {
@@ -784,7 +800,7 @@ export function useDjVoiceState({ onCommand, onDuck }: DjVoiceOptions): DjVoice 
         setError(failure instanceof Error ? failure.message : 'Your DJ couldn’t find its voice just now.');
       }
     })();
-  }, [finishSpeaking, settings.voice, settings.voiceModel, settings.voiceName, speechReady, stopSpeaking, voiceKey]);
+  }, [finishSpeaking, settings.talk, settings.voice, settings.voiceModel, settings.voiceName, speechReady, stopSpeaking, voiceKey]);
 
   return useMemo<DjVoice>(() => ({
     engine, settings, setSettings, earsKey, setEarsKey, voiceKey, setVoiceKey, browserEars,

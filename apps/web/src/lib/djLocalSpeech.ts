@@ -4,7 +4,9 @@
  * starts. It sounds far more natural than the operating system's voices; English only.
  */
 
-const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
+import { createProgressTracker } from './modelProgress';
+
+const MODEL_ID ='onnx-community/Kokoro-82M-v1.0-ONNX';
 const READY_KEY = 'allegra.dj.kokoro.v1';
 export const LOCAL_SPEECH_MB = 92;
 
@@ -45,9 +47,7 @@ export async function loadLocalSpeech(onProgress: (percent: number) => void = ()
       const speaker = await KokoroTTS.from_pretrained(MODEL_ID, {
         dtype: 'q8',
         device: 'wasm',
-        progress_callback: (event: { readonly status?: string; readonly progress?: number }) => {
-          if (event.status === 'progress' && typeof event.progress === 'number') onProgress(Math.round(event.progress));
-        }
+        progress_callback: createProgressTracker(onProgress)
       });
       try {
         window.localStorage.setItem(READY_KEY, '1');

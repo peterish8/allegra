@@ -8,6 +8,8 @@
  * down several times faster at a similar accuracy. If it cannot load, Whisper tiny (English) is used.
  */
 
+import { createProgressTracker, type ModelProgressEvent } from './modelProgress';
+
 const MODELS = ['onnx-community/moonshine-base-ONNX', 'Xenova/whisper-tiny.en'] as const;
 /** Remembers that a model was downloaded on this browser, so it never asks twice. */
 const READY_KEY = 'allegra.dj.ears.v2';
@@ -15,7 +17,6 @@ const READY_KEY = 'allegra.dj.ears.v2';
 export const LOCAL_VOICE_MB = 63;
 
 type Transcriber = (audio: Float32Array) => Promise<{ readonly text?: string } | readonly { readonly text?: string }[]>;
-type ModelProgress = { readonly status?: string; readonly progress?: number };
 
 let transcriberPromise: Promise<Transcriber> | null = null;
 
@@ -44,12 +45,11 @@ export async function loadLocalVoice(onProgress: (percent: number) => void = () 
       let lastError: unknown = null;
       for (const model of MODELS) {
         try {
+          const track = createProgressTracker(onProgress);
           const transcriber = await pipeline('automatic-speech-recognition', model, {
             device: 'wasm',
             dtype: 'q8',
-            progress_callback: (event: ModelProgress) => {
-              if (event.status === 'progress' && typeof event.progress === 'number') onProgress(Math.round(event.progress));
-            }
+            progress_callback: (event: ModelProgressEvent) => track(event)
           });
           markReady();
           return transcriber as unknown as Transcriber;

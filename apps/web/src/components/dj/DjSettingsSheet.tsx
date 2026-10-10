@@ -72,7 +72,7 @@ export function DjSettingsSheet({ provider, model, apiKey, onProvider, onModel, 
                 <select value={ears} onChange={(event) => voice.setSettings({ ears: event.target.value as DjEarsChoice })}>
                   <option value="auto">Automatic · free</option>
                   {voice.browserEars ? <option value="browser">This browser’s speech · free</option> : null}
-                  <option value="local">On this device (Whisper) · free</option>
+                  <option value="local">On this device · free</option>
                   <option value="openai">OpenAI · your key</option>
                   <option value="groq">Groq · your key</option>
                 </select>
@@ -85,7 +85,7 @@ export function DjSettingsSheet({ provider, model, apiKey, onProvider, onModel, 
             <p>
               {voice.engine === 'device' ? 'Recognised on this device: nothing you say leaves it.'
                 : voice.engine === 'browser' ? 'Your browser recognises your voice with its own speech service. Allegra never receives the audio.'
-                  : voice.engine === 'local' ? `Whisper runs on this device: nothing you say leaves it. It downloads once (about ${LOCAL_VOICE_MB} MB)${voice.localReady ? ', and it’s ready' : ''}.`
+                  : voice.engine === 'local' ? `Moonshine runs on this device, with Whisper as the fallback: the audio never leaves it. It downloads once (about ${LOCAL_VOICE_MB} MB)${voice.localReady ? ', and it’s ready' : ''}.`
                     : voice.engine === 'cloud' ? `Your request is recorded here and sent to ${ears === 'groq' ? 'Groq' : 'OpenAI'} to be written down. ${KEY_NOTE}`
                       : 'This browser can’t record audio.'}
             </p>
@@ -115,6 +115,14 @@ export function DjSettingsSheet({ provider, model, apiKey, onProvider, onModel, 
                   <option value="elevenlabs">ElevenLabs · your key</option>
                 </select>
               </label>
+              {speech !== 'off' ? (
+                <label>When it talks
+                  <select value={voice.settings.talk} onChange={(event) => voice.setSettings({ talk: event.target.value === 'always' ? 'always' : 'spoken' })}>
+                    <option value="spoken">When I talk to it</option>
+                    <option value="always">Every reply</option>
+                  </select>
+                </label>
+              ) : null}
               {speech === 'kokoro' ? (
                 <label>Voice
                   <select value={voice.settings.voiceName || 'af_heart'} onChange={(event) => voice.setSettings({ voiceName: event.target.value })}>
@@ -141,7 +149,7 @@ export function DjSettingsSheet({ provider, model, apiKey, onProvider, onModel, 
                     <Cpu size={14} aria-hidden="true" />{voice.speechProgress !== null ? (voice.speechProgress >= 100 ? 'Warming up…' : `Downloading · ${voice.speechProgress}%`) : `Download · ${LOCAL_SPEECH_MB} MB`}
                   </button>
                 ) : null}
-                <button type="button" className="dj-chip-button" onClick={() => voice.speak('Hey! I’m your DJ. Ask me for a song, a mood, or say sing along.')}>
+                <button type="button" className="dj-chip-button" onClick={() => voice.speak('Hey! I’m your DJ. Ask me for a song, a mood, or say sing along.', { force: true })}>
                   <Volume2 size={14} aria-hidden="true" />Hear a sample
                 </button>
               </div>
