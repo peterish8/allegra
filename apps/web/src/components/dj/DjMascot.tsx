@@ -4,7 +4,7 @@ import type { DjEmotion } from '../../hooks/useDjSession';
 import type { DjDanceVibe } from '../../lib/djMascotMotion';
 import type { Palette } from '../../lib/palette';
 
-/** The DJ's moods, plus the closed-eyed rest used while the local model is not loaded. */
+/** The DJ's moods, plus the closed-eyed rest it falls into after a long quiet spell. */
 export type DjMascotEmotion = DjEmotion | 'sleeping';
 
 export interface DjMascotProps {
@@ -13,7 +13,7 @@ export interface DjMascotProps {
   readonly emotion: DjMascotEmotion;
   /** The mascot's colours: the playing cover's palette, or the session tone's colours when nothing plays. */
   readonly palette: Palette;
-  /** True while music plays: faint song marks drift up behind the orb. */
+  /** True while music plays (the mini mascot sways; the stage one dances through its loop). */
   readonly playing: boolean;
   /** How it dances while music plays (stage only). */
   readonly vibe?: DjDanceVibe;
@@ -76,17 +76,6 @@ export function DjTint({ palette, className }: { readonly palette: Palette; read
 }
 
 /**
- * Faint song marks that drift up behind the orb while music plays: a few thin notes and soft motes of
- * light. Each has its own lane (--n-x, -1..1 of the orb's width), drift, size and start delay.
- */
-const NOTES: readonly { readonly kind: 'note' | 'mote'; readonly glyph: string; readonly style: CSSProperties }[] = [
-  { kind: 'note', glyph: '♪', style: { '--n-x': -0.36, '--n-drift': 1, '--n-size': 1, '--n-delay': 0 } as CSSProperties },
-  { kind: 'mote', glyph: '', style: { '--n-x': 0.22, '--n-drift': -1, '--n-size': 0.8, '--n-delay': 0.3 } as CSSProperties },
-  { kind: 'note', glyph: '♫', style: { '--n-x': 0.42, '--n-drift': -1, '--n-size': 0.85, '--n-delay': 0.55 } as CSSProperties },
-  { kind: 'mote', glyph: '', style: { '--n-x': -0.14, '--n-drift': 1, '--n-size': 0.6, '--n-delay': 0.8 } as CSSProperties }
-];
-
-/**
  * The DJ: a glass sphere with the playing song's colours swirling inside it, two glowing eyes and a
  * blush. It drifts, nods along on the beat, looks at the pointer and blinks; it thinks with three motes
  * orbiting it and smiles with closed, curved eyes when it is pleased. Its small, soft smile only changes
@@ -112,11 +101,6 @@ export function DjMascot({ size, emotion, palette, playing, vibe = 'steady', pro
       {size === 'stage' ? <div className="dj-m-stage-glow"><Tint slots={slots} className="dj-m-halo" /></div> : null}
       {size === 'stage' ? <div className="dj-m-floor"><span /></div> : null}
       <div className="dj-m-roam">
-        {size === 'stage' ? (
-          <div className="dj-m-notes" style={slotStyle(palette)}>
-            {NOTES.map((note, index) => <span key={index} className={`dj-m-note dj-m-note--${note.kind}`} style={note.style}>{note.glyph}</span>)}
-          </div>
-        ) : null}
         <div className="dj-m-dance">
           <div className="dj-m-kick" ref={ref}>
             <div className="dj-m-glow"><Tint slots={slots} className="dj-m-light" /></div>

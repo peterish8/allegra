@@ -92,6 +92,19 @@ describe('createMascotDriver', () => {
     assert.ok(last.lookX < -0.9 && last.lookY > 0.4);
   });
 
+  it('lets a reaction outrank the beat: no beat nods right after a hop of joy', () => {
+    const driver = createMascotDriver(seeded());
+    run(1, (dt) => driver.step(dt, input({ mode: 'groove' })));
+    driver.react('joy');
+    driver.step(FRAME, input({ mode: 'groove', onset: 0.8 }));
+    const during = run(0.2, (dt) => driver.step(dt, input({ mode: 'groove', onset: 0.5 })));
+    assert.ok(Math.max(...during.map((pose) => pose.nod)) < 0.05, `nod during reaction ${Math.max(...during.map((pose) => pose.nod))}`);
+    run(1, (dt) => driver.step(dt, input({ mode: 'groove' })));
+    driver.step(FRAME, input({ mode: 'groove', onset: 0.8 }));
+    const after = run(0.15, (dt) => driver.step(dt, input({ mode: 'groove', onset: 0.5 })));
+    assert.ok(Math.max(...after.map((pose) => pose.nod)) > 0.12, 'beats count again once the reaction is over');
+  });
+
   it('hops for joy and shakes its head', () => {
     const driver = createMascotDriver(seeded());
     run(1, (dt) => driver.step(dt, input({ mode: 'think' })));

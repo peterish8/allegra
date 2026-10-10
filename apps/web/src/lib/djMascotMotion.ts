@@ -99,8 +99,14 @@ const DOUBLE_BLINK_GAP = 0.2;
 
 /** Seconds between glances when nobody is pointing. */
 const GLANCE_GAP: readonly [number, number] = [1.4, 3.8];
-/** Nods closer together than this are one nod (typing fires one per key). */
+/** Nods closer together than this are one nod. */
 const NOD_GAP = 0.09;
+/**
+ * Animation has three levels: ambient (drift, sway), interactive (gaze, nods) and consequential (a hop
+ * for a set that landed, a head shake for an error). For this long after a consequential reaction the
+ * beat stops adding nods, so the reaction reads clearly instead of blurring into the dance.
+ */
+const REACTION_FOCUS = 0.9;
 /** A head shake lasts this long, at this many shakes a second and this many degrees. */
 const SHAKE_LENGTH = 0.55;
 const SHAKE_RATE = 5.5;
@@ -167,6 +173,7 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
 
   let shakeClock = SHAKE_LENGTH;
   let sinceNod = NOD_GAP;
+  let focusLeft = 0;
   let pending: DjMascotReaction[] = [];
 
   const react = (reaction: DjMascotReaction): void => {
@@ -178,9 +185,11 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
       if (reaction === 'joy') {
         lift.velocity += 1.9;
         squash.velocity += 2.6;
+        focusLeft = REACTION_FOCUS;
       } else if (reaction === 'shake') {
         shakeClock = 0;
         lift.velocity -= 0.25;
+        focusLeft = REACTION_FOCUS;
       } else if (sinceNod >= NOD_GAP) {
         sinceNod = 0;
         nod.velocity += 2.2;
@@ -192,7 +201,9 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
   const step = (dtRaw: number, input: DjMascotInput): DjMascotPose => {
     const dt = clamp(dtRaw, 0, 0.1);
     sinceNod += dt;
+    focusLeft = Math.max(0, focusLeft - dt);
     applyReactions();
+    const beatsCount = focusLeft === 0;
 
     const groove = input.mode === 'groove' ? GROOVES[input.vibe] : IDLE_GROOVE;
     // Reach and speed ease toward the new vibe, so a change of mood never jerks the path.
@@ -220,7 +231,7 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
     lastOnset = input.onset;
     sinceBeat += dt;
     quietClock += dt;
-    if (input.mode === 'groove' && rise > BEAT_RISE) {
+    if (input.mode === 'groove' && beatsCount && rise > BEAT_RISE) {
       const strength = clamp(input.onset, 0.3, 0.9);
       sinceBeat = 0;
       nod.velocity += groove.kick * 5 * strength;
@@ -229,7 +240,7 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
     }
     if (input.mode === 'groove') {
       swayTarget = groove.sway * Math.sin((2 * Math.PI * quietClock) / QUIET_PERIOD);
-      if (sinceBeat >= QUIET_AFTER) {
+      if (beatsCount && sinceBeat >= QUIET_AFTER) {
         quietNodIn -= dt;
         if (quietNodIn <= 0) {
           quietNodIn = QUIET_PERIOD / 2;

@@ -1,4 +1,4 @@
-import { ArrowUp, Cpu, Ear, KeyRound, LoaderCircle, Mic, Play, Settings2, Sparkles, Undo2 } from 'lucide-react';
+import { ArrowUp, Cpu, Ear, KeyRound, LoaderCircle, Mic, Play, Settings2, Sparkles, Square, Undo2 } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 
@@ -15,6 +15,7 @@ import { djEnergyWord, djSuggestions } from '../lib/djSession';
 import type { Palette } from '../lib/palette';
 import { DjBubble } from './dj/DjBubble';
 import { DjCrate } from './dj/DjCrate';
+import { DjHistory } from './dj/DjHistory';
 import { DjMascot, DjTint } from './dj/DjMascot';
 import { DjNowPlaying } from './dj/DjNowPlaying';
 import { DjSessionChips } from './dj/DjSessionChips';
@@ -60,10 +61,14 @@ const capitalised = (value: string): string => value.charAt(0).toLocaleUpperCase
 /** How many upcoming songs the queue box lists; the column scrolls past what fits. */
 const QUEUE_SHOWN = 40;
 
-function mascotModeFor(working: boolean, emotion: DjEmotion, playing: boolean): DjMascotMode {
+/** Nothing playing and nobody touching the page for this long: the DJ dozes off until the next move. */
+const SLEEP_AFTER_MS = 90_000;
+
+function mascotModeFor(working: boolean, emotion: DjEmotion, playing: boolean, asleep: boolean): DjMascotMode {
   if (working) return 'think';
   if (emotion === 'listening') return 'listen';
-  return playing ? 'groove' : 'idle';
+  if (playing) return 'groove';
+  return asleep ? 'sleep' : 'idle';
 }
 
 export function DjPage({
@@ -72,7 +77,7 @@ export function DjPage({
   const dj = useDjSession();
   const {
     provider, model, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist,
-    turn, reasons, working, status, emotion, history, undoable, offer,
+    turn, reasons, working, status, emotion, history, undoable, offers,
     setStatus, setEmotion, setDraftName, setProvider, setModel, setApiKey, setSettingsOpen, setGoal, setSongLimit,
   } = dj;
   const [prompt, setPrompt] = useState('');
@@ -96,7 +101,33 @@ export function DjPage({
   const vibe = djDanceVibe(tone, session.energy);
   const playing = Boolean(currentSong && isPlaying);
   const songPalette = palette ?? djTonePalette(tone);
-  const react = useDjMascot(pageRef, mascotRef, analyser, { mode: mascotModeFor(working, hearing ? 'listening' : emotion, playing), vibe, playing });
+
+  // After a long quiet spell (nothing playing, no pointer or key) the DJ dozes; any move wakes it at once.
+  const [asleep, setAsleep] = useState(false);
+  const busy = playing || working || hearing || settingsOpen;
+  useEffect(() => {
+    if (busy) {
+      setAsleep(false);
+      return undefined;
+    }
+    let timer = window.setTimeout(() => setAsleep(true), SLEEP_AFTER_MS);
+    const wake = (): void => {
+      setAsleep(false);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setAsleep(true), SLEEP_AFTER_MS);
+    };
+    window.addEventListener('pointermove', wake, { passive: true });
+    window.addEventListener('pointerdown', wake, { passive: true });
+    window.addEventListener('keydown', wake);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('pointermove', wake);
+      window.removeEventListener('pointerdown', wake);
+      window.removeEventListener('keydown', wake);
+    };
+  }, [busy]);
+
+  const react = useDjMascot(pageRef, mascotRef, analyser, { mode: mascotModeFor(working, hearing ? 'listening' : emotion, playing, asleep), vibe, playing });
 
   // A voice problem (blocked mic, no voice in this browser) is said by the DJ, once.
   const voiceError = voice?.error ?? null;
@@ -150,10 +181,20 @@ export function DjPage({
     else openSettings();
   };
 
+  // The box empties as soon as a request is sent (like a chat). If that request fails and nothing newer
+  // was sent since, its words come back so they can be fixed and sent again.
+  const submitCountRef = useRef(0);
   const submit = (value: string): void => {
-    void dj.submitPrompt(value).then((outcome) => {
+    const sent = value.trim();
+    if (!sent) return;
+    const id = submitCountRef.current + 1;
+    submitCountRef.current = id;
+    if (!sent.startsWith('/')) setPrompt('');
+    void dj.submitPrompt(sent).then((outcome) => {
       if (outcome.prefill !== undefined) setPrompt(outcome.prefill);
-      else if (outcome.clear) setPrompt('');
+      else if (outcome.clear) {
+        if (sent.startsWith('/')) setPrompt('');
+      } else if (submitCountRef.current === id) setPrompt((current) => current || sent);
     });
   };
 
@@ -244,10 +285,13 @@ export function DjPage({
       <button type="button" className="dj-chip-button" onClick={chooseLocal}><Cpu size={14} aria-hidden="true" />On this device · free</button>
       <button type="button" className="dj-chip-button" data-dj-opens-settings="" onClick={openSettings}><KeyRound size={14} aria-hidden="true" />Use my AI key</button>
     </>
-  ) : offer && status && !working && undoable === 0 ? (
-    <button type="button" className="dj-chip-button" onClick={() => submit(offer.prompt)}><Sparkles size={14} aria-hidden="true" />{offer.label}</button>
-  ) : undoable > 0 && !working ? (
-    <button type="button" className="dj-chip-button" onClick={dj.undoPlan}><Undo2 size={14} aria-hidden="true" />Undo, keep my old queue</button>
+  ) : (offers.length > 0 || undoable > 0) && status && !working ? (
+    <>
+      {undoable > 0 ? <button type="button" className="dj-chip-button" onClick={dj.undoPlan}><Undo2 size={14} aria-hidden="true" />Undo</button> : null}
+      {offers.map((item) => (
+        <button key={item.label} type="button" className="dj-chip-button" onClick={() => submit(item.prompt)}>{item.label}</button>
+      ))}
+    </>
   ) : needsStart && turn && !isRemote ? (
     <button type="button" className="dj-chip-button dj-chip-button--accent" onClick={() => dj.startPlan(turn)}><Play size={13} fill="currentColor" aria-hidden="true" />Start this set</button>
   ) : null;
@@ -270,7 +314,7 @@ export function DjPage({
   ) : null;
 
   return (
-    <div className="dj-page" ref={pageRef} data-tone={tone} style={{ ...INITIAL_VARS, '--dj-a': songPalette.primary, '--dj-b': songPalette.secondary } as CSSProperties}>
+    <div className="dj-page" ref={pageRef} data-tone={tone} data-hearing={hearing ? 'true' : 'false'} style={{ ...INITIAL_VARS, '--dj-a': songPalette.primary, '--dj-b': songPalette.secondary } as CSSProperties}>
       <h1 className="sr-only">Your DJ</h1>
       <div className="dj-layout">
         <section className="dj-hero" aria-label="Your DJ companion" ref={heroRef}>
@@ -289,13 +333,16 @@ export function DjPage({
             <DjMascot
               ref={mascotRef}
               size="stage"
-              emotion={working ? 'thinking' : emotion}
+              emotion={working ? 'thinking' : asleep && !playing ? 'sleeping' : emotion}
               palette={songPalette}
               playing={playing}
               vibe={vibe}
             />
             <DjBubble text={bubbleText} working={working || Boolean(voice?.transcribing) || voice?.localProgress !== null && voice?.localProgress !== undefined} reduced={reduced} actions={bubbleActions} />
-            <div className="dj-stage-info"><InfoTour label="How your DJ works" steps={DJ_TOUR} stage={djScene} /></div>
+            <div className="dj-stage-info">
+              <InfoTour label="How your DJ works" steps={DJ_TOUR} stage={djScene} />
+              <DjHistory history={history} reduced={reduced} />
+            </div>
             {strip || (djPickPlaying && goal === 'mix') ? (
               <p className="dj-session-strip">
                 {djPickPlaying && goal === 'mix' ? <span className="dj-session-live"><i aria-hidden="true" />DJ set playing</span> : null}
@@ -353,7 +400,7 @@ export function DjPage({
                 readOnly={hearing}
                 onFocus={() => { if (!working) setEmotion('listening'); }}
                 onBlur={() => { if (!working && (emotion === 'listening' || emotion === 'curious')) setEmotion('idle'); }}
-                onChange={(event) => { setPrompt(event.target.value); if (status && !working) setStatus(''); react('nod'); }}
+                onChange={(event) => { setPrompt(event.target.value); if (status && !working) setStatus(''); }}
                 maxLength={500}
                 placeholder={hearing ? 'Listening…' : goal === 'playlist' ? 'What should this playlist be?' : 'What should we play next?'}
                 aria-label="Tell your DJ what you want to hear"
@@ -365,25 +412,33 @@ export function DjPage({
               />
               <button
                 type="button"
-                className={`dj-mic-button${hearing ? ' is-listening' : ''}`}
+                className="dj-mic-button"
+                data-state={voice?.transcribing ? 'writing' : voice?.listening ? 'listening' : 'ready'}
                 onClick={() => {
                   if (!voice || voice.engine === 'none') {
                     setStatus('Voice isn’t available in this browser. Type your request instead.');
                     setEmotion('error');
                   } else if (voice.listening) voice.stop();
-                  else {
+                  else if (!voice.transcribing) {
                     voice.stopSpeaking();
                     voice.listen();
                   }
                 }}
-                aria-label={hearing ? 'Stop listening' : 'Speak your request'}
+                aria-label={voice?.transcribing ? 'Writing down what you said' : voice?.listening ? 'Stop listening' : 'Speak your request'}
                 aria-pressed={hearing}
               >
-                <Mic size={17} />
+                {voice?.transcribing ? <LoaderCircle size={17} className="dj-spin" /> : <Mic size={17} />}
               </button>
-              <button type="submit" className="dj-send-button" disabled={working || !prompt.trim()} aria-label="Ask the DJ">
-                {working ? <LoaderCircle size={17} className="dj-spin" /> : <ArrowUp size={18} strokeWidth={2.4} />}
-              </button>
+              {/* Like a chat box: an arrow to send; while the DJ works and nothing new is typed, a square to stop it. */}
+              {working && !prompt.trim() ? (
+                <button type="button" className="dj-send-button is-stop" onClick={dj.cancel} aria-label="Stop the DJ" title="Stop">
+                  <Square size={12} fill="currentColor" />
+                </button>
+              ) : (
+                <button type="submit" className="dj-send-button" disabled={!prompt.trim()} aria-label="Ask the DJ">
+                  <ArrowUp size={18} strokeWidth={2.4} />
+                </button>
+              )}
               {commandSuggestions.length ? (
                 <div className="dj-command-menu" id="dj-command-menu" role="listbox" aria-label="DJ shortcuts">
                   {commandSuggestions.map((suggestion) => (
