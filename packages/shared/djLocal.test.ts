@@ -165,6 +165,17 @@ test('"no songs by X" rules X out; "only X" and "all X songs" keep to X; moods a
   assert.ok(only.searchQueries.includes('anirudh'));
 });
 
+// Regression (2026-10-11, GPT-4o through OmniRoute): the model searched for songs but said "keep",
+// so the DJ found a set and then changed nothing.
+test('a model that searches for songs but says keep still builds the set; an explain-only keep stays', () => {
+  const asked = resolveDjLocalIntent('{"operation":"keep","searchQueries":["hindi party hits"]}', { ...context, message: 'upbeat hindi party songs' });
+  assert.equal(asked.operation, 'replace_upcoming');
+  const explained = resolveDjLocalIntent('{"operation":"keep","searchQueries":[]}', { ...context, message: 'why did you pick this song?' });
+  assert.equal(explained.operation, 'keep');
+  const explainWithQueries = resolveDjLocalIntent('{"operation":"keep","searchQueries":["x"]}', { ...context, message: 'why this one?' });
+  assert.equal(explainWithQueries.operation, 'keep', 'the request itself only asks why');
+});
+
 test('the model can add exclusions but never drop the ones the request made', () => {
   const intent = resolveDjLocalIntent('{"excludeArtists":["Sid Sriram"]}', { ...context, message: 'no songs by Anirudh' });
   assert.deepEqual(intent.excludeArtists, ['anirudh', 'sid sriram']);

@@ -228,12 +228,17 @@ export function resolveDjLocalIntent(output: string, context: DjLocalIntentConte
   const insertValue = typeof raw.insertAfter === 'string' ? Number(raw.insertAfter) : raw.insertAfter;
   const insertAfter = typeof insertValue === 'number' && Number.isInteger(insertValue) && insertValue >= 0 && insertValue <= 7
     ? insertValue : null;
-  const modelOperation = pick(raw.operation, ['replace_upcoming', 'insert', 'keep'] as const);
-  const operation = modelOperation === 'insert' && insertAfter === null ? 'replace_upcoming' : modelOperation ?? base.operation;
-
   const draftIds = new Set(context.draft.map(({ song }) => song.id));
   const removeTrackIds = strings(raw.removeTrackIds, 30, 200).filter((id) => draftIds.has(id));
   const modelQueries = strings(raw.searchQueries, 4, 140);
+
+  const modelOperation = pick(raw.operation, ['replace_upcoming', 'insert', 'keep'] as const);
+  // Searching for songs and then keeping the queue contradicts itself: the request decides. A
+  // request that only asks why (base keep) stays keep whatever the model searched.
+  const keepsWhileSearching = modelOperation === 'keep' && modelQueries.length > 0 && base.operation !== 'keep';
+  const operation = keepsWhileSearching ? base.operation
+    : modelOperation === 'insert' && insertAfter === null ? 'replace_upcoming'
+      : modelOperation ?? base.operation;
   const needsSongs = removeTrackIds.length === 0;
 
   return {
