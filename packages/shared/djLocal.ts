@@ -282,6 +282,11 @@ function artistKey(song: DjTrackContext): string {
   return normalized(song.artist.split(/[,/&]/)[0] ?? song.artist);
 }
 
+/** Every artist on a credit line, normalised: "Vivek, Sai Abhyankkar & X" → three keys. */
+function creditKeys(song: UnifiedSong): string[] {
+  return [...new Set(song.artist.split(/[,/&]| and | feat\.? | ft\.? /i).map(normalized).filter(Boolean))];
+}
+
 function containsArtist(songs: readonly DjTrackContext[], key: string): boolean {
   return Boolean(key) && songs.some((song) => artistKey(song) === key);
 }
@@ -453,18 +458,21 @@ export function rankDjLocalCandidates(options: {
       ...(languageMatch && options.language ? [`A ${capitalized(options.language)} pick, as asked.`] : []),
       ...(artistNamed && !only ? [`You asked for ${name}.`] : [])
     ];
-    return [{ item, artist, score, reasons, fallback: `${name} came up when I searched for that.`, alternate: `More from ${name} in the same search.`, nameKey }];
+    return [{ item, artist, credits: creditKeys(song), score, reasons, fallback: `${name} came up when I searched for that.`, alternate: `More from ${name} in the same search.`, nameKey }];
   }).sort((a, b) => b.score - a.score || a.item.queryIndex - b.item.queryIndex);
 
   const picks: (DjLocalPick & { readonly lane?: 'calm' | 'lively' })[] = [...existing];
+  // Counted per credited artist, featured ones too: one singer on most of a set's credit lines is
+  // still the same voice over and over, even when someone else is listed first.
   const artistCounts = new Map<string, number>();
-  for (const { song } of existing) {
-    const key = artistKey(songContext(song));
-    artistCounts.set(key, (artistCounts.get(key) ?? 0) + 1);
-  }
+  const count = (credits: readonly string[]): void => {
+    for (const credit of credits) artistCounts.set(credit, (artistCounts.get(credit) ?? 0) + 1);
+  };
+  for (const { song } of existing) count(creditKeys(song));
   const remaining = [...ranked];
   // An explicit "only X" outranks variety: no per-artist cap then.
-  const hasRoom = ({ artist }: { readonly artist: string }): boolean => only !== null || (artistCounts.get(artist) ?? 0) < 2;
+  const hasRoom = ({ credits }: { readonly credits: readonly string[] }): boolean =>
+    only !== null || credits.every((credit) => (artistCounts.get(credit) ?? 0) < 2);
   while (picks.length < cap && remaining.length > 0) {
     const previous = picks[picks.length - 1]?.reason ?? '';
     let index = remaining.findIndex(hasRoom);
@@ -494,7 +502,7 @@ export function rankDjLocalCandidates(options: {
     picks.push({ song: chosen.item.song, reason, ...(chosen.item.lane ? { lane: chosen.item.lane } : {}) });
     usedIds.add(chosen.item.song.id);
     usedNames.add(chosen.nameKey);
-    artistCounts.set(chosen.artist, (artistCounts.get(chosen.artist) ?? 0) + 1);
+    count(chosen.credits);
   }
   // The new picks take the planned shape, then no artist plays twice in a row where avoidable. Songs
   // already in the draft keep their place.

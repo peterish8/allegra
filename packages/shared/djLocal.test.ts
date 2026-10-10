@@ -200,6 +200,21 @@ test('"only X" keeps to X and lifts the two-per-artist cap', () => {
   assert.ok(picks.every(({ reason }) => reason.includes('Anirudh Ravichander')), picks.map((pick) => pick.reason).join(' | '));
 });
 
+test('a featured artist counts toward the two-song limit, not only the one listed first', () => {
+  const featured: DjLocalCandidate[] = [
+    { song: song({ id: 'f1', title: 'One', artist: 'Vivek, Sai Abhyankkar' }), queryIndex: 0 },
+    { song: song({ id: 'f2', title: 'Two', artist: 'Pa. Vijay, Sai Abhyankkar' }), queryIndex: 0 },
+    { song: song({ id: 'f3', title: 'Three', artist: 'Rokesh, Sai Abhyankkar' }), queryIndex: 0 },
+    { song: song({ id: 'f4', title: 'Four', artist: 'Dholu Bholu & Sai Abhyankkar' }), queryIndex: 0 },
+    { song: song({ id: 'o1', title: 'Five', artist: 'G.V. Prakash Kumar' }), queryIndex: 1 },
+    { song: song({ id: 'o2', title: 'Six', artist: 'Harini' }), queryIndex: 1 }
+  ];
+  const picks = rank({ candidates: featured, songLimit: 4 });
+  const withSai = picks.filter(({ song: picked }) => /Sai Abhyankkar/.test(picked.artist));
+  assert.equal(withSai.length, 2, picks.map(({ song: picked }) => picked.artist).join(' | '));
+  assert.ok(picks.some(({ song: picked }) => picked.id === 'o1') && picks.some(({ song: picked }) => picked.id === 'o2'));
+});
+
 test('no artist plays twice in a row when another order allows it', () => {
   const picks = rank({ candidates: POOL });
   for (let index = 1; index < picks.length; index += 1) {
