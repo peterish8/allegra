@@ -52,4 +52,4 @@ the API contract does not change. DJ picks get their own `djPlannedRef`; web tes
 
 ## Out of scope
 
-Hover preview, AI voice, generating music, phone UI, server-hosted model.
+Hover preview, generating music, phone UI, server-hosted model. (AI voice was moved into scope by the owner on 2026-10-10: free browser voices, BYOK cloud voices.)
