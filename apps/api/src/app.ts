@@ -54,6 +54,9 @@ export interface AppOptions extends Omit<ServiceOptions, 'jwtSecret'> {
     readonly stream?: RateLimitConfig;
     readonly auth?: RateLimitConfig;
     readonly discovery?: RateLimitConfig;
+    readonly djTurn?: RateLimitConfig;
+    readonly djTranscribe?: RateLimitConfig;
+    readonly djSpeak?: RateLimitConfig;
     readonly mcp?: RateLimitConfig;
     readonly oauth?: RateLimitConfig;
     readonly lookup?: RateLimitConfig;
@@ -178,6 +181,11 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
   const guests = limiter(limits.guests ?? { windowMs: 60_000, limit: 10 });
   // Translation spends a shared daily provider quota and recommendations fan out to the catalog.
   const discovery = limiter(limits.discovery ?? { windowMs: 60_000, limit: 20 });
+  // A spoken cloud request is transcribe + turn + speak, so each DJ route gets its own bucket
+  // rather than three calls drawing on the shared discovery one.
+  const djTurn = limiter(limits.djTurn ?? { windowMs: 60_000, limit: 20 });
+  const djTranscribe = limiter(limits.djTranscribe ?? { windowMs: 60_000, limit: 30 });
+  const djSpeak = limiter(limits.djSpeak ?? { windowMs: 60_000, limit: 30 });
   // Search, lyrics and artist lookups each fan out to several providers.
   const lookup = limiter(limits.lookup ?? { windowMs: 60_000, limit: 90 });
   // As-you-type search: a request per pause in typing, most answered by the edge cache before here.
@@ -225,6 +233,18 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
     }
     if (path === '/api/search/suggest') {
       typeahead(request, response, next);
+      return;
+    }
+    if (path === '/api/ai/dj/turn') {
+      djTurn(request, response, next);
+      return;
+    }
+    if (path === '/api/ai/dj/transcribe') {
+      djTranscribe(request, response, next);
+      return;
+    }
+    if (path === '/api/ai/dj/speak') {
+      djSpeak(request, response, next);
       return;
     }
     // A radio fans out to the catalog like recommendations do: one per search tap, then a refill now and then.

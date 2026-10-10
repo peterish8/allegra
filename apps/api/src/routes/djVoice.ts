@@ -1,6 +1,7 @@
-import { Router } from 'express';
+import { Router, type Response as ExpressResponse } from 'express';
 
 import { asRecord } from './common.js';
+import { djLog } from './dj.js';
 
 /**
  * The DJ's ears and voice with the listener's own key (BYOK). Allegra's free paths need no server:
@@ -104,12 +105,21 @@ function failure(error: unknown, fallback: string): { status: number; message: s
   return { status: 502, message: fallback };
 }
 
+/** One info line when the response finishes: route, provider, duration, status. Never the key, audio or text. */
+function logWhenDone(response: ExpressResponse, route: string, provider: string | null): void {
+  const startedAt = Date.now();
+  response.on('finish', () => {
+    djLog.info({ route, provider, ms: Date.now() - startedAt, status: response.statusCode }, 'dj request');
+  });
+}
+
 export function djVoiceRouter(fetchImpl: FetchLike = fetch): Router {
   const router = Router();
 
   router.post('/ai/dj/transcribe', async (request, response) => {
     const body = asRecord(request.body);
     const provider = body?.provider === 'openai' || body?.provider === 'groq' ? body.provider : null;
+    logWhenDone(response, 'dj/transcribe', provider);
     const apiKey = isString(body?.apiKey) ? body.apiKey.trim() : '';
     const audio = isString(body?.audio) ? body.audio : '';
     if (!provider || !apiKey || apiKey.length > 512 || !audio) {
@@ -134,6 +144,7 @@ export function djVoiceRouter(fetchImpl: FetchLike = fetch): Router {
   router.post('/ai/dj/speak', async (request, response) => {
     const body = asRecord(request.body);
     const provider = body?.provider === 'openai' || body?.provider === 'elevenlabs' ? body.provider : null;
+    logWhenDone(response, 'dj/speak', provider);
     const apiKey = isString(body?.apiKey) ? body.apiKey.trim() : '';
     const text = isString(body?.text) ? body.text.trim().slice(0, MAX_SPEAK_CHARS) : '';
     if (!provider || !apiKey || apiKey.length > 512 || !text) {

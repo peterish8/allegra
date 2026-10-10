@@ -2,7 +2,11 @@ import { Router } from 'express';
 
 import type { CatalogService } from '../catalog/catalog.js';
 import type { UnifiedSong } from '../types.js';
+import { createLogger } from '../lib/logger.js';
 import { asRecord } from './common.js';
+
+/** Shared with djVoice. Silent outside production, like the other service loggers. */
+export const djLog = createLogger(process.env.NODE_ENV === 'production');
 
 const MAX_TURN_MS = 45_000;
 const MAX_MODEL_CALLS = 6;
@@ -47,8 +51,13 @@ export function djRouter(catalog: CatalogService, fetchImpl: FetchLike = fetch):
   router.post('/ai/dj/turn', async (request, response) => {
     let controller: AbortController | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    let provider: Provider | null = null;
+    let goal: Goal | null = null;
+    let songs: number | null = null;
     try {
       const input = parseRequest(request.body);
+      if (input) { provider = input.provider; goal = input.goal; }
       if (!input) {
         response.status(400).json({ success: false, data: null, error: 'Check the DJ request and try again.' });
         return;
@@ -56,6 +65,7 @@ export function djRouter(catalog: CatalogService, fetchImpl: FetchLike = fetch):
       controller = new AbortController();
       timeout = setTimeout(() => controller?.abort(), MAX_TURN_MS);
       const data = await runDjTurn(catalog, input, controller.signal, fetchImpl);
+      songs = data.queue.length;
       response.status(200).json({ success: true, data });
     } catch (error) {
       if (controller?.signal.aborted) {
@@ -71,6 +81,8 @@ export function djRouter(catalog: CatalogService, fetchImpl: FetchLike = fetch):
       if (timeout) clearTimeout(timeout);
       // The key is request-scoped and never written to app storage or logs.
       controller = undefined;
+      // Only route, provider, goal, timing, status and count. Never the key, message, history or songs' text.
+      djLog.info({ route: 'dj/turn', provider, goal, ms: Date.now() - startedAt, status: response.statusCode, songs }, 'dj request');
     }
   });
   return router;

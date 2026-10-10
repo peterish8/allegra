@@ -72,8 +72,8 @@ current `message`, up to 8 prior `{role, content}` messages, and small session c
 track, up to 8 upcoming/recent/liked/skipped summaries, up to 30 editable draft-track summaries and
 the draft name, plus `{vibe, energy, language, constraints}`. The API relays the key and this limited context to the
 selected provider over HTTPS for this request only; it does not persist either. The provider is
-allowlisted by the server, the key is never accepted in a URL, and all requests are rate limited by
-the Discovery bucket. Gemini uses Google's OpenAI-compatible chat-completions endpoint and its
+allowlisted by the server, the key is never accepted in a URL, and requests are rate limited by
+their own per-client bucket, 20 a minute, separate from the Discovery bucket. Gemini uses Google's OpenAI-compatible chat-completions endpoint and its
 Gemini API key. A local model runs inside each client and does not call this endpoint; it can call
 the existing bounded catalog search path, but its inference and prompt stay on that device.
 
@@ -117,7 +117,8 @@ client sends only the small context above, never the full library or account pro
 The DJ's ears and voice with the listener's own key. The free paths need no server: the browser's
 speech recognition, Whisper running on the device, and the browser's own speech synthesis. These two
 routes exist only so a key never sits in the browser bundle; like the turn endpoint, the key is used
-for this one request and is never stored, logged, or accepted in a URL. Rate limited by the API bucket.
+for this one request and is never stored, logged, or accepted in a URL. Each route has its own per-client bucket, 30 a minute for transcribe and 30 a minute for speak,
+separate from the turn bucket, so a spoken request (transcribe, turn, speak) never draws on one allowance.
 
 ```ts
 // transcribe: a short spoken request, as a 16-bit mono WAV (base64, at most ~700 KB decoded).
