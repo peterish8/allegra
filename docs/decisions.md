@@ -67,6 +67,9 @@ dropped most Indian film songs. Length is what tells two recordings apart.
 **Decided:** cards on Home, Import, Spotify and Blend are clear glass: a 16% white hairline, a lit
 top edge, `backdrop-filter: blur(22–26px) saturate(150%)`, and at most a faint white sheen. No dark
 veil, no grey fill. Floating sheets (dialogs) keep a solid veil so text over anything stays readable.
+Exception (owner, 2026-10-10): the "Get the app" QR card is clear glass too, and its full-screen mode
+is only the code over the page faded and blurred: no card, no text. The code itself stays on white so
+phones can read it.
 **Why:** the owner wants the moving background glow visible through the surface.
 
 ### Home opens with a greeting, a top pick and a shortcut grid
