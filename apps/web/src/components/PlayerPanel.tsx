@@ -186,8 +186,11 @@ export function PlayerPanel({
   const [{ playerBlackBackground }] = useSettings();
   // The top bar's right-hand slot: the lyrics panel renders its ⋯ actions there on wide screens.
   const [topActionsSlot, setTopActionsSlot] = useState<HTMLDivElement | null>(null);
-  const desktopSolo = !isNarrowViewport && lyricsHidden && tab === 'lyrics';
-  const desktopLyricsVisible = tab === 'lyrics' && !lyricsHidden;
+  // A song with no lyrics (the lookup finished, found nothing, and did not fail) puts the lyrics away by
+  // itself: the cover and controls centre on their own, as if the listener had hidden them.
+  const noLyrics = !lyrics.loading && !lyrics.error && lyrics.lines.length === 0;
+  const desktopSolo = !isNarrowViewport && tab === 'lyrics' && (lyricsHidden || noLyrics);
+  const desktopLyricsVisible = tab === 'lyrics' && !lyricsHidden && !noLyrics;
   // Desktop: double-clicking the cover puts it away and lets the lyrics take the whole stage,
   // centred. The lyrics button (then "Show cover") or switching tabs brings the cover back.
   const [coverHidden, setCoverHidden] = useState(false);
@@ -559,8 +562,9 @@ export function PlayerPanel({
                   <div className="np-actions">
                     <IconButton
                       icon={Waves}
-                      label={isNarrowViewport ? (mode === 'workspace' ? 'Show cover' : 'Show lyrics') : lyricsFull ? 'Show cover' : desktopLyricsVisible ? 'Hide lyrics' : 'Show lyrics'}
+                      label={!isNarrowViewport && noLyrics && tab === 'lyrics' ? 'No lyrics for this song' : isNarrowViewport ? (mode === 'workspace' ? 'Show cover' : 'Show lyrics') : lyricsFull ? 'Show cover' : desktopLyricsVisible ? 'Hide lyrics' : 'Show lyrics'}
                       active={isNarrowViewport ? mode === 'workspace' : desktopLyricsVisible}
+                      disabled={!isNarrowViewport && noLyrics && tab === 'lyrics'}
                       onClick={() => {
                         if (isNarrowViewport) {
                           if (mode === 'workspace') onOpenImmersive();
@@ -660,7 +664,7 @@ export function PlayerPanel({
                 </div>
               </div>
 
-              <div className={`player-sidepanel ${tab === 'lyrics' ? 'is-lyrics' : ''}`} role="tabpanel" hidden={phoneCover || desktopSolo}>
+              <div className={`player-sidepanel ${tab === 'lyrics' ? 'is-lyrics' : ''}`} role="tabpanel" hidden={phoneCover} inert={desktopSolo} aria-hidden={desktopSolo || undefined}>
                 {tab === 'lyrics' && !phoneCover ? (
                   <>
                     <p className="panel-title">Lyrics</p>
