@@ -2,12 +2,22 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { parseDjSlashCommand } from '@shared/dj';
+import { applyDjLocalSession, heuristicDjLocalIntent } from '@shared/djLocal';
 
 import {
   DJ_PROVIDER_STORAGE_KEY,
   applySlashCommand,
+  DJ_MEMORY_STORAGE_KEY,
   defaultModelFor,
+  djSuggestions,
+  moveId,
+  orderByIds,
+  readDjMemory,
   readDjProviderChoice,
+  sessionWithEnergy,
+  sessionWithoutConstraint,
+  sessionWithoutLanguage,
+  writeDjMemory,
   writeDjProviderChoice
 } from './djSession.ts';
 
@@ -94,4 +104,75 @@ test('every provider has a default model', () => {
   assert.equal(defaultModelFor('openrouter'), 'openai/gpt-4o-mini');
   assert.equal(defaultModelFor('gemini'), 'gemini-3.8-flash');
   assert.equal(defaultModelFor('local'), 'Qwen3 0.6B (on-device)');
+});
+
+test('removing the language chip leaves the next local turn with no language', () => {
+  const remembered = { vibe: 'late night melodies', energy: 2, language: 'Tamil', constraints: ['no remixes'] };
+  const edited = sessionWithoutLanguage(remembered);
+  assert.equal(edited.language, null);
+  assert.deepEqual(edited.constraints, ['no remixes']);
+  const context = { goal: 'mix' as const, message: 'more like this', session: edited, current: null, draft: [], draftName: '' };
+  const next = applyDjLocalSession(heuristicDjLocalIntent(context), edited);
+  assert.equal(next.language, null);
+  // Untouched, the same message keeps the remembered language.
+  const kept = applyDjLocalSession(heuristicDjLocalIntent({ ...context, session: remembered }), remembered);
+  assert.equal(kept.language, 'Tamil');
+});
+
+test('energy and constraint edits', () => {
+  const session = { vibe: '', energy: 3, language: null, constraints: ['no remixes', 'short songs'] };
+  assert.equal(sessionWithEnergy(session, 9).energy, 5);
+  assert.equal(sessionWithEnergy(session, 0).energy, 1);
+  assert.deepEqual(sessionWithoutConstraint(session, 'no remixes').constraints, ['short songs']);
+});
+
+test('moveId and orderByIds', () => {
+  assert.deepEqual(moveId(['a', 'b', 'c'], 'a', 1), ['b', 'a', 'c']);
+  assert.deepEqual(moveId(['a', 'b', 'c'], 'a', -1), ['a', 'b', 'c']);
+  assert.deepEqual(moveId(['a', 'b', 'c'], 'c', -2), ['c', 'a', 'b']);
+  assert.deepEqual(moveId(['a', 'b'], 'x', 1), ['a', 'b']);
+  const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  assert.deepEqual(orderByIds(items, ['c', 'a'], (item) => item.id).map((item) => item.id), ['c', 'a', 'b']);
+});
+
+const SONG = {
+  id: 's1', title: 'Yeshanagula', artist: 'Anirudh Ravichander, Singer Prabha', artwork: 'a.jpg', streamUrl: 'u',
+  duration: 179, hasLyrics: false, playCount: 0, source: 'Saavn' as const, language: 'telugu'
+};
+
+test('suggestions start from the playing song, the main language and the hour', () => {
+  const chips = djSuggestions(SONG, [{ artist: 'X', language: 'telugu' }, { artist: 'Y', language: 'tamil' }], 22);
+  assert.equal(chips[0]?.label, 'More like Anirudh Ravichander');
+  assert.ok(chips.some((chip) => chip.label === 'Telugu melodies'));
+  assert.ok(chips.some((chip) => chip.label === 'Late night'));
+  assert.ok(chips.some((chip) => chip.label === 'Surprise me'));
+  const morning = djSuggestions(null, [], 8);
+  assert.ok(morning.some((chip) => chip.label === 'Morning lift'));
+  assert.ok(!morning.some((chip) => chip.label.startsWith('More like')));
+});
+
+test('session memory round-trips and never stores a key', () => {
+  const storage = fakeStorage();
+  writeDjMemory(storage, {
+    session: { vibe: 'late night', energy: 2, language: 'telugu', constraints: ['no sad songs'] },
+    history: [{ role: 'user', content: 'late night' }],
+    goal: 'playlist', songLimit: 12, draft: [{ song: SONG, reason: 'Same singer' }], draftName: 'Night', reasons: { s1: 'Same singer' }
+  });
+  const raw = storage.data.get(DJ_MEMORY_STORAGE_KEY) ?? '';
+  assert.ok(!/key/i.test(raw.replace(/"songLimit"/, '')));
+  const memory = readDjMemory(storage);
+  assert.equal(memory?.session.language, 'telugu');
+  assert.equal(memory?.draft[0]?.song.id, 's1');
+  assert.equal(memory?.goal, 'playlist');
+});
+
+test('malformed session memory reads as nothing remembered, bad songs are dropped', () => {
+  assert.equal(readDjMemory(fakeStorage({ [DJ_MEMORY_STORAGE_KEY]: '{oops' })), null);
+  assert.equal(readDjMemory(fakeStorage({ [DJ_MEMORY_STORAGE_KEY]: '{"session":{"vibe":3}}' })), null);
+  const memory = readDjMemory(fakeStorage({
+    [DJ_MEMORY_STORAGE_KEY]: JSON.stringify({ session: { vibe: '', energy: 9, constraints: [1, 'calm'] }, draft: [{ song: { id: 'x' } }] })
+  }));
+  assert.equal(memory?.session.energy, 5);
+  assert.deepEqual(memory?.session.constraints, ['calm']);
+  assert.equal(memory?.draft.length, 0);
 });

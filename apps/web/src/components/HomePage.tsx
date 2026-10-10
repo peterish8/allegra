@@ -37,6 +37,8 @@ interface HomePageProps {
   readonly onOpenArtist: (name: string) => void;
   readonly onSeedTaste: (artists: string[], languages: string[]) => Promise<void>;
   readonly onOpenAuth: () => void;
+  /** Opens the DJ's quick prompt on this page. */
+  readonly onAskDj?: () => void;
 }
 
 function greeting(now = new Date()): string {
@@ -106,7 +108,7 @@ export function HomePage({
   profile, taste, recentlyPlayed, likedSongs, picks, picksReason, picksProvider,
   trending, madeForYou, recommended, faces,
   currentSongId, isPlaying, likedIds,
-  onPlay, onToggle, onLike, onOpenArtist, onSeedTaste, onOpenAuth
+  onPlay, onToggle, onLike, onOpenArtist, onSeedTaste, onOpenAuth, onAskDj
 }: HomePageProps) {
   const reduced = useReducedMotion();
   const [skippedSetup, setSkippedSetup] = useState(() => window.localStorage.getItem('allegra-skip-setup') === '1');
@@ -199,6 +201,11 @@ export function HomePage({
                 <button type="button" className="home-pick__shuffle tactile-control" onClick={shuffleFeature} disabled={featureQueue.length < 2} aria-label="Shuffle">
                   <Shuffle size={17} aria-hidden="true" />
                 </button>
+                {onAskDj ? (
+                  <button type="button" className="home-pick__dj tactile-control" onClick={onAskDj} aria-label="Ask your DJ" title="Ask your DJ · Ctrl+J">
+                    <Sparkles size={17} aria-hidden="true" />
+                  </button>
+                ) : null}
               </div>
             </article>
           ) : null}

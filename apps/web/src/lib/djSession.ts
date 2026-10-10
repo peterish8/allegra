@@ -1,4 +1,5 @@
-import type { DjGoal, DjProvider, DjSlashCommand } from '@shared/dj';
+import type { DjGoal, DjProvider, DjSessionState, DjSlashCommand } from '@shared/dj';
+import type { UnifiedSong } from '@shared/types';
 
 /** The only DJ setting that is stored: which provider and model. The API key is never written anywhere. */
 export const DJ_PROVIDER_STORAGE_KEY = 'allegra.dj.provider.v1';
@@ -101,4 +102,156 @@ export function applySlashCommand(state: SlashState, parsed: ParsedSlash): Slash
     return { next: {}, send: { message: [command.prompt, remainder].filter(Boolean).join(' ') }, prompt: { clear: true } };
   }
   return { next: {}, prompt: { clear: true } };
+}
+
+/** The DJ's memory, edited by hand. Each helper returns a new session; the next turn sends it as the memory. */
+export function sessionWithEnergy(session: DjSessionState, energy: number): DjSessionState {
+  return { ...session, energy: Math.min(5, Math.max(1, Math.round(energy))) };
+}
+
+export function sessionWithoutLanguage(session: DjSessionState): DjSessionState {
+  return { ...session, language: null };
+}
+
+export function sessionWithoutConstraint(session: DjSessionState, constraint: string): DjSessionState {
+  return { ...session, constraints: session.constraints.filter((item) => item !== constraint) };
+}
+
+/** Moves `id` by `delta` places inside `ids` (clamped to the ends). Unknown ids leave the order alone. */
+export function moveId(ids: readonly string[], id: string, delta: number): string[] {
+  const from = ids.indexOf(id);
+  if (from < 0) return [...ids];
+  const to = Math.min(ids.length - 1, Math.max(0, from + delta));
+  if (to === from) return [...ids];
+  const next = [...ids];
+  next.splice(from, 1);
+  next.splice(to, 0, id);
+  return next;
+}
+
+/** Items in the order of `ids`; items whose id is not named keep their relative order at the end. */
+export function orderByIds<T>(items: readonly T[], ids: readonly string[], idOf: (item: T) => string): T[] {
+  const byId = new Map(items.map((item) => [idOf(item), item] as const));
+  const named = ids.flatMap((id) => {
+    const item = byId.get(id);
+    if (!item) return [];
+    byId.delete(id);
+    return [item];
+  });
+  return [...named, ...items.filter((item) => byId.has(idOf(item)))];
+}
+
+export interface DjSuggestion {
+  readonly label: string;
+  readonly prompt: string;
+}
+
+const firstArtist = (artist: string): string => artist.split(/,|&| and /)[0]?.trim() || artist;
+const capitalise = (word: string): string => word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase();
+
+/**
+ * Starter requests built from what the listener is doing: the playing song, the language they listen
+ * in most, the time of day, and a wildcard. Every chip is a plain request the DJ already understands.
+ */
+export function djSuggestions(
+  current: Pick<UnifiedSong, 'title' | 'artist' | 'language'> | null,
+  recent: readonly Pick<UnifiedSong, 'artist' | 'language'>[],
+  hour: number
+): DjSuggestion[] {
+  const chips: DjSuggestion[] = [];
+  if (current) {
+    const artist = firstArtist(current.artist);
+    chips.push({ label: `More like ${artist}`, prompt: `More songs like ${current.title} by ${artist}` });
+    chips.push({ label: 'Sing along', prompt: 'Start karaoke' });
+  }
+  const counts = new Map<string, number>();
+  for (const song of current ? [current, ...recent] : recent) {
+    const language = song.language?.trim().toLocaleLowerCase();
+    if (language && language !== 'english' && language !== 'unknown') counts.set(language, (counts.get(language) ?? 0) + 1);
+  }
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (top) chips.push({ label: `${capitalise(top)} melodies`, prompt: `${capitalise(top)} melodies` });
+  if (hour >= 21 || hour < 4) chips.push({ label: 'Late night', prompt: 'Late night, soft and unhurried' });
+  else if (hour < 11) chips.push({ label: 'Morning lift', prompt: 'Something bright to start the morning' });
+  else if (hour < 17) chips.push({ label: 'Focus flow', prompt: 'Steady music to focus, no sharp changes' });
+  else chips.push({ label: 'Golden hour', prompt: 'Warm evening songs' });
+  chips.push({ label: 'More energy', prompt: 'More energy' });
+  chips.push({ label: 'Surprise me', prompt: 'Surprise me, but keep my taste' });
+  return chips;
+}
+
+/** What the DJ remembers across a reload of this tab. Never the API key. */
+export const DJ_MEMORY_STORAGE_KEY = 'allegra.dj.memory.v1';
+
+export interface DjMemory {
+  readonly session: DjSessionState;
+  readonly history: readonly { readonly role: 'user' | 'assistant'; readonly content: string }[];
+  readonly goal: DjGoal;
+  readonly songLimit: number;
+  readonly draft: readonly { readonly song: UnifiedSong; readonly reason: string }[];
+  readonly draftName: string;
+  readonly reasons: Readonly<Record<string, string>>;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const isString = (value: unknown): value is string => typeof value === 'string';
+
+function readSong(value: unknown): UnifiedSong | null {
+  if (!isRecord(value)) return null;
+  const { id, title, artist, artwork, streamUrl, duration, hasLyrics, playCount, source } = value;
+  if (!isString(id) || !isString(title) || !isString(artist) || !isString(artwork) || !isString(streamUrl)) return null;
+  if (typeof duration !== 'number' || typeof hasLyrics !== 'boolean' || typeof playCount !== 'number') return null;
+  if (source !== 'Saavn' && source !== 'Gaana') return null;
+  return {
+    id, title, artist, artwork, streamUrl, duration, hasLyrics, playCount, source,
+    ...(isString(value.album) ? { album: value.album } : {}),
+    ...(isString(value.language) ? { language: value.language } : {})
+  };
+}
+
+function readSession(value: unknown): DjSessionState | null {
+  if (!isRecord(value) || !isString(value.vibe) || typeof value.energy !== 'number') return null;
+  const language = isString(value.language) ? value.language : null;
+  const constraints = Array.isArray(value.constraints) ? value.constraints.filter(isString).slice(0, 12) : [];
+  return { vibe: value.vibe, energy: Math.min(5, Math.max(1, Math.round(value.energy))), language, constraints };
+}
+
+/** Reads the remembered session; anything malformed reads as "nothing remembered". */
+export function readDjMemory(storage: Pick<Storage, 'getItem'>): DjMemory | null {
+  try {
+    const raw = storage.getItem(DJ_MEMORY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return null;
+    const session = readSession(parsed.session);
+    if (!session) return null;
+    const history = (Array.isArray(parsed.history) ? parsed.history : []).flatMap((item: unknown): DjMemory['history'][number][] => {
+      if (!isRecord(item) || !isString(item.content)) return [];
+      const { role } = item;
+      return role === 'user' || role === 'assistant' ? [{ role, content: item.content.slice(0, 2000) }] : [];
+    }).slice(-8);
+    const draft = (Array.isArray(parsed.draft) ? parsed.draft : []).flatMap((item: unknown) => {
+      if (!isRecord(item)) return [];
+      const song = readSong(item.song);
+      return song ? [{ song, reason: isString(item.reason) ? item.reason : '' }] : [];
+    }).slice(0, 30);
+    const reasons = isRecord(parsed.reasons)
+      ? Object.fromEntries(Object.entries(parsed.reasons).filter((entry): entry is [string, string] => isString(entry[1])).slice(0, 60))
+      : {};
+    const goal: DjGoal = parsed.goal === 'playlist' ? 'playlist' : 'mix';
+    const songLimit = typeof parsed.songLimit === 'number' ? Math.min(30, Math.max(1, Math.round(parsed.songLimit))) : 8;
+    const draftName = isString(parsed.draftName) && parsed.draftName.trim() ? parsed.draftName.slice(0, 100) : 'A little mix';
+    return { session, history, goal, songLimit, draft, draftName, reasons };
+  } catch {
+    return null;
+  }
+}
+
+/** Writes the session memory. Storage that is full or blocked is ignored. */
+export function writeDjMemory(storage: Pick<Storage, 'setItem'>, memory: DjMemory): void {
+  try {
+    storage.setItem(DJ_MEMORY_STORAGE_KEY, JSON.stringify(memory));
+  } catch {
+    // The session just is not remembered.
+  }
 }

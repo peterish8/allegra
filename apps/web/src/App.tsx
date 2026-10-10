@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ArrowUpToLine, ChevronRight, Download, House, Heart as HeartIcon, Disc3, Pause, Play, SkipBack, SkipForward, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Users, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpToLine, ChevronRight, House, Heart as HeartIcon, Disc3, Pause, Play, SkipBack, SkipForward, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -16,6 +16,9 @@ import { fromAllegraSong } from '@shared/songRef';
 
 import { AlbumPage } from './components/AlbumPage';
 import { DjPage } from './components/DjPage';
+import { DjMascot } from './components/dj/DjMascot';
+import { DjQuickPrompt } from './components/dj/DjQuickPrompt';
+import type { DjAction, DjActionResult } from './lib/djActions';
 import { ArtistPage } from './components/ArtistPage';
 import { LegalPage } from './components/LegalPage';
 import { isLegalView } from './lib/routes';
@@ -31,6 +34,7 @@ import { BlendsPage } from './components/blend/BlendsPage';
 import { DynamicAura } from './components/DynamicAura';
 import { AuthDialog } from './components/AuthDialog';
 import { useSignIn } from './auth/SignInContext';
+import { AppQrButton } from './components/AppQrButton';
 import { CommandPalette } from './components/CommandPalette';
 import { DiscoverSections, HomePage } from './components/HomePage';
 import { ConnectPicker, type ConnectPickerState } from './components/ConnectPicker';
@@ -51,6 +55,7 @@ import { useNarrowViewport } from './hooks/useNarrowViewport';
 import { useSettings } from './hooks/useSettings';
 import { PlaylistsContext, usePlaylists } from './hooks/usePlaylists';
 import { DjSessionContext, useDjSessionState } from './hooks/useDjSession';
+import { DjVoiceContext, useDjVoiceState } from './hooks/useDjVoice';
 import { QueueActionsContext, type QueueActions } from './hooks/useQueueActions';
 import { collectAlbumTracks } from './lib/album';
 import { tapHaptic } from './lib/haptics';
@@ -109,6 +114,18 @@ function likedKey(song: UnifiedSong): string {
   const ref = (song as Partial<LibrarySong>).libraryRef ?? fromAllegraSong(song);
   return ref?.startsWith('gaana:') ? `library:${ref}` : song.id;
 }
+
+/** Where "open …" takes the listener, and what the DJ calls it. */
+const DJ_PLACES = {
+  home: { path: paths.home, label: 'Home' },
+  browse: { path: paths.discover, label: 'Browse' },
+  library: { path: paths.library, label: 'your library' },
+  liked: { path: paths.liked, label: 'your liked songs' },
+  settings: { path: paths.settings, label: 'Settings' },
+  blends: { path: paths.blends, label: 'your Blends' }
+} as const;
+/** A DJ catalog lookup gives up after this long, so a slow search never hangs the DJ. */
+const DJ_SEARCH_TIMEOUT_MS = 8000;
 
 export default function App() {
   const reduced = useReducedMotion();
@@ -320,6 +337,10 @@ export default function App() {
   const userQueuedRef = useRef(new Set<string>());
   /** Songs the DJ planned. They are also in userQueuedRef (so they stay ahead of radio); this set tells them apart from the listener's own. */
   const djPlannedRef = useRef(new Set<string>());
+  const [djQuickOpen, setDjQuickOpen] = useState(false);
+  const closeDjQuick = useCallback((): void => setDjQuickOpen(false), []);
+  /** The upcoming songs, and which were the listener's and the DJ's, just before a DJ set replaced them. */
+  const djUndoRef = useRef<{ readonly currentId: string; readonly upcoming: readonly UnifiedSong[]; readonly planned: readonly string[]; readonly queued: readonly string[] } | null>(null);
   const radio = useSongRadio(transportRef, userQueuedRef);
   // Lock screen, media keys, headset buttons and car head units, all through the same funnel.
   const fillRadioQueue = useCallback(async (signal?: AbortSignal): Promise<number> => {
@@ -671,6 +692,13 @@ export default function App() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setPaletteOpen((open) => !open);
+      }
+      // Ctrl/⌘ J: the DJ from anywhere. On the DJ page it just focuses the page's own prompt.
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'j') {
+        event.preventDefault();
+        const pagePrompt = document.querySelector<HTMLInputElement>('.dj-page .dj-input-wrap input');
+        if (pagePrompt) pagePrompt.focus();
+        else setDjQuickOpen((open) => !open);
       }
     };
     window.addEventListener('keydown', onShortcut);
@@ -1127,6 +1155,7 @@ export default function App() {
     const upcoming = at >= 0 ? player.queue.slice(at + 1) : [];
     const planned = turn.queue.map(({ song }) => song).filter((song) => song.id !== current.id && Boolean(song.streamUrl));
     if (planned.length === 0) return false;
+    djUndoRef.current = { currentId: current.id, upcoming, planned: [...djPlannedRef.current], queued: [...userQueuedRef.current] };
     let next: UnifiedSong[];
     let picks: UnifiedSong[];
     if (turn.operation === 'insert') {
@@ -1150,6 +1179,17 @@ export default function App() {
     radio.stop();
     player.replaceUpcoming(next);
     setDjLive(true);
+    return true;
+  };
+
+  const undoDjPlan = (): boolean => {
+    const snapshot = djUndoRef.current;
+    djUndoRef.current = null;
+    const player = transportRef.current;
+    if (!snapshot || remotePlayback || player.currentSong?.id !== snapshot.currentId) return false;
+    djPlannedRef.current = new Set(snapshot.planned);
+    userQueuedRef.current = new Set(snapshot.queued);
+    player.replaceUpcoming([...snapshot.upcoming]);
     return true;
   };
 
@@ -1239,6 +1279,134 @@ export default function App() {
   queueSongRef.current = queueSong;
   const queueActions = useMemo<QueueActions>(() => ({ add: (song, next) => { void queueSongRef.current(song, next); } }), []);
 
+  // The DJ's hands: what a typed or spoken command does in the app. Each branch answers in the DJ's
+  // voice, and none of them throws. A song the DJ should sing along to is held in karaokeForRef until it
+  // has actually loaded, so karaoke starts on that song and not the one before it.
+  const karaokeForRef = useRef<string | null>(null);
+  const findDjSong = async (query: string): Promise<UnifiedSong | null> => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), DJ_SEARCH_TIMEOUT_MS);
+    try {
+      const { results } = await searchSongs(query.replace(/\s+by\s+/i, ' '), controller.signal);
+      return results.find((song) => Boolean(song.streamUrl)) ?? results[0] ?? null;
+    } catch {
+      return null;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
+  const singAlongTo = (songId: string): string => {
+    if (remotePlayback) return ' Karaoke works when the music plays on this device.';
+    karaokeForRef.current = songId;
+    setPlayerMode('immersive');
+    return ' Karaoke is starting: the vocals fade out in a moment and the lyrics are up.';
+  };
+  const playDjList = async (list: readonly UnifiedSong[], shuffle: boolean): Promise<UnifiedSong | null> => {
+    const order = shuffle ? [...list].sort(() => Math.random() - 0.5) : [...list];
+    const first = order[0];
+    if (!first) return null;
+    await playSong(first, order);
+    return first;
+  };
+  const runDjAction = async (action: DjAction): Promise<DjActionResult> => {
+    const song = playerSong;
+    switch (action.kind) {
+      case 'play-song': {
+        const found = await findDjSong(action.query);
+        if (!found) return { ok: false, reply: `I couldn’t find “${action.query}” in the catalog. Try the title another way?` };
+        await playFromSearch(found);
+        const extra = action.karaoke ? singAlongTo(found.id) : '';
+        if (action.lyrics && !action.karaoke) setPlayerMode('immersive');
+        return { ok: true, reply: `Playing “${found.title}” by ${found.artist}.${extra}` };
+      }
+      case 'play-liked': {
+        const first = await playDjList(likedSongs, action.shuffle);
+        if (!first) return { ok: false, reply: 'You haven’t liked any songs yet. Say “like this” while one plays.' };
+        return { ok: true, reply: `${action.shuffle ? 'Shuffling' : 'Playing'} your liked songs, ${likedSongs.length} of them.${action.karaoke ? singAlongTo(first.id) : ''}` };
+      }
+      case 'play-playlist': {
+        const wanted = action.name.toLocaleLowerCase();
+        const playlist = playlists.playlists.find((item) => item.name.toLocaleLowerCase() === wanted)
+          ?? playlists.playlists.find((item) => item.name.toLocaleLowerCase().includes(wanted));
+        if (!playlist) return { ok: false, reply: `I couldn’t find a playlist called “${action.name}”.` };
+        const songs = playlist.songIds.map((id) => playlists.songs.get(id)).filter((item): item is NonNullable<typeof item> => Boolean(item));
+        const first = await playDjList(songs, action.shuffle);
+        if (!first) return { ok: false, reply: `“${playlist.name}” has no songs yet.` };
+        return { ok: true, reply: `${action.shuffle ? 'Shuffling' : 'Playing'} “${playlist.name}”, ${songs.length} songs.${action.karaoke ? singAlongTo(first.id) : ''}` };
+      }
+      case 'queue-song': {
+        const found = await findDjSong(action.query);
+        if (!found) return { ok: false, reply: `I couldn’t find “${action.query}” in the catalog.` };
+        await queueSong(found, action.next);
+        return { ok: true, reply: song ? `“${found.title}” ${action.next ? 'plays next' : 'is in your queue'}.` : `Playing “${found.title}”.` };
+      }
+      case 'like': {
+        if (!song) return { ok: false, reply: 'Nothing is playing yet, so there is nothing to like.' };
+        const liked = likedIds.has(likedKey(song));
+        if (liked === action.on) return { ok: true, reply: action.on ? `“${song.title}” is already in your liked songs.` : `“${song.title}” isn’t in your liked songs.` };
+        toggleLike(song);
+        return { ok: true, reply: action.on ? `Added “${song.title}” to your liked songs.` : `Removed “${song.title}” from your liked songs.` };
+      }
+      case 'transport': {
+        if (!song) return { ok: false, reply: 'Nothing is playing yet. Ask me for a song.' };
+        if (action.op === 'pause') {
+          if (playerIsPlaying) togglePlayer();
+          return { ok: true, reply: 'Paused.' };
+        }
+        if (action.op === 'resume') {
+          if (!playerIsPlaying) togglePlayer();
+          return { ok: true, reply: `Back to “${song.title}”.` };
+        }
+        if (action.op === 'next') {
+          skipNextSmart();
+          return { ok: true, reply: 'Skipping to the next one.' };
+        }
+        if (action.op === 'previous') {
+          previousPlayer();
+          return { ok: true, reply: 'Going back.' };
+        }
+        seekPlayer(0);
+        if (!playerIsPlaying) togglePlayer();
+        return { ok: true, reply: `“${song.title}” from the top.` };
+      }
+      case 'karaoke': {
+        if (!song) return { ok: false, reply: 'Play a song first, then ask me for karaoke.' };
+        if (remotePlayback) return { ok: false, reply: 'Karaoke works when the music plays on this device.' };
+        if (liveKaraoke.active === action.on) return { ok: true, reply: action.on ? 'Karaoke is already on.' : 'Karaoke is already off.' };
+        void liveKaraoke.toggle();
+        if (action.on) setPlayerMode('immersive');
+        return { ok: true, reply: action.on ? 'Karaoke on: the vocals fade out in a moment and the lyrics are up.' : 'Karaoke off. The singer is back.' };
+      }
+      case 'lyrics': {
+        if (!song) return { ok: false, reply: 'Play a song first and I’ll bring up its lyrics.' };
+        setPlayerMode('immersive');
+        return { ok: true, reply: `Here are the lyrics for “${song.title}”.` };
+      }
+      case 'shuffle': {
+        if (playerShuffle !== action.on) togglePlayerShuffle();
+        return { ok: true, reply: action.on ? 'Shuffle is on.' : 'Shuffle is off.' };
+      }
+      case 'open': {
+        const place = DJ_PLACES[action.place];
+        router.push(place.path);
+        return { ok: true, reply: `Opening ${place.label}.` };
+      }
+      case 'now-playing': {
+        if (!song) return { ok: true, reply: 'Nothing is playing right now.' };
+        return { ok: true, reply: `This is “${song.title}” by ${song.artist}${song.album ? `, from ${song.album}` : ''}.` };
+      }
+    }
+  };
+  // Karaoke for a song the DJ just started: only once that song is the one loaded.
+  const currentAudioId = audio.currentSong?.id;
+  useEffect(() => {
+    const id = karaokeForRef.current;
+    if (!id || remotePlayback || currentAudioId !== id || liveKaraoke.busy) return;
+    karaokeForRef.current = null;
+    if (!liveKaraoke.active) void liveKaraoke.toggle();
+  }, [currentAudioId, liveKaraoke, remotePlayback]);
+  const djPlaylistNames = useMemo(() => playlists.playlists.map((item) => item.name), [playlists.playlists]);
+
   // One DJ session for the whole app, so leaving /dj keeps the conversation. Everything it does to playback goes through the handlers above.
   const djNextSongs = useMemo(() => playingNext.slice(0, 8), [playingNext]);
   const dj = useDjSessionState({
@@ -1249,12 +1417,42 @@ export default function App() {
     likedSongs,
     nextSongs: djNextSongs,
     onApplyPlan: applyDjPlan,
+    onUndoPlan: undoDjPlan,
     onStartPlan: startDjPlan,
     onReorder: reorderDjUpcoming,
     onRemove: removeDjUpcoming,
     onPlayFrom: playDjFrom,
-    onSkip: skipNextSmart
+    onSkip: skipNextSmart,
+    onAction: runDjAction,
+    playlistNames: djPlaylistNames,
+    onReply: (text) => djVoiceRef.current?.speak(text)
   });
+  // Speaking to the DJ, from any page. A spoken request runs like a typed one; off the DJ page the quick
+  // prompt opens so the reply has somewhere to show.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const djRef = useRef(dj);
+  djRef.current = dj;
+  const onVoiceCommand = useCallback((text: string): void => {
+    if (viewRef.current !== 'dj') setDjQuickOpen(true);
+    void djRef.current.submitPrompt(text, { goal: 'mix' });
+  }, []);
+  // While the DJ talks, the music steps back to a third of its level, then returns to where it was.
+  const duckedFromRef = useRef<number | null>(null);
+  const onVoiceDuck = useCallback((ducked: boolean): void => {
+    const element = audio.audioRef.current;
+    if (!element) return;
+    if (ducked && duckedFromRef.current === null) {
+      duckedFromRef.current = element.volume;
+      element.volume = element.volume * 0.3;
+    } else if (!ducked && duckedFromRef.current !== null) {
+      element.volume = duckedFromRef.current;
+      duckedFromRef.current = null;
+    }
+  }, [audio.audioRef]);
+  const djVoice = useDjVoiceState({ onCommand: onVoiceCommand, onDuck: onVoiceDuck });
+  const djVoiceRef = useRef(djVoice);
+  djVoiceRef.current = djVoice;
 
   // Keep radio topped up so end-of-track advance always has a distinct next.
   useEffect(() => {
@@ -1462,10 +1660,40 @@ export default function App() {
     onRename: connect.rename
   };
 
+  // One search for the whole app. On the DJ page it is a small icon in the stage and a song picked there
+  // is one the DJ notices; everywhere else it is the pill in the top bar.
+  const searchPalette = (
+    <CommandPalette
+      open={paletteOpen}
+      onOpen={() => setPaletteOpen(true)}
+      onClose={() => setPaletteOpen(false)}
+      activeQuery={view === 'dj' ? '' : query.trim()}
+      recent={recentlyPlayed}
+      variant={view === 'dj' ? 'icon' : 'pill'}
+      onPlaySong={(song, queue) => {
+        void playSong(song, queue);
+        if (view === 'dj') dj.notePick(song);
+      }}
+      onPlayFromSearch={(song) => {
+        void playFromSearch(song);
+        if (view === 'dj') dj.notePick(song);
+      }}
+      onOpenArtist={openArtist}
+      onNavigate={(path) => { router.push(path); }}
+      onSearchAll={(value) => { if (view !== 'discover') router.push(paths.discover); setQuery(value); }}
+      onClearSearch={() => setQuery('')}
+      onAskDj={(value) => {
+        if (view !== 'dj') setDjQuickOpen(true);
+        void dj.submitPrompt(value, { goal: 'mix' });
+      }}
+    />
+  );
+
   return (
     <PlaylistsContext.Provider value={playlists}>
     <QueueActionsContext.Provider value={queueActions}>
     <DjSessionContext.Provider value={dj}>
+    <DjVoiceContext.Provider value={djVoice}>
     <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme="dark" data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
       {immersiveOpen ? null : (
         <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={shaderPalette} variant={settings.appBackground} />
@@ -1497,7 +1725,7 @@ export default function App() {
                     : <><strong>Guest</strong><small>Sign in to keep your music</small></>}
               </span>
             </button>
-            <div className="header-buttons"><Link className="icon-button app-download-link" href={`${paths.settings}#settings-android`} aria-label="Get the Android app" title="Get the Android app"><Download size={15} aria-hidden="true" /></Link><button className="motion-toggle icon-button" type="button" aria-label={motionPaused ? 'Resume background motion' : 'Pause background motion'} title={motionPaused ? 'Resume background motion' : 'Pause background motion'} onClick={() => updateSettings((current) => ({ animatedBackground: !current.animatedBackground }))}>{motionPaused ? <Play size={15} fill="currentColor" aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}</button><Link className={`icon-button settings-link${view === 'settings' ? ' is-active' : ''}`} href={paths.settings} aria-label="Settings" title="Settings" aria-current={view === 'settings' ? 'page' : undefined}><SettingsIcon size={15} aria-hidden="true" /></Link></div>
+            <div className="header-buttons"><AppQrButton settingsHref={`${paths.settings}#settings-android`} /><button className="motion-toggle icon-button" type="button" aria-label={motionPaused ? 'Resume background motion' : 'Pause background motion'} title={motionPaused ? 'Resume background motion' : 'Pause background motion'} onClick={() => updateSettings((current) => ({ animatedBackground: !current.animatedBackground }))}>{motionPaused ? <Play size={15} fill="currentColor" aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}</button><Link className={`icon-button settings-link${view === 'settings' ? ' is-active' : ''}`} href={paths.settings} aria-label="Settings" title="Settings" aria-current={view === 'settings' ? 'page' : undefined}><SettingsIcon size={15} aria-hidden="true" /></Link></div>
           </div>
       </header>
 
@@ -1507,19 +1735,7 @@ export default function App() {
             {isDetailView || isCollectionView ? <button type="button" className="topbar-back" onClick={() => goBack(view === 'liked' || view === 'playlist' ? '#library' : view === 'shared' ? '#home' : '#discover')} aria-label="Back"><ArrowLeft size={17} aria-hidden="true" /><span>Back</span></button> : null}
             <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' || view === 'import' || view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'luvLink' ? 'LuvLink' : view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' ? 'Blends' : view === 'blend' ? 'Blend' : view === 'blendJoin' ? 'Join a Blend' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong>{view === 'discover' ? <InfoTour className="crumbs-info" label="About Browse" steps={BROWSE_TOUR} stage={browseScene} /> : null}</nav>
             <div className="mood-pills" role="group" aria-label="Quick picks"><span className="mood-pills-label" aria-hidden="true">Quick picks</span>{moodPrompts.map((prompt) => <button key={prompt} type="button" className="mood-pill" aria-pressed={query === prompt} onClick={() => { if (view !== 'discover') router.push(paths.discover); setQuery(query === prompt ? '' : prompt); }}><span>{prompt}</span></button>)}</div>
-            <CommandPalette
-              open={paletteOpen}
-              onOpen={() => setPaletteOpen(true)}
-              onClose={() => setPaletteOpen(false)}
-              activeQuery={query.trim()}
-              recent={recentlyPlayed}
-              onPlaySong={(song, queue) => playSong(song, queue)}
-              onPlayFromSearch={(song) => { void playFromSearch(song); }}
-              onOpenArtist={openArtist}
-              onNavigate={(path) => { router.push(path); }}
-              onSearchAll={(value) => { if (view !== 'discover') router.push(paths.discover); setQuery(value); }}
-              onClearSearch={() => setQuery('')}
-            />
+            {searchPalette}
         </div> : null}
         {view === 'dj' ? (
           <DjPage
@@ -1529,6 +1745,8 @@ export default function App() {
             isRemote={remotePlayback}
             isCurrentLiked={playerSong ? likedIds.has(likedKey(playerSong)) : false}
             palette={playerSong ? palette : null}
+            recent={recentlyPlayed}
+            searchSlot={searchPalette}
             audioRef={audio.audioRef}
             onToggle={togglePlayer}
             onLike={toggleLike}
@@ -1542,6 +1760,7 @@ export default function App() {
             picks={aiPicks}
             picksReason={aiPicksReasoning}
             picksProvider={aiPicksProvider}
+            onAskDj={() => setDjQuickOpen(true)}
             trending={home?.trending ?? []}
             madeForYou={home?.madeForYou ?? []}
             recommended={home?.recommended ?? []}
@@ -1778,6 +1997,11 @@ export default function App() {
           </div>
 
           <div className="am-right">
+            {view !== 'dj' ? (
+              <button type="button" className={`am-btn am-dj${djQuickOpen ? ' is-on' : ''}${djVoice.wakeOn ? ' is-awake' : ''}`} aria-label="Ask your DJ (Ctrl+J)" aria-expanded={djQuickOpen} title="Ask your DJ · Ctrl+J" onClick={() => setDjQuickOpen((open) => !open)}>
+                <DjMascot size="mini" emotion={dj.working ? 'thinking' : djVoice.listening ? 'listening' : 'idle'} palette={palette} playing={playerIsPlaying} />
+              </button>
+            ) : null}
             <button type="button" className="am-btn am-btn--mute" aria-label={playerVolume === 0 ? 'Unmute' : 'Mute'} title={playerVolume === 0 ? 'Unmute' : 'Mute'} onClick={() => changePlayerVolume(playerVolume === 0 ? 1 : 0)}>{playerVolume === 0 ? <VolumeX size={17} aria-hidden="true" /> : <Volume2 size={17} aria-hidden="true" />}</button>
             <input
               type="range"
@@ -1884,8 +2108,9 @@ export default function App() {
                             <Artwork song={song} size="small" />
                             <span className="am-queue-copy">
                               <strong>{song.title}</strong>
-                              <small>{song.artist}{radio.reasonFor(song.id) ? ` · ${radio.reasonFor(song.id)}` : ''}</small>
+                              <small>{song.artist}{djPlannedRef.current.has(song.id) && dj.reasons[song.id] ? ` · ${dj.reasons[song.id]}` : radio.reasonFor(song.id) ? ` · ${radio.reasonFor(song.id)}` : ''}</small>
                             </span>
+                            {djPlannedRef.current.has(song.id) ? <span className="am-queue-dj" title="Picked by your DJ"><i /><i /><span className="sr-only">Picked by your DJ</span></span> : null}
                             <span className="am-queue-time">{formatTime(song.duration)}</span>
                           </button>
                           {queueEditable ? (
@@ -1970,9 +2195,18 @@ export default function App() {
         onOpenAlbum={openAlbumFromPlayer}
         onOpenArtist={openArtistFromPlayer}
       />
+      <DjQuickPrompt
+        open={djQuickOpen && view !== 'dj'}
+        onClose={closeDjQuick}
+        palette={palette}
+        playing={playerIsPlaying}
+        hasSong={Boolean(playerSong) && !remotePlayback}
+        onOpenPage={() => { setDjQuickOpen(false); router.push(paths.dj); }}
+      />
       <OfflineToast visible={offline} />
       <NoticeToast notice={connect.notice} onDone={connect.dismissNotice} />
     </div>
+    </DjVoiceContext.Provider>
     </DjSessionContext.Provider>
     </QueueActionsContext.Provider>
     </PlaylistsContext.Provider>
