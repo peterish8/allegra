@@ -3,6 +3,17 @@
 Choices that are easy to undo by accident. Each says what was decided, why, and what would change
 it. Newest first. Mistakes that led to some of these are in `.planning/LEARNING-LOG.md`.
 
+## 2026-10-11
+
+### Big features run the full local e2e suite before merge; every fix ships its test
+**Decided:** before a feature PR merges, `npm run typecheck`, `npm run lint`, `npm test` and the
+Playwright journeys in `tests/e2e` all pass locally, and the journeys cover the buttons the change adds
+or touches (click them, then check the state they leave). Every bug fix comes with a test written to
+fail on the old code, kept next to the code it guards, so the same bug is caught by CI if it returns.
+**Why:** the owner found a regression by hand: liking the playing song on Now Playing showed liked,
+then flipped back to unliked about a second later. Unit tests were green; nothing clicked the button.
+**Changes if:** never relaxed for features; a docs- or copy-only change may skip e2e.
+
 ## 2026-10-09
 
 ### The DJ is a glass orb that nods along
