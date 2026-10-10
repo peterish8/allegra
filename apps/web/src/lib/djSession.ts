@@ -12,6 +12,52 @@ export interface DjProviderChoice {
   readonly model: string;
 }
 
+/** One model in a settings dropdown: the exact ID sent to the provider, a name and a short note. */
+export interface DjModelOption {
+  readonly id: string;
+  readonly label: string;
+  readonly note: string;
+}
+
+/**
+ * Tool-calling models offered per provider, first one the default (checked against OpenRouter's live
+ * model list, 2026-10-11). "Other" in the dropdown still accepts any ID the provider takes.
+ */
+export const DJ_THINKING_MODELS: Readonly<Record<Exclude<DjProvider, 'local'>, readonly DjModelOption[]>> = {
+  openai: [
+    { id: 'gpt-4o-mini', label: 'GPT-4o mini', note: 'tested with the DJ · cheap' },
+    { id: 'gpt-6-luna', label: 'GPT-6 Luna', note: 'newer · cheap and fast' },
+    { id: 'gpt-6-sol', label: 'GPT-6 Sol', note: 'smarter · costs more' },
+    { id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', note: 'newest · costs more' }
+  ],
+  openrouter: [
+    { id: 'openai/gpt-4o-mini', label: 'GPT-4o mini', note: 'tested with the DJ · cheap' },
+    { id: 'openai/gpt-6-luna', label: 'GPT-6 Luna', note: 'newer · cheap and fast' },
+    { id: 'google/gemini-3.8-flash', label: 'Gemini 3.8 Flash', note: 'fast' },
+    { id: 'anthropic/claude-haiku-5.5', label: 'Claude Haiku 5.5', note: 'careful with tools' },
+    { id: 'deepseek/deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash', note: 'very cheap' },
+    { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', label: 'Nemotron 3 Ultra', note: 'free · can be slow or busy' }
+  ],
+  gemini: [
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', note: 'tested with the DJ · fast' },
+    { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash', note: 'previous Flash' },
+    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite', note: 'cheapest' }
+  ]
+};
+
+/** OpenAI's built-in speech voices; an empty choice leaves the server default (coral). */
+export const DJ_OPENAI_VOICES: readonly DjModelOption[] = ['alloy', 'ash', 'ballad', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']
+  .map((id) => ({ id, label: id[0]!.toUpperCase() + id.slice(1), note: '' }));
+
+/** Where each provider hands out keys; shown beside the key field. */
+export const DJ_KEY_PAGES: Readonly<Record<'openai' | 'openrouter' | 'gemini' | 'groq' | 'elevenlabs', { readonly name: string; readonly url: string }>> = {
+  openai: { name: 'OpenAI', url: 'https://platform.openai.com/api-keys' },
+  openrouter: { name: 'OpenRouter', url: 'https://openrouter.ai/keys' },
+  gemini: { name: 'Google AI Studio', url: 'https://aistudio.google.com/apikey' },
+  groq: { name: 'Groq', url: 'https://console.groq.com/keys' },
+  elevenlabs: { name: 'ElevenLabs', url: 'https://elevenlabs.io/app/settings/api-keys' }
+};
+
 export function defaultModelFor(provider: DjProvider): string {
   if (provider === 'openai') return 'gpt-4o-mini';
   if (provider === 'openrouter') return 'openai/gpt-4o-mini';

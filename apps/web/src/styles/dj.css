@@ -205,6 +205,19 @@
   color: var(--ink); background: rgba(255, 255, 255, .06); font: inherit; font-size: 12px;
 }
 .dj-provider-fields input:focus-visible, .dj-provider-fields select:focus-visible { outline: 2px solid color-mix(in srgb, var(--dj-a, var(--wave)) 70%, white); outline-offset: 1px; }
+/* Dropdowns: our own chevron, and a dark option list so the open menu matches the glass. */
+.dj-provider-fields select {
+  appearance: none; padding-right: 32px; color-scheme: dark; cursor: pointer; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-opacity='.7' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
+}
+.dj-provider-fields select:hover, .dj-provider-fields input:hover { border-color: rgba(255, 255, 255, .24); }
+.dj-provider-fields option { color: #f4f4f1; background: #1c1d22; }
+.dj-model-picker { display: grid; gap: 6px; min-width: 0; }
+.dj-key-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dj-key-link { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-soft, var(--ink)); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
+.dj-key-link:hover { color: var(--ink); }
+.dj-key-link:focus-visible { outline: 2px solid rgba(255, 255, 255, .82); outline-offset: 2px; border-radius: 4px; }
 .dj-provider-note { grid-column: 1 / -1; margin: 0 !important; }
 .dj-settings-sheet p { margin: 10px 0 0; color: var(--ink-muted); font-size: 11px; line-height: 1.5; }
 .dj-clear-key { margin-top: 8px; padding: 0; border: 0; color: var(--ink-soft, var(--ink-muted)); background: transparent; font: inherit; font-size: 11px; text-decoration: underline; cursor: pointer; }
@@ -831,6 +844,9 @@
 }
 .dj-tour__pill svg { color: var(--wave); }
 .dj-tour__pill--quiet { color: var(--ink-muted); background: rgba(255, 255, 255, .05); font-weight: 500; }
+/* The key scene's three settings fields, each a wide pill with its dropdown chevron. */
+.info-scene__part.dj-tour__field { min-width: 196px; justify-content: flex-start; }
+.dj-tour__field .dj-tour__chevron { margin-left: auto; color: var(--ink-muted); }
 .dj-tour__mic { width: 64px; height: 64px; border-radius: 50%; color: #fff; background: #dc7568; }
 .dj-tour__mic > * { grid-area: 1 / 1; }
 .dj-tour__mic-ring { width: 64px; height: 64px; border: 2px solid #dc7568; border-radius: 50%; }

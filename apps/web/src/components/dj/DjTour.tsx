@@ -1,14 +1,17 @@
 'use client';
 
 /**
- * The DJ page's "i": nine short scenes, acted out by the DJ itself, that explain everything on the page:
+ * The DJ page's "i": eleven short scenes, acted out by the DJ itself, that explain everything on the page:
  * asking, the commands it carries out, voice and the microphone, its spoken answers, the queue, the set
- * controls, search, and the free or bring-your-own-key choices. Built on the site's InfoTour, so it
+ * controls, search, then step-by-step setup: free on this device (brain, then voice) or with your own
+ * key. Built on the site's InfoTour, so it
  * opens from the "i" and folds back into it like every other page's walkthrough.
  */
-import { Brain, Ear, Heart, KeyRound, ListMusic, Lock, Mic, Play, Search, SkipForward, Sparkles, Undo2, Volume2 } from 'lucide-react';
+import { Brain, ChevronDown, Cpu, Download, Ear, Heart, KeyRound, ListMusic, Lock, Mic, Play, Search, SkipForward, Sparkles, Undo2, Volume2 } from 'lucide-react';
 import { useEffect, useState, type CSSProperties } from 'react';
 
+import { LOCAL_SPEECH_MB } from '../../lib/djLocalSpeech';
+import { LOCAL_VOICE_MB } from '../../lib/djWhisper';
 import type { Palette } from '../../lib/palette';
 import type { TourStep } from '../InfoTour';
 import { Loop, Part, Stage, useTick, type Scene } from '../infoScenes';
@@ -27,9 +30,44 @@ export const DJ_TOUR: readonly TourStep[] = [
   { title: 'Talk instead of typing', body: 'Tap the mic and speak. The first time, your browser asks to use the microphone: choose Allow. Turn on the ear in the top corner and just say “Hey DJ, …”. Voice needs a secure https page.', icon: Mic, pose: 'orbit' },
   { title: 'It answers out loud', body: 'Replies are spoken, and the music dips while it talks. In settings, pick your browser’s voice, a natural voice that runs on your device, or your own OpenAI or ElevenLabs key. Silent turns it off.', icon: Volume2, pose: 'spread' },
   { title: 'Your queue, beside it', body: 'The song playing now sits on top in its own colours; what comes next is below, each with the reason it was picked. Tap to play, drag the grip to reorder, ✕ to remove. Undo brings back a queue the DJ replaced.', icon: ListMusic, pose: 'stack' },
-  { title: 'Shape the set', body: 'Under the bar, Mix shapes what plays next and Playlist builds one you can save. The dots set the energy, from calm to loud. Two ideas sit beside them: tap one to try it.', icon: Sparkles, pose: 'fan' },
+  { title: 'Shape the set', body: 'Under the bar, Live DJ changes what plays next and Playlist builds one you can save. The bars set the energy, Calm to Hype. Tap Steady to plan the set’s shape (build up, wind down) and Mixed to choose familiar artists or new ones. Say “no songs by …” and that artist stays out until you tap its ✕.', icon: Sparkles, pose: 'fan' },
   { title: 'Search, then pick', body: 'The magnifier in the corner, or Ctrl K, searches everything. Pick a song and it plays at once; the DJ notices and offers more like it. Ctrl J asks the DJ from any page.', icon: Search, pose: 'lift' },
-  { title: 'Free, or your own key', body: 'The gear holds three choices: how it thinks, hears and speaks. Each has a free option that runs on your device (one download, then cached) and one that uses your own key. Keys are never saved.', icon: KeyRound, pose: 'spread' }
+  {
+    title: 'Set up: free, on this device',
+    body: 'No account and no key. The DJ’s brain runs inside your browser.',
+    steps: [
+      'Tap the gear at the top of the stage.',
+      'Under “Thinks with”, choose On this device · free.',
+      'Ask for anything. Your first request downloads the model once (about 390 MB); after that it’s cached.',
+      'Chrome or Edge with WebGPU is fastest. Song searches still need the internet.'
+    ],
+    icon: Cpu,
+    pose: 'spread'
+  },
+  {
+    title: 'Set up: voice on this device',
+    body: 'Talk to it and hear it answer, with your voice never leaving the device.',
+    steps: [
+      `In the gear, set “Hears you with” to On this device · free (about ${LOCAL_VOICE_MB} MB, once).`,
+      `Set “Speaks with” to Natural voice on this device and press Download (about ${LOCAL_SPEECH_MB} MB).`,
+      'Tap the mic. When the browser asks, choose Allow.',
+      'The mic needs a secure page: https:// or localhost.'
+    ],
+    icon: Mic,
+    pose: 'orbit'
+  },
+  {
+    title: 'Set up: your own key',
+    body: 'Sharper picks from a cloud model. You pay the provider directly, and Allegra never stores the key.',
+    steps: [
+      'Get a key from OpenAI, Google AI Studio (Gemini) or OpenRouter. The key field links to each page.',
+      'In the gear, choose that provider under “Thinks with”.',
+      'Pick a model from the list. The first is tested with the DJ; Other… takes any tool-calling model.',
+      'Paste the key. It lives in this tab only, so after a reload you paste it again.'
+    ],
+    icon: KeyRound,
+    pose: 'spread'
+  }
 ];
 
 function Mascot({ reduced, emotion, x = 0, y = 0, size = 112 }: { readonly reduced: boolean; readonly emotion: DjMascotEmotion; readonly x?: number; readonly y?: number; readonly size?: number }) {
@@ -119,14 +157,33 @@ export const djScene: Scene = (step, reduced) => (
         <Part reduced={reduced} delay={0.55} className="dj-tour__pill dj-tour__pill--quiet dj-tour__undo"><Undo2 size={11} />Undo</Part>
       </Part>
     ) : step === 6 ? <>
-      <Part reduced={reduced} y={-36} from={{ y: 20 }} className="dj-tour__dial"><span className="dj-tour__mix">Mix</span><EnergyDots reduced={reduced} /></Part>
-      <Part reduced={reduced} x={-62} y={30} delay={0.2} className="dj-tour__pill dj-tour__pill--quiet">Late night</Part>
-      <Part reduced={reduced} x={66} y={30} delay={0.3} className="dj-tour__pill dj-tour__pill--quiet">More energy</Part>
-      <Part reduced={reduced} y={78} delay={0.45} className="dj-tour__pill">Playlist · save it</Part>
+      <Part reduced={reduced} y={-48} from={{ y: 20 }} className="dj-tour__dial"><span className="dj-tour__mix">Live DJ</span><EnergyDots reduced={reduced} /></Part>
+      <Part reduced={reduced} x={-62} y={14} delay={0.2} className="dj-tour__pill dj-tour__pill--quiet">Build up</Part>
+      <Part reduced={reduced} x={62} y={14} delay={0.3} className="dj-tour__pill dj-tour__pill--quiet">Discover</Part>
+      <Part reduced={reduced} x={-62} y={60} delay={0.42} className="dj-tour__pill dj-tour__pill--quiet">No Anirudh ✕</Part>
+      <Part reduced={reduced} x={62} y={60} delay={0.5} className="dj-tour__pill">Playlist · save it</Part>
     </> : step === 7 ? <>
       <Part reduced={reduced} x={-110} className="dj-tour__search"><Search size={20} /></Part>
       <Loop reduced={reduced} className="dj-tour__flying" style={{ x: -60, background: COVERS[2] }} animate={{ x: [-70, 34], opacity: [0, 1, 1, 0], scale: [0.7, 1, 1, 0.5] }} duration={1.8} times={[0, 0.2, 0.7, 1]} />
       <Mascot reduced={reduced} emotion="happy" x={76} size={96} />
+    </> : step === 9 ? <>
+      {/* Voice on this device: hear, speak, then the browser's Allow. */}
+      <Mascot reduced={reduced} emotion="listening" y={-50} size={84} />
+      <Part reduced={reduced} x={-80} y={26} delay={0.15} className="dj-tour__pill"><Mic size={12} />Hears · on device</Part>
+      <Part reduced={reduced} x={80} y={26} delay={0.28} className="dj-tour__pill"><Download size={12} />Speaks · download</Part>
+      <Part reduced={reduced} y={68} delay={0.45} className="dj-tour__pill dj-tour__pill--quiet"><Lock size={12} />Allow microphone</Part>
+    </> : step === 10 ? <>
+      {/* Your own key: provider, then model, then the key, one after another. */}
+      {[
+        { y: -70, icon: <Brain size={12} />, text: 'OpenAI', chevron: true },
+        { y: -28, icon: <Sparkles size={12} />, text: 'GPT-4o mini · tested', chevron: true },
+        { y: 14, icon: <KeyRound size={12} />, text: '••••••••••', chevron: false }
+      ].map((row, i) => (
+        <Part key={row.text} reduced={reduced} y={row.y} delay={0.1 + i * 0.18} from={{ y: row.y + 24 }} className="dj-tour__pill dj-tour__field">
+          {row.icon}{row.text}{row.chevron ? <ChevronDown size={12} className="dj-tour__chevron" /> : null}
+        </Part>
+      ))}
+      <Part reduced={reduced} y={58} delay={0.66} className="dj-tour__pill dj-tour__pill--quiet"><Lock size={12} />Kept in this tab only</Part>
     </> : <>
       {[
         { x: -108, icon: <Brain size={16} />, title: 'Thinks', free: 'On device', key: 'OpenAI · Gemini' },

@@ -1,11 +1,26 @@
-import { Brain, Cpu, Ear, Mic, Volume2, X } from 'lucide-react';
+import { Brain, Cpu, Ear, ExternalLink, Mic, Volume2, X } from 'lucide-react';
 import type { Ref } from 'react';
 
 import type { DjProvider } from '@shared/dj';
 
 import type { DjEarsChoice, DjVoice, DjVoiceChoice } from '../../hooks/useDjVoice';
 import { LOCAL_SPEECH_MB, LOCAL_SPEECH_VOICES } from '../../lib/djLocalSpeech';
+import { DJ_KEY_PAGES, DJ_OPENAI_VOICES, DJ_THINKING_MODELS } from '../../lib/djSession';
 import { LOCAL_VOICE_MB } from '../../lib/djWhisper';
+import { DjModelPicker } from './DjModelPicker';
+
+/** A password field for one provider's key, with a link to the page that hands keys out. */
+function KeyField({ provider, value, onChange }: { readonly provider: keyof typeof DJ_KEY_PAGES; readonly value: string; readonly onChange: (key: string) => void }) {
+  const page = DJ_KEY_PAGES[provider];
+  return (
+    <label className="dj-key-field">
+      <span className="dj-key-label">API key
+        <a href={page.url} target="_blank" rel="noopener noreferrer" className="dj-key-link">Get one at {page.name}<ExternalLink size={11} aria-hidden="true" /></a>
+      </span>
+      <input type="password" autoComplete="off" value={value} onChange={(event) => onChange(event.target.value)} maxLength={512} placeholder={`Paste your ${page.name === 'Google AI Studio' ? 'Gemini' : page.name} key`} />
+    </label>
+  );
+}
 
 export interface DjSettingsSheetProps {
   readonly provider: DjProvider;
@@ -56,9 +71,9 @@ export function DjSettingsSheet({ provider, model, apiKey, onProvider, onModel, 
             </select>
           </label>
           {provider !== 'local' ? <>
-            <label>Model<input value={model} onChange={(event) => onModel(event.target.value)} maxLength={160} placeholder="Tool-calling model ID" /></label>
-            <label className="dj-key-field">API key<input type="password" autoComplete="off" value={apiKey} onChange={(event) => onApiKey(event.target.value)} maxLength={512} placeholder="Paste your key" /></label>
-          </> : <p className="dj-provider-note">Qwen3 0.6B runs in your browser. It downloads once (about 390 MB) and stays cached. Catalog search still needs a connection.</p>}
+            <DjModelPicker key={provider} label="Model" value={model} options={DJ_THINKING_MODELS[provider]} onChange={onModel} maxLength={160} placeholder="Any tool-calling model ID" />
+            <KeyField provider={provider} value={apiKey} onChange={onApiKey} />
+          </> : <p className="dj-provider-note">Qwen3 0.6B runs in your browser: your first request downloads it once (about 390 MB), then it stays cached. Chrome or Edge with WebGPU is fastest. Catalog search still needs a connection.</p>}
         </div>
         {apiKey && provider !== 'local' ? <button type="button" className="dj-clear-key" onClick={() => onApiKey('')}>Forget key</button> : null}
       </section>
@@ -78,8 +93,17 @@ export function DjSettingsSheet({ provider, model, apiKey, onProvider, onModel, 
                 </select>
               </label>
               {cloudEars ? <>
-                <label>Model<input value={voice.settings.earsModel} onChange={(event) => voice.setSettings({ earsModel: event.target.value })} maxLength={120} placeholder={ears === 'groq' ? 'whisper-large-v3-turbo' : 'gpt-transcribe'} /></label>
-                <label className="dj-key-field">API key<input type="password" autoComplete="off" value={voice.earsKey} onChange={(event) => voice.setEarsKey(event.target.value)} maxLength={512} placeholder={`Paste your ${ears === 'groq' ? 'Groq' : 'OpenAI'} key`} /></label>
+                <DjModelPicker
+                  key={ears}
+                  label="Model"
+                  value={voice.settings.earsModel}
+                  options={[]}
+                  defaultLabel={`Default · ${ears === 'groq' ? 'whisper-large-v3-turbo' : 'gpt-transcribe'}`}
+                  onChange={(earsModel) => voice.setSettings({ earsModel })}
+                  maxLength={120}
+                  placeholder="Speech-to-text model ID"
+                />
+                <KeyField provider={ears} value={voice.earsKey} onChange={voice.setEarsKey} />
               </> : null}
             </div>
             <p>
@@ -131,9 +155,27 @@ export function DjSettingsSheet({ provider, model, apiKey, onProvider, onModel, 
                 </label>
               ) : null}
               {cloudVoice ? <>
-                <label>{speech === 'elevenlabs' ? 'Voice ID' : 'Voice'}<input value={voice.settings.voiceName} onChange={(event) => voice.setSettings({ voiceName: event.target.value })} maxLength={80} placeholder={speech === 'elevenlabs' ? 'JBFqnCBsd6RMkjVDRZzb' : 'coral'} /></label>
-                <label>Model<input value={voice.settings.voiceModel} onChange={(event) => voice.setSettings({ voiceModel: event.target.value })} maxLength={120} placeholder={speech === 'elevenlabs' ? 'eleven_flash_v2_5' : 'gpt-4o-mini-tts'} /></label>
-                <label className="dj-key-field">API key<input type="password" autoComplete="off" value={voice.voiceKey} onChange={(event) => voice.setVoiceKey(event.target.value)} maxLength={512} placeholder={`Paste your ${speech === 'elevenlabs' ? 'ElevenLabs' : 'OpenAI'} key`} /></label>
+                <DjModelPicker
+                  key={`${speech}-voice`}
+                  label={speech === 'elevenlabs' ? 'Voice ID' : 'Voice'}
+                  value={voice.settings.voiceName}
+                  options={speech === 'openai' ? DJ_OPENAI_VOICES : []}
+                  defaultLabel={speech === 'elevenlabs' ? 'Default · George' : 'Default · Coral'}
+                  onChange={(voiceName) => voice.setSettings({ voiceName })}
+                  maxLength={80}
+                  placeholder={speech === 'elevenlabs' ? 'Paste a voice ID' : 'Voice name'}
+                />
+                <DjModelPicker
+                  key={`${speech}-model`}
+                  label="Model"
+                  value={voice.settings.voiceModel}
+                  options={[]}
+                  defaultLabel={`Default · ${speech === 'elevenlabs' ? 'eleven_flash_v2_5' : 'gpt-4o-mini-tts'}`}
+                  onChange={(voiceModel) => voice.setSettings({ voiceModel })}
+                  maxLength={120}
+                  placeholder="Text-to-speech model ID"
+                />
+                <KeyField provider={speech} value={voice.voiceKey} onChange={voice.setVoiceKey} />
               </> : null}
             </div>
             <p>{speech === 'off' ? 'Your DJ answers in words on screen only.'

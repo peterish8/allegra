@@ -10,6 +10,7 @@ import {
   DJ_EXPLORATIONS,
   DJ_MEMORY_STORAGE_KEY,
   DJ_SHAPES,
+  DJ_THINKING_MODELS,
   defaultModelFor,
   djEnergyWord,
   djOffersAfterSet,
@@ -111,6 +112,10 @@ test('every provider has a default model', () => {
   assert.equal(defaultModelFor('openrouter'), 'openai/gpt-4o-mini');
   assert.equal(defaultModelFor('gemini'), 'gemini-3.8-flash');
   assert.equal(defaultModelFor('local'), 'Qwen3 0.6B (on-device)');
+  // The dropdown's first choice is the default, so switching provider and opening the list agree.
+  for (const provider of ['openai', 'openrouter', 'gemini'] as const) {
+    assert.equal(DJ_THINKING_MODELS[provider][0]?.id, defaultModelFor(provider));
+  }
 });
 
 test('removing the language chip leaves the next local turn with no language', () => {
