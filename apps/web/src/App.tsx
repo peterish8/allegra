@@ -7,7 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
 
-import type { ArtistProfile, HomePayload, LyricLine, LyricsPayload, SharedPlaylist, UnifiedSong } from '@shared/types';
+import type { AlbumSummary, ArtistProfile, HomePayload, LyricLine, LyricsPayload, SharedPlaylist, UnifiedSong } from '@shared/types';
 import type { DjTurnResponse } from '@shared/dj';
 import type { PerformanceAttempt } from '@shared/performanceTrace';
 import { deriveMoodPrompts } from '@shared/moodPrompts';
@@ -58,19 +58,21 @@ import { PlaylistsContext, usePlaylists } from './hooks/usePlaylists';
 import { DjSessionContext, useDjSessionState } from './hooks/useDjSession';
 import { DjVoiceContext, useDjVoiceState } from './hooks/useDjVoice';
 import { QueueActionsContext, type QueueActions } from './hooks/useQueueActions';
-import { collectAlbumTracks } from './lib/album';
+import { albumStandIn, collectAlbumTracks, isAlbumStandIn, type AlbumTarget } from './lib/album';
+import { useAlbum } from './hooks/useAlbum';
 import { tapHaptic } from './lib/haptics';
 import { useLibraryArrival } from './lib/libraryArrival';
 import { ImportChip } from './components/import/ImportChip';
 import { lockScroll } from './lib/scrollLock';
 import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
-import { ApiError, applyLibraryOps, ensureSession, fetchArtist, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
+import { ApiError, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
 import { catalogSongId, shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
 import { resolveSnapshotForPlayback, snapshotForSong, snapshotToDisplaySong, useConnect } from './hooks/useConnect';
 import { useSnapshotArtworks } from './hooks/useSnapshotArtwork';
 import { isControllingAnotherDevice } from '../../../packages/connect/src/index';
 import { likedKey, type LibrarySong } from './lib/libraryRows';
+import { playOrderFrom } from './lib/djSession';
 import { legacyHashToPath, parseRoute, paths } from './lib/routes';
 import { flags } from './lib/flags';
 import { pickTopResult } from './lib/topResult';
@@ -137,6 +139,8 @@ export default function App() {
   const pendingSearchCommitRef = useRef<{ readonly attempt: PerformanceAttempt; readonly query: string; readonly resultCount: number } | null>(null);
   const committedSearchAttemptRef = useRef<PerformanceAttempt | null>(null);
   const [songs, setSongs] = useState<UnifiedSong[]>([]);
+  /** The catalog's albums for the current search (`/api/search/albums`); empty when it found none. */
+  const [catalogAlbums, setCatalogAlbums] = useState<readonly AlbumSummary[]>([]);
   const [featured, setFeatured] = useState<UnifiedSong[]>([]);
   const [home, setHome] = useState<HomePayload | null>(null);
   const [searching, setSearching] = useState(true);
@@ -442,15 +446,24 @@ export default function App() {
     router.push(paths.artist(name));
   }, [router]);
 
-  /** Albums from the artist page: open the album when one of its songs is loaded, otherwise search for it. */
-  const openAlbumByName = useCallback((albumName: string, seed: UnifiedSong | null) => {
+  /** An album the catalog knows by id: open its page now; the tracks load there (`useAlbum`). */
+  const openCatalogAlbum = useCallback((album: AlbumTarget) => {
+    openAlbum(albumStandIn(album));
+  }, [openAlbum]);
+
+  /** Albums from the artist page: by the catalog's id when it has one, else the loaded song, else a search. */
+  const openAlbumByName = useCallback((albumName: string, seed: UnifiedSong | null, catalog?: AlbumTarget) => {
+    if (catalog) {
+      openCatalogAlbum(catalog);
+      return;
+    }
     if (seed) {
       openAlbum(seed);
       return;
     }
     router.push(paths.discover);
     setQuery(`${albumName} ${artistName ?? ''}`.trim());
-  }, [openAlbum, artistName, router]);
+  }, [openAlbum, openCatalogAlbum, artistName, router]);
 
   const loadSearch = useCallback(async (value: string, signal?: AbortSignal): Promise<void> => {
     const attempt = activeWebSearchAttempt();
@@ -458,6 +471,10 @@ export default function App() {
     const requestStartedAt = attempt ? performance.now() : 0;
     setSearching(true);
     setSearchError(null);
+    // Albums run beside the song search and never hold it up; a failure just leaves the grouped fallback.
+    if (value !== DEFAULT_QUERY) {
+      void searchAlbums(value, 8, signal).then(setCatalogAlbums, () => { if (!signal?.aborted) setCatalogAlbums([]); });
+    }
     try {
       const response = await searchSongs(value, signal);
       if (attempt && webPerformanceTrace?.record(attempt, 'catalog.completed', {
@@ -654,6 +671,7 @@ export default function App() {
     const trimmed = query.trim();
     if (!trimmed) {
       setSongs([]);
+      setCatalogAlbums([]);
       setSearchError(null);
       return undefined;
     }
@@ -1213,7 +1231,7 @@ export default function App() {
     radioActiveRef.current = false;
     radio.stop();
     setDjLive(true);
-    audio.selectSong(first, songs);
+    audio.selectSong(first, playOrderFrom(songs, first.id));
     setPlayerMode('mini');
     setRecentlyPlayed((current) => [first, ...current.filter((item) => item.id !== first.id)].slice(0, 25));
     void recordRecentlyPlayed(first, 0).catch(() => undefined);
@@ -1248,7 +1266,8 @@ export default function App() {
   };
   const playDjFrom = (song: UnifiedSong, list: readonly UnifiedSong[]): boolean => {
     if (remotePlayback || song.id === playerSong?.id) return false;
-    void playSong(song, [...list]);
+    // The tapped song first; the ones above it stay in Up next instead of counting as played.
+    void playSong(song, playOrderFrom(list, song.id));
     return true;
   };
 
@@ -1478,6 +1497,13 @@ export default function App() {
     return () => controller.abort();
   }, [audio.currentSong?.id, audio.queue.length, fillRadioQueue]);
 
+  /** Plays a catalog album from its card: loads the whole album, then plays it in track order. */
+  const playCatalogAlbum = (album: AlbumSummary): void => {
+    void fetchAlbum(album.id).then((detail) => playAlbumTracks([...detail.songs])).catch(() => {
+      setSearchError('That album could not be loaded. Try again.');
+    });
+  };
+
   const playAlbumTracks = (tracks: UnifiedSong[], shuffle = false): void => {
     if (tracks.length === 0) return;
     const ordered = shuffle ? [...tracks].sort(() => Math.random() - 0.5) : tracks;
@@ -1595,8 +1621,12 @@ export default function App() {
   };
 
   const pageTransition = reduced ? { duration: motionTokens.duration.instant } : undefined;
+  // The catalog's whole album when the seed has an id (`GET /api/albums/:id`); the songs already loaded,
+  // grouped by album, when it has none or the lookup failed. The stand-in seed is never a track.
+  const albumState = useAlbum(view === 'album' ? albumSeed?.albumId ?? null : null);
   const albumTracks = useMemo(() => {
     if (!albumSeed) return [];
+    if (albumState.detail) return [...albumState.detail.songs];
     return collectAlbumTracks(albumSeed, [
       displaySongs,
       featured,
@@ -1606,8 +1636,10 @@ export default function App() {
       audio.queue,
       suggestions,
       aiPicks
-    ]);
-  }, [albumSeed, displaySongs, featured, songs, likedSongs, recentlyPlayed, audio.queue, suggestions, aiPicks]);
+    ]).filter((song) => !isAlbumStandIn(song));
+  }, [albumSeed, albumState.detail, displaySongs, featured, songs, likedSongs, recentlyPlayed, audio.queue, suggestions, aiPicks]);
+  // "Like album" likes a real song of it: the seed, or the first track when the seed is a stand-in.
+  const albumLikeTarget = albumSeed && !isAlbumStandIn(albumSeed) ? albumSeed : albumTracks[0] ?? null;
 
   // Album needs a song to be about; without one the route shows Browse, so it must not wear the detail chrome.
   // Artists get the full-bleed cinematic hero. Playlists, Liked Songs and albums sit directly on the shader.
@@ -1763,6 +1795,8 @@ export default function App() {
             audioRef={audio.audioRef}
             onToggle={togglePlayer}
             onLike={toggleLike}
+            onPlayPlaylist={(playlistSongs) => { void playDjList(playlistSongs, false); }}
+            onOpenLibrary={() => router.push(paths.library)}
           />
         ) : view === 'home' ? (
           <HomePage
@@ -1855,7 +1889,7 @@ export default function App() {
             karaokeBackend={liveKaraoke.backend}
             karaokeActive={liveKaraoke.active}
           />
-        ) : view === 'library' ? <LibraryPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} likedSongs={likedSongs} recentlyPlayed={recentlyPlayed} likedIds={likedIds} loading={personalLoading} error={personalError} actionError={personalActionError} currentSongId={playerSong?.id} isPlaying={playerIsPlaying} onPlay={playSong} onLike={toggleLike} onRetry={() => void loadPersonalSpace()} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'liked' ? <CollectionPage kind="liked" title="Liked Songs" songs={likedSongs} loading={personalLoading} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(likedSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'playlist' ? <CollectionPage kind="playlist" title={activePlaylist?.name ?? (playlists.loading ? 'Playlist' : 'Playlist not found')} songs={activePlaylistSongs} loading={playlists.loading || (activePlaylist !== null && activePlaylistSongs.length < activePlaylist.songIds.length)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(activePlaylistSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} {...(activePlaylist ? { onDelete: () => { void playlists.remove(activePlaylist.id); router.push(paths.library); }, share: { libraryId: activePlaylist.id, isPublic: activePlaylist.isPublic, onChanged: () => { void playlists.reload(); } }, cover: { libraryId: activePlaylist.id, ...(activePlaylist.coverUrl ? { coverUrl: activePlaylist.coverUrl } : {}), onUpload: playlists.setCover } } : {})} /> : view === 'artist' && artistName ? <ArtistPage name={artistName} profile={artistProfile} photoFallback={faces[artistName.toLocaleLowerCase()] || null} songs={artistTracks} related={relatedArtists} loading={artistLoading && artistTracks.length === 0} error={artistTracks.length === 0 ? artistError : null} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onBack={() => goBack(paths.discover)} onRetry={() => setArtistReload((count) => count + 1)} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(artistTracks, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbumByName} onOpenArtist={openArtist} /> : view === 'album' && albumSeed ? <AlbumPage seed={albumSeed} tracks={albumTracks} palette={palette} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={() => playAlbumTracks(albumTracks, false)} onShuffle={() => playAlbumTracks(albumTracks, true)} onLike={toggleLike} onLikeAlbum={() => toggleLike(albumSeed)} albumLiked={likedIds.has(likedKey(albumSeed))} /> : <>
+        ) : view === 'library' ? <LibraryPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} likedSongs={likedSongs} recentlyPlayed={recentlyPlayed} likedIds={likedIds} loading={personalLoading} error={personalError} actionError={personalActionError} currentSongId={playerSong?.id} isPlaying={playerIsPlaying} onPlay={playSong} onLike={toggleLike} onRetry={() => void loadPersonalSpace()} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'liked' ? <CollectionPage kind="liked" title="Liked Songs" songs={likedSongs} loading={personalLoading} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(likedSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'playlist' ? <CollectionPage kind="playlist" title={activePlaylist?.name ?? (playlists.loading ? 'Playlist' : 'Playlist not found')} songs={activePlaylistSongs} loading={playlists.loading || (activePlaylist !== null && activePlaylistSongs.length < activePlaylist.songIds.length)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(activePlaylistSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} {...(activePlaylist ? { onDelete: () => { void playlists.remove(activePlaylist.id); router.push(paths.library); }, share: { libraryId: activePlaylist.id, isPublic: activePlaylist.isPublic, onChanged: () => { void playlists.reload(); } }, cover: { libraryId: activePlaylist.id, ...(activePlaylist.coverUrl ? { coverUrl: activePlaylist.coverUrl } : {}), onUpload: playlists.setCover } } : {})} /> : view === 'artist' && artistName ? <ArtistPage name={artistName} profile={artistProfile} photoFallback={faces[artistName.toLocaleLowerCase()] || null} songs={artistTracks} related={relatedArtists} loading={artistLoading && artistTracks.length === 0} error={artistTracks.length === 0 ? artistError : null} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onBack={() => goBack(paths.discover)} onRetry={() => setArtistReload((count) => count + 1)} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(artistTracks, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbumByName} onPlayCatalogAlbum={playCatalogAlbum} onOpenArtist={openArtist} /> : view === 'album' && albumSeed ? <AlbumPage seed={albumSeed} detail={albumState.detail} loading={albumState.loading} tracks={albumTracks} palette={palette} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={() => playAlbumTracks(albumTracks, false)} onShuffle={() => playAlbumTracks(albumTracks, true)} onLike={toggleLike} onLikeAlbum={() => { if (albumLikeTarget) toggleLike(albumLikeTarget); }} albumLiked={albumLikeTarget ? likedIds.has(likedKey(albumLikeTarget)) : false} /> : <>
         <div className="browse-grid">
           <div className="browse-main">
             <motion.section className="hero-banner" variants={pageVariants} initial="hidden" animate="visible" transition={pageTransition} aria-label="Featured track" data-live={playerIsPlaying ? 'true' : undefined} data-searching={isSearching ? 'true' : undefined}>
@@ -1889,6 +1923,9 @@ export default function App() {
                 onPlayTrack={(song, queue) => playSong(song, queue)}
                 onLike={toggleLike}
                 onOpenAlbum={openAlbum}
+                catalogAlbums={catalogAlbums}
+                onOpenCatalogAlbum={openCatalogAlbum}
+                onPlayCatalogAlbum={playCatalogAlbum}
                 onOpenArtist={openArtist}
                 onOpenPlaylist={(id) => { router.push(paths.playlist(id)); }}
                 onRetry={retryCurrentSearch}

@@ -32,7 +32,7 @@ export interface PlaylistsApi {
   readonly contains: (libraryId: string, song: UnifiedSong) => boolean;
   readonly create: (name: string) => Promise<LibraryRecord | null>;
   readonly addSongs: (libraryId: string, songs: readonly UnifiedSong[]) => Promise<boolean>;
-  readonly remove: (libraryId: string) => Promise<void>;
+  readonly remove: (libraryId: string) => Promise<boolean>;
   /** Adds the song if it is absent from the playlist, removes it otherwise. */
   readonly toggleSong: (libraryId: string, song: UnifiedSong) => Promise<void>;
   readonly setCover: (libraryId: string, file: File, onProgress?: (ratio: number) => void) => Promise<LibraryRecord | null>;
@@ -290,7 +290,7 @@ export function usePlaylists(): PlaylistsApi {
     }
   }, [commit, commitRefs]);
 
-  const remove = useCallback(async (libraryId: string): Promise<void> => {
+  const remove = useCallback(async (libraryId: string): Promise<boolean> => {
     const before = playlistsRef.current;
     setActionError(null);
     commit(before.filter((library) => library.id !== libraryId));
@@ -299,9 +299,11 @@ export function usePlaylists(): PlaylistsApi {
       const nextRefs = new Map(playlistRefsRef.current);
       nextRefs.delete(libraryId);
       commitRefs(nextRefs);
+      return true;
     } catch (caught) {
       commit(before);
       setActionError(messageOf(caught, 'That playlist could not be deleted.'));
+      return false;
     }
   }, [commit, commitRefs]);
 

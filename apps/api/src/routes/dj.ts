@@ -14,6 +14,8 @@ const MAX_SEARCHES = 4;
 const MAX_TOOL_CALLS_PER_RESPONSE = 4;
 const MAX_CONTEXT_SONGS = 8;
 const MAX_DRAFT_SONGS = 30;
+const MAX_SOURCE_PLAYLISTS = 2;
+const MAX_SOURCE_TRACKS = 40;
 const MAX_MESSAGES = 8;
 
 type Provider = 'openai' | 'openrouter' | 'gemini';
@@ -22,6 +24,7 @@ type DraftOperation = 'replace' | 'extend' | 'keep' | 'remove';
 type Reaction = 'neutral' | 'curious' | 'excited' | 'dreamy' | 'confused';
 type Operation = 'replace_upcoming' | 'insert' | 'keep';
 type ContextSong = Pick<UnifiedSong, 'id' | 'title' | 'artist'> & { language?: string };
+type PlaylistSource = { readonly name: string; readonly tracks: ContextSong[] };
 type SessionState = { vibe: string; energy: number; language: string | null; constraints: string[] };
 type Candidate = { song: UnifiedSong; reason: string };
 type CatalogSearchOperation = { id: unknown; query: string } | { id: unknown; error: string };
@@ -41,6 +44,7 @@ interface DjRequest {
   readonly recent: ContextSong[];
   readonly liked: ContextSong[];
   readonly skipped: ContextSong[];
+  readonly playlistSources: PlaylistSource[];
   readonly session: SessionState;
   /** Artists the listener ruled out; any committed song credited to one is dropped. */
   readonly excludeArtists: string[];
@@ -129,6 +133,7 @@ function parseRequest(value: unknown): DjRequest | null {
     recent: parseSongs(body.recent),
     liked: parseSongs(body.liked),
     skipped: parseSongs(body.skipped),
+    playlistSources: parsePlaylistSources(body.playlistSources),
     session: {
       vibe: bounded(sessionValue.vibe, 100) ?? '',
       energy: numberBetween(sessionValue.energy, 1, 5) ?? 3,
@@ -140,6 +145,16 @@ function parseRequest(value: unknown): DjRequest | null {
     exploration: body.exploration === 'familiar' || body.exploration === 'discover' ? body.exploration : 'balanced',
     shape: body.shape === 'build' || body.shape === 'wind' || body.shape === 'dynamic' ? body.shape : 'steady'
   };
+}
+
+function parsePlaylistSources(value: unknown): PlaylistSource[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_SOURCE_PLAYLISTS).flatMap((source) => {
+    const row = asRecord(source);
+    const name = bounded(row.name, 100);
+    if (!name) return [];
+    return [{ name, tracks: parseSongs(row.tracks, MAX_SOURCE_TRACKS) }];
+  });
 }
 
 /** Lower case, letters and digits only: "A. R. Rahman" → "a r rahman". */
@@ -310,6 +325,7 @@ async function runDjTurn(catalog: CatalogService, input: DjRequest, signal: Abor
           recentlyPlayed: input.recent,
           liked: input.liked,
           skipped: input.skipped,
+          playlistSources: input.playlistSources,
           session: input.session,
           excludeArtists: input.excludeArtists,
           exploration: input.exploration,
@@ -510,13 +526,14 @@ function systemPrompt(input: DjRequest): string {
     input.goal === 'playlist'
       ? `This is an editable playlist draft, not a playback queue. Keep operation=keep. Return at most ${input.songLimit} newly searched songs. Set draftOperation=replace for a fresh draft, extend to add new songs while preserving the draft, remove to remove only existing draft items, and keep for a title-only or explanation change. For removals, use only exact IDs from get_session_context.draft in removeTrackIds. Preserve the title unless the user asks to rename it. Give reasons based only on the catalog and supplied taste context.`
       : `This is a live mix. Return at most ${input.songLimit} songs for the upcoming queue.`,
+    ...(input.playlistSources.length > 0 ? ['The listener explicitly chose these playlists as source material. Use tracks from both playlists as musical seeds, search at least one representative track from each playlist in the catalog, and mix in songs that fit the requested vibe. Prefer a varied order and include songs associated with both sources where the catalog has playable matches.'] : []),
     'Never pick a song credited to an artist in excludeArtists; those songs are dropped after you commit. Avoid the same artist twice in a row unless the user asked for one artist only, and then keep to that artist.',
     `Exploration is ${input.exploration}: familiar leans on liked and recent artists, discover prefers artists the listener has not played or liked, balanced mixes both.`,
     input.shape === 'steady'
       ? 'Keep the set at a steady energy.'
       : `The listener planned the set's shape as ${input.shape === 'build' ? 'building up (calmer first, livelier last)' : input.shape === 'wind' ? 'winding down (livelier first, calmer last)' : 'dynamic (alternate calmer and livelier)'}. Order songs by that plan from catalog facts and the searches that found them; never claim measured energy.`,
     'Return a warm, concise reply in the user’s language. Never claim an action succeeded before it is applied by the player.',
-    `Current task and session: ${JSON.stringify({ goal: input.goal, songLimit: input.songLimit, draftName: input.draftName, draft: input.draft, session, excludeArtists: input.excludeArtists, exploration: input.exploration, plannedShape: input.shape })}`
+    `Current task and session: ${JSON.stringify({ goal: input.goal, songLimit: input.songLimit, draftName: input.draftName, draft: input.draft, playlistSources: input.playlistSources.map(({ name, tracks }) => ({ name, trackCount: tracks.length })), session, excludeArtists: input.excludeArtists, exploration: input.exploration, plannedShape: input.shape })}`
   ].join('\n');
 }
 

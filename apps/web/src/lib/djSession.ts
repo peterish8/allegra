@@ -308,6 +308,17 @@ export function djOffersAfterSet(energy: number): { readonly label: string; read
   return [{ label: 'Less like this', prompt: 'Less like this set: other artists, a different feel' }, nudge];
 }
 
+/**
+ * The queue for playing `id` from a DJ list: that song first, then every other song in the list in
+ * its order, the ones above it included. Playing from the middle of the list once handed the player
+ * the whole list, which counted the songs above as already played, and they vanished from Up next.
+ */
+export function playOrderFrom<T extends { readonly id: string }>(list: readonly T[], id: string): T[] {
+  const chosen = list.find((item) => item.id === id);
+  if (!chosen) return [...list];
+  return [chosen, ...list.filter((item) => item.id !== id)];
+}
+
 /** What the DJ remembers across a reload of this tab. Never the API key. */
 export const DJ_MEMORY_STORAGE_KEY = 'allegra.dj.memory.v1';
 

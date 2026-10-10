@@ -95,6 +95,11 @@ export interface DjTrackContext {
   readonly language?: string;
 }
 
+export interface DjPlaylistSource {
+  readonly name: string;
+  readonly tracks: readonly DjTrackContext[];
+}
+
 export interface DjSessionState {
   readonly vibe: string;
   readonly energy: number;
@@ -117,6 +122,8 @@ export interface DjTurnRequest {
   readonly recent: readonly DjTrackContext[];
   readonly liked: readonly DjTrackContext[];
   readonly skipped: readonly DjTrackContext[];
+  /** At most two playlists selected by the listener as source material for this turn. */
+  readonly playlistSources?: readonly DjPlaylistSource[];
   readonly session: DjSessionState;
   /** Artists the listener ruled out for this session (or for good, with taste memory on). Optional. */
   readonly excludeArtists?: readonly string[];

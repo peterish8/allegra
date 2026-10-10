@@ -13,6 +13,12 @@ import {
 const POINTER_HOLD_MS = 2600;
 /** How far from the mascot (in its own widths) a pointer still pulls its eyes all the way over. */
 const LOOK_REACH = 2.2;
+/** Taps closer together than this are one run; the third in a run spins it. */
+const TAP_RUN_MS = 450;
+/** Stroking: the pointer turns back over the orb this soon after the last turn, having moved this far (orb widths). */
+const STROKE_TURN_MS = 700;
+const STROKE_TRAVEL = 0.08;
+const PURR_EVERY_MS = 250;
 
 export interface DjMascotLoopOptions {
   readonly mode: DjMascotMode;
@@ -36,10 +42,13 @@ function writeVars(target: HTMLElement, values: Readonly<Record<string, string>>
  * `--dj-nod`) onto `targetRef`. Everything under it reads those: the mascot, the stage light and the
  * now-playing bars. No React state, so nothing re-renders per frame.
  *
- * `mascotRef` is the element the eyes look out from. Under reduced motion the body holds still and only
- * the audio values are written (the stylesheet turns them into opacity).
+ * `mascotRef` is the element the eyes look out from, and the one you can touch: a tap boops it, three
+ * quick taps spin it, and stroking back and forth across it makes it blush and purr.
  *
- * Returns `react`, which makes the mascot hop for joy, shake its head or nod.
+ * Under reduced motion the body holds still: only the audio values and the face's opacity changes
+ * (`--dj-squint`, `--dj-blush`) are written, so every reaction still shows, as a fade.
+ *
+ * Returns `react` (see `DjMascotReaction`): joy, shake, nod, hello, perk, droop, love, yawn, stretch…
  */
 export function useDjMascot(
   targetRef: RefObject<HTMLElement | null>,
@@ -66,19 +75,57 @@ export function useDjMascot(
     let frame = 0;
     let last = performance.now();
     let pointer: { x: number; y: number; at: number } | null = null;
+    let taps: number[] = [];
+    let stroke = { lastX: 0, direction: 0, travel: 0, turnedAt: 0, purredAt: 0 };
+
+    /** Back-and-forth over the orb: each quick turn of direction is a stroke, and strokes purr. */
+    const feelStroke = (event: PointerEvent, box: DOMRect): void => {
+      const inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+      if (!inside) { stroke = { ...stroke, direction: 0, travel: 0 }; return; }
+      const dx = event.clientX - stroke.lastX;
+      stroke.lastX = event.clientX;
+      if (dx === 0) return;
+      const direction = Math.sign(dx);
+      const now = performance.now();
+      if (stroke.direction !== 0 && direction !== stroke.direction && stroke.travel >= box.width * STROKE_TRAVEL) {
+        if (now - stroke.turnedAt <= STROKE_TURN_MS && now - stroke.purredAt >= PURR_EVERY_MS) {
+          stroke.purredAt = now;
+          driver.react('purr');
+        }
+        stroke.turnedAt = now;
+        stroke.travel = 0;
+      }
+      stroke.direction = direction;
+      stroke.travel += Math.abs(dx);
+    };
 
     // Measured in the pointer event, not in the frame loop, so the loop never reads layout after writing styles.
     const onPointer = (event: PointerEvent): void => {
       const mascot = mascotRef.current;
-      if (event.pointerType === 'touch' || !mascot) return;
+      if (!mascot) return;
       const box = mascot.getBoundingClientRect();
       if (box.width === 0) return;
+      feelStroke(event, box);
+      if (event.pointerType === 'touch') return;
       const reach = box.width * LOOK_REACH;
       pointer = {
         x: (event.clientX - (box.left + box.width / 2)) / reach,
         y: (event.clientY - (box.top + box.height / 2)) / reach,
         at: performance.now()
       };
+    };
+
+    /** A tap boops it; the third tap in a quick run spins it instead. */
+    const onTap = (): void => {
+      const now = performance.now();
+      const last = taps.at(-1);
+      taps = last !== undefined && now - last <= TAP_RUN_MS ? [...taps, now] : [now];
+      if (taps.length >= 3) {
+        taps = [];
+        driver.react('spin');
+      } else {
+        driver.react('boop');
+      }
     };
 
     const lookFrom = (now: number): { x: number; y: number } | null =>
@@ -113,13 +160,17 @@ export function useDjMascot(
         '--dj-voice': voice.toFixed(3),
         '--dj-onset': onset.toFixed(3)
       };
+      const pose = driver.step(dt, { mode, vibe, onset, energy: playing ? energy : 0, look: lookFrom(now) });
+      // The face's warmth is opacity, so it shows under reduced motion too.
+      const face = { '--dj-squint': pose.squint.toFixed(3), '--dj-blush': pose.blush.toFixed(3) };
       if (query.matches) {
-        writeVars(target, audio, written);
+        writeVars(target, { ...audio, ...face }, written);
         return;
       }
-      const pose = driver.step(dt, { mode, vibe, onset, look: lookFrom(now) });
       writeVars(target, {
         ...audio,
+        ...face,
+        '--dj-spin': pose.spin.toFixed(1),
         '--dj-roam-x': pose.x.toFixed(3),
         '--dj-roam-y': pose.y.toFixed(3),
         '--dj-lift': pose.lift.toFixed(3),
@@ -135,7 +186,7 @@ export function useDjMascot(
     const rest = (): void => {
       writeVars(target, {
         '--dj-roam-x': '0', '--dj-roam-y': '0', '--dj-lift': '0', '--dj-squash': '0', '--dj-sway': '0',
-        '--dj-look-x': '0', '--dj-look-y': '0', '--dj-blink': '0', '--dj-nod': '0'
+        '--dj-look-x': '0', '--dj-look-y': '0', '--dj-blink': '0', '--dj-nod': '0', '--dj-spin': '0'
       }, written);
     };
 
@@ -144,12 +195,15 @@ export function useDjMascot(
     };
 
     rest();
+    const touchable = mascotRef.current;
     window.addEventListener('pointermove', onPointer, { passive: true });
+    touchable?.addEventListener('pointerdown', onTap);
     query.addEventListener('change', onMotionChange);
     frame = window.requestAnimationFrame(sample);
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener('pointermove', onPointer);
+      touchable?.removeEventListener('pointerdown', onTap);
       query.removeEventListener('change', onMotionChange);
       driverRef.current = null;
       writeVars(target, { '--dj-bass': '0', '--dj-energy': '0', '--dj-voice': '0', '--dj-onset': '0' }, written);

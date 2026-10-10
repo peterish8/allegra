@@ -19,6 +19,7 @@ import {
   moveId,
   nextOption,
   orderByIds,
+  playOrderFrom,
   readDjMemory,
   readDjProviderChoice,
   sessionWithEnergy,
@@ -236,6 +237,14 @@ test('older memory without the set options reads with safe defaults', () => {
   assert.equal(memory?.exploration, 'balanced');
   assert.equal(memory?.shape, 'steady');
   assert.deepEqual(memory?.excludeArtists, ['anirudh']);
+});
+
+// Regression (2026-10-11): tapping the third song of Up next made the first two disappear.
+test('playing from the middle of a DJ list keeps every other song upcoming, in order', () => {
+  const list = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id }));
+  assert.deepEqual(playOrderFrom(list, 'c').map(({ id }) => id), ['c', 'a', 'b', 'd', 'e']);
+  assert.deepEqual(playOrderFrom(list, 'a').map(({ id }) => id), ['a', 'b', 'c', 'd', 'e']);
+  assert.deepEqual(playOrderFrom(list, 'missing').map(({ id }) => id), ['a', 'b', 'c', 'd', 'e']);
 });
 
 test('ruled-out artists are lower case, unique and capped; options cycle', () => {

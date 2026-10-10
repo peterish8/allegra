@@ -1,6 +1,6 @@
-import { ArrowUp, Cpu, Ear, KeyRound, LoaderCircle, Mic, Play, Settings2, Sparkles, Square, Undo2 } from 'lucide-react';
+import { ArrowUp, Check, Cpu, Ear, KeyRound, ListMusic, LoaderCircle, Mic, Play, Settings2, Sparkles, Square, Undo2 } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react';
 
 import { getDjSlashSuggestions, type DjGoal } from '@shared/dj';
 import type { UnifiedSong } from '@shared/types';
@@ -8,6 +8,7 @@ import type { UnifiedSong } from '@shared/types';
 import { useAudioAnalyser } from '../hooks/useAudioAnalyser';
 import { DJ_READY_STATUS, useDjSession, type DjEmotion, type DjPick } from '../hooks/useDjSession';
 import { MIC_BLOCKED_COPY, MIC_INSECURE_COPY, useDjVoice } from '../hooks/useDjVoice';
+import { usePlaylistsContext } from '../hooks/usePlaylists';
 import { LOCAL_VOICE_MB } from '../lib/djWhisper';
 import { normalizeEndpoint } from '../lib/djCustom';
 import { djTonePalette, djToneFor } from '../lib/djDance';
@@ -16,6 +17,7 @@ import { djEnergyWord, djSuggestions } from '../lib/djSession';
 import type { Palette } from '../lib/palette';
 import { DjBubble } from './dj/DjBubble';
 import { DjCrate } from './dj/DjCrate';
+import { SavePlaylistButton } from './SavePlaylistButton';
 import { DjHistory } from './dj/DjHistory';
 import { DjMascot, DjTint } from './dj/DjMascot';
 import { DjNowPlaying } from './dj/DjNowPlaying';
@@ -25,6 +27,7 @@ import { DJ_TOUR, djScene } from './dj/DjTour';
 import { InfoTour } from './InfoTour';
 import { useDjMascot } from './dj/useDjMascot';
 import { useDjStageShape } from './dj/useDjStageShape';
+import { TactileButton } from './ui';
 
 interface DjPageProps {
   readonly currentSong: UnifiedSong | null;
@@ -43,6 +46,8 @@ interface DjPageProps {
   readonly audioRef: RefObject<HTMLAudioElement | null>;
   readonly onToggle: () => void;
   readonly onLike: (song: UnifiedSong) => void;
+  readonly onPlayPlaylist: (songs: readonly UnifiedSong[]) => void;
+  readonly onOpenLibrary: () => void;
 }
 
 const INITIAL_VARS = {
@@ -64,6 +69,9 @@ const QUEUE_SHOWN = 40;
 
 /** Nothing playing and nobody touching the page for this long: the DJ dozes off until the next move. */
 const SLEEP_AFTER_MS = 90_000;
+/** The hello waits for the page to settle; a welcome back needs the tab away at least this long. */
+const HELLO_DELAY_MS = 350;
+const WELCOME_BACK_MS = 30_000;
 
 function mascotModeFor(working: boolean, emotion: DjEmotion, playing: boolean, asleep: boolean): DjMascotMode {
   if (working) return 'think';
@@ -73,9 +81,10 @@ function mascotModeFor(working: boolean, emotion: DjEmotion, playing: boolean, a
 }
 
 export function DjPage({
-  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, palette = null, recent, upcoming, searchSlot, audioRef, onToggle, onLike,
+  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, palette = null, recent, upcoming, searchSlot, audioRef, onToggle, onLike, onPlayPlaylist, onOpenLibrary,
 }: DjPageProps) {
   const dj = useDjSession();
+  const library = usePlaylistsContext();
   const {
     provider, model, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist,
     turn, reasons, working, status, emotion, history, undoable, offers,
@@ -97,6 +106,21 @@ export function DjPage({
   const reduced = useReducedMotion() ?? false;
   const analyser = useAudioAnalyser(audioRef, isPlaying);
   const [hour] = useState(() => new Date().getHours());
+  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<readonly string[]>([]);
+  const [mixVibe, setMixVibe] = useState('');
+
+  const savedPlaylists = useMemo(() => library.playlists.map((playlist) => {
+    const songs = playlist.songIds.map((id) => library.songs.get(id)).filter((song): song is NonNullable<typeof song> => Boolean(song));
+    return { ...playlist, songs, tracksReady: songs.length === playlist.songIds.length };
+  }), [library.playlists, library.songs]);
+  const selectedPlaylists = savedPlaylists.filter((playlist) => selectedPlaylistIds.includes(playlist.id));
+  useEffect(() => {
+    const ids = new Set(savedPlaylists.map((playlist) => playlist.id));
+    setSelectedPlaylistIds((current) => {
+      const next = current.filter((id) => ids.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [savedPlaylists]);
 
   const tone = djToneFor(session.vibe, session.energy);
   const vibe = djDanceVibe(tone, session.energy);
@@ -146,6 +170,37 @@ export function DjPage({
     if (emotion === 'happy') react('joy');
     else if (emotion === 'error') react('shake');
   }, [emotion, react]);
+
+  // It greets you when you arrive, and again when you come back to the tab after a while.
+  useEffect(() => {
+    const timer = window.setTimeout(() => react('hello'), HELLO_DELAY_MS);
+    let hiddenAt = 0;
+    const onVisibility = (): void => {
+      if (document.hidden) { hiddenAt = Date.now(); return; }
+      if (hiddenAt && Date.now() - hiddenAt >= WELCOME_BACK_MS) react('hello');
+      hiddenAt = 0;
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [react]);
+
+  // Everything else it notices: a new song or music coming back (perks up), a pause (droops), a like
+  // (blushes), dozing off (yawns), waking (stretches), and the controls you touch (a nod, or energy).
+  const songId = currentSong?.id ?? null;
+  const seen = useRef({ songId, playing, liked: isCurrentLiked, asleep, settingsOpen, goal, energy: session.energy, shape: dj.shape, exploration: dj.exploration });
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = { songId, playing, liked: isCurrentLiked, asleep, settingsOpen, goal, energy: session.energy, shape: dj.shape, exploration: dj.exploration };
+    if (songId !== before.songId && songId !== null) react('perk');
+    else if (playing !== before.playing && songId !== null) react(playing ? 'perk' : 'droop');
+    if (songId === before.songId && isCurrentLiked && !before.liked) react('love');
+    if (asleep !== before.asleep) react(asleep ? 'yawn' : 'stretch');
+    if (session.energy !== before.energy) react(session.energy > before.energy ? 'perk' : 'droop');
+    else if ((settingsOpen && !before.settingsOpen) || goal !== before.goal || dj.shape !== before.shape || dj.exploration !== before.exploration) react('nod');
+  }, [asleep, dj.exploration, dj.shape, goal, isCurrentLiked, playing, react, session.energy, settingsOpen, songId]);
 
   // The AI settings sheet is a floating panel: Esc and a press outside close it, and focus goes back to the gear.
   useEffect(() => {
@@ -237,6 +292,23 @@ export function DjPage({
     setGoal(next);
     setSongLimit(next === 'mix' ? Math.min(songLimit, 8) : Math.max(songLimit, 10));
   };
+  const togglePlaylistForMix = (id: string): void => {
+    setSelectedPlaylistIds((current) => current.includes(id)
+      ? current.filter((selected) => selected !== id)
+      : current.length < 2 ? [...current, id] : current);
+  };
+  const mixSelectedPlaylists = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    const sources = selectedPlaylists.filter((playlist) => playlist.tracksReady && playlist.songs.length > 0);
+    const vibeRequest = mixVibe.trim();
+    if (sources.length !== 2 || !vibeRequest || working) return;
+    chooseGoal('mix');
+    const complete = await dj.send(
+      `Create a ${vibeRequest} mix using both selected playlists. Blend their sounds into one set and keep the transitions and energy cohesive.`,
+      { goal: 'mix', playlistSources: sources.map(({ name, songs }) => ({ name, songs })) }
+    );
+    if (complete) setMixVibe('');
+  };
   // Under the console: the Mix / energy dial and just two ideas, so the row stays one line.
   const showStarters = !prompt && !working && !hearing;
 
@@ -317,6 +389,7 @@ export function DjPage({
       onSkip={dj.skipAndTeach}
     />
   ) : null;
+  const saveQueue = needsStart && turn ? turn.queue.map(({ song }) => song) : upcoming;
 
   return (
     <div className="dj-page" ref={pageRef} data-tone={tone} data-hearing={hearing ? 'true' : 'false'} style={{ ...INITIAL_VARS, '--dj-a': songPalette.primary, '--dj-b': songPalette.secondary } as CSSProperties}>
@@ -522,6 +595,7 @@ export function DjPage({
                 {needsStart && turn && !isRemote ? (
                   <button type="button" className="dj-primary dj-crate-action" onClick={() => dj.startPlan(turn)}><Play size={14} fill="currentColor" /> Start this set</button>
                 ) : null}
+                {saveQueue.length > 0 ? <SavePlaylistButton songs={saveQueue} defaultName={needsStart ? 'DJ Mix' : 'Up next'} className="dj-primary dj-crate-action" /> : null}
               </>
             )}
             empty={<p className="dj-crate-empty">Nothing lined up yet. Ask your DJ and its picks land here, each with the reason it chose them.</p>}
@@ -530,6 +604,77 @@ export function DjPage({
             onRemove={removePick}
           />
         ) : null}
+
+        <section className="dj-playlists" aria-labelledby="dj-playlists-title">
+          <div className="dj-playlists-head">
+            <div>
+              <span className="dj-playlists-eyebrow"><ListMusic size={14} aria-hidden="true" /> Your library</span>
+              <h2 id="dj-playlists-title">Your playlists, in the mix</h2>
+              <p>Play any playlist here, or choose two and give your DJ a vibe to blend them around.</p>
+            </div>
+            <button type="button" className="dj-library-link" onClick={onOpenLibrary}>Open your library <ArrowUp size={14} aria-hidden="true" /></button>
+          </div>
+
+          {library.loading ? <p className="dj-playlists-message" role="status">Loading your playlists…</p> : library.error ? (
+            <div className="dj-playlists-empty" role="alert"><p>{library.error}</p><button type="button" className="dj-library-link" onClick={() => { void library.reload(); }}>Try again</button></div>
+          ) : savedPlaylists.length === 0 ? (
+            <div className="dj-playlists-empty">
+              <p>Your saved playlists will show up here.</p>
+              <button type="button" className="dj-library-link" onClick={onOpenLibrary}>Create a playlist in Your library <ArrowUp size={14} aria-hidden="true" /></button>
+            </div>
+          ) : (
+            <>
+              <ul className="dj-playlist-list" aria-label="Saved playlists">
+                {savedPlaylists.map((playlist) => {
+                  const selected = selectedPlaylistIds.includes(playlist.id);
+                  const canUse = playlist.tracksReady && playlist.songs.length > 0;
+                  const selectionPosition = selectedPlaylistIds.indexOf(playlist.id) + 1;
+                  return (
+                    <li className={`dj-playlist-card${selected ? ' is-selected' : ''}`} key={playlist.id}>
+                      <div className="dj-playlist-card-head">
+                        <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={selected}
+                          aria-label={`${selected ? 'Remove' : 'Choose'} ${playlist.name} ${selected ? 'from' : 'for'} the playlist mix${selected ? `, selected ${selectionPosition}` : ''}`}
+                          disabled={!canUse || (!selected && selectedPlaylistIds.length >= 2)}
+                          className="dj-playlist-select"
+                          onClick={() => togglePlaylistForMix(playlist.id)}
+                        >
+                          <span className="dj-playlist-check" aria-hidden="true">{selected ? <Check size={13} /> : null}</span>
+                          <span className="dj-playlist-copy"><strong>{playlist.name}</strong><small>{playlist.songIds.length} {playlist.songIds.length === 1 ? 'song' : 'songs'}</small></span>
+                        </button>
+                        <button type="button" className="dj-playlist-play" disabled={!canUse || isRemote} onClick={() => onPlayPlaylist(playlist.songs)} aria-label={`Play ${playlist.name}`} title={isRemote ? 'Switch playback to this device to play a playlist here' : undefined}>
+                          <Play size={14} fill="currentColor" aria-hidden="true" /><span>Play</span>
+                        </button>
+                      </div>
+                      <p className="dj-playlist-preview">
+                        {playlist.songs.length > 0 ? playlist.songs.slice(0, 3).map((song) => song.title).join(' · ') : playlist.tracksReady ? 'No songs in this playlist yet.' : 'Loading playlist tracks…'}
+                        {playlist.songs.length > 3 ? ` · +${playlist.songs.length - 3} more` : ''}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+              <form className="dj-playlist-mix-form" onSubmit={(event) => void mixSelectedPlaylists(event)}>
+                <label htmlFor="dj-playlist-vibe">What vibe should connect them?</label>
+                <div className="dj-playlist-mix-row">
+                  <input
+                    id="dj-playlist-vibe"
+                    value={mixVibe}
+                    maxLength={160}
+                    onChange={(event) => setMixVibe(event.target.value)}
+                    placeholder="Late-night, warm, a little nostalgic…"
+                  />
+                  <TactileButton type="submit" variant="primary" icon={Sparkles} className="dj-playlist-mix-button" disabled={working || selectedPlaylists.length !== 2 || selectedPlaylists.some((playlist) => !playlist.tracksReady || playlist.songs.length === 0) || !mixVibe.trim()}>
+                    {working ? 'Mixing…' : 'Mix both playlists'}
+                  </TactileButton>
+                </div>
+                <p className="dj-playlist-mix-hint">Choose two playlists. Your DJ will use both as the starting point, then build the set around your vibe.</p>
+              </form>
+            </>
+          )}
+        </section>
       </div>
     </div>
   );

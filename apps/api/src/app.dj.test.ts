@@ -94,6 +94,32 @@ test('a committed song by an excluded artist is dropped, and the model is told w
   assert.match(context?.content ?? '', /"plannedShape":"build"/);
 });
 
+test('the DJ receives only the two selected playlist sources with bounded track summaries', async () => {
+  const captured: Captured[] = [];
+  const tracks = Array.from({ length: 45 }, (_, index) => ({
+    id: `track-${index}`,
+    title: `Song ${index}`,
+    artist: 'Singer',
+    language: 'tamil'
+  }));
+  const reply = await request(app(geminiFetch(captured))).post('/api/ai/dj/turn').send({
+    ...turn,
+    playlistSources: [
+      { name: 'Morning', tracks },
+      { name: 'Evening', tracks },
+      { name: 'Not selected', tracks }
+    ]
+  });
+
+  assert.equal(reply.status, 200, JSON.stringify(reply.body));
+  const context = JSON.parse((captured[1]?.body.messages as { role: string; content?: string }[]).find((message) => message.role === 'tool')?.content ?? '{}') as {
+    playlistSources?: { name: string; tracks: { id: string }[] }[];
+  };
+  assert.deepEqual(context.playlistSources?.map(({ name, tracks: items }) => [name, items.length]), [['Morning', 40], ['Evening', 40]]);
+  const system = (captured[0]?.body.messages as { role: string; content?: string }[]).find((message) => message.role === 'system')?.content ?? '';
+  assert.match(system, /source material/);
+});
+
 test('Gemini gets tool schemas it accepts', async () => {
   const captured: Captured[] = [];
   await request(app(geminiFetch(captured))).post('/api/ai/dj/turn').send(turn);

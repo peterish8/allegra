@@ -10,7 +10,14 @@
  *    over a slow side-to-side sway, so it moves in time with the song without dancing about.
  *  - Looks at the pointer, and glances around on its own when nobody is pointing.
  *  - Blinks at random intervals, sometimes twice.
- *  - Reacts: a hop of joy, a head shake, a small nod (`react`).
+ *  - Keeps time: it learns the beat spacing from the detected beats, bobs its head left and right on
+ *    alternate beats, and nods on a predicted beat the detector missed (a soft one), so it stays in time.
+ *  - Hears the song's shape: a sudden jump from quiet to loud (a drop) earns a small hop, and a long
+ *    loud stretch closes its eyes in a happy squint now and then.
+ *  - Leans a little toward the pointer, not only its eyes.
+ *  - Reacts (`react`): joy, shake, nod, and the everyday ones: hello on arrival, perk (new song, music
+ *    back, energy up), droop (pause, energy down), boop (a tap), spin (three taps), love (a like),
+ *    purr (stroked), yawn (falling asleep), stretch (waking).
  */
 
 /** How the mascot moves while music plays. Chosen from the session's tone and energy. */
@@ -19,7 +26,9 @@ export type DjDanceVibe = 'calm' | 'steady' | 'bouncy' | 'dreamy';
 /** What the mascot is doing: drifting, dancing to music, thinking, listening to the listener, or asleep. */
 export type DjMascotMode = 'idle' | 'groove' | 'think' | 'listen' | 'sleep';
 
-export type DjMascotReaction = 'joy' | 'shake' | 'nod';
+export type DjMascotReaction =
+  | 'joy' | 'shake' | 'nod'
+  | 'hello' | 'perk' | 'droop' | 'boop' | 'spin' | 'love' | 'purr' | 'yawn' | 'stretch';
 
 export interface DjMascotInput {
   readonly mode: DjMascotMode;
@@ -28,6 +37,8 @@ export interface DjMascotInput {
   readonly onset: number;
   /** Where the pointer is relative to the mascot (-1..1 each way), or null when nobody is pointing. */
   readonly look: { readonly x: number; readonly y: number } | null;
+  /** The song's overall loudness, 0..1 (0 when nothing plays). Optional: drops and bliss need it. */
+  readonly energy?: number;
 }
 
 export interface DjMascotPose {
@@ -47,6 +58,12 @@ export interface DjMascotPose {
   readonly blink: number;
   /** How far the head is dipped in a nod, 0 upright. */
   readonly nod: number;
+  /** Degrees of a whole-body spin (three taps), 0 at rest. */
+  readonly spin: number;
+  /** 0 open eyes, 1 happy closed curves (a boop, a drop, bliss, a hello). */
+  readonly squint: number;
+  /** 0..1 extra warmth in the cheeks (stroked, a like). */
+  readonly blush: number;
 }
 
 export interface DjMascotDriver {
@@ -111,6 +128,35 @@ const REACTION_FOCUS = 0.9;
 const SHAKE_LENGTH = 0.55;
 const SHAKE_RATE = 5.5;
 const SHAKE_DEGREES = 11;
+/** A wave (hello, a stretch on waking): a slower, gentler side-to-side wiggle. */
+const WAVE_LENGTH = 0.95;
+const WAVE_RATE = 2.4;
+const WAVE_DEGREES = 8;
+/** Three taps: one whole turn, easing out. */
+const SPIN_LENGTH = 0.9;
+
+/** Beat keeping: the spacing is the median of the recent gaps, trusted once most of them agree. */
+const BEAT_HISTORY = 7;
+const BEAT_GAP: readonly [number, number] = [0.28, 1.3];
+const BEAT_AGREEMENT = 0.15;
+/** A predicted beat comes this late past the expected time; at most this many in a row. */
+const BEAT_GRACE = 1.08;
+const MAX_PREDICTED = 4;
+/** Each beat tips the head this many times the vibe's sway, alternately left and right. */
+const BOB = 6;
+
+/** A drop: loudness jumps this far above its slow average while that average is still this low. */
+const DROP_RISE = 0.22;
+const DROP_QUIET = 0.35;
+const DROP_COOLDOWN = 10;
+/** Bliss: after this long above this loudness, a happy squint every so many beats. */
+const BLISS_LEVEL = 0.55;
+const BLISS_AFTER = 5;
+const BLISS_EVERY = 8;
+
+/** Blush fades over this long; a lean toward the pointer reaches this many degrees. */
+const BLUSH_FADE = 2.5;
+const LEAN_DEGREES = 4;
 
 /** Springs are integrated in steps no longer than this, so a stiff spring stays stable at any frame rate. */
 const MAX_SUBSTEP = 1 / 240;
@@ -172,9 +218,37 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
   let glance = { x: 0, y: 0 };
 
   let shakeClock = SHAKE_LENGTH;
+  let waveClock = WAVE_LENGTH;
+  let spinClock = SPIN_LENGTH;
   let sinceNod = NOD_GAP;
   let focusLeft = 0;
   let pending: DjMascotReaction[] = [];
+
+  // Face: a happy squint that eases in and out, and a blush that fades on its own.
+  const squint = spring(90, 14);
+  let squintFor = 0;
+  let blush = 0;
+  // A glance the body asks for (up when it perks, down when it droops), ahead of the pointer.
+  let glanceHold = 0;
+  let asked = { x: 0, y: 0 };
+  // A yawn leans back and stretches tall for a moment.
+  let yawnLeft = 0;
+
+  // Beat keeping, on the driver's own clock.
+  let clock = 0;
+  let beatTimes: number[] = [];
+  let lastBeatAt = -Infinity;
+  let predicted = 0;
+  let side = 1;
+  // The song's shape.
+  let slowEnergy = 0;
+  let dropCooldown = 0;
+  let loudFor = 0;
+  let beatsSinceBliss = 0;
+
+  const squintAtLeast = (seconds: number): void => { squintFor = Math.max(squintFor, seconds); };
+  const blushAtLeast = (value: number): void => { blush = Math.min(1, Math.max(blush, value)); };
+  const look = (to: { x: number; y: number }, seconds: number): void => { asked = to; glanceHold = seconds; };
 
   const react = (reaction: DjMascotReaction): void => {
     pending.push(reaction);
@@ -182,24 +256,94 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
 
   const applyReactions = (): void => {
     for (const reaction of pending) {
-      if (reaction === 'joy') {
-        lift.velocity += 1.9;
-        squash.velocity += 2.6;
-        focusLeft = REACTION_FOCUS;
-      } else if (reaction === 'shake') {
-        shakeClock = 0;
-        lift.velocity -= 0.25;
-        focusLeft = REACTION_FOCUS;
-      } else if (sinceNod >= NOD_GAP) {
-        sinceNod = 0;
-        nod.velocity += 2.2;
+      switch (reaction) {
+        case 'joy':
+          lift.velocity += 1.9;
+          squash.velocity += 2.6;
+          focusLeft = REACTION_FOCUS;
+          break;
+        case 'shake':
+          shakeClock = 0;
+          lift.velocity -= 0.25;
+          focusLeft = REACTION_FOCUS;
+          break;
+        case 'hello':
+          // Lands squashed, springs up, waves and smiles at you.
+          squash.value = -0.28;
+          lift.velocity += 1.7;
+          waveClock = 0;
+          squintAtLeast(1.1);
+          blushAtLeast(0.5);
+          look({ x: 0, y: 0.15 }, 1.2);
+          focusLeft = REACTION_FOCUS;
+          break;
+        case 'perk':
+          lift.velocity += 0.9;
+          look({ x: 0, y: -0.55 }, 0.6);
+          break;
+        case 'droop':
+          lift.velocity -= 0.35;
+          squash.velocity -= 1.4;
+          look({ x: 0, y: 0.65 }, 0.9);
+          break;
+        case 'boop':
+          squash.velocity -= 4.6;
+          lift.velocity += 0.55;
+          squintAtLeast(0.7);
+          blushAtLeast(0.35);
+          break;
+        case 'spin':
+          spinClock = 0;
+          lift.velocity += 1;
+          squintAtLeast(1.2);
+          focusLeft = SPIN_LENGTH + 0.3;
+          break;
+        case 'love':
+          lift.velocity += 1.6;
+          squash.velocity += 2;
+          blushAtLeast(1);
+          squintAtLeast(1.2);
+          focusLeft = REACTION_FOCUS;
+          break;
+        case 'purr':
+          blush = Math.min(1, blush + 0.22);
+          squintAtLeast(0.5);
+          if (sinceNod >= NOD_GAP) { sinceNod = 0; nod.velocity += 1.2; }
+          break;
+        case 'yawn':
+          yawnLeft = 1.4;
+          squash.velocity += 3.2;
+          break;
+        case 'stretch':
+          squash.velocity += 3;
+          lift.velocity += 0.8;
+          waveClock = 0;
+          break;
+        case 'nod':
+          if (sinceNod >= NOD_GAP) { sinceNod = 0; nod.velocity += 2.2; }
+          break;
       }
     }
     pending = [];
   };
 
+  /** The spacing between beats, once the recent gaps mostly agree; null until then. */
+  const beatPeriod = (): number | null => {
+    const gaps: number[] = [];
+    for (let i = 1; i < beatTimes.length; i += 1) {
+      const gap = beatTimes[i]! - beatTimes[i - 1]!;
+      if (gap >= BEAT_GAP[0] && gap <= BEAT_GAP[1]) gaps.push(gap);
+    }
+    if (gaps.length < 4) return null;
+    const sorted = [...gaps].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)]!;
+    const agreeing = gaps.filter((gap) => Math.abs(gap - median) <= median * BEAT_AGREEMENT).length;
+    return agreeing >= 4 ? median : null;
+  };
+
   const step = (dtRaw: number, input: DjMascotInput): DjMascotPose => {
     const dt = clamp(dtRaw, 0, 0.1);
+    clock += dt;
     sinceNod += dt;
     focusLeft = Math.max(0, focusLeft - dt);
     applyReactions();
@@ -226,19 +370,57 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
     follow(x, targetX, dt);
     follow(y, targetY, dt);
 
-    // The groove: a nod on every beat, over a slow sway. Quiet passages keep the sway and a soft nod.
-    const rise = input.onset - lastOnset;
-    lastOnset = input.onset;
-    sinceBeat += dt;
-    quietClock += dt;
-    if (input.mode === 'groove' && beatsCount && rise > BEAT_RISE) {
-      const strength = clamp(input.onset, 0.3, 0.9);
+    // The groove: a nod on every beat, the head tipping left and right on alternate beats, over a slow
+    // sway. Quiet passages keep the sway and a soft nod.
+    const grooving = input.mode === 'groove';
+    const beat = (strength: number): void => {
       sinceBeat = 0;
       nod.velocity += groove.kick * 5 * strength;
       lift.velocity -= groove.bounce * strength;
       squash.velocity -= groove.kick * 0.6 * strength;
+      side = -side;
+      tilt.velocity += side * groove.sway * BOB * strength;
+      beatsSinceBliss += 1;
+      if (loudFor >= BLISS_AFTER && beatsSinceBliss >= BLISS_EVERY) {
+        beatsSinceBliss = 0;
+        squintAtLeast(0.45);
+      }
+    };
+    const rise = input.onset - lastOnset;
+    lastOnset = input.onset;
+    sinceBeat += dt;
+    quietClock += dt;
+    if (grooving && beatsCount && rise > BEAT_RISE) {
+      beat(clamp(input.onset, 0.3, 0.9));
+      beatTimes = [...beatTimes, clock].slice(-BEAT_HISTORY);
+      lastBeatAt = clock;
+      predicted = 0;
+    } else if (grooving && beatsCount && predicted < MAX_PREDICTED) {
+      // A beat the detector missed (a soft one): nod where it should have been, to stay in time.
+      const period = beatPeriod();
+      if (period !== null && clock - lastBeatAt >= period * BEAT_GRACE) {
+        beat(0.65);
+        lastBeatAt += period;
+        predicted += 1;
+      }
     }
-    if (input.mode === 'groove') {
+    if (!grooving) {
+      beatTimes = [];
+      predicted = 0;
+    }
+
+    // The song's shape: a jump from quiet to loud is a drop (a small hop); a long loud stretch is bliss.
+    const energy = clamp(input.energy ?? 0, 0, 1);
+    slowEnergy += (energy - slowEnergy) * (1 - Math.exp(-dt / 3));
+    dropCooldown = Math.max(0, dropCooldown - dt);
+    if (grooving && dropCooldown === 0 && slowEnergy < DROP_QUIET && energy - slowEnergy > DROP_RISE) {
+      dropCooldown = DROP_COOLDOWN;
+      lift.velocity += 1.3;
+      squintAtLeast(0.6);
+    }
+    loudFor = grooving && energy > BLISS_LEVEL ? loudFor + dt : 0;
+
+    if (grooving) {
       swayTarget = groove.sway * Math.sin((2 * Math.PI * quietClock) / QUIET_PERIOD);
       if (beatsCount && sinceBeat >= QUIET_AFTER) {
         quietNodIn -= dt;
@@ -250,6 +432,10 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
     } else {
       swayTarget = input.mode === 'think' ? -7 : 0;
     }
+    // It leans a little toward the pointer while drifting or dancing.
+    if (input.look && (input.mode === 'idle' || grooving)) swayTarget += clamp(input.look.x, -1, 1) * LEAN_DEGREES;
+    yawnLeft = Math.max(0, yawnLeft - dt);
+    if (yawnLeft > 0) swayTarget -= 6 * Math.sin((Math.PI * yawnLeft) / 1.4);
     follow(tilt, swayTarget, dt);
     follow(nod, 0, dt);
     follow(lift, 0, dt);
@@ -259,6 +445,18 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
     const shake = shakeClock < SHAKE_LENGTH
       ? SHAKE_DEGREES * Math.sin(2 * Math.PI * SHAKE_RATE * shakeClock) * (1 - shakeClock / SHAKE_LENGTH)
       : 0;
+    waveClock += dt;
+    const wave = waveClock < WAVE_LENGTH
+      ? WAVE_DEGREES * Math.sin(2 * Math.PI * WAVE_RATE * waveClock) * (1 - waveClock / WAVE_LENGTH)
+      : 0;
+    // One whole turn, easing out; 360° looks the same as 0°, so it returns to rest without a jump.
+    spinClock += dt;
+    const spinT = Math.min(1, spinClock / SPIN_LENGTH);
+    const spin = spinT < 1 ? 360 * (1 - (1 - spinT) ** 3) : 0;
+
+    squintFor = Math.max(0, squintFor - dt);
+    follow(squint, squintFor > 0 ? 1 : 0, dt);
+    blush = Math.max(0, blush - dt / BLUSH_FADE);
 
     // Eyes: pose first, then the pointer, then a glance of its own.
     let eyeX = 0;
@@ -272,6 +470,11 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
     } else if (input.mode === 'sleep') {
       eyeX = 0;
       eyeY = 0.3;
+    } else if (glanceHold > 0) {
+      // The body asked for this look (up on a perk, down on a droop, at you on a hello).
+      glanceHold -= dt;
+      eyeX = asked.x;
+      eyeY = asked.y;
     } else if (input.look) {
       eyeX = clamp(input.look.x, -1, 1);
       eyeY = clamp(input.look.y, -1, 1);
@@ -317,11 +520,14 @@ export function createMascotDriver(rand: () => number = Math.random): DjMascotDr
       y: y.value,
       lift: lift.value,
       squash: clamp(squash.value, -0.35, 0.3),
-      tilt: tilt.value + shake,
+      tilt: tilt.value + shake + wave,
       lookX: lookX.value,
       lookY: lookY.value,
       blink,
-      nod: clamp(nod.value, -0.15, 0.5)
+      nod: clamp(nod.value, -0.15, 0.5),
+      spin,
+      squint: clamp(squint.value, 0, 1),
+      blush
     };
   };
 

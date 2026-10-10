@@ -1,4 +1,4 @@
-import type { AccountProfile, ApiResponse, ArtistProfile, ArtistSummary, HomePayload, LyricLine, LyricsPayload, MotionArtwork, SharedPlaylist, TasteSummary, UnifiedSong } from '@shared/types';
+import type { AccountProfile, AlbumDetail, AlbumSummary, ApiResponse, ArtistProfile, ArtistSummary, HomePayload, LyricLine, LyricsPayload, MotionArtwork, SharedPlaylist, TasteSummary, UnifiedSong } from '@shared/types';
 import { POLICY_VERSION, type ReportReason } from '@shared/legal';
 import type { BlendCreated, BlendDetail, BlendInviteLink, BlendInvitePreview, BlendSummary } from '@shared/blendView';
 import type { ImportedTrack } from '@shared/importParse';
@@ -215,6 +215,17 @@ export async function fetchRadio(songId: string, signal?: AbortSignal): Promise<
 /** Provider profile for an artist: real photo, followers, top songs, albums, similar artists. */
 export async function fetchArtist(name: string, signal?: AbortSignal): Promise<ArtistProfile> {
   return request(`/api/artists/${encodeURIComponent(name)}`, { signal });
+}
+
+/** A whole album by the catalog's id (a song's `albumId`), in its own track order. */
+export async function fetchAlbum(id: string, signal?: AbortSignal): Promise<AlbumDetail> {
+  return request(`/api/albums/${encodeURIComponent(id)}`, { signal });
+}
+
+/** The catalog's albums by name: a soundtrack and its singles are separate albums with their own ids. */
+export async function searchAlbums(query: string, limit = 8, signal?: AbortSignal): Promise<AlbumSummary[]> {
+  const data = await request<{ results: AlbumSummary[] }>(`/api/search/albums?q=${encodeURIComponent(query)}&limit=${limit}`, { signal });
+  return data.results;
 }
 
 /** Photos for a list of artist names (max 12). Names without a photo are omitted. */

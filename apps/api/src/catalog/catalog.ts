@@ -2,13 +2,13 @@ import { ProviderUnavailableError, NotFoundError, TimeoutError } from '../lib/er
 import { cacheKey, type CacheStore } from '../lib/cache.js';
 import { CircuitBreaker } from '../lib/circuitBreaker.js';
 import { isDerivative, queryWantsDerivative } from '../lib/derivative.js';
-import { collapseRecordings, needsCanonicalRelease, normalizeSong, songIdentity } from '../lib/normalize.js';
+import { collapseRecordings, needsCanonicalRelease, normalizeAlbumDetail, normalizeAlbumSummary, normalizeSong, songIdentity } from '../lib/normalize.js';
 import type { GaanaProvider } from '../providers/gaana.js';
 import type { CanonicalRelease, ReleaseAuthority } from '../providers/musicbrainz.js';
 import type { ProviderResult, SaavnAsset, SaavnProvider, SaavnSong } from '../providers/saavn.js';
 import { decodeHtml, repairMojibake } from '../lib/decodeHtml.js';
 import { inLanguages, languagesKey } from '../lib/languages.js';
-import type { ArtistProfile, ArtistSummary, HomePayload, UnifiedSong } from '../types.js';
+import type { AlbumDetail, AlbumSummary, ArtistProfile, ArtistSummary, HomePayload, UnifiedSong } from '../types.js';
 import { parseSongRef } from '../shared/songRef.js';
 
 export interface CatalogSearch {
@@ -74,7 +74,8 @@ export class CatalogService {
     // v4: edits rank below originals, and the top row's album and cover are corrected
     // against the release authority when the provider only has it on a playlist.
     // v6: the provider's relevance order is kept instead of re-sorting by play count.
-    const key = cacheKey('search', 'v6', query, String(limit), String(page));
+    // v7: songs carry `albumId` (2026-10-11).
+    const key = cacheKey('search', 'v7', query, String(limit), String(page));
     const cached = await this.cache.get<CatalogSearch>(key);
     if (cached) {
       return cached;
@@ -154,9 +155,12 @@ export class CatalogService {
       return [...results];
     }
 
+    // The provider's album id belongs to the provider's album name: drop it with the name.
+    const { albumId: _replacedAlbumId, ...rest } = top;
+    void _replacedAlbumId;
     return [
       {
-        ...top,
+        ...rest,
         album: canonical.album,
         // Keep the provider's cover when the archive has no front image for the record.
         ...(canonical.coverUrl ? { artwork: canonical.coverUrl } : {})
@@ -169,7 +173,7 @@ export class CatalogService {
     const ref = parseSongRef(id);
     const source = ref?.source === 'gaana' ? 'Gaana' : 'Saavn';
     const providerId = ref?.id ?? id;
-    const key = cacheKey('song', source, providerId);
+    const key = cacheKey('song', 'v2', source, providerId);
     const cached = await this.cache.get<UnifiedSong>(key);
     if (cached) {
       return cached;
@@ -240,7 +244,7 @@ export class CatalogService {
   }
 
   private async getRawSuggestions(id: string, limit: number): Promise<UnifiedSong[]> {
-    const key = cacheKey('suggestions', 'v3', id, String(limit));
+    const key = cacheKey('suggestions', 'v4', id, String(limit));
     const cached = await this.cache.get<UnifiedSong[]>(key);
     if (cached) {
       return cached;
@@ -259,6 +263,44 @@ export class CatalogService {
     const songs = collapseRecordings(normalizeMany(result.data, source)).slice(0, limit);
     await this.cache.set(key, songs, 86_400);
     return songs;
+  }
+
+  /** A whole album by the catalog's id, in its own track order (`GET /api/albums/:id`). */
+  public async getAlbum(id: string): Promise<AlbumDetail> {
+    const key = cacheKey('album', 'v1', id);
+    const cached = await this.cache.get<AlbumDetail>(key);
+    if (cached) {
+      return cached;
+    }
+    const result = await this.call(this.saavnBreaker, () => this.saavn.getAlbum(id));
+    if (!result.ok) {
+      throw unavailable(result.reason);
+    }
+    const album = result.data ? normalizeAlbumDetail(result.data) : null;
+    if (!album) {
+      throw new NotFoundError();
+    }
+    await this.cache.set(key, album, 21_600);
+    return album;
+  }
+
+  /** Albums by name (`GET /api/search/albums`). An empty answer is a real answer, not a failure. */
+  public async searchAlbums(query: string, limit: number): Promise<AlbumSummary[]> {
+    const key = cacheKey('album-search', 'v1', query.trim().toLocaleLowerCase(), String(limit));
+    const cached = await this.cache.get<AlbumSummary[]>(key);
+    if (cached) {
+      return cached;
+    }
+    const result = await this.call(this.saavnBreaker, () => this.saavn.searchAlbums(query, limit));
+    if (!result.ok) {
+      throw unavailable(result.reason);
+    }
+    const albums = result.data.flatMap((raw) => {
+      const album = normalizeAlbumSummary(raw);
+      return album ? [album] : [];
+    }).slice(0, limit);
+    await this.cache.set(key, albums, 3600);
+    return albums;
   }
 
   /** Full artist page data by name: photo, followers, top songs, albums, similar artists. */

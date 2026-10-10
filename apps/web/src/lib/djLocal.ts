@@ -1,4 +1,4 @@
-import type { DjExploration, DjGoal, DjLocalIntent, DjSessionState, DjSetShape, DjTrackContext, DjTurnResponse } from '@shared/dj';
+import type { DjExploration, DjGoal, DjLocalIntent, DjPlaylistSource, DjSessionState, DjSetShape, DjTrackContext, DjTurnResponse } from '@shared/dj';
 import type { DjLocalPick } from '@shared/djLocal';
 import { applyDjLocalSession, resolveDjLocalIntent, rankDjLocalCandidates } from '@shared/djLocal';
 
@@ -57,6 +57,7 @@ function promptForIntent(input: {
   readonly recent: readonly DjTrackContext[];
   readonly liked: readonly DjTrackContext[];
   readonly skipped: readonly DjTrackContext[];
+  readonly playlistSources?: readonly DjPlaylistSource[];
   readonly draft: readonly DjLocalPick[];
   readonly draftName: string;
 }): string {
@@ -72,6 +73,7 @@ function promptForIntent(input: {
     recentListening: input.recent.slice(0, 8),
     likedSongs: input.liked.slice(0, 8),
     skippedSongs: input.skipped.slice(0, 8),
+    playlistSources: (input.playlistSources ?? []).map(({ name, tracks }) => ({ name, tracks })),
     playlistDraft: input.draft.map(({ song }) => ({ id: song.id, title: song.title, artist: song.artist })),
     playlistName: input.draftName,
     instructions: [
@@ -79,6 +81,7 @@ function promptForIntent(input: {
       'excludeArtists lists artist names the user rules out ("no songs by X", "not the same artist" means the current artist). onlyArtist is one artist name when the user asks for only that artist, otherwise null.',
       'operation is replace_upcoming, insert, or keep. insertAfter is 0 through 7 only for insert, otherwise null.',
       'Use 1 to 4 concise catalog search queries when songs are needed. Never output song IDs for new recommendations.',
+      'When playlistSources are present for a live mix, search at least one track from each selected playlist, then use any remaining searches for the requested vibe.',
       'strategy is replace or extend. For playlist removals, return only exact IDs from playlistDraft in removeTrackIds. Keep a draft song unless the user clearly asks to remove it.',
       'For a playlist, default to extend when a draft already exists; choose replace only when the user asks for a fresh/new playlist or to replace the whole draft.',
       'Retain existing language and constraints unless the user clearly changes them. Do not invent BPM, genre, mood, instrumentation, or other track facts.',
@@ -113,6 +116,7 @@ export async function requestLocalDjTurn(input: {
   readonly recent: readonly DjTrackContext[];
   readonly liked: readonly DjTrackContext[];
   readonly skipped: readonly DjTrackContext[];
+  readonly playlistSources?: readonly DjPlaylistSource[];
   readonly draft: readonly DjLocalPick[];
   readonly draftName: string;
   /** Artists the session already rules out (from earlier requests or "Less like this artist"). */
@@ -154,16 +158,21 @@ export async function requestLocalDjTurn(input: {
   const intent = resolveDjLocalIntent(modelText, input);
   const excludeArtists = [...new Set([...(input.excludeArtists ?? []), ...intent.excludeArtists])];
   const shape = input.shape ?? 'steady';
+  const sourceQueries = (input.playlistSources ?? []).flatMap(({ tracks }) => {
+    const track = tracks[Math.floor(tracks.length / 2)];
+    return track ? [`${track.title} ${track.artist}`] : [];
+  });
 
   // A planned shape adds one calmer and one livelier search around the set's language or vibe, so the
   // set can be ordered by which search found each song. It is labelled a plan; nothing is measured.
   const session = applyDjLocalSession(intent, input.session);
   const around = intent.onlyArtist ?? session.language ?? session.vibe ?? '';
-  const lanes: { readonly query: string; readonly lane: 'calm' | 'lively' }[] = shape !== 'steady' && intent.searchQueries.length > 0 && around
+  const lanes: { readonly query: string; readonly lane: 'calm' | 'lively' }[] = shape !== 'steady' && (intent.searchQueries.length > 0 || sourceQueries.length > 0) && around
     ? [{ query: `${around} soft melodies`, lane: 'calm' }, { query: `${around} upbeat hits`, lane: 'lively' }]
     : [];
+  const baseQueries = [...new Set([...sourceQueries, ...intent.searchQueries])].slice(0, 4 - lanes.length);
   const queries = [
-    ...intent.searchQueries.slice(0, 4 - lanes.length).map((query) => ({ query, lane: undefined })),
+    ...baseQueries.map((query) => ({ query, lane: undefined })),
     ...lanes
   ];
   const searchResults = await Promise.all(queries.map(async ({ query, lane }, queryIndex) => {

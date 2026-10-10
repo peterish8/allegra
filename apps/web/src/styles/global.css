@@ -3369,6 +3369,7 @@ body::before { background: radial-gradient(circle at 64% -10%, rgba(180, 198, 25
 .playlist-empty,
 .playlist-note { margin: 0; color: var(--ink-muted); font-size: var(--text-small); }
 .playlist-error { margin: 0; color: #ff9c9c; font-size: var(--text-small); }
+.save-playlist-status { flex-basis: 100%; color: var(--wave); font-size: var(--text-meta); }
 
 .playlist-new { display: flex; gap: 8px; }
 .playlist-new input {

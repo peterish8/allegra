@@ -24,6 +24,9 @@ export interface UnifiedSong {
   title: string;          // HTML entities already decoded
   artist: string;         // decoded, comma-joined
   album?: string;
+  /** Additive, 2026-10-11. The catalog's own album id (Saavn only), for GET /api/albums/:id.
+   *  Absent for Gaana rows and when `album` was replaced by a canonical release name. */
+  albumId?: string;
   artwork: string;        // 1000x1000 when available
   streamUrl: string;      // ALWAYS our proxy: /api/stream/:id — never a CDN URL
   duration: number;       // SECONDS
@@ -70,11 +73,13 @@ The cloud BYOK providers are `openai`, `openrouter`, and `gemini`. The caller se
 provider's `apiKey`, `model`, task `goal` (`mix` or `playlist`), a bounded `songLimit` (1–30), the
 current `message`, up to 8 prior `{role, content}` messages, and small session context: the active
 track, up to 8 upcoming/recent/liked/skipped summaries, up to 30 editable draft-track summaries and
-the draft name, plus `{vibe, energy, language, constraints}`. Three optional fields shape the set
+the draft name, plus `{vibe, energy, language, constraints}`. Four optional fields shape the set
 (added 2026-10-11; an older client that omits them gets the old behaviour): `excludeArtists`
 (up to 12 names the listener ruled out), `exploration` (`familiar` | `balanced` | `discover`,
 default `balanced`) and `shape` (`steady` | `build` | `wind` | `dynamic`, default `steady`; a
-planned order, never measured energy). Any committed song credited, as whole words, to an
+planned order, never measured energy), and `playlistSources` (up to two playlists the listener
+explicitly selected, each with a name and up to 40 `{id, title, artist, language?}` track summaries).
+Playlist sources are used as seeds only for that DJ turn and are never saved by the endpoint. Any committed song credited, as whole words, to an
 excluded artist, or with no stream, is dropped; if none are left the turn becomes a `keep`. The API relays the key and this limited context to the
 selected provider over HTTPS for this request only; it does not persist either. The provider is
 allowlisted by the server, the key is never accepted in a URL, and requests are rate limited by
@@ -116,7 +121,8 @@ Provider failures return
 friendly API errors and never include the upstream response body or the submitted key.
 
 This endpoint does not use the signed-in account token and does not save listening history. The
-client sends only the small context above, never the full library or account profile.
+client sends only the small context above and, when the listener asks for a playlist-based mix, the
+two selected playlists; it never sends the rest of the library or the account profile.
 
 ### `POST /api/ai/dj/transcribe` and `POST /api/ai/dj/speak` (added 2026-10-10)
 The DJ's ears and voice with the listener's own key. The free paths need no server: the browser's
@@ -201,6 +207,20 @@ are dropped from the other two shelves.
 Additive endpoint (no existing shape changed). `name` is the lead artist as shown on a song. Resolves the name through the provider's artist search (exact match preferred), then returns `ArtistProfile` from `packages/shared/types.ts`: a real `image` (500×500 photo or `null`), `isVerified`, `followerCount`, optional `bio`, `songs` (most popular first, all playable), `albums` (with cover + year) and `similar` artists. `404` when no artist matches.
 ### `GET /api/artists/faces?names=a,b,c` → `ApiResponse<ArtistSummary[]>` · cache 24 h — added 2026-09-21
 Up to 12 comma-separated names; returns `{ id, name, image }` for each one that has a photo. Unmatched names are simply omitted. Used for avatars on lists.
+
+### `GET /api/albums/:id` → `ApiResponse<AlbumDetail>` · cache 6 h — added 2026-10-11
+Additive endpoint. `id` is a song's `albumId` or an `AlbumSummary.id` (Saavn album ids, digits). Returns
+the catalog's whole album, in its own track order, every song playable through `/api/stream`:
+```ts
+interface AlbumSummary { id: string; name: string; artist: string; artwork: string | null; year: string | null; language: string | null }
+interface AlbumDetail extends AlbumSummary { songCount: number; songs: UnifiedSong[] }
+```
+`songCount` is the catalog's count; `songs` drops any row without a stream, so it can be shorter.
+`404` when the catalog has no such album.
+
+### `GET /api/search/albums?q=…&limit=8` → `ApiResponse<{ results: AlbumSummary[] }>` · cache 1 h — added 2026-10-11
+Albums by name from the catalog (Saavn), so a film's soundtrack and its singles are separate results
+with their own ids. `limit` 1–20. Empty → `success: true` with `results: []`.
 
 ### `GET /api/artwork`
 `title`, `artist`, `limit`=5 → `ApiResponse<{ urls: string[] }>` · cache 30 d

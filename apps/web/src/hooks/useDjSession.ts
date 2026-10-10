@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { parseDjSlashCommand } from '@shared/dj';
-import type { DjCloudProvider, DjExploration, DjGoal, DjSessionState, DjSetShape, DjTrackContext, DjTurnRequest, DjTurnResponse } from '@shared/dj';
+import type { DjCloudProvider, DjExploration, DjGoal, DjPlaylistSource, DjSessionState, DjSetShape, DjTrackContext, DjTurnRequest, DjTurnResponse } from '@shared/dj';
 import { leadArtist, readArtistRules } from '@shared/djLocal';
 import type { UnifiedSong } from '@shared/types';
 
@@ -9,6 +9,8 @@ import { requestDjTurn } from '../lib/api';
 import { parseDjAction, type DjAction, type DjActionResult } from '../lib/djActions';
 import { customChat, normalizeEndpoint } from '../lib/djCustom';
 import { requestLocalDjTurn } from '../lib/djLocal';
+import { samplePlaylistTracks } from '../lib/djPlaylistSources';
+import { savePlaylistWithSongs } from '../lib/savePlaylist';
 import {
   applySlashCommand,
   defaultModelFor,
@@ -70,6 +72,7 @@ export interface DjOffer {
 export interface DjSendOptions {
   readonly goal?: DjGoal;
   readonly songLimit?: number;
+  readonly playlistSources?: readonly { readonly name: string; readonly songs: readonly UnifiedSong[] }[];
 }
 
 export interface DjSession {
@@ -329,6 +332,12 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
         recent: recent.slice(0, 8).map(contextSong),
         liked: likedSongs.slice(0, 8).map(contextSong),
         skipped: skipped.slice(0, 8).map(contextSong),
+        ...(options?.playlistSources?.length ? {
+          playlistSources: options.playlistSources.slice(0, 2).map((source): DjPlaylistSource => ({
+            name: source.name.slice(0, 100),
+            tracks: samplePlaylistTracks(source.songs, 40).map(contextSong)
+          }))
+        } : {}),
         session
       };
       // On-device and custom-endpoint turns run in this browser; only the cloud key path uses the API.
@@ -470,14 +479,9 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
     setSavingPlaylist(true);
     setStatus('Saving your playlist…');
     try {
-      const library = await playlists.create(draftName.trim() || 'A little mix');
-      if (!library) throw new Error(playlists.actionError ?? 'That playlist could not be created.');
-      const saved = await playlists.addSongs(library.id, draft.map(({ song }) => song));
-      if (!saved) {
-        await playlists.remove(library.id);
-        throw new Error(playlists.actionError ?? 'The playlist could not be saved. Your draft is still here to retry.');
-      }
-      setStatus(`Saved “${draftName.trim() || 'A little mix'}” to your playlists.`);
+      const result = await savePlaylistWithSongs(draftName.trim() || 'A little mix', draft.map(({ song }) => song), playlists);
+      if (!result.ok) throw new Error(result.error);
+      setStatus(`Saved “${result.playlist.name}” to your playlists.`);
       setEmotion('happy');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'The playlist could not be saved.');

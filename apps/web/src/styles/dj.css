@@ -23,6 +23,7 @@
   color: var(--ink);
 }
 .dj-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.dj-layout > .dj-playlists { grid-column: 1 / -1; }
 /* The hero is one piece of glass: the stage and, under it, a tab holding the console. Its outline is
    cut by useDjStageShape (clip-path) and drawn by .dj-hero-edge, so the glass has no border or shadow. */
 .dj-hero {
@@ -45,7 +46,7 @@
 }
 
 /* The shared glass recipe. */
-.dj-hero, .dj-input-wrap, .dj-crate {
+.dj-hero, .dj-input-wrap, .dj-crate, .dj-playlists {
   border: 1px solid var(--dj-glass-border);
   background: var(--dj-glass-fill);
   box-shadow: var(--dj-glass-shadow);
@@ -361,6 +362,47 @@
 .dj-primary:disabled { opacity: .42; cursor: default; transform: none; }
 .dj-draft-name input { width: min(220px, 44cqw); height: 36px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 999px; color: var(--ink); background: rgba(255, 255, 255, .06); font: inherit; font-size: 12px; }
 
+/* Saved playlists sit under the DJ stage and queue, with the same glass and cover-tinted language. */
+.dj-playlists { min-width: 0; padding: clamp(16px, 2.5cqw, 28px); border-radius: 26px; }
+.dj-playlists-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+.dj-playlists-head h2 { margin: 6px 0 4px; font-size: clamp(19px, 2.3cqw, 26px); font-weight: 650; letter-spacing: -.035em; }
+.dj-playlists-head p { max-width: 62ch; margin: 0; color: var(--ink-muted); font-size: 13px; line-height: 1.5; }
+.dj-playlists-eyebrow { display: inline-flex; align-items: center; gap: 7px; color: var(--wave); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.dj-library-link { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 999px; color: var(--ink); background: rgba(255, 255, 255, .05); font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.dj-library-link svg { transform: rotate(45deg); }
+.dj-library-link:hover { background: rgba(255, 255, 255, .1); }
+.dj-playlists-message, .dj-playlists-empty { margin: 0; color: var(--ink-muted); font-size: 13px; }
+.dj-playlists-empty p { margin: 0 0 10px; }
+.dj-playlist-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 9px; margin: 0; padding: 0; list-style: none; }
+.dj-playlist-card { min-width: 0; padding: 12px; border: 1px solid rgba(255, 255, 255, .1); border-radius: 18px; background: rgba(0, 0, 0, .16); transition: border-color var(--d-fast) var(--ease-standard), background var(--d-fast) var(--ease-standard); }
+.dj-playlist-card.is-selected { border-color: color-mix(in srgb, var(--wave) 55%, rgba(255, 255, 255, .16)); background: color-mix(in srgb, var(--wave) 8%, rgba(0, 0, 0, .16)); }
+.dj-playlist-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dj-playlist-select { display: flex; min-width: 0; min-height: 44px; flex: 1; align-items: center; gap: 10px; padding: 0; border: 0; color: var(--ink); background: transparent; text-align: left; cursor: pointer; }
+.dj-playlist-select:disabled { opacity: .48; cursor: default; }
+.dj-playlist-check { display: grid; width: 21px; height: 21px; flex: 0 0 21px; place-items: center; border: 1px solid rgba(255, 255, 255, .28); border-radius: 7px; color: #17190e; }
+.is-selected .dj-playlist-check { border-color: var(--wave); background: var(--wave); }
+.dj-playlist-copy { display: grid; min-width: 0; gap: 3px; }
+.dj-playlist-copy strong { overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.dj-playlist-copy small { color: var(--ink-muted); font-size: 11px; }
+.dj-playlist-play { display: inline-flex; min-width: 64px; min-height: 36px; align-items: center; justify-content: center; gap: 5px; padding: 0 10px; border: 0; border-radius: 999px; color: #16180e; background: var(--wave); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.dj-playlist-play:disabled { opacity: .42; cursor: default; }
+.dj-playlist-preview { margin: 8px 0 0 31px; overflow: hidden; color: var(--ink-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.dj-playlist-mix-form { display: grid; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, .1); }
+.dj-playlist-mix-form > label { font-size: 12px; font-weight: 650; }
+.dj-playlist-mix-row { display: flex; min-width: 0; gap: 9px; }
+.dj-playlist-mix-row input { min-width: 0; min-height: 44px; flex: 1; padding: 0 15px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 999px; color: var(--ink); background: rgba(0, 0, 0, .2); font: inherit; font-size: 13px; }
+.dj-playlist-mix-row input:focus-visible { border-color: var(--wave); outline: 2px solid color-mix(in srgb, var(--wave) 36%, transparent); outline-offset: 1px; }
+.dj-playlist-mix-button { min-height: 44px; }
+.dj-playlist-mix-hint { margin: 0; color: var(--ink-muted); font-size: 11px; line-height: 1.45; }
+.dj-playlist-select:focus-visible, .dj-playlist-play:focus-visible, .dj-library-link:focus-visible { outline: 2px solid var(--wave); outline-offset: 3px; }
+
+@media (max-width: 560px) {
+  .dj-playlists { padding: 16px; border-radius: 22px; }
+  .dj-playlists-head { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .dj-playlist-mix-row { flex-direction: column; }
+  .dj-playlist-mix-button { width: 100%; }
+}
+
 /* The song playing now: the one row washed in its colours, with live level bars on the cover. */
 .dj-now {
   position: relative; isolation: isolate; overflow: hidden;
@@ -512,8 +554,12 @@
   scale: calc(1 - var(--dj-squash, 0) * .55) calc(1 + var(--dj-squash, 0));
   rotate: calc(var(--dj-sway, 0) * 1deg);
 }
-.dj-m-kick { scale: calc(1 + var(--dj-onset, 0) * .035); }
+.dj-m-kick { scale: calc(1 + var(--dj-onset, 0) * .035); rotate: calc(var(--dj-spin, 0) * 1deg); }
 .dj-m[data-playing='true'] .dj-m-kick { will-change: transform; }
+/* The stage orb is touchable: a tap boops it, three spin it, stroking makes it purr. Only the orb
+   itself, not its light or the motes around it, so it never covers the stage's controls. */
+.dj-m--stage .dj-m-kick { pointer-events: auto; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.dj-m--stage .dj-m-glow, .dj-m--stage .dj-m-orbit { pointer-events: none; }
 
 /* The song's light, behind the glass. Quiet at rest, never above .6 on bass. */
 .dj-m-glow { opacity: min(.6, calc(var(--m-glow-base) + var(--dj-bass, 0) * .3)); }
@@ -610,11 +656,13 @@
   /* Soft, solid eyes: a gentle edge, no halo. */
   background: linear-gradient(180deg, #fdfaf3 0%, #f1e9dc 100%);
   box-shadow: 0 0 calc(var(--m-size) * .025) rgba(255, 255, 255, .25);
+  /* Open eyes give way to the happy curves as the loop squints (a boop, a drop, a hello). */
+  opacity: calc(1 - var(--dj-squint, 0));
   transition: opacity var(--d-base) var(--ease-standard);
 }
 /* Happy eyes: closed upward curves. Drawn always, shown by opacity. */
 .dj-m-eye i {
-  position: absolute; top: 22%; left: -18%; width: 136%; height: 58%; opacity: 0;
+  position: absolute; top: 22%; left: -18%; width: 136%; height: 58%; opacity: var(--dj-squint, 0);
   border-top: max(2px, calc(var(--m-size) * .026)) solid #fffaf0; border-radius: 50% 50% 0 0 / 100% 100% 0 0;
   filter: drop-shadow(0 0 calc(var(--m-size) * .015) rgba(255, 255, 255, .3));
   transition: opacity var(--d-base) var(--ease-standard);
@@ -635,7 +683,8 @@
 .dj-m-cheeks i {
   position: absolute; top: 56%; width: 17%; height: 9%; border-radius: 50%;
   background: radial-gradient(closest-side, color-mix(in srgb, var(--m-a, #ff8fa3) 45%, #ff9fb4), transparent);
-  opacity: .14; transition: opacity var(--d-slow) var(--ease-standard);
+  /* Warms when stroked or when you like the song (`--dj-blush` from the loop). */
+  opacity: calc(.14 + var(--dj-blush, 0) * .45); transition: opacity var(--d-slow) var(--ease-standard);
 }
 .dj-m-cheeks i:first-child { left: 17%; }
 .dj-m-cheeks i:last-child { right: 17%; }
@@ -703,7 +752,7 @@
 /* ---------- Reduced motion: everything collapses to opacity ---------- */
 @media (prefers-reduced-motion: reduce) {
   .dj-m--stage .dj-m-roam, .dj-m-dance, .dj-m-face, .dj-m-eyes { translate: none; rotate: none; scale: none; }
-  .dj-m-kick { scale: none; will-change: auto; }
+  .dj-m-kick { scale: none; rotate: none; will-change: auto; }
   .dj-m-glow { opacity: min(.6, calc(var(--m-glow-base) + var(--dj-bass, 0) * .15 + var(--dj-onset, 0) * .2)); }
   .dj-m-floor > span { translate: none; scale: none; }
   .dj-m-stage-glow .dj-m-slot > span, .dj-m--mini .dj-m-kick, .dj-m--mini .dj-m-eye, .dj-m--mini[data-playing='true'] .dj-m-dance { animation: none; }
