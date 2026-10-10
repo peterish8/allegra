@@ -94,7 +94,7 @@ export function applySlashCommand(state: SlashState, parsed: ParsedSlash): Slash
     if (remainder) return { next, send: { message: remainder, goal: command.goal, songLimit }, prompt: { clear: true } };
     return {
       next,
-      status: command.goal === 'playlist' ? 'Playlist draft ready. Tell me the mood or first song.' : 'Live mix ready. What are we feeling?',
+      status: command.goal === 'playlist' ? 'Playlist draft ready. Tell me the mood or first song.' : 'Live DJ is on. What should we play next?',
       prompt: { clear: true }
     };
   }
@@ -144,25 +144,41 @@ export function orderByIds<T>(items: readonly T[], ids: readonly string[], idOf:
 export interface DjSuggestion {
   readonly label: string;
   readonly prompt: string;
+  /** What pressing it will do, in plain words (the chip's tooltip and accessible description). */
+  readonly hint: string;
 }
 
 const firstArtist = (artist: string): string => artist.split(/,|&| and /)[0]?.trim() || artist;
 const capitalise = (word: string): string => word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase();
 
+/** The five energy levels, as words the listener reads on the control. */
+export const DJ_ENERGY_WORDS = ['Calm', 'Easy', 'Balanced', 'Lively', 'Hype'] as const;
+
+export function djEnergyWord(energy: number): (typeof DJ_ENERGY_WORDS)[number] {
+  const index = Math.min(5, Math.max(1, Math.round(Number.isFinite(energy) ? energy : 3))) - 1;
+  return DJ_ENERGY_WORDS[index] ?? 'Balanced';
+}
+
 /**
- * Starter requests built from what the listener is doing: the playing song, the language they listen
- * in most, the time of day, and a wildcard. Every chip is a plain request the DJ already understands.
+ * Starter requests built from what is true right now: the playing song (and whether it has lyrics),
+ * the set's energy, the language the listener plays most, the hour, then a wildcard. Each says what it
+ * will do, and each is a plain request the DJ already understands.
  */
 export function djSuggestions(
-  current: Pick<UnifiedSong, 'title' | 'artist' | 'language'> | null,
+  current: Pick<UnifiedSong, 'title' | 'artist' | 'language' | 'hasLyrics'> | null,
   recent: readonly Pick<UnifiedSong, 'artist' | 'language'>[],
-  hour: number
+  hour: number,
+  session: Pick<DjSessionState, 'energy' | 'language'> = { energy: 3, language: null }
 ): DjSuggestion[] {
   const chips: DjSuggestion[] = [];
   if (current) {
     const artist = firstArtist(current.artist);
-    chips.push({ label: `More like ${artist}`, prompt: `More songs like ${current.title} by ${artist}` });
-    chips.push({ label: 'Sing along', prompt: 'Start karaoke' });
+    chips.push({ label: `More from ${artist}`, prompt: `More songs by ${artist} next`, hint: `Lines up songs by ${artist} after this one` });
+  }
+  if (session.energy >= 4) {
+    chips.push({ label: 'Calmer next', prompt: 'A little calmer next, keep the style', hint: 'Keeps the style and brings the energy down' });
+  } else {
+    chips.push({ label: 'More energy', prompt: 'More energy next, keep the style', hint: 'Keeps the style and lifts the energy' });
   }
   const counts = new Map<string, number>();
   for (const song of current ? [current, ...recent] : recent) {
@@ -170,13 +186,15 @@ export function djSuggestions(
     if (language && language !== 'english' && language !== 'unknown') counts.set(language, (counts.get(language) ?? 0) + 1);
   }
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-  if (top) chips.push({ label: `${capitalise(top)} melodies`, prompt: `${capitalise(top)} melodies` });
-  if (hour >= 21 || hour < 4) chips.push({ label: 'Late night', prompt: 'Late night, soft and unhurried' });
-  else if (hour < 11) chips.push({ label: 'Morning lift', prompt: 'Something bright to start the morning' });
-  else if (hour < 17) chips.push({ label: 'Focus flow', prompt: 'Steady music to focus, no sharp changes' });
-  else chips.push({ label: 'Golden hour', prompt: 'Warm evening songs' });
-  chips.push({ label: 'More energy', prompt: 'More energy' });
-  chips.push({ label: 'Surprise me', prompt: 'Surprise me, but keep my taste' });
+  if (top && !session.language) {
+    chips.push({ label: `Keep it ${capitalise(top)}`, prompt: `${capitalise(top)} songs next`, hint: `Keeps the next songs in ${capitalise(top)}` });
+  }
+  if (current?.hasLyrics) chips.push({ label: 'Sing along', prompt: 'Start karaoke', hint: 'Fades the singer out and shows the lyrics' });
+  if (hour >= 21 || hour < 4) chips.push({ label: 'Late night', prompt: 'Late night, soft and unhurried', hint: 'Soft, unhurried songs for now' });
+  else if (hour < 11) chips.push({ label: 'Morning lift', prompt: 'Something bright to start the morning', hint: 'Bright songs to start the day' });
+  else if (hour < 17) chips.push({ label: 'Focus flow', prompt: 'Steady music to focus, no sharp changes', hint: 'Steady songs with no sharp changes' });
+  else chips.push({ label: 'Golden hour', prompt: 'Warm evening songs', hint: 'Warm songs for the evening' });
+  chips.push({ label: 'Surprise me', prompt: 'Surprise me, but keep my taste', hint: 'Something you may not expect, still your taste' });
   return chips;
 }
 

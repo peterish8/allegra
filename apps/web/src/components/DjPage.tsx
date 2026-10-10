@@ -1,8 +1,8 @@
-import { Cpu, Ear, KeyRound, LoaderCircle, Mic, Play, Send, Settings2, Sparkles, Undo2 } from 'lucide-react';
+import { ArrowUp, Cpu, Ear, KeyRound, LoaderCircle, Mic, Play, Settings2, Sparkles, Undo2 } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 
-import { getDjSlashSuggestions } from '@shared/dj';
+import { getDjSlashSuggestions, type DjGoal } from '@shared/dj';
 import type { UnifiedSong } from '@shared/types';
 
 import { useAudioAnalyser } from '../hooks/useAudioAnalyser';
@@ -11,7 +11,7 @@ import { MIC_BLOCKED_COPY, MIC_INSECURE_COPY, useDjVoice } from '../hooks/useDjV
 import { LOCAL_VOICE_MB } from '../lib/djWhisper';
 import { djTonePalette, djToneFor } from '../lib/djDance';
 import { djDanceVibe, type DjMascotMode } from '../lib/djMascotMotion';
-import { djSuggestions } from '../lib/djSession';
+import { djEnergyWord, djSuggestions } from '../lib/djSession';
 import type { Palette } from '../lib/palette';
 import { DjBubble } from './dj/DjBubble';
 import { DjCrate } from './dj/DjCrate';
@@ -34,6 +34,8 @@ interface DjPageProps {
   readonly palette?: Palette | null;
   /** Recently played songs, newest first: the starter suggestions read their language. */
   readonly recent: readonly UnifiedSong[];
+  /** Everything after the song playing now, in order: the queue box lists as much of it as fits. */
+  readonly upcoming: readonly UnifiedSong[];
   /** The app's search, as a small icon in the stage's corner. A song picked there is one the DJ notices. */
   readonly searchSlot?: ReactNode;
   readonly audioRef: RefObject<HTMLAudioElement | null>;
@@ -49,9 +51,14 @@ const INITIAL_VARS = {
 
 function greeting(hour: number, song: UnifiedSong | null): string {
   const part = hour < 5 ? 'Up late' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  if (song) return `${part}. Liking “${song.title}”? Ask me for more like it, or for something else entirely.`;
-  return `${part}. Tell me a mood, a moment or a song, and I’ll line up the next few.`;
+  if (song) return `${part}. Enjoying “${song.title}”? Ask for more like it, or something new.`;
+  return `${part}. Tell me a mood, a moment or a song.`;
 }
+
+const capitalised = (value: string): string => value.charAt(0).toLocaleUpperCase() + value.slice(1);
+
+/** How many upcoming songs the queue box lists; the column scrolls past what fits. */
+const QUEUE_SHOWN = 40;
 
 function mascotModeFor(working: boolean, emotion: DjEmotion, playing: boolean): DjMascotMode {
   if (working) return 'think';
@@ -60,13 +67,13 @@ function mascotModeFor(working: boolean, emotion: DjEmotion, playing: boolean): 
 }
 
 export function DjPage({
-  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, palette = null, recent, searchSlot, audioRef, onToggle, onLike,
+  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, palette = null, recent, upcoming, searchSlot, audioRef, onToggle, onLike,
 }: DjPageProps) {
   const dj = useDjSession();
   const {
     provider, model, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist,
-    turn, reasons, working, status, emotion, nextSongs, history, undoable, offer,
-    setStatus, setEmotion, setDraftName, setProvider, setModel, setApiKey, setSettingsOpen, setGoal,
+    turn, reasons, working, status, emotion, history, undoable, offer,
+    setStatus, setEmotion, setDraftName, setProvider, setModel, setApiKey, setSettingsOpen, setGoal, setSongLimit,
   } = dj;
   const [prompt, setPrompt] = useState('');
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -163,16 +170,27 @@ export function DjPage({
   const crate = useMemo<{ readonly items: readonly DjPick[]; readonly editable: boolean }>(() => {
     if (goal === 'playlist') return { items: draft, editable: true };
     if (needsStart && turn) return { items: turn.queue, editable: true };
-    const upcoming = nextSongs.slice(0, 8);
-    if (!turn) return { items: upcoming.map((song) => ({ song, reason: reasons[song.id] ?? '' })), editable: false };
+    const shown = upcoming.slice(0, QUEUE_SHOWN);
+    if (!turn) return { items: shown.map((song) => ({ song, reason: reasons[song.id] ?? '' })), editable: false };
     return {
-      items: upcoming.filter((song) => reasons[song.id] !== undefined).map((song) => ({ song, reason: reasons[song.id] ?? '' })),
+      items: shown.filter((song) => reasons[song.id] !== undefined).map((song) => ({ song, reason: reasons[song.id] ?? '' })),
       editable: true
     };
-  }, [draft, goal, needsStart, nextSongs, reasons, turn]);
+  }, [draft, goal, needsStart, upcoming, reasons, turn]);
 
   const commandSuggestions = getDjSlashSuggestions(prompt, goal);
-  const starters = useMemo(() => djSuggestions(currentSong, recent.slice(0, 12), hour), [currentSong, hour, recent]);
+  const starters = useMemo(
+    () => djSuggestions(currentSong, recent.slice(0, 12), hour, session),
+    [currentSong, hour, recent, session]
+  );
+  // The set at a glance, from what the DJ actually holds: vibe · energy · language, and whether its set plays.
+  const strip = [session.vibe ? capitalised(session.vibe) : '', session.vibe || session.language ? djEnergyWord(session.energy) : '', session.language ? capitalised(session.language) : '']
+    .filter(Boolean)
+    .join(' · ');
+  const chooseGoal = (next: DjGoal): void => {
+    setGoal(next);
+    setSongLimit(next === 'mix' ? Math.min(songLimit, 8) : Math.max(songLimit, 10));
+  };
   // Under the console: the Mix / energy dial and just two ideas, so the row stays one line.
   const showStarters = !prompt && !working && !hearing;
 
@@ -235,12 +253,14 @@ export function DjPage({
   ) : null;
 
   const showNow = Boolean(currentSong && goal === 'mix');
+  // "From your DJ" only when the DJ really picked the song playing now (radio and search plays are not its set).
+  const djPickPlaying = Boolean(isLive && currentSong && reasons[currentSong.id] !== undefined);
   const nowRow = currentSong && showNow ? (
     <DjNowPlaying
       song={currentSong}
       playing={isPlaying}
       liked={isCurrentLiked}
-      live={isLive}
+      live={djPickPlaying}
       reason={reasons[currentSong.id] ?? ''}
       palette={songPalette}
       onToggle={onToggle}
@@ -276,6 +296,12 @@ export function DjPage({
             />
             <DjBubble text={bubbleText} working={working || Boolean(voice?.transcribing) || voice?.localProgress !== null && voice?.localProgress !== undefined} reduced={reduced} actions={bubbleActions} />
             <div className="dj-stage-info"><InfoTour label="How your DJ works" steps={DJ_TOUR} stage={djScene} /></div>
+            {strip || (djPickPlaying && goal === 'mix') ? (
+              <p className="dj-session-strip">
+                {djPickPlaying && goal === 'mix' ? <span className="dj-session-live"><i aria-hidden="true" />DJ set playing</span> : null}
+                {strip ? <span className="dj-session-vibe">{strip}</span> : null}
+              </p>
+            ) : null}
             <div className="dj-stage-tools">
               {voice && voice.engine !== 'none' ? (
                 <button
@@ -321,7 +347,6 @@ export function DjPage({
           <form className="dj-compose" ref={composeRef} onSubmit={(event) => { event.preventDefault(); submit(prompt); }}>
             <div className="dj-input-wrap" data-busy={working || hearing ? 'true' : 'false'}>
               <span className="dj-input-ring" aria-hidden="true"><i /></span>
-              <Sparkles className="dj-input-mark" size={16} aria-hidden="true" />
               <input
                 ref={inputRef}
                 value={hearing ? voice?.transcript ?? '' : prompt}
@@ -330,7 +355,7 @@ export function DjPage({
                 onBlur={() => { if (!working && (emotion === 'listening' || emotion === 'curious')) setEmotion('idle'); }}
                 onChange={(event) => { setPrompt(event.target.value); if (status && !working) setStatus(''); react('nod'); }}
                 maxLength={500}
-                placeholder={hearing ? 'Listening…' : 'Ask your DJ anything'}
+                placeholder={hearing ? 'Listening…' : goal === 'playlist' ? 'What should this playlist be?' : 'What should we play next?'}
                 aria-label="Tell your DJ what you want to hear"
                 role="combobox"
                 aria-autocomplete="list"
@@ -357,7 +382,7 @@ export function DjPage({
                 <Mic size={17} />
               </button>
               <button type="submit" className="dj-send-button" disabled={working || !prompt.trim()} aria-label="Ask the DJ">
-                {working ? <LoaderCircle size={18} className="dj-spin" /> : <Send size={16} />}
+                {working ? <LoaderCircle size={17} className="dj-spin" /> : <ArrowUp size={18} strokeWidth={2.4} />}
               </button>
               {commandSuggestions.length ? (
                 <div className="dj-command-menu" id="dj-command-menu" role="listbox" aria-label="DJ shortcuts">
@@ -378,12 +403,12 @@ export function DjPage({
                 onEnergy={dj.setEnergy}
                 onRemoveConstraint={dj.removeConstraint}
                 onClearLanguage={dj.clearLanguage}
-                onToggleGoal={() => setGoal(goal === 'mix' ? 'playlist' : 'mix')}
+                onGoal={chooseGoal}
               />
               {showStarters ? (
                 <ul className="dj-starters" aria-label="Try asking">
                   {starters.slice(0, 2).map((chip) => (
-                    <li key={chip.label}><button type="button" className="dj-starter" onClick={() => submit(chip.prompt)}>{chip.label}</button></li>
+                    <li key={chip.label}><button type="button" className="dj-starter" title={chip.hint} onClick={() => submit(chip.prompt)}>{chip.label}</button></li>
                   ))}
                 </ul>
               ) : null}
@@ -401,7 +426,7 @@ export function DjPage({
             label="Editable playlist draft"
             header={(
               <>
-                <div className="dj-crate-title"><h3>Your draft</h3><span>{draft.length} of {songLimit} songs</span></div>
+                <div className="dj-crate-title"><h3>Your playlist draft</h3><span>{draft.length} of {songLimit} songs · nothing plays until you choose</span></div>
                 {draft.length > 0 ? <>
                   <label className="dj-draft-name"><span className="sr-only">Playlist name</span><input value={draftName} onChange={(event) => setDraftName(event.target.value)} maxLength={100} aria-label="Playlist name" /></label>
                   <button type="button" className="dj-primary dj-crate-action" onClick={() => void dj.savePlaylist()} disabled={savingPlaylist}><Sparkles size={14} /> {savingPlaylist ? 'Saving…' : 'Save playlist'}</button>
@@ -423,8 +448,8 @@ export function DjPage({
             header={(
               <>
                 <div className="dj-crate-title">
-                  <h3>{needsStart ? 'Your set' : 'Coming up'}</h3>
-                  <span>{crate.items.length} {crate.items.length === 1 ? 'song' : 'songs'}{turn && crate.editable ? ' · picked by your DJ' : ''}</span>
+                  <h3>{needsStart ? 'Your set' : 'Up next'}<span className="dj-crate-count"> · {crate.items.length} {crate.items.length === 1 ? 'song' : 'songs'}</span></h3>
+                  <span>{needsStart ? 'Planned by your DJ · starts when you press Start' : turn && crate.editable ? 'Picked by your DJ · your own queued songs stay first' : 'Your queue'}</span>
                 </div>
                 {needsStart && turn && !isRemote ? (
                   <button type="button" className="dj-primary dj-crate-action" onClick={() => dj.startPlan(turn)}><Play size={14} fill="currentColor" /> Start this set</button>

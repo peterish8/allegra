@@ -246,7 +246,7 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
     setUndoable(0);
     setOffer(null);
     setEmotion('thinking');
-    setStatus('Reading your set and looking through the catalog…');
+    setStatus(selectedGoal === 'playlist' ? 'Finding tracks for your playlist…' : 'Finding tracks that match your request…');
     try {
       const common = {
         goal: selectedGoal,
@@ -298,7 +298,8 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
       }
       return true;
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'The DJ could not finish that request. Try again.');
+      const fallback = selectedGoal === 'playlist' ? 'Couldn’t update the draft. Nothing in it was lost.' : 'Couldn’t update the queue. Your music is still playing.';
+      setStatus(error instanceof Error && error.message ? error.message : fallback);
       setEmotion('error');
       return false;
     } finally {

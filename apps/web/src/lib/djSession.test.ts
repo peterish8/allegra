@@ -9,6 +9,7 @@ import {
   applySlashCommand,
   DJ_MEMORY_STORAGE_KEY,
   defaultModelFor,
+  djEnergyWord,
   djSuggestions,
   moveId,
   orderByIds,
@@ -140,15 +141,33 @@ const SONG = {
   duration: 179, hasLyrics: false, playCount: 0, source: 'Saavn' as const, language: 'telugu'
 };
 
-test('suggestions start from the playing song, the main language and the hour', () => {
+test('suggestions start from the playing song, the energy, the main language and the hour', () => {
   const chips = djSuggestions(SONG, [{ artist: 'X', language: 'telugu' }, { artist: 'Y', language: 'tamil' }], 22);
-  assert.equal(chips[0]?.label, 'More like Anirudh Ravichander');
-  assert.ok(chips.some((chip) => chip.label === 'Telugu melodies'));
+  assert.equal(chips[0]?.label, 'More from Anirudh Ravichander');
+  assert.equal(chips[1]?.label, 'More energy');
+  assert.ok(chips.some((chip) => chip.label === 'Keep it Telugu'));
   assert.ok(chips.some((chip) => chip.label === 'Late night'));
   assert.ok(chips.some((chip) => chip.label === 'Surprise me'));
+  assert.ok(chips.every((chip) => chip.hint.length > 0));
   const morning = djSuggestions(null, [], 8);
   assert.ok(morning.some((chip) => chip.label === 'Morning lift'));
-  assert.ok(!morning.some((chip) => chip.label.startsWith('More like')));
+  assert.ok(!morning.some((chip) => chip.label.startsWith('More from')));
+});
+
+test('suggestions follow the set: calmer when it is loud, no language chip once one is set, sing along only with lyrics', () => {
+  const loud = djSuggestions(SONG, [], 14, { energy: 5, language: 'telugu' });
+  assert.equal(loud[1]?.label, 'Calmer next');
+  assert.ok(!loud.some((chip) => chip.label.startsWith('Keep it')));
+  assert.ok(!loud.some((chip) => chip.label === 'Sing along'));
+  const withLyrics = djSuggestions({ ...SONG, hasLyrics: true }, [], 14);
+  assert.ok(withLyrics.some((chip) => chip.label === 'Sing along'));
+});
+
+test('energy words cover the five levels and clamp the rest', () => {
+  assert.deepEqual([1, 2, 3, 4, 5].map(djEnergyWord), ['Calm', 'Easy', 'Balanced', 'Lively', 'Hype']);
+  assert.equal(djEnergyWord(0), 'Calm');
+  assert.equal(djEnergyWord(9), 'Hype');
+  assert.equal(djEnergyWord(Number.NaN), 'Balanced');
 });
 
 test('session memory round-trips and never stores a key', () => {

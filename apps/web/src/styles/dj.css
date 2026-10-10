@@ -30,14 +30,18 @@
   display: grid; min-width: 0; gap: 0; align-content: start;
   border: 0 !important; border-radius: 30px; box-shadow: none !important;
 }
-.dj-hero > .dj-tint { opacity: min(1, calc(.72 + var(--dj-energy, 0) * .4)); }
+.dj-hero > .dj-tint { opacity: min(.9, calc(.6 + var(--dj-energy, 0) * .3)); }
 .dj-hero-edge { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .dj-hero-edge path { fill: none; stroke: url(#dj-hero-edge-light); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-/* Wide: the stage leads and the queue is a slim column beside it, so the first pick is always in view. */
-@container (min-width: 960px) {
-  .dj-layout:has(> .dj-crate) { grid-template-columns: minmax(0, 1fr) clamp(300px, 27cqw, 360px); align-items: start; gap: 18px; }
+/* Wide: the stage leads and the queue is a column beside it, exactly as tall as the stage (height 0 +
+   min-height 100% lets the stage alone set the row's height), scrolling on its own. */
+@container (min-width: 880px) {
+  .dj-layout:has(> .dj-crate) { grid-template-columns: minmax(0, 1fr) clamp(280px, 30cqw, 360px); align-items: stretch; gap: 18px; }
   .dj-layout > .dj-note { grid-column: 1 / -1; }
-  .dj-layout > .dj-crate { position: sticky; top: 12px; max-height: calc(100svh - var(--dock, 96px) - 40px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .dj-layout > .dj-crate {
+    position: sticky; top: 12px; align-self: stretch; height: 0; min-height: 100%;
+    align-content: start; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  }
 }
 
 /* The shared glass recipe. */
@@ -62,15 +66,17 @@
   border-radius: 30px;
   container-type: size;
 }
-@container (min-width: 960px) {
-  .dj-mascot-stage { height: clamp(320px, calc(100svh - var(--dock, 96px) - 320px), 600px); }
+/* Wide: the stage and its console fill the screen down to the player bar, so no dead band sits under it. */
+@container (min-width: 880px) {
+  /* 100svh minus the dock, the console under the stage (up to two rows of controls) and a clear gap. */
+  .dj-mascot-stage { height: clamp(300px, calc(100svh - var(--dock, 96px) - 226px), 660px); }
 }
-/* The song's light in the room. It swells a little with the music. */
+/* The song's light in the room: one soft pool behind the mascot, not a wash over the whole stage, so the
+   glass stays neutral and covers keep their own colour. It swells a little with the music. */
 .dj-stage-wash {
   background:
-    radial-gradient(ellipse 60% 75% at 18% 12%, color-mix(in srgb, var(--m-a) 26%, transparent), transparent 70%),
-    radial-gradient(ellipse 70% 80% at 88% 100%, color-mix(in srgb, var(--m-b) 22%, transparent), transparent 72%),
-    radial-gradient(ellipse 45% 55% at 60% 40%, color-mix(in srgb, var(--m-c) 12%, transparent), transparent 80%);
+    radial-gradient(ellipse 46% 58% at 50% 38%, color-mix(in srgb, var(--m-a) 16%, transparent), transparent 72%),
+    radial-gradient(ellipse 70% 60% at 50% 100%, color-mix(in srgb, var(--m-b) 8%, transparent), transparent 74%);
 }
 .dj-mascot-stage {
   /* The band at the bottom of the stage where the DJ's words sit; the mascot keeps to the room above it. */
@@ -145,8 +151,7 @@
   opacity: 0; transition: opacity var(--d-fast) var(--ease-standard);
 }
 .dj-input-wrap:focus-within::after { opacity: 1; }
-.dj-input-mark { flex: none; color: var(--dj-a, var(--ink-faint)); opacity: .9; }
-.dj-input-wrap input { flex: 1; min-width: 0; height: 42px; padding: 0 8px; border: 0; outline: 0; color: var(--ink); background: transparent; font: inherit; font-size: 14px; }
+.dj-input-wrap input { flex: 1; min-width: 0; height: 42px; padding: 0 8px 0 4px; border: 0; outline: 0; color: var(--ink); background: transparent; font: inherit; font-size: 14px; }
 .dj-input-wrap input::placeholder { color: var(--ink-faint); }
 .dj-gear-button, .dj-mic-button, .dj-send-button {
   display: grid; width: 36px; height: 36px; flex: none; place-items: center; padding: 0;
@@ -155,9 +160,10 @@
 }
 .dj-gear-button:hover, .dj-mic-button:hover { color: var(--ink); background: var(--dj-hover); }
 .dj-mic-button.is-listening { color: #fff; background: #dc7568; animation: dj-mic-pulse var(--d-atmosphere) var(--ease-standard) infinite alternate; }
-.dj-send-button { color: #15170c; background: var(--wave); }
+/* Send: a plain arrow in a white circle; faint until there is something to send. */
+.dj-send-button { width: 34px; height: 34px; margin-left: 2px; color: #111214; background: var(--ink); }
 .dj-send-button:not(:disabled):hover { transform: scale(1.06); }
-.dj-send-button:disabled { opacity: .35; cursor: default; }
+.dj-send-button:disabled { opacity: .28; cursor: default; }
 .dj-input-wrap button:focus-visible { outline: 2px solid rgba(255, 255, 255, .82); outline-offset: 2px; }
 .dj-spin { animation: dj-rotate var(--d-spin) linear infinite; }
 @keyframes dj-mic-pulse { from { opacity: 1; } to { opacity: .7; } }
@@ -204,51 +210,72 @@
 .dj-compose-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; min-width: 0; max-width: 100%; }
 .dj-compose-row > * { min-width: 0; max-width: 100%; }
 .dj-chips, .dj-starters { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
-/* Mix or Playlist, and how much energy: one control. */
-.dj-dial {
-  display: inline-flex; height: 34px; align-items: center; gap: 4px; padding: 3px 8px 3px 3px;
+/* Three tiers of control. Primary (send, Start this set, Save) is the solid lime. Secondary (the mode
+   switch and energy) is a glass pill. Quiet (ideas, memory chips) is text until hovered. */
+
+/* Secondary: Live DJ or Playlist. The chosen option is a lit segment; each says what it does on hover. */
+.dj-mode, .dj-energy {
+  display: inline-flex; height: 36px; align-items: center; padding: 3px;
   border: 1px solid rgba(255, 255, 255, .14); border-radius: 999px; background: rgba(255, 255, 255, .06);
 }
-.dj-dial-goal {
-  display: inline-flex; height: 26px; align-items: center; gap: 6px; padding: 0 11px; border: 0; border-radius: 999px;
-  color: var(--ink); background: rgba(255, 255, 255, .12); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer;
+.dj-mode-option {
+  height: 28px; padding: 0 12px; border: 0; border-radius: 999px;
+  color: var(--ink-soft, var(--ink-muted)); background: transparent; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
   transition: transform var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard);
 }
-.dj-dial-goal::before { width: 6px; height: 6px; border-radius: 50%; background: var(--dj-a, var(--wave)); content: ''; }
-.dj-dial-goal:hover { background: rgba(255, 255, 255, .18); }
-.dj-dial-goal:active { transform: scale(.96); }
-.dj-dial-goal:focus-visible { outline: 2px solid rgba(255, 255, 255, .82); outline-offset: 2px; }
-.dj-dial-sep { width: 1px; height: 14px; margin: 0 2px; background: rgba(255, 255, 255, .14); }
-.dj-dial-energy { display: inline-flex; align-items: center; }
+.dj-mode-option[aria-checked='true'] { color: #15170c; background: var(--ink); }
+.dj-mode-option[aria-checked='false']:hover { color: var(--ink); background: var(--dj-hover); }
+.dj-mode-option:active { transform: scale(.96); }
+
+/* Secondary: energy as five rising bars (hit areas 24 × 28) and the word for the chosen level. */
+.dj-energy { gap: 6px; padding: 3px 12px 3px 6px; }
+.dj-energy-bars { display: inline-flex; align-items: center; }
+.dj-energy-bar { display: grid; width: 24px; height: 28px; place-items: end center; padding: 0 0 6px; border: 0; background: transparent; cursor: pointer; }
+.dj-energy-bar::before {
+  width: 5px; height: 16px; border-radius: 3px; background: rgba(255, 255, 255, .24); content: '';
+  transform-origin: bottom; transform: scaleY(calc(.3 + var(--bar, 3) * .14));
+  transition: transform var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard);
+}
+.dj-energy-bar.is-lit::before { background: var(--ink); }
+.dj-energy-bar:hover::before { transform: scaleY(calc(.3 + var(--bar, 3) * .14)) scaleX(1.3); }
+.dj-energy-word { min-width: 58px; color: var(--ink); font-size: 12.5px; font-weight: 600; }
+
+/* Quiet: what the DJ remembers. */
 .dj-chip {
   display: inline-flex; min-height: 32px; align-items: center; gap: 2px; padding: 0 4px 0 12px;
-  border: 1px solid rgba(255, 255, 255, .14); border-radius: 999px; color: var(--ink); background: rgba(255, 255, 255, .07); font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, .1); border-radius: 999px; color: var(--ink-soft, var(--ink)); background: rgba(255, 255, 255, .04); font-size: 12px;
 }
-button.dj-chip { padding: 0 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.dj-chip--goal { border-color: color-mix(in srgb, var(--dj-a, var(--wave)) 45%, transparent); }
 .dj-chip-x { display: grid; width: 24px; height: 24px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--ink-muted); background: transparent; cursor: pointer; }
 .dj-chip-x:hover { color: var(--ink); background: var(--dj-hover); }
-.dj-chip--energy { gap: 0; padding: 0 6px; }
-.dj-energy-dot { display: grid; width: 16px; height: 26px; place-items: center; padding: 0; border: 0; background: transparent; cursor: pointer; }
-.dj-energy-dot::before { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, .22); content: ''; transition: transform var(--d-fast) var(--ease-standard); }
-.dj-energy-dot.is-lit::before { background: var(--dj-a, var(--wave)); }
-.dj-energy-dot:hover::before { transform: scale(1.35); }
+/* Quiet: two ideas. Text first; a faint pill only on hover. */
 .dj-starter {
-  min-height: 34px; padding: 0 14px; border: 1px solid rgba(255, 255, 255, .1); border-radius: 999px;
-  color: var(--ink-muted); background: rgba(255, 255, 255, .035); font: inherit; font-size: 12px; cursor: pointer;
+  min-height: 34px; padding: 0 12px; border: 1px solid transparent; border-radius: 999px;
+  color: var(--ink-soft, var(--ink-muted)); background: transparent; font: inherit; font-size: 12.5px; cursor: pointer;
   transition: transform var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard);
 }
-.dj-starter:hover { color: var(--ink); background: var(--dj-hover); transform: translateY(-1px); }
-.dj-chip button:focus-visible, button.dj-chip:focus-visible, .dj-starter:focus-visible, .dj-chip-button:focus-visible { outline: 2px solid rgba(255, 255, 255, .82); outline-offset: 2px; }
+.dj-starter:hover { border-color: rgba(255, 255, 255, .12); color: var(--ink); background: var(--dj-hover); transform: translateY(-1px); }
+.dj-chip button:focus-visible, .dj-starter:focus-visible, .dj-chip-button:focus-visible, .dj-mode-option:focus-visible, .dj-energy-bar:focus-visible { outline: 2px solid rgba(255, 255, 255, .82); outline-offset: 2px; }
+
+/* The set at a glance, at the top of the stage: what is playing for you and in what shape. */
+.dj-session-strip {
+  position: absolute; z-index: 4; top: 22px; left: 50%; translate: -50% 0;
+  display: inline-flex; max-width: calc(100cqw - 220px); align-items: center; gap: 12px; margin: 0;
+  color: var(--ink-soft, var(--ink-muted)); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap;
+}
+.dj-session-vibe { overflow: hidden; text-overflow: ellipsis; }
+.dj-session-live { display: inline-flex; flex: none; align-items: center; gap: 6px; color: var(--ink); }
+.dj-session-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--wave); animation: dj-live var(--d-atmosphere) var(--ease-standard) infinite alternate; }
 
 .dj-note { margin: 0; color: var(--ink-muted); font-size: 12px; }
 
 /* ---------- Queue box ---------- */
-.dj-crate { position: relative; display: grid; min-width: 0; padding: 8px; border-radius: 26px; }
+/* Rows keep their own height (max-content); a column shorter than its content scrolls instead of squashing them. */
+.dj-crate { position: relative; display: grid; grid-auto-rows: max-content; min-width: 0; padding: 8px; border-radius: 26px; container: dj-crate / inline-size; }
 .dj-crate-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 10px 6px; }
 .dj-crate-title { display: grid; gap: 2px; margin-right: auto; }
-.dj-crate-title h3 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
-.dj-crate-title span { color: var(--ink-faint); font-size: 11px; }
+.dj-crate-title h3 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+.dj-crate-title h3 .dj-crate-count { color: var(--ink-muted); font-weight: 500; }
+.dj-crate-title > span { color: var(--ink-muted); font-size: 12px; line-height: 1.35; }
 .dj-crate-empty { margin: 4px 10px 12px; color: var(--ink-muted); font-size: 13px; line-height: 1.5; }
 .dj-primary {
   display: inline-flex; min-height: 36px; align-items: center; gap: 6px; padding: 0 15px; border: 0; border-radius: 999px;
@@ -269,7 +296,7 @@ button.dj-chip { padding: 0 12px; font: inherit; font-size: 12px; font-weight: 6
 .dj-now > .dj-tint { opacity: min(1, calc(.8 + var(--dj-onset, 0) * .3)); }
 .dj-now-wash {
   background:
-    linear-gradient(105deg, color-mix(in srgb, var(--m-a) 36%, transparent), color-mix(in srgb, var(--m-b) 18%, transparent) 55%, color-mix(in srgb, var(--m-c) 6%, transparent));
+    linear-gradient(105deg, color-mix(in srgb, var(--m-a) 26%, transparent), color-mix(in srgb, var(--m-b) 10%, transparent) 55%, transparent);
 }
 .dj-now-art { position: relative; width: 54px; height: 54px; overflow: hidden; padding: 0; border: 0; border-radius: 14px; background: transparent; cursor: pointer; }
 .dj-now-art .artwork, .dj-row .artwork { width: 100%; height: 100%; border-radius: inherit; }
@@ -288,12 +315,30 @@ button.dj-chip { padding: 0 12px; font: inherit; font-size: 12px; font-weight: 6
 .dj-now-badge { padding: 1px 6px; border: 1px solid rgba(255, 255, 255, .2); border-radius: 999px; color: var(--ink); font-size: 9px; letter-spacing: .08em; }
 .dj-now[data-playing='true'] .dj-now-dot { background: var(--wave); animation: dj-live var(--d-atmosphere) var(--ease-standard) infinite alternate; }
 .dj-now-copy strong, .dj-now-copy small, .dj-now-copy em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dj-now-copy strong { font-size: 14px; font-weight: 650; }
-.dj-now-copy small { color: var(--ink-muted); font-size: 12px; }
-.dj-now-copy em { color: var(--ink-faint); font-size: 11px; font-style: normal; }
+.dj-now-copy strong { font-size: 15px; font-weight: 650; }
+.dj-now-copy small { color: var(--ink-soft, var(--ink-muted)); font-size: 12.5px; }
+.dj-now-copy em { color: var(--ink-muted); font-size: 11.5px; font-style: normal; }
 .dj-now-actions { display: flex; align-items: center; gap: 0; }
 .dj-now-actions .dj-icon-button { width: 32px; height: 32px; }
 @keyframes dj-live { from { opacity: 1; } to { opacity: .35; } }
+/* A narrow queue column: the buttons sit on the "Now playing" line, and the title and artist take the
+   full width under it, so the row loses no height to a separate button row. (After the base rules, so
+   `display: contents` wins.) */
+@container dj-crate (max-width: 360px) {
+  .dj-now {
+    grid-template-columns: 54px minmax(0, 1fr) auto;
+    grid-template-areas: 'art label actions' 'art title title' 'art artist artist' 'reason reason reason';
+    row-gap: 0; column-gap: 12px; padding: 8px 8px 10px 10px;
+  }
+  .dj-now .dj-now-art { grid-area: art; align-self: center; }
+  .dj-now .dj-now-copy { display: contents; }
+  .dj-now .dj-now-label { grid-area: label; margin: 0; }
+  .dj-now .dj-now-copy strong { grid-area: title; }
+  .dj-now .dj-now-copy small { grid-area: artist; }
+  .dj-now .dj-now-copy em { grid-area: reason; margin-top: 6px; }
+  .dj-now .dj-now-actions { grid-area: actions; }
+  .dj-now .dj-now-actions .dj-icon-button { width: 30px; height: 30px; }
+}
 
 .dj-icon-button {
   display: grid; width: 38px; height: 38px; place-items: center; padding: 0; border: 0; border-radius: 50%;
@@ -318,17 +363,17 @@ button.dj-chip { padding: 0 12px; font: inherit; font-size: 12px; font-weight: 6
 }
 .dj-row-play:focus-visible { outline: 2px solid rgba(255, 255, 255, .82); outline-offset: -2px; }
 .dj-row .artwork { width: 42px; height: 42px; overflow: hidden; border-radius: 10px; }
-.dj-row-index { display: grid; place-items: center; color: var(--ink-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.dj-row-index { display: grid; place-items: center; color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .dj-row-index > * { grid-area: 1 / 1; transition: opacity var(--d-fast) var(--ease-standard); }
 .dj-row-index svg { color: var(--ink); opacity: 0; }
 .dj-row:hover .dj-row-index span, .dj-row-play:focus-visible .dj-row-index span { opacity: 0; }
 .dj-row:hover .dj-row-index svg, .dj-row-play:focus-visible .dj-row-index svg { opacity: 1; }
 .dj-row-copy { display: grid; min-width: 0; gap: 1px; }
 .dj-row-copy strong, .dj-row-copy small, .dj-row-copy em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dj-row-copy strong { font-size: 13.5px; font-weight: 600; }
-.dj-row-copy small { color: var(--ink-muted); font-size: 12px; }
-.dj-row-copy em { display: flex; align-items: center; gap: 5px; margin-top: 1px; color: var(--ink-faint); font-size: 11px; font-style: normal; }
-.dj-row-copy em svg { flex: none; color: var(--dj-a, var(--wave)); }
+.dj-row-copy strong { font-size: 14px; font-weight: 600; }
+.dj-row-copy small { color: var(--ink-soft, var(--ink-muted)); font-size: 12.5px; }
+.dj-row-copy em { display: flex; align-items: center; gap: 5px; margin-top: 1px; color: var(--ink-muted); font-size: 11.5px; font-style: normal; }
+.dj-row-copy em svg { flex: none; color: var(--ink-muted); }
 .dj-row-tools { display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity var(--d-fast) var(--ease-standard); }
 .dj-row:hover .dj-row-tools, .dj-row:focus-within .dj-row-tools { opacity: 1; }
 @media (hover: none) { .dj-row-tools { opacity: 1; } }
@@ -623,8 +668,11 @@ button.dj-chip { padding: 0 12px; font: inherit; font-size: 12px; font-weight: 6
   .dj-eq i, .dj-now[data-playing='true'] .dj-eq i { scale: 1 .5; }
   .dj-now[data-playing='true'] .dj-eq { opacity: calc(.5 + var(--dj-energy, 0) * .5); }
   .dj-dots i { animation-name: dj-live; }
-  .dj-chip-button, .dj-starter, .dj-primary, .dj-icon-button, .dj-send-button, .dj-energy-dot::before { transition: opacity var(--d-fast) var(--ease-standard); }
-  .dj-chip-button:hover, .dj-starter:hover, .dj-primary:hover, .dj-send-button:not(:disabled):hover, .dj-energy-dot:hover::before { transform: none; }
+  .dj-chip-button, .dj-starter, .dj-primary, .dj-icon-button, .dj-send-button, .dj-mode-option { transition: opacity var(--d-fast) var(--ease-standard); }
+  .dj-energy-bar::before { transition: opacity var(--d-fast) var(--ease-standard); }
+  .dj-chip-button:hover, .dj-starter:hover, .dj-primary:hover, .dj-send-button:not(:disabled):hover, .dj-mode-option:active { transform: none; }
+  .dj-energy-bar:hover::before { transform: scaleY(calc(.3 + var(--bar, 3) * .14)); }
+  .dj-session-live i { animation: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .dj-hero, .dj-input-wrap, .dj-crate { background: rgba(32, 34, 38, .94); -webkit-backdrop-filter: none; backdrop-filter: none; }
@@ -677,8 +725,8 @@ button.dj-chip { padding: 0 12px; font: inherit; font-size: 12px; font-weight: 6
 .dj-quick-pill input { flex: 1; min-width: 0; height: 42px; padding: 0 6px; border: 0; outline: 0; color: var(--ink); background: transparent; font: inherit; font-size: 15px; }
 .dj-quick-pill input::placeholder { color: var(--ink-faint); }
 .dj-quick-send, .dj-quick-icon { display: grid; width: 38px; height: 38px; flex: none; place-items: center; padding: 0; border: 0; border-radius: 50%; cursor: pointer; transition: transform var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard); }
-.dj-quick-send { color: #15170c; background: var(--wave); }
-.dj-quick-send:disabled { opacity: .35; cursor: default; }
+.dj-quick-send { color: #111214; background: var(--ink); }
+.dj-quick-send:disabled { opacity: .28; cursor: default; }
 .dj-quick-icon { color: var(--ink-muted); background: transparent; }
 .dj-quick-icon:hover { color: var(--ink); background: rgba(255, 255, 255, .08); }
 .dj-quick-pill button:focus-visible, .dj-quick-link:focus-visible { outline: 2px solid rgba(255, 255, 255, .82); outline-offset: 2px; }
@@ -749,8 +797,6 @@ button.dj-chip { padding: 0 12px; font: inherit; font-size: 12px; font-weight: 6
 @media (prefers-reduced-motion: reduce) {
   .dj-hero, .dj-mascot-stage > .dj-m, .dj-compose .dj-input-wrap, .dj-compose-row, .dj-layout > .dj-crate { animation-name: dj-fade; }
   .dj-input-ring i { animation: none; }
-  .dj-dial-goal { transition: opacity var(--d-fast) var(--ease-standard); }
-  .dj-dial-goal:active { transform: none; }
 }
 
 /* ---------- Settings: thinks, hears, speaks ---------- */

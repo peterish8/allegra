@@ -1,4 +1,4 @@
-import { ArrowUpRight, LoaderCircle, Mic, Play, Send, Undo2, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, LoaderCircle, Mic, Play, Undo2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -110,7 +110,7 @@ export function DjQuickPrompt({ open, onClose, palette, playing, hasSong, onOpen
               </button>
             ) : null}
             <button type="submit" className="dj-quick-send" disabled={dj.working || !prompt.trim()} aria-label="Send to your DJ">
-              {dj.working ? <LoaderCircle size={16} className="dj-spin" /> : <Send size={15} />}
+              {dj.working ? <LoaderCircle size={16} className="dj-spin" /> : <ArrowUp size={17} strokeWidth={2.4} />}
             </button>
             <button type="button" className="dj-quick-icon" onClick={onOpenPage} aria-label="Open the DJ page" title="Open the DJ page"><ArrowUpRight size={16} /></button>
             <button type="button" className="dj-quick-icon" onClick={onClose} aria-label="Close"><X size={15} /></button>

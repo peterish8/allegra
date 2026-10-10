@@ -19,6 +19,7 @@ import { DjPage } from './components/DjPage';
 import { DjMascot } from './components/dj/DjMascot';
 import { DjQuickPrompt } from './components/dj/DjQuickPrompt';
 import type { DjAction, DjActionResult } from './lib/djActions';
+import { shuffled } from './lib/shuffle';
 import { ArtistPage } from './components/ArtistPage';
 import { LegalPage } from './components/LegalPage';
 import { isLegalView } from './lib/routes';
@@ -1302,7 +1303,7 @@ export default function App() {
     return ' Karaoke is starting: the vocals fade out in a moment and the lyrics are up.';
   };
   const playDjList = async (list: readonly UnifiedSong[], shuffle: boolean): Promise<UnifiedSong | null> => {
-    const order = shuffle ? [...list].sort(() => Math.random() - 0.5) : [...list];
+    const order = shuffle ? shuffled(list) : [...list];
     const first = order[0];
     if (!first) return null;
     await playSong(first, order);
@@ -1746,6 +1747,7 @@ export default function App() {
             isCurrentLiked={playerSong ? likedIds.has(likedKey(playerSong)) : false}
             palette={playerSong ? palette : null}
             recent={recentlyPlayed}
+            upcoming={playingNext}
             searchSlot={searchPalette}
             audioRef={audio.audioRef}
             onToggle={togglePlayer}
