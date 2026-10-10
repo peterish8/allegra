@@ -1,4 +1,4 @@
-import { Check, Ellipsis, Info, Languages, LoaderCircle, Mic, Minus, Moon, Plus, RefreshCw, SlidersHorizontal, WifiOff, X } from 'lucide-react';
+import { AlignLeft, Check, Ellipsis, Info, Languages, LoaderCircle, Mic, Minus, Moon, Plus, RefreshCw, SlidersHorizontal, WifiOff, X } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
 import {
   Fragment,
@@ -446,6 +446,10 @@ export function LyricsPanel({
   const toggleBlackBackground = (): void => {
     updateSettings({ playerBlackBackground: !settings.playerBlackBackground });
   };
+  /** Letter by letter ↔ line by line (also a triple tap on the player's Lyrics tab). */
+  const toggleLineByLine = (): void => {
+    updateSettings({ lyricsHighlight: letters ? 'lines' : 'letters' });
+  };
 
   const runFromMenu = (event: MouseEvent<HTMLElement>, action?: (event: MouseEvent<HTMLElement>) => void): void => {
     setMoreOpen(false);
@@ -511,6 +515,19 @@ export function LyricsPanel({
             className="ytm-lyrics__alternatives-button"
           >
             Other lyrics
+          </TactileButton>
+        ) : null}
+        {!compact ? (
+          <TactileButton
+            variant={letters ? 'ghost' : 'secondary'}
+            icon={AlignLeft}
+            onClick={toggleLineByLine}
+            aria-pressed={!letters}
+            aria-label="Line by line: light the whole line at once instead of letter by letter"
+            title="Line by line (or triple-tap the Lyrics tab)"
+            className="ytm-lyrics__lines-button"
+          >
+            Line by line
           </TactileButton>
         ) : null}
         {hideBackdrop && !compact ? (
@@ -779,6 +796,15 @@ export function LyricsPanel({
                   Other lyrics
                 </button>
               ) : null}
+              <button
+                type="button"
+                className={`lyrics-dock__item${letters ? '' : ' is-on'}`}
+                onClick={(event) => runFromMenu(event, toggleLineByLine)}
+                aria-pressed={!letters}
+              >
+                <AlignLeft size={16} aria-hidden="true" />
+                Line by line
+              </button>
               {hideBackdrop ? (
                 <button
                   type="button"

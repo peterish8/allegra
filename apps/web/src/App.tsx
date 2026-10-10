@@ -1,19 +1,25 @@
 'use client';
 
-import { ArrowLeft, ArrowUpToLine, ChevronRight, Download, House, Heart as HeartIcon, Disc3, Pause, Play, SkipBack, SkipForward, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Users, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpToLine, ChevronRight, House, Heart as HeartIcon, Disc3, Pause, Play, SkipBack, SkipForward, Waves, Clock, Compass, Library as LibraryIcon, ListMusic, PanelLeftClose, PanelLeftOpen, Repeat, Repeat1, Search as SearchIcon, Settings as SettingsIcon, Shuffle, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
 
-import type { ArtistProfile, HomePayload, LyricLine, LyricsPayload, SharedPlaylist, UnifiedSong } from '@shared/types';
+import type { AlbumSummary, ArtistProfile, HomePayload, LyricLine, LyricsPayload, SharedPlaylist, UnifiedSong } from '@shared/types';
+import type { DjTurnResponse } from '@shared/dj';
 import type { PerformanceAttempt } from '@shared/performanceTrace';
 import { deriveMoodPrompts } from '@shared/moodPrompts';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import { fromAllegraSong } from '@shared/songRef';
 
 import { AlbumPage } from './components/AlbumPage';
+import { DjPage } from './components/DjPage';
+import { DjMascot } from './components/dj/DjMascot';
+import { DjQuickPrompt } from './components/dj/DjQuickPrompt';
+import type { DjAction, DjActionResult } from './lib/djActions';
+import { shuffled } from './lib/shuffle';
 import { ArtistPage } from './components/ArtistPage';
 import { LegalPage } from './components/LegalPage';
 import { isLegalView } from './lib/routes';
@@ -29,6 +35,7 @@ import { BlendsPage } from './components/blend/BlendsPage';
 import { DynamicAura } from './components/DynamicAura';
 import { AuthDialog } from './components/AuthDialog';
 import { useSignIn } from './auth/SignInContext';
+import { AppQrButton } from './components/AppQrButton';
 import { CommandPalette } from './components/CommandPalette';
 import { DiscoverSections, HomePage } from './components/HomePage';
 import { ConnectPicker, type ConnectPickerState } from './components/ConnectPicker';
@@ -48,20 +55,24 @@ import { useMediaSession } from './hooks/useMediaSession';
 import { useNarrowViewport } from './hooks/useNarrowViewport';
 import { useSettings } from './hooks/useSettings';
 import { PlaylistsContext, usePlaylists } from './hooks/usePlaylists';
+import { DjSessionContext, useDjSessionState } from './hooks/useDjSession';
+import { DjVoiceContext, useDjVoiceState } from './hooks/useDjVoice';
 import { QueueActionsContext, type QueueActions } from './hooks/useQueueActions';
-import { collectAlbumTracks } from './lib/album';
+import { albumStandIn, collectAlbumTracks, isAlbumStandIn, type AlbumTarget } from './lib/album';
+import { useAlbum } from './hooks/useAlbum';
 import { tapHaptic } from './lib/haptics';
 import { useLibraryArrival } from './lib/libraryArrival';
 import { ImportChip } from './components/import/ImportChip';
 import { lockScroll } from './lib/scrollLock';
 import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
-import { ApiError, applyLibraryOps, ensureSession, fetchArtist, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
+import { ApiError, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
 import { catalogSongId, shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
 import { resolveSnapshotForPlayback, snapshotForSong, snapshotToDisplaySong, useConnect } from './hooks/useConnect';
 import { useSnapshotArtworks } from './hooks/useSnapshotArtwork';
 import { isControllingAnotherDevice } from '../../../packages/connect/src/index';
-import type { LibrarySong } from './lib/libraryRows';
+import { likedKey, type LibrarySong } from './lib/libraryRows';
+import { playOrderFrom } from './lib/djSession';
 import { legacyHashToPath, parseRoute, paths } from './lib/routes';
 import { flags } from './lib/flags';
 import { pickTopResult } from './lib/topResult';
@@ -102,10 +113,17 @@ function curatedSongs(songs: UnifiedSong[]): UnifiedSong[] {
   return uniqueByIdentity(songs).slice(0, 6);
 }
 
-function likedKey(song: UnifiedSong): string {
-  const ref = (song as Partial<LibrarySong>).libraryRef ?? fromAllegraSong(song);
-  return ref?.startsWith('gaana:') ? `library:${ref}` : song.id;
-}
+/** Where "open …" takes the listener, and what the DJ calls it. */
+const DJ_PLACES = {
+  home: { path: paths.home, label: 'Home' },
+  browse: { path: paths.discover, label: 'Browse' },
+  library: { path: paths.library, label: 'your library' },
+  liked: { path: paths.liked, label: 'your liked songs' },
+  settings: { path: paths.settings, label: 'Settings' },
+  blends: { path: paths.blends, label: 'your Blends' }
+} as const;
+/** A DJ catalog lookup gives up after this long, so a slow search never hangs the DJ. */
+const DJ_SEARCH_TIMEOUT_MS = 8000;
 
 export default function App() {
   const reduced = useReducedMotion();
@@ -121,6 +139,8 @@ export default function App() {
   const pendingSearchCommitRef = useRef<{ readonly attempt: PerformanceAttempt; readonly query: string; readonly resultCount: number } | null>(null);
   const committedSearchAttemptRef = useRef<PerformanceAttempt | null>(null);
   const [songs, setSongs] = useState<UnifiedSong[]>([]);
+  /** The catalog's albums for the current search (`/api/search/albums`); empty when it found none. */
+  const [catalogAlbums, setCatalogAlbums] = useState<readonly AlbumSummary[]>([]);
   const [featured, setFeatured] = useState<UnifiedSong[]>([]);
   const [home, setHome] = useState<HomePayload | null>(null);
   const [searching, setSearching] = useState(true);
@@ -138,6 +158,7 @@ export default function App() {
   const [translateError, setTranslateError] = useState<string | null>(null);
   const [translateProvider, setTranslateProvider] = useState<string | null>(null);
   const [playerMode, setPlayerMode] = useState<PlayerMode>('mini');
+  const [djLive, setDjLive] = useState(false);
   const [albumSeed, setAlbumSeed] = useState<UnifiedSong | null>(null);
   const [offline, setOffline] = useState(!navigator.onLine);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
@@ -305,12 +326,28 @@ export default function App() {
   const autoplaySimilarRef = useRef(settings.autoplaySimilar);
   autoplaySimilarRef.current = settings.autoplaySimilar;
   useEffect(() => {
-    if (connect.connectLoads > 0) radioActiveRef.current = autoplaySimilarRef.current;
+    if (connect.connectLoads > 0) {
+      radioActiveRef.current = autoplaySimilarRef.current;
+      setDjLive(autoplaySimilarRef.current);
+    }
   }, [connect.connectLoads]);
   const aiPicksRef = useRef<UnifiedSong[]>([]);
   const reloadPlaylists = playlists.reload;
   /** Songs the listener queued with Play next / Add to queue: they stay in front of any radio. */
   const userQueuedRef = useRef(new Set<string>());
+  /** Songs the DJ planned. They are also in userQueuedRef (so they stay ahead of radio); this set tells them apart from the listener's own. */
+  const djPlannedRef = useRef(new Set<string>());
+  const [djQuickOpen, setDjQuickOpen] = useState(false);
+  const closeDjQuick = useCallback((): void => setDjQuickOpen(false), []);
+  /** The upcoming songs, and which were the listener's and the DJ's, just before a DJ set replaced them. */
+  const djUndoRef = useRef<{
+    readonly currentId: string;
+    readonly upcoming: readonly UnifiedSong[];
+    readonly planned: readonly string[];
+    readonly queued: readonly string[];
+    /** The upcoming ids the set produced; Undo only runs while the queue still matches them. */
+    readonly applied?: readonly string[];
+  } | null>(null);
   const radio = useSongRadio(transportRef, userQueuedRef);
   // Lock screen, media keys, headset buttons and car head units, all through the same funnel.
   const fillRadioQueue = useCallback(async (signal?: AbortSignal): Promise<number> => {
@@ -409,15 +446,24 @@ export default function App() {
     router.push(paths.artist(name));
   }, [router]);
 
-  /** Albums from the artist page: open the album when one of its songs is loaded, otherwise search for it. */
-  const openAlbumByName = useCallback((albumName: string, seed: UnifiedSong | null) => {
+  /** An album the catalog knows by id: open its page now; the tracks load there (`useAlbum`). */
+  const openCatalogAlbum = useCallback((album: AlbumTarget) => {
+    openAlbum(albumStandIn(album));
+  }, [openAlbum]);
+
+  /** Albums from the artist page: by the catalog's id when it has one, else the loaded song, else a search. */
+  const openAlbumByName = useCallback((albumName: string, seed: UnifiedSong | null, catalog?: AlbumTarget) => {
+    if (catalog) {
+      openCatalogAlbum(catalog);
+      return;
+    }
     if (seed) {
       openAlbum(seed);
       return;
     }
     router.push(paths.discover);
     setQuery(`${albumName} ${artistName ?? ''}`.trim());
-  }, [openAlbum, artistName, router]);
+  }, [openAlbum, openCatalogAlbum, artistName, router]);
 
   const loadSearch = useCallback(async (value: string, signal?: AbortSignal): Promise<void> => {
     const attempt = activeWebSearchAttempt();
@@ -425,6 +471,10 @@ export default function App() {
     const requestStartedAt = attempt ? performance.now() : 0;
     setSearching(true);
     setSearchError(null);
+    // Albums run beside the song search and never hold it up; a failure just leaves the grouped fallback.
+    if (value !== DEFAULT_QUERY) {
+      void searchAlbums(value, 8, signal).then(setCatalogAlbums, () => { if (!signal?.aborted) setCatalogAlbums([]); });
+    }
     try {
       const response = await searchSongs(value, signal);
       if (attempt && webPerformanceTrace?.record(attempt, 'catalog.completed', {
@@ -499,6 +549,7 @@ export default function App() {
     const song = transportRef.current.currentSong;
     if (song) {
       userQueuedRef.current.delete(song.id);
+      djPlannedRef.current.delete(song.id);
       radio.started(song);
     }
   }, [audio.currentSong?.id, radio]);
@@ -620,6 +671,7 @@ export default function App() {
     const trimmed = query.trim();
     if (!trimmed) {
       setSongs([]);
+      setCatalogAlbums([]);
       setSearchError(null);
       return undefined;
     }
@@ -661,6 +713,13 @@ export default function App() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setPaletteOpen((open) => !open);
+      }
+      // Ctrl/⌘ J: the DJ from anywhere. On the DJ page it just focuses the page's own prompt.
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'j') {
+        event.preventDefault();
+        const pagePrompt = document.querySelector<HTMLInputElement>('.dj-page .dj-input-wrap input');
+        if (pagePrompt) pagePrompt.focus();
+        else setDjQuickOpen((open) => !open);
       }
     };
     window.addEventListener('keydown', onShortcut);
@@ -1058,7 +1117,7 @@ export default function App() {
    * `fromSearch`: a search hit plays its song radio (Spotify's rule), never the rest of the
    * results; with "keep playing similar songs" off it plays that one song.
    */
-  const playSong = async (song: UnifiedSong, queue: UnifiedSong[] = displaySongs, fromSearch = Boolean(query.trim()) && queue === displaySongs): Promise<void> => {
+  const playSong = async (song: UnifiedSong, queue: UnifiedSong[] = displaySongs, fromSearch = Boolean(query.trim()) && queue === displaySongs, forceRadio = false): Promise<void> => {
     const attempt = activeWebSearchAttempt();
     if (attempt) webPerformanceTrace?.record(attempt, 'result.selected');
     if (await connect.playRemote(song, fromSearch ? [song] : queue)) {
@@ -1078,8 +1137,9 @@ export default function App() {
       }
       playable = matched;
     }
-    const startRadio = settings.autoplaySimilar && (fromSearch || shouldStartRadio(playable, queue));
+    const startRadio = forceRadio || (settings.autoplaySimilar && (fromSearch || shouldStartRadio(playable, queue)));
     radioActiveRef.current = startRadio;
+    setDjLive(startRadio);
     if (startRadio) radio.start(playable);
     else radio.stop();
     const playableQueue = queue.map((item) => item.id === song.id ? playable : item).filter((item) => Boolean(item.streamUrl));
@@ -1106,6 +1166,110 @@ export default function App() {
   };
 
   const playFromSearch = (song: UnifiedSong): Promise<void> => playSong(song, [song], true);
+
+  /** Puts a DJ set into the queue. Returns how many songs it really placed (0 when it placed none). */
+  const applyDjPlan = (turn: DjTurnResponse): number => {
+    if (!audio.currentSong || remotePlayback || turn.operation === 'keep') return 0;
+    const player = transportRef.current;
+    const current = player.currentSong;
+    if (!current) return 0;
+    const at = player.queue.findIndex((item) => item.id === current.id);
+    const upcoming = at >= 0 ? player.queue.slice(at + 1) : [];
+    const planned = turn.queue.map(({ song }) => song).filter((song) => song.id !== current.id && Boolean(song.streamUrl));
+    if (planned.length === 0) return 0;
+    djUndoRef.current = { currentId: current.id, upcoming, planned: [...djPlannedRef.current], queued: [...userQueuedRef.current] };
+    let next: UnifiedSong[];
+    let picks: UnifiedSong[];
+    if (turn.operation === 'insert') {
+      const index = Math.min(Math.max(0, turn.insertAfter ?? 0), upcoming.length);
+      next = [...upcoming.slice(0, index), ...planned, ...upcoming.slice(index)];
+      picks = planned;
+    } else {
+      // Earlier DJ picks are replaced; only what the listener queued themselves stays in front.
+      const pinned = upcoming.filter((song) => userQueuedRef.current.has(song.id) && !djPlannedRef.current.has(song.id));
+      const seen = new Set([current.id, ...pinned.map((song) => song.id)]);
+      picks = planned.filter((song) => !seen.has(song.id) && Boolean(seen.add(song.id)));
+      next = [...pinned, ...picks];
+      for (const id of djPlannedRef.current) userQueuedRef.current.delete(id);
+      djPlannedRef.current.clear();
+    }
+    for (const song of picks) {
+      userQueuedRef.current.add(song.id);
+      djPlannedRef.current.add(song.id);
+    }
+    radioActiveRef.current = false;
+    radio.stop();
+    player.replaceUpcoming(next);
+    if (djUndoRef.current) djUndoRef.current = { ...djUndoRef.current, applied: next.map((song) => song.id) };
+    setDjLive(true);
+    return picks.length;
+  };
+
+  /**
+   * Puts back the queue a DJ set replaced, but only if nothing has changed since: the same song plays
+   * and the upcoming list is exactly what the set made. A queue the listener edited is left alone.
+   */
+  const undoDjPlan = (): boolean => {
+    const snapshot = djUndoRef.current;
+    djUndoRef.current = null;
+    const player = transportRef.current;
+    if (!snapshot || remotePlayback || player.currentSong?.id !== snapshot.currentId) return false;
+    const at = player.queue.findIndex((item) => item.id === snapshot.currentId);
+    const now = (at >= 0 ? player.queue.slice(at + 1) : []).map((song) => song.id);
+    if (snapshot.applied && now.join('\u0000') !== snapshot.applied.join('\u0000')) return false;
+    djPlannedRef.current = new Set(snapshot.planned);
+    userQueuedRef.current = new Set(snapshot.queued);
+    player.replaceUpcoming([...snapshot.upcoming]);
+    return true;
+  };
+
+  const startDjPlan = (turn: DjTurnResponse, fromId?: string): void => {
+    if (remotePlayback || turn.operation === 'keep' || turn.queue.length === 0) return;
+    const songs = turn.queue.map(({ song }) => song).filter((song) => Boolean(song.streamUrl));
+    const first = (fromId ? songs.find((song) => song.id === fromId) : undefined) ?? songs[0];
+    if (!first) return;
+    radioActiveRef.current = false;
+    radio.stop();
+    setDjLive(true);
+    audio.selectSong(first, playOrderFrom(songs, first.id));
+    setPlayerMode('mini');
+    setRecentlyPlayed((current) => [first, ...current.filter((item) => item.id !== first.id)].slice(0, 25));
+    void recordRecentlyPlayed(first, 0).catch(() => undefined);
+    tapHaptic();
+  };
+
+  // Queue controls for the DJ's own picks. They act on this device only; the listener's queued songs stay put.
+  const reorderDjUpcoming = (ids: readonly string[]): boolean => {
+    if (remotePlayback) return false;
+    const slots: number[] = [];
+    const picks = new Map<string, UnifiedSong>();
+    playingNext.forEach((song, index) => {
+      if (!djPlannedRef.current.has(song.id)) return;
+      slots.push(index);
+      picks.set(song.id, song);
+    });
+    if (slots.length === 0) return false;
+    const ordered = ids.filter((id, at) => picks.has(id) && ids.indexOf(id) === at).map((id) => picks.get(id) as UnifiedSong);
+    const named = new Set(ordered.map((song) => song.id));
+    const sequence = [...ordered, ...[...picks.values()].filter((song) => !named.has(song.id))];
+    const next = [...playingNext];
+    slots.forEach((slot, at) => { next[slot] = sequence[at] as UnifiedSong; });
+    audio.replaceUpcoming(next);
+    return true;
+  };
+  const removeDjUpcoming = (id: string): boolean => {
+    if (remotePlayback || !djPlannedRef.current.has(id)) return false;
+    audio.replaceUpcoming(playingNext.filter((song) => song.id !== id));
+    djPlannedRef.current.delete(id);
+    userQueuedRef.current.delete(id);
+    return true;
+  };
+  const playDjFrom = (song: UnifiedSong, list: readonly UnifiedSong[]): boolean => {
+    if (remotePlayback || song.id === playerSong?.id) return false;
+    // The tapped song first; the ones above it stay in Up next instead of counting as played.
+    void playSong(song, playOrderFrom(list, song.id));
+    return true;
+  };
 
   // Play next / Add to queue, on whichever device is playing. With nothing playing, the song starts.
   const queueSong = async (song: UnifiedSong, next: boolean): Promise<void> => {
@@ -1134,6 +1298,8 @@ export default function App() {
     const at = player.queue.findIndex((item) => item.id === player.currentSong?.id);
     const rest = (at >= 0 ? player.queue.slice(at + 1) : []).filter((item) => item.id !== playable.id);
     userQueuedRef.current.add(playable.id);
+    // Queued by hand, so it is the listener's own now, not a DJ pick.
+    djPlannedRef.current.delete(playable.id);
     // Spotify's "Next in queue": after the other songs the listener queued, ahead of any radio.
     const mine = rest.filter((item) => userQueuedRef.current.has(item.id));
     const others = rest.filter((item) => !userQueuedRef.current.has(item.id));
@@ -1143,6 +1309,181 @@ export default function App() {
   const queueSongRef = useRef(queueSong);
   queueSongRef.current = queueSong;
   const queueActions = useMemo<QueueActions>(() => ({ add: (song, next) => { void queueSongRef.current(song, next); } }), []);
+
+  // The DJ's hands: what a typed or spoken command does in the app. Each branch answers in the DJ's
+  // voice, and none of them throws. A song the DJ should sing along to is held in karaokeForRef until it
+  // has actually loaded, so karaoke starts on that song and not the one before it.
+  const karaokeForRef = useRef<string | null>(null);
+  const findDjSong = async (query: string): Promise<UnifiedSong | null> => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), DJ_SEARCH_TIMEOUT_MS);
+    try {
+      const { results } = await searchSongs(query.replace(/\s+by\s+/i, ' '), controller.signal);
+      return results.find((song) => Boolean(song.streamUrl)) ?? results[0] ?? null;
+    } catch {
+      return null;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
+  const singAlongTo = (songId: string): string => {
+    if (remotePlayback) return ' Karaoke works when the music plays on this device.';
+    karaokeForRef.current = songId;
+    setPlayerMode('immersive');
+    return ' Karaoke is starting: the vocals fade out in a moment and the lyrics are up.';
+  };
+  const playDjList = async (list: readonly UnifiedSong[], shuffle: boolean): Promise<UnifiedSong | null> => {
+    const order = shuffle ? shuffled(list) : [...list];
+    const first = order[0];
+    if (!first) return null;
+    await playSong(first, order);
+    return first;
+  };
+  const runDjAction = async (action: DjAction): Promise<DjActionResult> => {
+    const song = playerSong;
+    switch (action.kind) {
+      case 'play-song': {
+        const found = await findDjSong(action.query);
+        if (!found) return { ok: false, reply: `I couldn’t find “${action.query}” in the catalog. Try the title another way?` };
+        await playFromSearch(found);
+        const extra = action.karaoke ? singAlongTo(found.id) : '';
+        if (action.lyrics && !action.karaoke) setPlayerMode('immersive');
+        return { ok: true, reply: `Playing “${found.title}” by ${found.artist}.${extra}` };
+      }
+      case 'play-liked': {
+        const first = await playDjList(likedSongs, action.shuffle);
+        if (!first) return { ok: false, reply: 'You haven’t liked any songs yet. Say “like this” while one plays.' };
+        return { ok: true, reply: `${action.shuffle ? 'Shuffling' : 'Playing'} your liked songs, ${likedSongs.length} of them.${action.karaoke ? singAlongTo(first.id) : ''}` };
+      }
+      case 'play-playlist': {
+        const wanted = action.name.toLocaleLowerCase();
+        const playlist = playlists.playlists.find((item) => item.name.toLocaleLowerCase() === wanted)
+          ?? playlists.playlists.find((item) => item.name.toLocaleLowerCase().includes(wanted));
+        if (!playlist) return { ok: false, reply: `I couldn’t find a playlist called “${action.name}”.` };
+        const songs = playlist.songIds.map((id) => playlists.songs.get(id)).filter((item): item is NonNullable<typeof item> => Boolean(item));
+        const first = await playDjList(songs, action.shuffle);
+        if (!first) return { ok: false, reply: `“${playlist.name}” has no songs yet.` };
+        return { ok: true, reply: `${action.shuffle ? 'Shuffling' : 'Playing'} “${playlist.name}”, ${songs.length} songs.${action.karaoke ? singAlongTo(first.id) : ''}` };
+      }
+      case 'queue-song': {
+        const found = await findDjSong(action.query);
+        if (!found) return { ok: false, reply: `I couldn’t find “${action.query}” in the catalog.` };
+        await queueSong(found, action.next);
+        return { ok: true, reply: song ? `“${found.title}” ${action.next ? 'plays next' : 'is in your queue'}.` : `Playing “${found.title}”.` };
+      }
+      case 'like': {
+        if (!song) return { ok: false, reply: 'Nothing is playing yet, so there is nothing to like.' };
+        const liked = likedIds.has(likedKey(song));
+        if (liked === action.on) return { ok: true, reply: action.on ? `“${song.title}” is already in your liked songs.` : `“${song.title}” isn’t in your liked songs.` };
+        toggleLike(song);
+        return { ok: true, reply: action.on ? `Added “${song.title}” to your liked songs.` : `Removed “${song.title}” from your liked songs.` };
+      }
+      case 'transport': {
+        if (!song) return { ok: false, reply: 'Nothing is playing yet. Ask me for a song.' };
+        if (action.op === 'pause') {
+          if (playerIsPlaying) togglePlayer();
+          return { ok: true, reply: 'Paused.' };
+        }
+        if (action.op === 'resume') {
+          if (!playerIsPlaying) togglePlayer();
+          return { ok: true, reply: `Back to “${song.title}”.` };
+        }
+        if (action.op === 'next') {
+          skipNextSmart();
+          return { ok: true, reply: 'Skipping to the next one.' };
+        }
+        if (action.op === 'previous') {
+          previousPlayer();
+          return { ok: true, reply: 'Going back.' };
+        }
+        seekPlayer(0);
+        if (!playerIsPlaying) togglePlayer();
+        return { ok: true, reply: `“${song.title}” from the top.` };
+      }
+      case 'karaoke': {
+        if (!song) return { ok: false, reply: 'Play a song first, then ask me for karaoke.' };
+        if (remotePlayback) return { ok: false, reply: 'Karaoke works when the music plays on this device.' };
+        if (liveKaraoke.active === action.on) return { ok: true, reply: action.on ? 'Karaoke is already on.' : 'Karaoke is already off.' };
+        void liveKaraoke.toggle();
+        if (action.on) setPlayerMode('immersive');
+        return { ok: true, reply: action.on ? 'Karaoke on: the vocals fade out in a moment and the lyrics are up.' : 'Karaoke off. The singer is back.' };
+      }
+      case 'lyrics': {
+        if (!song) return { ok: false, reply: 'Play a song first and I’ll bring up its lyrics.' };
+        setPlayerMode('immersive');
+        return { ok: true, reply: `Here are the lyrics for “${song.title}”.` };
+      }
+      case 'shuffle': {
+        if (playerShuffle !== action.on) togglePlayerShuffle();
+        return { ok: true, reply: action.on ? 'Shuffle is on.' : 'Shuffle is off.' };
+      }
+      case 'open': {
+        const place = DJ_PLACES[action.place];
+        router.push(place.path);
+        return { ok: true, reply: `Opening ${place.label}.` };
+      }
+      case 'now-playing': {
+        if (!song) return { ok: true, reply: 'Nothing is playing right now.' };
+        return { ok: true, reply: `This is “${song.title}” by ${song.artist}${song.album ? `, from ${song.album}` : ''}.` };
+      }
+    }
+  };
+  // Karaoke for a song the DJ just started: only once that song is the one loaded.
+  const currentAudioId = audio.currentSong?.id;
+  useEffect(() => {
+    const id = karaokeForRef.current;
+    if (!id || remotePlayback || currentAudioId !== id || liveKaraoke.busy) return;
+    karaokeForRef.current = null;
+    if (!liveKaraoke.active) void liveKaraoke.toggle();
+  }, [currentAudioId, liveKaraoke, remotePlayback]);
+  const djPlaylistNames = useMemo(() => playlists.playlists.map((item) => item.name), [playlists.playlists]);
+
+  // One DJ session for the whole app, so leaving /dj keeps the conversation. Everything it does to playback goes through the handlers above.
+  const djNextSongs = useMemo(() => playingNext.slice(0, 8), [playingNext]);
+  const dj = useDjSessionState({
+    playlists,
+    currentSong: playerSong,
+    isRemote: remotePlayback,
+    recent: recentlyPlayed,
+    likedSongs,
+    nextSongs: djNextSongs,
+    onApplyPlan: applyDjPlan,
+    onUndoPlan: undoDjPlan,
+    onStartPlan: startDjPlan,
+    onReorder: reorderDjUpcoming,
+    onRemove: removeDjUpcoming,
+    onPlayFrom: playDjFrom,
+    onSkip: skipNextSmart,
+    onAction: runDjAction,
+    playlistNames: djPlaylistNames,
+    onReply: (text) => djVoiceRef.current?.speak(text)
+  });
+  // Speaking to the DJ, from any page. A spoken request runs like a typed one; off the DJ page the quick
+  // prompt opens so the reply has somewhere to show.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const djRef = useRef(dj);
+  djRef.current = dj;
+  const onVoiceCommand = useCallback((text: string): void => {
+    if (viewRef.current !== 'dj') setDjQuickOpen(true);
+    void djRef.current.submitPrompt(text, { goal: 'mix' });
+  }, []);
+  // While the DJ talks, the music steps back to a third of its level, then returns to where it was.
+  const duckedFromRef = useRef<number | null>(null);
+  const onVoiceDuck = useCallback((ducked: boolean): void => {
+    const element = audio.audioRef.current;
+    if (!element) return;
+    if (ducked && duckedFromRef.current === null) {
+      duckedFromRef.current = element.volume;
+      element.volume = element.volume * 0.3;
+    } else if (!ducked && duckedFromRef.current !== null) {
+      element.volume = duckedFromRef.current;
+      duckedFromRef.current = null;
+    }
+  }, [audio.audioRef]);
+  const djVoice = useDjVoiceState({ onCommand: onVoiceCommand, onDuck: onVoiceDuck });
+  const djVoiceRef = useRef(djVoice);
+  djVoiceRef.current = djVoice;
 
   // Keep radio topped up so end-of-track advance always has a distinct next.
   useEffect(() => {
@@ -1155,6 +1496,13 @@ export default function App() {
     void fillRadioQueue(controller.signal);
     return () => controller.abort();
   }, [audio.currentSong?.id, audio.queue.length, fillRadioQueue]);
+
+  /** Plays a catalog album from its card: loads the whole album, then plays it in track order. */
+  const playCatalogAlbum = (album: AlbumSummary): void => {
+    void fetchAlbum(album.id).then((detail) => playAlbumTracks([...detail.songs])).catch(() => {
+      setSearchError('That album could not be loaded. Try again.');
+    });
+  };
 
   const playAlbumTracks = (tracks: UnifiedSong[], shuffle = false): void => {
     if (tracks.length === 0) return;
@@ -1273,8 +1621,12 @@ export default function App() {
   };
 
   const pageTransition = reduced ? { duration: motionTokens.duration.instant } : undefined;
+  // The catalog's whole album when the seed has an id (`GET /api/albums/:id`); the songs already loaded,
+  // grouped by album, when it has none or the lookup failed. The stand-in seed is never a track.
+  const albumState = useAlbum(view === 'album' ? albumSeed?.albumId ?? null : null);
   const albumTracks = useMemo(() => {
     if (!albumSeed) return [];
+    if (albumState.detail) return [...albumState.detail.songs];
     return collectAlbumTracks(albumSeed, [
       displaySongs,
       featured,
@@ -1284,8 +1636,10 @@ export default function App() {
       audio.queue,
       suggestions,
       aiPicks
-    ]);
-  }, [albumSeed, displaySongs, featured, songs, likedSongs, recentlyPlayed, audio.queue, suggestions, aiPicks]);
+    ]).filter((song) => !isAlbumStandIn(song));
+  }, [albumSeed, albumState.detail, displaySongs, featured, songs, likedSongs, recentlyPlayed, audio.queue, suggestions, aiPicks]);
+  // "Like album" likes a real song of it: the seed, or the first track when the seed is a stand-in.
+  const albumLikeTarget = albumSeed && !isAlbumStandIn(albumSeed) ? albumSeed : albumTracks[0] ?? null;
 
   // Album needs a song to be about; without one the route shows Browse, so it must not wear the detail chrome.
   // Artists get the full-bleed cinematic hero. Playlists, Liked Songs and albums sit directly on the shader.
@@ -1350,9 +1704,40 @@ export default function App() {
     onRename: connect.rename
   };
 
+  // One search for the whole app. On the DJ page it is a small icon in the stage and a song picked there
+  // is one the DJ notices; everywhere else it is the pill in the top bar.
+  const searchPalette = (
+    <CommandPalette
+      open={paletteOpen}
+      onOpen={() => setPaletteOpen(true)}
+      onClose={() => setPaletteOpen(false)}
+      activeQuery={view === 'dj' ? '' : query.trim()}
+      recent={recentlyPlayed}
+      variant={view === 'dj' ? 'icon' : 'pill'}
+      onPlaySong={(song, queue) => {
+        void playSong(song, queue);
+        if (view === 'dj') dj.notePick(song);
+      }}
+      onPlayFromSearch={(song) => {
+        void playFromSearch(song);
+        if (view === 'dj') dj.notePick(song);
+      }}
+      onOpenArtist={openArtist}
+      onNavigate={(path) => { router.push(path); }}
+      onSearchAll={(value) => { if (view !== 'discover') router.push(paths.discover); setQuery(value); }}
+      onClearSearch={() => setQuery('')}
+      onAskDj={(value) => {
+        if (view !== 'dj') setDjQuickOpen(true);
+        void dj.submitPrompt(value, { goal: 'mix' });
+      }}
+    />
+  );
+
   return (
     <PlaylistsContext.Provider value={playlists}>
     <QueueActionsContext.Provider value={queueActions}>
+    <DjSessionContext.Provider value={dj}>
+    <DjVoiceContext.Provider value={djVoice}>
     <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme="dark" data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
       {immersiveOpen ? null : (
         <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={shaderPalette} variant={settings.appBackground} />
@@ -1365,6 +1750,7 @@ export default function App() {
             <Link className={`nav-link ${view === 'home' || view === 'shared' ? 'is-active' : ''}`} aria-current={view === 'home' ? 'page' : undefined} href={paths.home} title="Home"><House size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Home</span></Link>
             <Link className={`nav-link ${view === 'discover' || view === 'album' || view === 'artist' ? 'is-active' : ''}`} aria-current={view === 'discover' ? 'page' : undefined} href={paths.discover} title="Browse"><Compass size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Browse</span></Link>
             <Link className={`nav-link ${view === 'library' || view === 'playlist' ? 'is-active' : ''}`} aria-current={view === 'library' ? 'page' : undefined} href={paths.library} title="Your library">{libraryArrivals > 0 ? <span key={libraryArrivals} className="nav-arrival" aria-hidden="true" /> : null}<LibraryIcon size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Your library</span></Link>
+            <Link className={`nav-link ${view === 'dj' ? 'is-active' : ''}`} aria-current={view === 'dj' ? 'page' : undefined} href={paths.dj} title="Your DJ"><span className="dj-nav-icon" aria-hidden="true"><i className="dj-nav-icon__eye dj-nav-icon__eye--left" /><i className="dj-nav-icon__eye dj-nav-icon__eye--right" /></span><span className="nav-label">Your DJ</span></Link>
             <span className="nav-divider" role="separator" />
             <Link className="nav-link" href={paths.library} title="Recently played" onClick={(event) => openLibrarySection(event, 'library-played-lately')}><Clock size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Recently played</span></Link>
             <Link className={`nav-link ${view === 'liked' ? 'is-active' : ''}`} aria-current={view === 'liked' ? 'page' : undefined} href={paths.liked} title="Favorite songs"><HeartIcon size={22} strokeWidth={1.5} aria-hidden="true" /><span className="nav-label">Favorite songs</span></Link>
@@ -1383,31 +1769,36 @@ export default function App() {
                     : <><strong>Guest</strong><small>Sign in to keep your music</small></>}
               </span>
             </button>
-            <div className="header-buttons"><Link className="icon-button app-download-link" href={`${paths.settings}#settings-android`} aria-label="Get the Android app" title="Get the Android app"><Download size={15} aria-hidden="true" /></Link><button className="motion-toggle icon-button" type="button" aria-label={motionPaused ? 'Resume background motion' : 'Pause background motion'} title={motionPaused ? 'Resume background motion' : 'Pause background motion'} onClick={() => updateSettings((current) => ({ animatedBackground: !current.animatedBackground }))}>{motionPaused ? <Play size={15} fill="currentColor" aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}</button><Link className={`icon-button settings-link${view === 'settings' ? ' is-active' : ''}`} href={paths.settings} aria-label="Settings" title="Settings" aria-current={view === 'settings' ? 'page' : undefined}><SettingsIcon size={15} aria-hidden="true" /></Link></div>
+            <div className="header-buttons"><AppQrButton settingsHref={`${paths.settings}#settings-android`} /><button className="motion-toggle icon-button" type="button" aria-label={motionPaused ? 'Resume background motion' : 'Pause background motion'} title={motionPaused ? 'Resume background motion' : 'Pause background motion'} onClick={() => updateSettings((current) => ({ animatedBackground: !current.animatedBackground }))}>{motionPaused ? <Play size={15} fill="currentColor" aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}</button><Link className={`icon-button settings-link${view === 'settings' ? ' is-active' : ''}`} href={paths.settings} aria-label="Settings" title="Settings" aria-current={view === 'settings' ? 'page' : undefined}><SettingsIcon size={15} aria-hidden="true" /></Link></div>
           </div>
       </header>
 
-      <main id="main-content" ref={mainRef} tabIndex={-1} aria-label={view === 'luvLink' ? 'LuvLink' : view === 'home' ? 'Home' : view === 'library' ? 'Your listening library' : view === 'album' ? 'Album' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Blend' : isLegalView(view) ? 'Policies' : 'Discover music'} className={`content-wrap ${view !== 'discover' ? 'inner-page-wrap' : ''} ${isDetailView ? 'is-detail' : ''} ${isCollectionView ? 'is-collection' : ''}`}>
+      <main id="main-content" ref={mainRef} tabIndex={-1} aria-label={view === 'luvLink' ? 'LuvLink' : view === 'dj' ? 'Your DJ' : view === 'home' ? 'Home' : view === 'library' ? 'Your listening library' : view === 'album' ? 'Album' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Blend' : isLegalView(view) ? 'Policies' : 'Discover music'} className={`content-wrap ${view !== 'discover' ? 'inner-page-wrap' : ''} ${isDetailView ? 'is-detail' : ''} ${isCollectionView ? 'is-collection' : ''}`}>
           <ImportChip hidden={view === 'import' || view === 'blends'} />
-        <div className="panel-topbar" data-tone={topbarBright ? 'bright' : undefined}>
+        {view !== 'dj' ? <div className="panel-topbar" data-tone={topbarBright ? 'bright' : undefined}>
             {isDetailView || isCollectionView ? <button type="button" className="topbar-back" onClick={() => goBack(view === 'liked' || view === 'playlist' ? '#library' : view === 'shared' ? '#home' : '#discover')} aria-label="Back"><ArrowLeft size={17} aria-hidden="true" /><span>Back</span></button> : null}
             <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' || view === 'import' || view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'luvLink' ? 'LuvLink' : view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' ? 'Blends' : view === 'blend' ? 'Blend' : view === 'blendJoin' ? 'Join a Blend' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong>{view === 'discover' ? <InfoTour className="crumbs-info" label="About Browse" steps={BROWSE_TOUR} stage={browseScene} /> : null}</nav>
             <div className="mood-pills" role="group" aria-label="Quick picks"><span className="mood-pills-label" aria-hidden="true">Quick picks</span>{moodPrompts.map((prompt) => <button key={prompt} type="button" className="mood-pill" aria-pressed={query === prompt} onClick={() => { if (view !== 'discover') router.push(paths.discover); setQuery(query === prompt ? '' : prompt); }}><span>{prompt}</span></button>)}</div>
-            <CommandPalette
-              open={paletteOpen}
-              onOpen={() => setPaletteOpen(true)}
-              onClose={() => setPaletteOpen(false)}
-              activeQuery={query.trim()}
-              recent={recentlyPlayed}
-              onPlaySong={(song, queue) => playSong(song, queue)}
-              onPlayFromSearch={(song) => { void playFromSearch(song); }}
-              onOpenArtist={openArtist}
-              onNavigate={(path) => { router.push(path); }}
-              onSearchAll={(value) => { if (view !== 'discover') router.push(paths.discover); setQuery(value); }}
-              onClearSearch={() => setQuery('')}
-            />
-        </div>
-        {view === 'home' ? (
+            {searchPalette}
+        </div> : null}
+        {view === 'dj' ? (
+          <DjPage
+            currentSong={playerSong}
+            isPlaying={playerIsPlaying}
+            isLive={djLive}
+            isRemote={remotePlayback}
+            isCurrentLiked={playerSong ? likedIds.has(likedKey(playerSong)) : false}
+            palette={playerSong ? palette : null}
+            recent={recentlyPlayed}
+            upcoming={playingNext}
+            searchSlot={searchPalette}
+            audioRef={audio.audioRef}
+            onToggle={togglePlayer}
+            onLike={toggleLike}
+            onPlayPlaylist={(playlistSongs) => { void playDjList(playlistSongs, false); }}
+            onOpenLibrary={() => router.push(paths.library)}
+          />
+        ) : view === 'home' ? (
           <HomePage
             profile={accountResolving ? null : account.profile}
             taste={account.taste}
@@ -1416,6 +1807,7 @@ export default function App() {
             picks={aiPicks}
             picksReason={aiPicksReasoning}
             picksProvider={aiPicksProvider}
+            onAskDj={() => setDjQuickOpen(true)}
             trending={home?.trending ?? []}
             madeForYou={home?.madeForYou ?? []}
             recommended={home?.recommended ?? []}
@@ -1480,6 +1872,7 @@ export default function App() {
               if (!match) return false;
               // The room owns what plays next: no local radio or queue behind the room's song.
               radioActiveRef.current = false;
+              setDjLive(false);
               radio.stop();
               audio.selectSong(match, [match]);
             }
@@ -1496,7 +1889,7 @@ export default function App() {
             karaokeBackend={liveKaraoke.backend}
             karaokeActive={liveKaraoke.active}
           />
-        ) : view === 'library' ? <LibraryPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} likedSongs={likedSongs} recentlyPlayed={recentlyPlayed} likedIds={likedIds} loading={personalLoading} error={personalError} actionError={personalActionError} currentSongId={playerSong?.id} isPlaying={playerIsPlaying} onPlay={playSong} onLike={toggleLike} onRetry={() => void loadPersonalSpace()} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'liked' ? <CollectionPage kind="liked" title="Liked Songs" songs={likedSongs} loading={personalLoading} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(likedSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'playlist' ? <CollectionPage kind="playlist" title={activePlaylist?.name ?? (playlists.loading ? 'Playlist' : 'Playlist not found')} songs={activePlaylistSongs} loading={playlists.loading || (activePlaylist !== null && activePlaylistSongs.length < activePlaylist.songIds.length)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(activePlaylistSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} {...(activePlaylist ? { onDelete: () => { void playlists.remove(activePlaylist.id); router.push(paths.library); }, share: { libraryId: activePlaylist.id, isPublic: activePlaylist.isPublic, onChanged: () => { void playlists.reload(); } }, cover: { libraryId: activePlaylist.id, ...(activePlaylist.coverUrl ? { coverUrl: activePlaylist.coverUrl } : {}), onUpload: playlists.setCover } } : {})} /> : view === 'artist' && artistName ? <ArtistPage name={artistName} profile={artistProfile} photoFallback={faces[artistName.toLocaleLowerCase()] || null} songs={artistTracks} related={relatedArtists} loading={artistLoading && artistTracks.length === 0} error={artistTracks.length === 0 ? artistError : null} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onBack={() => goBack(paths.discover)} onRetry={() => setArtistReload((count) => count + 1)} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(artistTracks, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbumByName} onOpenArtist={openArtist} /> : view === 'album' && albumSeed ? <AlbumPage seed={albumSeed} tracks={albumTracks} palette={palette} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={() => playAlbumTracks(albumTracks, false)} onShuffle={() => playAlbumTracks(albumTracks, true)} onLike={toggleLike} onLikeAlbum={() => toggleLike(albumSeed)} albumLiked={likedIds.has(likedKey(albumSeed))} /> : <>
+        ) : view === 'library' ? <LibraryPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} likedSongs={likedSongs} recentlyPlayed={recentlyPlayed} likedIds={likedIds} loading={personalLoading} error={personalError} actionError={personalActionError} currentSongId={playerSong?.id} isPlaying={playerIsPlaying} onPlay={playSong} onLike={toggleLike} onRetry={() => void loadPersonalSpace()} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'liked' ? <CollectionPage kind="liked" title="Liked Songs" songs={likedSongs} loading={personalLoading} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(likedSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'playlist' ? <CollectionPage kind="playlist" title={activePlaylist?.name ?? (playlists.loading ? 'Playlist' : 'Playlist not found')} songs={activePlaylistSongs} loading={playlists.loading || (activePlaylist !== null && activePlaylistSongs.length < activePlaylist.songIds.length)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(activePlaylistSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} {...(activePlaylist ? { onDelete: () => { void playlists.remove(activePlaylist.id); router.push(paths.library); }, share: { libraryId: activePlaylist.id, isPublic: activePlaylist.isPublic, onChanged: () => { void playlists.reload(); } }, cover: { libraryId: activePlaylist.id, ...(activePlaylist.coverUrl ? { coverUrl: activePlaylist.coverUrl } : {}), onUpload: playlists.setCover } } : {})} /> : view === 'artist' && artistName ? <ArtistPage name={artistName} profile={artistProfile} photoFallback={faces[artistName.toLocaleLowerCase()] || null} songs={artistTracks} related={relatedArtists} loading={artistLoading && artistTracks.length === 0} error={artistTracks.length === 0 ? artistError : null} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onBack={() => goBack(paths.discover)} onRetry={() => setArtistReload((count) => count + 1)} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(artistTracks, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbumByName} onPlayCatalogAlbum={playCatalogAlbum} onOpenArtist={openArtist} /> : view === 'album' && albumSeed ? <AlbumPage seed={albumSeed} detail={albumState.detail} loading={albumState.loading} tracks={albumTracks} palette={palette} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={() => playAlbumTracks(albumTracks, false)} onShuffle={() => playAlbumTracks(albumTracks, true)} onLike={toggleLike} onLikeAlbum={() => { if (albumLikeTarget) toggleLike(albumLikeTarget); }} albumLiked={albumLikeTarget ? likedIds.has(likedKey(albumLikeTarget)) : false} /> : <>
         <div className="browse-grid">
           <div className="browse-main">
             <motion.section className="hero-banner" variants={pageVariants} initial="hidden" animate="visible" transition={pageTransition} aria-label="Featured track" data-live={playerIsPlaying ? 'true' : undefined} data-searching={isSearching ? 'true' : undefined}>
@@ -1530,6 +1923,9 @@ export default function App() {
                 onPlayTrack={(song, queue) => playSong(song, queue)}
                 onLike={toggleLike}
                 onOpenAlbum={openAlbum}
+                catalogAlbums={catalogAlbums}
+                onOpenCatalogAlbum={openCatalogAlbum}
+                onPlayCatalogAlbum={playCatalogAlbum}
                 onOpenArtist={openArtist}
                 onOpenPlaylist={(id) => { router.push(paths.playlist(id)); }}
                 onRetry={retryCurrentSearch}
@@ -1600,6 +1996,9 @@ export default function App() {
         <Link className={`bottom-nav__item${view === 'discover' || view === 'album' || view === 'artist' ? ' is-active' : ''}`} href={paths.discover} aria-current={view === 'discover' ? 'page' : undefined}>
           <Compass size={22} strokeWidth={1.7} aria-hidden="true" /><span>Browse</span>
         </Link>
+        <Link className={`bottom-nav__item${view === 'dj' ? ' is-active' : ''}`} href={paths.dj} aria-current={view === 'dj' ? 'page' : undefined}>
+          <Waves size={22} strokeWidth={1.7} aria-hidden="true" /><span>DJ</span>
+        </Link>
         <Link className={`bottom-nav__item${view === 'library' || view === 'playlist' || view === 'liked' ? ' is-active' : ''}`} href={paths.library} aria-current={view === 'library' ? 'page' : undefined}>
           {libraryArrivals > 0 ? <span key={libraryArrivals} className="nav-arrival" aria-hidden="true" /> : null}
           <LibraryIcon size={22} strokeWidth={1.7} aria-hidden="true" /><span>Library</span>
@@ -1648,6 +2047,11 @@ export default function App() {
           </div>
 
           <div className="am-right">
+            {view !== 'dj' ? (
+              <button type="button" className={`am-btn am-dj${djQuickOpen ? ' is-on' : ''}${djVoice.wakeOn ? ' is-awake' : ''}`} aria-label="Ask your DJ (Ctrl+J)" aria-expanded={djQuickOpen} title="Ask your DJ · Ctrl+J" onClick={() => setDjQuickOpen((open) => !open)}>
+                <DjMascot size="mini" emotion={dj.working ? 'thinking' : djVoice.listening ? 'listening' : 'idle'} palette={palette} playing={playerIsPlaying} />
+              </button>
+            ) : null}
             <button type="button" className="am-btn am-btn--mute" aria-label={playerVolume === 0 ? 'Unmute' : 'Mute'} title={playerVolume === 0 ? 'Unmute' : 'Mute'} onClick={() => changePlayerVolume(playerVolume === 0 ? 1 : 0)}>{playerVolume === 0 ? <VolumeX size={17} aria-hidden="true" /> : <Volume2 size={17} aria-hidden="true" />}</button>
             <input
               type="range"
@@ -1754,8 +2158,9 @@ export default function App() {
                             <Artwork song={song} size="small" />
                             <span className="am-queue-copy">
                               <strong>{song.title}</strong>
-                              <small>{song.artist}{radio.reasonFor(song.id) ? ` · ${radio.reasonFor(song.id)}` : ''}</small>
+                              <small>{song.artist}{djPlannedRef.current.has(song.id) && dj.reasons[song.id] ? ` · ${dj.reasons[song.id]}` : radio.reasonFor(song.id) ? ` · ${radio.reasonFor(song.id)}` : ''}</small>
                             </span>
+                            {djPlannedRef.current.has(song.id) ? <span className="am-queue-dj" title="Picked by your DJ"><i /><i /><span className="sr-only">Picked by your DJ</span></span> : null}
                             <span className="am-queue-time">{formatTime(song.duration)}</span>
                           </button>
                           {queueEditable ? (
@@ -1840,9 +2245,19 @@ export default function App() {
         onOpenAlbum={openAlbumFromPlayer}
         onOpenArtist={openArtistFromPlayer}
       />
+      <DjQuickPrompt
+        open={djQuickOpen && view !== 'dj'}
+        onClose={closeDjQuick}
+        palette={palette}
+        playing={playerIsPlaying}
+        hasSong={Boolean(playerSong) && !remotePlayback}
+        onOpenPage={() => { setDjQuickOpen(false); router.push(paths.dj); }}
+      />
       <OfflineToast visible={offline} />
       <NoticeToast notice={connect.notice} onDone={connect.dismissNotice} />
     </div>
+    </DjVoiceContext.Provider>
+    </DjSessionContext.Provider>
     </QueueActionsContext.Provider>
     </PlaylistsContext.Provider>
   );

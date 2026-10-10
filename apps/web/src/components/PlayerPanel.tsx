@@ -41,6 +41,7 @@ import type { Palette } from '../lib/palette';
 import { usePlayhead, type Playhead } from '../lib/playhead';
 import { tapHaptic } from '../lib/haptics';
 import { createDoubleTap } from '../lib/karaokeMix';
+import { countLyricsTap, highlightLabel, NO_TAPS, otherHighlight, type TapRun } from '../lib/lyricsTaps';
 import { fetchCanvasArtwork } from '../lib/api';
 import { creditedArtists, formatTime, clamp } from '../lib/utils';
 import { motionTokens, spring } from '../motion';
@@ -183,11 +184,33 @@ export function PlayerPanel({
   // show/hide: hiding the lyrics leaves the cover and controls centred on their own. The phone's
   // "workspace" mode (lyrics take over, cover fades out) only applies to the stacked layout.
   const [lyricsHidden, setLyricsHidden] = useState(false);
-  const [{ playerBlackBackground }] = useSettings();
+  const [{ playerBlackBackground, lyricsHighlight }, updateSettings] = useSettings();
+  // Three quick taps on the Lyrics tab switch letter by letter ↔ line by line, as on the phone app.
+  const lyricsTapsRef = useRef<TapRun>(NO_TAPS);
+  const [highlightNote, setHighlightNote] = useState('');
+  const [noteShown, setNoteShown] = useState(false);
+  useEffect(() => {
+    if (!noteShown) return undefined;
+    const timer = window.setTimeout(() => setNoteShown(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [noteShown, highlightNote]);
+  const tapLyricsTab = (): void => {
+    const { run, triple } = countLyricsTap(lyricsTapsRef.current, performance.now());
+    lyricsTapsRef.current = run;
+    if (!triple) return;
+    const next = otherHighlight(lyricsHighlight);
+    updateSettings({ lyricsHighlight: next });
+    tapHaptic(14);
+    setHighlightNote(highlightLabel(next));
+    setNoteShown(true);
+  };
   // The top bar's right-hand slot: the lyrics panel renders its ⋯ actions there on wide screens.
   const [topActionsSlot, setTopActionsSlot] = useState<HTMLDivElement | null>(null);
-  const desktopSolo = !isNarrowViewport && lyricsHidden && tab === 'lyrics';
-  const desktopLyricsVisible = tab === 'lyrics' && !lyricsHidden;
+  // A song with no lyrics (the lookup finished, found nothing, and did not fail) puts the lyrics away by
+  // itself: the cover and controls centre on their own, as if the listener had hidden them.
+  const noLyrics = !lyrics.loading && !lyrics.error && lyrics.lines.length === 0;
+  const desktopSolo = !isNarrowViewport && tab === 'lyrics' && (lyricsHidden || noLyrics);
+  const desktopLyricsVisible = tab === 'lyrics' && !lyricsHidden && !noLyrics;
   // Desktop: double-clicking the cover puts it away and lets the lyrics take the whole stage,
   // centred. The lyrics button (then "Show cover") or switching tabs brings the cover back.
   const [coverHidden, setCoverHidden] = useState(false);
@@ -365,7 +388,8 @@ export function PlayerPanel({
                   role="tab"
                   aria-selected={visibleTab === 'lyrics'}
                   aria-label="Lyrics"
-                  onClick={() => selectTab('lyrics')}
+                  title="Lyrics · triple-tap to switch letter by letter and line by line"
+                  onClick={() => { selectTab('lyrics'); tapLyricsTab(); }}
                 >
                   <Waves size={14} aria-hidden="true" /> Lyrics
                 </button>
@@ -389,6 +413,8 @@ export function PlayerPanel({
                 >
                   <Sparkles size={14} aria-hidden="true" /> Related
                 </button>
+                {/* Says which style a triple tap switched to, then fades. */}
+                <span className={`lyrics-style-note${noteShown ? ' is-shown' : ''}`} role="status" aria-live="polite">{highlightNote}</span>
               </div>
               <div className="listening-top__spacer" ref={setTopActionsSlot} />
             </div>
@@ -559,8 +585,9 @@ export function PlayerPanel({
                   <div className="np-actions">
                     <IconButton
                       icon={Waves}
-                      label={isNarrowViewport ? (mode === 'workspace' ? 'Show cover' : 'Show lyrics') : lyricsFull ? 'Show cover' : desktopLyricsVisible ? 'Hide lyrics' : 'Show lyrics'}
+                      label={!isNarrowViewport && noLyrics && tab === 'lyrics' ? 'No lyrics for this song' : isNarrowViewport ? (mode === 'workspace' ? 'Show cover' : 'Show lyrics') : lyricsFull ? 'Show cover' : desktopLyricsVisible ? 'Hide lyrics' : 'Show lyrics'}
                       active={isNarrowViewport ? mode === 'workspace' : desktopLyricsVisible}
+                      disabled={!isNarrowViewport && noLyrics && tab === 'lyrics'}
                       onClick={() => {
                         if (isNarrowViewport) {
                           if (mode === 'workspace') onOpenImmersive();
@@ -660,7 +687,7 @@ export function PlayerPanel({
                 </div>
               </div>
 
-              <div className={`player-sidepanel ${tab === 'lyrics' ? 'is-lyrics' : ''}`} role="tabpanel" hidden={phoneCover || desktopSolo}>
+              <div className={`player-sidepanel ${tab === 'lyrics' ? 'is-lyrics' : ''}`} role="tabpanel" hidden={phoneCover} inert={desktopSolo} aria-hidden={desktopSolo || undefined}>
                 {tab === 'lyrics' && !phoneCover ? (
                   <>
                     <p className="panel-title">Lyrics</p>

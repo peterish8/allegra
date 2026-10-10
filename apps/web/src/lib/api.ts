@@ -1,4 +1,4 @@
-import type { AccountProfile, ApiResponse, ArtistProfile, ArtistSummary, HomePayload, LyricLine, LyricsPayload, MotionArtwork, SharedPlaylist, TasteSummary, UnifiedSong } from '@shared/types';
+import type { AccountProfile, AlbumDetail, AlbumSummary, ApiResponse, ArtistProfile, ArtistSummary, HomePayload, LyricLine, LyricsPayload, MotionArtwork, SharedPlaylist, TasteSummary, UnifiedSong } from '@shared/types';
 import { POLICY_VERSION, type ReportReason } from '@shared/legal';
 import type { BlendCreated, BlendDetail, BlendInviteLink, BlendInvitePreview, BlendSummary } from '@shared/blendView';
 import type { ImportedTrack } from '@shared/importParse';
@@ -6,6 +6,7 @@ import type { LibraryChange, LibraryOp } from '@shared/library';
 import { fromAllegraSong, type SongRef, type SongSnapshot } from '@shared/songRef';
 import type { SpotifySourcePlaylist, SpotifyStatus, SpotifySyncStep } from '@shared/spotify';
 import type { ListenExit } from '@shared/listenSignal';
+import type { DjTurnRequest, DjTurnResponse } from '@shared/dj';
 import type { RadioTaste } from '@shared/radio';
 import { TYPEAHEAD_LIMIT } from '@shared/typeahead';
 
@@ -216,6 +217,17 @@ export async function fetchArtist(name: string, signal?: AbortSignal): Promise<A
   return request(`/api/artists/${encodeURIComponent(name)}`, { signal });
 }
 
+/** A whole album by the catalog's id (a song's `albumId`), in its own track order. */
+export async function fetchAlbum(id: string, signal?: AbortSignal): Promise<AlbumDetail> {
+  return request(`/api/albums/${encodeURIComponent(id)}`, { signal });
+}
+
+/** The catalog's albums by name: a soundtrack and its singles are separate albums with their own ids. */
+export async function searchAlbums(query: string, limit = 8, signal?: AbortSignal): Promise<AlbumSummary[]> {
+  const data = await request<{ results: AlbumSummary[] }>(`/api/search/albums?q=${encodeURIComponent(query)}&limit=${limit}`, { signal });
+  return data.results;
+}
+
 /** Photos for a list of artist names (max 12). Names without a photo are omitted. */
 export async function fetchArtistFaces(names: readonly string[], signal?: AbortSignal): Promise<ArtistSummary[]> {
   return request(`/api/artists/faces?names=${encodeURIComponent(names.join(','))}`, { signal });
@@ -398,16 +410,12 @@ export interface LibraryApplyReply {
 }
 
 export async function applyLibraryOps(ops: readonly LibraryOp[], options: { readonly sentAt?: number; readonly signal?: AbortSignal } = {}): Promise<LibraryApplyReply> {
-  const result = await request<LibraryApplyReply>('/api/me/library/ops', {
+  return request<LibraryApplyReply>('/api/me/library/ops', {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ ops, sentAt: options.sentAt ?? Date.now() }),
     ...(options.signal ? { signal: options.signal } : {})
   });
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('allegra:library-own-write', { detail: { ...result, opCount: ops.length } }));
-  }
-  return result;
 }
 
 export async function createLibrary(name: string): Promise<LibraryRecord> {
@@ -511,6 +519,34 @@ export async function translateLyrics(
 export async function fetchAiRecommendations(currentSongId?: string, signal?: AbortSignal): Promise<{ songs: UnifiedSong[]; provider: string; reasoning: string }> {
   const query = currentSongId ? `?songId=${encodeURIComponent(currentSongId)}` : '';
   return request(`/api/ai/recommendations${query}`, { signal });
+}
+
+export async function requestDjTurn(input: DjTurnRequest, signal?: AbortSignal): Promise<DjTurnResponse> {
+  return request('/api/ai/dj/turn', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+    signal
+  });
+}
+
+export type DjEarsCloudProvider = 'openai' | 'groq';
+export type DjVoiceCloudProvider = 'openai' | 'elevenlabs';
+
+/** A spoken request (base64 16-bit mono WAV) written down by the listener's own transcription provider. */
+export async function requestDjTranscription(
+  input: { readonly provider: DjEarsCloudProvider; readonly apiKey: string; readonly model?: string; readonly audio: string },
+  signal?: AbortSignal
+): Promise<{ readonly text: string }> {
+  return request('/api/ai/dj/transcribe', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(input), signal });
+}
+
+/** One DJ reply spoken by the listener's own voice provider, as base64 MP3. */
+export async function requestDjSpeech(
+  input: { readonly provider: DjVoiceCloudProvider; readonly apiKey: string; readonly model?: string; readonly voice?: string; readonly text: string },
+  signal?: AbortSignal
+): Promise<{ readonly audio: string; readonly mime: string }> {
+  return request('/api/ai/dj/speak', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(input), signal });
 }
 
 function isApiResponse<T>(value: unknown): value is ApiResponse<T> {

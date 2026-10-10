@@ -2,9 +2,10 @@ import { ArrowRight, Disc3, ListMusic, Music2, Play, Sparkles, Users } from 'luc
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 
-import type { UnifiedSong } from '@shared/types';
+import type { AlbumSummary, UnifiedSong } from '@shared/types';
 
 import { ArtistPreviewCard } from './ArtistPreviewCard';
+import { albumsInResults } from '../lib/album';
 import { SongCard } from './SongCard';
 import { Artwork, EmptyState, SkeletonCard, TactileButton } from './ui';
 import type { LibraryRecord } from '../lib/api';
@@ -15,11 +16,15 @@ import { motionTokens, spring } from '../motion';
 
 export type SearchTab = 'all' | 'songs' | 'artists' | 'albums' | 'playlists';
 
-interface AlbumHit {
+/** One album card: a catalog album (by id) or, without any, an album grouped from these results. */
+interface AlbumCard {
   readonly key: string;
   readonly name: string;
-  readonly seed: UnifiedSong;
-  readonly trackCount: number;
+  readonly sub: string;
+  readonly image: string | null;
+  readonly seed: UnifiedSong | null;
+  readonly open: () => void;
+  readonly play: () => void;
 }
 
 interface SearchResultsProps {
@@ -35,6 +40,10 @@ interface SearchResultsProps {
   readonly onPlayTrack: (song: UnifiedSong, queue?: UnifiedSong[]) => void;
   readonly onLike: (song: UnifiedSong) => void;
   readonly onOpenAlbum: (song: UnifiedSong) => void;
+  /** The catalog's albums for this query (`/api/search/albums`); empty falls back to grouping `songs`. */
+  readonly catalogAlbums?: readonly AlbumSummary[];
+  readonly onOpenCatalogAlbum?: (album: AlbumSummary) => void;
+  readonly onPlayCatalogAlbum?: (album: AlbumSummary) => void;
   readonly onOpenArtist: (name: string) => void;
   readonly onOpenPlaylist: (id: string) => void;
   readonly onRetry: () => void;
@@ -65,19 +74,6 @@ export function artistsFromSongs(songs: readonly UnifiedSong[], limit: number): 
   return list;
 }
 
-function albumsFromSongs(songs: readonly UnifiedSong[], limit: number): AlbumHit[] {
-  const byKey = new Map<string, { name: string; seed: UnifiedSong; trackCount: number }>();
-  for (const song of songs) {
-    const name = song.album?.trim();
-    if (!name) continue;
-    const key = name.toLocaleLowerCase();
-    const found = byKey.get(key);
-    if (found) found.trackCount += 1;
-    else byKey.set(key, { name, seed: song, trackCount: 1 });
-  }
-  return [...byKey.entries()].slice(0, limit).map(([key, value]) => ({ key, ...value }));
-}
-
 export function SearchResults({
   query,
   songs,
@@ -91,6 +87,9 @@ export function SearchResults({
   onPlayTrack,
   onLike,
   onOpenAlbum,
+  catalogAlbums = [],
+  onOpenCatalogAlbum,
+  onPlayCatalogAlbum,
   onOpenArtist,
   onOpenPlaylist,
   onRetry
@@ -104,7 +103,30 @@ export function SearchResults({
   }, [query]);
 
   const artists = useMemo(() => artistsFromSongs(songs, 18), [songs]);
-  const albums = useMemo(() => albumsFromSongs(songs, 18), [songs]);
+  // The catalog's own albums when it found any (real names, real tracks); otherwise albums grouped
+  // from these results, without a song count, since a few results are not the whole album.
+  const albums = useMemo((): AlbumCard[] => {
+    if (catalogAlbums.length > 0 && onOpenCatalogAlbum && onPlayCatalogAlbum) {
+      return catalogAlbums.map((album) => ({
+        key: `catalog:${album.id}`,
+        name: album.name,
+        sub: [album.artist, album.year].filter(Boolean).join(' · '),
+        image: album.artwork,
+        seed: null,
+        open: () => onOpenCatalogAlbum(album),
+        play: () => onPlayCatalogAlbum(album)
+      }));
+    }
+    return albumsInResults(songs, 18).map((hit) => ({
+      key: hit.key,
+      name: hit.name,
+      sub: hit.seed.artist,
+      image: null,
+      seed: hit.seed,
+      open: () => onOpenAlbum(hit.seed),
+      play: () => onPlayTrack(hit.seed, [...hit.tracks])
+    }));
+  }, [catalogAlbums, onOpenAlbum, onOpenCatalogAlbum, onPlayCatalogAlbum, onPlayTrack, songs]);
   const matchedPlaylists = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     if (!needle) return [];
@@ -204,33 +226,26 @@ export function SearchResults({
     );
   };
 
-  const renderAlbums = (list: AlbumHit[]): ReactElement => (
+  const renderAlbums = (list: readonly AlbumCard[]): ReactElement => (
     <div className="media-grid">
       {list.map((album) => (
         <div className="media-card" key={album.key}>
           <button
             type="button"
             className="media-card-open"
-            onClick={() => onOpenAlbum(album.seed)}
+            onClick={album.open}
             aria-label={`Open album ${album.name}`}
           >
             <span className="media-card-art">
-              <Artwork song={album.seed} size="large" />
+              {album.image ? <img src={album.image} alt="" width={320} height={320} loading="lazy" crossOrigin="anonymous" /> : album.seed ? <Artwork song={album.seed} size="large" /> : null}
             </span>
             <span className="media-card-title">{album.name}</span>
-            <span className="media-card-sub">
-              {album.seed.artist} · {album.trackCount} {album.trackCount === 1 ? 'song' : 'songs'}
-            </span>
+            <span className="media-card-sub">{album.sub}</span>
           </button>
           <button
             type="button"
             className="media-card-play"
-            onClick={() =>
-              onPlayTrack(
-                album.seed,
-                songs.filter((song) => song.album?.trim().toLocaleLowerCase() === album.key)
-              )
-            }
+            onClick={album.play}
             aria-label={`Play ${album.name}`}
           >
             <Play size={20} fill="currentColor" aria-hidden="true" />

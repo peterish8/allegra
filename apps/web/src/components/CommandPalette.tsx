@@ -1,5 +1,5 @@
 import { paths } from '../lib/routes';
-import { ArrowRight, Clock, Compass, Disc3, Heart, House, Library, ListMusic, Search, Settings, User } from 'lucide-react';
+import { ArrowRight, Clock, Compass, Disc3, Heart, House, Library, ListMusic, Search, Settings, Sparkles, User } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
@@ -36,6 +36,10 @@ interface CommandPaletteProps {
   readonly onNavigate: (path: string) => void;
   readonly onSearchAll: (query: string) => void;
   readonly onClearSearch: () => void;
+  /** Sends what was typed to the DJ as a request, without leaving the page. */
+  readonly onAskDj?: (query: string) => void;
+  /** `icon` shows only the magnifier (the DJ page keeps its top clear); the default is the full pill. */
+  readonly variant?: 'pill' | 'icon';
 }
 
 interface CommandItem {
@@ -53,7 +57,7 @@ const SHEET_ID = 'command-palette';
 const answers = new PrefixCache<UnifiedSong>();
 const songText = (song: UnifiedSong): string => `${song.title} ${song.artist}`;
 
-export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onPlaySong, onPlayFromSearch, onOpenArtist, onNavigate, onSearchAll, onClearSearch }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onPlaySong, onPlayFromSearch, onOpenArtist, onNavigate, onSearchAll, onClearSearch, onAskDj, variant = 'pill' }: CommandPaletteProps) {
   const reduced = useReducedMotion();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UnifiedSong[]>([]);
@@ -198,7 +202,11 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     const list: CommandItem[] = [];
 
     if (trimmed) {
-      list.push({ id: 'all', section: 'Search', title: `Search “${trimmed}”`, hint: 'All results', icon: <ArrowRight size={16} />, run: () => onSearchAll(trimmed) });
+      const all: CommandItem = { id: 'all', section: 'Search', title: `Search “${trimmed}”`, hint: 'All results', icon: <ArrowRight size={16} />, run: () => onSearchAll(trimmed) };
+      const ask: CommandItem | null = onAskDj ? { id: 'ask-dj', section: 'Search', title: `Ask your DJ: “${trimmed}”`, hint: 'Plays it, queues it, or lines up more like it', icon: <Sparkles size={16} />, run: () => onAskDj(trimmed) } : null;
+      // On the DJ page Enter asks the DJ instead of leaving for the search page.
+      if (ask && variant === 'icon') list.push(ask, all);
+      else list.push(all, ...(ask ? [ask] : []));
     }
 
     // Songs you played that match lead (no network wait), then the catalog's answer.
@@ -235,6 +243,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     const destinations: CommandItem[] = [
       { id: 'go-home', section: 'Go to', title: 'Home', icon: <House size={16} />, run: go(paths.home) },
       { id: 'go-browse', section: 'Go to', title: 'Browse', icon: <Compass size={16} />, run: go(paths.discover) },
+      { id: 'go-dj', section: 'Go to', title: 'Your DJ', hint: 'Ctrl+J asks it from anywhere', icon: <Sparkles size={16} />, run: go(paths.dj) },
       { id: 'go-library', section: 'Go to', title: 'Your library', icon: <Library size={16} />, run: go(paths.library) },
       { id: 'go-liked', section: 'Go to', title: 'Favorite songs', icon: <Heart size={16} />, run: go(paths.liked) },
       { id: 'go-playlists', section: 'Go to', title: 'Playlists', icon: <ListMusic size={16} />, run: go(paths.library) }
@@ -248,7 +257,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
       if (!needle || item.title.toLowerCase().includes(needle)) list.push(item);
     });
     return list;
-  }, [trimmed, results, recent, activeQuery, go, onSearchAll, onPlaySong, onPlayFromSearch, onOpenArtist, onClearSearch]);
+  }, [trimmed, results, recent, activeQuery, go, onSearchAll, onPlaySong, onPlayFromSearch, onOpenArtist, onClearSearch, onAskDj, variant]);
 
   const sections = useMemo(() => {
     const map = new Map<string, CommandItem[]>();
@@ -307,7 +316,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
   return (
     <>
       {/* The pill keeps its slot while the sheet is open, so the top bar never reflows. */}
-      <div className="cmdk-slot">
+      <div className={`cmdk-slot${variant === 'icon' ? ' cmdk-slot--icon' : ''}`}>
         <AnimatePresence initial={false}>
           {!open ? (
             <motion.button
@@ -315,25 +324,28 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
               ref={triggerRef}
               type="button"
               layoutId={SHEET_ID}
-              className="search-box cmdk-trigger"
+              className={`search-box cmdk-trigger${variant === 'icon' ? ' cmdk-trigger--icon' : ''}`}
               style={{ borderRadius: 999 }}
               transition={morph}
               onClick={onOpen}
               aria-haspopup="dialog"
               aria-label="Search music"
+              title={variant === 'icon' ? 'Search music · Ctrl+K' : undefined}
             >
               <Search size={17} aria-hidden="true" />
-              <span className={`cmdk-trigger-text ${activeQuery ? 'has-value' : ''}`}>{activeQuery || 'Search music'}</span>
-              {activeQuery ? (
-                <span
-                  className="search-clear"
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Clear search"
-                  onClick={(event) => { event.stopPropagation(); onClearSearch(); }}
-                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); onClearSearch(); } }}
-                >×</span>
-              ) : <kbd>⌘ K</kbd>}
+              {variant === 'icon' ? null : <>
+                <span className={`cmdk-trigger-text ${activeQuery ? 'has-value' : ''}`}>{activeQuery || 'Search music'}</span>
+                {activeQuery ? (
+                  <span
+                    className="search-clear"
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Clear search"
+                    onClick={(event) => { event.stopPropagation(); onClearSearch(); }}
+                    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); onClearSearch(); } }}
+                  >×</span>
+                ) : <kbd>⌘ K</kbd>}
+              </>}
             </motion.button>
           ) : null}
         </AnimatePresence>

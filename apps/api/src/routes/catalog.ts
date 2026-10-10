@@ -41,6 +41,34 @@ export function catalogRouter(catalog: CatalogService): Router {
     }
   });
 
+  // Albums by name: the catalog's own albums, so a soundtrack and its singles are separate results.
+  router.get('/search/albums', async (request, response) => {
+    const query = boundedString(request.query.q);
+    if (!query) {
+      response.status(400).json({ success: false, data: null, error: "Something's missing from that request." });
+      return;
+    }
+    try {
+      sendSuccess(response, { results: await catalog.searchAlbums(query, positiveInt(request.query.limit, 8, 20)) });
+    } catch (error) {
+      sendFailure(response, error);
+    }
+  });
+
+  // A whole album by the catalog's id (a song's `albumId`).
+  router.get('/albums/:id', async (request, response) => {
+    const id = queryString(request.params.id);
+    if (!id || !/^[A-Za-z0-9_-]{1,40}$/.test(id)) {
+      response.status(400).json({ success: false, data: null, error: "Something's missing from that request." });
+      return;
+    }
+    try {
+      sendSuccess(response, await catalog.getAlbum(id));
+    } catch (error) {
+      sendFailure(response, error);
+    }
+  });
+
   // Static path first so "faces" is never read as an artist name.
   router.get('/artists/faces', async (request, response) => {
     const names = queryString(request.query.names)?.split(',').map((name) => name.trim()).filter(Boolean) ?? [];

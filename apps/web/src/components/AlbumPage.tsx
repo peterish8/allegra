@@ -3,9 +3,10 @@ import { motion, useReducedMotion } from 'motion/react';
 import { useMemo } from 'react';
 import type { CSSProperties } from 'react';
 
-import type { UnifiedSong } from '@shared/types';
+import type { AlbumDetail, UnifiedSong } from '@shared/types';
 
 import { Artwork, IconButton, TactileButton } from './ui';
+import { SavePlaylistButton } from './SavePlaylistButton';
 import { formatAlbumDuration } from '../lib/album';
 import type { Palette } from '../lib/palette';
 import { formatTime } from '../lib/utils';
@@ -13,6 +14,10 @@ import { itemVariants, motionTokens, pageVariants, spring } from '../motion';
 
 interface AlbumPageProps {
   readonly seed: UnifiedSong;
+  /** The catalog's album (`GET /api/albums/:id`) once loaded: its name, artist and year win over the seed's. */
+  readonly detail?: AlbumDetail | null;
+  /** True while the catalog's tracks are on their way. */
+  readonly loading?: boolean;
   readonly tracks: UnifiedSong[];
   readonly palette: Palette;
   readonly currentSongId: string | null;
@@ -32,6 +37,8 @@ interface AlbumPageProps {
  */
 export function AlbumPage({
   seed,
+  detail = null,
+  loading = false,
   tracks,
   palette,
   currentSongId,
@@ -46,7 +53,10 @@ export function AlbumPage({
 }: AlbumPageProps) {
   const reduced = useReducedMotion();
   const totalDuration = useMemo(() => tracks.reduce((sum, track) => sum + track.duration, 0), [tracks]);
-  const yearGuess = useMemo(() => inferYearHint(seed), [seed]);
+  // The catalog's year when it gave one; never a guess.
+  const year = detail?.year ?? null;
+  const title = detail?.name ?? (seed.album?.trim() || seed.title);
+  const artist = detail?.artist ?? seed.artist;
 
   const shellStyle = {
     '--album-primary': palette.primary,
@@ -75,11 +85,13 @@ export function AlbumPage({
 
         <div className="album-hero__copy">
           <span className="album-hero__eyebrow">Album</span>
-          <h1 id="album-title">{seed.album?.trim() || seed.title}</h1>
-          <p className="album-hero__artist">{seed.artist}</p>
-          <p className="album-hero__meta">
-            {yearGuess ? `${yearGuess} · ` : ''}
-            {tracks.length} {tracks.length === 1 ? 'Song' : 'Songs'} · {formatAlbumDuration(totalDuration)}
+          <h1 id="album-title">{title}</h1>
+          <p className="album-hero__artist">{artist}</p>
+          <p className="album-hero__meta" aria-live="polite">
+            {year ? `${year} · ` : ''}
+            {loading && tracks.length === 0
+              ? 'Loading the whole album…'
+              : `${tracks.length} ${tracks.length === 1 ? 'Song' : 'Songs'} · ${formatAlbumDuration(totalDuration)}${loading ? ' · loading the rest…' : ''}`}
           </p>
           <div className="album-hero__actions">
             <TactileButton variant="primary" icon={Play} onClick={onPlayAll}>
@@ -94,6 +106,7 @@ export function AlbumPage({
               active={albumLiked}
               onClick={onLikeAlbum}
             />
+            <SavePlaylistButton songs={tracks} defaultName={title} disabled={loading} />
           </div>
         </div>
       </motion.section>
@@ -129,10 +142,4 @@ export function AlbumPage({
       </motion.section>
     </motion.div>
   );
-}
-
-function inferYearHint(song: UnifiedSong): string | null {
-  // Providers rarely expose year; keep the meta row honest without inventing one.
-  void song;
-  return null;
 }

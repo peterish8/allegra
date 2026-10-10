@@ -18,7 +18,7 @@ export interface SaavnSong {
   readonly id?: string | number;
   readonly name?: string;
   readonly title?: string;
-  readonly album?: string | { readonly name?: string };
+  readonly album?: string | { readonly id?: string | number; readonly name?: string };
   readonly duration?: number | string;
   readonly language?: string;
   readonly hasLyrics?: boolean;
@@ -44,6 +44,14 @@ export interface SaavnAlbumSummary {
   readonly name?: string;
   readonly year?: string | number;
   readonly image?: readonly SaavnAsset[];
+}
+
+/** An album from `/search/albums` or `/albums?id=` (the fields we read; `songs` only on the detail). */
+export interface SaavnAlbum extends SaavnAlbumSummary {
+  readonly language?: string;
+  readonly songCount?: number | string;
+  readonly artists?: { readonly primary?: readonly { readonly name?: string }[] };
+  readonly songs?: readonly SaavnSong[];
 }
 
 export interface SaavnArtist extends SaavnArtistSummary {
@@ -158,6 +166,32 @@ export class SaavnProvider {
       }
     }
     return { ok: false, data: null, reason };
+  }
+
+  /** Album detail (`/albums?id=`): name, year, artists, cover and every song in track order. */
+  public async getAlbum(id: string): Promise<ProviderResult<SaavnAlbum | null>> {
+    let reason: ProviderFailureReason = 'error';
+    for (const baseUrl of this.baseUrls) {
+      try {
+        const response = await this.request(baseUrl, 'albums', { id });
+        if (!response.ok) {
+          continue;
+        }
+        const body: unknown = await response.json();
+        if (isRecord(body) && body.success === true && isRecord(body.data)) {
+          return { ok: true, data: body.data as SaavnAlbum };
+        }
+      } catch (error) {
+        reason = isAbortError(error) ? 'timeout' : 'error';
+      }
+    }
+    return { ok: false, data: null, reason };
+  }
+
+  /** Album search (`/search/albums`): id, name, year, artists and cover per match. */
+  public async searchAlbums(query: string, limit = 8): Promise<ProviderResult<SaavnAlbum[]>> {
+    const result = await this.requestResults('search/albums', { query, limit: String(limit) });
+    return { ...result, data: result.data as SaavnAlbum[] };
   }
 
   private async requestResults(

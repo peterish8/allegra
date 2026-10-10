@@ -8,6 +8,12 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const baseURL = process.env.E2E_BASE_URL?.replace(/\/+$/, '') ?? 'http://localhost:5173';
 const local = !process.env.E2E_BASE_URL;
+/**
+ * E2E_CHANNEL=chrome (or msedge) runs the browser projects in the installed browser instead of
+ * Playwright's bundled Chromium. On some Windows builds the bundled Chromium 153 crashes on every
+ * app page about a second after load (2026-10-11) while Chrome 154 and Edge 155 run it fine.
+ */
+const channel = process.env.E2E_CHANNEL;
 
 export default defineConfig({
   testDir: '.',
@@ -23,13 +29,14 @@ export default defineConfig({
     baseURL,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    ...(channel ? { channel } : {}),
     launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] }
   },
   projects: [
     { name: 'api', testMatch: /api\.spec\.ts/ },
     {
       name: 'desktop',
-      testMatch: /(app|karaoke)\.spec\.ts/,
+      testMatch: /(app|karaoke|player)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 860 } }
     },
     {

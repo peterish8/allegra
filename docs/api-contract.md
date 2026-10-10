@@ -24,6 +24,9 @@ export interface UnifiedSong {
   title: string;          // HTML entities already decoded
   artist: string;         // decoded, comma-joined
   album?: string;
+  /** Additive, 2026-10-11. The catalog's own album id (Saavn only), for GET /api/albums/:id.
+   *  Absent for Gaana rows and when `album` was replaced by a canonical release name. */
+  albumId?: string;
   artwork: string;        // 1000x1000 when available
   streamUrl: string;      // ALWAYS our proxy: /api/stream/:id — never a CDN URL
   duration: number;       // SECONDS
@@ -64,6 +67,87 @@ export interface LyricsPayload {
 `→ ApiResponse<{ results: UnifiedSong[]; source: 'Saavn'|'Gaana' }>`
 Empty results → `success: true` with `results: []`, **not** an error.
 Cache 1 h. Budget: <800 ms cold, <200 ms cached.
+
+### Proposed change — `POST /api/ai/dj/turn`
+The cloud BYOK providers are `openai`, `openrouter`, and `gemini`. The caller sends the selected
+provider's `apiKey`, `model`, task `goal` (`mix` or `playlist`), a bounded `songLimit` (1–30), the
+current `message`, up to 8 prior `{role, content}` messages, and small session context: the active
+track, up to 8 upcoming/recent/liked/skipped summaries, up to 30 editable draft-track summaries and
+the draft name, plus `{vibe, energy, language, constraints}`. Four optional fields shape the set
+(added 2026-10-11; an older client that omits them gets the old behaviour): `excludeArtists`
+(up to 12 names the listener ruled out), `exploration` (`familiar` | `balanced` | `discover`,
+default `balanced`) and `shape` (`steady` | `build` | `wind` | `dynamic`, default `steady`; a
+planned order, never measured energy), and `playlistSources` (up to two playlists the listener
+explicitly selected, each with a name and up to 40 `{id, title, artist, language?}` track summaries).
+Playlist sources are used as seeds only for that DJ turn and are never saved by the endpoint. Any committed song credited, as whole words, to an
+excluded artist, or with no stream, is dropped; if none are left the turn becomes a `keep`. The API relays the key and this limited context to the
+selected provider over HTTPS for this request only; it does not persist either. The provider is
+allowlisted by the server, the key is never accepted in a URL, and requests are rate limited by
+their own per-client bucket, 20 a minute, separate from the Discovery bucket. Gemini uses Google's OpenAI-compatible chat-completions endpoint and its
+Gemini API key. A local model runs inside each client and does not call this endpoint; it can call
+the existing bounded catalog search path, but its inference and prompt stay on that device.
+
+The cloud provider may call only `get_session_context`, `search_catalog`, and `commit_dj_plan`.
+The first returns the supplied bounded session context. Search returns metadata for real playable
+catalog rows. Commit submits a validated intent, response, reaction, and catalog IDs returned by
+searches made during this turn. The API rejects IDs not returned by its own catalog tool and returns
+the corresponding real `UnifiedSong` records with one reason per song. Queue mode is limited to 8
+tracks; playlist mode can return up to the user's selected limit of 30. Playlist mode never applies
+the draft to the playback queue. The response shape is:
+
+```ts
+type DjTurn = {
+  reply: string;
+  session: { vibe: string; energy: number; language: string | null; constraints: string[] };
+  goal: 'mix' | 'playlist';
+  playlistName: string | null;
+  draftOperation: 'replace' | 'extend' | 'keep' | 'remove';
+  removeTrackIds: string[];
+  operation: 'replace_upcoming' | 'insert' | 'keep';
+  insertAfter: number | null;
+  reaction: 'neutral' | 'curious' | 'excited' | 'dreamy' | 'confused';
+  queue: { song: UnifiedSong; reason: string }[];
+};
+```
+
+The client owns session memory and queue application. For `mix`, `replace_upcoming` preserves the
+current song and replaces only upcoming DJ picks; `insert` adds the first returned song after
+`insertAfter` queued tracks; `keep` leaves the player queue untouched (for example, an explanation
+request). Starting a new set only begins playback after an explicit user action. For `playlist`,
+the client keeps an editable draft, lets the user remove or refine tracks, and saves the named,
+confirmed result through the existing playlist service in one action. Refinement may replace the
+draft, append catalog-backed tracks, preserve it, or remove only IDs from the submitted draft.
+Provider failures return
+friendly API errors and never include the upstream response body or the submitted key.
+
+This endpoint does not use the signed-in account token and does not save listening history. The
+client sends only the small context above and, when the listener asks for a playlist-based mix, the
+two selected playlists; it never sends the rest of the library or the account profile.
+
+### `POST /api/ai/dj/transcribe` and `POST /api/ai/dj/speak` (added 2026-10-10)
+The DJ's ears and voice with the listener's own key. The free paths need no server: the browser's
+speech recognition, Whisper running on the device, and the browser's own speech synthesis. These two
+routes exist only so a key never sits in the browser bundle; like the turn endpoint, the key is used
+for this one request and is never stored, logged, or accepted in a URL. Each route has its own per-client bucket, 30 a minute for transcribe and 30 a minute for speak,
+separate from the turn bucket, so a spoken request (transcribe, turn, speak) never draws on one allowance.
+
+```ts
+// transcribe: a short spoken request, as a 16-bit mono WAV (base64, at most ~700 KB decoded).
+// The route alone accepts a body up to 1 MB; every other route keeps the 32 KB limit.
+type TranscribeRequest = { provider: 'openai' | 'groq'; apiKey: string; model?: string; audio: string };
+type TranscribeData = { text: string };            // ApiResponse<TranscribeData>
+
+// speak: one reply, at most 600 characters, returned as base64 MP3.
+type SpeakRequest = { provider: 'openai' | 'elevenlabs'; apiKey: string; model?: string; voice?: string; text: string };
+type SpeakData = { audio: string; mime: 'audio/mpeg' };  // ApiResponse<SpeakData>
+```
+
+Defaults when `model`/`voice` are omitted: OpenAI transcription `gpt-transcribe`, Groq
+`whisper-large-v3-turbo`; OpenAI speech `gpt-4o-mini-tts` with voice `coral`, ElevenLabs
+`eleven_flash_v2_5` with the premade voice `JBFqnCBsd6RMkjVDRZzb`. `model` and `voice` are plain
+identifiers (letters, digits, `._:-/`). A provider refusal becomes plain copy: 401 for a rejected
+key, 429 for a limit, 400 for an unknown model or voice, 502 otherwise, 504 after 20 s. The
+provider's own error text never reaches the client.
 
 **Recording collapse (2026-09-21):** the provider lists one row per release, so the
 same song can appear ~20 times with different compilation covers. Search groups by
@@ -123,6 +207,20 @@ are dropped from the other two shelves.
 Additive endpoint (no existing shape changed). `name` is the lead artist as shown on a song. Resolves the name through the provider's artist search (exact match preferred), then returns `ArtistProfile` from `packages/shared/types.ts`: a real `image` (500×500 photo or `null`), `isVerified`, `followerCount`, optional `bio`, `songs` (most popular first, all playable), `albums` (with cover + year) and `similar` artists. `404` when no artist matches.
 ### `GET /api/artists/faces?names=a,b,c` → `ApiResponse<ArtistSummary[]>` · cache 24 h — added 2026-09-21
 Up to 12 comma-separated names; returns `{ id, name, image }` for each one that has a photo. Unmatched names are simply omitted. Used for avatars on lists.
+
+### `GET /api/albums/:id` → `ApiResponse<AlbumDetail>` · cache 6 h — added 2026-10-11
+Additive endpoint. `id` is a song's `albumId` or an `AlbumSummary.id` (Saavn album ids, digits). Returns
+the catalog's whole album, in its own track order, every song playable through `/api/stream`:
+```ts
+interface AlbumSummary { id: string; name: string; artist: string; artwork: string | null; year: string | null; language: string | null }
+interface AlbumDetail extends AlbumSummary { songCount: number; songs: UnifiedSong[] }
+```
+`songCount` is the catalog's count; `songs` drops any row without a stream, so it can be shorter.
+`404` when the catalog has no such album.
+
+### `GET /api/search/albums?q=…&limit=8` → `ApiResponse<{ results: AlbumSummary[] }>` · cache 1 h — added 2026-10-11
+Albums by name from the catalog (Saavn), so a film's soundtrack and its singles are separate results
+with their own ids. `limit` 1–20. Empty → `success: true` with `results: []`.
 
 ### `GET /api/artwork`
 `title`, `artist`, `limit`=5 → `ApiResponse<{ urls: string[] }>` · cache 30 d

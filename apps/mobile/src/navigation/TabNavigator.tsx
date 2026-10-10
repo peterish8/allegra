@@ -22,6 +22,7 @@ import BlendJoinScreen from '../screens/BlendJoinScreen';
 import ImportScreen from '../screens/ImportScreen';
 import SearchScreen from '../screens/SearchScreen';
 import StreamScreen from '../screens/StreamScreen';
+import DjScreen from '../screens/DjScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ArtistScreen from '../screens/ArtistScreen';
 import CollectionScreen from '../screens/CollectionScreen';
@@ -184,6 +185,7 @@ export const TabNavigator: React.FC = () => {
         <Tab.Screen name="Luvs" component={LuvsScreen} options={{ tabBarLabel: 'Luvs', tabBarIcon: LuvsIcon, freezeOnBlur: false }} />
         <Tab.Screen name="Library" component={LibraryStackScreen} options={{ tabBarLabel: 'Library', tabBarIcon: LibraryIcon }} />
         <Tab.Screen name="Search" component={SearchScreen} options={{ tabBarLabel: 'Search', tabBarIcon: SearchIcon }} />
+        <Tab.Screen name="Dj" component={DjScreen} options={{ tabBarLabel: 'Your DJ', tabBarButton: () => null }} />
         <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: 'Settings' }} />
         <Tab.Screen name="Browse" component={BrowseStackScreen} options={{ tabBarLabel: 'Browse' }} />
       </Tab.Navigator>

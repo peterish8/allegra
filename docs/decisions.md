@@ -3,6 +3,37 @@
 Choices that are easy to undo by accident. Each says what was decided, why, and what would change
 it. Newest first. Mistakes that led to some of these are in `.planning/LEARNING-LOG.md`.
 
+## 2026-10-11
+
+### Big features run the full local e2e suite before merge; every fix ships its test
+**Decided:** before a feature PR merges, `npm run typecheck`, `npm run lint`, `npm test` and the
+Playwright journeys in `tests/e2e` all pass locally, and the journeys cover the buttons the change adds
+or touches (click them, then check the state they leave). Every bug fix comes with a test written to
+fail on the old code, kept next to the code it guards, so the same bug is caught by CI if it returns.
+**Why:** the owner found a regression by hand: liking the playing song on Now Playing showed liked,
+then flipped back to unliked about a second later. Unit tests were green; nothing clicked the button.
+**Changes if:** never relaxed for features; a docs- or copy-only change may skip e2e.
+
+## 2026-10-09
+
+### The DJ is a glass orb that nods along
+**Decided (updated 2026-10-10):** the mascot (`components/dj/DjMascot.tsx`) is a clear-glass orb with
+the playing song's colours turning inside it (never the artwork), soft pill eyes, a small smile that
+changes only with mood, and a faint blush. It drifts on a figure-of-eight, nods on detected beats,
+looks at the pointer, blinks, hops for joy, shakes its head on errors and sleeps after a long quiet
+spell. The record, the hopping across the stage and the drifting song notes are gone. With nothing
+playing it uses the session tone's darkened colours; colour changes cross-fade between two slots by
+opacity. The song's colour lives in the mascot, one light pool behind it and the now-playing row;
+panels stay neutral clear glass.
+**Why:** the owner asked for a mascot that is distinctive, alive and tinted by the music, without
+bright glows; an outside audit (2026-10-10) found the notes and strong glows decorative.
+**Rules it adds:** every transform sits on its own layer (roam > dance > kick); motion is written to
+custom properties from one rAF loop (`useDjMascot`), never to React state; a consequential reaction
+(joy, error) briefly outranks the beat; reduced motion keeps the mascot still and centred and turns
+beats into glow opacity.
+**Changes if:** the DJ gets a second visual form (plan 01-06 reuses this component at 44 px) or the
+mascot starts to cost frames on a phone.
+
 ## 2026-10-05
 
 ### Recording identity stays stricter than cross-catalog matching
@@ -48,6 +79,9 @@ dropped most Indian film songs. Length is what tells two recordings apart.
 **Decided:** cards on Home, Import, Spotify and Blend are clear glass: a 16% white hairline, a lit
 top edge, `backdrop-filter: blur(22–26px) saturate(150%)`, and at most a faint white sheen. No dark
 veil, no grey fill. Floating sheets (dialogs) keep a solid veil so text over anything stays readable.
+Exception (owner, 2026-10-10): the "Get the app" QR card is clear glass too, and its full-screen mode
+is only the code over the page faded and blurred: no card, no text. The code itself stays on white so
+phones can read it.
 **Why:** the owner wants the moving background glow visible through the surface.
 
 ### Home opens with a greeting, a top pick and a shortcut grid

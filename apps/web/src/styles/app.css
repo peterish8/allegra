@@ -230,6 +230,11 @@ body::after,
 }
 
 .nav-link svg { width: 18px; height: 18px; flex: 0 0 18px; }
+.dj-nav-icon { position: relative; display: block; width: 18px; height: 18px; flex: 0 0 18px; overflow: visible; border-radius: 50%; background: radial-gradient(ellipse 75% 82% at 52% 76%, rgba(255, 145, 47, 0.9) 0%, rgba(255, 190, 90, 0.64) 40%, rgba(255, 223, 161, 0.2) 68%, transparent 100%); filter: drop-shadow(0 0 3px rgba(255, 166, 66, 0.26)); transition: filter var(--d-fast) var(--ease-standard); }
+.dj-nav-icon__eye { position: absolute; display: block; width: 4px; height: 6px; border-radius: 55% 45% 48% 52%; background: #fff; box-shadow: 0 1px 3px rgba(180, 92, 20, 0.18); }
+.dj-nav-icon__eye--left { top: 6px; left: 4px; transform: rotate(10deg); }
+.dj-nav-icon__eye--right { top: 8px; right: 3px; transform: rotate(13deg); }
+.nav-link:is(:hover, .is-active) .dj-nav-icon { filter: drop-shadow(0 0 5px rgba(255, 174, 77, 0.7)); }
 .nav-link:hover { background: rgba(255, 255, 255, 0.07); color: #fff; transform: none; }
 .nav-link.is-active { background: linear-gradient(90deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0)); color: #fff; box-shadow: none; }
 .nav-link.is-active::before { position: absolute; top: 7px; bottom: 7px; left: 0; width: 3px; border-radius: 0 4px 4px 0; background: var(--art-primary, var(--wave)); box-shadow: 0 0 12px color-mix(in srgb, var(--art-primary, var(--wave)) 55%, transparent); content: ''; }
@@ -1250,11 +1255,12 @@ body::after,
   .session-chip,
   .nav-divider,
   .nav-collapse-toggle,
-  /* Keep Home / Browse / Library; hide the deeper library shortcuts. */
-  .desktop-nav .nav-link:nth-of-type(n+4) { display: none; }
+  /* Keep the DJ one tap away on compact headers with the everyday destinations. */
+  .desktop-nav .nav-link:nth-of-type(n+5) { display: none; }
   .desktop-nav { width: auto; flex-direction: row; align-items: center; gap: 2px; margin: 0 0 0 auto; }
   .nav-link { width: auto; min-height: 44px; margin: 0; padding: 0 12px; border-radius: 999px; font-size: 14px; }
   .nav-link svg,
+  .nav-link .dj-nav-icon,
   .nav-link.is-active::before { display: none; }
   .nav-link.is-active { background: rgba(255, 255, 255, 0.14); }
   .header-actions { flex-direction: row; align-items: center; margin: 0; padding: 0; border: 0; }
@@ -1321,6 +1327,7 @@ body::after,
    * spilling past the pill's rounded edge. */
   .site-header .desktop-nav .nav-link { width: 36px; min-height: 36px; padding: 0; justify-content: center; }
   .site-header .desktop-nav .nav-link svg { display: block; width: 18px; height: 18px; }
+  .site-header .desktop-nav .dj-nav-icon { display: block; width: 18px; height: 18px; }
   .site-header .desktop-nav .nav-label { position: absolute; overflow: hidden; width: 1px; height: 1px; padding: 0; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
   .hero-banner { min-height: 176px; padding: 18px; }
@@ -5761,7 +5768,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     left: 12px;
     display: grid;
     height: var(--tabbar-h);
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 2px;
     padding: 4px;
     border: 1px solid rgba(255, 255, 255, 0.16);
@@ -6538,7 +6545,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
  * bottom — always, lyrics open or not. `.now-playing` dissolves (display: contents) so the cover, the
  * track info and the controls become cells of one grid; the dock's glass is that grid's ::before.
  * The cover and the panel share the stage row, each claiming its half. Hiding the lyrics
- * (`.is-solo`) lets the cover take the whole stage, centred. Nothing animates layout. */
+ * (`.is-solo`) slides the cover to the centre of the stage. Nothing animates layout. */
 @media (min-width: 901px) {
   .listening-world .listening-body {
     --stage-art: min(560px, calc(100dvh - 330px), 38vw);
@@ -6588,8 +6595,8 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   }
   /* Cover put away: the cover slides off left (Motion, in PlayerPanel) while the lyric column glides
    * from the right half toward the centre — one transform on the panel, same duration and curve as
-   * the cover, so the two read as a single move. Width and text alignment never change mid-move. */
-  .listening-world .player-sidepanel { transition: transform var(--d-slow) var(--ease-press); }
+   * the cover, so the two read as a single move. Width and text alignment never change mid-move.
+   * (Its transition is set with the no-lyrics slide below.) */
   /* The move centres the column on the stage: the panel is the right half, so half its own width
    * back lands it dead centre at any window size. The lines centre inside it, so a long line spreads
    * evenly both ways instead of running off to the right of a left edge. */
@@ -6598,7 +6605,17 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .listening-world.is-lyrics-full .player-sidepanel.is-lyrics .ytm-lyrics__note,
   .listening-world.is-lyrics-full .player-sidepanel.is-lyrics .ytm-lyrics__alert { align-self: center; text-align: center; }
   .listening-world.is-lyrics-full .np-art { pointer-events: none; }
-  .listening-world.is-solo .np-art { justify-self: center; margin-left: 0; --stage-art: min(580px, calc(100dvh - 330px), 60vw); width: var(--stage-art); }
+  /* No lyrics (or lyrics hidden): the cover glides from the middle of the left half to the middle of
+   * the stage, a quarter of the stage's width, while the panel fades out. `translate` composes with the
+   * transform Motion writes on .np-art, so the two never fight; the size stays put, so it is one clean
+   * slide. Same duration and curve as the cover-away move above. */
+  .listening-world .listening-body { container-type: inline-size; }
+  .listening-world .np-art { transition: translate var(--d-slow) var(--ease-press); }
+  .listening-world.is-solo .np-art { translate: 25cqw 0; }
+  .listening-world .player-sidepanel { transition: transform var(--d-slow) var(--ease-press), opacity var(--d-base) var(--ease-standard); }
+  .listening-world.is-solo .player-sidepanel { opacity: 0; pointer-events: none; }
+  /* Reduced motion: the cover is simply there; the panel still fades. */
+  @media (prefers-reduced-motion: reduce) { .listening-world .np-art { transition: none; } }
 
   /* Dock: track info left, transport + scrubber centre, actions right. */
   .listening-world .np-controls { display: contents; }
@@ -7497,3 +7514,41 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .luvlink-notice { margin-top: 12px !important; color: var(--text-muted); font-size: 12px; }
 @media (max-width: 760px) { .luvlink-grid { grid-template-columns: 1fr; } .luvlink-now { grid-template-columns: 66px minmax(0, 1fr); column-gap: 13px; } .luvlink-art { width: 66px; height: 66px; border-radius: 14px; } .luvlink-queue li { grid-template-columns: 21px minmax(0, 1fr) auto auto; } }
 @media (prefers-reduced-motion: reduce) { .luvlink-primary, .luvlink-secondary, .luvlink-icon, .luvlink-text-button { transition: opacity var(--motion-duration-instant) var(--motion-ease-standard); } }
+
+/* The DJ nav mark stays in Allegra's monochrome rail until the pointer wakes it. */
+.dj-nav-icon {
+  isolation: isolate;
+  background: transparent;
+  filter: none;
+  transition: filter 420ms cubic-bezier(.2,.75,.25,1);
+}
+.dj-nav-icon::before {
+  position: absolute;
+  z-index: -1;
+  inset: -7px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 174, 83, .34), rgba(255, 155, 68, .12) 48%, transparent 74%);
+  content: '';
+  opacity: 0;
+  scale: .72;
+  transition: opacity 520ms ease, scale 620ms cubic-bezier(.16,1,.3,1);
+}
+.dj-nav-icon__eye {
+  background: #a5a5aa;
+  box-shadow: none;
+  transition: background-color 380ms ease, filter 420ms ease, transform 520ms cubic-bezier(.16,1,.3,1);
+}
+.nav-link.is-active:not(:hover):not(:focus-visible) .dj-nav-icon { filter: none; }
+.nav-link:is(:hover, :focus-visible) .dj-nav-icon {
+  filter: drop-shadow(0 0 5px rgba(255, 174, 77, .38));
+}
+.nav-link:is(:hover, :focus-visible) .dj-nav-icon::before { opacity: 1; scale: 1; }
+.nav-link:is(:hover, :focus-visible) .dj-nav-icon__eye {
+  background: #fff;
+  filter: drop-shadow(0 0 2px rgba(255, 246, 222, .7));
+}
+.nav-link:is(:hover, :focus-visible) .dj-nav-icon__eye--left { transform: rotate(-4deg) translateY(-1px); }
+.nav-link:is(:hover, :focus-visible) .dj-nav-icon__eye--right { transform: rotate(18deg) translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+  .dj-nav-icon, .dj-nav-icon::before, .dj-nav-icon__eye { transition-duration: .01ms; }
+}

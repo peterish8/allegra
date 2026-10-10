@@ -1513,6 +1513,21 @@ body::before { display: none; }
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.06);
   background: rgba(0,0,0,0.35);
+  position: relative;
+}
+
+/* A triple tap on Lyrics: a small pill under the tabs names the style it switched to, then fades. */
+.lyrics-style-note {
+  position: absolute; top: calc(100% + 8px); left: 50%; z-index: 5;
+  padding: 5px 12px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px;
+  color: var(--ink); background: rgba(14, 14, 18, 0.62); font-size: 12px; font-weight: 600; white-space: nowrap;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  pointer-events: none; opacity: 0; transform: translate(-50%, -4px);
+  transition: opacity var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-standard);
+}
+.lyrics-style-note.is-shown { opacity: 1; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) {
+  .lyrics-style-note, .lyrics-style-note.is-shown { transform: translate(-50%, 0); transition: opacity var(--d-base) var(--ease-standard); }
 }
 
 .ptab {
