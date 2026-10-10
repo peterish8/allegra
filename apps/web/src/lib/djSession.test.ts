@@ -10,6 +10,8 @@ import {
   DJ_MEMORY_STORAGE_KEY,
   defaultModelFor,
   djEnergyWord,
+  djOffersAfterSet,
+  djOutcome,
   djSuggestions,
   moveId,
   orderByIds,
@@ -161,6 +163,27 @@ test('suggestions follow the set: calmer when it is loud, no language chip once 
   assert.ok(!loud.some((chip) => chip.label === 'Sing along'));
   const withLyrics = djSuggestions({ ...SONG, hasLyrics: true }, [], 14);
   assert.ok(withLyrics.some((chip) => chip.label === 'Sing along'));
+});
+
+test('the outcome says what really changed, in numbers, and falls back to the reply', () => {
+  const mix = { goal: 'mix' as const, operation: 'replace_upcoming' as const, insertAfter: null, draftOperation: 'keep' as const, reply: 'Here you go!' };
+  assert.equal(djOutcome(mix, { applied: 5 }), 'Updated the next 5 tracks. Your current song stays.');
+  assert.equal(djOutcome(mix, { applied: 1 }), 'Updated the next 1 track. Your current song stays.');
+  assert.equal(djOutcome(mix, { applied: 0 }), 'Here you go!');
+  assert.equal(djOutcome({ ...mix, operation: 'insert', insertAfter: 2 }, { applied: 3 }), 'Added 3 tracks after the next 2 songs.');
+  assert.equal(djOutcome({ ...mix, operation: 'insert', insertAfter: 0 }, { applied: 1 }), 'Added 1 track right after this song.');
+  assert.equal(djOutcome({ ...mix, operation: 'keep' }, {}), 'Here you go!');
+  const playlist = { ...mix, goal: 'playlist' as const, operation: 'keep' as const };
+  assert.equal(djOutcome({ ...playlist, draftOperation: 'replace' }, { draftSize: 12 }), 'Started a new draft with 12 songs. Nothing plays until you choose.');
+  assert.equal(djOutcome({ ...playlist, draftOperation: 'extend' }, { added: 4, draftSize: 16 }), 'Added 4 songs to your draft, 16 in all.');
+  assert.equal(djOutcome({ ...playlist, draftOperation: 'remove' }, { removed: 2 }), 'Took 2 songs out of your draft.');
+  assert.equal(djOutcome({ ...playlist, draftOperation: 'extend' }, { added: 0 }), 'Here you go!');
+});
+
+test('after a set it offers to steer away or push the energy further', () => {
+  assert.deepEqual(djOffersAfterSet(5).map((offer) => offer.label), ['Less like this', 'Even more hype']);
+  assert.deepEqual(djOffersAfterSet(2).map((offer) => offer.label), ['Less like this', 'Even calmer']);
+  assert.deepEqual(djOffersAfterSet(3).map((offer) => offer.label), ['Less like this', 'A bit calmer']);
 });
 
 test('energy words cover the five levels and clamp the rest', () => {

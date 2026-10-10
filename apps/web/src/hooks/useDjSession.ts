@@ -10,6 +10,8 @@ import { requestLocalDjTurn } from '../lib/djLocal';
 import {
   applySlashCommand,
   defaultModelFor,
+  djOffersAfterSet,
+  djOutcome,
   orderByIds,
   readDjMemory,
   readDjProviderChoice,
@@ -38,7 +40,8 @@ export interface DjSessionInputs {
   readonly likedSongs: readonly UnifiedSong[];
   /** The next few songs in the queue, in order (App passes `playingNext.slice(0, 8)`). */
   readonly nextSongs: readonly UnifiedSong[];
-  readonly onApplyPlan: (turn: DjTurnResponse) => boolean;
+  /** Puts a mix set into the queue; returns how many songs it really placed (0 = none). */
+  readonly onApplyPlan: (turn: DjTurnResponse) => number;
   /** Puts back the upcoming songs a set replaced. False when there is nothing to put back. */
   readonly onUndoPlan: () => boolean;
   readonly onStartPlan: (turn: DjTurnResponse, fromId?: string) => void;
@@ -87,7 +90,10 @@ export interface DjSession {
   /** Songs the last set replaced in the queue; 0 when there is nothing to undo. */
   readonly undoable: number;
   readonly undoPlan: () => void;
-  readonly offer: DjOffer | null;
+  /** Next steps the DJ offers under its words (at most two), sent as requests when pressed. */
+  readonly offers: readonly DjOffer[];
+  /** Stops the turn in progress; its result, if it still arrives, is dropped. */
+  readonly cancel: () => void;
   /** The listener picked a song themselves (search): the DJ notices and offers to follow it. */
   readonly notePick: (song: UnifiedSong) => void;
   /** Sends one message. Resolves true only when the turn completed (the prompt can be cleared). */
@@ -192,7 +198,10 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
   const [turn, setTurn] = useState<DjTurnResponse | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>(() => ({ ...(memory?.reasons ?? {}) }));
   const [undoable, setUndoable] = useState(0);
-  const [offer, setOffer] = useState<DjOffer | null>(null);
+  const [offers, setOffers] = useState<readonly DjOffer[]>([]);
+  /** The turn in flight. A newer request aborts it; a result for any other id is stale and dropped. */
+  const runRef = useRef<{ readonly id: number; readonly controller: AbortController } | null>(null);
+  const runCounterRef = useRef(0);
   const [working, setWorking] = useState(false);
   const [emotion, setEmotion] = useState<DjEmotion>('idle');
   const [status, setStatus] = useState('');
@@ -226,9 +235,19 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
     return () => window.clearTimeout(timer);
   }, [emotion]);
 
+  const cancel = useCallback((): void => {
+    const run = runRef.current;
+    if (!run) return;
+    run.controller.abort();
+    runRef.current = null;
+    setWorking(false);
+    setStatus('Stopped. Nothing was changed.');
+    setEmotion('idle');
+  }, []);
+
   const send = useCallback(async (message: string, options?: DjSendOptions): Promise<boolean> => {
     const text = message.trim();
-    if (!text || working) return false;
+    if (!text) return false;
     const { currentSong, isRemote, recent, likedSongs, nextSongs, onApplyPlan } = inputsRef.current;
     const selectedGoal = options?.goal ?? goal;
     const selectedSongLimit = options?.songLimit ?? songLimit;
@@ -242,9 +261,16 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
       setStatus('Choose a model that supports tool calling.');
       return false;
     }
+    // A newer request replaces the one in flight: the older one is aborted and its answer dropped.
+    runRef.current?.controller.abort();
+    const controller = new AbortController();
+    const runId = runCounterRef.current + 1;
+    runCounterRef.current = runId;
+    runRef.current = { id: runId, controller };
+    const isCurrent = (): boolean => runRef.current?.id === runId;
     setWorking(true);
     setUndoable(0);
-    setOffer(null);
+    setOffers([]);
     setEmotion('thinking');
     setStatus(selectedGoal === 'playlist' ? 'Finding tracks for your playlist…' : 'Finding tracks that match your request…');
     try {
@@ -263,56 +289,76 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
         session
       };
       const result = provider === 'local'
-        ? await requestLocalDjTurn({ ...common, draft, onProgress: setStatus })
-        : await requestDjTurn({ ...common, provider: provider as DjCloudProvider, apiKey: apiKey.trim(), model: model.trim() });
+        ? await requestLocalDjTurn({ ...common, draft, onProgress: (line) => { if (isCurrent()) setStatus(line); }, signal: controller.signal })
+        : await requestDjTurn({ ...common, provider: provider as DjCloudProvider, apiKey: apiKey.trim(), model: model.trim() }, controller.signal);
+      // Stopped, or overtaken by a newer request: this answer is stale and changes nothing.
+      if (!isCurrent()) return false;
       setTurn(result);
       setSession(result.session);
       setHistory((items) => [...items, { role: 'user' as const, content: text }, { role: 'assistant' as const, content: result.reply }].slice(-8));
       if (result.queue.length > 0) {
         setReasons((current) => ({ ...current, ...Object.fromEntries(result.queue.map((item) => [item.song.id, item.reason])) }));
       }
-      inputsRef.current.onReply?.(result.reply);
+      const happy = result.reaction === 'excited' || result.reaction === 'dreamy';
+      let said: string;
       if (selectedGoal === 'playlist') {
         const removed = new Set(result.removeTrackIds);
         const remaining = draft.filter(({ song }) => !removed.has(song.id));
-        const nextDraft = result.draftOperation === 'replace' ? [...result.queue]
+        const nextDraft = (result.draftOperation === 'replace' ? [...result.queue]
           : result.draftOperation === 'extend' ? [...remaining, ...result.queue]
-            : remaining;
-        setDraft(nextDraft.slice(0, selectedSongLimit));
+            : remaining).slice(0, selectedSongLimit);
+        setDraft(nextDraft);
         if (result.playlistName) setDraftName(result.playlistName);
-        setStatus(result.reply);
-        setEmotion(result.reaction === 'excited' || result.reaction === 'dreamy' ? 'happy' : 'idle');
+        said = djOutcome(result, {
+          draftSize: nextDraft.length,
+          added: Math.max(0, nextDraft.length - remaining.length),
+          removed: draft.length - remaining.length
+        });
+        setEmotion(happy ? 'happy' : 'idle');
       } else if (result.operation === 'replace_upcoming' || result.operation === 'insert') {
+        // The set is also kept as the draft, so switching to Playlist can save it.
         setDraft([...result.queue]);
-        if (currentSong && !isRemote && onApplyPlan(result)) {
-          if (result.operation === 'replace_upcoming') setUndoable(result.queue.length);
-          setStatus(result.reply);
-          setEmotion(result.reaction === 'excited' || result.reaction === 'dreamy' ? 'happy' : 'idle');
+        const applied = currentSong && !isRemote ? onApplyPlan(result) : 0;
+        if (applied > 0) {
+          if (result.operation === 'replace_upcoming') setUndoable(applied);
+          setOffers(djOffersAfterSet(result.session.energy));
+          said = djOutcome(result, { applied });
+          setEmotion('happy');
         } else {
-          setStatus(isRemote ? 'Your set is ready. Switch playback to this device to use it.' : DJ_READY_STATUS);
+          said = isRemote ? 'Your set is ready. Switch playback to this device to use it.' : DJ_READY_STATUS;
           setEmotion('happy');
         }
       } else {
-        setStatus(result.reply);
+        said = result.reply;
         setEmotion(result.reaction === 'confused' ? 'error' : 'idle');
       }
+      setStatus(said);
+      inputsRef.current.onReply?.(said);
       return true;
     } catch (error) {
+      if (controller.signal.aborted || !isCurrent()) return false;
       const fallback = selectedGoal === 'playlist' ? 'Couldn’t update the draft. Nothing in it was lost.' : 'Couldn’t update the queue. Your music is still playing.';
       setStatus(error instanceof Error && error.message ? error.message : fallback);
       setEmotion('error');
       return false;
     } finally {
-      setWorking(false);
+      if (isCurrent()) {
+        runRef.current = null;
+        setWorking(false);
+      }
     }
-  }, [apiKey, draft, draftName, goal, history, model, provider, session, skipped, songLimit, working]);
+  }, [apiKey, draft, draftName, goal, history, model, provider, session, skipped, songLimit]);
 
-  /** Carries out an app request on the spot, and keeps it in the conversation so the model knows. */
+  /**
+   * Carries out an app request on the spot, and keeps it in the conversation so the model knows. It may
+   * run while a set is being planned ("pause" mid-plan); it then leaves that turn's working state alone.
+   */
   const act = useCallback(async (value: string, action: DjAction): Promise<boolean> => {
-    setWorking(true);
+    const planning = runRef.current !== null;
+    if (!planning) setWorking(true);
     setUndoable(0);
-    setOffer(null);
-    setEmotion('thinking');
+    setOffers([]);
+    if (!planning) setEmotion('thinking');
     try {
       const result = await inputsRef.current.onAction(action);
       setStatus(result.reply);
@@ -320,17 +366,18 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
       setEmotion(result.ok ? 'happy' : 'error');
       setHistory((items) => [...items, { role: 'user' as const, content: value }, { role: 'assistant' as const, content: result.reply }].slice(-8));
       if (result.ok && (action.kind === 'play-song' || action.kind === 'now-playing')) {
-        setOffer({ label: 'Line up more like this', prompt: 'More songs like this one next' });
+        setOffers([{ label: 'Line up more like this', prompt: 'More songs like this one next' }]);
       }
       return result.ok;
     } finally {
-      setWorking(false);
+      if (!runRef.current) setWorking(false);
     }
   }, []);
 
   const submitPrompt = useCallback(async (raw: string, options?: { readonly goal?: DjGoal }): Promise<{ readonly clear: boolean; readonly prefill?: string }> => {
+    // No "busy" guard: an app command runs at once even mid-plan, and a new request replaces the one in flight.
     const value = raw.trim();
-    if (!value || working) return { clear: false };
+    if (!value) return { clear: false };
     const parsed = parseDjSlashCommand(value);
     if (!parsed) {
       if (value.startsWith('/')) {
@@ -355,12 +402,12 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
       });
     }
     return outcome.prompt;
-  }, [act, goal, send, songLimit, working]);
+  }, [act, goal, send, songLimit]);
 
   const notePick = useCallback((song: UnifiedSong): void => {
     setUndoable(0);
     setStatus(`“${song.title}”, nice pick. Want me to line up more like it after this?`);
-    setOffer({ label: 'Yes, more like this', prompt: `More songs like ${song.title} by ${song.artist} next` });
+    setOffers([{ label: 'Yes, more like this', prompt: `More songs like ${song.title} by ${song.artist} next` }]);
     setEmotion('happy');
   }, []);
 
@@ -387,7 +434,7 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
 
   const undoPlan = useCallback((): void => {
     if (!inputsRef.current.onUndoPlan()) {
-      setStatus('That set has already moved on, so there is nothing to put back.');
+      setStatus('The queue has changed since that set, so I left it as it is.');
       setUndoable(0);
       return;
     }
@@ -433,13 +480,13 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
   const { nextSongs } = inputs;
   return useMemo<DjSession>(() => ({
     provider, model, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist, history, skipped,
-    turn, reasons, working, status, emotion, nextSongs, undoable, undoPlan, offer, notePick,
+    turn, reasons, working, status, emotion, nextSongs, undoable, undoPlan, offers, cancel, notePick,
     send, submitPrompt, savePlaylist, skipAndTeach, removeFromDraft, startPlan, reorder, removePick, playFrom,
     reorderTurn, removeFromTurn, reorderDraft, setEnergy, removeConstraint, clearLanguage,
     setStatus, setEmotion, setGoal, setSongLimit, setDraftName, setProvider, setModel, setApiKey, setSettingsOpen
   }), [
     provider, model, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist, history, skipped,
-    turn, reasons, working, status, emotion, nextSongs, undoable, undoPlan, offer, notePick,
+    turn, reasons, working, status, emotion, nextSongs, undoable, undoPlan, offers, cancel, notePick,
     send, submitPrompt, savePlaylist, skipAndTeach, removeFromDraft, startPlan, reorder, removePick, playFrom,
     reorderTurn, removeFromTurn, reorderDraft, setEnergy, removeConstraint, clearLanguage,
     setProvider, setModel

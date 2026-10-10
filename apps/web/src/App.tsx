@@ -341,7 +341,14 @@ export default function App() {
   const [djQuickOpen, setDjQuickOpen] = useState(false);
   const closeDjQuick = useCallback((): void => setDjQuickOpen(false), []);
   /** The upcoming songs, and which were the listener's and the DJ's, just before a DJ set replaced them. */
-  const djUndoRef = useRef<{ readonly currentId: string; readonly upcoming: readonly UnifiedSong[]; readonly planned: readonly string[]; readonly queued: readonly string[] } | null>(null);
+  const djUndoRef = useRef<{
+    readonly currentId: string;
+    readonly upcoming: readonly UnifiedSong[];
+    readonly planned: readonly string[];
+    readonly queued: readonly string[];
+    /** The upcoming ids the set produced; Undo only runs while the queue still matches them. */
+    readonly applied?: readonly string[];
+  } | null>(null);
   const radio = useSongRadio(transportRef, userQueuedRef);
   // Lock screen, media keys, headset buttons and car head units, all through the same funnel.
   const fillRadioQueue = useCallback(async (signal?: AbortSignal): Promise<number> => {
@@ -1147,15 +1154,16 @@ export default function App() {
 
   const playFromSearch = (song: UnifiedSong): Promise<void> => playSong(song, [song], true);
 
-  const applyDjPlan = (turn: DjTurnResponse): boolean => {
-    if (!audio.currentSong || remotePlayback || turn.operation === 'keep') return false;
+  /** Puts a DJ set into the queue. Returns how many songs it really placed (0 when it placed none). */
+  const applyDjPlan = (turn: DjTurnResponse): number => {
+    if (!audio.currentSong || remotePlayback || turn.operation === 'keep') return 0;
     const player = transportRef.current;
     const current = player.currentSong;
-    if (!current) return false;
+    if (!current) return 0;
     const at = player.queue.findIndex((item) => item.id === current.id);
     const upcoming = at >= 0 ? player.queue.slice(at + 1) : [];
     const planned = turn.queue.map(({ song }) => song).filter((song) => song.id !== current.id && Boolean(song.streamUrl));
-    if (planned.length === 0) return false;
+    if (planned.length === 0) return 0;
     djUndoRef.current = { currentId: current.id, upcoming, planned: [...djPlannedRef.current], queued: [...userQueuedRef.current] };
     let next: UnifiedSong[];
     let picks: UnifiedSong[];
@@ -1179,15 +1187,23 @@ export default function App() {
     radioActiveRef.current = false;
     radio.stop();
     player.replaceUpcoming(next);
+    if (djUndoRef.current) djUndoRef.current = { ...djUndoRef.current, applied: next.map((song) => song.id) };
     setDjLive(true);
-    return true;
+    return picks.length;
   };
 
+  /**
+   * Puts back the queue a DJ set replaced, but only if nothing has changed since: the same song plays
+   * and the upcoming list is exactly what the set made. A queue the listener edited is left alone.
+   */
   const undoDjPlan = (): boolean => {
     const snapshot = djUndoRef.current;
     djUndoRef.current = null;
     const player = transportRef.current;
     if (!snapshot || remotePlayback || player.currentSong?.id !== snapshot.currentId) return false;
+    const at = player.queue.findIndex((item) => item.id === snapshot.currentId);
+    const now = (at >= 0 ? player.queue.slice(at + 1) : []).map((song) => song.id);
+    if (snapshot.applied && now.join('\u0000') !== snapshot.applied.join('\u0000')) return false;
     djPlannedRef.current = new Set(snapshot.planned);
     userQueuedRef.current = new Set(snapshot.queued);
     player.replaceUpcoming([...snapshot.upcoming]);

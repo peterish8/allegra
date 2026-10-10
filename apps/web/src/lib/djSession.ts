@@ -1,4 +1,4 @@
-import type { DjGoal, DjProvider, DjSessionState, DjSlashCommand } from '@shared/dj';
+import type { DjGoal, DjProvider, DjSessionState, DjSlashCommand, DjTurnResponse } from '@shared/dj';
 import type { UnifiedSong } from '@shared/types';
 
 /** The only DJ setting that is stored: which provider and model. The API key is never written anywhere. */
@@ -196,6 +196,55 @@ export function djSuggestions(
   else chips.push({ label: 'Golden hour', prompt: 'Warm evening songs', hint: 'Warm songs for the evening' });
   chips.push({ label: 'Surprise me', prompt: 'Surprise me, but keep my taste', hint: 'Something you may not expect, still your taste' });
   return chips;
+}
+
+const count = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+export interface DjOutcomeCounts {
+  /** Mix: songs the queue really took (0 when it took none). */
+  readonly applied?: number;
+  /** Playlist: songs in the draft after the turn, songs it added, songs it took out. */
+  readonly draftSize?: number;
+  readonly added?: number;
+  readonly removed?: number;
+}
+
+/**
+ * What the DJ says after a turn: the outcome in real numbers ("Updated the next 5 tracks. Your current
+ * song stays."), not the model's flourish. The model's own sentence still goes into the conversation.
+ * An explanation, or a turn that changed nothing, says the model's reply.
+ */
+export function djOutcome(
+  turn: Pick<DjTurnResponse, 'goal' | 'operation' | 'insertAfter' | 'draftOperation' | 'reply'>,
+  counts: DjOutcomeCounts
+): string {
+  if (turn.goal === 'playlist') {
+    const size = counts.draftSize ?? 0;
+    if (turn.draftOperation === 'replace' && size > 0) return `Started a new draft with ${count(size, 'song')}. Nothing plays until you choose.`;
+    if (turn.draftOperation === 'extend' && (counts.added ?? 0) > 0) return `Added ${count(counts.added ?? 0, 'song')} to your draft, ${size} in all.`;
+    if (turn.draftOperation === 'remove' && (counts.removed ?? 0) > 0) return `Took ${count(counts.removed ?? 0, 'song')} out of your draft.`;
+    return turn.reply;
+  }
+  const applied = counts.applied ?? 0;
+  if (turn.operation === 'replace_upcoming' && applied > 0) return `Updated the next ${count(applied, 'track')}. Your current song stays.`;
+  if (turn.operation === 'insert' && applied > 0) {
+    const where = turn.insertAfter ? `after the next ${turn.insertAfter === 1 ? 'song' : `${turn.insertAfter} songs`}` : 'right after this song';
+    return `Added ${count(applied, 'track')} ${where}.`;
+  }
+  return turn.reply;
+}
+
+/**
+ * Next steps offered after a set lands: steer away from it, or push its energy further. Each is a
+ * plain request; Undo sits beside them on its own.
+ */
+export function djOffersAfterSet(energy: number): { readonly label: string; readonly prompt: string }[] {
+  const nudge = energy >= 4
+    ? { label: 'Even more hype', prompt: 'Even more energy next, same style' }
+    : energy <= 2
+      ? { label: 'Even calmer', prompt: 'Even calmer next, same style' }
+      : { label: 'A bit calmer', prompt: 'A bit calmer next, same style' };
+  return [{ label: 'Less like this', prompt: 'Less like this set: other artists, a different feel' }, nudge];
 }
 
 /** What the DJ remembers across a reload of this tab. Never the API key. */

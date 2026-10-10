@@ -69,36 +69,34 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` dropped (with
 
 ## Phase 2 — Mascot and conversation states
 
-- [ ] `[B]` **Mascot 25% smaller on desktop** (stage size token), adjust after a look.
-- [ ] `[S]` **Song notes off by default.** Remove the drifting ♪ ♫ from the stage mascot.
-- [ ] `[B]` **Material refinement.** Softer specular highlight, less blush, lighter floor shadow,
-  eyes as soft shapes rather than strong white glows.
-- [ ] `[B]` **Behaviour hierarchy** (ambient → interactive → consequential): a consequential event
-  (set applied, error) visibly overrides the groove; typing makes it look at the input instead of
-  nodding on every key.
-- [ ] `[B]` **Sleep after inactivity.** Nothing playing and no interaction for 90 s → `sleep` mode and
-  `sleeping` face; any pointer, key or new song wakes it at once.
-- [ ] `[B]` **Paused = quiet idle.** Groove only while audio actually plays (check the current rule).
-- [ ] `[B]` **Short outcome replies.** After a set applies, the caption says what changed, from real
-  numbers: "Updated the next 5 tracks. Your current song stays." The model's own sentence goes to
-  history.
-- [ ] `[B]` **Conversation drawer.** History (last 8 turns) behind a quiet icon on the stage; the
-  caption only shows the latest line.
-- [ ] `[B]` **Follow-up offers after a set:** Undo · Less like this · Even calmer / More hype (picked
-  from the energy just used).
-- [ ] `[B]` **Mic states that can't be missed:** ready → listening (ring + live transcript) →
-  writing it down → working → done, on the mic button itself; the mascot's other motion dims while
-  listening.
+- [x] `[B]` **Mascot 25% smaller on desktop** (`--m-size` now ≤ 256 px, half the room's height).
+- [x] `[S→B]` **Song notes removed** (component, CSS and their dead tokens; old hop/float tokens too).
+- [x] `[B]` **Material refinement.** Softer highlight, lighter blush and floor shadow, solid soft eyes
+  with no halo, a smaller stage light.
+- [x] `[B]` **Behaviour hierarchy.** A joy hop or error shake stops beat nods for 0.9 s
+  (`REACTION_FOCUS`, tested); typing no longer nods per key (focus already makes it look at the input).
+- [x] `[B]` **Sleep after inactivity.** 90 s with nothing playing, no work, no listening and no
+  pointer/key → `sleep` pose and `sleeping` face; any move wakes it.
+- [x] `[B]` **Paused = quiet idle.** Already true: groove only while a song plays on this device.
+- [x] `[B]` **Short outcome replies** (`djOutcome`, tested): "Updated the next 5 tracks. Your current
+  song stays.", playlist counts, etc., from the songs App really placed (`applyDjPlan` now returns the
+  count). The model's sentence goes to the conversation; the voice says the outcome.
+- [x] `[B]` **Conversation drawer** (`DjHistory`): a quiet icon beside the "i", a solid-veil sheet.
+- [x] `[B]` **Follow-up offers after a set** (`djOffersAfterSet`, tested): Undo · Less like this ·
+  Even calmer / A bit calmer / Even more hype.
+- [x] `[B]` **Mic states** on the button (`data-state`: ready / listening / writing with a spinner);
+  the stage light dims while it listens. Send is a Stop square while the DJ works.
 - [-] **Correct before acting** (spoken countdown). Owner: no countdown; Undo covers it.
 
 ## Phase 3 — Recommendations, queue safety and the agent
 
 - [-] **"Basic" brain as the default.** Owner: keep the first-run question.
-- [ ] `[B]` **Request lifecycle.** Every turn gets a `requestId`; a newer request aborts the older
-  one; a stale result is dropped, never applied. A Stop button while it works.
-- [ ] `[B]` **Queue revisions.** App counts queue changes; a plan remembers the revision it was made
-  against; if the current song changed before it lands, it is re-applied against the new queue (or
-  dropped with a message). Undo refuses when the queue moved on.
+- [x] `[B]` **Request lifecycle.** Each turn has an id and an AbortController; a newer request aborts
+  the older one; a stale or stopped result is dropped. Stop square while it works. App commands
+  ("pause") run even mid-plan. Not exercised live with a cloud key (would send a key to a provider).
+- [x] `[B]` **Queue safety.** A plan always lands on the live queue (`applyDjPlan` reads the player at
+  apply time, protects the current song and the listener's own songs). Undo only runs while the
+  upcoming list is exactly what the set made; an edited queue is left alone.
 - [ ] `[B]` **Typed action validation.** One validator for every DJ action (from the parser or a
   model plan): catalog IDs only from this turn's searches, playable stream required, current song and
   the listener's own queued songs protected. Unit-tested.
