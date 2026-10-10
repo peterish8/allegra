@@ -399,16 +399,12 @@ export interface LibraryApplyReply {
 }
 
 export async function applyLibraryOps(ops: readonly LibraryOp[], options: { readonly sentAt?: number; readonly signal?: AbortSignal } = {}): Promise<LibraryApplyReply> {
-  const result = await request<LibraryApplyReply>('/api/me/library/ops', {
+  return request<LibraryApplyReply>('/api/me/library/ops', {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ ops, sentAt: options.sentAt ?? Date.now() }),
     ...(options.signal ? { signal: options.signal } : {})
   });
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('allegra:library-own-write', { detail: { ...result, opCount: ops.length } }));
-  }
-  return result;
 }
 
 export async function createLibrary(name: string): Promise<LibraryRecord> {

@@ -70,7 +70,7 @@ import { catalogSongId, shouldStartRadio, uniqueByIdentity } from './lib/songIde
 import { resolveSnapshotForPlayback, snapshotForSong, snapshotToDisplaySong, useConnect } from './hooks/useConnect';
 import { useSnapshotArtworks } from './hooks/useSnapshotArtwork';
 import { isControllingAnotherDevice } from '../../../packages/connect/src/index';
-import type { LibrarySong } from './lib/libraryRows';
+import { likedKey, type LibrarySong } from './lib/libraryRows';
 import { legacyHashToPath, parseRoute, paths } from './lib/routes';
 import { flags } from './lib/flags';
 import { pickTopResult } from './lib/topResult';
@@ -109,11 +109,6 @@ function uniqueArtists(songs: readonly UnifiedSong[], limit: number, exclude: st
 
 function curatedSongs(songs: UnifiedSong[]): UnifiedSong[] {
   return uniqueByIdentity(songs).slice(0, 6);
-}
-
-function likedKey(song: UnifiedSong): string {
-  const ref = (song as Partial<LibrarySong>).libraryRef ?? fromAllegraSong(song);
-  return ref?.startsWith('gaana:') ? `library:${ref}` : song.id;
 }
 
 /** Where "open …" takes the listener, and what the DJ calls it. */

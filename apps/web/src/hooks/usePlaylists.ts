@@ -120,19 +120,10 @@ export function usePlaylists(): PlaylistsApi {
     setLikedSongs([]);
   }, [accountId]);
 
-  useEffect(() => {
-    const onOwnWrite = (event: Event): void => {
-      const detail = (event as CustomEvent<{ rev?: unknown; applied?: unknown; opCount?: unknown; rejected?: unknown; superseded?: unknown }>).detail;
-      if (!detail || typeof detail.rev !== 'number' || typeof detail.applied !== 'number' || typeof detail.opCount !== 'number'
-          || !Array.isArray(detail.rejected) || detail.rejected.length > 0
-          || !Array.isArray(detail.superseded) || detail.superseded.length > 0
-          || detail.applied !== detail.opCount
-          || detail.rev - detail.applied !== libraryCursorRef.current) return;
-      libraryCursorRef.current = detail.rev;
-    };
-    window.addEventListener('allegra:library-own-write', onOwnWrite);
-    return () => window.removeEventListener('allegra:library-own-write', onOwnWrite);
-  }, []);
+  // The cursor moves only in `reload`, after the changes up to it are in `libraryChangesRef`. It once
+  // also jumped past this tab's own writes (likes, playlist edits) without recording them, so the next
+  // reload rebuilt the library without them: a like flipped back to unliked a moment later
+  // (2026-10-11, tests/e2e/player.spec.ts). Re-reading our own few changes is the price of being right.
 
   const commit = useCallback((next: LibraryRecord[]): void => {
     playlistsRef.current = next;
