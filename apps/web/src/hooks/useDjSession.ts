@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { parseDjSlashCommand } from '@shared/dj';
-import type { DjCloudProvider, DjExploration, DjGoal, DjProvider, DjSessionState, DjSetShape, DjTrackContext, DjTurnRequest, DjTurnResponse } from '@shared/dj';
+import type { DjCloudProvider, DjExploration, DjGoal, DjSessionState, DjSetShape, DjTrackContext, DjTurnRequest, DjTurnResponse } from '@shared/dj';
 import { leadArtist, readArtistRules } from '@shared/djLocal';
 import type { UnifiedSong } from '@shared/types';
 
 import { requestDjTurn } from '../lib/api';
 import { parseDjAction, type DjAction, type DjActionResult } from '../lib/djActions';
+import { customChat, normalizeEndpoint } from '../lib/djCustom';
 import { requestLocalDjTurn } from '../lib/djLocal';
 import {
   applySlashCommand,
@@ -22,6 +23,7 @@ import {
   withExcludedArtists,
   writeDjMemory,
   writeDjProviderChoice,
+  type DjBrain,
   type DjMemory,
   type DjProviderChoice
 } from '../lib/djSession';
@@ -71,8 +73,10 @@ export interface DjSendOptions {
 }
 
 export interface DjSession {
-  readonly provider: DjProvider;
+  readonly provider: DjBrain;
   readonly model: string;
+  /** A custom endpoint's URL as typed (its usable form is what gets stored). */
+  readonly endpoint: string;
   readonly apiKey: string;
   readonly settingsOpen: boolean;
   readonly session: DjSessionState;
@@ -132,8 +136,9 @@ export interface DjSession {
   readonly setGoal: (goal: DjGoal) => void;
   readonly setSongLimit: (songLimit: number) => void;
   readonly setDraftName: (name: string) => void;
-  readonly setProvider: (provider: DjProvider) => void;
+  readonly setProvider: (provider: DjBrain) => void;
   readonly setModel: (model: string) => void;
+  readonly setEndpoint: (endpoint: string) => void;
   readonly setApiKey: (apiKey: string) => void;
   readonly setSettingsOpen: (open: boolean) => void;
 }
@@ -220,21 +225,27 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
   const [working, setWorking] = useState(false);
   const [emotion, setEmotion] = useState<DjEmotion>('idle');
   const [status, setStatus] = useState('');
-  const { provider, model } = choice;
+  const { provider, model, endpoint = '' } = choice;
 
-  const setProvider = useCallback((next: DjProvider): void => {
-    const nextChoice = { provider: next, model: defaultModelFor(next) };
-    setChoice(nextChoice);
+  /** Stores a choice; the endpoint is written only once it is a usable URL (it is typed a letter at a time). */
+  const storeChoice = useCallback((next: DjProviderChoice): void => {
+    setChoice(next);
     const storage = browserStorage();
-    if (storage) writeDjProviderChoice(storage, nextChoice);
+    const usable = next.endpoint ? normalizeEndpoint(next.endpoint) : null;
+    if (storage) writeDjProviderChoice(storage, { provider: next.provider, model: next.model, ...(usable ? { endpoint: usable } : {}) });
   }, []);
 
+  const setProvider = useCallback((next: DjBrain): void => {
+    storeChoice({ provider: next, model: defaultModelFor(next), ...(endpoint ? { endpoint } : {}) });
+  }, [endpoint, storeChoice]);
+
   const setModel = useCallback((next: string): void => {
-    const nextChoice = { provider, model: next };
-    setChoice(nextChoice);
-    const storage = browserStorage();
-    if (storage) writeDjProviderChoice(storage, nextChoice);
-  }, [provider]);
+    storeChoice({ provider, model: next, ...(endpoint ? { endpoint } : {}) });
+  }, [endpoint, provider, storeChoice]);
+
+  const setEndpoint = useCallback((next: string): void => {
+    storeChoice({ provider, model, endpoint: next.slice(0, 300) });
+  }, [model, provider, storeChoice]);
 
   // The conversation survives a reload of this tab. Reasons are trimmed to the newest few dozen.
   useEffect(() => {
@@ -266,14 +277,21 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
     const { currentSong, isRemote, recent, likedSongs, nextSongs, onApplyPlan } = inputsRef.current;
     const selectedGoal = options?.goal ?? goal;
     const selectedSongLimit = options?.songLimit ?? songLimit;
-    if (provider !== 'local' && !apiKey.trim()) {
+    // A custom endpoint's key is optional (a local router may not ask for one); its URL is not.
+    if (provider !== 'local' && provider !== 'custom' && !apiKey.trim()) {
       setSettingsOpen(true);
       setStatus('Add your AI key to start a DJ conversation.');
       return false;
     }
+    const customEndpoint = provider === 'custom' ? normalizeEndpoint(endpoint) : null;
+    if (provider === 'custom' && !customEndpoint) {
+      setSettingsOpen(true);
+      setStatus('Add your endpoint’s URL, like http://localhost:20128/v1.');
+      return false;
+    }
     if (provider !== 'local' && !model.trim()) {
       setSettingsOpen(true);
-      setStatus('Choose a model that supports tool calling.');
+      setStatus(provider === 'custom' ? 'Choose one of your endpoint’s models.' : 'Choose a model that supports tool calling.');
       return false;
     }
     // A newer request replaces the one in flight: the older one is aborted and its answer dropped.
@@ -313,8 +331,15 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
         skipped: skipped.slice(0, 8).map(contextSong),
         session
       };
-      const local = provider === 'local'
-        ? await requestLocalDjTurn({ ...common, draft, onProgress: (line) => { if (isCurrent()) setStatus(line); }, signal: controller.signal })
+      // On-device and custom-endpoint turns run in this browser; only the cloud key path uses the API.
+      const local = provider === 'local' || customEndpoint
+        ? await requestLocalDjTurn({
+          ...common,
+          draft,
+          onProgress: (line) => { if (isCurrent()) setStatus(line); },
+          signal: controller.signal,
+          ...(customEndpoint ? { think: (messages) => customChat(customEndpoint, apiKey.trim(), model.trim(), messages, controller.signal) } : {})
+        })
         : null;
       const result: DjTurnResponse = local ?? await requestDjTurn({ ...common, provider: provider as DjCloudProvider, apiKey: apiKey.trim(), model: model.trim() }, controller.signal);
       // Stopped, or overtaken by a newer request: this answer is stale and changes nothing.
@@ -375,7 +400,7 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
         setWorking(false);
       }
     }
-  }, [apiKey, draft, draftName, excludeArtists, exploration, goal, history, model, provider, session, shape, skipped, songLimit]);
+  }, [apiKey, draft, draftName, endpoint, excludeArtists, exploration, goal, history, model, provider, session, shape, skipped, songLimit]);
 
   /**
    * Carries out an app request on the spot, and keeps it in the conversation so the model knows. It may
@@ -513,14 +538,14 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
 
   const { nextSongs } = inputs;
   return useMemo<DjSession>(() => ({
-    provider, model, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist, history, skipped,
+    provider, model, endpoint, setEndpoint, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist, history, skipped,
     turn, reasons, working, status, emotion, nextSongs, undoable, undoPlan, offers, cancel, notePick,
     send, submitPrompt, savePlaylist, skipAndTeach, removeFromDraft, startPlan, reorder, removePick, playFrom,
     reorderTurn, removeFromTurn, reorderDraft, setEnergy, removeConstraint, clearLanguage,
     excludeArtists, avoidArtist, allowArtist, exploration, setExploration, shape, setShape,
     setStatus, setEmotion, setGoal, setSongLimit, setDraftName, setProvider, setModel, setApiKey, setSettingsOpen
   }), [
-    provider, model, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist, history, skipped,
+    provider, model, endpoint, setEndpoint, apiKey, settingsOpen, session, goal, songLimit, draft, draftName, savingPlaylist, history, skipped,
     turn, reasons, working, status, emotion, nextSongs, undoable, undoPlan, offers, cancel, notePick,
     send, submitPrompt, savePlaylist, skipAndTeach, removeFromDraft, startPlan, reorder, removePick, playFrom,
     reorderTurn, removeFromTurn, reorderDraft, setEnergy, removeConstraint, clearLanguage,

@@ -1,13 +1,13 @@
 'use client';
 
 /**
- * The DJ page's "i": eleven short scenes, acted out by the DJ itself, that explain everything on the page:
+ * The DJ page's "i": twelve short scenes, acted out by the DJ itself, that explain everything on the page:
  * asking, the commands it carries out, voice and the microphone, its spoken answers, the queue, the set
  * controls, search, then step-by-step setup: free on this device (brain, then voice) or with your own
- * key. Built on the site's InfoTour, so it
+ * key or your own endpoint (OmniRoute). Built on the site's InfoTour, so it
  * opens from the "i" and folds back into it like every other page's walkthrough.
  */
-import { Brain, ChevronDown, Cpu, Download, Ear, Heart, KeyRound, ListMusic, Lock, Mic, Play, Search, SkipForward, Sparkles, Undo2, Volume2 } from 'lucide-react';
+import { Brain, ChevronDown, Cpu, Download, Ear, Heart, KeyRound, ListMusic, Lock, Mic, Play, Search, Server, SkipForward, Sparkles, Undo2, Volume2, Zap } from 'lucide-react';
 import { useEffect, useState, type CSSProperties } from 'react';
 
 import { LOCAL_SPEECH_MB } from '../../lib/djLocalSpeech';
@@ -67,6 +67,18 @@ export const DJ_TOUR: readonly TourStep[] = [
     ],
     icon: KeyRound,
     pose: 'spread'
+  },
+  {
+    title: 'Set up: your own endpoint',
+    body: 'Run a free router like OmniRoute on this computer and the DJ uses the models you connected to it.',
+    steps: [
+      'Start OmniRoute (omniroute serve). It answers at http://localhost:20128/v1.',
+      'In its dashboard, Security → CORS Allowed Origins: add this site’s address.',
+      'In the gear, choose Custom endpoint and paste the URL. Its models load by themselves.',
+      'Pick one and press Test model; keep the first that answers in a few seconds.'
+    ],
+    icon: Server,
+    pose: 'stack'
   }
 ];
 
@@ -184,6 +196,18 @@ export const djScene: Scene = (step, reduced) => (
         </Part>
       ))}
       <Part reduced={reduced} y={58} delay={0.66} className="dj-tour__pill dj-tour__pill--quiet"><Lock size={12} />Kept in this tab only</Part>
+    </> : step === 11 ? <>
+      {/* Your own endpoint: the URL, a model from its list, then a quick test. */}
+      {[
+        { y: -70, icon: <Server size={12} />, text: 'localhost:20128/v1', chevron: false },
+        { y: -28, icon: <Sparkles size={12} />, text: 'github/gpt-4o', chevron: true },
+        { y: 14, icon: <Zap size={12} />, text: 'Works · 2.0 s', chevron: false }
+      ].map((row, i) => (
+        <Part key={row.text} reduced={reduced} y={row.y} delay={0.1 + i * 0.18} from={{ y: row.y + 24 }} className="dj-tour__pill dj-tour__field">
+          {row.icon}{row.text}{row.chevron ? <ChevronDown size={12} className="dj-tour__chevron" /> : null}
+        </Part>
+      ))}
+      <Part reduced={reduced} y={58} delay={0.66} className="dj-tour__pill dj-tour__pill--quiet"><Lock size={12} />Your browser calls it directly</Part>
     </> : <>
       {[
         { x: -108, icon: <Brain size={16} />, title: 'Thinks', free: 'On device', key: 'OpenAI · Gemini' },

@@ -9,6 +9,7 @@ import { useAudioAnalyser } from '../hooks/useAudioAnalyser';
 import { DJ_READY_STATUS, useDjSession, type DjEmotion, type DjPick } from '../hooks/useDjSession';
 import { MIC_BLOCKED_COPY, MIC_INSECURE_COPY, useDjVoice } from '../hooks/useDjVoice';
 import { LOCAL_VOICE_MB } from '../lib/djWhisper';
+import { normalizeEndpoint } from '../lib/djCustom';
 import { djTonePalette, djToneFor } from '../lib/djDance';
 import { djDanceVibe, type DjMascotMode } from '../lib/djMascotMotion';
 import { djEnergyWord, djSuggestions } from '../lib/djSession';
@@ -150,7 +151,8 @@ export function DjPage({
   useEffect(() => {
     if (!settingsOpen) return undefined;
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return;
+      // An Escape something inside already used (closing an open dropdown) leaves the sheet open.
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
       setSettingsOpen(false);
       gearRef.current?.focus();
     };
@@ -199,7 +201,10 @@ export function DjPage({
   };
 
   const needsStart = Boolean(goal === 'mix' && turn && turn.operation !== 'keep' && turn.queue.length > 0 && (!currentSong || isRemote));
-  const needsSetup = provider !== 'local' && !apiKey.trim() && history.length === 0;
+  // Set up means: on-device, a custom endpoint with a usable URL (its key is optional), or a cloud key.
+  const needsSetup = history.length === 0 && (provider === 'custom'
+    ? !normalizeEndpoint(dj.endpoint)
+    : provider !== 'local' && !apiKey.trim());
 
   // "Ready when you are" is only true until the set starts, whichever control starts it.
   useEffect(() => {
@@ -380,9 +385,11 @@ export function DjPage({
                   ref={sheetRef}
                   provider={provider}
                   model={model}
+                  endpoint={dj.endpoint}
                   apiKey={apiKey}
                   onProvider={setProvider}
                   onModel={setModel}
+                  onEndpoint={dj.setEndpoint}
                   onApiKey={setApiKey}
                   voice={voice}
                   onClose={() => { setSettingsOpen(false); gearRef.current?.focus(); }}

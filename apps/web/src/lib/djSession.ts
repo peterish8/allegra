@@ -1,15 +1,26 @@
-import type { DjExploration, DjGoal, DjProvider, DjSessionState, DjSetShape, DjSlashCommand, DjTurnResponse } from '@shared/dj';
+import type { DjCloudProvider, DjExploration, DjGoal, DjProvider, DjSessionState, DjSetShape, DjSlashCommand, DjTurnResponse } from '@shared/dj';
 import type { UnifiedSong } from '@shared/types';
 
-/** The only DJ setting that is stored: which provider and model. The API key is never written anywhere. */
+import { normalizeEndpoint } from './djCustom';
+
+/** The only DJ setting that is stored: provider, model and a custom endpoint's URL. The API key is never written anywhere. */
 export const DJ_PROVIDER_STORAGE_KEY = 'allegra.dj.provider.v1';
 
-const PROVIDERS: readonly DjProvider[] = ['openai', 'openrouter', 'gemini', 'local'];
+/**
+ * What the web DJ can think with: the shared providers, plus `custom`, any OpenAI-compatible endpoint
+ * the listener runs or rents (OmniRoute, a self-hosted router). The browser calls a custom endpoint
+ * directly, so it never reaches `/api/ai/dj/turn` and stays out of the shared (and phone) types.
+ */
+export type DjBrain = DjProvider | 'custom';
+
+const PROVIDERS: readonly DjBrain[] = ['openai', 'openrouter', 'gemini', 'local', 'custom'];
 const MODEL_MAX_LENGTH = 160;
 
 export interface DjProviderChoice {
-  readonly provider: DjProvider;
+  readonly provider: DjBrain;
   readonly model: string;
+  /** A custom endpoint's base URL ("http://localhost:20128/v1"), kept across provider switches. */
+  readonly endpoint?: string;
 }
 
 /** One model in a settings dropdown: the exact ID sent to the provider, a name and a short note. */
@@ -23,7 +34,7 @@ export interface DjModelOption {
  * Tool-calling models offered per provider, first one the default (checked against OpenRouter's live
  * model list, 2026-10-11). "Other" in the dropdown still accepts any ID the provider takes.
  */
-export const DJ_THINKING_MODELS: Readonly<Record<Exclude<DjProvider, 'local'>, readonly DjModelOption[]>> = {
+export const DJ_THINKING_MODELS: Readonly<Record<DjCloudProvider, readonly DjModelOption[]>> = {
   openai: [
     { id: 'gpt-4o-mini', label: 'GPT-4o mini', note: 'tested with the DJ · cheap' },
     { id: 'gpt-6-luna', label: 'GPT-6 Luna', note: 'newer · cheap and fast' },
@@ -58,14 +69,16 @@ export const DJ_KEY_PAGES: Readonly<Record<'openai' | 'openrouter' | 'gemini' | 
   elevenlabs: { name: 'ElevenLabs', url: 'https://elevenlabs.io/app/settings/api-keys' }
 };
 
-export function defaultModelFor(provider: DjProvider): string {
+export function defaultModelFor(provider: DjBrain): string {
   if (provider === 'openai') return 'gpt-4o-mini';
   if (provider === 'openrouter') return 'openai/gpt-4o-mini';
   if (provider === 'gemini') return 'gemini-3.8-flash';
+  // A custom endpoint's models are its own: the listener picks one from its list.
+  if (provider === 'custom') return '';
   return 'Qwen3 0.6B (on-device)';
 }
 
-function isProvider(value: unknown): value is DjProvider {
+function isProvider(value: unknown): value is DjBrain {
   return typeof value === 'string' && (PROVIDERS as readonly string[]).includes(value);
 }
 
@@ -79,19 +92,21 @@ export function readDjProviderChoice(storage: Pick<Storage, 'getItem'>): DjProvi
     const record = parsed as Record<string, unknown>;
     if (!isProvider(record.provider)) return null;
     const model = typeof record.model === 'string' ? record.model.trim() : '';
+    const endpoint = typeof record.endpoint === 'string' ? normalizeEndpoint(record.endpoint) : null;
     return {
       provider: record.provider,
-      model: model && model.length <= MODEL_MAX_LENGTH ? model : defaultModelFor(record.provider)
+      model: model && model.length <= MODEL_MAX_LENGTH ? model : defaultModelFor(record.provider),
+      ...(endpoint ? { endpoint } : {})
     };
   } catch {
     return null;
   }
 }
 
-/** Writes only provider and model. Storage that is full or blocked is ignored. */
+/** Writes only provider, model and endpoint URL, never a key. Storage that is full or blocked is ignored. */
 export function writeDjProviderChoice(storage: Pick<Storage, 'setItem'>, choice: DjProviderChoice): void {
   try {
-    storage.setItem(DJ_PROVIDER_STORAGE_KEY, JSON.stringify({ provider: choice.provider, model: choice.model }));
+    storage.setItem(DJ_PROVIDER_STORAGE_KEY, JSON.stringify({ provider: choice.provider, model: choice.model, ...(choice.endpoint ? { endpoint: choice.endpoint } : {}) }));
   } catch {
     // The choice just is not remembered.
   }

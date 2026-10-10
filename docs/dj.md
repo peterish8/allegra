@@ -232,7 +232,7 @@ The sheet has three sections, each with a free choice and a choice that uses you
 
 | Section | Choices |
 |---|---|
-| **Thinks with** | On this device (Qwen3 0.6B, about 390 MB, downloaded once), OpenAI, OpenRouter, Gemini. Cloud choices show Model and API key fields, plus **Forget key**. |
+| **Thinks with** | On this device (Qwen3 0.6B, about 390 MB, downloaded once), OpenAI, OpenRouter, Gemini, or a custom endpoint (§10). Cloud choices show a Model dropdown (checked IDs, plus Other…) and an API key field linked to the provider's key page, plus **Forget key**. Every dropdown is `DjSelect`: glass, keyboard-driven, searchable past 12 choices. |
 | **Hears you with** | Automatic, This browser's speech (only listed where it works), On this device (Whisper/Moonshine), OpenAI, Groq. Shows a plain line on where the audio goes, a microphone line (allowed / blocked with unblock steps / insecure page / will ask), **Recognise on this device instead** (installs Chrome's language pack), and the "Hey DJ" toggle. |
 | **Speaks with** | Silent, Natural voice on this device (Kokoro, five voices, about 92 MB), This browser's voice, OpenAI, ElevenLabs. Has **Download** for Kokoro and **Hear a sample**. |
 
@@ -499,6 +499,28 @@ Other rules:
 ### Your key (`openai | openrouter | gemini`)
 
 The client sends `POST /api/ai/dj/turn` with the key in the body. The server runs the tool loop (§12). The key is held in React memory and sent only with each request.
+
+### Your own endpoint (`provider: 'custom'`, web only)
+
+Any OpenAI-compatible server the listener runs or rents, typically OmniRoute on their own computer
+(`http://localhost:20128/v1`). Code: `lib/djCustom.ts`, fields in `DjSettingsSheet` (`CustomEndpointFields`).
+
+- **The browser calls it, never our API.** Our server could not reach the listener's localhost, fetching a
+  listener-typed URL from the server would be an SSRF hole, and the key then only goes to its own endpoint.
+  `DjBrain` (`lib/djSession.ts`) adds `custom` on the web only; the shared `DjProvider` and the phone are unchanged.
+- **Same pipeline as on-device.** Its model reads the request through `promptForIntent`; catalog search,
+  hard filters and ranking are the on-device ones. A failure is shown ("Couldn't reach …, check CORS",
+  key, model, timeout), never silently replaced by the heuristic.
+- **URL rules** (`normalizeEndpoint`): `https://` anywhere, plain `http://` only on loopback; no
+  credentials or query string; a pasted `/chat/completions` or `/models` is trimmed. Stored in
+  `allegra.dj.provider.v1` as `endpoint`; the key stays in memory.
+- **Models**: the list loads by itself from `GET {url}/models` (debounced, up to 2000), starts on a
+  router's free automatic route when it has one (`suggestedModel`), and the dropdown searches. **Test
+  model** sends one tiny request and reports the time or the exact error.
+- **OmniRoute specifics** (checked 2026-10-11): CORS is closed by default, so the listener adds this
+  site under Dashboard → Security → CORS Allowed Origins (or starts it with `CORS_ALLOWED_ORIGINS`). Its
+  `auto/*` routes can fail with 503 when their first pick is unavailable; a direct model such as
+  `github/gpt-4o` answered in about 2 s. Which models answer changes with each account's quota.
 
 ---
 

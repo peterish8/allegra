@@ -82,6 +82,13 @@ test('provider and model round-trip through storage', () => {
   assert.equal(readDjProviderChoice(storage), null);
   writeDjProviderChoice(storage, { provider: 'gemini', model: 'gemini-3.8-flash' });
   assert.deepEqual(readDjProviderChoice(storage), { provider: 'gemini', model: 'gemini-3.8-flash' });
+  // A custom endpoint keeps its URL and model; a bad stored URL is dropped, never trusted.
+  writeDjProviderChoice(storage, { provider: 'custom', model: 'gpt-6-luna', endpoint: 'http://localhost:20128/v1' });
+  assert.deepEqual(readDjProviderChoice(storage), { provider: 'custom', model: 'gpt-6-luna', endpoint: 'http://localhost:20128/v1' });
+  assert.deepEqual(
+    readDjProviderChoice(fakeStorage({ [DJ_PROVIDER_STORAGE_KEY]: JSON.stringify({ provider: 'custom', model: 'm', endpoint: 'http://evil.example/v1' }) })),
+    { provider: 'custom', model: 'm' }
+  );
 });
 
 test('a stored apiKey is ignored and never written', () => {
@@ -112,6 +119,7 @@ test('every provider has a default model', () => {
   assert.equal(defaultModelFor('openrouter'), 'openai/gpt-4o-mini');
   assert.equal(defaultModelFor('gemini'), 'gemini-3.8-flash');
   assert.equal(defaultModelFor('local'), 'Qwen3 0.6B (on-device)');
+  assert.equal(defaultModelFor('custom'), '');
   // The dropdown's first choice is the default, so switching provider and opening the list agree.
   for (const provider of ['openai', 'openrouter', 'gemini'] as const) {
     assert.equal(DJ_THINKING_MODELS[provider][0]?.id, defaultModelFor(provider));

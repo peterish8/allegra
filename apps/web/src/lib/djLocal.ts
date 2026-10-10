@@ -121,21 +121,34 @@ export async function requestLocalDjTurn(input: {
   readonly shape?: DjSetShape;
   readonly onProgress: (message: string) => void;
   readonly signal?: AbortSignal;
+  /**
+   * The listener's own model (a custom endpoint) in place of the on-device one. It reads the same
+   * prompt; if it fails, the error reaches the listener instead of falling back quietly, since they
+   * chose that endpoint and need to know it isn't answering.
+   */
+  readonly think?: (messages: readonly ChatMessage[]) => Promise<string>;
 }): Promise<DjTurnResponse & { readonly excludeArtists: readonly string[] }> {
   let modelText = '';
-  try {
-    input.onProgress('Loading Allegra’s on-device DJ…');
-    const generator = await getGenerator(input.onProgress);
-    input.onProgress('Reading your taste and shaping catalog searches…');
-    const output = await generator([
-      { role: 'system', content: 'You are a small local intent parser for a music DJ. Follow the JSON schema in the user message exactly. Reply with the JSON object only. /no_think' },
-      { role: 'user', content: promptForIntent(input) }
-    ], { max_new_tokens: 512, do_sample: false });
-    modelText = generatedContent(output[0]?.generated_text);
-  } catch {
-    // The model could not load or run on this device; the request itself still drives a real catalog search.
-    if (input.signal?.aborted) throw new DOMException('The request was cancelled.', 'AbortError');
+  const messages: readonly ChatMessage[] = [
+    { role: 'system', content: 'You are a small local intent parser for a music DJ. Follow the JSON schema in the user message exactly. Reply with the JSON object only. /no_think' },
+    { role: 'user', content: promptForIntent(input) }
+  ];
+  if (input.think) {
+    input.onProgress('Asking your model…');
+    modelText = await input.think(messages);
     input.onProgress('Searching the catalog from your request…');
+  } else {
+    try {
+      input.onProgress('Loading Allegra’s on-device DJ…');
+      const generator = await getGenerator(input.onProgress);
+      input.onProgress('Reading your taste and shaping catalog searches…');
+      const output = await generator(messages, { max_new_tokens: 512, do_sample: false });
+      modelText = generatedContent(output[0]?.generated_text);
+    } catch {
+      // The model could not load or run on this device; the request itself still drives a real catalog search.
+      if (input.signal?.aborted) throw new DOMException('The request was cancelled.', 'AbortError');
+      input.onProgress('Searching the catalog from your request…');
+    }
   }
   if (input.signal?.aborted) throw new DOMException('The request was cancelled.', 'AbortError');
   const intent = resolveDjLocalIntent(modelText, input);

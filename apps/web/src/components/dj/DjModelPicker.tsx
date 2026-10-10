@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import type { DjModelOption } from '../../lib/djSession';
+import { DjSelect, type DjSelectOption } from './DjSelect';
 
 const OTHER = '__other__';
 
@@ -24,25 +25,24 @@ export function DjModelPicker({ label, value, options, onChange, defaultLabel, p
   const [typing, setTyping] = useState(!listed);
   const selected = typing || !listed ? OTHER : value;
 
+  const choices: DjSelectOption<string>[] = [
+    ...(defaultLabel !== undefined ? [{ value: '', label: defaultLabel }] : []),
+    ...options.map((option) => ({ value: option.id, label: option.label, ...(option.note ? { note: option.note } : {}) })),
+    { value: OTHER, label: 'Other…', note: 'type any model ID' }
+  ];
+
   return (
     <div className="dj-model-picker">
-      <label>{label}
-        <select
-          value={selected}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (next === OTHER) { setTyping(true); return; }
-            setTyping(false);
-            onChange(next);
-          }}
-        >
-          {defaultLabel !== undefined ? <option value="">{defaultLabel}</option> : null}
-          {options.map((option) => (
-            <option key={option.id} value={option.id}>{option.note ? `${option.label} · ${option.note}` : option.label}</option>
-          ))}
-          <option value={OTHER}>Other…</option>
-        </select>
-      </label>
+      <DjSelect
+        label={label}
+        value={selected}
+        options={choices}
+        onChange={(next) => {
+          if (next === OTHER) { setTyping(true); return; }
+          setTyping(false);
+          onChange(next);
+        }}
+      />
       {selected === OTHER ? (
         <input
           aria-label={`${label}: type an ID`}
