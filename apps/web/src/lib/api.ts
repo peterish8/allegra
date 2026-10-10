@@ -523,6 +523,25 @@ export async function requestDjTurn(input: DjTurnRequest, signal?: AbortSignal):
   });
 }
 
+export type DjEarsCloudProvider = 'openai' | 'groq';
+export type DjVoiceCloudProvider = 'openai' | 'elevenlabs';
+
+/** A spoken request (base64 16-bit mono WAV) written down by the listener's own transcription provider. */
+export async function requestDjTranscription(
+  input: { readonly provider: DjEarsCloudProvider; readonly apiKey: string; readonly model?: string; readonly audio: string },
+  signal?: AbortSignal
+): Promise<{ readonly text: string }> {
+  return request('/api/ai/dj/transcribe', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(input), signal });
+}
+
+/** One DJ reply spoken by the listener's own voice provider, as base64 MP3. */
+export async function requestDjSpeech(
+  input: { readonly provider: DjVoiceCloudProvider; readonly apiKey: string; readonly model?: string; readonly voice?: string; readonly text: string },
+  signal?: AbortSignal
+): Promise<{ readonly audio: string; readonly mime: string }> {
+  return request('/api/ai/dj/speak', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(input), signal });
+}
+
 function isApiResponse<T>(value: unknown): value is ApiResponse<T> {
   if (typeof value !== 'object' || value === null) return false;
   const record = value as Record<string, unknown>;
