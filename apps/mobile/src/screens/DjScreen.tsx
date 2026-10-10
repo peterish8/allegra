@@ -18,6 +18,7 @@ import { StreamService } from '../services/stream/StreamService';
 import { STREAM_QUEUE_ID } from '../services/stream/streamSong';
 import { Signal, Space } from '../constants/allegraTheme';
 import Artwork from '../components/allegra/Artwork';
+import { actWhereMusicIs } from '../services/connect/playbackIntents';
 import { requestDjTurn } from '../services/dj/djApi';
 import { hasDownloadedDjModel, prepareDjModel, requestLocalDjTurn } from '../services/dj/localDj';
 import { addOnlineSongsToPlaylist } from '../services/sync/onlinePlaylist';
@@ -290,7 +291,8 @@ export const DjScreen: React.FC = () => {
     if (!currentSong) return;
     setEmotion('curious');
     if (streamSeed) setSkipped(current => [contextSong(streamSeed), ...current.filter(song => song.id !== streamSeed.id)].slice(0, 8));
-    usePlayerStore.getState().nextInPlaylist().catch(() => undefined);
+    // Where the music is: another device's queue when this phone is its remote, else this phone's.
+    actWhereMusicIs({ kind: 'next' }, () => { usePlayerStore.getState().nextInPlaylist().catch(() => undefined); }).catch(() => undefined);
   }, [currentSong, streamSeed]);
 
   const savePlaylist = useCallback(async () => {
@@ -374,7 +376,7 @@ export const DjScreen: React.FC = () => {
           <Artwork uri={currentSong.coverImageUri ?? currentSong.coverRemoteUri} title={currentSong.title} artist={currentSong.artist ?? ''} size={54} style={styles.artwork} />
           <View style={styles.trackCopy}><Text style={styles.overline}>{isLive ? 'RIGHT NOW' : 'CURRENT TRACK'}</Text><Text style={styles.trackTitle} numberOfLines={1}>{currentSong.title}</Text><Text style={styles.trackArtist} numberOfLines={1}>{currentSong.artist}</Text></View>
           <Pressable onPress={async () => { const result = await toggleLike(currentSong.id); if (result === 'liked' && streamSeed) StreamService.love(streamSeed.id); }} style={styles.iconButton} accessibilityLabel={currentSongLiked ? 'Unlike song' : 'Like song'}><Ionicons name={currentSongLiked ? 'heart' : 'heart-outline'} size={20} color={currentSongLiked ? Signal.accentBright : Signal.inkSoft} /></Pressable>
-          <Pressable onPress={() => { requestPlayback(!isPlaying); }} style={styles.iconButton} accessibilityLabel={isPlaying ? 'Pause' : 'Play'}><Ionicons name={isPlaying ? 'pause' : 'play'} size={19} color={Signal.inkSoft} /></Pressable>
+          <Pressable onPress={() => { actWhereMusicIs({ kind: isPlaying ? 'pause' : 'play' }, () => requestPlayback(!isPlaying)).catch(() => undefined); }} style={styles.iconButton} accessibilityLabel={isPlaying ? 'Pause' : 'Play'}><Ionicons name={isPlaying ? 'pause' : 'play'} size={19} color={Signal.inkSoft} /></Pressable>
           <Pressable onPress={skipCurrent} style={styles.iconButton} accessibilityLabel="Skip song"><Ionicons name="play-skip-forward" size={20} color={Signal.inkSoft} /></Pressable>
         </View> : null}
 
