@@ -14,6 +14,12 @@ export interface DjSelectProps<T extends string> {
   readonly options: readonly DjSelectOption<T>[];
   readonly onChange: (value: T) => void;
   readonly disabled?: boolean;
+  /** Shown while `value` is none of the options (nothing picked yet). Default: the first option. */
+  readonly placeholder?: string;
+  /** Always open with a search field, however short the list. */
+  readonly searchable?: boolean;
+  /** The search field's hint. Default: "Search N choices". */
+  readonly searchPlaceholder?: string;
 }
 
 /** More choices than this and the open list gets a search field (an endpoint can list ~800 models). */
@@ -24,7 +30,7 @@ const SEARCH_FROM = 12;
  * opens a listbox: arrows, Home/End and a typed letter move, Enter or Space picks, Escape closes and
  * returns focus, a tap outside closes. A long list opens with a search field that filters as you type.
  */
-export function DjSelect<T extends string>({ label, value, options, onChange, disabled }: DjSelectProps<T>) {
+export function DjSelect<T extends string>({ label, value, options, onChange, disabled, placeholder, searchable: alwaysSearch = false, searchPlaceholder }: DjSelectProps<T>) {
   const id = useId();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -33,8 +39,8 @@ export function DjSelect<T extends string>({ label, value, options, onChange, di
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const searchable = options.length > SEARCH_FROM;
-  const selected = options.find((option) => option.value === value) ?? options[0];
+  const searchable = alwaysSearch || options.length > SEARCH_FROM;
+  const selected = options.find((option) => option.value === value) ?? (placeholder === undefined ? options[0] : undefined);
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -124,7 +130,7 @@ export function DjSelect<T extends string>({ label, value, options, onChange, di
         onClick={() => (open ? setOpen(false) : show())}
         onKeyDown={onButtonKey}
       >
-        <span className="dj-select__value">{selected?.label ?? ''}</span>
+        <span className={`dj-select__value${selected ? '' : ' is-placeholder'}`}>{selected?.label ?? placeholder ?? ''}</span>
         <ChevronDown size={14} aria-hidden="true" className="dj-select__chevron" />
       </button>
       {open ? (
@@ -137,7 +143,7 @@ export function DjSelect<T extends string>({ label, value, options, onChange, di
                 value={query}
                 onChange={(event) => { setQuery(event.target.value); setActive(0); }}
                 onKeyDown={(event) => onListKey(event, true)}
-                placeholder={`Search ${options.length} choices`}
+                placeholder={searchPlaceholder ?? `Search ${options.length} choices`}
                 aria-label={`Search ${label.toLowerCase()}`}
                 aria-controls={`${id}-list`}
                 aria-activedescendant={activeId}
