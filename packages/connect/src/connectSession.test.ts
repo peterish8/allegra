@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createConnectSession, IDLE_OWNER_MS } from './connectSession.ts';
-import { decidePlaybackRoute } from './routing.ts';
+import { decidePlaybackRoute, isControllingAnotherDevice } from './routing.ts';
 import { connectError } from './errors.ts';
 import { MemoryTransport } from './memoryTransport.ts';
 import { FakePlayerPort } from './testing.ts';
@@ -814,6 +814,39 @@ test('a short pause keeps the other device a remote', async () => {
   await settle();
   assert.equal(playerA.getSnapshot().isPlaying, true);
   assert.equal(playerB.getSnapshot().isPlaying, false);
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('playing here after the owner went idle stays here while the claim is on its way', async () => {
+  // The owner is still open and online. While the claim travels, this device plays and the owner is
+  // still listed: if the owner stopped counting as idle then, the web would read "another device
+  // plays" and its remote-playback effect would pause the audio the listener just started.
+  const { clock, transport, playerA, playerB, sessionA, sessionB } = await sessionPair();
+  await playerA.pause();
+  await settle();
+  clock.advance(IDLE_OWNER_MS + 1_000);
+  await settle();
+  assert.equal(sessionB.view().activeDeviceIdle, true);
+  assert.equal(sessionB.view().activeDeviceOnline, true);
+  assert.equal(playerB.getSnapshot().song?.ref, song.ref, 'the owner\'s song was restored here, paused');
+
+  transport.delayNext('claim', 40);
+  await playerB.play();
+  await settle();
+  assert.equal(sessionB.view().activeDeviceId, 'web-a', 'the claim has not landed yet');
+  assert.equal(sessionB.view().activeDeviceIdle, true);
+  assert.equal(isControllingAnotherDevice(sessionB.view(), 'phone-b'), false);
+  // A pause pressed meanwhile stops the sound here, not a command to the idle laptop.
+  sessionB.control({ kind: 'pause' });
+  await settle();
+  assert.equal(playerB.getSnapshot().isPlaying, false);
+  assert.equal(sessionB.view().pendingCommand, undefined);
+
+  await new Promise<void>((resolve) => setTimeout(resolve, 60));
+  await settle();
+  assert.equal(sessionB.view().activeDeviceId, 'phone-b');
+  assert.equal(playerA.getSnapshot().isPlaying, false);
   sessionA.dispose();
   sessionB.dispose();
 });

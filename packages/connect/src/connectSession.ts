@@ -204,10 +204,14 @@ export function createConnectSession({ transport, player, device: initialDevice,
     return state?.activeDeviceId && !state.isPlaying ? state.positionAt : undefined;
   }
 
-  /** The owner (this device or another) has sat paused for `IDLE_OWNER_MS`. */
+  /**
+   * The owner (this device or another) has sat paused for `IDLE_OWNER_MS`. Sound starting here
+   * does not end that: until this device's claim lands the idle owner is still listed, and reading
+   * it as playing elsewhere then would make the screen a remote and pause what just started.
+   */
   function ownerIdle(): boolean {
     const since = pausedAt();
-    if (since === undefined || pending || local.isPlaying) return false;
+    if (since === undefined || pending) return false;
     return sampledClock.now() - since >= IDLE_OWNER_MS;
   }
 

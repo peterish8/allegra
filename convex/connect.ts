@@ -1144,8 +1144,10 @@ export const beginV2 = mutation({
  * state is paused, or Presence has given the owner up as offline. That last owner cannot confirm
  * anything (a closed laptop, a killed app), so the destination starts where the song would have
  * reached; if the owner is in fact still playing it stops as soon as it reconnects and sees the
- * new epoch. An owner that Presence still counts online, legacy ones included, must confirm its
- * pause through releaseV2, and its silence is a failed transfer.
+ * new epoch. A V2 owner still playing is not waited for either: it pauses itself when its state
+ * shows another owner (connectSession's pauseAfterOwnershipLoss). Only a legacy (protocol 1) owner
+ * that Presence still counts online must confirm its pause through releaseV2, and its silence is a
+ * failed transfer.
  */
 export const prepareV2 = mutation({
   args: { deviceId: v.string(), commandId: v.id('connectCommands'), reservationToken: v.string() },
