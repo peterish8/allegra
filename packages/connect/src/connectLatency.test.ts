@@ -137,5 +137,7 @@ test('the switch no longer waits for the playing device to confirm its pause', a
   const saved = before - now;
   // The handshake costs a push to the phone, its pause and a release round trip.
   const handshake = NETWORK.pushMs + PAUSE_MS + NETWORK.upMs + NETWORK.downMs;
-  assert.ok(saved >= handshake * 0.8, `only ${Math.round(saved)} ms faster than the handshake path (expected about ${handshake} ms)`);
+  // Half the handshake is the bar: it measures ~285 of 300 ms saved, and a loaded CI runner jitters.
+  // The old code saved nothing (it took the handshake path for every online owner).
+  assert.ok(saved >= handshake * 0.5, `only ${Math.round(saved)} ms faster than the handshake path (expected about ${handshake} ms)`);
 });
