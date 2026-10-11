@@ -11,6 +11,7 @@ import type { AlbumSummary, ArtistProfile, HomePayload, LyricLine, LyricsPayload
 import type { DjTurnResponse } from '@shared/dj';
 import type { PerformanceAttempt } from '@shared/performanceTrace';
 import { deriveMoodPrompts } from '@shared/moodPrompts';
+import { recommendArtistNames } from '@shared/genres';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import { fromAllegraSong } from '@shared/songRef';
 
@@ -188,6 +189,7 @@ export default function App() {
   const [artistReload, setArtistReload] = useState(0);
   const [suggestions, setSuggestions] = useState<UnifiedSong[]>([]);
   const [palette, setPalette] = useState<Palette>(DEFAULT_PALETTE);
+  const [playingPalette, setPlayingPalette] = useState<Palette | null>(null);
   const [ambientColor, setAmbientColor] = useState('#2d7fe4');
   const [settings, updateSettings] = useSettings();
   // Background motion is a saved setting; the header button is a shortcut to it.
@@ -818,15 +820,17 @@ export default function App() {
     likedSongs.length > 0 ||
     recentlyPlayed.length > 0 ||
     (account.taste?.topArtists?.length ?? 0) > 0 ||
+    (account.taste?.languages?.length ?? 0) > 0 ||
     Boolean(playerSong?.id);
 
   // Taste fingerprint, not now-playing id: skipping tracks must not re-bill Bedrock.
   const tasteFingerprint = useMemo(() => {
     const liked = likedSongs.map((song) => song.id).slice(0, 30).join(',');
     const recent = recentlyPlayed.map((song) => song.id).slice(0, 20).join(',');
-    const artists = (account.taste?.topArtists ?? []).slice(0, 12).join(',');
-    return `${liked}|${recent}|${artists}`;
-  }, [likedSongs, recentlyPlayed, account.taste?.topArtists]);
+    const artists = (account.taste?.topArtists ?? []).slice(0, 12).map(({ name, score }) => `${name}:${score}`).join(',');
+    const languages = (account.taste?.languages ?? []).slice(0, 8).map(({ name, score }) => `${name}:${score}`).join(',');
+    return `${liked}|${recent}|${artists}|${languages}`;
+  }, [likedSongs, recentlyPlayed, account.taste?.topArtists, account.taste?.languages]);
   const currentSongIdRef = useRef(playerSong ? catalogSongId(playerSong) : undefined);
   currentSongIdRef.current = playerSong ? catalogSongId(playerSong) : undefined;
 
@@ -900,10 +904,33 @@ export default function App() {
   };
   // Popular artists: one avatar per lead artist, taken from what is already on screen.
   const knownSongs = useMemo(
-    () => [...displaySongs, ...(home?.trending ?? []), ...(home?.madeForYou ?? []), ...(home?.recommended ?? []), ...likedSongs, ...recentlyPlayed],
-    [displaySongs, home, likedSongs, recentlyPlayed]
+    () => [...displaySongs, ...(home?.trending ?? []), ...(home?.madeForYou ?? []), ...(home?.recommended ?? []), ...likedSongs, ...recentlyPlayed, ...aiPicks],
+    [displaySongs, home, likedSongs, recentlyPlayed, aiPicks]
   );
   const artists = useMemo(() => uniqueArtists(knownSongs, 6), [knownSongs]);
+  const aiArtists = useMemo(() => uniqueArtists(aiPicks, 6), [aiPicks]);
+  const tasteArtists = useMemo(() => recommendArtistNames(account.taste, 6).map((name) => ({ name })), [account.taste]);
+  const hasListenerTaste = Boolean(
+    (account.taste?.topArtists?.length ?? 0) > 0 ||
+    (account.taste?.languages?.length ?? 0) > 0 ||
+    (account.taste?.genres?.length ?? 0) > 0
+  );
+  const personalizedArtists = useMemo(() => {
+    const seen = new Set<string>();
+    return [...(hasListenerTaste ? tasteArtists : []), ...aiArtists].filter((artist) => {
+      const key = artist.name.trim().toLocaleLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 6);
+  }, [aiArtists, hasListenerTaste, tasteArtists]);
+  const starterArtists = useMemo(() => recommendArtistNames(null, 6).map((name) => ({ name })), []);
+  const discoveryArtists = personalizedArtists.length > 0 ? personalizedArtists : artists.length > 0 ? artists : starterArtists;
+  const artistSectionHint = aiArtists.length > 0
+    ? 'From your listening and likes'
+    : hasListenerTaste
+      ? (account.taste?.genres?.length ?? 0) > 0 ? 'Matched to your genres and listening' : 'Based on what you play'
+      : artists.length > 0 ? 'A few places to start' : 'Popular picks to get started';
 
   // Artist page: the provider's profile (photo, followers, top songs, albums); plain search if it is unavailable.
   useEffect(() => {
@@ -1007,7 +1034,7 @@ export default function App() {
   // got marked, the same request went out again, and cards sat on a placeholder
   // forever. A ref records what is already in flight so re-runs skip it instead.
   useEffect(() => {
-    const wanted = [...new Set([...artists, ...collaborators].map((artist) => artist.name).concat(searchArtistNames, tasteArtistNames, artistName ? [artistName] : []))]
+    const wanted = [...new Set([...artists, ...discoveryArtists, ...collaborators].map((artist) => artist.name).concat(searchArtistNames, tasteArtistNames, artistName ? [artistName] : []))]
       .filter((name) => {
         const key = name.toLocaleLowerCase();
         return key.length > 0 && !(key in faces) && !requestedFacesRef.current.has(key);
@@ -1030,7 +1057,7 @@ export default function App() {
         // Release them so a later render can try again.
         for (const name of wanted) requestedFacesRef.current.delete(name.toLocaleLowerCase());
       });
-  }, [artistName, artists, collaborators, faces, searchArtistNames, tasteArtistNames]);
+  }, [artistName, artists, collaborators, discoveryArtists, faces, searchArtistNames, tasteArtistNames]);
 
   const activePlaylist = useMemo(() => (playlistId ? playlists.playlists.find((playlist) => playlist.id === playlistId) ?? null : null), [playlistId, playlists.playlists]);
   const activePlaylistSongs = useMemo(
@@ -1092,6 +1119,21 @@ export default function App() {
     });
     return () => controller.abort();
   }, [activeSong?.title, artistName, atmosphereArtwork]);
+
+  // Glow follows the playing cover, whichever page is open (the shader follows the page). Only read
+  // while Glow is the background: the shader has its own palette.
+  const glowArtwork = settings.appBackground === 'glow' ? playerSong?.artwork : undefined;
+  useEffect(() => {
+    if (!glowArtwork) {
+      setPlayingPalette(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    void extractPalette(glowArtwork, controller.signal).then((next) => {
+      if (!controller.signal.aborted) setPlayingPalette(next);
+    });
+    return () => controller.abort();
+  }, [glowArtwork]);
 
   // Backgrounds drift on a timer — never pulse with the beat.
   useEffect(() => {
@@ -1742,7 +1784,7 @@ export default function App() {
     <DjVoiceContext.Provider value={djVoice}>
     <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme="dark" data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
       {immersiveOpen ? null : (
-        <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={shaderPalette} variant={settings.appBackground} />
+        <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={settings.appBackground === 'glow' ? playingPalette : shaderPalette} variant={settings.appBackground} />
       )}
       <a className="skip-link" href="#main-content">Skip to content</a>
       <AuthDialog open={authOpen} account={account} onClose={() => setAuthOpen(false)} />
@@ -1822,7 +1864,7 @@ export default function App() {
             onToggle={togglePlayer}
             onLike={toggleLike}
             onOpenArtist={openArtist}
-            onSeedTaste={(artistNames, languageNames) => account.seed(artistNames, languageNames)}
+            onSeedTaste={(artistNames, languageNames, genreIds) => account.seed(artistNames, languageNames, genreIds)}
             onOpenAuth={() => setAuthOpen(true)}
           />
         ) : view === 'shared' ? (
@@ -1908,7 +1950,7 @@ export default function App() {
               {activeSong ? <motion.div className="hero-banner-art" variants={itemVariants}><Artwork song={activeSong} size="large" /></motion.div> : null}
             </motion.section>
 
-            {!isSearching && artists.length > 0 ? <section className="artist-section" aria-labelledby="artists-heading"><div className="section-heading"><h2 id="artists-heading">Popular artists</h2></div><div className="artist-list">{artists.map((artist) => <ArtistPreviewCard key={artist.name} name={artist.name} image={faces[artist.name.toLocaleLowerCase()] || null} photoPending={!(artist.name.toLocaleLowerCase() in faces)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} onPlayTrack={(song, queue) => playSong(song, queue)} onOpenArtist={openArtist} />)}</div></section> : null}
+            {!isSearching && discoveryArtists.length > 0 ? <section className="artist-section" aria-labelledby="artists-heading"><div className="section-heading"><div><h2 id="artists-heading">{personalizedArtists.length > 0 ? 'Artists picked for you' : 'Popular artists'}</h2><span className="result-count">{artistSectionHint}</span></div></div><div className="artist-list">{discoveryArtists.map((artist) => <ArtistPreviewCard key={artist.name} name={artist.name} image={faces[artist.name.toLocaleLowerCase()] || null} photoPending={!(artist.name.toLocaleLowerCase() in faces)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} onPlayTrack={(song, queue) => playSong(song, queue)} onOpenArtist={openArtist} />)}</div></section> : null}
 
 
             {isSearching ? (
@@ -1934,6 +1976,7 @@ export default function App() {
               />
             ) : (
               <DiscoverSections
+                taste={account.taste}
                 trending={home?.trending ?? []}
                 madeForYou={home?.madeForYou ?? []}
                 recommended={home?.recommended ?? []}

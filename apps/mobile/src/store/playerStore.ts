@@ -82,17 +82,22 @@ export function shouldAutoPlayLoadedSong(songId: string): boolean {
 }
 
 /**
- * Have the next song's cover downloaded and decoded before the skip, so Now Playing changes it with the title.
+ * Keep the nearby queue covers downloaded and decoded before a skip. The player can then draw the incoming
+ * artwork under a cover swipe instead of waiting for Media3 to report the new current item.
  * (It used to stage the next song in Media3 too. On Android the Kotlin queue engine holds the whole queue now,
  * so there is nothing to stage; callers still call this after they change the queue.)
  */
 export function prepareNextInQueue(): void {
   const { playlistQueue, currentQueueIndex, currentSongId } = usePlayerStore.getState();
   if (!playlistQueue || playlistQueue.length < 2) return;
-  if (usePlaybackModesStore.getState().repeatMode === 'off' && currentQueueIndex >= playlistQueue.length - 1) return;
-  const next = playlistQueue[(currentQueueIndex + 1) % playlistQueue.length];
-  if (!next || next.id === currentSongId) return;
-  prefetchCover(next.coverImageUri);
+  const warmed = new Set<string>();
+  for (const offset of [-2, -1, 1, 2]) {
+    const index = (currentQueueIndex + offset + playlistQueue.length) % playlistQueue.length;
+    const song = playlistQueue[index];
+    if (!song || song.id === currentSongId || warmed.has(song.id)) continue;
+    warmed.add(song.id);
+    prefetchCover(song.coverImageUri);
+  }
 }
 
 // Module-level controls ref — written by PlayerContext at mount, read everywhere else.
@@ -581,6 +586,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentSong: songs[startIndex],
       currentSongId: startSongId || null,
     });
+    prepareNextInQueue();
     if (__DEV__) {
       console.log(`[PLAYER] Set playlist queue: ${playlistId}, ${songs.length} songs, starting at ${startIndex}`);
     }

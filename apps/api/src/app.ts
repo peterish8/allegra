@@ -273,7 +273,7 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
       writes(request, response, next);
       return;
     }
-    if (path === '/api/search' || path.startsWith('/api/lyrics') || path.startsWith('/api/artists')) {
+    if (path === '/api/search' || path.startsWith('/api/lyrics') || path.startsWith('/api/artists') || path.startsWith('/api/albums')) {
       lookup(request, response, next);
       return;
     }

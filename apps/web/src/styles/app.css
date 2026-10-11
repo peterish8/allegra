@@ -7234,6 +7234,8 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   transform: rotate(-4deg);
   transition: transform var(--d-slow) var(--ease-spring);
 }
+/* A genre's sleeve wears the cover of the song it would start with, over its tint. */
+.mood-sleeve__face img { display: block; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
 .mood-sleeve__disc {
   position: absolute;
   z-index: -2;

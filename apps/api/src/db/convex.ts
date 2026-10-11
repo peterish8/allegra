@@ -154,6 +154,8 @@ function parseTaste(value: unknown): TasteProfile | undefined {
   return {
     artists: parseEntries(record.artists),
     languages: parseEntries(record.languages),
+    // Older profile rows have no genres: they read as none picked.
+    genres: Array.isArray(record.genres) ? record.genres.filter((genre): genre is string => typeof genre === 'string') : [],
     signals: typeof record.signals === 'number' ? record.signals : 0,
     onboarded: record.onboarded === true,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : new Date(0).toISOString()

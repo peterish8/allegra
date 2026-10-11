@@ -399,8 +399,8 @@ fresh guest session.
 
 | Endpoint | Auth | Body → response |
 |---|---|---|
-| `GET /api/me/taste` | Bearer | → `{ topArtists: {name,score}[] (<=12), languages: {name,score}[] (<=5), signals: number, onboarded: boolean }` |
-| `POST /api/me/taste/seed` | Bearer | `{ artists: string[] (<=30), languages: string[] (<=8) }` → same as `GET`. Onboarding: strong weight, sets `onboarded: true`. |
+| `GET /api/me/taste` | Bearer | → `{ topArtists: {name,score}[] (<=12), languages: {name,score}[] (<=5), genres: MusicGenreId[] (<=10), signals: number, onboarded: boolean }` |
+| `POST /api/me/taste/seed` | Bearer | `{ artists: string[] (<=30), languages: string[] (<=8), genres?: MusicGenreId[] (<=10) }` → same as `GET`. Onboarding: strong weight, sets `onboarded: true`. Older clients may omit `genres`; older taste records read as an empty list. |
 | `POST /api/me/taste/signal` | Bearer | `{ songId, seconds, playedAt? }` or `{ songRef, song?, seconds, playedAt? }` → `204`. `playedAt` is an ISO timestamp and is recommended; the most-played tally needs it to ignore repeated delivery. Additive 2026-10-06: optional `exit` (`'ended' \| 'skipped' \| 'paused' \| 'switched'`) and `exitPositionSec`. With `exit`, `packages/shared/listenSignal.ts` decides: heard out or left in the last 15 s counts for the artist, left inside 30 s counts against, anything between is neutral. Without it, the older rule: `<10 s` counts against the artist, most of a song counts for them. |
 
 Taste is also updated **automatically** by existing routes. Legacy songId writes resolve through the catalog; provider-aware writes include a validated `SongSnapshot`, so Gaana plays train the same account taste without a colliding bare ID. Recent rows retain the ref and snapshot for account history and recommendation seeds. The artist profile remains as described above; separately, the most-played tally stores at most 200 song identities, adds listened minutes (or −1 for a skip under 10 seconds), +10 once for a native like, and +5 for a native playlist add. Tally weights halve every 45 days. A future `playedAt` is clamped to server time; a signal older than 30 days is ignored by the tally.
@@ -410,6 +410,12 @@ and `cumulativeSeconds` (finite 0–7200). New clients reuse the ID and original
 and send cumulative heard seconds. The tally applies only the newly heard amount. Dedupe is
 bounded to the last 16 checkpoints per retained song; older clients retain timestamp dedupe.
 Learning preference is checked authoritatively when accepting writes and publishing a Blend.
+
+`genres` (additive, 2026-10-12) are the listener's own picks from onboarding, as `MusicGenreId`
+from `packages/shared/genres.ts`: one of `bollywood`, `pop`, `hiphop`, `punjabi`, `indie`,
+`electronic`, `rnb`, `retro`, `southindian` or `acoustic`. Unknown ids are dropped, duplicates
+collapse. They are never inferred from or written by listening signals, and survive merges, plays
+and import seeds.
 
 ### Sharing a playlist
 
