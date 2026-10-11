@@ -365,8 +365,24 @@
 
 /* Mix two playlists: one line under the stage. Two searchable pickers, the vibe and the button;
    what it does lives behind the (i). Same glass as the stage and the queue. */
-.dj-playlists { min-width: 0; padding: clamp(14px, 2cqw, 20px); border-radius: 26px; container: dj-mix / inline-size; }
-.dj-playlists-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.dj-playlists { min-width: 0; padding: 8px; border-radius: 22px; container: dj-mix / inline-size; }
+.dj-playlists.is-open { padding: clamp(10px, 1.6cqw, 16px); }
+.dj-playlists-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dj-playlists.is-open .dj-playlists-head { margin-bottom: 12px; }
+.dj-mix-toggle {
+  display: inline-flex; min-height: 40px; align-items: center; gap: 9px; padding: 0 14px; border: 0; border-radius: 999px;
+  color: var(--ink); background: transparent; font: inherit; font-size: 15px; font-weight: 650; letter-spacing: -.01em; cursor: pointer;
+  transition: transform var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard);
+}
+.dj-mix-toggle:hover { background: rgba(255, 255, 255, .07); }
+.dj-mix-toggle:active { transform: scale(.98); }
+.dj-mix-toggle:focus-visible { outline: 2px solid var(--wave); outline-offset: 2px; }
+.dj-mix-toggle > svg:first-child { color: var(--wave); }
+.dj-mix-toggle__chevron { color: var(--ink-muted); transition: transform var(--d-base) var(--ease-standard); }
+.dj-mix-toggle[aria-expanded='true'] .dj-mix-toggle__chevron { transform: rotate(180deg); }
+.dj-mix-body { animation: dj-mix-open var(--d-base) var(--ease-decelerate); }
+@keyframes dj-mix-open { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dj-mix-body { animation-name: dj-fade; } }
 .dj-playlists-heading { display: flex; align-items: center; gap: 6px; }
 .dj-playlists-head h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
 .dj-library-link { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 999px; color: var(--ink); background: rgba(255, 255, 255, .05); font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }

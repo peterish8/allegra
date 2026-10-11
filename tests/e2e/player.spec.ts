@@ -171,6 +171,12 @@ test('DJ playlist mix: pick two playlists by search, add a vibe, and the (i) exp
   await page.goto('/dj');
   const mixer = page.getByRole('region', { name: 'Mix two playlists' });
   await expect(mixer).toBeVisible({ timeout: 30_000 });
+  // Folded to one button until it is opened.
+  const toggle = mixer.getByRole('button', { name: 'Mix two playlists' });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(mixer.getByRole('button', { name: /^First playlist/ })).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   const go = mixer.getByRole('button', { name: 'Mix', exact: true });
   await expect(go).toBeDisabled();
 
@@ -192,6 +198,9 @@ test('DJ playlist mix: pick two playlists by search, add a vibe, and the (i) exp
   await expect(mixer.getByRole('note')).toContainText('builds one set');
   await page.keyboard.press('Escape');
   await expect(mixer.getByRole('note')).toBeHidden();
+  // And folds away again.
+  await toggle.click();
+  await expect(mixer.getByRole('button', { name: /^First playlist/ })).toHaveCount(0);
 
   await page.evaluate(async (made) => {
     const headers = { Authorization: `Bearer ${localStorage.getItem('allegra-session-token') ?? ''}` };

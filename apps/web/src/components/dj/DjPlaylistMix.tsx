@@ -1,4 +1,4 @@
-import { ArrowUp, Info, Sparkles } from 'lucide-react';
+import { ArrowUp, ChevronDown, Info, Shuffle, Sparkles } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 
 import type { UnifiedSong } from '@shared/types';
@@ -29,11 +29,14 @@ export interface DjPlaylistMixProps {
 const NONE = '';
 
 /**
- * Two of the listener's playlists and a vibe, blended by the DJ into one set. One line: two
- * searchable pickers, the vibe and the button. What it does is behind the (i), not spelled out on
- * the page: the whole library of cards it replaced read as clutter (2026-10-12).
+ * Two of the listener's playlists and a vibe, blended by the DJ into one set. Folded to a single
+ * button; opened, one line: two searchable pickers, the vibe and the button. What it does is behind
+ * the (i), not spelled out on the page: the wall of cards it replaced read as clutter (2026-10-12).
  */
 export function DjPlaylistMix({ playlists, loading, error, working, onRetry, onOpenLibrary, onMix }: DjPlaylistMixProps) {
+  // Folded to one button until it is wanted: the stage and the queue are the page (2026-10-12).
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
   const [first, setFirst] = useState<string>(NONE);
   const [second, setSecond] = useState<string>(NONE);
   const [vibe, setVibe] = useState('');
@@ -60,16 +63,22 @@ export function DjPlaylistMix({ playlists, loading, error, working, onRetry, onO
   };
 
   return (
-    <section className="dj-playlists" aria-labelledby="dj-playlists-title">
+    <section className={`dj-playlists${open ? ' is-open' : ''}`} aria-labelledby="dj-playlists-title">
       <div className="dj-playlists-head">
         <div className="dj-playlists-heading">
-          <h2 id="dj-playlists-title">Mix two playlists</h2>
-          <MixInfo />
+          <h2 id="dj-playlists-title">
+            <button type="button" className="dj-mix-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((value) => !value)}>
+              <Shuffle size={15} aria-hidden="true" />
+              <span>Mix two playlists</span>
+              <ChevronDown size={15} aria-hidden="true" className="dj-mix-toggle__chevron" />
+            </button>
+          </h2>
+          {open ? <MixInfo /> : null}
         </div>
-        <button type="button" className="dj-library-link" onClick={onOpenLibrary}>Your library <ArrowUp size={14} aria-hidden="true" /></button>
+        {open ? <button type="button" className="dj-library-link" onClick={onOpenLibrary}>Your library <ArrowUp size={14} aria-hidden="true" /></button> : null}
       </div>
 
-      {loading ? <p className="dj-playlists-message" role="status">Loading your playlists…</p> : error ? (
+      {!open ? null : <div id={bodyId} className="dj-mix-body">{loading ? <p className="dj-playlists-message" role="status">Loading your playlists…</p> : error ? (
         <div className="dj-playlists-empty" role="alert"><p>{error}</p><button type="button" className="dj-library-link" onClick={onRetry}>Try again</button></div>
       ) : usable.length < 2 ? (
         <p className="dj-playlists-message">Save two playlists with songs in Your library and you can mix them here.</p>
@@ -85,7 +94,7 @@ export function DjPlaylistMix({ playlists, loading, error, working, onRetry, onO
             {working ? 'Mixing…' : loadingTracks ? 'Loading songs…' : 'Mix'}
           </TactileButton>
         </form>
-      )}
+      )}</div>}
     </section>
   );
 }
