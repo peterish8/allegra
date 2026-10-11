@@ -351,6 +351,37 @@ describe('Connect backend', () => {
     ]);
   });
 
+  it('hands playback from an online V2 owner at once, where the song has reached', async () => {
+    // 2026-10-11: a transfer waited for the playing device to confirm its pause (four more network
+    // hops). A V2 owner pauses itself when it sees it lost ownership, so nobody waits for it now.
+    const t = backend();
+    const client = asUser(t, 'users:v2-instant');
+    await registerV2Device(client, 'laptop', true, 3);
+    await registerV2Device(client, 'phone', true, 3);
+    const claim = await client.mutation(api.connect.claim, {
+      deviceId: 'laptop', snapshot: { ...playerSnapshot, positionSec: 30 }
+    });
+    const sent = await client.mutation(api.connect.transferV2, {
+      fromDeviceId: 'phone', toDeviceId: 'phone', requestId: 'instant-pull-01',
+      expectedOwnershipEpoch: claim.ownershipEpoch
+    });
+    const begun = await client.mutation(api.connect.beginV2, { deviceId: 'phone', commandId: sent.commandId });
+    const prepared = await client.mutation(api.connect.prepareV2, {
+      deviceId: 'phone', commandId: sent.commandId, reservationToken: begun.reservationToken
+    });
+
+    expect(prepared).toMatchObject({ status: 'activated', resume: true, ownershipEpoch: claim.ownershipEpoch + 1 });
+    if (prepared.status !== 'activated') throw new Error('the transfer waited for an owner that pauses itself');
+    expect(prepared.positionSec).toBeGreaterThanOrEqual(30);
+    const after = await client.query(api.connect.state, {});
+    expect(after).toMatchObject({ activeDeviceId: 'phone', ownershipEpoch: claim.ownershipEpoch + 1 });
+    expect(after?.handoff).toBeUndefined();
+    // The laptop's next report is refused, which is what stops its audio if it missed the state change.
+    await expectCode(client.mutation(api.connect.report, {
+      deviceId: 'laptop', patch: { positionSec: 40 }, rev: claim.rev, expectedOwnershipEpoch: claim.ownershipEpoch
+    }), 'device_not_active');
+  });
+
   it('sends a V2 transfer with the epoch it was queued under', async () => {
     // Android builds from a8577af drop a take_over whose state has no ownershipEpoch, so the
     // transfer never starts and expires 60 s later. Keep sending it.

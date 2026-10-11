@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createConnectSession } from './connectSession.ts';
+import { createConnectSession, IDLE_OWNER_MS } from './connectSession.ts';
+import { decidePlaybackRoute } from './routing.ts';
 import { connectError } from './errors.ts';
 import { MemoryTransport } from './memoryTransport.ts';
 import { FakePlayerPort } from './testing.ts';
@@ -386,7 +387,7 @@ test('transfer loads the current position and queue before the new device claims
   sessionB.dispose();
 });
 
-test('transferring back waits for the former owner to confirm pause before playback resumes', async () => {
+test('transferring back from a legacy owner waits for it to confirm pause before playback resumes', async () => {
   const clock = new TestClock();
   const transport = new MemoryTransport(() => clock.now());
   transport.seedState(state(clock, { shuffle: true, repeat: 'all' }));
@@ -400,6 +401,8 @@ test('transferring back waits for the former owner to confirm pause before playb
   assert.deepEqual(await sessionA.transferTo('phone-b'), { ok: true });
   clock.advance(2_500);
   playerB.deferNextPause = true;
+  // Only an owner on the legacy protocol is still waited for (a V2 one pauses itself).
+  transport.setProtocolVersion('phone-b', 1);
 
   const transferBack = sessionA.transferTo('web-a');
   await playerB.pauseStarted;
@@ -703,11 +706,27 @@ test('a transfer nobody picks up still fails at the pick-up window', async () =>
   sessionA.dispose();
 });
 
-test('pulling playback from an owner that stopped listening fails in seconds, not at the deadline', async () => {
+test('pulling playback from an owner that stopped listening plays here at once', async () => {
   // 2026-10-01: Chrome owned playback but had left Connect (a lock bug), so the phone's
-  // "play here" waited the full 60 s for a release that could not come.
+  // "play here" waited the full 60 s for a release that could not come. Since 2026-10-11 a V2
+  // owner is never waited for, so the pull does not depend on it answering at all.
   const { clock, transport, playerB, sessionA, sessionB } = await sessionPair();
   silently(transport, () => sessionA.dispose());
+  clock.advance(3_000);
+
+  const result = await sessionB.transferTo('phone-b');
+  await settle();
+  assert.deepEqual(result, { ok: true });
+  assert.equal(playerB.getSnapshot().isPlaying, true);
+  assert.equal(playerB.getSnapshot().positionSec, 40);
+  assert.equal(sessionB.view().activeDeviceId, 'phone-b');
+  sessionB.dispose();
+});
+
+test('a legacy owner that never answers fails the pull in seconds, not at the deadline', async () => {
+  const { clock, transport, playerB, sessionA, sessionB } = await sessionPair();
+  silently(transport, () => sessionA.dispose());
+  transport.setProtocolVersion('web-a', 1);
 
   const transfer = sessionB.transferTo('phone-b');
   await settle();
@@ -725,6 +744,109 @@ test('pulling playback from an owner that stopped listening fails in seconds, no
   assert.equal(playerB.getSnapshot().isPlaying, false);
   assert.equal(sessionB.view().activeDeviceId, 'web-a');
   sessionB.dispose();
+});
+
+test('a transfer from a playing owner starts here without waiting for its pause, and the owner then stops', async () => {
+  const clock = new TestClock();
+  const transport = new MemoryTransport(() => clock.now());
+  transport.seedState(state(clock));
+  const playerA = new FakePlayerPort({ song, queue: [nextSong], isPlaying: true, positionSec: 37, volume: 0.8 });
+  const playerB = new DeferredPausePlayer();
+  const sessionA = createConnectSession({ transport, player: playerA, device: device('web-a', 'Laptop'), clock });
+  const sessionB = createConnectSession({ transport, player: playerB, device: device('phone-b', 'Pixel 8'), clock });
+  sessionA.setVisible(true);
+  sessionB.setVisible(true);
+  await settle();
+  assert.deepEqual(await sessionA.transferTo('phone-b'), { ok: true });
+  clock.advance(2_500);
+  playerB.deferNextPause = true;
+
+  // The phone's pause has not finished when the laptop starts: nothing waits for it.
+  const result = await sessionA.transferTo('web-a');
+  assert.deepEqual(result, { ok: true });
+  assert.equal(playerA.getSnapshot().isPlaying, true);
+  const load = [...playerA.calls].reverse().find((call) => call.method === 'load');
+  assert.equal((load?.args[2] as { positionSec: number } | undefined)?.positionSec, 39.5);
+  assert.equal(sessionA.view().activeDeviceId, 'web-a');
+  assert.equal(playerB.getSnapshot().isPlaying, true);
+  await playerB.pauseStarted;
+  playerB.releasePause();
+  await settle();
+  assert.equal(playerB.getSnapshot().isPlaying, false);
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('a pick made after the owner has sat paused for ten minutes plays here, with no notice', async () => {
+  // 2026-10-11: the phone played hours earlier and stayed the owner, so play on the laptop went to it.
+  const { clock, playerA, playerB, sessionA, sessionB } = await sessionPair();
+  await playerA.pause();
+  await settle();
+  sessionA.setVisible(false);
+  await settle();
+  assert.equal(sessionB.view().activeDeviceIdle, false);
+
+  clock.advance(IDLE_OWNER_MS + 1_000);
+  await settle();
+  assert.equal(sessionB.view().activeDeviceIdle, true);
+  assert.equal(decidePlaybackRoute({ view: sessionB.view(), deviceId: 'phone-b' }).kind, 'local');
+
+  sessionB.control({ kind: 'play_song', song: nextSong, queue: [] });
+  await settle();
+  assert.equal(playerB.getSnapshot().isPlaying, true);
+  assert.equal(playerB.getSnapshot().song?.ref, nextSong.ref);
+  assert.equal(sessionB.view().activeDeviceId, 'phone-b');
+  assert.equal(sessionB.view().notice, undefined);
+  assert.equal(playerA.getSnapshot().isPlaying, false);
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('a short pause keeps the other device a remote', async () => {
+  const { clock, playerA, playerB, sessionA, sessionB } = await sessionPair();
+  await playerA.pause();
+  await settle();
+  clock.advance(IDLE_OWNER_MS - 60_000);
+  await settle();
+
+  assert.equal(sessionB.view().activeDeviceIdle, false);
+  sessionB.control({ kind: 'play' });
+  await settle();
+  assert.equal(playerA.getSnapshot().isPlaying, true);
+  assert.equal(playerB.getSnapshot().isPlaying, false);
+  sessionA.dispose();
+  sessionB.dispose();
+});
+
+test('an idle owner in the background stops heartbeating, and playing there again reclaims playback', async () => {
+  const transportRef: { current?: CountingTransport } = {};
+  const { clock, playerA, sessionA, sessionB } = await sessionPair({
+    transportFactory: (testClock) => (transportRef.current = new CountingTransport(() => testClock.now()))
+  });
+  const transport = transportRef.current as CountingTransport;
+  await playerA.pause();
+  await settle();
+  sessionA.setVisible(false);
+  // The phone stays in front, so it keeps beating; only the laptop's beats are counted.
+  sessionB.dispose();
+  clock.advance(IDLE_OWNER_MS + 1_000);
+  await settle();
+  const beats = transport.heartbeats;
+  clock.advance(5 * 60_000);
+  await settle();
+  assert.equal(transport.heartbeats, beats);
+  let server: Parameters<Parameters<MemoryTransport['watch']>[1]>[0] | undefined;
+  const stopWatch = transport.watch('phone-b', (next) => { server = next; });
+  assert.equal(server?.devices.find((row) => row.deviceId === 'web-a')?.isOnline, false);
+
+  // Play from the lock screen: the device listens again and keeps playback rather than pausing.
+  playerA.update({ isPlaying: true });
+  await settle();
+  assert.equal(playerA.getSnapshot().isPlaying, true);
+  assert.equal(server?.state?.activeDeviceId, 'web-a');
+  assert.equal(server?.state?.isPlaying, true);
+  stopWatch();
+  sessionA.dispose();
 });
 
 class CountingTransport extends MemoryTransport {

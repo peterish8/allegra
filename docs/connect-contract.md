@@ -67,7 +67,7 @@ clock; online status comes from Presence.
 | `sendV2({fromDeviceId,targetDeviceId,requestId,expectedOwnershipEpoch,kind,args?})` | Additive fenced send. `requestId` is 8–64 characters and deduplicates by account/source/request ID: identical retries return the original receipt; changed content fails `request_conflict`. Target must be the active V2 device and able to play. `queue_remove`, `queue_move` and `queue_clear` need a target on protocol 3 or later and otherwise fail `update_required` (an older app drops a kind it does not know, which would read as an unreachable device). A server deadline is 15 seconds for controls and queue edits, and 60 seconds for anything that may look a song up (`play_song`, `queue_add`). `take_over` is refused here. |
 | `transferV2({fromDeviceId,toDeviceId,requestId,expectedOwnershipEpoch})` | Additive V2 transfer command with the same request dedupe and account quota. The destination must be owned, online, V2, and able to play; a current song is required. The destination may equal the source device. The command is bound to the observed ownership epoch and has a 60-second deadline. |
 | `beginV2({deviceId,commandId})` | Target-only execution reservation. Refuse expired, stale-epoch, terminal, or non-playable commands before player work. Repeated begin on the same pending command returns the same reservation token. Legacy inbox rows can still use this receiver path. |
-| `prepareV2({deviceId,commandId,reservationToken})` | Transfer destination calls after it has loaded the song paused. If a different owner is still playing and Presence counts it online (legacy clients included), record a handoff and wait for its confirmed pause. Otherwise make the destination active at the next epoch, paused, and return the resume intent: at the saved position when the state was paused, or at the position the song has reached when the playing owner is offline in Presence (see below). |
+| `prepareV2({deviceId,commandId,reservationToken})` | Transfer destination calls after it has loaded the song paused. If a different owner is still playing, Presence counts it online, and it is a legacy (protocol 1) client, record a handoff and wait for its confirmed pause. Otherwise make the destination active at the next epoch, paused, and return the resume intent: at the saved position when the state was paused, or at the position the song has reached when the owner is playing (see below). |
 | `releaseV2({deviceId,commandId,expectedOwnershipEpoch,positionSec,resume})` | Current owner calls only after its player confirms pause. Atomically set the exact paused position, move ownership to the destination, increment epoch, clear the handoff, and record the release data. A transfer whose online owner does not confirm within 15 seconds fails `owner_unreachable`. |
 | `completeV2({deviceId,commandId,reservationToken,outcome,patch?,rev?})` | Complete or fail a reserved command idempotently. Successful patches require the target to be active and the exact revision; conflicts return `currentRev` without finalizing so the client can retry completion without replaying audio. Failed outcomes never apply patches and clear a matching handoff. |
 
@@ -83,8 +83,31 @@ The cost is the one case where two devices can sound at once: the owner is still
 off from the server. It lasts until that owner reconnects. Its next `report` or `claim` is refused
 (`device_not_active` / `stale_ownership`) and the session pauses it; it also pauses as soon as its
 state query shows another active device. A `claim` by a device that starts its own song already
-worked this way. While Presence still counts the owner online nothing changes: no confirmation, no
-transfer.
+worked this way. While Presence still counts a legacy owner online nothing changes: no confirmation, no
+transfer. A V2 owner is never waited for (next section).
+
+### Instant handoff from a V2 owner
+
+Changed 2026-10-11, after Spotify's model: the cloud holds the position, the destination starts
+from it, and the old device stops when it sees it lost ownership. Before, a playing owner that
+Presence counted online always had to pause and call `releaseV2` first: four more network hops
+between the tap and the sound, and a 15-second `owner_unreachable` when the owner's tab was
+throttled. A protocol 2+ owner has paused itself on losing ownership since V2 shipped
+(`pauseAfterOwnershipLoss`), so `prepareV2` no longer waits for it: it hands over where the song
+has reached from `positionSec` + `positionAt`. Until the owner's state query delivers the change
+(tens of milliseconds), both devices can sound; a missed delivery is caught by its next `report`,
+refused as `device_not_active` / `stale_ownership`. Only a protocol 1 owner still gets a handoff.
+
+### Idle owners (client rule)
+
+Added 2026-10-11. The server keeps `activeDeviceId` until another device claims; the clients
+decide when it stops being where playback is. An owner whose stored state has been paused for
+`IDLE_OWNER_MS` (10 minutes, `packages/connect/src/connectSession.ts`; measured from
+`positionAt`, which a pause sets) is idle: `ConnectView.activeDeviceIdle` is true, routing sends
+play and picks to the device they were made on (no "offline" notice), and that device claims when
+it starts. An idle owner that is not visible and not playing stops listening, so it stops
+heartbeating and reads offline. Playing it again (a lock-screen play) re-registers and claims
+against the fresh state. No server change was needed.
 
 `claim.snapshot` and `report.patch` may contain `song`, `queue`, `isPlaying`,
 `positionSec`, `volume`, `shuffle`, and `repeat`. `positionAt`,

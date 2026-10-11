@@ -1,5 +1,5 @@
 import { shareableArtwork } from '@shared/artwork';
-import { fromAllegraSong, type SongSnapshot } from '@shared/songRef';
+import { fromAllegraSong, parseSongRef, type SongSnapshot } from '@shared/songRef';
 import type { UnifiedSong } from '@shared/types';
 
 import type { LibrarySong } from './libraryRows';
@@ -37,4 +37,32 @@ export function snapshotFromSong(song: UnifiedSong): SongSnapshot | null {
 export function withFoundCover(sent: SongSnapshot, found: string | null | undefined): SongSnapshot {
   const artwork = shareableArtwork(found, sent.artwork);
   return artwork === sent.artwork ? sent : { ...sent, artwork };
+}
+
+/**
+ * A Saavn or Gaana song plays straight from its ref: `/api/stream/:id` finds the audio itself, so
+ * the catalog row adds nothing playback needs. Skipping that lookup is what lets a transfer or a
+ * pick sent here start in well under a second, and spares one request per queued song. Null when
+ * the catalog is still needed: another source, or no cover to show.
+ */
+export function streamableFromSnapshot(snapshot: SongSnapshot): LibrarySong | null {
+  const parsed = parseSongRef(snapshot.ref);
+  if (!parsed || (parsed.source !== 'saavn' && parsed.source !== 'gaana') || !parsed.id) return null;
+  // No cover to share means "look it up by ref" (connect-contract.md): the catalog row has it.
+  if (!snapshot.artwork) return null;
+  const gaana = parsed.source === 'gaana';
+  return {
+    id: parsed.id,
+    title: snapshot.title,
+    artist: snapshot.artist,
+    ...(snapshot.album ? { album: snapshot.album } : {}),
+    artwork: snapshot.artwork,
+    streamUrl: `/api/stream/${encodeURIComponent(gaana ? `gaana:${parsed.id}` : parsed.id)}`,
+    duration: snapshot.duration,
+    hasLyrics: false,
+    playCount: 0,
+    source: gaana ? 'Gaana' : 'Saavn',
+    libraryRef: snapshot.ref,
+    librarySnapshot: snapshot
+  };
 }

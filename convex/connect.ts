@@ -260,6 +260,15 @@ async function isDeviceOnline(ctx: QueryCtx | MutationCtx, userId: string, devic
   return rooms.some(({ roomId }) => roomId === roomOf(userId));
 }
 
+/** A device on the V1 protocol, or one no longer registered (treated the cautious way). */
+async function isLegacyDevice(ctx: QueryCtx | MutationCtx, deviceId: string): Promise<boolean> {
+  const device = await ctx.db
+    .query('devices')
+    .withIndex('by_deviceId', (q) => q.eq('deviceId', deviceId))
+    .unique();
+  return (device?.protocolVersion ?? 1) < PROTOCOL_V2;
+}
+
 // ── Validation ───────────────────────────────────────────────────────────────
 
 const rejectInvalid = (): never => fail('invalid_command');
@@ -1173,9 +1182,13 @@ export const prepareV2 = mutation({
       };
     }
 
+    // Spotify's handoff: the destination starts from the stored position at once, and a V2 owner
+    // pauses itself when its state shows it lost ownership (connectSession's pauseAfterOwnershipLoss).
+    // Only a legacy owner, which never learned that, is still asked to confirm its pause first.
     const ownerId = own.activeDeviceId;
     const waitForOwner =
-      ownerId !== undefined && ownerId !== deviceId && player.isPlaying && (await isDeviceOnline(ctx, userId, ownerId));
+      ownerId !== undefined && ownerId !== deviceId && player.isPlaying &&
+      (await isLegacyDevice(ctx, ownerId)) && (await isDeviceOnline(ctx, userId, ownerId));
 
     if (waitForOwner) {
       if (own.handoff?.commandId !== command._id) {

@@ -238,7 +238,7 @@ export default function App() {
   const connectView = connect.view;
   // Another device plays (or this browser's other tab does): this tab is its remote.
   const remotePlayback = isControllingAnotherDevice(connectView, connect.deviceId)
-    || Boolean(connect.tabStatus === 'other-tab' && connectView?.activeDeviceId && connectView.activeDeviceOnline);
+    || Boolean(connect.tabStatus === 'other-tab' && connectView?.activeDeviceId && connectView.activeDeviceOnline && !connectView.activeDeviceIdle);
   // A song sent without a cover it could share is shown with the one looked up here.
   const remoteSongs = useMemo(
     () => (remotePlayback && connectView ? [connectView.song, ...connectView.queue] : []),
@@ -1678,15 +1678,17 @@ export default function App() {
   } as CSSProperties;
 
   // "Listen on": one state for the mini player's devices button and the full player's.
-  const playingElsewhere = Boolean(connectView?.activeDeviceId && connectView.activeDeviceId !== connect.deviceId);
+  // A device that sat paused for a while is not where playback is: this one is, as with Spotify.
+  const shownActive = connectView?.activeDeviceIdle ? undefined : connectView;
+  const playingElsewhere = Boolean(shownActive?.activeDeviceId && shownActive.activeDeviceId !== connect.deviceId);
   const pickerSong = playingElsewhere ? connectView?.song : audio.currentSong ?? undefined;
   const connectPicker: ConnectPickerState = {
     connected: connect.connected,
     otherTab: connect.tabStatus === 'other-tab',
     deviceId: connect.deviceId,
     devices: connectView?.devices ?? [],
-    ...(connectView?.activeDeviceId ? { activeDeviceId: connectView.activeDeviceId } : {}),
-    ...(connectView?.activeDevice ? { activeDeviceName: connectView.activeDevice.name } : {}),
+    ...(shownActive?.activeDeviceId ? { activeDeviceId: shownActive.activeDeviceId } : {}),
+    ...(shownActive?.activeDevice ? { activeDeviceName: shownActive.activeDevice.name } : {}),
     activeDeviceOnline: connectView?.activeDeviceOnline ?? true,
     isPlaying: playingElsewhere && connectView ? connectView.isPlaying : audio.isPlaying,
     ...(pickerSong ? { songTitle: pickerSong.title, songArtist: pickerSong.artist } : {}),

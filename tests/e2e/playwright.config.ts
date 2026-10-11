@@ -36,7 +36,7 @@ export default defineConfig({
     { name: 'api', testMatch: /api\.spec\.ts/ },
     {
       name: 'desktop',
-      testMatch: /(app|karaoke|player)\.spec\.ts/,
+      testMatch: /(app|karaoke|player|connect)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 860 } }
     },
     {
