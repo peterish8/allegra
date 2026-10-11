@@ -321,7 +321,8 @@ export type ConnectTraceOperation =
   | 'write_retry'
   | 'claim_retry'
   | 'release_retry'
-  | 'handoff_deadline';
+  | 'handoff_deadline'
+  | 'idle_owner';
 
 export type ConnectTraceOutcome =
   | 'ok'
@@ -412,6 +413,11 @@ export interface ConnectView {
   readonly isThisDeviceActive: boolean;
   /** False when the active device is another device that Presence reports offline. */
   readonly activeDeviceOnline: boolean;
+  /**
+   * The active device is another one that has sat paused for `IDLE_OWNER_MS`: playback is no longer
+   * there, so play or a pick made here plays here. Absent reads as false.
+   */
+  readonly activeDeviceIdle?: boolean;
   readonly ownershipEpoch: number;
   readonly song?: SongSnapshot;
   readonly queue: readonly SongSnapshot[];

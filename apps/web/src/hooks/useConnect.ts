@@ -14,6 +14,7 @@ import {
   createDevelopmentTrace,
   createQueueStager,
   decidePlaybackRoute,
+  isControllingAnotherDevice,
   ownerOfflineMessage,
   reportable,
   traceCatalogLookup,
@@ -35,7 +36,7 @@ import { useConvexAppClient } from '../../app/ConvexSignInProvider';
 import { useSignIn } from '../auth/SignInContext';
 import type { AudioPlayerState } from './useAudioPlayer';
 import { exactSaavnMatch, type LibrarySong } from '../lib/libraryRows';
-import { snapshotFromSong, withFoundCover } from '../lib/connectSnapshot';
+import { snapshotFromSong, streamableFromSnapshot, withFoundCover } from '../lib/connectSnapshot';
 import { fetchSongsByIds, resolveApiUrl, searchSongs } from '../lib/api';
 import { accountIdFromToken, deviceIdForAccount } from '../lib/connectDeviceId';
 import { browserNameFrom } from '../lib/browserName';
@@ -78,6 +79,8 @@ function songFromSnapshot(snapshot: SongSnapshot): LibrarySong {
 }
 
 async function resolvePlayable(snapshot: SongSnapshot, trace?: DevelopmentTraceBuffer): Promise<LibrarySong | null> {
+  const direct = streamableFromSnapshot(snapshot);
+  if (direct) return direct;
   const parsed = parseSongRef(snapshot.ref);
   const id = toAllegraId(snapshot.ref);
   if (id || parsed?.source === 'gaana') {
@@ -577,6 +580,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
   useEffect(() => {
     const current = sessionRef.current;
     if (!current || !documentVisible || !view?.isPlaying) return undefined;
+    // Ticks only while playing, so an idle (paused) owner never counts as remote here.
     const isRemote = !view.isThisDeviceActive && view.activeDeviceOnline;
     const shouldBroadcastForTab = tabStatus === 'leader' && channelRef.current !== null;
     if (!isRemote && !shouldBroadcastForTab) return undefined;
@@ -644,7 +648,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
     const current = sessionRef.current;
     const currentView = current?.view() ?? view;
     const remote = current
-      ? Boolean(currentView?.activeDeviceId && !currentView.isThisDeviceActive && currentView.activeDeviceOnline)
+      ? isControllingAnotherDevice(currentView ?? null, deviceIdRef.current)
       : tabStatusRef.current === 'other-tab' && channelRef.current !== null;
     if (!remote) return 'local';
     const snapshot = snapshotFromSong(song);

@@ -154,3 +154,12 @@ test('a view that is already fresh needs no wait', async () => {
   assert.equal(timers.size, 0);
   assert.equal(session.listenerCount, 0);
 });
+
+test('a pick plays here when the other device has sat paused long enough to be idle', () => {
+  const idle = view({ isPlaying: false, activeDeviceIdle: true });
+  assert.deepEqual(decidePlaybackRoute({ view: idle, deviceId: 'phone-b' }), { kind: 'local' });
+  assert.equal(isControllingAnotherDevice(idle, 'phone-b'), false);
+  // Idle wins over offline: no "is offline, so this plays here" notice for a device nobody used.
+  assert.deepEqual(decidePlaybackRoute({ view: { ...idle, activeDeviceOnline: false }, deviceId: 'phone-b' }), { kind: 'local' });
+  assert.equal(isControllingAnotherDevice(view({ isPlaying: false }), 'phone-b'), true);
+});

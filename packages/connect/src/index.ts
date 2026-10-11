@@ -1,4 +1,4 @@
-export { createConnectSession } from './connectSession.ts';
+export { createConnectSession, IDLE_OWNER_MS } from './connectSession.ts';
 export { createConvexTransport } from './convexWire.ts';
 export type { ConvexWireClient } from './convexWire.ts';
 export { createDevelopmentTrace, estimateSerializedByteLength, traceCatalogLookup } from './developmentTrace.ts';
