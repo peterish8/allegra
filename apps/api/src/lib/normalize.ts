@@ -203,38 +203,6 @@ function isCompilationAlbum(album: string | undefined): boolean {
   );
 }
 
-/**
- * True when every row in the group is a licence placement rather than a release.
- *
- * The signature is unmistakable: one master — same play count, same length to the
- * second — listed on several *different* albums, none of which is named after it.
- * Saavn does this for anything that went viral, and the record it was actually
- * released on is usually not in the result set at all. So the album name and the
- * cover art on every one of these rows belong to somebody's playlist.
- *
- * Structural on purpose. A keyword list never ends: "Throwback TikTok Songs" is a
- * compilation and reads like nothing in one.
- */
-export function isPlacementOnly(group: readonly UnifiedSong[]): boolean {
-  if (group.length < 3) return false;
-  const first = group[0];
-  if (!first) return false;
-  const albums = new Set(group.map((song) => (song.album ? flatten(song.album) : '')));
-  if (albums.size < 3) return false;
-  if (group.some(albumMatchesTitle)) return false;
-  return group.every((song) => song.playCount === first.playCount && song.duration === first.duration);
-}
-
-/**
- * Whether this row is worth asking an outside authority about: it is on an album that
- * is not its own, and that album reads like a compilation. Callers pay a rate-limited
- * network round trip for a true answer, so it stays deliberately narrow.
- */
-export function needsCanonicalRelease(song: UnifiedSong): boolean {
-  if (albumMatchesTitle(song)) return false;
-  return isCompilationAlbum(song.album) || isPlacementOnly([song, ...(song.variants ?? [])]);
-}
-
 function stripVariants(song: UnifiedSong): UnifiedSong {
   if (!song.variants) return song;
   const { variants, ...rest } = song;

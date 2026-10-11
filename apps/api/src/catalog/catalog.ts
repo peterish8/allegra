@@ -2,7 +2,7 @@ import { ProviderUnavailableError, NotFoundError, TimeoutError } from '../lib/er
 import { cacheKey, type CacheStore } from '../lib/cache.js';
 import { CircuitBreaker } from '../lib/circuitBreaker.js';
 import { isDerivative, queryWantsDerivative } from '../lib/derivative.js';
-import { collapseRecordings, needsCanonicalRelease, normalizeAlbumDetail, normalizeAlbumSummary, normalizeSong, songIdentity } from '../lib/normalize.js';
+import { collapseRecordings, normalizeAlbumDetail, normalizeAlbumSummary, normalizeSong, songIdentity } from '../lib/normalize.js';
 import type { GaanaProvider } from '../providers/gaana.js';
 import type { CanonicalRelease, ReleaseAuthority } from '../providers/musicbrainz.js';
 import type { ProviderResult, SaavnAsset, SaavnProvider, SaavnSong } from '../providers/saavn.js';
@@ -22,6 +22,8 @@ export interface CatalogOptions {
   readonly cache: CacheStore;
   /** Names the record a song was released on. Unset leaves the provider's album and cover alone. */
   readonly releaseAuthority?: ReleaseAuthority;
+  /** How long a search waits for the release authority. Default `RELEASE_WAIT_MS`. */
+  readonly releaseWaitMs?: number;
 }
 
 export interface SearchOptions {
@@ -36,6 +38,11 @@ export interface SearchOptions {
 /** A corrected album name and cover are worth a month; a miss is re-asked tomorrow. */
 const RELEASE_TTL_SECONDS = 2_592_000;
 const RELEASE_MISS_TTL_SECONDS = 86_400;
+/**
+ * A search shows its results after this even if the authority has not answered: a cover fixed on
+ * the next search beats a search that hangs (MusicBrainz' own timeout is 6 s).
+ */
+const RELEASE_WAIT_MS = 1_200;
 /** A typeahead answer later than this is worse than none: the listener has typed on. */
 const SUGGEST_TIMEOUT_MS = 4_000;
 
@@ -60,6 +67,7 @@ export class CatalogService {
   private readonly gaana: GaanaProvider;
   private readonly cache: CacheStore;
   private readonly releaseAuthority: ReleaseAuthority | undefined;
+  private readonly releaseWaitMs: number;
   private readonly saavnBreaker = new CircuitBreaker();
   private readonly gaanaBreaker = new CircuitBreaker();
 
@@ -68,6 +76,7 @@ export class CatalogService {
     this.gaana = options.gaana;
     this.cache = options.cache;
     this.releaseAuthority = options.releaseAuthority;
+    this.releaseWaitMs = options.releaseWaitMs ?? RELEASE_WAIT_MS;
   }
 
   public async search(query: string, limit: number, page: number, options: SearchOptions = {}): Promise<CatalogSearch> {
@@ -75,7 +84,9 @@ export class CatalogService {
     // against the release authority when the provider only has it on a playlist.
     // v6: the provider's relevance order is kept instead of re-sorting by play count.
     // v7: songs carry `albumId` (2026-10-11).
-    const key = cacheKey('search', 'v7', query, String(limit), String(page));
+    // v8: the top result is always checked against the release authority: a provider album
+    // name can look right while its cover is still a playlist or fan-uploaded thumbnail.
+    const key = cacheKey('search', 'v8', query, String(limit), String(page));
     const cached = await this.cache.get<CatalogSearch>(key);
     if (cached) {
       return cached;
@@ -99,11 +110,11 @@ export class CatalogService {
     }
 
     const ordered = originalsFirst(collapseRecordings(normalizeMany(raw, source, 'relevance')), query).slice(0, limit);
-    const value = {
-      results: options.enrich === false ? ordered : await this.withCanonicalRelease(ordered),
-      source
-    } satisfies CatalogSearch;
-    await this.cache.set(key, value, 3600);
+    const enriched = options.enrich === false ? { results: ordered, settled: true } : await this.withCanonicalRelease(ordered);
+    const value = { results: enriched.results, source } satisfies CatalogSearch;
+    // A release still on its way is cached by itself when it lands; keeping this answer would
+    // serve the provider's cover for an hour, so the next search is built afresh instead.
+    if (enriched.settled) await this.cache.set(key, value, 3600);
     return value;
   }
 
@@ -134,39 +145,60 @@ export class CatalogService {
   /**
    * Put the real record's name and cover on the top row.
    *
-   * Only the top row, and only when it needs it: the authority is rate limited to
-   * about one request a second, so this is at most one round trip per uncached query.
+   * Only the top row: the authority is rate limited to about one request a second,
+   * so this is at most one round trip per uncached query. A plausible-looking
+   * provider album is not enough evidence that its image belongs to this release.
    * Any failure returns the provider's own data untouched.
+   *
+   * A search waits at most `RELEASE_WAIT_MS` for it: every uncached search now asks, and the
+   * authority can take seconds. A slower answer still lands in the cache for the next search,
+   * and `settled: false` tells the caller not to keep this one for long.
    */
-  private async withCanonicalRelease(results: readonly UnifiedSong[]): Promise<UnifiedSong[]> {
+  private async withCanonicalRelease(results: readonly UnifiedSong[]): Promise<{ readonly results: UnifiedSong[]; readonly settled: boolean }> {
     const top = results[0];
-    if (!this.releaseAuthority || !top || !needsCanonicalRelease(top)) {
-      return [...results];
+    const authority = this.releaseAuthority;
+    if (!authority || !top) {
+      return { results: [...results], settled: true };
     }
 
-    const key = cacheKey('release', 'v1', top.title, top.artist);
+    // v2: a plain Single counts as a release too (an original single is not a compilation).
+    const key = cacheKey('release', 'v2', top.title, top.artist);
     // `false` is a remembered miss; `null` means we have never asked.
     let canonical = await this.cache.get<CanonicalRelease | false>(key);
     if (canonical === null) {
-      canonical = (await this.releaseAuthority.canonical(top.title, top.artist, top.duration)) ?? false;
-      await this.cache.set(key, canonical, canonical ? RELEASE_TTL_SECONDS : RELEASE_MISS_TTL_SECONDS);
+      const lookup = (async (): Promise<CanonicalRelease | false> => {
+        const found = (await authority.canonical(top.title, top.artist, top.duration)) ?? false;
+        await this.cache.set(key, found, found ? RELEASE_TTL_SECONDS : RELEASE_MISS_TTL_SECONDS);
+        return found;
+      })().catch(() => false as const);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), this.releaseWaitMs); });
+      const answer = await Promise.race([lookup, late]);
+      clearTimeout(timer);
+      if (answer === null) {
+        return { results: [...results], settled: false };
+      }
+      canonical = answer;
     }
     if (!canonical) {
-      return [...results];
+      return { results: [...results], settled: true };
     }
 
     // The provider's album id belongs to the provider's album name: drop it with the name.
     const { albumId: _replacedAlbumId, ...rest } = top;
     void _replacedAlbumId;
-    return [
-      {
-        ...rest,
-        album: canonical.album,
-        // Keep the provider's cover when the archive has no front image for the record.
-        ...(canonical.coverUrl ? { artwork: canonical.coverUrl } : {})
-      },
-      ...results.slice(1)
-    ];
+    return {
+      results: [
+        {
+          ...rest,
+          album: canonical.album,
+          // Keep the provider's cover when the archive has no front image for the record.
+          ...(canonical.coverUrl ? { artwork: canonical.coverUrl } : {})
+        },
+        ...results.slice(1)
+      ],
+      settled: true
+    };
   }
 
   public async getSong(id: string): Promise<UnifiedSong> {
