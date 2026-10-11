@@ -5,7 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode, RefObject } from 'react';
 
 import type { AccountProfile, HomePayload, TasteSummary, UnifiedSong } from '@shared/types';
+import { genrePersonalNote, genreSearchQuery, recommendGenres } from '@shared/genres';
 
+import { searchSongs } from '../lib/api';
 import { ArtistPreviewCard } from './ArtistPreviewCard';
 import { TasteOnboarding } from './TasteOnboarding';
 import { Artwork, IconButton } from './ui';
@@ -35,7 +37,7 @@ interface HomePageProps {
   readonly onToggle: () => void;
   readonly onLike: (song: UnifiedSong) => void;
   readonly onOpenArtist: (name: string) => void;
-  readonly onSeedTaste: (artists: string[], languages: string[]) => Promise<void>;
+  readonly onSeedTaste: (artists: string[], languages: string[], genres: string[]) => Promise<void>;
   readonly onOpenAuth: () => void;
   /** Opens the DJ's quick prompt on this page. */
   readonly onAskDj?: () => void;
@@ -57,16 +59,6 @@ function formatPlays(count: number): string | null {
   if (count >= 1e3) return `${Math.round(count / 1e3)}K plays`;
   return `${count} plays`;
 }
-
-/** Browse entries. Every query is one the catalog actually answers well. */
-const MOODS: ReadonlyArray<{ readonly label: string; readonly note: string; readonly query: string; readonly tint: string }> = [
-  { label: 'Romance', note: 'Slow and close', query: 'romantic hits', tint: '#ee6b5f' },
-  { label: 'Party', note: 'Loud and late', query: 'party songs', tint: '#d9e66a' },
-  { label: 'Chill', note: 'Low and easy', query: 'lofi chill songs', tint: '#7bafd4' },
-  { label: 'Workout', note: 'Keep moving', query: 'workout gym songs', tint: '#f0a05a' },
-  { label: 'Focus', note: 'Words out of the way', query: 'instrumental focus music', tint: '#9b8bd0' },
-  { label: 'Throwback', note: 'Already know the words', query: '90s superhit songs', tint: '#6fc3a0' }
-];
 
 /** First unique recording wins, so no shelf shows the same track twice. */
 function dedupe(groups: ReadonlyArray<readonly UnifiedSong[]>, limit: number): UnifiedSong[] {
@@ -296,6 +288,7 @@ export function HomePage({
   );
 }
 interface DiscoverSectionsProps {
+  readonly taste: TasteSummary | null;
   readonly trending: readonly UnifiedSong[];
   readonly madeForYou: readonly UnifiedSong[];
   readonly recommended: readonly UnifiedSong[];
@@ -316,6 +309,9 @@ interface DiscoverSectionsProps {
 }
 
 const titleCase = (word: string): string => word.charAt(0).toUpperCase() + word.slice(1);
+
+/** Each genre row's lead songs, by its genres and queries, for the life of the page. */
+const genreLeadCache = new Map<string, Readonly<Record<string, UnifiedSong>>>();
 /** "Tamil", "Tamil and English", "Tamil, Telugu and English". */
 const languageList = (languages: readonly string[]): string => {
   const names = languages.map(titleCase);
@@ -326,34 +322,69 @@ const languageList = (languages: readonly string[]): string => {
  * Browse's half of the split: somewhere to wander. Moods first (a bento of record sleeves), then
  * what everyone is playing today, then what is loved right now and somewhere new.
  */
-export function DiscoverSections({ trending, madeForYou, recommended, currentSongId, isPlaying, likedIds, onPlay, onToggle, onLike, onExplore, chart: chartFor = null, languages = [], picks = [] }: DiscoverSectionsProps) {
+export function DiscoverSections({ taste, trending, madeForYou, recommended, currentSongId, isPlaying, likedIds, onPlay, onToggle, onLike, onExplore, chart: chartFor = null, languages = [], picks = [] }: DiscoverSectionsProps) {
   const reduced = useReducedMotion();
   const chart = useMemo(() => trending.slice(0, 10), [trending]);
   // Somewhere new: the listener's own picks once there are enough of them, else the general shelf.
   const wander = picks.length >= 6 ? picks : recommended;
+  const genres = useMemo(() => recommendGenres(taste).map((genre) => ({ genre, query: genreSearchQuery(genre, taste) })), [taste]);
+  const genreKey = genres.map(({ genre, query }) => `${genre.id}=${query}`).join('|');
+  // Picked genres or any listening make the row the listener's own; before that it is a tour.
+  const personalGenres = Boolean(taste && (taste.signals > 0 || (taste.genres?.length ?? 0) > 0));
+  const [genreLeads, setGenreLeads] = useState<Readonly<Record<string, UnifiedSong>>>(() => genreLeadCache.get(genreKey) ?? {});
+
+  // Each sleeve wears the cover of the song its search would start with. One search per genre,
+  // kept for the session: coming back to Home must not search six times again.
+  useEffect(() => {
+    const cached = genreLeadCache.get(genreKey);
+    if (cached) { setGenreLeads(cached); return undefined; }
+    const controller = new AbortController();
+    void Promise.all(genres.map(async ({ genre, query }) => {
+      try {
+        const { results } = await searchSongs(query, controller.signal);
+        return [genre.id, results[0]] as const;
+      } catch {
+        return [genre.id, undefined] as const;
+      }
+    })).then((leads) => {
+      if (controller.signal.aborted) return;
+      const next: Record<string, UnifiedSong> = {};
+      for (const [id, song] of leads) if (song) next[id] = song;
+      genreLeadCache.set(genreKey, next);
+      setGenreLeads(next);
+    });
+    return () => controller.abort();
+  }, [genreKey, genres]);
+
   return (
     <>
-      <Section id="browse-moods" title="Browse by mood" hint="Pick a feeling, we fill the room" reduced={reduced}>
+      <Section id="browse-moods" title={personalGenres ? 'Genres for you' : 'Explore genres'} hint={personalGenres ? 'Shaped by what you love' : 'Choose a sound to find songs'} reduced={reduced}>
         <div className="mood-sleeves">
-          {MOODS.map((mood, index) => (
-            <button
-              key={mood.label}
-              type="button"
-              className={`mood-sleeve${index === 0 ? ' is-lead' : ''}`}
-              style={{ '--mood-tint': mood.tint } as CSSProperties}
-              onClick={() => onExplore(mood.query)}
-              aria-label={`${mood.label}: ${mood.note}`}
-            >
-              {/* The record waits half inside its sleeve; hovering slides it out and sets it turning. */}
-              <span className="mood-sleeve__disc" aria-hidden="true"><i /></span>
-              <span className="mood-sleeve__face" aria-hidden="true" />
-              <span className="mood-sleeve__copy">
-                <strong>{mood.label}</strong>
-                <small>{mood.note}</small>
-              </span>
-              <span className="mood-sleeve__go" aria-hidden="true"><ChevronRight size={16} /></span>
-            </button>
-          ))}
+          {genres.map(({ genre, query }, index) => {
+            const note = genrePersonalNote(genre, taste);
+            const cover = genreLeads[genre.id]?.artwork;
+            return (
+              <button
+                key={genre.id}
+                type="button"
+                className={`mood-sleeve${index === 0 ? ' is-lead' : ''}`}
+                style={{ '--mood-tint': genre.tint } as CSSProperties}
+                onClick={() => onExplore(query)}
+                aria-label={`${genre.label}: ${note}`}
+              >
+                {/* The record waits half inside its sleeve; hovering slides it out and sets it turning. */}
+                <span className="mood-sleeve__disc" aria-hidden="true"><i /></span>
+                <span className="mood-sleeve__face" aria-hidden="true">
+                  {cover ? <img src={cover} alt="" loading="lazy" decoding="async" onError={(event) => { event.currentTarget.style.display = 'none'; }} /> : null}
+                </span>
+                <span className="mood-sleeve__copy">
+                  <strong>{genre.label}</strong>
+                  <small>{note}</small>
+                </span>
+                <span className="mood-sleeve__go" aria-hidden="true"><ChevronRight size={16} /></span>
+              </button>
+            );
+          })}
         </div>
       </Section>
 
