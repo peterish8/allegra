@@ -11,20 +11,23 @@ function song(id: string, title: string, artist: string, extra: Partial<UnifiedS
 
 const TUM_HI_HO = song('s1', 'Tum Hi Ho', 'Arijit Singh');
 
-function fakeCatalog(results: (query: string) => UnifiedSong[] | Promise<UnifiedSong[]>) {
+function fakeCatalog(results: (query: string, page: number) => UnifiedSong[] | Promise<UnifiedSong[]>) {
   let calls = 0;
   let inFlight = 0;
   let maxInFlight = 0;
+  const pages: number[] = [];
   return {
     get calls() { return calls; },
     get maxInFlight() { return maxInFlight; },
-    search: async (query: string) => {
+    get pages() { return pages; },
+    search: async (query: string, _limit: number, page: number) => {
       calls += 1;
+      pages.push(page);
       inFlight += 1;
       maxInFlight = Math.max(maxInFlight, inFlight);
       try {
         await new Promise((resolve) => setTimeout(resolve, 5));
-        return { results: await results(query), source: 'Saavn' as const };
+        return { results: await results(query, page), source: 'Saavn' as const };
       } finally {
         inFlight -= 1;
       }
@@ -44,9 +47,12 @@ test('close: a feat. credit that changes the lead, or a near title by the same l
   assert.equal(scoreCandidate({ title: 'Tum Hi Ho', artist: 'Arijit Singh', durationSec: 300 }, TUM_HI_HO), 'close');
 });
 
-test('none: different song, or a Gaana-only row', () => {
+test('none: different song', () => {
   assert.equal(scoreCandidate({ title: 'Channa Mereya', artist: 'Arijit Singh' }, TUM_HI_HO), 'none');
-  assert.equal(scoreCandidate({ title: 'Tum Hi Ho', artist: 'Arijit Singh' }, { ...TUM_HI_HO, source: 'Gaana' }), 'none');
+});
+
+test('exact: a Gaana row is accepted because it has a playable Allegra song ref', () => {
+  assert.equal(scoreCandidate({ title: 'Tum Hi Ho', artist: 'Arijit Singh' }, { ...TUM_HI_HO, source: 'Gaana' }), 'exact');
 });
 
 test('match returns a Saavn snapshot, prefers exact, and keeps batch order', async () => {
@@ -67,13 +73,22 @@ test('a second request for the same track is answered from the cache', async () 
   assert.equal(again?.confidence, 'exact');
 });
 
-test('a misses-only result is remembered; Gaana-only answers count as none', async () => {
-  const catalog = fakeCatalog(() => [{ ...TUM_HI_HO, source: 'Gaana' }]);
+test('a misses-only result is remembered', async () => {
+  const catalog = fakeCatalog(() => [song('not-it', 'Other song', 'Other artist')]);
   const matcher = new ImportMatcher(catalog, new MemoryCacheStore());
   const [first] = await matcher.match([{ title: 'Tum Hi Ho', artist: 'Arijit Singh' }]);
   await matcher.match([{ title: 'Tum Hi Ho', artist: 'Arijit Singh' }]);
   assert.deepEqual(first, { index: 0, song: null, confidence: 'none' });
   assert.equal(catalog.calls, 1);
+});
+
+test('searches the first catalog page and retries a precise album query before giving up', async () => {
+  const catalog = fakeCatalog((query) => query.includes('Aashiqui 2') ? [TUM_HI_HO] : []);
+  const matcher = new ImportMatcher(catalog, new MemoryCacheStore());
+  const [result] = await matcher.match([{ title: 'Tum Hi Ho', artist: 'Arijit Singh', album: 'Aashiqui 2' }]);
+  assert.equal(result?.confidence, 'exact');
+  assert.ok(catalog.pages.every((page) => page === 0));
+  assert.equal(catalog.calls, 2);
 });
 
 test('a throwing catalog gives none for that track without failing the batch, and is not cached', async () => {

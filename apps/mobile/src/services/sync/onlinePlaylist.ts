@@ -16,6 +16,31 @@ import { playlistItemOp } from './plan';
 
 export type AddResult = 'added' | 'exists' | 'error';
 
+/** Add an editable DJ draft to a playlist with a single local refresh after its bounded items are saved. */
+export async function addOnlineSongsToPlaylist(playlistId: string, songs: readonly SongSnapshot[]): Promise<boolean> {
+  try {
+    const playlists = usePlaylistStore.getState();
+    if (!playlistId || playlistId === playlists.defaultPlaylistId) return false;
+    const existing = await getOnlinePlaylistSongs(playlistId);
+    const refs = new Set(existing.map((row) => row.ref));
+    const unique = new Map<string, SongSnapshot>();
+    for (const song of songs) {
+      if (!refs.has(song.ref) && !unique.has(song.ref)) unique.set(song.ref, song);
+    }
+    for (const song of unique.values()) {
+      const at = Date.now();
+      const snapshot = { ...song, at };
+      await upsertOnlinePlaylistSong(playlistId, snapshot);
+      record(playlistItemOp(playlistId, song.ref, true, at, song));
+    }
+    useOnlineLibraryStore.getState().bumpPlaylists();
+    await playlists.fetchPlaylists();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function addOnlineSongToPlaylist(playlistId: string, song: SongSnapshot): Promise<AddResult> {
   try {
     const playlists = usePlaylistStore.getState();

@@ -45,6 +45,8 @@ export function decidePlaybackRoute({ view, deviceId, heldLocally = false, stale
   if (!view.ready && !staleOk) return WAIT;
   const active = view.activeDeviceId;
   if (!active || active === deviceId) return LOCAL;
+  // Paused there long ago: nothing is playing anywhere, so this device plays (Spotify's rule too).
+  if (view.activeDeviceIdle) return LOCAL;
   const deviceName = view.activeDevice?.name ?? 'your other device';
   if (!view.activeDeviceOnline) return { kind: 'local_owner_offline', deviceName };
   return { kind: 'remote', deviceId: active, deviceName };
@@ -52,7 +54,7 @@ export function decidePlaybackRoute({ view, deviceId, heldLocally = false, stale
 
 /** Another of the listener's devices plays and is online, so this one is a remote control. */
 export function isControllingAnotherDevice(view: ConnectView | null, deviceId: string | null): boolean {
-  return Boolean(view?.activeDeviceId && deviceId && view.activeDeviceId !== deviceId && view.activeDeviceOnline);
+  return Boolean(view?.activeDeviceId && deviceId && view.activeDeviceId !== deviceId && view.activeDeviceOnline && !view.activeDeviceIdle);
 }
 
 /** The words for a pick that played here because the device that was playing is offline. */

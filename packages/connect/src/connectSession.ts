@@ -25,6 +25,12 @@ const DEADLINE_GRACE_MS = 2_000;
 /** How long a transfer's destination waits for the playing device to pause and release. */
 const RELEASE_WAIT_MS = 15_000;
 const REPORT_DRIFT_MS = 5_000;
+/**
+ * How long a paused owner stays where playback is. Past it, Spotify's rule: nothing is playing, so
+ * play pressed (or a song picked) on any device plays on that device, and the idle owner stops
+ * heartbeating. Before it, a short pause keeps this device a remote for the one that paused.
+ */
+export const IDLE_OWNER_MS = 10 * 60_000;
 const QUEUE_CAPACITY = 32;
 const EMPTY_PLAYER: PlayerSnapshot = { queue: [], isPlaying: false, positionSec: 0, volume: 1, shuffle: false, repeat: 'off' };
 
@@ -114,6 +120,14 @@ export function createConnectSession({ transport, player, device: initialDevice,
   let inboxRetryCount = 0;
   let handoffInFlight = false;
   let handoffCommandId: string | undefined;
+  let idleTimer: unknown;
+  /** The pause the idle timer was set for, so a snapshot with the same pause does not reset it. */
+  let idleTimerFor: number | undefined;
+  /**
+   * Playback started here while this device was not listening (an idle owner, a hidden tab): its
+   * snapshot is old, so the claim waits for a fresh one instead of reading as lost ownership.
+   */
+  let startedAway = false;
   const processed = new Set<string>();
   const processing = new Set<string>();
   const completions = new Map<string, PendingCompletion>();
@@ -183,6 +197,36 @@ export function createConnectSession({ transport, player, device: initialDevice,
   function stateEpoch(): number { return snapshot?.state?.ownershipEpoch ?? 0; }
   function activeDevice(): ConnectDevice | undefined { return snapshot?.devices.find((row) => row.deviceId === activeId()); }
   function activeOnline(): boolean { return isActive() || activeDevice()?.isOnline === true; }
+
+  /** Server time the owner paused at, while the stored state is paused. */
+  function pausedAt(): number | undefined {
+    const state = snapshot?.state;
+    return state?.activeDeviceId && !state.isPlaying ? state.positionAt : undefined;
+  }
+
+  /**
+   * The owner (this device or another) has sat paused for `IDLE_OWNER_MS`. Sound starting here
+   * does not end that: until this device's claim lands the idle owner is still listed, and reading
+   * it as playing elsewhere then would make the screen a remote and pause what just started.
+   */
+  function ownerIdle(): boolean {
+    const since = pausedAt();
+    if (since === undefined || pending) return false;
+    return sampledClock.now() - since >= IDLE_OWNER_MS;
+  }
+
+  /** Re-renders (and stops listening, for an idle owner) when the owner crosses the idle mark. */
+  function armIdleTimer(): void {
+    const since = disposed ? undefined : pausedAt();
+    if (since === idleTimerFor && (idleTimer !== undefined || since === undefined)) return;
+    clearTimer(idleTimer);
+    idleTimer = undefined;
+    idleTimerFor = since;
+    if (since === undefined) return;
+    const remaining = since + IDLE_OWNER_MS - sampledClock.now();
+    if (remaining <= 0) return;
+    idleTimer = schedule(() => { idleTimer = undefined; notify(); reconcileListening(); }, remaining, 'idle_owner');
+  }
   function localPosition(): number {
     const live = player.getSnapshot();
     return clamp(live.positionSec, live.song?.duration ?? 0);
@@ -241,6 +285,7 @@ export function createConnectSession({ transport, player, device: initialDevice,
       ...(state?.activeDeviceId ? { activeDeviceId: state.activeDeviceId } : {}),
       isThisDeviceActive: isActive(),
       activeDeviceOnline: activeOnline(),
+      activeDeviceIdle: activeId() !== undefined && !isActive() && ownerIdle(),
       ownershipEpoch: stateEpoch(),
       ...(song ? { song } : {}),
       queue: queueItems,
@@ -268,7 +313,9 @@ export function createConnectSession({ transport, player, device: initialDevice,
   }
   function wakeSnapshotWaiters(): void { for (const wake of [...snapshotWaiters]) wake(); snapshotWaiters.clear(); }
 
-  function shouldListen(): boolean { return !disposed && (visible || local.isPlaying || isActive()); }
+  // An owner keeps listening so the others can control it, until it has sat paused long enough
+  // that nobody would expect it to start: then it leaves, like any idle device, and stops beating.
+  function shouldListen(): boolean { return !disposed && (visible || local.isPlaying || (isActive() && !ownerIdle())); }
 
   async function registerAndListen(): Promise<void> {
     if (registering || listening || !shouldListen()) return;
@@ -378,7 +425,12 @@ export function createConnectSession({ transport, player, device: initialDevice,
       }
     }
 
-    if (wasActive && !isActive() && local.isPlaying) void pauseAfterOwnershipLoss();
+    const resumedAway = startedAway && local.isPlaying;
+    startedAway = false;
+    // Played here while away: that is the listener choosing this device, not a stale owner.
+    if (resumedAway) { if (isActive()) void reportLocal(true); else void claimLocal(); }
+    else if (wasActive && !isActive() && local.isPlaying) void pauseAfterOwnershipLoss();
+    armIdleTimer();
     if (next.state?.handoff && next.state.activeDeviceId === device.deviceId && next.state.handoff.toDeviceId !== device.deviceId) {
       void answerHandoff(next.state.handoff.commandId, stateEpoch());
     }
@@ -591,6 +643,15 @@ export function createConnectSession({ transport, player, device: initialDevice,
     if (disposed) return;
     if (command.kind === 'take_over') return;
     const remote = activeId() !== undefined && activeId() !== device.deviceId;
+    if (remote && ownerIdle()) {
+      // Nothing has played for a while: this device plays, and claims when it starts. With nothing
+      // loaded here yet, "play" picks up the idle owner's song where it was left.
+      const state = snapshot?.state;
+      if (command.kind === 'play' && !player.getSnapshot().song && state?.song) {
+        void applyLocalControl({ kind: 'play_song', song: state.song, queue: state.queue, positionSec: state.positionSec });
+      } else void applyLocalControl(command);
+      return;
+    }
     if (remote && !activeOnline()) {
       if (command.kind === 'play' || command.kind === 'play_song') {
         // The listener asked for music and the device that had it cannot answer: it plays here,
@@ -643,8 +704,11 @@ export function createConnectSession({ transport, player, device: initialDevice,
     if (disposed || restoring) return;
     const started = next.isPlaying && !previous.isPlaying;
     if (started) autoplayBlocked = false;
-    if (started && !isActive() && !claimInFlight && next.song) void claimLocal();
-    if (isActive() && !handoffInFlight) void reportLocal(next.positionSec !== previous.positionSec);
+    const current = listening && fresh;
+    if (started && !current && next.song) startedAway = true;
+    if (current && started && !isActive() && !claimInFlight && next.song) void claimLocal();
+    if (current && isActive() && !handoffInFlight) void reportLocal(next.positionSec !== previous.positionSec);
+    armIdleTimer();
     notify();
     reconcileListening();
   }

@@ -51,6 +51,7 @@ const profileData = v.object({
     v.object({
       artists: v.array(tasteEntry),
       languages: v.array(tasteEntry),
+      genres: v.optional(v.array(v.string())),
       signals: v.number(),
       onboarded: v.boolean(),
       updatedAt: v.string()

@@ -54,10 +54,9 @@ import { LIKED_PLAYLIST_ID } from '../services/sync/plan';
 import { onlineRowToSong, playList, removeOnlineFromPlaylist } from '../services/sync/onlineSongs';
 import { PlaylistItem } from '../components/PlaylistItem';
 import { CustomMenu } from '../components/CustomMenu';
-import { CoverFlow } from '../components/CoverFlow';
 import { safeGoBack } from '../utils/navigationService';
 import Marquee from '../components/allegra/Marquee';
-import { GlassButton, PrimaryButton } from '../components/allegra/home';
+import { Tactile } from '../components/allegra/motion';
 import { shuffled } from '../utils/shuffle';
 import { countOf } from '../utils/formatters';
 import { ModernDeleteModal } from '../components/ModernDeleteModal';
@@ -96,9 +95,6 @@ export const PlaylistDetailScreen: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [songToDelete, setSongToDelete] = useState<string | null>(null);
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' } | null>(null);
-  /** Cover rail focus (may differ from playing track while browsing). */
-  const [focusedCoverIndex, setFocusedCoverIndex] = useState(0);
-
   // Store Hooks
   const currentSongId = usePlayerStore(state => state.currentSongId);
   const currentPlaylistId = usePlayerStore(state => state.currentPlaylistId);
@@ -380,28 +376,17 @@ export const PlaylistDetailScreen: React.FC = () => {
   const isSongInPlaylist = currentSong && songs.some(s => s.id === currentSong.id);
   const activeSongInPlaylist = (activeIsPlaying && isSongInPlaylist) ? currentSong : null;
   
-  // Playing track index in the filtered list (for rail highlight + follow).
-  const currentIndex = activeIsPlaying && currentSong
-    ? filteredSongs.findIndex(s => s.id === currentSong.id)
-    : -1;
-
-  const focusedSong =
-    filteredSongs[focusedCoverIndex] ??
-    filteredSongs[0] ??
-    null;
-  
-  // Blurred header bg follows the focused rail cover (browse) then playhead.
+  // The playlist's own cover owns its first impression. The playing track only takes over the
+  // atmosphere while it belongs to this playlist; browsing tracks never makes the header jump.
   const headerImageUri =
-    focusedSong?.coverImageUri ||
-    activeSongInPlaylist?.coverImageUri ||
     playlistCover ||
+    activeSongInPlaylist?.coverImageUri ||
     songs[0]?.coverImageUri;
 
   const activeSongGradient = useMemo(() => {
-     if (focusedSong) return getGradientForSong(focusedSong);
      if (activeSongInPlaylist) return getGradientForSong(activeSongInPlaylist);
      return getGradientForSong(songs[0] || { id: 'default', gradientId: 'dynamic' });
-  }, [focusedSong, activeSongInPlaylist, songs]);
+  }, [activeSongInPlaylist, songs]);
 
   const totalDuration = useMemo(
     () => songs.reduce((acc, song) => acc + (song.duration || 0), 0),
@@ -581,95 +566,59 @@ export const PlaylistDetailScreen: React.FC = () => {
   }
 
   const renderHeader = () => (
-          <View style={styles.listHeader}>
-             {/* Bent CoverFlow deck + free-form fling (loop, tap-to-play, live title) */}
-             {filteredSongs.length > 0 ? (
-                 <CoverFlow
-                    songs={filteredSongs}
-                    playingIndex={currentIndex}
-                    defaultGradientColors={activeSongGradient}
-                    isEditMode={isEditMode}
-                    onFocusedIndexChange={setFocusedCoverIndex}
-                    onSelectSong={(index, song) => handleSongPress(song, index)}
-                    onEditPress={handleCoverPress}
-                 />
-             ) : (
-                 <Pressable onPress={handleCoverPress} disabled={!isEditMode}>
-                   <View style={styles.coverContainer}>
-                      {headerImageUri ? (
-                          <Image
-                            source={{ uri: headerImageUri }}
-                            style={styles.coverArt}
-                            contentFit="cover"
-                            cachePolicy="memory-disk"
-                            transition={0}
-                          />
-                      ) : (
-                          <LinearGradient colors={activeSongGradient as [string, string]} style={styles.coverArt}>
-                              <Ionicons name="musical-notes" size={80} color="rgba(255,255,255,0.4)" />
-                          </LinearGradient>
-                      )}
-                      
-                      {isEditMode && (
-                          <View style={styles.editOverlay}>
-                              <Ionicons name="camera" size={32} color="#fff" />
-                          </View>
-                      )}
-                   </View>
-                 </Pressable>
-             )}
+    <View style={styles.listHeader}>
+      <Pressable
+        onPress={handleCoverPress}
+        disabled={!isEditMode}
+        accessibilityRole={isEditMode ? 'button' : undefined}
+        accessibilityLabel={isEditMode ? 'Change playlist cover' : undefined}
+      >
+        <View style={styles.coverContainer}>
+          {headerImageUri ? (
+            <Image source={{ uri: headerImageUri }} style={styles.coverArt} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+          ) : (
+            <LinearGradient colors={activeSongGradient as [string, string]} style={styles.coverArt}>
+              <Ionicons name="musical-notes" size={70} color="rgba(255,255,255,0.48)" />
+            </LinearGradient>
+          )}
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.34)']} style={styles.coverShade} pointerEvents="none" />
+          {isEditMode ? <View style={styles.editOverlay}><Ionicons name="camera" size={28} color="#fff" /></View> : null}
+        </View>
+      </Pressable>
 
-             {/* Live song title under rail (same cover ≠ same song) */}
-             <Text style={styles.focusedSongTitle} numberOfLines={2}>
-               {focusedSong?.title ?? ' '}
-             </Text>
-             {!!focusedSong?.artist && (
-               <Text style={styles.focusedSongArtist} numberOfLines={1}>
-                 {focusedSong.artist}
-               </Text>
-             )}
-             <View style={styles.metaContainer}>
-                <Text style={styles.playlistMeta}>{countOf(songs.length, 'song')} • {formatTotalDuration()}</Text>
-                {/* Sort Button */}
-                <Pressable 
-                    style={styles.sortButton}
-                    onPress={(e) => {
-                        const { pageX, pageY } = e.nativeEvent;
-                        setSortMenuAnchor({ x: pageX, y: pageY });
-                        setSortMenuVisible(true);
-                    }}
-                >
-                    <Ionicons 
-                        name={sortOption === 'custom' ? "filter" : "filter-circle"}
-                        size={16}
-                        color={sortOption === 'custom' ? "rgba(255,255,255,0.6)" : colors.primary}
-                    />
-                    <Text style={[
-                        styles.sortButtonText,
-                        sortOption !== 'custom' && { color: colors.primary }
-                    ]}>
-                        {getSortLabel()}
-                    </Text>
-                </Pressable>
-             </View>
+      <Text style={styles.playlistHeroTitle} numberOfLines={2}>{playlistName}</Text>
+      <View style={styles.metaContainer}>
+        <Text style={styles.playlistMeta}>{countOf(songs.length, 'song')} • {formatTotalDuration()}</Text>
+        <Pressable
+          style={styles.sortButton}
+          onPress={(e) => {
+            const { pageX, pageY } = e.nativeEvent;
+            setSortMenuAnchor({ x: pageX, y: pageY });
+            setSortMenuVisible(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`Sort playlist, ${getSortLabel()}`}
+        >
+          <Ionicons name={sortOption === 'custom' ? 'filter' : 'filter-circle'} size={16} color={sortOption === 'custom' ? 'rgba(255,255,255,0.72)' : colors.primary} />
+          <Text style={[styles.sortButtonText, sortOption !== 'custom' && { color: colors.primary }]}>{getSortLabel()}</Text>
+        </Pressable>
+      </View>
 
-             {/* Play and shuffle: the whole playlist in one tap (the mini player and the
-                 player itself have the transport and the scrubber). */}
-             {songs.length > 0 ? (
-                 <View style={styles.playRow}>
-                     <View style={styles.playRowButton}>
-                         <PrimaryButton
-                             icon={activeIsPlaying && isPlaying ? 'pause' : 'play'}
-                             label={activeIsPlaying && isPlaying ? 'Pause' : activeIsPlaying ? 'Resume' : 'Play'}
-                             onPress={playOrPause}
-                         />
-                     </View>
-                     <View style={styles.playRowButton}>
-                         <GlassButton icon="shuffle" label="Shuffle" onPress={shufflePlaylist} />
-                     </View>
-                 </View>
-             ) : null}
-          </View>
+      {songs.length > 0 ? (
+        <View style={styles.heroActions}>
+          <Tactile style={styles.heroRoundAction} haptic="select" onPress={shufflePlaylist} accessibilityRole="button" accessibilityLabel="Shuffle playlist">
+            <Ionicons name="shuffle" size={21} color={Signal.wave} />
+          </Tactile>
+          <Tactile style={styles.heroPlayAction} haptic="light" onPress={playOrPause} accessibilityRole="button" accessibilityLabel={activeIsPlaying && isPlaying ? 'Pause playlist' : activeIsPlaying ? 'Resume playlist' : 'Play playlist'}>
+            <Ionicons name={activeIsPlaying && isPlaying ? 'pause' : 'play'} size={19} color="#101010" />
+            <Text style={styles.heroPlayLabel}>{activeIsPlaying && isPlaying ? 'Pause' : activeIsPlaying ? 'Resume' : 'Play'}</Text>
+          </Tactile>
+          <Tactile style={styles.heroRoundAction} haptic="select" onPress={() => (navigation as any).navigate('AddToPlaylist', { playlistId })} accessibilityRole="button" accessibilityLabel="Add songs to playlist">
+            <Ionicons name="add" size={24} color="#fff" />
+          </Tactile>
+        </View>
+      ) : null}
+    </View>
   );
 
   return (
@@ -936,43 +885,37 @@ const styles = StyleSheet.create({
   },
   listHeader: {
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
     width: '100%',
-    // No horizontal clip — stacked cover peeks must paint outside the centre.
-    paddingHorizontal: 0,
-    overflow: 'visible',
+    paddingHorizontal: 24,
+    paddingTop: 10,
   },
   coverContainer: {
+    width: 210,
+    height: 210,
+    borderRadius: 28,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 10,
-    elevation: 8,
-    marginBottom: 10,
-    marginTop: 4,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.38,
+    shadowRadius: 18,
+    elevation: 10,
   },
-  // Play and shuffle side by side, as wide as the cover deck above them.
-  playRow: {
-      flexDirection: 'row',
-      gap: 12,
-      marginTop: 14,
-      marginBottom: 14,
-      width: '100%',
-      maxWidth: 340,
-      alignSelf: 'center',
-  },
-  playRowButton: { flex: 1 },
   coverArt: {
-    width: 188,
-    height: 188,
-    borderRadius: 14,
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+  },
+  coverShade: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 28,
   },
   editOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 28,
   },
   playingIndicator: {
       position: 'absolute',
@@ -985,30 +928,13 @@ const styles = StyleSheet.create({
       justifyContent: 'center',
       alignItems: 'center'
   },
-  playlistName: {
-    fontSize: 22,
-    fontWeight: 'bold',
+  playlistHeroTitle: {
     color: '#fff',
+    fontSize: 28,
+    fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 2,
-    paddingHorizontal: 8,
-  },
-  focusedSongTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#fff',
-    textAlign: 'center',
-    marginTop: 2,
-    marginBottom: 2,
-    paddingHorizontal: 20,
-  },
-  focusedSongArtist: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.65)',
-    textAlign: 'center',
-    marginBottom: 4,
-    paddingHorizontal: 24,
+    marginTop: 18,
+    paddingHorizontal: 12,
   },
   playlistMeta: {
       color: 'rgba(255,255,255,0.6)',
@@ -1018,8 +944,8 @@ const styles = StyleSheet.create({
   metaContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginTop: 2,
-      marginBottom: 2,
+      justifyContent: 'center',
+      marginTop: 8,
       gap: 8,
   },
   sortButton: {
@@ -1035,6 +961,40 @@ const styles = StyleSheet.create({
       fontSize: 12,
       color: 'rgba(255,255,255,0.8)',
       fontWeight: '500',
+  },
+  heroActions: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 14,
+      justifyContent: 'center',
+      marginBottom: 6,
+      marginTop: 18,
+  },
+  heroRoundAction: {
+      alignItems: 'center',
+      backgroundColor: 'rgba(255,255,255,0.12)',
+      borderColor: 'rgba(255,255,255,0.16)',
+      borderRadius: 23,
+      borderWidth: 1,
+      height: 46,
+      justifyContent: 'center',
+      width: 46,
+  },
+  heroPlayAction: {
+      alignItems: 'center',
+      backgroundColor: Signal.wave,
+      borderRadius: 23,
+      flexDirection: 'row',
+      gap: 7,
+      height: 46,
+      justifyContent: 'center',
+      minWidth: 116,
+      paddingHorizontal: 18,
+  },
+  heroPlayLabel: {
+      color: '#101010',
+      fontSize: 15,
+      fontWeight: '800',
   },
   searchPill: {
       flexDirection: 'row',

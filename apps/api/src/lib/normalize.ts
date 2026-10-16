@@ -1,6 +1,6 @@
 import { isDerivative } from './derivative.js';
-import type { SaavnSong } from '../providers/saavn.js';
-import type { UnifiedSong } from '../types.js';
+import type { SaavnAlbum, SaavnSong } from '../providers/saavn.js';
+import type { AlbumDetail, AlbumSummary, UnifiedSong } from '../types.js';
 import { decodeHtml } from './decodeHtml.js';
 import { identityKey } from '../shared/identity.js';
 
@@ -24,6 +24,8 @@ export function normalizeSong(
   const duration = toNonNegativeNumber(raw.duration);
   const playCount = source === 'Gaana' ? 0 : parsePlayCount(raw.playCount ?? raw.play_count);
   const album = getAlbum(raw);
+  // Only Saavn's ids open with GET /api/albums/:id; a Gaana album id belongs to another catalog.
+  const albumId = source === 'Saavn' ? getAlbumId(raw) : null;
   const optional = {
     ...(raw.language ? { language: decodeHtml(raw.language) } : {})
   };
@@ -33,6 +35,7 @@ export function normalizeSong(
     title,
     artist,
     ...(album ? { album: decodeHtml(album) } : {}),
+    ...(album && albumId ? { albumId } : {}),
     artwork: image,
     streamUrl: `/api/stream/${encodeURIComponent(source === 'Gaana' ? `gaana:${id}` : id)}`,
     duration,
@@ -200,38 +203,6 @@ function isCompilationAlbum(album: string | undefined): boolean {
   );
 }
 
-/**
- * True when every row in the group is a licence placement rather than a release.
- *
- * The signature is unmistakable: one master — same play count, same length to the
- * second — listed on several *different* albums, none of which is named after it.
- * Saavn does this for anything that went viral, and the record it was actually
- * released on is usually not in the result set at all. So the album name and the
- * cover art on every one of these rows belong to somebody's playlist.
- *
- * Structural on purpose. A keyword list never ends: "Throwback TikTok Songs" is a
- * compilation and reads like nothing in one.
- */
-export function isPlacementOnly(group: readonly UnifiedSong[]): boolean {
-  if (group.length < 3) return false;
-  const first = group[0];
-  if (!first) return false;
-  const albums = new Set(group.map((song) => (song.album ? flatten(song.album) : '')));
-  if (albums.size < 3) return false;
-  if (group.some(albumMatchesTitle)) return false;
-  return group.every((song) => song.playCount === first.playCount && song.duration === first.duration);
-}
-
-/**
- * Whether this row is worth asking an outside authority about: it is on an album that
- * is not its own, and that album reads like a compilation. Callers pay a rate-limited
- * network round trip for a true answer, so it stays deliberately narrow.
- */
-export function needsCanonicalRelease(song: UnifiedSong): boolean {
-  if (albumMatchesTitle(song)) return false;
-  return isCompilationAlbum(song.album) || isPlacementOnly([song, ...(song.variants ?? [])]);
-}
-
 function stripVariants(song: UnifiedSong): UnifiedSong {
   if (!song.variants) return song;
   const { variants, ...rest } = song;
@@ -259,6 +230,45 @@ function getAlbum(raw: SaavnSong): string | null {
     return raw.album.trim() || null;
   }
   return raw.album?.name?.trim() || null;
+}
+
+/** A provider album id we can pass back to it safely: short, letters, digits, `_` or `-`. */
+function cleanAlbumId(value: unknown): string | null {
+  const id = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
+  return /^[A-Za-z0-9_-]{1,40}$/.test(id) ? id : null;
+}
+
+function getAlbumId(raw: SaavnSong): string | null {
+  return typeof raw.album === 'object' ? cleanAlbumId(raw.album.id) : null;
+}
+
+/** A Saavn album as the contract's `AlbumSummary`, or null without an id and a name. */
+export function normalizeAlbumSummary(raw: SaavnAlbum): AlbumSummary | null {
+  const id = cleanAlbumId(raw.id);
+  const name = decodeHtml((raw.name ?? '').trim());
+  if (!id || !name) return null;
+  const artists = raw.artists?.primary?.map((artist) => decodeHtml(artist.name?.trim() ?? '')).filter(Boolean) ?? [];
+  const year = raw.year === undefined || raw.year === null ? '' : String(raw.year).trim();
+  return {
+    id,
+    name,
+    artist: artists.join(', ') || 'Various Artists',
+    artwork: pickAsset(raw.image, '500x500'),
+    year: /^\d{4}$/.test(year) ? year : null,
+    language: raw.language ? decodeHtml(raw.language) : null
+  };
+}
+
+/** A Saavn album with its songs as `AlbumDetail`: track order kept, unplayable rows dropped. */
+export function normalizeAlbumDetail(raw: SaavnAlbum): AlbumDetail | null {
+  const summary = normalizeAlbumSummary(raw);
+  if (!summary) return null;
+  const songs = (raw.songs ?? []).flatMap((song) => {
+    const normalized = normalizeSong(song, 'Saavn');
+    return normalized ? [normalized] : [];
+  });
+  const counted = typeof raw.songCount === 'number' ? raw.songCount : Number(raw.songCount);
+  return { ...summary, songCount: Number.isFinite(counted) && counted >= songs.length ? Math.trunc(counted) : songs.length, songs };
 }
 
 function pickAsset(

@@ -1,7 +1,7 @@
 import type { LibraryChange } from '@shared/library';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import type { UnifiedSong } from '@shared/types';
-import { matchKey, parseSongRef } from '@shared/songRef';
+import { fromAllegraSong, matchKey, parseSongRef, toAllegraId } from '@shared/songRef';
 
 export type LikeChange = Extract<LibraryChange, { kind: 'like' }>;
 export type PlaylistChange = Extract<LibraryChange, { kind: 'playlist' }>;
@@ -17,6 +17,18 @@ export type LibrarySong = UnifiedSong & {
   readonly libraryRef: SongRef;
   readonly librarySnapshot?: SongSnapshot;
 };
+
+/**
+ * The one key a liked song is known by, whichever form it arrives in: the playing catalog song
+ * (`abc`), a library row built from its saved snapshot (`library:saavn:abc`), or a Gaana row. Taken
+ * from the song's ref, never its display id: a snapshot row's id differs from the catalog id, and
+ * keying by id made a fresh like read as unliked after the next library reload (2026-10-11).
+ */
+export function likedKey(song: UnifiedSong): string {
+  const ref = (song as Partial<LibrarySong>).libraryRef ?? fromAllegraSong(song);
+  if (!ref) return song.id;
+  return toAllegraId(ref) ?? `library:${ref}`;
+}
 
 export function createLibrarySong(ref: SongRef, snapshot?: SongSnapshot, playable?: UnifiedSong): LibrarySong | null {
   if (playable) return { ...playable, libraryRef: ref, ...(snapshot ? { librarySnapshot: snapshot } : {}) };

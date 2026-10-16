@@ -43,6 +43,22 @@ test('save then get round-trips a user and sends the server secret every time', 
   assert.ok(calls.every((call) => call.secret === 'a-long-shared-secret'));
 });
 
+// 2026-10-12: genre picks were saved but dropped by the read, so onboarding forgot them on the next load.
+test('taste genres survive a save and a read; an older row without them reads as none', async () => {
+  const rows = new Map<string, unknown>();
+  const { client } = fakeClient(rows);
+  const store = new ConvexUserStore(new ConvexGateway({ url: 'https://example.convex.cloud', serverSecret: 'a-long-shared-secret', client }));
+  const taste = { artists: [{ name: 'Arijit Singh', score: 4 }], languages: [], genres: ['bollywood', 'retro'], signals: 1, onboarded: true, updatedAt: '2026-10-12T00:00:00.000Z' };
+
+  await store.save({ ...user, taste });
+  assert.deepEqual((await store.get('u1'))?.taste?.genres, ['bollywood', 'retro']);
+
+  const { genres: _dropped, ...older } = taste;
+  void _dropped;
+  rows.set('u1', { ...user, taste: older });
+  assert.deepEqual((await store.get('u1'))?.taste?.genres, []);
+});
+
 test('an unknown user is null, not an error', async () => {
   const { client } = fakeClient(new Map());
   const store = new ConvexUserStore(new ConvexGateway({ url: 'https://example.convex.cloud', serverSecret: 'a-long-shared-secret', client }));

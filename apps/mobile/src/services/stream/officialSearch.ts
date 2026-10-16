@@ -15,32 +15,37 @@ import { YTSong } from '../ytmusic/parsers';
 import { resolveMany, variantsIn } from '../ytmusic/resolver';
 import { dedupeStreamable } from './streamSong';
 
-const MIN_OFFICIAL = 5;
-
 export interface OfficialSearchDeps {
   searchYT: (q: string) => Promise<YTSong[]>;
-  searchCatalog: (q: string) => Promise<UnifiedSong[]>;
+  searchCatalog: (q: string, signal?: AbortSignal) => Promise<UnifiedSong[]>;
 }
 
 const defaultDeps: OfficialSearchDeps = {
   searchYT: q => YTMusicClient.searchSongs(q),
-  searchCatalog: q => searchMusic(q),
+  searchCatalog: (q, signal) => searchMusic(q, undefined, undefined, { signal, relevance: true }),
 };
 
 export async function searchOfficial(
   query: string,
   limit = 20,
   deps: OfficialSearchDeps = defaultDeps,
+  signal?: AbortSignal,
 ): Promise<UnifiedSong[]> {
   const q = query.trim();
   if (!q) return [];
   const [yts, catalog] = await Promise.all([
     deps.searchYT(q).catch(() => [] as YTSong[]),
-    deps.searchCatalog(q).catch(() => [] as UnifiedSong[]),
+    deps.searchCatalog(q, signal).catch(() => [] as UnifiedSong[]),
   ]);
-  const official = await resolveMany(yts, deps.searchCatalog, limit, 6, catalog);
-  if (official.length >= MIN_OFFICIAL) return dedupeStreamable(official).slice(0, limit);
+  const official = await resolveMany(yts, candidateQuery => deps.searchCatalog(candidateQuery, signal), limit, 6, catalog);
+  // A YouTube Music song row is our authority for identity and album art.  Do
+  // not pad a partial official answer with catalog rows: that was the path that
+  // quietly reintroduced karaoke/playlist thumbnails beside official releases.
+  if (yts.length > 0) return dedupeStreamable(official).slice(0, limit);
 
+  // If YouTube Music itself is unavailable, keep search usable with the
+  // catalog's best non-derivative rows. Those rows are deliberately a fallback,
+  // never mixed into a verified official answer.
   const wanted = new Set(variantsIn(q));
   const plain = catalog.filter(s => variantsIn(s.title).every(v => wanted.has(v)));
   return dedupeStreamable([...official, ...plain]).slice(0, limit);

@@ -43,6 +43,8 @@ interface NowPlayingBackgroundProps {
   onCanvasVisibleChange?: (visible: boolean) => void;
   /** A sideways swipe on the cover moves the hero with the finger. */
   shift?: SharedValue<number>;
+  /** The queued artwork that enters from the other side during a cover swipe. */
+  incomingCoverImageUri?: string;
 }
 
 const CROSSFADE_MS = 600;
@@ -57,6 +59,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   playing = false,
   onCanvasVisibleChange,
   shift,
+  incomingCoverImageUri,
 }) => {
   const { frame, onLayout } = usePlayerFrame();
   // The shader only draws while this screen is the one in front.
@@ -67,6 +70,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   const style = useSettingsStore(s => s.playerBackground);
   const appleInspired = useSettingsStore(s => s.appleMusicInspired);
   const palette = useArtworkPalette(coverImageUri, gradientColors);
+  const incomingPalette = useArtworkPalette(incomingCoverImageUri, gradientColors);
 
   const glowOn = style === 'blend' && showLyrics;
   // The glow (a Skia canvas and a palette read) sat invisible under the cover on every open of the player. It is
@@ -117,6 +121,13 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
     const x = shift ? shift.value : 0;
     return { opacity: 1 - 0.6 * Math.min(1, Math.abs(x) / Math.max(1, width)), transform: [{ translateX: x }] as const };
   });
+  // The outgoing artwork follows the finger through `shift`. Its queued neighbour mirrors that move,
+  // beginning just beyond the opposite edge, so the full-bleed Apple hero feels like one continuous strip.
+  const incomingSlideStyle = useAnimatedStyle(() => {
+    const x = shift ? shift.value : 0;
+    const enteringX = x < 0 ? x + width : x > 0 ? x - width : width;
+    return { transform: [{ translateX: enteringX }] as const };
+  });
 
   useEffect(() => {
     diag('player', `background ${style}, apple inspired ${appleInspired}, lyrics ${showLyrics}, glow ${glowOn}, hero ${heroOn}, canvas ${canvas ? canvas.source : 'none'}`);
@@ -160,6 +171,12 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
             scrimStrength={0}
             overlay={<AppleBackdrop uri={coverImageUri} palette={palette} showHero={heroOn} frame={frame} veil />}
           />
+        </Animated.View>
+      ) : null}
+
+      {incomingCoverImageUri ? (
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, incomingSlideStyle]}>
+          <AppleBackdrop uri={incomingCoverImageUri} palette={incomingPalette} showHero={heroOn} frame={frame} />
         </Animated.View>
       ) : null}
 

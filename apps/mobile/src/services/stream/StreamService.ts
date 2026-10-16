@@ -14,6 +14,7 @@ import { creditedArtists } from '@shared/identity';
 import type { ListenVerdict } from '@shared/listenSignal';
 import { RadioSession, type RadioTaste } from '@shared/radio';
 import { withUpcoming } from '../../../../../packages/connect/src/queueStager';
+import type { UnifiedSong as CatalogSong } from '@shared/types';
 import { prepareNextInQueue, usePlayerStore, usesNativeQueue } from '../../store/playerStore';
 import { usePlaybackModesStore } from '../../store/playbackModesStore';
 import type { RepeatMode } from '../../../../../packages/connect/src/types';
@@ -25,6 +26,7 @@ import { Song, UnifiedSong } from '../../types/song';
 import { recommendFor } from './recommend';
 import { getRecommendations } from '../MultiSourceSearchService';
 import { lyricaService } from '../LyricaService';
+import { ALLEGRA_API_URL } from '../account/config';
 import {
   dedupeStreamable,
   isStreamSongId,
@@ -38,8 +40,28 @@ const remember = (songs: UnifiedSong[]) => {
   for (const s of songs) catalog.set(toStreamSong(s).id, s);
 };
 
+const fromCatalog = (song: CatalogSong): UnifiedSong => {
+  const streamUrl = /^https?:\/\//i.test(song.streamUrl) ? song.streamUrl : `${ALLEGRA_API_URL}${song.streamUrl}`;
+  return {
+    id: song.id,
+    title: song.title,
+    artist: song.artist,
+    highResArt: song.artwork,
+    thumbnail: song.artwork,
+    downloadUrl: streamUrl,
+    streamUrl,
+    source: song.source,
+    duration: song.duration,
+    hasLyrics: song.hasLyrics,
+    language: song.language,
+    playCount: song.playCount,
+  };
+};
+
 /** The song radio a search hit or the Radio menu started. Null once another queue is played. */
 let radio: RadioSession<UnifiedSong> | null = null;
+/** An explicitly started DJ/radio keeps filling its queue even when autoplay is disabled. */
+let radioForceRefill = false;
 /** Its candidate fetch in flight, shared so a refill never asks twice. */
 let radioLoad: Promise<void> = Promise.resolve();
 /** Stream ids the listener queued with Play next: they stay ahead of radio picks. */
@@ -75,6 +97,7 @@ export const StreamService = {
   /** Replace the queue with `songs` and start playing at `index`. */
   play(songs: UnifiedSong[], index = 0, autoplay = true): void {
     radio = null;
+    radioForceRefill = false;
     const playable = dedupeStreamable(songs);
     if (playable.length === 0) return;
     const target = songs[index];
@@ -82,6 +105,47 @@ export const StreamService = {
     remember(playable);
     const queue = playable.map(s => toStreamSong(s));
     usePlayerStore.getState().setPlaylistQueue(STREAM_QUEUE_ID, queue, startIndex, autoplay);
+  },
+
+  /** Starts a validated AI DJ catalog set only after the listener presses Play. */
+  startDjCatalog(songs: CatalogSong[]): number {
+    const playable = dedupeStreamable(songs.map(fromCatalog));
+    if (playable.length === 0) return 0;
+    StreamService.play(playable, 0, true);
+    return playable.length;
+  },
+
+  /** Applies a catalog-backed AI DJ plan without replacing or starting the current track. */
+  applyDjUpcoming(songs: CatalogSong[], operation: 'replace_upcoming' | 'insert', insertAfter: number | null = null): boolean {
+    const state = usePlayerStore.getState();
+    if (!state.currentSong) return false;
+    const list = state.playlistQueue ?? [state.currentSong];
+    const current = list.find(song => song.id === state.currentSongId) ?? state.currentSong;
+    const currentIndex = Math.max(0, list.findIndex(song => song.id === current.id));
+    const upcoming = list.slice(currentIndex + 1);
+    const currentIdentity = `${current.title.trim().toLocaleLowerCase()}|${(current.artist ?? '').trim().toLocaleLowerCase()}`;
+    const converted = songs.map(fromCatalog);
+    const pinned = upcoming.filter(song => userQueued.has(song.id));
+    const exclude = operation === 'insert'
+      ? [current.id, currentIdentity, ...upcoming.map(song => song.id), ...upcoming.map(song => `${song.title.trim().toLocaleLowerCase()}|${(song.artist ?? '').trim().toLocaleLowerCase()}`)]
+      : [current.id, currentIdentity, ...pinned.map(song => song.id), ...pinned.map(song => `${song.title.trim().toLocaleLowerCase()}|${(song.artist ?? '').trim().toLocaleLowerCase()}`)];
+    const planned = dedupeStreamable(converted, exclude);
+    if (planned.length === 0) return false;
+    remember(planned);
+    const items = planned.map(song => toStreamSong(song));
+    let nextUpcoming: Song[];
+    if (operation === 'insert') {
+      const index = Math.min(Math.max(0, insertAfter ?? 0), upcoming.length);
+      nextUpcoming = [...upcoming.slice(0, index), ...(items as Song[]), ...upcoming.slice(index)];
+    } else {
+      nextUpcoming = [...pinned, ...(items as Song[])];
+    }
+    radio = null;
+    radioForceRefill = false;
+    for (const item of items) userQueued.add(item.id);
+    state.updateQueue(withUpcoming(list, current, nextUpcoming));
+    prepareNextInQueue();
+    return true;
   },
 
   /** Adds songs right after the current one (or starts playback when idle). */
@@ -158,6 +222,40 @@ export const StreamService = {
     rerank(session);
   },
 
+  /** A listener's like feeds the current set, so the next picks lean toward that artist. */
+  love(streamId: string): void {
+    const session = activeRadio();
+    const song = catalog.get(streamId);
+    if (!session || !song) return;
+    session.love(song);
+    rerank(session);
+  },
+
+  /** Starts the full DJ flow from a recent catalog listen, even if autoplay is turned off. */
+  async startDj(seed: UnifiedSong): Promise<number> {
+    const playable = dedupeStreamable([seed])[0];
+    if (!playable) return 0;
+    const target = toStreamSong(playable);
+    const before = usePlayerStore.getState();
+    if (before.currentSongId !== target.id || before.currentPlaylistId !== STREAM_QUEUE_ID) {
+      StreamService.play([playable], 0);
+    }
+    if (usePlayerStore.getState().currentSongId !== target.id) return 0;
+    remember([playable]);
+    const session = new RadioSession(playable, localTaste());
+    radio = session;
+    radioForceRefill = true;
+    radioHeard.clear();
+    radioHeard.add(target.id);
+    radioLoad = gather(session, playable);
+    await settled(radioLoad);
+    if (activeRadio() !== session || usePlayerStore.getState().currentSongId !== target.id) return 0;
+    await extendRadio(target.id, true);
+    const latest = usePlayerStore.getState();
+    const at = latest.playlistQueue?.findIndex(song => song.id === target.id) ?? -1;
+    return at < 0 ? 0 : Math.max(0, (latest.playlistQueue?.length ?? 0) - at - 1);
+  },
+
   /**
    * "Save" for a streamed song: queue it for download so it lands in the
    * library with lyrics and art. Returns false when the song is unknown.
@@ -215,6 +313,9 @@ export const StreamService = {
     const session = new RadioSession(seed, localTaste());
     session.add(fresh, 'mix', seed);
     radio = session;
+    radioForceRefill = true;
+    catalog.set(song.id, seed);
+    remember([seed]);
     radioHeard.clear();
     radioHeard.add(current.id);
     radioLoad = Promise.resolve();
@@ -335,7 +436,7 @@ async function extendRadio(songId: string, force = false): Promise<void> {
     repeat: usePlaybackModesStore.getState().repeatMode,
     enabled: useSettingsStore.getState().autoQueueRefill ?? true,
     remaining: queue.length - 1 - idx,
-    force,
+    force: force || radioForceRefill,
   });
   if (!refill) return;
   const playlistId = state.currentPlaylistId;
@@ -379,7 +480,10 @@ onQueueLow(({ mediaId }) => {
 
 /** The song radio, while its stream queue is still the one playing (any other queue ends it). */
 function activeRadio(): RadioSession<UnifiedSong> | null {
-  if (radio && usePlayerStore.getState().currentPlaylistId !== STREAM_QUEUE_ID) radio = null;
+  if (radio && usePlayerStore.getState().currentPlaylistId !== STREAM_QUEUE_ID) {
+    radio = null;
+    radioForceRefill = false;
+  }
   return radio;
 }
 

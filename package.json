@@ -21,6 +21,7 @@
     "test": "npm test --workspaces --if-present && npm run infra:test && npm run convex:test",
     "build": "npm run build --workspaces --if-present",
     "e2e": "playwright test -c tests/e2e/playwright.config.ts",
+    "e2e:connect-login": "node tests/e2e/connect-login.mjs",
     "mobile:check": "npm --prefix apps/mobile run ci"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
 import type { Consent } from './legal';
+import type { MusicGenreId } from './genres';
 import type { LyricWord } from './wordSync';
 
 export interface UnifiedSong {
@@ -6,6 +7,8 @@ export interface UnifiedSong {
   readonly title: string;
   readonly artist: string;
   readonly album?: string;
+  /** The catalog's album id (Saavn only) for `GET /api/albums/:id`. Absent for Gaana and canonical-release names. */
+  readonly albumId?: string;
   readonly artwork: string;
   readonly streamUrl: string;
   readonly duration: number;
@@ -57,6 +60,23 @@ export interface ArtistProfile extends ArtistSummary {
   readonly similar: ArtistSummary[];
 }
 
+/** An album as the catalog knows it (`GET /api/search/albums`). */
+export interface AlbumSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly artist: string;
+  readonly artwork: string | null;
+  readonly year: string | null;
+  readonly language: string | null;
+}
+
+/** A whole album in the catalog's own track order (`GET /api/albums/:id`). Every song is playable. */
+export interface AlbumDetail extends AlbumSummary {
+  /** The catalog's count; `songs` can be shorter when a row has no stream. */
+  readonly songCount: number;
+  readonly songs: readonly UnifiedSong[];
+}
+
 /** Album motion artwork (`GET /api/canvas`). `videoUrl` is always an https://*.apple.com URL. */
 export interface MotionArtwork {
   readonly source: 'Apple Music';
@@ -93,6 +113,8 @@ export interface AccountProfile {
 export interface TasteSummary {
   readonly topArtists: { readonly name: string; readonly score: number }[];
   readonly languages: { readonly name: string; readonly score: number }[];
+  /** Explicit genre picks from onboarding, kept stable as catalogue ids. */
+  readonly genres?: readonly MusicGenreId[];
   readonly signals: number;
   /** False until they pick favourites or listen enough for us to know. */
   readonly onboarded: boolean;

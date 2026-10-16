@@ -28,6 +28,7 @@ export type TabParamList = {
   Luvs: undefined;
   Library: NavigatorScreenParams<LibraryStackParamList> | undefined; // Was Playlists
   Search: undefined; // replaced Settings in the tab bar
+  Dj: undefined;
   // Pushed screens without a tab icon. They live in the tab navigator so the
   // bottom bar stays on screen, as in Spotify and Apple Music (see VISIBLE_TABS).
   Settings: undefined;

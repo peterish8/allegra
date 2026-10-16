@@ -3,7 +3,26 @@ import test from 'node:test';
 
 import type { LibraryChange } from '@shared/library';
 
-import { createLibrarySong, exactSaavnMatch, foldLibraryRows } from './libraryRows.ts';
+import { createLibrarySong, exactSaavnMatch, foldLibraryRows, likedKey } from './libraryRows.ts';
+
+// Regression (2026-10-11): a song liked on Now Playing, rebuilt after a library reload from its saved
+// snapshot (id "library:saavn:abc"), was keyed apart from the playing song ("abc") and read as unliked.
+test('a liked song has one key whether it is playing or rebuilt from its library snapshot', () => {
+  const snapshot = { ref: 'saavn:abc' as const, title: 'Tum Hi Ho', artist: 'Arijit Singh', artwork: '', duration: 262 };
+  const playing = { id: 'abc', title: 'Tum Hi Ho', artist: 'Arijit Singh', artwork: '', streamUrl: '/api/stream/abc', duration: 262, hasLyrics: true, playCount: 0, source: 'Saavn' as const };
+  const fromSnapshot = createLibrarySong('saavn:abc', snapshot);
+  const fromPlayable = createLibrarySong('saavn:abc', snapshot, playing);
+  assert.equal(fromSnapshot?.id, 'library:saavn:abc', 'the snapshot row keeps its own display id');
+  assert.equal(likedKey(playing), 'abc');
+  assert.equal(likedKey(fromSnapshot!), likedKey(playing));
+  assert.equal(likedKey(fromPlayable!), likedKey(playing));
+
+  const gaanaSnapshot = { ref: 'gaana:g7' as const, title: 'Raat', artist: 'A', artwork: '', duration: 200 };
+  const gaanaRow = createLibrarySong('gaana:g7', gaanaSnapshot);
+  const gaanaPlaying = { ...playing, id: 'gaana:g7', source: 'Gaana' as const };
+  assert.equal(likedKey(gaanaRow!), 'library:gaana:g7');
+  assert.equal(likedKey(gaanaPlaying), likedKey(gaanaRow!));
+});
 
 test('keeps Gaana refs and snapshots while folding current likes', () => {
   const changes: LibraryChange[] = [

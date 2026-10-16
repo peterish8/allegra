@@ -95,6 +95,12 @@ interface NowPlayingControlsProps {
   onOutputPress?: () => void;
   /** Playback is on another device: the output button lights up. */
   outputActive?: boolean;
+  /** Lyrics-only view: keep just the title, timeline and transport on screen. */
+  lyricsFullscreen?: boolean;
+  /** Leaves the lyrics-only view without hiding the lyrics themselves. */
+  onExitLyricsFullscreen?: () => void;
+  /** Opens the lyrics-only view from the button beside song options. */
+  onEnterLyricsFullscreen?: () => void;
 }
 
 /**
@@ -234,6 +240,9 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   remoteVolume,
   onOutputPress,
   outputActive = false,
+  lyricsFullscreen = false,
+  onExitLyricsFullscreen,
+  onEnterLyricsFullscreen,
 }) => {
   const insets = useSafeAreaInsets();
   // Where the transport's bottom edge sits in the player, so Up next can lift
@@ -356,6 +365,74 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
     NativeAudioPlayer.openOutputSwitcher();
   }, []);
 
+  if (lyricsFullscreen) {
+    return (
+      <Animated.View
+        style={[styles.focusContainer, animatedStyle]}
+        pointerEvents={controlsVisible ? 'box-none' : 'none'}
+      >
+        <View style={[styles.focusContent, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
+          <View style={styles.focusTitleRow}>
+            <Tactile
+              onPress={() => { tick('light'); onExitLyricsFullscreen?.(); }}
+              hitSlop={10}
+              pressScale={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Exit lyrics fullscreen"
+              style={styles.roundGlass}
+            >
+              <MaterialCommunityIcons name="fullscreen-exit" size={20} color={INK} />
+            </Tactile>
+            <Text style={styles.focusTitle} numberOfLines={1}>{currentSongTitle || 'Not playing'}</Text>
+          </View>
+
+          <View style={styles.focusScrubber}>
+            <AppleSlider
+              progress={progress}
+              onCommit={seek}
+              height={10}
+              accessibilityLabel="Song position"
+              renderBelow={display => <TimeLabels display={display} durationSV={durationSV} />}
+            />
+          </View>
+
+          <View style={styles.focusTransport}>
+            <Tactile
+              onPress={() => { tick('light'); setBackNudge(n => n + 1); onSkipBackward(); }}
+              hitSlop={12}
+              pressScale={0.84}
+              accessibilityRole="button"
+              accessibilityLabel="Previous"
+              style={styles.transportBtn}
+            >
+              <NudgeIcon name="play-back" size={40} color={INK} direction={-1} trigger={backNudge} />
+            </Tactile>
+            <Tactile
+              onPress={() => { tick('medium'); onTogglePlay(); }}
+              hitSlop={12}
+              pressScale={0.86}
+              accessibilityRole="button"
+              accessibilityLabel={storePlaying ? 'Pause' : 'Play'}
+              style={styles.transportBtn}
+            >
+              <MorphIcon on={storePlaying} onIcon="pause" offIcon="play" size={52} color={INK} offStyle={styles.playNudge} />
+            </Tactile>
+            <Tactile
+              onPress={() => { tick('light'); setForwardNudge(n => n + 1); onSkipForward(); }}
+              hitSlop={12}
+              pressScale={0.84}
+              accessibilityRole="button"
+              accessibilityLabel="Next"
+              style={styles.transportBtn}
+            >
+              <NudgeIcon name="play-forward" size={40} color={INK} direction={1} trigger={forwardNudge} />
+            </Tactile>
+          </View>
+        </View>
+      </Animated.View>
+    );
+  }
+
   return (
     <Animated.View
       // Pinned to the bottom. Its size never changes with lyrics: the volume row fades in place (ROWS_MOVE).
@@ -393,6 +470,18 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             </View>
           </AnimatedPressable>
 
+          {onEnterLyricsFullscreen ? (
+            <Tactile
+              onPress={() => { tick('light'); onEnterLyricsFullscreen(); }}
+              hitSlop={8}
+              pressScale={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Open lyrics fullscreen"
+              style={styles.roundGlass}
+            >
+              <MaterialCommunityIcons name="fullscreen" size={19} color={INK} />
+            </Tactile>
+          ) : null}
           {onMorePress ? (
             <Tactile
               onPress={e => { tick('light'); onMorePress(e); }}
@@ -525,6 +614,13 @@ const CONTAINER_PAD_TOP = 40;
 
 const styles = StyleSheet.create({
   container: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 15, paddingTop: CONTAINER_PAD_TOP },
+  focusContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 25 },
+  // No band behind the controls: the lyrics frame stops above them and fades its own edge.
+  focusContent: { paddingHorizontal: CONTENT_PAD },
+  focusTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  focusTitle: { flex: 1, color: INK, fontSize: 17, fontWeight: '700' },
+  focusScrubber: { marginTop: 16 },
+  focusTransport: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', marginTop: 8 },
   content: { paddingHorizontal: CONTENT_PAD },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // The row's gap (10) plus this makes DOCK_GAP between the thumbnail and the title.

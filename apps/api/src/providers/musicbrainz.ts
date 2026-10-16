@@ -10,8 +10,8 @@ import { fetchWithTimeout } from '../lib/fetchWithTimeout.js';
  *
  * MusicBrainz knows the difference: a release group is typed, and an editorial
  * compilation is tagged `Compilation` in its secondary types. Filtering to a plain
- * `Album` with no secondary type and taking the earliest leaves the original record.
- * Its cover comes from the Cover Art Archive, keyed on the same release group.
+ * `Album` or `Single` with no secondary type and taking the earliest leaves the
+ * original release. Its cover comes from the Cover Art Archive, keyed on the same release group.
  *
  * Both are free, need no key, and are rate limited to roughly one request a second
  * per IP — so callers must cache, and must only ask about rows that need it.
@@ -153,7 +153,7 @@ interface ElectedRelease {
 }
 
 /**
- * The earliest plain `Album` release of a recording that matches the duration we hold.
+ * The earliest plain `Album` or `Single` release of a recording that matches the duration we hold.
  * Exported so the election can be tested without reaching MusicBrainz.
  */
 export function electRelease(
@@ -171,7 +171,7 @@ export function electRelease(
 
     for (const release of recording.releases ?? []) {
       const group = release['release-group'];
-      if (!group || group['primary-type'] !== 'Album') continue;
+      if (!group || (group['primary-type'] !== 'Album' && group['primary-type'] !== 'Single')) continue;
       if ((group['secondary-types'] ?? []).length > 0) continue;
       const album = release.title?.trim();
       if (!album) continue;

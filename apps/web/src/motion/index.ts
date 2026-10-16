@@ -41,7 +41,9 @@ export const spring = {
   /** Soft-focus lyrics: ~320–450ms, little/no bounce. */
   lyrics: { type: 'spring', stiffness: 260, damping: 38, mass: 0.85 } as const,
   /** Artwork breathe while playing (1 → 1.015). */
-  breathe: { type: 'spring', stiffness: 120, damping: 28, mass: 1 } as const
+  breathe: { type: 'spring', stiffness: 120, damping: 28, mass: 1 } as const,
+  /** A ball landing: stiff and under-damped, so it squashes, overshoots and wobbles back. */
+  bounce: { type: 'spring', stiffness: 700, damping: 12, mass: 1 } as const
 };
 
 export const pageVariants: Variants = {

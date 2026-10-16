@@ -7,7 +7,7 @@ import { LEGAL_PATHS, type LegalDocument } from '@shared/legal';
 import { flags as defaultFlags, type Flags } from './flags';
 
 export type AppView =
-  | 'home' | 'discover' | 'library' | 'album' | 'artist' | 'playlist' | 'liked' | 'shared' | 'settings'
+  | 'home' | 'discover' | 'dj' | 'library' | 'album' | 'artist' | 'playlist' | 'liked' | 'shared' | 'settings'
   | 'import' | 'blends' | 'blend' | 'blendJoin' | 'luvLink'
   | LegalDocument;
 
@@ -31,6 +31,7 @@ export interface Route {
 export const paths = {
   home: '/',
   discover: '/discover',
+  dj: '/dj',
   library: '/library',
   liked: '/liked',
   album: '/album',
@@ -89,6 +90,8 @@ export function parseRoute(pathname: string, enabled: Flags = defaultFlags): Rou
     }
     case 'discover':
       return { view: 'discover', ...NO_PARAMS };
+    case 'dj':
+      return { view: 'dj', ...NO_PARAMS };
     case 'library':
       return { view: 'library', ...NO_PARAMS };
     case 'liked':
