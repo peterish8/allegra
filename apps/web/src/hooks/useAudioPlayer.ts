@@ -541,6 +541,20 @@ export function useAudioPlayer(): AudioPlayerState {
 }
 
 /** Next track that is not a remaster of the current song. */
+/**
+ * The song that plays after `current` when it ends on its own, or null when that cannot be
+ * known ahead (shuffle picks at random) or is the same song (repeat one).
+ */
+export function upcomingSong(
+  list: readonly UnifiedSong[],
+  current: UnifiedSong | null,
+  shuffle: boolean,
+  repeat: RepeatMode
+): UnifiedSong | null {
+  if (!current || shuffle || repeat === 'one') return null;
+  return nextDistinct(list, list.findIndex((item) => item.id === current.id), current, repeat === 'all') ?? null;
+}
+
 function nextDistinct(
   list: readonly UnifiedSong[],
   index: number,

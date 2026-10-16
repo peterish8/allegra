@@ -10,8 +10,11 @@ import { DEFAULT_KARAOKE_MIX, normalizeMix, type KaraokeMix } from './karaokeMix
 export type LyricsSize = 'small' | 'medium' | 'large';
 /** How the sung line lights up: letter by letter as it is sung, or the whole line at once. Same as the phone. */
 export type LyricsHighlight = 'letters' | 'lines';
-/** `auto` tries the on-device model and falls back; `basic` always uses the light remover. */
-export type KaraokeMode = 'auto' | 'basic';
+/**
+ * `auto` uses the on-device model where the device can keep up, while `ai` tries it on
+ * any device. The light remover remains the instant fallback, not a persistent mode.
+ */
+export type KaraokeMode = 'auto' | 'ai';
 
 /** What moves behind the shell: the flowing shader, or the phone's glow (the cover's colours across the top, black below). */
 export type AppBackground = 'shader' | 'glow';
@@ -34,6 +37,10 @@ export interface Settings {
   readonly lyricsOffsets: Readonly<Record<string, number>>;
   readonly karaokeMode: KaraokeMode;
   readonly karaokeMix: KaraokeMix;
+  /** Karaoke carries on into the next song instead of switching off at every change. */
+  readonly karaokeStayOn: boolean;
+  /** Load the AI model in idle time for listeners who use karaoke, so a press starts at once. */
+  readonly karaokeWarmUp: boolean;
   /** Vercel Analytics + Speed Insights (cookie-less). Applies from the next page load. */
   readonly analytics: boolean;
   /** Whose "Top 10 today": `auto` (where you are), `IN` (all of India) or a state code (packages/shared/regions.ts). */
@@ -60,6 +67,8 @@ export const DEFAULT_SETTINGS: Settings = {
   lyricsOffsets: {},
   karaokeMode: 'auto',
   karaokeMix: DEFAULT_KARAOKE_MIX,
+  karaokeStayOn: true,
+  karaokeWarmUp: true,
   analytics: true,
   chartRegion: 'auto'
 };
@@ -112,8 +121,14 @@ export function parseSettings(raw: string | null): Settings {
     playerBlackBackground: flag(stored.playerBlackBackground, DEFAULT_SETTINGS.playerBlackBackground),
     rememberLyricsOffset: flag(stored.rememberLyricsOffset, DEFAULT_SETTINGS.rememberLyricsOffset),
     lyricsOffsets: offsets(stored.lyricsOffsets),
-    karaokeMode: oneOf(stored.karaokeMode, ['auto', 'basic'], DEFAULT_SETTINGS.karaokeMode),
+    // Older builds allowed Basic-only. Migrate that preference to Auto; downloads still
+    // require consent, and Auto keeps the light remover when this device cannot keep up.
+    karaokeMode: stored.karaokeMode === 'basic'
+      ? 'auto'
+      : oneOf(stored.karaokeMode, ['auto', 'ai'], DEFAULT_SETTINGS.karaokeMode),
     karaokeMix: stored.karaokeMix === undefined ? DEFAULT_KARAOKE_MIX : normalizeMix(stored.karaokeMix),
+    karaokeStayOn: flag(stored.karaokeStayOn, DEFAULT_SETTINGS.karaokeStayOn),
+    karaokeWarmUp: flag(stored.karaokeWarmUp, DEFAULT_SETTINGS.karaokeWarmUp),
     analytics: flag(stored.analytics, DEFAULT_SETTINGS.analytics),
     chartRegion: oneOf(stored.chartRegion, CHART_REGIONS, DEFAULT_SETTINGS.chartRegion)
   };

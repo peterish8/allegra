@@ -129,7 +129,7 @@ test('the full player opens with lyrics and closes again', async ({ page }) => {
   });
   await expect(player).toBeVisible();
   await expect(player.getByRole('tab', { name: 'Lyrics' })).toBeVisible();
-  await player.getByRole('tab', { name: 'Up next' }).click();
+  await player.getByRole('tab', { name: 'Queue' }).click();
   await page.keyboard.press('Escape');
   await expect(player).toBeHidden();
   await expectPlaying(page);

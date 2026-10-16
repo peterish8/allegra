@@ -14,11 +14,11 @@ interface KaraokeMixSheetProps {
   readonly returnFocusRef: RefObject<HTMLElement | null>;
 }
 
-const PRESETS: readonly { readonly label: string; readonly mix: KaraokeMix }[] = [
-  { label: 'Karaoke', mix: DEFAULT_KARAOKE_MIX },
-  { label: 'Guide vocal', mix: { vocals: 0.25, instruments: 1 } },
-  { label: 'Vocals only', mix: { vocals: 1, instruments: 0 } },
-  { label: 'Original', mix: { vocals: 1, instruments: 1 } }
+const PRESETS: readonly { readonly label: string; readonly name: string; readonly mix: KaraokeMix }[] = [
+  { label: 'Karaoke', name: 'Karaoke mix', mix: DEFAULT_KARAOKE_MIX },
+  { label: 'Guide', name: 'Guide vocal mix', mix: { vocals: 0.25, instruments: 1 } },
+  { label: 'Vocals', name: 'Vocals only', mix: { vocals: 1, instruments: 0 } },
+  { label: 'Original', name: 'Original mix', mix: { vocals: 1, instruments: 1 } }
 ];
 
 function sameMix(a: KaraokeMix, b: KaraokeMix): boolean {
@@ -67,17 +67,17 @@ export function KaraokeMixSheet({ open, karaoke, onClose, returnFocusRef }: Kara
     };
   }, [open, returnFocusRef]);
 
-  const { mix, setMix, supportsMix, active, busy, basicByChoice, backend } = karaoke;
+  const { mix, setMix, supportsMix, active, busy, backend, status } = karaoke;
   const basic = active && backend === 'midside';
   const locked = basic;
 
   let note: string;
-  if (basicByChoice) note = 'Basic mode is on in Settings. It removes vocals without separating them, so there is nothing to mix. Set Karaoke to Auto to use these sliders.';
-  else if (basic) note = 'The on-device AI model isn’t running here, so vocals and instruments aren’t separated. These levels apply whenever the AI model runs.';
-  else if (busy) note = 'Applies as soon as the separated track is ready.';
-  else if (!active) note = 'Saved for next time. Turn Karaoke on to hear it.';
-  else if (supportsMix) note = 'Separated on this device. Nothing is uploaded.';
-  else note = 'Applies as soon as the separated track is ready.';
+  if (basic) note = 'Choose AI below; you’ll confirm before its first download.';
+  else if (busy) note = 'Saved. AI mix applies as separation catches up.';
+  else if (status === 'catching-up') note = 'Saved. AI mix applies once separation catches up.';
+  else if (!active) note = 'Saved for next time. Turn on Karaoke to hear your mix.';
+  else if (supportsMix) note = 'AI separation is running on this device.';
+  else note = 'Saved for when AI separation is ready.';
 
   const fader = (key: keyof KaraokeMix, label: string, icon: typeof Mic) => {
     const Icon = icon;
@@ -124,19 +124,50 @@ export function KaraokeMixSheet({ open, karaoke, onClose, returnFocusRef }: Kara
           }}
         >
           <div className="karaoke-mix__head">
-            <h3 id={titleId}>Karaoke mix</h3>
+            <div className="karaoke-mix__copy">
+              <span className="karaoke-mix__eyebrow">SOUND BALANCE</span>
+              <h3 id={titleId}>Karaoke mix</h3>
+              <p>Set vocals and music separately.</p>
+            </div>
             <button type="button" className="karaoke-mix__close" onClick={onClose} aria-label="Close karaoke mix">
               <X size={16} aria-hidden="true" />
             </button>
           </div>
-          {fader('vocals', 'Vocals', Mic)}
-          {fader('instruments', 'Bass & instruments', Guitar)}
+          <div className="karaoke-mix__levels">
+            {fader('vocals', 'Vocals', Mic)}
+            {fader('instruments', 'Music', Guitar)}
+          </div>
+          {!supportsMix ? (
+            <div className="karaoke-mix__model">
+              <div className="karaoke-mix__model-copy">
+                <span className="karaoke-mix__model-mark" aria-hidden="true">AI</span>
+                <span>
+                  <strong>{busy ? 'AI model is preparing' : 'On-device AI mix'}</strong>
+                  <small>{busy ? 'The model is getting ready for this song.' : 'One-time on-device model · about 750 MB'}</small>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="karaoke-mix__model-action"
+                disabled={busy}
+                aria-label="Choose the on-device AI vocal remover, about 750 megabytes"
+                onClick={karaoke.chooseAiModel}
+              >
+                {busy ? 'Preparing' : 'Choose'}
+              </button>
+            </div>
+          ) : null}
+          <div className="karaoke-mix__preset-head">
+            <span>Quick mixes</span>
+            <span>Choose a starting point</span>
+          </div>
           <div className="karaoke-mix__presets" role="group" aria-label="Mix presets">
             {PRESETS.map((preset) => (
               <button
                 key={preset.label}
                 type="button"
                 className="karaoke-mix__preset"
+                aria-label={preset.name}
                 aria-pressed={sameMix(mix, preset.mix)}
                 disabled={locked}
                 onClick={() => setMix(preset.mix)}
@@ -145,7 +176,10 @@ export function KaraokeMixSheet({ open, karaoke, onClose, returnFocusRef }: Kara
               </button>
             ))}
           </div>
-          <p className="karaoke-mix__note">{note}</p>
+          <div className="karaoke-mix__status" aria-live="polite">
+            <span className="karaoke-mix__status-dot" aria-hidden="true" />
+            <p className="karaoke-mix__note">{note}</p>
+          </div>
         </motion.div>
       ) : null}
     </AnimatePresence>
