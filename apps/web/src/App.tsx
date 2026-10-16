@@ -42,7 +42,7 @@ import { Artwork, EmptyState, IconButton, NoticeToast, OfflineToast, TactileButt
 import { useAccount, useListenTracker } from './hooks/useAccount';
 import { useSongRadio } from './hooks/useSongRadio';
 import { accountDisplayName, isResolvingAccount, recallAccountName, rememberAccountName } from './lib/accountState';
-import { useAudioPlayer } from './hooks/useAudioPlayer';
+import { upcomingSong, useAudioPlayer } from './hooks/useAudioPlayer';
 import { useLiveKaraoke } from './hooks/useLiveKaraoke';
 import { useMediaSession } from './hooks/useMediaSession';
 import { useNarrowViewport } from './hooks/useNarrowViewport';
@@ -290,10 +290,16 @@ export default function App() {
   useEffect(() => {
     if (remotePlayback) void audio.requestPlayback(false);
   }, [audio.requestPlayback, remotePlayback]);
-  const liveKaraoke = useLiveKaraoke(remotePlayback ? null : audio.currentSong, {
-    audioRef: audio.audioRef,
-    swapAudioSource: audio.swapAudioSource
-  });
+  // Karaoke separates the opening of the next song ahead of time, so it stays on across the change.
+  const karaokeUpNext = useMemo(
+    () => (remotePlayback ? null : upcomingSong(audio.queue, audio.currentSong, audio.shuffle, audio.repeat)),
+    [remotePlayback, audio.queue, audio.currentSong, audio.shuffle, audio.repeat]
+  );
+  const liveKaraoke = useLiveKaraoke(
+    remotePlayback ? null : audio.currentSong,
+    { audioRef: audio.audioRef, swapAudioSource: audio.swapAudioSource },
+    karaokeUpNext
+  );
   const hasSongLoaded = playerSong !== null;
   const playlists = usePlaylists();
   const transportRef = useRef(audio);
@@ -1495,6 +1501,7 @@ export default function App() {
             onOpenAccount={() => setAuthOpen(true)}
             karaokeBackend={liveKaraoke.backend}
             karaokeActive={liveKaraoke.active}
+            onChooseAiModel={liveKaraoke.chooseAiModel}
           />
         ) : view === 'library' ? <LibraryPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} likedSongs={likedSongs} recentlyPlayed={recentlyPlayed} likedIds={likedIds} loading={personalLoading} error={personalError} actionError={personalActionError} currentSongId={playerSong?.id} isPlaying={playerIsPlaying} onPlay={playSong} onLike={toggleLike} onRetry={() => void loadPersonalSpace()} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'liked' ? <CollectionPage kind="liked" title="Liked Songs" songs={likedSongs} loading={personalLoading} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(likedSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'playlist' ? <CollectionPage kind="playlist" title={activePlaylist?.name ?? (playlists.loading ? 'Playlist' : 'Playlist not found')} songs={activePlaylistSongs} loading={playlists.loading || (activePlaylist !== null && activePlaylistSongs.length < activePlaylist.songIds.length)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(activePlaylistSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} {...(activePlaylist ? { onDelete: () => { void playlists.remove(activePlaylist.id); router.push(paths.library); }, share: { libraryId: activePlaylist.id, isPublic: activePlaylist.isPublic, onChanged: () => { void playlists.reload(); } }, cover: { libraryId: activePlaylist.id, ...(activePlaylist.coverUrl ? { coverUrl: activePlaylist.coverUrl } : {}), onUpload: playlists.setCover } } : {})} /> : view === 'artist' && artistName ? <ArtistPage name={artistName} profile={artistProfile} photoFallback={faces[artistName.toLocaleLowerCase()] || null} songs={artistTracks} related={relatedArtists} loading={artistLoading && artistTracks.length === 0} error={artistTracks.length === 0 ? artistError : null} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onBack={() => goBack(paths.discover)} onRetry={() => setArtistReload((count) => count + 1)} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(artistTracks, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbumByName} onOpenArtist={openArtist} /> : view === 'album' && albumSeed ? <AlbumPage seed={albumSeed} tracks={albumTracks} palette={palette} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={() => playAlbumTracks(albumTracks, false)} onShuffle={() => playAlbumTracks(albumTracks, true)} onLike={toggleLike} onLikeAlbum={() => toggleLike(albumSeed)} albumLiked={likedIds.has(likedKey(albumSeed))} /> : <>
         <div className="browse-grid">
@@ -1642,7 +1649,7 @@ export default function App() {
                 <strong>{playerSong.title}</strong>
                 <span>{[playerSong.artist, playerSong.album].filter(Boolean).join(' \u2014 ')}</span>
               </button>
-              <BarScrubber playhead={playhead} duration={playerDuration} onSeek={seekPlayer} />
+              <BarScrubber playhead={playhead} duration={playerDuration} onSeek={seekPlayer} karaokeCoverage={remotePlayback ? null : liveKaraoke.coverage} />
             </div>
             <IconButton icon={HeartIcon} label={likedIds.has(likedKey(playerSong)) ? 'Remove from likes' : 'Add to likes'} active={likedIds.has(likedKey(playerSong))} onClick={() => toggleLike(playerSong)} />
           </div>

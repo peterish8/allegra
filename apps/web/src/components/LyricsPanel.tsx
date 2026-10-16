@@ -19,6 +19,8 @@ import { createPortal } from 'react-dom';
 import type { LyricLine, LyricsPayload } from '@shared/types';
 import { displayWords, isRtlText, sweepAt, type DisplayWord } from '@shared/wordSync';
 
+import type { KaraokeStage } from '../hooks/useLiveKaraoke';
+import { KaraokeProgress } from './KaraokeProgress';
 import { IconButton, TactileButton } from './ui';
 import { useNarrowViewport } from '../hooks/useNarrowViewport';
 import { useSettings } from '../hooks/useSettings';
@@ -53,9 +55,10 @@ interface LyricsPanelProps {
   readonly karaokeActive?: boolean;
   readonly karaokeBusy?: boolean;
   /** 0–1 while preparing karaoke. */
-  readonly karaokeProgressRatio?: number | null;
+  readonly karaokeAriaLabel?: string;
   readonly karaokeDisabled?: boolean;
   readonly karaokeError?: string | null;
+  readonly karaokeStage?: KaraokeStage | null;
   /** Receives the press so the caller can tell a double tap from a single one. */
   readonly onToggleKaraoke?: (event: MouseEvent<HTMLElement>) => void;
   /** Opens the vocal / instrument mix. Shown beside Karaoke while it is on. */
@@ -114,9 +117,10 @@ export function LyricsPanel({
   softFocus = true,
   karaokeActive = false,
   karaokeBusy = false,
-  karaokeProgressRatio = null,
+  karaokeAriaLabel,
   karaokeDisabled = false,
   karaokeError = null,
+  karaokeStage = null,
   onToggleKaraoke,
   onOpenKaraokeMix,
   songId = null,
@@ -398,13 +402,7 @@ export function LyricsPanel({
     setAlternativesOpen(!alternativesOpen);
   };
 
-  const karaokeLabel = karaokeBusy
-    ? karaokeProgressRatio != null
-      ? `Preparing ${Math.round(karaokeProgressRatio * 100)}%`
-      : 'Preparing…'
-    : karaokeActive
-      ? 'Karaoke on'
-      : 'Karaoke';
+  const karaokeLabel = karaokeActive ? 'Karaoke on' : 'Karaoke';
   const showMix = Boolean(onOpenKaraokeMix) && (karaokeActive || karaokeBusy);
   const showTranslate = Boolean(onToggleTranslate) && lines.length > 0;
 
@@ -453,34 +451,31 @@ export function LyricsPanel({
   };
 
   // Rendered in the player's top bar (top-right corner) when it hands us a slot, else in place.
+  const karaokeButton = onToggleKaraoke ? (
+    <TactileButton
+      variant={karaokeActive ? 'primary' : 'ghost'}
+      icon={Mic}
+      onClick={onToggleKaraoke}
+      disabled={karaokeDisabled}
+      aria-pressed={karaokeActive}
+      aria-busy={karaokeBusy || undefined}
+      aria-label={karaokeAriaLabel ?? (karaokeActive ? 'Turn karaoke off' : 'Turn karaoke on')}
+      className={`ytm-lyrics__karaoke-btn${karaokeActive ? ' is-on' : ''}${karaokeBusy ? ' is-busy' : ''}`}
+    >
+      {karaokeLabel}
+    </TactileButton>
+  ) : null;
+
   const actionsNode = (
     <div
       ref={actionsRef}
       className={`ytm-lyrics__actions${collapsibleActions ? ' is-collapsible' : ''}${actionsOpen ? ' is-open' : ''}`}
     >
+      {collapsibleActions && !actionsOpen && karaokeButton ? (
+        <div className="ytm-lyrics__karaoke-pin">{karaokeButton}</div>
+      ) : null}
       <div id="lyrics-actions" className="ytm-lyrics__chrome-actions" inert={collapsibleActions && !actionsOpen}>
-        {onToggleKaraoke ? (
-          <TactileButton
-            variant={karaokeActive ? 'primary' : 'ghost'}
-            icon={Mic}
-            onClick={onToggleKaraoke}
-            // Not `disabled` while preparing: a double tap must still reach the mix.
-            disabled={karaokeDisabled}
-            aria-disabled={karaokeBusy || undefined}
-            aria-pressed={karaokeActive}
-            aria-busy={karaokeBusy || undefined}
-            aria-label={
-              karaokeBusy
-                ? 'Preparing karaoke'
-                : karaokeActive
-                  ? 'Turn karaoke off'
-                  : 'Turn karaoke on'
-            }
-            className={`ytm-lyrics__karaoke-btn${karaokeActive ? ' is-on' : ''}${karaokeBusy ? ' is-busy' : ''}`}
-          >
-            {karaokeLabel}
-          </TactileButton>
-        ) : null}
+        {(!collapsibleActions || actionsOpen) ? karaokeButton : null}
         {showMix ? (
           <IconButton
             icon={SlidersHorizontal}
@@ -543,8 +538,8 @@ export function LyricsPanel({
           onClick={() => setActionsOpen(true)}
           aria-expanded={actionsOpen}
           aria-controls="lyrics-actions"
-          aria-label="Lyrics options"
-          title="Lyrics options"
+          aria-label="More lyric options"
+          title="More lyric options"
           inert={actionsOpen}
         >
           <Ellipsis size={18} aria-hidden="true" />
@@ -581,6 +576,7 @@ export function LyricsPanel({
         </div>
         {collapsibleActions && actionsSlot ? createPortal(actionsNode, actionsSlot) : actionsNode}
       </div>
+      {karaokeActive && karaokeBusy ? <KaraokeProgress stage={karaokeStage} variant="lyrics" /> : null}
       {alternativesOpen ? (
         <div id="lyrics-alternatives" className="lyrics-alternatives" aria-live="polite">
           <div className="lyrics-alternatives__head">
@@ -651,11 +647,6 @@ export function LyricsPanel({
             </div>
           ) : null}
         </div>
-      ) : null}
-      {karaokeBusy ? (
-        <p className="ytm-lyrics__note ytm-lyrics__busy" role="status">
-          Preparing karaoke{karaokeProgressRatio != null ? ` ${Math.round(karaokeProgressRatio * 100)}%` : '…'}
-        </p>
       ) : null}
       {karaokeError ? (
         <p className="ytm-lyrics__alert" role="alert">
@@ -826,12 +817,12 @@ export function LyricsPanel({
                 aria-label="Lyrics source"
                 title="Lyrics source"
               >
-                <Info size={15} aria-hidden="true" />
+                <Info size={13} aria-hidden="true" />
               </button>
             ) : null}
             <div className="lyrics-sync" role="group" aria-label="Adjust lyrics timing">
               <button type="button" className="lyrics-sync__btn" onClick={() => nudgeSync(-0.1)} aria-label="Show lyrics 0.1 seconds earlier">
-                <Minus size={14} aria-hidden="true" />
+                <Minus size={12} aria-hidden="true" />
               </button>
               <button
                 type="button"
@@ -844,7 +835,7 @@ export function LyricsPanel({
                 {syncOffset > 0 ? '+' : ''}{syncOffset.toFixed(1)}s
               </button>
               <button type="button" className="lyrics-sync__btn" onClick={() => nudgeSync(0.1)} aria-label="Show lyrics 0.1 seconds later">
-                <Plus size={14} aria-hidden="true" />
+                <Plus size={12} aria-hidden="true" />
               </button>
             </div>
           </div>

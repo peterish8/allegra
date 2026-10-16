@@ -2225,8 +2225,8 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   appearance: none;
 }
 
-.am-range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--wave) var(--fill, 0%), rgba(255, 255, 255, 0.24) var(--fill, 0%)); }
-.am-range::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.24); }
+.am-range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background-image: linear-gradient(90deg, var(--wave) var(--fill, 0%), rgba(255, 255, 255, 0.24) var(--fill, 0%)), var(--karaoke-coverage, none); }
+.am-range::-moz-range-track { height: 4px; border-radius: 2px; background-color: rgba(255, 255, 255, 0.24); background-image: var(--karaoke-coverage, none); }
 .am-range::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--wave); }
 .am-range::-webkit-slider-thumb { width: 0; height: 0; margin-top: 0; border: 0; -webkit-appearance: none; }
 .am-range::-moz-range-thumb { width: 0; height: 0; border: 0; }
@@ -4052,7 +4052,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     90deg,
     var(--track-done) var(--progress),
     var(--track-rest) var(--progress)
-  );
+  ), var(--karaoke-coverage, none);
 }
 
 .listening-progress .progress-range::-moz-range-track {
@@ -4062,7 +4062,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     90deg,
     var(--track-done) var(--progress),
     var(--track-rest) var(--progress)
-  );
+  ), var(--karaoke-coverage, none);
 }
 
 .listening-progress .progress-range::-webkit-slider-thumb {
@@ -4934,8 +4934,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   text-align: center;
 }
 .ytm-lyrics__alert { background: rgba(255, 96, 84, 0.16); color: var(--accent-bright, #ffaaa0); }
-/* Desktop has the Karaoke pill on the cover for progress; the phone lyrics view has only an icon. */
-.ytm-lyrics__busy { display: none; }
 
 @media (max-width: 900px) {
   .listening-world__shell {
@@ -5147,8 +5145,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 
   /* While the reader is scrolling by hand, everything must be legible. */
   .listening-world.is-lyrics .ytm-lyrics.is-user-scrolling .ytm-lyrics__line:not(.is-active) { opacity: 0.58; }
-
-  .listening-world.is-lyrics .ytm-lyrics__busy { display: block; }
 
   .listening-world.is-lyrics .ytm-lyrics__state {
     display: grid;
@@ -6700,6 +6696,8 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .listening-top__spacer { position: relative; display: flex; align-items: center; justify-content: flex-end; min-height: 44px; }
 .ytm-lyrics__actions { display: flex; align-items: center; justify-content: flex-end; }
 .ytm-lyrics__actions.is-collapsible { position: absolute; top: 50%; right: 0; transform: translateY(-50%); min-height: 44px; }
+.ytm-lyrics__karaoke-pin { position: absolute; top: 50%; right: 48px; display: flex; align-items: center; transform: translateY(-50%); }
+.ytm-lyrics__karaoke-pin .ytm-lyrics__karaoke-btn { min-height: 36px; padding: 0 9px; gap: 6px; font-size: 12px; opacity: 1; }
 .ytm-lyrics__actions.is-collapsible .ytm-lyrics__chrome-actions {
   display: flex;
   flex-wrap: nowrap;

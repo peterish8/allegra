@@ -4,6 +4,9 @@ import test from 'node:test';
 import {
   assembleSegment,
   catchUpChunk,
+  AHEAD_TARGET_CHUNKS,
+  BACKFILL_CHUNKS,
+  nextChunk,
   chunkIndexAt,
   chunkTail,
   crossfadeHead,
@@ -134,4 +137,46 @@ test('the dropout seen in testing: a chunk landing late in its span defers to th
   assert.equal(catchUpChunk(31, 6.5, total), 3);
   // Never past the last chunk.
   assert.equal(catchUpChunk(261, 6.5, total), streamChunkCount(total) - 1);
+});
+
+/** The order a worker would separate a song in, from a fixed focus and playhead. */
+function workOrder(count: number, focus: number, playhead: number, done: number[] = []): number[] {
+  const flags = new Uint8Array(count);
+  for (const k of done) flags[k] = 1;
+  const order: number[] = [];
+  for (let pick = nextChunk(flags, focus, playhead); pick; pick = nextChunk(flags, focus, playhead)) {
+    order.push(pick.index);
+    flags[pick.index] = 1;
+  }
+  return order;
+}
+
+test('the chunks a seek back lands on are separated right after the lead, not at the end of the song', () => {
+  // Pressed at 1:00 while playing: the playhead is in chunk 6 and the first chunk aims at 7.
+  const order = workOrder(24, 7, 6);
+  assert.deepEqual(order.slice(0, AHEAD_TARGET_CHUNKS), [7, 8, 9]);
+  // Next: the chunk catchUpChunk skipped, then 30 s behind the playhead.
+  assert.deepEqual(order.slice(AHEAD_TARGET_CHUNKS, AHEAD_TARGET_CHUNKS + 1 + BACKFILL_CHUNKS), [6, 5, 4, 3]);
+  // Every chunk once.
+  assert.deepEqual([...order].sort((a, b) => a - b), Array.from({ length: 24 }, (_, k) => k));
+});
+
+test('karaoke started at 0:00 while playing fills chunk 0 straight after the lead', () => {
+  const order = workOrder(20, 1, 0);
+  assert.deepEqual(order.slice(0, 4), [1, 2, 3, 0]);
+});
+
+test('the lead always wins over backfill once the playhead moves on', () => {
+  const flags = new Uint8Array(24);
+  flags.fill(1, 7, 10);
+  // Lead done: backfill.
+  assert.deepEqual(nextChunk(flags, 7, 7), { index: 6, urgent: false });
+  // Playhead moved a chunk on and the lead has a gap again: that comes first.
+  assert.deepEqual(nextChunk(flags, 8, 8), { index: 10, urgent: true });
+});
+
+test('nextChunk reports nothing left once every chunk exists, and clamps a stray focus', () => {
+  assert.equal(nextChunk(new Uint8Array(5).fill(1), 2, 2), null);
+  assert.equal(nextChunk(new Uint8Array(0), 0, 0), null);
+  assert.deepEqual(nextChunk(new Uint8Array(3), 99, -4), { index: 2, urgent: true });
 });

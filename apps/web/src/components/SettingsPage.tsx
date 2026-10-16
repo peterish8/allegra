@@ -4,6 +4,7 @@ import {
   Keyboard,
   Mic,
   Compass,
+  Download,
   Music2,
   Palette as PaletteIcon,
   RotateCcw,
@@ -25,7 +26,16 @@ import { flags } from '../lib/flags';
 import { paths } from '../lib/routes';
 import { fetchAccountSettings, setPersonalization, fetchHealth } from '../lib/api';
 import { DEFAULT_KARAOKE_MIX, type KaraokeMix } from '../lib/karaokeMix';
-import { clearRoformerCache, detectLiveKaraokeCapabilities, roformerCacheBytes, type LiveKaraokeBackend } from '../lib/liveKaraoke';
+import {
+  clearRoformerCache,
+  clearStemCache,
+  roformerCacheBytes,
+  stemCacheBytes,
+  STEM_CACHE_LIMIT_BYTES,
+  storedVerdict,
+  webgpuAvailable,
+  type LiveKaraokeBackend
+} from '../lib/liveKaraoke';
 import { resetSettings, type AppBackground, type KaraokeMode, type LyricsHighlight, type LyricsSize } from '../lib/settings';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
 import { InfoTour } from './InfoTour';
@@ -40,6 +50,7 @@ interface SettingsPageProps {
   readonly onOpenAccount: () => void;
   readonly karaokeBackend: LiveKaraokeBackend | null;
   readonly karaokeActive: boolean;
+  readonly onChooseAiModel: () => void;
 }
 
 /* ── Small controls ─────────────────────────────────────────────────────── */
@@ -154,12 +165,15 @@ const SHORTCUTS: readonly { readonly keys: readonly string[]; readonly action: s
  * saved on this device (see lib/settings.ts); account data stays where it always was.
  * Only controls that change something are here — no placeholders.
  */
-export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeBackend, karaokeActive }: SettingsPageProps) {
+export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeBackend, karaokeActive, onChooseAiModel }: SettingsPageProps) {
   const reduced = useReducedMotion();
   const [settings, update] = useSettings();
-  const [capabilities] = useState(() => detectLiveKaraokeCapabilities());
+  const [webgpu, setWebgpu] = useState<boolean | null>(null);
   const [modelBytes, setModelBytes] = useState<number | null>(null);
   const [modelNote, setModelNote] = useState<string | null>(null);
+  const [stemBytes, setStemBytes] = useState<number | null>(null);
+  const [stemNote, setStemNote] = useState<string | null>(null);
+  const [tooSlow, setTooSlow] = useState(false);
   const [health, setHealth] = useState<{ state: 'loading' } | { state: 'ok'; version: string } | { state: 'down' }>({ state: 'loading' });
   const [confirmReset, setConfirmReset] = useState(false);
   const [personalization, setPersonalizationState] = useState<boolean | null>(null);
@@ -191,6 +205,13 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
     void roformerCacheBytes().then((bytes) => {
       if (live) setModelBytes(bytes);
     });
+    void stemCacheBytes().then((bytes) => {
+      if (live) setStemBytes(bytes);
+    });
+    void webgpuAvailable().then((available) => {
+      if (live) setWebgpu(available);
+    });
+    setTooSlow(storedVerdict() === 'too-slow');
     return () => {
       live = false;
     };
@@ -222,12 +243,24 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
     setModelNote(ok ? 'Deleted. It downloads again the next time Karaoke uses the AI model.' : 'Couldn’t delete the model. Close other Allegra tabs and try again.');
   };
 
+  const clearStems = async (): Promise<void> => {
+    setStemNote(null);
+    const ok = await clearStemCache();
+    setStemBytes(ok ? 0 : stemBytes);
+    setStemNote(ok ? 'Cleared. Songs separate again the next time Karaoke plays them.' : 'Couldn’t clear it while a song is being separated. Turn Karaoke off and try again.');
+  };
+
+  const retryAi = (): void => {
+    setTooSlow(false);
+    onChooseAiModel();
+  };
+
   const karaokeInUse = !karaokeActive
     ? 'Not running'
     : karaokeBackend === 'roformer'
       ? 'On-device AI model'
       : karaokeBackend === 'midside'
-        ? 'Basic vocal remover'
+        ? 'Light vocal remover'
         : 'Starting…';
 
   return (
@@ -330,14 +363,28 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
         <Choice<KaraokeMode>
           label="Vocal remover"
           hint={settings.karaokeMode === 'auto'
-            ? 'Uses the on-device AI model when this device can run it, otherwise the basic remover.'
-            : 'Always the basic remover: starts fast and downloads nothing, but leaves some vocals and has no mix.'}
+            ? 'Vocals drop the moment you press Karaoke; the on-device AI model takes over where this device can keep up with the song. Phones use the light remover.'
+            : modelBytes !== null && modelBytes > 0
+              ? 'Uses the on-device AI model on any device, phones included. The light remover plays while it loads or catches up.'
+              : 'Tries the on-device AI model on any device, phones included. The first use asks before downloading about 752 MB. The light remover plays while it loads or catches up.'}
           value={settings.karaokeMode}
           options={[
-            { value: 'auto', label: 'Auto (AI)' },
-            { value: 'basic', label: 'Basic only' }
+            { value: 'auto', label: 'Auto' },
+            { value: 'ai', label: 'Always AI' }
           ]}
-          onChange={(karaokeMode) => update({ karaokeMode })}
+          onChange={(karaokeMode) => karaokeMode === 'ai' ? onChooseAiModel() : update({ karaokeMode })}
+        />
+        <Switch
+          label="Keep Karaoke on between songs"
+          hint="Karaoke carries on into the next song, and the AI model separates its opening ahead of time."
+          checked={settings.karaokeStayOn}
+          onChange={(karaokeStayOn) => update({ karaokeStayOn })}
+        />
+        <Switch
+          label="Get the AI model ready in the background"
+          hint="If you used Karaoke in the last two weeks, the model loads while music plays, so pressing Karaoke starts the AI in seconds."
+          checked={settings.karaokeWarmUp}
+          onChange={(karaokeWarmUp) => update({ karaokeWarmUp })}
         />
         <div className="settings-row settings-row--stack">
           <div className="settings-row__copy">
@@ -359,15 +406,44 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
             </TactileButton>
           </div>
         </div>
-        <Row label="This device" hint={`GPU acceleration (WebGPU): ${capabilities.webgpu ? 'available' : 'not available — the AI model runs slower or falls back'}. Right now: ${karaokeInUse}.`}>
-          <span className={`settings-pill${capabilities.webgpu ? ' is-good' : ''}`}>{capabilities.webgpu ? 'WebGPU' : 'CPU only'}</span>
+        <Row
+          label="This device"
+          hint={`GPU acceleration (WebGPU): ${webgpu === null ? 'checking…' : webgpu ? 'available' : 'not available, so Auto uses the light remover'}. Right now: ${karaokeInUse}.`}
+        >
+          <span className={`settings-pill${webgpu ? ' is-good' : ''}`}>{webgpu === null ? '…' : webgpu ? 'WebGPU' : 'No WebGPU'}</span>
+        </Row>
+        {tooSlow ? (
+          <Row label="Measured too slow" hint="Last time this device separated slower than the song plays, so Auto now uses the light remover. Try again after a browser or driver update.">
+            <TactileButton variant="ghost" icon={RotateCcw} onClick={retryAi}>
+              Try AI again
+            </TactileButton>
+          </Row>
+        ) : null}
+        <Row
+          label="On-device AI model"
+          hint={modelNote ?? (modelBytes === null
+            ? 'Checking…'
+            : modelBytes > 0
+              ? `${formatBytes(modelBytes)} stored in this browser. Choose it to retry AI after postponing the download.`
+              : 'Not downloaded. Choose it to use the AI model; Karaoke asks before the one-time 752 MB download.')}
+        >
+          <span className="settings-confirm">
+            <TactileButton variant="secondary" icon={Download} onClick={onChooseAiModel}>
+              Choose AI model
+            </TactileButton>
+            <TactileButton variant="ghost" icon={Trash2} disabled={!modelBytes} onClick={() => void deleteModel()}>
+              Delete
+            </TactileButton>
+          </span>
         </Row>
         <Row
-          label="Downloaded AI model"
-          hint={modelNote ?? (modelBytes === null ? 'Checking…' : modelBytes > 0 ? `${formatBytes(modelBytes)} stored in this browser.` : 'Not downloaded. It downloads (about 750 MB) the first time Karaoke uses it.')}
+          label="Separated songs"
+          hint={stemNote ?? (stemBytes === null ? 'Checking…' : stemBytes > 0
+            ? `${formatBytes(stemBytes)} of up to ${formatBytes(STEM_CACHE_LIMIT_BYTES)}. Songs you sang before start instantly; the oldest are dropped first.`
+            : 'None yet. Songs separated by the AI model are kept here (up to 1 GB), so they never separate twice.')}
         >
-          <TactileButton variant="ghost" icon={Trash2} disabled={!modelBytes} onClick={() => void deleteModel()}>
-            Delete
+          <TactileButton variant="ghost" icon={Trash2} disabled={!stemBytes} onClick={() => void clearStems()}>
+            Clear
           </TactileButton>
         </Row>
       </Section>
