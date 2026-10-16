@@ -555,8 +555,8 @@ export function LyricsPanel({
           onClick={() => setActionsOpen(true)}
           aria-expanded={actionsOpen}
           aria-controls="lyrics-actions"
-          aria-label="More lyric options"
-          title="More lyric options"
+          aria-label="Lyrics options"
+          title="Lyrics options"
           inert={actionsOpen}
         >
           <Ellipsis size={18} aria-hidden="true" />
