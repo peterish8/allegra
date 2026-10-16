@@ -564,7 +564,7 @@ export function PlayerPanel({
                     {onToggleShuffle ? (
                       <IconButton icon={Shuffle} label={shuffle ? 'Shuffle on' : 'Shuffle off'} active={shuffle} aria-pressed={shuffle} className="np-mode" onClick={onToggleShuffle} />
                     ) : null}
-                    <IconButton icon={SkipBack} label="Previous track" onClick={goPrevious} solidOnHover />
+                    <IconButton icon={SkipBack} label="Previous track" onClick={goPrevious} solid />
                     <button
                       className={`ctrl-play tactile-control${isBuffering ? ' is-buffering' : ''}`}
                       onClick={onToggle}
@@ -577,7 +577,7 @@ export function PlayerPanel({
                           its shape and stays pressable while the track loads. */}
                       {isBuffering ? <span className="ctrl-play-wait" aria-hidden="true" /> : null}
                     </button>
-                    <IconButton icon={SkipForward} label="Next track" onClick={goNext} solidOnHover />
+                    <IconButton icon={SkipForward} label="Next track" onClick={goNext} solid />
                     {onCycleRepeat ? (
                       <IconButton
                         icon={repeat === 'one' ? Repeat1 : Repeat}

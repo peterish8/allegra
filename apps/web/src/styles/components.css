@@ -1363,7 +1363,7 @@ body::before { display: none; }
   transition: transform var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard);
 }
 
-.ctrl-play:hover { transform: scale(1.04); }
+@media (hover: hover) { .ctrl-play:hover { transform: scale(1.04); } }
 .ctrl-play--sm { width: 40px; height: 40px; }
 
 .progress {

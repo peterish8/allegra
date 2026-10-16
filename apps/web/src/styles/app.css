@@ -131,12 +131,6 @@ body::after,
 
 .icon-button:hover,
 .tactile-icon-control:hover { background: var(--active-wash); color: var(--ink); }
-/* IconButton's blurred glyph twin; only surfaces that want a hover halo show it. */
-.icon-glow { display: none; }
-/* Its filled twin (solidOnHover), laid exactly over the outline and faded in on hover. */
-.tactile-icon-control:has(> .icon-solid) { position: relative; }
-.icon-solid { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; transition: opacity var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-press); pointer-events: none; }
-.tactile-icon-control:is(:hover, :focus-visible) > .icon-solid { opacity: 1; }
 
 .tactile-icon-control[aria-label^='Remove from likes'] { color: var(--accent); }
 .tactile-icon-control[aria-label^='Remove from likes'] svg { fill: currentColor; }
@@ -2572,8 +2566,7 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .am-now { border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(255, 255, 255, 0.055); }
 .am-btn { width: 44px; height: 44px; }
 .am-btn--skip { width: 44px; height: 44px; }
-.am-play { width: 46px; height: 46px; box-shadow: 0 8px 24px color-mix(in srgb, var(--wave) 28%, transparent); }
-.am-play:hover { box-shadow: 0 10px 30px color-mix(in srgb, var(--wave) 38%, transparent); }
+.am-play { width: 46px; height: 46px; }
 
 @media (prefers-reduced-motion: reduce) {
   .am-btn,
@@ -4449,32 +4442,47 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 .am-btn:hover { transform: translateY(-1px) scale(1.08); background: rgba(255, 255, 255, 0.16); }
 .am-btn:active { transform: scale(0.9); background: rgba(255, 255, 255, 0.22); }
-.am-btn svg { transition: transform var(--d-base) var(--ease-press); }
-.am-btn[aria-label="Previous track"]:hover svg { transform: translateX(-2px); }
-.am-btn[aria-label="Next track"]:hover svg { transform: translateX(2px); }
-.am-btn[aria-label^="Shuffle"]:hover svg { transform: rotate(-12deg) scale(1.1); }
-.am-btn[aria-label^="Repeat"]:hover svg { transform: rotate(18deg) scale(1.1); }
 .am-now .tactile-icon-control:hover { transform: scale(1.14); }
 .am-now .tactile-icon-control:active { transform: scale(0.88); }
 
-/* Play: springs up, glows through a faded layer, presses down. */
-.am-play { position: relative; isolation: isolate; transition: transform var(--d-fast) var(--ease-press); }
-.am-play::after {
-  position: absolute;
-  z-index: -1;
-  inset: -10px;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--wave) 60%, transparent), transparent);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--d-base) var(--ease-standard);
-  content: '';
+/* The bar's transport hovers like the full player's: no wash, lift or glow. The glyph brightens
+ * from muted to white and grows a touch; play only grows. A dot under shuffle and repeat says they
+ * are on, so the state never rests on colour alone. */
+.am-transport .am-btn,
+.am-transport .am-play { transition: transform var(--d-fast) var(--ease-press), opacity var(--d-fast) var(--ease-standard); }
+.am-transport .am-btn { position: relative; color: #fff; }
+.am-transport .am-btn,
+.am-transport .am-btn:is(:hover, :active, .is-on) { background: transparent; }
+.am-transport .am-btn:hover,
+.am-transport .am-play:hover { transform: none; }
+.am-transport .am-btn > svg { opacity: 0.62; transition: opacity var(--d-fast) var(--ease-standard); }
+.am-transport .am-btn--skip > svg { opacity: 0.82; }
+.am-transport .am-btn.is-on { color: var(--wave); }
+.am-transport .am-btn.is-on > svg,
+.am-transport .am-btn:focus-visible > svg { opacity: 1; }
+@media (hover: hover) {
+  .am-transport .am-btn:hover { transform: scale(1.06); }
+  .am-transport .am-btn:hover > svg { opacity: 1; }
+  .am-transport .am-play:hover { transform: scale(1.04); }
 }
-.am-play:hover { transform: scale(1.09); }
-.am-play:hover::after { opacity: 1; }
-.am-play:active { transform: scale(0.92); }
-.am-play svg { transition: transform var(--d-base) var(--ease-press); }
-.am-play:hover svg { transform: scale(1.08); }
+.am-transport .am-btn:active { transform: scale(0.92); }
+.am-transport .am-btn:active > svg { opacity: 0.7; }
+.am-transport .am-play:active { transform: scale(0.94); }
+.am-transport .am-btn.is-on::after,
+.listening-world .np-btns .np-mode[aria-pressed='true']::after {
+  position: absolute;
+  bottom: 4px;
+  left: calc(50% - 2px);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .am-transport :is(.am-btn, .am-play):is(:hover, :active) { transform: none; }
+}
 
 /* Cover art: breathes forward on hover so it reads as the way into the player. */
 .am-art { position: relative; transition: transform var(--d-base) var(--ease-press); }
@@ -4495,9 +4503,8 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .am-scrub time { color: rgba(255, 255, 255, 0.78); }
 
 @media (prefers-reduced-motion: reduce) {
-  .am-btn:hover, .am-btn:active, .am-play:hover, .am-play:active, .am-art:hover, .am-art:active,
+  .am-btn:hover, .am-btn:active, .am-art:hover, .am-art:active,
   .am-now .tactile-icon-control:hover, .am-now .tactile-icon-control:active { transform: none; }
-  .am-btn:hover svg, .am-play:hover svg { transform: none; }
 }
 
 /* ---------- Artist "about" sheet ---------- */
@@ -4643,15 +4650,15 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   background: transparent;
   color: #fff;
 }
-.listening-world .np-btns .tactile-icon-control:hover { background: rgba(255, 255, 255, 0.16); }
 .listening-world .np-btns .tactile-icon-control svg { width: 24px; height: 24px; filter: none; }
 .listening-world .ctrl-play {
+  flex: 0 0 auto;
   width: 64px;
   height: 64px;
   border: 1px solid rgba(255, 255, 255, 0.88);
   background: linear-gradient(145deg, #fffefb 0%, #e2e5ec 100%);
   color: #111218;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 9px 22px -9px rgba(0, 0, 0, 0.72), 0 0 0 5px rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 9px 22px -9px rgba(0, 0, 0, 0.72);
 }
 .listening-world .ctrl-play::before {
   position: absolute;
@@ -4662,7 +4669,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   pointer-events: none;
 }
 .listening-world .ctrl-play svg { width: 26px; height: 26px; }
-.listening-world .ctrl-play:hover { transform: scale(1.04); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 12px 26px -8px rgba(0, 0, 0, 0.78), 0 0 0 6px rgba(255, 255, 255, 0.1); }
 
 /* Actions: one quiet pill holding the three secondary controls. */
 .listening-world .np-actions {
@@ -4724,33 +4730,31 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .listening-world .np-actions .tactile-icon-control,
 .listening-world .np-actions > button { width: 44px; height: 44px; }
 
-/* Player icons (the skips and the actions beside them) hover as light, not as a disc: the glyph
- * brightens and lifts, and a halo in its own shape and colour rises around it. The halo is the
- * IconButton's pre-blurred twin, so the blur is painted once and only opacity and transform
- * animate; there is no fill behind the icon for the eye to read as a circle. */
-.listening-world :is(.np-btns, .np-actions) .tactile-icon-control { position: relative; isolation: isolate; }
-.listening-world :is(.np-btns, .np-actions) .tactile-icon-control:is(:hover, :focus-visible, :active) { background: transparent; }
-.listening-world :is(.np-btns, .np-actions) .icon-glow {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: inherit;
-  filter: blur(6px);
-  opacity: 0;
-  transition: opacity var(--d-slow) var(--ease-standard), transform var(--d-base) var(--ease-press);
-  pointer-events: none;
+/* Player icons (the transport and the actions beside it) hover the way Spotify, Apple Music and
+ * YouTube Music do: no disc, ring or glow behind the glyph. It brightens from muted to full white
+ * and grows a touch, and a press dips it back. Opacity and transform only, and the hover only on
+ * pointers that really hover, so a tap never leaves a control stuck lit. */
+.listening-world :is(.np-btns, .np-actions) .tactile-icon-control {
+  position: relative;
+  background: transparent;
+  transition: transform var(--d-fast) var(--ease-press), opacity var(--d-fast) var(--ease-standard);
 }
-.listening-world :is(.np-btns, .np-actions) .icon-glow svg { filter: none; }
-.listening-world :is(.np-btns, .np-actions) .tactile-icon-control:is(:hover, :focus-visible) .icon-glow { opacity: 1; }
-.listening-world :is(.np-btns, .np-actions) .tactile-icon-control > svg { opacity: 0.82; transition: opacity var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-press); }
-.listening-world :is(.np-btns, .np-actions) .tactile-icon-control:is(:hover, :focus-visible) > svg { opacity: 1; }
-/* The skips lean the way they go; glyph and halo move together. */
-.listening-world .np-btns .tactile-icon-control[aria-label='Previous track']:hover > :is(svg, .icon-glow, .icon-solid) { transform: translateX(-2px); }
-.listening-world .np-btns .tactile-icon-control[aria-label='Next track']:hover > :is(svg, .icon-glow, .icon-solid) { transform: translateX(2px); }
+.listening-world :is(.np-btns, .np-actions) .tactile-icon-control:is(:hover, :focus-visible, :active) { background: transparent; }
+.listening-world :is(.np-btns, .np-actions) .tactile-icon-control > svg { opacity: 0.82; transition: opacity var(--d-fast) var(--ease-standard); }
+@media (hover: hover) {
+  .listening-world :is(.np-btns, .np-actions) .tactile-icon-control:not(:disabled):hover { transform: scale(1.06); }
+  .listening-world :is(.np-btns, .np-actions) .tactile-icon-control:not(:disabled):hover > svg { opacity: 1; }
+}
+.listening-world :is(.np-btns, .np-actions) .tactile-icon-control:focus-visible > svg { opacity: 1; }
+.listening-world :is(.np-btns, .np-actions) .tactile-icon-control:not(:disabled):active { transform: scale(0.92); }
+.listening-world :is(.np-btns, .np-actions) .tactile-icon-control:not(:disabled):active > svg { opacity: 0.7; }
+.listening-world :is(.np-btns, .np-actions) .tactile-icon-control:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--wave, #d9e66a) 72%, white);
+  outline-offset: 2px;
+}
 @media (prefers-reduced-motion: reduce) {
-  .listening-world .np-btns .tactile-icon-control:hover > :is(svg, .icon-glow, .icon-solid) { transform: none; }
+  .listening-world :is(.np-btns, .np-actions) .tactile-icon-control:is(:hover, :active),
+  .listening-world .np-btns .ctrl-play:hover { transform: none; }
 }
 
 /* ---------- Lyrics stage: the cover's colour over black, and a background that visibly moves ---------- */
@@ -6705,6 +6709,17 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     --lyric-line-size: calc(clamp(26px, 2.9vw, 44px) * var(--lyrics-scale, 1));
     --lyric-line-height: 1.3;
   }
+}
+
+/* A narrow wide-player (laptop half-screen, small tablets): one dock row squeezed the track info to a
+ * word per line and pushed the actions out. Stack it: info and actions, then transport, then scrubber. */
+@media (min-width: 901px) and (max-width: 1240px) {
+  .listening-world .listening-body { grid-template-rows: minmax(0, 1fr) 20px 8px auto auto auto 10px; }
+  .listening-world :is(.np-meta, .np-dock-cover) { grid-column: 2 / 4; grid-row: 4; align-self: center; margin-top: 10px; }
+  .listening-world .np-meta { padding-left: 0; }
+  .listening-world .np-actions { grid-column: 3 / 5; grid-row: 4; align-self: center; margin-top: 10px; }
+  .listening-world .np-btns { grid-column: 2 / 5; grid-row: 5; margin-top: 4px; }
+  .listening-world .np-controls > :first-child { grid-column: 2 / 5; grid-row: 6; justify-self: center; width: min(620px, 100%); }
 }
 
 /* Wide player: the lyric actions sit behind a ⋯ in the top bar's right corner, level with Back and
