@@ -880,6 +880,7 @@ export const MiniPlayer: React.FC = () => {
                             the top/bottom instead of a black scrim. */}
                         <SynchronizedLyrics
                             lyrics={lyricsToUse || []}
+                            duration={songForLyrics?.duration}
                             currentTime={positionSV}
                             onLyricPress={handleClassicLyricSeek}
                             isUserScrolling={false}

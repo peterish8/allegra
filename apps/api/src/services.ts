@@ -39,6 +39,11 @@ import type { SongSnapshot } from './shared/songRef.js';
 import { SpotifyProvider } from './providers/spotify.js';
 import { SpotifyStore } from './db/spotifyStore.js';
 import { SpotifyTransferService } from './services/spotifyTransfer.js';
+import { SaavnLyricsProvider } from './providers/saavnLyrics.js';
+import { LyricSites, PoliteFetcher } from './providers/lyricsSites/lyricSites.js';
+import { Tamil2Lyrics } from './providers/lyricsSites/tamil2lyrics.js';
+import { MemoryVerifiedLyricsStore, type VerifiedLyricsStore } from './services/verifiedLyrics.js';
+import { ConvexVerifiedLyricsStore } from './db/convexVerifiedLyrics.js';
 
 /**
  * Provider settings exactly as config.ts loads them (documented there). Each is optional here so a
@@ -58,6 +63,8 @@ type ProviderSettings = Partial<
     | 'youLyPlusServers'
     | 'unisonApiUrl'
     | 'kugouApiUrl'
+    | 'saavnLyricsUrl'
+    | 'lyricSites'
     | 'musicBrainz'
     | 'translation'
     | 'convexUrl'
@@ -78,6 +85,8 @@ export interface ServiceOptions extends ProviderSettings {
   /** Injected in tests; otherwise Convex when configured and memory for local development. */
   readonly tally?: TasteTally;
   readonly blends?: BlendStore;
+  /** Injected in tests; otherwise Convex when configured and memory for local development. */
+  readonly verifiedLyrics?: VerifiedLyricsStore;
   /** Verifier for signed-in accounts. Built from convexSiteUrl unless supplied (tests). */
   readonly accountVerifier?: TokenVerifier;
 }
@@ -87,6 +96,8 @@ export interface AppServices {
   readonly stream: StreamResolver;
   readonly artwork: ArtworkService;
   readonly lyrics: LyricsService;
+  /** Lyrics listeners synced and confirmed (Convex, or memory for local development). */
+  readonly verifiedLyrics: VerifiedLyricsStore;
   readonly auth: AuthService;
   /** Profiles, share links and reports: the store the account routes read and erase through. */
   readonly users: UserStore;
@@ -145,6 +156,7 @@ export function createServices(options: ServiceOptions): AppServices {
   const convexStore = convex ? new ConvexUserStore(convex) : undefined;
   const userStore = options.userStore ?? convexStore ?? new MemoryUserStore();
   const tally = options.tally ?? (convex ? new ConvexTasteTally(convex) : new MemoryTasteTally());
+  const verifiedLyrics = options.verifiedLyrics ?? (convex ? new ConvexVerifiedLyricsStore(convex) : new MemoryVerifiedLyricsStore());
 
   // Guest tokens are ours; Convex Auth signs the ones that come back from Google.
   // Without a Convex site URL only guest sessions exist, which is how local dev runs.
@@ -202,8 +214,12 @@ export function createServices(options: ServiceOptions): AppServices {
       ...(options.betterLyricsApiUrl ? { betterLyrics: new BetterLyricsProvider({ baseUrl: options.betterLyricsApiUrl, ...(options.betterLyricsApiKey ? { apiKey: options.betterLyricsApiKey } : {}), ...fetchImpl }) } : {}),
       ...(options.youLyPlusServers ? { youLyPlus: new YouLyPlusProvider({ servers: options.youLyPlusServers, ...fetchImpl }) } : {}),
       ...(options.unisonApiUrl ? { unison: new UnisonProvider({ baseUrl: options.unisonApiUrl, ...fetchImpl }) } : {}),
-      ...(options.kugouApiUrl ? { kugou: new KuGouProvider({ baseUrl: options.kugouApiUrl, ...fetchImpl }) } : {})
+      ...(options.kugouApiUrl ? { kugou: new KuGouProvider({ baseUrl: options.kugouApiUrl, ...fetchImpl }) } : {}),
+      ...(options.saavnLyricsUrl ? { saavnLyrics: new SaavnLyricsProvider({ baseUrl: options.saavnLyricsUrl, ...fetchImpl }) } : {}),
+      ...(options.lyricSites ? { lyricSites: new LyricSites([new Tamil2Lyrics(new PoliteFetcher(fetchImpl), cache)], cache) } : {}),
+      verified: verifiedLyrics
     }),
+    verifiedLyrics,
     auth,
     users: userStore,
     tally,

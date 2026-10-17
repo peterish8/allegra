@@ -1,6 +1,7 @@
 import type { Transition, Variants } from 'motion/react';
 
 export const motionTokens = {
+  marquee: { pixelsPerSecond: 36, gap: 48, minimumDuration: 8 },
   duration: {
     instant: 0.1,
     fast: 0.16,

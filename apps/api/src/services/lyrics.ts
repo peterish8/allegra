@@ -1,4 +1,4 @@
-import { cacheKey, type CacheStore } from '../lib/cache.js';
+import { CACHE_MISS, cacheKey, isCacheMiss, MemoryCacheStore, type CacheMiss, type CacheStore } from '../lib/cache.js';
 import { LATE, withinBudget } from '../lib/deadline.js';
 import { hasTimestamps, parseLyrics } from '../lib/lrc.js';
 import { scoreLyrics } from '../lib/matcher.js';
@@ -7,20 +7,49 @@ import type { KuGouProvider } from '../providers/kugou.js';
 import type { LrclibEntry, LrclibProvider } from '../providers/lrclib.js';
 import type { LyricaProvider } from '../providers/lyrica.js';
 import type { LyricsCandidate } from '../providers/lyricsCandidate.js';
+import { filmOf, type LyricSites, type SiteLyrics } from '../providers/lyricsSites/lyricSites.js';
+import type { SaavnLyricsProvider } from '../providers/saavnLyrics.js';
 import type { UnisonProvider } from '../providers/unison.js';
 import type { YouLyPlusProvider } from '../providers/youlyplus.js';
-import type { LyricsPayload } from '../types.js';
+import { matchKey, parseSongRef } from '../shared/songRef.js';
+import type { LyricsPayload, VerifiedLyrics } from '../types.js';
+import { publicView, verifiedPayloads, versionLabel, type StoredVerifiedLyrics, type VerifiedLyricsStore } from './verifiedLyrics.js';
+import { cleanLyricStanzas } from '../shared/lyricsText.js';
+import type { LyricSource } from './lyricSync.js';
 
 const HIT_TTL_SECONDS = 2_592_000;
 const MISS_TTL_SECONDS = 86_400;
 const ALTERNATIVES_TTL_SECONDS = 86_400;
 const MAX_ALTERNATIVES = 6;
+/** Listener-synced lyrics are read on every lookup; a slow read must not hold the providers up. */
+const VERIFIED_BUDGET_MS = 2_500;
+/** Kept in this instance only, briefly, so a new sync shows up within a minute everywhere. */
+const VERIFIED_MEMO_SECONDS = 60;
+/** A song found by title and artist (no ref) must also last about as long as the synced one. */
+const MATCH_KEY_DURATION_SLACK_SECONDS = 3;
 /**
  * How long a listener waits for an answer. A song with no lyrics walks every tier in turn, which
  * can take minutes; the web client gives up at 15 s and would report a dead connection instead of
  * "no lyrics". Past this, the lookup keeps running and caches its result for the next ask.
  */
 const LOOKUP_BUDGET_MS = 11_000;
+/**
+ * Lyric sites are only for songs the providers lack. A song they have answers well inside this,
+ * so its lookup never touches a site; past it, the site is asked while the providers finish.
+ */
+const SITE_GRACE_MS = 3_000;
+/** Never settles: a race entry that must not win with an empty answer. */
+const NEVER = new Promise<never>(() => undefined);
+
+/** What the catalog knows about the song beyond title and artist; each field is optional. */
+export interface SongHints {
+  /** "saavn:<id>": listener-synced and JioSaavn lyrics are found by it. */
+  readonly ref?: string;
+  /** Names the film for a lyric site (`Baththa (Original Motion Picture Soundtrack)`). */
+  readonly album?: string;
+  /** The catalog's language name ("tamil"): lyric sites are asked only for languages they cover. */
+  readonly language?: string;
+}
 
 /** The optional sources behind LRCLIB. Each is asked only if configured, and none ever throws. */
 export interface LyricsSources {
@@ -29,8 +58,16 @@ export interface LyricsSources {
   readonly youLyPlus?: YouLyPlusProvider;
   readonly unison?: UnisonProvider;
   readonly kugou?: KuGouProvider;
+  /** JioSaavn's own plain lyrics, asked by the song's Saavn id when the providers have none. */
+  readonly saavnLyrics?: SaavnLyricsProvider;
+  /** Lyrics listeners synced and confirmed; asked first whenever the caller names the song. */
+  readonly verified?: VerifiedLyricsStore;
+  /** Lyric sites, the last resort: plain text, shown as "Found online". */
+  readonly lyricSites?: LyricSites;
   /** Overrides LOOKUP_BUDGET_MS (tests). */
   readonly budgetMs?: number;
+  /** Overrides SITE_GRACE_MS (tests). */
+  readonly siteGraceMs?: number;
 }
 
 export class LyricsService {
@@ -42,7 +79,12 @@ export class LyricsService {
   private readonly youLyPlus: YouLyPlusProvider | undefined;
   private readonly unison: UnisonProvider | undefined;
   private readonly kugou: KuGouProvider | undefined;
+  private readonly saavnLyrics: SaavnLyricsProvider | undefined;
+  private readonly verifiedStore: VerifiedLyricsStore | undefined;
+  private readonly lyricSites: LyricSites | undefined;
+  private verifiedMemo = new MemoryCacheStore();
   private readonly budgetMs: number;
+  private readonly siteGraceMs: number;
 
   public constructor(
     private readonly lrclib: LrclibProvider,
@@ -54,19 +96,33 @@ export class LyricsService {
     this.youLyPlus = sources.youLyPlus;
     this.unison = sources.unison;
     this.kugou = sources.kugou;
+    this.saavnLyrics = sources.saavnLyrics;
+    this.verifiedStore = sources.verified;
+    this.lyricSites = sources.lyricSites;
     this.budgetMs = sources.budgetMs ?? LOOKUP_BUDGET_MS;
+    this.siteGraceMs = sources.siteGraceMs ?? SITE_GRACE_MS;
   }
 
   /**
    * The best lyrics for a song, or null: none found, or none found within the budget (the lookup
    * then finishes in the background, so asking again shortly gets its answer from the cache).
+   * With `ref` ("saavn:<id>"), lyrics listeners synced come first (English before the song's own
+   * script), and JioSaavn's plain lyrics answer when the providers have none. A lyric site
+   * ("Found online") is the last resort, for a song in a language it covers.
    */
   public async find(
     title: string,
     artist: string,
     duration: number | undefined,
-    syncedOnly: boolean
+    syncedOnly: boolean,
+    song: SongHints = {}
   ): Promise<LyricsPayload | null> {
+    const shared = verifiedPayloads(await this.verified(song.ref, title, artist, duration), duration)[0];
+    if (shared) {
+      return shared;
+    }
+    // Started beside the providers, so JioSaavn costs no wait of its own.
+    const saavn = syncedOnly ? null : this.saavnFallback(song.ref, duration);
     const cleaned = cleanLyricsQuery(title, artist);
     const key = cacheKey('lyrics', cleaned.title, cleaned.artist, String(duration ?? 0), String(syncedOnly));
     let lookup = this.inflight.get(key);
@@ -74,8 +130,141 @@ export class LyricsService {
       lookup = this.cascade(title, artist, duration, syncedOnly).finally(() => this.inflight.delete(key));
       this.inflight.set(key, lookup);
     }
-    const value = await withinBudget(lookup, this.budgetMs);
-    return value === LATE ? null : value;
+    // A site is asked only when the providers have not answered within the grace period.
+    const providers = lookup;
+    const siteApplies = !syncedOnly && this.lyricSites?.covers(song.language) === true;
+    const site = siteApplies
+      ? withinBudget(providers, this.siteGraceMs).then(async value => value !== LATE && value ? [] : sitePayloads(await this.siteVersions(title, artist, song), duration))
+      : null;
+    // Keep scraped words readable in plain mode until a listener shares real timing.
+    const fallback = (async (): Promise<LyricsPayload | null> => {
+      const official = saavn ? await saavn : null;
+      if (official) return official;
+      return site ? (await site)[0] ?? null : null;
+    })();
+    // Plain lyrics in hand end the wait once the providers have had their grace period, instead of
+    // holding the listener for the whole budget; a provider that answers later caches its lyrics
+    // for the next play.
+    const early = saavn || site
+      ? [withinBudget(providers, this.siteGraceMs).then(() => fallback).then((value) => value ?? NEVER)]
+      : [];
+    const value = await withinBudget(Promise.race([providers.then((found) => found ?? fallback), ...early]), this.budgetMs);
+    if (value !== LATE) {
+      return value;
+    }
+    // Out of budget: only a moment more, because the client's own timeout is close.
+    const last = await withinBudget(fallback, 500);
+    return last === LATE ? null : last;
+  }
+
+  /**
+   * Site words and private provenance, English first. Null when no site has the song. Never throws.
+   */
+  private async siteVersions(title: string, artist: string, song: SongHints): Promise<SiteLyrics | null> {
+    const sites = this.lyricSites;
+    if (!sites || !sites.covers(song.language)) {
+      return null;
+    }
+    const cleaned = cleanLyricsQuery(title, artist);
+    const film = filmOf(title, song.album);
+    const found = await sites
+      .find({ title: cleaned.title, artist: cleaned.artist, ...(film ? { film } : {}), ...(song.language ? { language: song.language } : {}) })
+      .catch((): null => null);
+    return found;
+  }
+
+  /** Server-held sync sources: providers and sites are asked together, with provenance kept for saving. */
+  public async sources(title: string, artist: string, duration: number, song: SongHints): Promise<LyricSource[]> {
+    const [providers, siteSettled] = await Promise.all([
+      this.alternatives(title, artist, duration, false, song),
+      withinBudget(this.siteVersions(title, artist, song), this.budgetMs)
+    ]);
+    const site = siteSettled === LATE ? null : siteSettled;
+    const language = languageCode(song.language);
+    const fromProviders: LyricSource[] = providers.flatMap(payload => {
+      const lines = cleanLyricStanzas([payload.lines.map(line => line.text).filter(text => text !== '[INSTRUMENTAL]' && text !== '🎵')]).flat();
+      if (!lines.length) return [];
+      const script = /[^\p{Script=Latin}\p{M}\p{N}\p{P}\p{S}\p{Z}\s]/u.test(lines.join(' ')) ? 'native' as const : 'latin' as const;
+      return [{ origin: 'provider' as const, source: { name: payload.source }, script, language, lines, synced: payload.type === 'synced' }];
+    });
+    const fromSite: LyricSource[] = (site?.versions ?? []).flatMap(version => {
+      const lines = cleanLyricStanzas(version.text.split(/\n\s*\n/u).map(stanza => stanza.split('\n'))).flat();
+      const synced = fromProviders.some(candidate => candidate.synced && candidate.script === version.script && candidate.lines.join('\n') === lines.join('\n'));
+      return lines.length && site ? [{ origin: 'site' as const, source: site.source, script: version.script, language: version.language, lines, synced }] : [];
+    });
+    return [...fromProviders, ...fromSite];
+  }
+
+  /**
+   * The lyrics listeners synced for a song, live versions only, or null. Asked by ref; a song with
+   * no ref (a download on the phone) is matched by title and artist and must last about as long.
+   * Never throws and never takes longer than VERIFIED_BUDGET_MS.
+   */
+  public async verified(ref: string | undefined, title: string, artist: string, duration?: number): Promise<VerifiedLyrics | null> {
+    const store = this.verifiedStore;
+    if (!store) {
+      return null;
+    }
+    const song = ref ? parseSongRef(ref) : null;
+    const key = song ? `ref:${song.source}:${song.id}` : `match:${matchKey(title, artist)}:${Math.round(duration ?? 0)}`;
+    if (!song && !title.trim()) {
+      return null;
+    }
+    // Hold the cache instance so a read started before invalidation cannot refill the new cache.
+    const memoStore = this.verifiedMemo;
+    const memo = await memoStore.get<VerifiedLyrics | CacheMiss>(key);
+    if (memo) {
+      return isCacheMiss(memo) ? null : memo;
+    }
+    const read = async (): Promise<StoredVerifiedLyrics | null> => {
+      if (song) {
+        return store.get(`${song.source}:${song.id}`);
+      }
+      const row = await store.byMatchKey(matchKey(title, artist));
+      const close = row && (duration === undefined || duration <= 0 || Math.abs(row.duration - duration) <= MATCH_KEY_DURATION_SLACK_SECONDS);
+      return close ? row : null;
+    };
+    const row = await withinBudget(read(), VERIFIED_BUDGET_MS);
+    if (row === LATE) {
+      // Unknown, not absent: do not remember it.
+      return null;
+    }
+    const view = publicView(row);
+    await memoStore.set(key, view ?? CACHE_MISS, VERIFIED_MEMO_SECONDS);
+    return view;
+  }
+
+  /** Drops this instance's memo for a song, after a sync, report or moderation change. */
+  public async forgetVerified(ref: string): Promise<void> {
+    const song = parseSongRef(ref);
+    if (song) {
+      // The same recording may have been read by ref or several title/artist/duration keys.
+      this.verifiedMemo = new MemoryCacheStore();
+    }
+  }
+
+  /** JioSaavn's plain lyrics for a Saavn song, cached like the providers' answers. Null otherwise. */
+  private saavnFallback(ref: string | undefined, duration: number | undefined): Promise<LyricsPayload | null> | null {
+    const song = ref ? parseSongRef(ref) : null;
+    const provider = this.saavnLyrics;
+    if (!provider || song?.source !== 'saavn') {
+      return null;
+    }
+    // Catalog IDs are case-sensitive; cacheKey normalises text and must not normalise this ID.
+    const key = `lyrics-saavn:v2:${song.id}:${Math.round(duration ?? 0)}`;
+    return (async () => {
+      const cached = await this.cache.get<LyricsPayload | CacheMiss>(key);
+      if (cached) {
+        return isCacheMiss(cached) ? null : cached;
+      }
+      const found = await provider.find(song.id);
+      const lines = found ? parseLyrics(found.lyrics, duration ?? 180) : [];
+      const payload: LyricsPayload | null = lines.length > 0
+        ? { source: found?.source ?? 'JioSaavn', type: 'plain', matchScore: 40, matchReason: 'JioSaavn • Plain text', lines }
+        : null;
+      await this.cache.set(key, payload ?? CACHE_MISS, payload ? HIT_TTL_SECONDS : MISS_TTL_SECONDS);
+      return payload;
+    })().catch(() => null);
   }
 
   /**
@@ -203,11 +392,42 @@ export class LyricsService {
     title: string,
     artist: string,
     duration: number | undefined,
+    syncedOnly: boolean,
+    song: SongHints = {}
+  ): Promise<LyricsPayload[]> {
+    // Listener-synced versions lead (and are never cached here); JioSaavn's own text comes next,
+    // then the providers'. Unsynced site words are reserved for the finder and plain playback fallback.
+    const saavn = syncedOnly ? null : this.saavnFallback(song.ref, duration);
+    const [shared, saavnSettled, providers] = await Promise.all([
+      this.verified(song.ref, title, artist, duration).then((view) => verifiedPayloads(view, duration)),
+      saavn ? withinBudget(saavn, this.budgetMs) : Promise.resolve(null),
+      this.providerAlternatives(title, artist, duration, syncedOnly)
+    ]);
+    const fromSaavn = saavnSettled && saavnSettled !== LATE ? [saavnSettled] : [];
+    const seen = new Set<string>();
+    return [...shared, ...fromSaavn, ...providers]
+      .filter((payload) => {
+        const fingerprint = lyricsFingerprint(payload);
+        if (!fingerprint || seen.has(fingerprint)) {
+          return false;
+        }
+        seen.add(fingerprint);
+        return true;
+      })
+      // Stable: synced first (listener syncs lead), then JioSaavn's plain text.
+      .sort((left, right) => Number(right.type === 'synced') - Number(left.type === 'synced'));
+  }
+
+  /** What the providers alone offer, cached by title and artist. */
+  private async providerAlternatives(
+    title: string,
+    artist: string,
+    duration: number | undefined,
     syncedOnly: boolean
   ): Promise<LyricsPayload[]> {
     const cleaned = cleanLyricsQuery(title, artist);
     const lead = leadArtist(cleaned.artist);
-    const key = cacheKey('lyrics-alternatives', cleaned.title, cleaned.artist, String(duration ?? 0), String(syncedOnly));
+    const key = cacheKey('lyrics-alternatives', 'v2', cleaned.title, cleaned.artist, String(duration ?? 0), String(syncedOnly));
     const cached = await this.cache.get<LyricsPayload[]>(key);
     if (cached) {
       return cached;
@@ -218,7 +438,8 @@ export class LyricsService {
     // running is left to finish on its own, and the list is not cached, so a later ask sees it.
     const artistForSearch = lead || cleaned.artist;
     const single = (lookup: Promise<LyricsCandidate | null>): Promise<LyricsCandidate[]> => lookup.then((candidate) => (candidate ? [candidate] : []));
-    const [lrclibSettled, looseSettled, ...aggregatorSettled] = await Promise.all([
+    const [exactSettled, lrclibSettled, looseSettled, ...aggregatorSettled] = await Promise.all([
+      withinBudget(this.lrclib.get(cleaned.title, cleaned.artist, duration), this.budgetMs),
       withinBudget(Promise.all(attempts.map((attempt) => this.lrclib.search(attempt.title, attempt.artist, duration))), this.budgetMs),
       withinBudget(lead ? this.lrclib.searchText(`${cleaned.title} ${lead}`) : Promise.resolve([]), this.budgetMs),
       // Same preference order as fromAggregators; Unison and KuGou can offer several versions each.
@@ -228,12 +449,13 @@ export class LyricsService {
       withinBudget(single(this.findLyrica(cleaned.title, cleaned.artist, lead, duration, syncedOnly)), this.budgetMs),
       withinBudget(this.kugou ? this.kugou.findAll(cleaned.title, artistForSearch, duration) : Promise.resolve([]), this.budgetMs)
     ]);
-    const complete = lrclibSettled !== LATE && looseSettled !== LATE && aggregatorSettled.every((value) => value !== LATE);
+    const complete = exactSettled !== LATE && lrclibSettled !== LATE && looseSettled !== LATE && aggregatorSettled.every((value) => value !== LATE);
     const searches = lrclibSettled === LATE ? [] : lrclibSettled;
     const loose = looseSettled === LATE ? [] : looseSettled;
     const aggregated = aggregatorSettled.flatMap((value) => (value === LATE ? [] : value));
 
-    const fromLrclib = [...searches.flat(), ...loose]
+    const exact = exactSettled !== LATE && exactSettled ? [exactSettled] : [];
+    const fromLrclib = [...exact, ...searches.flat(), ...loose]
       .filter((entry) => isUsable(entry, syncedOnly) && titlesAlike(entry.trackName, cleaned.title))
       .sort((left, right) => scoreLyrics(right, cleaned.title, duration).score - scoreLyrics(left, cleaned.title, duration).score)
       .map((entry) => {
@@ -387,6 +609,19 @@ function toPayloadFromRaw(raw: string, title: string, duration: number | undefin
 function candidatePayload(candidate: LyricsCandidate, title: string, duration: number | undefined): LyricsPayload {
   const payload = toPayloadFromRaw(candidate.lyrics, title, duration, candidate.source);
   return candidate.filedAs ? { ...payload, matchReason: `${candidate.filedAs} • ${payload.type === 'synced' ? 'Synced' : 'Plain text'}` } : payload;
+}
+
+function languageCode(language: string | undefined): string {
+  const codes: Readonly<Record<string, string>> = { tamil: 'ta', telugu: 'te', hindi: 'hi', malayalam: 'ml', kannada: 'kn', english: 'en' };
+  return codes[language?.toLowerCase() ?? ''] ?? (language?.length === 2 ? language.toLowerCase() : 'und');
+}
+
+/** Private site provenance never reaches the plain playback payload. */
+function sitePayloads(found: SiteLyrics | null, duration: number | undefined): LyricsPayload[] {
+  return (found?.versions ?? []).flatMap(version => {
+    const lines = parseLyrics(version.text, duration ?? 180);
+    return lines.length ? [{ source: `Found online (${versionLabel(version)})`, type: 'plain' as const, matchScore: 30, matchReason: 'Plain text', lines }] : [];
+  });
 }
 
 /** Same words and same kind means the same version, whichever provider or entry it came from. */

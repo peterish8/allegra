@@ -9,6 +9,16 @@ import type { ListenExit } from '@shared/listenSignal';
 import type { DjTurnRequest, DjTurnResponse } from '@shared/dj';
 import type { RadioTaste } from '@shared/radio';
 import { TYPEAHEAD_LIMIT } from '@shared/typeahead';
+import type { LyricsSourcesResponse, LyricsSyncRequest, LyricsSyncResult } from '@shared/lyricSync';
+import { readLocalTiming } from './lyricAlign/localTiming';
+
+export function getLyricsSources(ref: string, signal?: AbortSignal): Promise<LyricsSourcesResponse> {
+  return request(`/api/lyrics/sources?ref=${encodeURIComponent(ref)}`, { signal });
+}
+
+export function saveLyricsSync(body: LyricsSyncRequest, signal?: AbortSignal): Promise<LyricsSyncResult> {
+  return request('/api/lyrics/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
+}
 
 export interface LibraryRecord {
   readonly id: string;
@@ -270,31 +280,39 @@ export async function fetchHome(signal?: AbortSignal, options: { readonly langua
   return request(`/api/home${query ? `?${query}` : ''}`, { signal });
 }
 
+/**
+ * A song's lyrics query: its ref lets listener-synced and JioSaavn lyrics answer for it, and its
+ * album and language let the server find it online when no provider has it.
+ */
+function lyricsQuery(song: UnifiedSong): string {
+  const ref = fromAllegraSong(song);
+  return new URLSearchParams({
+    songId: song.id,
+    ...(ref ? { ref } : {}),
+    title: song.title,
+    artist: song.artist,
+    ...(song.album ? { album: song.album } : {}),
+    ...(song.language ? { language: song.language } : {}),
+    duration: String(song.duration),
+    syncedOnly: 'false'
+  }).toString();
+}
+
 export async function fetchLyrics(song: UnifiedSong, signal?: AbortSignal): Promise<LyricsPayload> {
-  return request(
-    `/api/lyrics?${new URLSearchParams({
-      songId: song.id,
-      title: song.title,
-      artist: song.artist,
-      duration: String(song.duration),
-      syncedOnly: 'false'
-    }).toString()}`,
-    { signal }
-  );
+  const ref = fromAllegraSong(song);
+  const local = ref ? readLocalTiming(ref) : null;
+  try {
+    const response = await request<LyricsPayload>(`/api/lyrics?${lyricsQuery(song)}`, { signal });
+    return response.type === 'plain' && local ? local : response;
+  } catch (error) {
+    if (local && error instanceof ApiError && error.status === 404) return local;
+    throw error;
+  }
 }
 
 /** Explicitly requested alternatives, not the normal fast lyric cascade. */
 export async function fetchLyricsAlternatives(song: UnifiedSong, signal?: AbortSignal): Promise<LyricsPayload[]> {
-  return request(
-    `/api/lyrics/alternatives?${new URLSearchParams({
-      songId: song.id,
-      title: song.title,
-      artist: song.artist,
-      duration: String(song.duration),
-      syncedOnly: 'false'
-    }).toString()}`,
-    { signal }
-  );
+  return request(`/api/lyrics/alternatives?${lyricsQuery(song)}`, { signal });
 }
 
 /** `GET /api/artwork`: cover links for a song by title and artist, best guess first. */

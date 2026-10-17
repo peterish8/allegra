@@ -53,7 +53,7 @@ import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { refetchCurrent, setAsRingtone, shareSong, shuffleUpcoming } from '../services/player/playerMenuActions';
 import { usePlaybackModesStore } from '../store/playbackModesStore';
 import { useLuvLinkStore } from '../store/luvLinkStore';
-import { parseSongRef } from '@shared/songRef';
+import { fromMobileId, parseSongRef } from '@shared/songRef';
 import ConnectRemotePlayer from '../components/connect/ConnectRemotePlayer';
 import { useConnect } from '../services/connect/ConnectProvider';
 import { prefetchCover } from '../components/player/coverImages';
@@ -652,8 +652,13 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // saved into the library first (isCurrentSongSaving), then lands in Liked songs.
   // What the lyrics picker searches for: one object per song, so the search runs once per opening.
   const pickerTarget = React.useMemo(
-    () => ({ title: currentSong?.title ?? '', artist: currentSong?.artist ?? '', duration: currentSong?.duration ?? 0 }),
-    [currentSong?.title, currentSong?.artist, currentSong?.duration],
+    () => ({
+      title: currentSong?.title ?? '',
+      artist: currentSong?.artist ?? '',
+      duration: currentSong?.duration ?? 0,
+      ref: fromMobileId(currentSong?.id ?? '') ?? undefined,
+    }),
+    [currentSong?.title, currentSong?.artist, currentSong?.duration, currentSong?.id],
   );
 
   const onToggleLike = useCallback(async () => {

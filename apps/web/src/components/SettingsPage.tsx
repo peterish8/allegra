@@ -344,6 +344,12 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
           onChange={(showLyricsSource) => update({ showLyricsSource })}
         />
         <Switch
+          label="Auto-scroll lyrics without timing"
+          hint="Move plain lyrics steadily through the song. Scroll by hand to pause."
+          checked={settings.autoScrollPlainLyrics}
+          onChange={(autoScrollPlainLyrics) => update({ autoScrollPlainLyrics })}
+        />
+        <Switch
           label="Remember timing per song"
           hint="Your +/− sync nudge comes back the next time you play that song."
           checked={settings.rememberLyricsOffset}

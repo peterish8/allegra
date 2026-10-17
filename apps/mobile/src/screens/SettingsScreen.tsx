@@ -376,6 +376,7 @@ const SettingsScreen: React.FC<Props> = () => {
             onChange={settings.setLineSpacing}
           />
           <TimingRow value={settings.lyricsDelay} onChange={settings.setLyricsDelay} />
+          <Kit.Switch label="Auto-scroll lyrics without timing" hint="Move plain lyrics steadily through the song. Scroll by hand to pause." value={settings.autoScrollPlainLyrics} onChange={settings.setAutoScrollPlainLyrics} />
         </Section>
 
         <Section id="nav" summary={summaries.nav} icon="navigate-outline" title="Navigation and voice" lead="The bar at the bottom and the mic in it." onLayout={at('nav')}>

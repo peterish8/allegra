@@ -4370,7 +4370,12 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   mask-image: linear-gradient(90deg, transparent 0, #000 9%, #000 91%, transparent 100%);
 }
 .np-marquee.is-scrolling .np-marquee__track { animation: np-marquee var(--marquee-duration, 14s) linear infinite; }
-@keyframes np-marquee { from { transform: translateX(0); } to { transform: translateX(calc(var(--marquee-shift, 50%) * -1)); } }
+@keyframes np-marquee { from { transform: translateX(calc(var(--marquee-shift, 50%) * -1)); } to { transform: translateX(0); } }
+.am-meta > strong, .am-meta > .np-marquee { width: 100%; min-width: 0; }
+.am-meta .np-marquee__track, .am-meta .np-marquee__item { max-width: none; overflow: visible; }
+.am-meta strong .np-marquee, .am-meta strong .np-marquee span { color: inherit; font: inherit; }
+.np-artist { min-width: 0; }
+.np-artist .np-marquee__item { white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
   .ytm-lyrics__line.is-active .lyric-wave i { animation: none; transform: scaleY(0.6); }
@@ -4624,6 +4629,20 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .ytm-lyrics--softfocus:not(.ytm-lyrics--compact) .ytm-lyrics__scroll { padding-inline: clamp(28px, 4vw, 48px); }
 .ytm-lyrics--nobackdrop.ytm-lyrics--softfocus:not(.ytm-lyrics--compact) .ytm-lyrics__edge { right: -32px; left: -32px; }
 .ytm-lyrics--softfocus .ytm-lyrics__line.is-active { text-shadow: 0 0 22px rgba(255, 255, 255, 0.2) !important; }
+.ytm-lyrics .ytm-lyrics__scroll.is-plain {
+  padding-block: 24px 48px !important;
+  scroll-behavior: auto;
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
+}
+.ytm-lyrics .ytm-lyrics__line.is-plain {
+  margin: 0;
+  color: #fff;
+  opacity: 0.85;
+  cursor: text;
+  filter: none;
+  --lyric-fade: 0.85;
+}
 
 /* ---------- Big player controls: dark glass card, crisp white, clear grouping ---------- */
 .listening-world .np-controls {
@@ -4807,7 +4826,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 /* No lyrics / couldn't load: centred in the lyric column, a small mark over a title, one line of
  * copy and the next step. It rises in once; nothing loops except the idle wave's slow breath. */
 .ytm-lyrics__state--empty,
-.ytm-lyrics__state--error { display: grid; flex: 1 1 auto; min-height: 0; place-items: center; padding: 24px var(--lyrics-gutter, 16px); }
+.ytm-lyrics__state--error { display: grid; flex: 1 1 auto; min-height: 0; place-items: safe center center; padding: 24px var(--lyrics-gutter, 16px); overflow-y: auto; overscroll-behavior: contain; }
 .lyrics-message {
   display: grid;
   max-width: 24rem;
@@ -5170,8 +5189,8 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .listening-world.is-lyrics .ytm-lyrics__state {
     display: grid;
     flex: 1 1 auto;
-    place-items: center;
-    padding: 0 22px 12vh;
+    place-items: safe center center;
+    padding: 12px 22px;
   }
 
   /* Up Next / Related: a plain list under a real title, same fade at the foot. */
@@ -5286,6 +5305,39 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   color: var(--ink);
   font-weight: 650;
 }
+
+.lyric-sync-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: rgb(0 0 0 / 55%); backdrop-filter: blur(20px); }
+.lyric-sync-sheet { width: min(740px, 100%); max-height: calc(100dvh - 48px); overflow: auto; color: var(--ink, #f7f5f0); background: rgb(25 26 27 / 92%); border: 1px solid rgb(255 255 255 / 16%); border-radius: 28px; padding: 28px; box-shadow: 0 24px 80px rgb(0 0 0 / 40%); }
+.lyric-sync-sheet header, .lyric-sync-sheet footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.lyric-sync-sheet h2 { margin: 0; font-size: 26px; }
+.lyric-sync-sheet p { line-height: 1.6; }
+.lyric-sync-sheet header p { margin: 4px 0 20px; opacity: .7; }
+.lyric-sync-sheet button:not(.ytm-lyrics__line) { border: 1px solid rgb(255 255 255 / 20%); border-radius: 999px; background: rgb(255 255 255 / 10%); color: inherit; padding: 11px 18px; cursor: pointer; }
+.lyric-sync-sheet button:disabled { opacity: .45; cursor: default; }
+.lyric-sync-sheet button:focus-visible, .lyric-sync-sheet input:focus-visible, .lyric-sync-sheet summary:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.lyric-sync-candidates { display: grid; gap: 12px; margin: 24px 0; }
+.lyric-sync-candidates > label { display: flex; align-items: flex-start; gap: 14px; padding: 16px; border: 1px solid rgb(255 255 255 / 12%); border-radius: 16px; }
+.lyric-sync-candidates small, .lyric-sync-consent small { display: block; opacity: .65; margin: 5px 0 12px; }
+.lyric-sync-candidates details { max-height: 220px; overflow: auto; }
+.lyric-sync-candidates summary { cursor: pointer; font-size: 13px; }
+.lyric-sync-consent { border-top: 1px solid rgb(255 255 255 / 12%); padding-top: 12px; }
+.lyric-sync-consent label { display: block; margin-bottom: 16px; }
+.lyric-sync-sheet progress { width: 100%; accent-color: #f5eee4; }
+.lyric-sync-preview { height: 330px; margin: 16px 0; overflow: hidden; }
+.lyric-sync-preview .ytm-lyrics { height: 100%; }
+.lyric-sync-preview .ytm-lyrics__line { font-size: 28px; }
+.lyric-sync-versions { display: flex; gap: 8px; margin: 12px 0; }
+.lyric-sync-confidence { display: flex; align-items: center; gap: 10px; margin: 12px 0; font-size: 13px; color: rgb(255 255 255 / 72%); }
+.lyric-sync-confidence strong { color: var(--ink, #f7f5f0); font-size: 15px; font-variant-numeric: tabular-nums; }
+.lyric-sync-review { margin: 12px 0; border: 1px solid rgb(255 255 255 / 12%); border-radius: 14px; background: rgb(255 255 255 / 3%); }
+.lyric-sync-review summary { padding: 12px 14px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.lyric-sync-review > p { margin: 0 14px 8px; font-size: 12px; opacity: .68; }
+.lyric-sync-review ol { max-height: 170px; overflow: auto; margin: 0; padding: 0 10px 10px; list-style: none; }
+.lyric-sync-review li + li { border-top: 1px solid rgb(255 255 255 / 7%); }
+.lyric-sync-review li button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 6px !important; border: 0 !important; border-radius: 10px !important; background: transparent !important; text-align: left; }
+.lyric-sync-review li button:hover { background: rgb(255 255 255 / 8%) !important; }
+.lyric-sync-review time { flex: 0 0 auto; font-size: 12px; opacity: .65; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .lyric-sync-backdrop { padding: 12px; } .lyric-sync-sheet { padding: 22px; border-radius: 22px; } }
 
 .lyrics-alternatives {
   width: min(100% - 32px, 44rem);

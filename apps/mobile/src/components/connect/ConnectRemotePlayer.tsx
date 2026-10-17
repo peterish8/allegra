@@ -328,6 +328,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
                   <NowPlayingLyricsArea
                     showLyrics={showLyrics}
                     processedLyrics={lyrics}
+                    duration={song.duration}
                     currentTime={livePos}
                     onLyricPress={seek}
                     songTitle={song.title}

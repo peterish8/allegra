@@ -35,6 +35,26 @@ export interface LyricsPayload {
 }
 
 /** Mirrors packages/shared/types.ts. */
+export type LyricsScript = 'latin' | 'native';
+
+/** Mirrors packages/shared/types.ts. */
+export interface VerifiedLyricsVersion {
+  readonly script: LyricsScript;
+  readonly language: string;
+  readonly lrc: string;
+  readonly syncedAt: number;
+}
+
+/** Mirrors packages/shared/types.ts. */
+export interface VerifiedLyrics {
+  readonly ref: string;
+  readonly title: string;
+  readonly artist: string;
+  readonly duration: number;
+  readonly versions: readonly VerifiedLyricsVersion[];
+}
+
+/** Mirrors packages/shared/types.ts. */
 export interface ArtistSummary {
   readonly id: string;
   readonly name: string;

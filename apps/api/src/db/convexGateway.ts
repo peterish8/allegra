@@ -26,7 +26,9 @@ export const CONVEX_QUERIES = [
   'spotify:connection',
   'spotify:listPlaylists',
   'spotify:receipts',
-  'spotify:dailyAccounts'
+  'spotify:dailyAccounts',
+  'verifiedLyrics:get',
+  'verifiedLyrics:byMatchKey'
 ] as const;
 export const CONVEX_MUTATIONS = [
   'profiles:save',
@@ -61,7 +63,10 @@ export const CONVEX_MUTATIONS = [
   'spotify:claimPlaylist',
   'spotify:releasePlaylist',
   'spotify:checkpoint',
-  'reports:file'
+  'reports:file',
+  'verifiedLyrics:submit',
+  'verifiedLyrics:report',
+  'verifiedLyrics:setHidden'
 ] as const;
 
 export type ConvexQuery = (typeof CONVEX_QUERIES)[number];

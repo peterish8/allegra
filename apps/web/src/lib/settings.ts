@@ -29,6 +29,7 @@ export interface Settings {
   /** Letter by letter uses a source's word timings, or estimates them for a line-synced song. */
   readonly lyricsHighlight: LyricsHighlight;
   readonly showLyricsSource: boolean;
+  readonly autoScrollPlainLyrics: boolean;
   /** Plain black behind the player instead of the artwork-coloured atmosphere. */
   readonly playerBlackBackground: boolean;
   /** Keep each song's lyric sync nudge instead of resetting it on the next play. */
@@ -62,6 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lyricsSize: 'medium',
   lyricsHighlight: 'letters',
   showLyricsSource: true,
+  autoScrollPlainLyrics: true,
   playerBlackBackground: false,
   rememberLyricsOffset: true,
   lyricsOffsets: {},
@@ -118,6 +120,7 @@ export function parseSettings(raw: string | null): Settings {
     lyricsSize: oneOf(stored.lyricsSize, ['small', 'medium', 'large'], DEFAULT_SETTINGS.lyricsSize),
     lyricsHighlight: oneOf(stored.lyricsHighlight, ['letters', 'lines'], DEFAULT_SETTINGS.lyricsHighlight),
     showLyricsSource: flag(stored.showLyricsSource, DEFAULT_SETTINGS.showLyricsSource),
+    autoScrollPlainLyrics: flag(stored.autoScrollPlainLyrics, DEFAULT_SETTINGS.autoScrollPlainLyrics),
     playerBlackBackground: flag(stored.playerBlackBackground, DEFAULT_SETTINGS.playerBlackBackground),
     rememberLyricsOffset: flag(stored.rememberLyricsOffset, DEFAULT_SETTINGS.rememberLyricsOffset),
     lyricsOffsets: offsets(stored.lyricsOffsets),
