@@ -20,6 +20,10 @@ export interface AppConfig {
   readonly youLyPlusServers?: readonly string[];
   readonly unisonApiUrl?: string;
   readonly kugouApiUrl?: string;
+  /** JioSaavn's lyrics endpoint, asked by Saavn song id. `JIOSAAVN_LYRICS_URL=off` disables. */
+  readonly saavnLyricsUrl?: string;
+  /** Lyric sites as the last lyrics fallback ("Found online"). On unless `LYRIC_SITES=off`. */
+  readonly lyricSites?: boolean;
   /** Convex deployment URL. Unset means user data stays in memory. */
   readonly convexUrl?: string;
   readonly convexServerSecret?: string;
@@ -67,6 +71,7 @@ const DEFAULT_LYRICA = 'https://test-0k.onrender.com/lyrics';
 const DEFAULT_BETTER_LYRICS = 'https://lyrics-api.boidu.dev';
 const DEFAULT_UNISON = 'https://unison.boidu.dev';
 const DEFAULT_KUGOU = 'https://lyrics.kugou.com';
+const DEFAULT_SAAVN_LYRICS = 'https://www.jiosaavn.com/api.php';
 const DEFAULT_MUSICBRAINZ = 'https://musicbrainz.org/ws/2';
 const DEFAULT_COVERART = 'https://coverartarchive.org';
 // MusicBrainz throttles anonymous agents harder, so it wants a way to reach whoever is calling.
@@ -111,6 +116,8 @@ export function loadConfig(env: NodeJS.Dict<string>): AppConfig {
       : [...DEFAULT_YOULYPLUS_SERVERS];
   const unisonApiUrl = isOff(env.UNISON_API_URL) ? undefined : readOptionalProviderUrl(env.UNISON_API_URL, production, 'UNISON_API_URL') ?? DEFAULT_UNISON;
   const kugouApiUrl = isOff(env.KUGOU_API_URL) ? undefined : readOptionalProviderUrl(env.KUGOU_API_URL, production, 'KUGOU_API_URL') ?? DEFAULT_KUGOU;
+  // JioSaavn's own site, not a community mirror, so it stays on in production too.
+  const saavnLyricsUrl = isOff(env.JIOSAAVN_LYRICS_URL) ? undefined : readOptionalProviderUrl(env.JIOSAAVN_LYRICS_URL, production, 'JIOSAAVN_LYRICS_URL') ?? DEFAULT_SAAVN_LYRICS;
   // On by default: it only runs for a row whose album is somebody's playlist.
   const musicBrainz: MusicBrainzConfig | undefined = isOff(env.MUSICBRAINZ_API_URL)
     ? undefined
@@ -169,6 +176,8 @@ export function loadConfig(env: NodeJS.Dict<string>): AppConfig {
     ...(youLyPlusServers && youLyPlusServers.length > 0 ? { youLyPlusServers } : {}),
     ...(unisonApiUrl ? { unisonApiUrl } : {}),
     ...(kugouApiUrl ? { kugouApiUrl } : {}),
+    ...(saavnLyricsUrl ? { saavnLyricsUrl } : {}),
+    ...(isOff(env.LYRIC_SITES) ? {} : { lyricSites: true }),
     ...(convexUrl && convexServerSecret ? { convexUrl, convexServerSecret } : {}),
     ...(convexSiteUrl ? { convexSiteUrl } : {}),
     ...(spotifyClientId ? { spotifyClientId } : {}),

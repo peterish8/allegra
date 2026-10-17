@@ -7,6 +7,8 @@
  */
 import { Buffer } from 'buffer';
 import { buildUrl, fetchJson } from '../net/fetchWithTimeout';
+import { ALLEGRA_API_URL } from '../account/config';
+import { parseSongRef } from '@shared/songRef';
 import { alignSyllables, enhancedLine, LyricWord } from '@shared/wordSync';
 import { formatLrcTime, hasLrcTimestamps, toTimedLrc, ttmlToLrc } from './lrc';
 
@@ -18,21 +20,27 @@ export interface LyricsQuery {
   duration?: number;
   /** YouTube video id, when the song came from YouTube. */
   videoId?: string;
+  /** The catalog song ("saavn:<id>", `@shared/songRef`), when known: Allegra and JioSaavn look it up by it. */
+  ref?: string;
 }
 
 export type LyricsProviderName =
+  | 'Allegra'
   | 'YouLyPlus'
   | 'Paxsenix'
   | 'Unison'
   | 'BetterLyrics'
   | 'SimpMusic'
   | 'LrcLib'
-  | 'KuGou';
+  | 'KuGou'
+  | 'JioSaavn';
 
 export interface ProviderLyrics {
   provider: LyricsProviderName;
   lyrics: string;
   synced: boolean;
+  /** What the listener is shown instead of the provider's name ("Allegra · Tamil"). */
+  label?: string;
   trackName?: string;
   artistName?: string;
   albumName?: string;
@@ -379,7 +387,89 @@ export const kuGou: LyricsProvider = async q => {
   return c ? download(c.id, c.accesskey) : null;
 };
 
+// ─── Allegra (lyrics listeners synced on the website) ───────────────────────
+
+interface VerifiedVersion { script?: string; language?: string; lrc?: string }
+interface VerifiedResponse {
+  data?: { title?: string; artist?: string; duration?: number; versions?: VerifiedVersion[] } | null;
+}
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  ta: 'Tamil', te: 'Telugu', hi: 'Hindi', ml: 'Malayalam', kn: 'Kannada', bn: 'Bengali', mr: 'Marathi', pa: 'Punjabi', gu: 'Gujarati', or: 'Odia', ur: 'Urdu',
+};
+
+const versionLabel = (version: VerifiedVersion): string =>
+  version.script === 'native' ? `Allegra · ${LANGUAGE_NAMES[version.language ?? ''] ?? 'Native script'}` : 'Allegra · English';
+
+/**
+ * Every version listeners synced for the song on allegravibe.vercel.app (`GET /api/lyrics/verified`),
+ * English first, then the song's own script. By ref; a download with no ref is matched by title,
+ * artist and length.
+ */
+export const allegraVersions = async (q: LyricsQuery): Promise<ProviderLyrics[]> => {
+  if (!q.ref && !q.title) return [];
+  const res = await fetchJson<VerifiedResponse>(buildUrl(`${ALLEGRA_API_URL}/api/lyrics/verified`, {
+    ref: q.ref,
+    title: q.title,
+    artist: q.artist,
+    duration: durationSecs(q),
+  }));
+  const data = res?.data;
+  return (data?.versions ?? []).flatMap(version => {
+    const hit = result('Allegra', version.lrc, {
+      label: versionLabel(version),
+      trackName: data?.title,
+      artistName: data?.artist,
+      duration: data?.duration,
+    });
+    return hit?.synced ? [hit] : [];
+  });
+};
+
+export const allegra: LyricsProvider = async q => (await allegraVersions(q))[0] ?? null;
+
+// ─── JioSaavn (the catalog's own plain lyrics) ──────────────────────────────
+
+interface SaavnLyricsResponse { lyrics?: string }
+
+const NAMED_ENTITIES: Record<string, string> = { amp: '&', apos: "'", gt: '>', lt: '<', nbsp: ' ', quot: '"' };
+
+const decodeEntities = (value: string): string =>
+  value.replace(/&(#x[\da-f]+|#\d+|[a-z][a-z\d]+);/gi, (entity, body: string) => {
+    const lower = body.toLowerCase();
+    if (lower.startsWith('#')) {
+      const code = lower.startsWith('#x') ? Number.parseInt(lower.slice(2), 16) : Number.parseInt(lower.slice(1), 10);
+      return Number.isNaN(code) ? entity : String.fromCodePoint(code);
+    }
+    return NAMED_ENTITIES[lower] ?? entity;
+  });
+
+/** JioSaavn's `line<br>line` as plain text: one lyric per line, entities decoded, tags dropped. */
+export const saavnLyricsText = (raw: string): string =>
+  decodeEntities(raw.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ''))
+    .split(/\r?\n/)
+    .map(line => line.replace(/\s+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+/** Plain lyrics for the exact recording, asked by its Saavn id. Only for `saavn:` refs. */
+export const jioSaavn: LyricsProvider = async q => {
+  const song = q.ref ? parseSongRef(q.ref) : null;
+  if (song?.source !== 'saavn' || !/^[A-Za-z0-9_-]{1,32}$/.test(song.id)) return null;
+  const res = await fetchJson<SaavnLyricsResponse>(buildUrl('https://www.jiosaavn.com/api.php', {
+    __call: 'lyrics.getLyrics',
+    ctx: 'web6dot0',
+    api_version: 4,
+    _format: 'json',
+    _marker: 0,
+    lyrics_id: song.id,
+  }));
+  return typeof res?.lyrics === 'string' ? result('JioSaavn', saavnLyricsText(res.lyrics)) : null;
+};
+
 export const LYRICS_PROVIDERS: Record<LyricsProviderName, LyricsProvider> = {
+  Allegra: allegra,
   YouLyPlus: youLyPlus,
   Paxsenix: paxsenix,
   Unison: unison,
@@ -387,10 +477,15 @@ export const LYRICS_PROVIDERS: Record<LyricsProviderName, LyricsProvider> = {
   SimpMusic: simpMusic,
   LrcLib: lrcLib,
   KuGou: kuGou,
+  JioSaavn: jioSaavn,
 };
 
-/** Echo Music's default order: richest word-synced sources first. */
+/**
+ * Lyrics listeners synced on Allegra first, then Echo Music's order (richest word-synced sources
+ * first), and JioSaavn's plain text last: it only answers when nothing else has the song.
+ */
 export const DEFAULT_PROVIDER_ORDER: LyricsProviderName[] = [
+  'Allegra',
   'YouLyPlus',
   'Paxsenix',
   'Unison',
@@ -398,4 +493,5 @@ export const DEFAULT_PROVIDER_ORDER: LyricsProviderName[] = [
   'SimpMusic',
   'LrcLib',
   'KuGou',
+  'JioSaavn',
 ];

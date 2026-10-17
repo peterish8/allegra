@@ -171,6 +171,7 @@ const FullCover: React.FC<{
 interface NowPlayingLyricsAreaProps {
   showLyrics: boolean;
   processedLyrics: ProcessedLyric[];
+  duration?: number;
   currentTime: SharedValue<number>;
   onLyricPress: (timestamp: number) => void;
   songTitle?: string;
@@ -267,6 +268,7 @@ const Stage: React.FC<{
 const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   showLyrics,
   processedLyrics,
+  duration,
   currentTime,
   onLyricPress,
   songTitle,
@@ -389,6 +391,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
         ref={flatListRef}
         textStyle={textStyle}
         lyrics={processedLyrics || []}
+        duration={duration}
         currentTime={currentTime}
         onLyricPress={onLyricPress}
         songTitle={songTitle}

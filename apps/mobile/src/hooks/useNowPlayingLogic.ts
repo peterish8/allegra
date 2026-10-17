@@ -118,19 +118,7 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
       const lastTimestamp = rawLyrics[rawLyrics.length - 1].timestamp;
       const isCollapsed = lastTimestamp === 0 && rawLyrics.length > 1;
 
-      if (isCollapsed) {
-        const duration = (durationSV.value > 0)
-          ? durationSV.value
-          : (currentSong?.duration || 180);
-
-        if (__DEV__) console.log(`[NowPlaying] ⚠️ Detected collapsed lyrics. Auto-generating timestamps for ${duration}s`);
-
-        const newLyrics = rawLyrics.map((line, index) => ({
-          ...line,
-          timestamp: (index / rawLyrics.length) * duration,
-        }));
-        return newLyrics;
-      }
+      if (isCollapsed) return rawLyrics;
 
       const firstTimestamp = rawLyrics[0].timestamp;
       if (firstTimestamp > 2) {
@@ -146,12 +134,13 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
   // Selector only — this hook re-renders on position ticks during playback.
   const lyricsDelay = useSettingsStore(s => s.lyricsDelay);
 
-  // SynchronizedLyrics is the one owner of automatic lyric scrolling, for synced and generated timestamps alike.
+  // SynchronizedLyrics owns automatic scrolling for timed lines and plain text alike.
   // A second driver lived here (a JS-thread animated scrollToIndex fired from every position report for evenly
   // spaced lyrics, with no check that the lyrics were even on screen); it fought the list's own follow.
 
   const getActiveLyricIndex = useCallback(() => {
     if (!processedLyrics || processedLyrics.length === 0) return -1;
+    if (processedLyrics.every(line => line.timestamp === 0 && !('words' in line && line.words?.length))) return -1;
     const effectiveTime = positionSV.value + lyricsDelay;
     return processedLyrics.findIndex((line, i) => {
       const nextLine = processedLyrics[i + 1];

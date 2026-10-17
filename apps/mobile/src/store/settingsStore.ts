@@ -67,6 +67,7 @@ interface SettingsState {
   lyricsAlign: LyricsAlign;
   /** Letter by letter uses a source's word timings, or estimates them for a line-synced song. */
   lyricsHighlight: LyricsHighlight;
+  autoScrollPlainLyrics: boolean;
   lineSpacing: LineSpacing;
   
   // Playback
@@ -105,6 +106,7 @@ interface SettingsState {
   setLyricsSize: (size: number) => void;
   setLyricsAlign: (align: LyricsAlign) => void;
   setLyricsHighlight: (highlight: LyricsHighlight) => void;
+  setAutoScrollPlainLyrics: (enabled: boolean) => void;
   setLineSpacing: (spacing: LineSpacing) => void;
   setScrollSpeed: (speed: ScrollSpeed) => void;
   setSkipDuration: (duration: 10 | 15 | 30) => void;
@@ -184,6 +186,7 @@ const DEFAULT_SETTINGS = {
   lyricsSize: 28,
   lyricsAlign: 'left' as LyricsAlign,
   lyricsHighlight: 'letters' as LyricsHighlight,
+  autoScrollPlainLyrics: true,
   lineSpacing: 'normal' as LineSpacing,
   scrollSpeed: 'medium' as ScrollSpeed,
   skipDuration: 15 as const,
@@ -233,6 +236,7 @@ export const useSettingsStore = create<SettingsState>()(
       setLyricsSize: (size) => set({ lyricsSize: clampLyricsSize(size) }),
       setLyricsAlign: (lyricsAlign) => set({ lyricsAlign }),
       setLyricsHighlight: (lyricsHighlight) => set({ lyricsHighlight }),
+      setAutoScrollPlainLyrics: (autoScrollPlainLyrics) => set({ autoScrollPlainLyrics }),
       setLineSpacing: (lineSpacing) => set({ lineSpacing }),
       
       // Playback actions

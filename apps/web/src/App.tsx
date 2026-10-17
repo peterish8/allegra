@@ -40,7 +40,7 @@ import { AppQrButton } from './components/AppQrButton';
 import { CommandPalette } from './components/CommandPalette';
 import { DiscoverSections, HomePage } from './components/HomePage';
 import { ConnectPicker, type ConnectPickerState } from './components/ConnectPicker';
-import { PlayerPanel } from './components/PlayerPanel';
+import { MarqueeText, PlayerPanel } from './components/PlayerPanel';
 import { BarScrubber, FeatureProgress, FeatureRemaining } from './components/PlayheadViews';
 import { SettingsPage } from './components/SettingsPage';
 import { MusicFlowShader } from './components/shader/MusicFlowShader';
@@ -48,6 +48,7 @@ import type { ImmersivePlayerMode } from './components/PlayerPanel';
 import { SearchResults, artistsFromSongs } from './components/SearchResults';
 import { Artwork, EmptyState, IconButton, NoticeToast, OfflineToast, TactileButton } from './components/ui';
 import { useAccount, useListenTracker } from './hooks/useAccount';
+import { LyricsSyncDialog } from './components/LyricsSyncDialog';
 import { useSongRadio } from './hooks/useSongRadio';
 import { accountDisplayName, isResolvingAccount, recallAccountName, rememberAccountName } from './lib/accountState';
 import { upcomingSong, useAudioPlayer } from './hooks/useAudioPlayer';
@@ -178,6 +179,7 @@ export default function App() {
   const [sharedLoading, setSharedLoading] = useState(false);
   const [sharedError, setSharedError] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
+  const [lyricsSyncSong, setLyricsSyncSong] = useState<UnifiedSong | null>(null);
   const [artistSongs, setArtistSongs] = useState<UnifiedSong[]>([]);
   const [artistProfile, setArtistProfile] = useState<ArtistProfile | null>(null);
   const [artistLoading, setArtistLoading] = useState(false);
@@ -2090,8 +2092,8 @@ export default function App() {
             <button type="button" className="am-art" onClick={() => setPlayerMode('immersive')} aria-label="Expand player"><Artwork song={playerSong} size="small" /></button>
             <div className="am-now-body">
               <button type="button" className="am-meta" onClick={() => setPlayerMode('immersive')}>
-                <strong>{playerSong.title}</strong>
-                <span>{[playerSong.artist, playerSong.album].filter(Boolean).join(' \u2014 ')}</span>
+                <strong><MarqueeText text={playerSong.title} /></strong>
+                <MarqueeText text={[playerSong.artist, playerSong.album].filter(Boolean).join(' \u2014 ')} />
               </button>
               <BarScrubber playhead={playhead} duration={playerDuration} onSeek={seekPlayer} karaokeCoverage={remotePlayback ? null : liveKaraoke.coverage} />
             </div>
@@ -2251,6 +2253,8 @@ export default function App() {
         liked={playerSong ? likedIds.has(likedKey(playerSong)) : false}
         lyrics={{
           lines: lyrics,
+          type: lyricsPayload?.type,
+          duration: playerSong?.duration ?? 0,
           translations: lyricTranslations,
           playhead,
           playing: playerIsPlaying,
@@ -2272,6 +2276,7 @@ export default function App() {
           alternativesError: lyricsAlternativesError,
           onLoadAlternatives: loadLyricsAlternatives,
           onSelectAlternative: selectLyricsAlternative,
+          onSyncLyrics: () => { if (playerIsPlaying) togglePlayer(); setLyricsSyncSong(playerSong); },
           songId: playerSong?.id ?? null
         }}
         palette={palette}
@@ -2297,6 +2302,7 @@ export default function App() {
         onOpenAlbum={openAlbumFromPlayer}
         onOpenArtist={openArtistFromPlayer}
       />
+      {lyricsSyncSong ? <LyricsSyncDialog key={lyricsSyncSong.id} song={lyricsSyncSong} signedIn={signIn.signedIn} onSignIn={() => { setLyricsSyncSong(null); setAuthOpen(true); }} onClose={() => setLyricsSyncSong(null)} onSaved={retryLyrics} onUse={(payload) => { if (playerSong?.id === lyricsSyncSong.id) selectLyricsAlternative(payload); setLyricsSyncSong(null); }} playhead={playhead} playing={playerIsPlaying} onActivateLine={(seconds) => { if (playerSong?.id === lyricsSyncSong.id) activateLyricLine(seconds); else void playSong(lyricsSyncSong, [lyricsSyncSong]).then(() => activateLyricLine(seconds)); }} /> : null}
       <DjQuickPrompt
         open={djQuickOpen && view !== 'dj'}
         onClose={closeDjQuick}

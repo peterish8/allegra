@@ -66,18 +66,17 @@ class LyricaService {
     artist: string,
     syncedOnly: boolean = false,
     duration?: number,
-    options: { skipEcho?: boolean } = {},
+    options: { skipEcho?: boolean; ref?: string } = {},
   ): Promise<LyricaResult | null> {
     try {
       const { cleanSong, cleanArtist } = cleanTitleArtist(song, artist);
 
       if (__DEV__) console.log('[Lyrica] Cleaned - Artist:', cleanArtist, 'Song:', cleanSong, 'Duration:', duration);
 
-      // Echo Music provider cascade first (YouLyPlus, Paxsenix, Unison, BetterLyrics,
-      // SimpMusic, LRCLIB, KuGou). A synced hit wins outright; a plain hit is held
-      // back in case the Lyrica backend below has timestamps.
+      // Provider cascade first (Allegra listener syncs, Echo Music's seven, JioSaavn). A synced
+      // hit wins outright; a plain hit is held back in case the Lyrica backend below has timestamps.
       const echo = options.skipEcho ? null : await EchoLyricsCascade.fetchBest(
-        { title: cleanSong, artist: cleanArtist, duration },
+        { title: cleanSong, artist: cleanArtist, duration, ref: options.ref },
         undefined,
         syncedOnly,
       );
@@ -127,7 +126,7 @@ class LyricaService {
   fromProvider(hit: ProviderLyrics): LyricaResult {
     return {
       lyrics: hit.lyrics,
-      source: hit.provider,
+      source: hit.label ?? hit.provider,
       metadata: {
         title: hit.trackName,
         artist: hit.artistName,
@@ -231,7 +230,7 @@ class LyricaService {
     }
   }
 
-  parseLrc(lrcContent: string, duration: number = 180): LyricLine[] {
+  parseLrc(lrcContent: string, _duration: number = 180): LyricLine[] {
     if (!lrcContent) return [];
     
     const lines = lrcContent.split('\n');
@@ -241,8 +240,7 @@ class LyricaService {
     // Check if ANY line has a timestamp first
     const hasTimestamps = lines.some(line => timeRegex.test(line));
     
-    // Ensure valid duration for estimation (prevent 0 timestamps)
-    const safeDuration = duration > 0 ? duration : 180;
+    // Retain the argument for existing callers; plain text has no timing to estimate.
 
     if (hasTimestamps) {
         // Standard LRC Parsing; word tags (`<mm:ss.xxx>`) become the line's words.
@@ -269,15 +267,14 @@ class LyricaService {
           });
         });
     } else {
-        // PLAIN TEXT AUTO-SCROLL LOGIC
+        // Preserve the lack of timing. SynchronizedLyrics owns proportional scrolling.
         const meaningfulLines = lines.map(l => l.trim()).filter(l => l.length > 0);
         const totalLines = meaningfulLines.length;
         
         if (totalLines > 0) {
-            const timePerLine = safeDuration / totalLines;
             meaningfulLines.forEach((text, index) => {
                 result.push({
-                    timestamp: index * timePerLine,
+                    timestamp: 0,
                     text: text,
                     lineOrder: index,
                 });

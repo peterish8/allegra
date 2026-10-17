@@ -27,7 +27,9 @@ export const SHARED_COPIES = [
   'blendLimits.ts',
   'blendView.ts',
   'regions.ts',
-  'listenSignal.ts'
+  'listenSignal.ts',
+  'lyricsText.ts',
+  'lyricSync.ts'
 ];
 
 const root = new URL('../', import.meta.url);

@@ -3,8 +3,10 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
 import type { AuthService } from '../auth/auth.js';
+import type { SongHints } from '../services/lyrics.js';
 import { buildRecommendationInput } from '../services/recommendationContext.js';
 import type { AppServices } from '../services.js';
+import { fromAllegraSong } from '../shared/songRef.js';
 import type { UnifiedSong } from '../types.js';
 import { tasteSummary } from '../user/taste.js';
 import { refForId } from '../user/libraryOps.js';
@@ -32,6 +34,12 @@ function leanSong(song: UnifiedSong) {
     ...(song.language ? { language: song.language } : {}),
     artwork: song.artwork
   };
+}
+
+/** What a lyrics lookup can use beyond title and artist: the song's ref, album and language. */
+function lyricsHints(song: UnifiedSong): SongHints {
+  const ref = fromAllegraSong(song);
+  return { ...(ref ? { ref } : {}), ...(song.album ? { album: song.album } : {}), ...(song.language ? { language: song.language } : {}) };
 }
 
 function librarySummary(library: LibraryRecord) {
@@ -110,7 +118,7 @@ export function registerTools(server: McpServer, services: AppServices, userId: 
     bound(async (args) => {
       const [song] = await catalog.getSongs([args.songId]);
       if (!song) return fail("Couldn't find that song.");
-      const payload = await lyrics.find(song.title, song.artist, song.duration, args.syncedOnly ?? false);
+      const payload = await lyrics.find(song.title, song.artist, song.duration, args.syncedOnly ?? false, lyricsHints(song));
       if (!payload) return fail('No lyrics found for this song.');
       return ok(payload);
     })
@@ -126,7 +134,7 @@ export function registerTools(server: McpServer, services: AppServices, userId: 
       if (!translation.isAvailable) return fail('Translation is not available right now.');
       const [song] = await catalog.getSongs([args.songId]);
       if (!song) return fail("Couldn't find that song.");
-      const payload = await lyrics.find(song.title, song.artist, song.duration, false);
+      const payload = await lyrics.find(song.title, song.artist, song.duration, false, lyricsHints(song));
       if (!payload || payload.lines.length === 0) return fail('No lyrics to translate for this song.');
       const result = await translation.translate(payload.lines, song.title, song.artist, args.targetLanguage ?? 'English', song.language);
       if (!result) return fail('Could not translate this song right now.');

@@ -27,6 +27,7 @@ import type * as shares from "../shares.js";
 import type * as spotify from "../spotify.js";
 import type * as spotifyCron from "../spotifyCron.js";
 import type * as taste from "../taste.js";
+import type * as verifiedLyrics from "../verifiedLyrics.js";
 
 import type {
   ApiFromModules,
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   spotify: typeof spotify;
   spotifyCron: typeof spotifyCron;
   taste: typeof taste;
+  verifiedLyrics: typeof verifiedLyrics;
 }>;
 
 /**

@@ -213,11 +213,9 @@ export function PlayerPanel({
   };
   // The top bar's right-hand slot: the lyrics panel renders its ⋯ actions there on wide screens.
   const [topActionsSlot, setTopActionsSlot] = useState<HTMLDivElement | null>(null);
-  // A song with no lyrics (the lookup finished, found nothing, and did not fail) puts the lyrics away by
-  // itself: the cover and controls centre on their own, as if the listener had hidden them.
-  const noLyrics = !lyrics.loading && !lyrics.error && lyrics.lines.length === 0;
-  const desktopSolo = !isNarrowViewport && tab === 'lyrics' && (lyricsHidden || noLyrics);
-  const desktopLyricsVisible = tab === 'lyrics' && !lyricsHidden && !noLyrics;
+  // Keep missing-lyrics recovery and Other lyrics reachable after an empty lookup.
+  const desktopSolo = !isNarrowViewport && tab === 'lyrics' && lyricsHidden;
+  const desktopLyricsVisible = tab === 'lyrics' && !lyricsHidden;
   // Desktop: double-clicking the cover puts it away and lets the lyrics take the whole stage,
   // centred. The lyrics button (then "Show cover") or switching tabs brings the cover back.
   const [coverHidden, setCoverHidden] = useState(false);
@@ -532,6 +530,7 @@ export function PlayerPanel({
                     </MarqueeText>
                   </h2>
               <p className="np-artist">
+                    <MarqueeText text={song.artist}>
                     {onOpenArtist && artists.length > 0
                       ? artists.map((name, index) => (
                           <span key={`${name}-${index}`}>
@@ -547,6 +546,7 @@ export function PlayerPanel({
                           </span>
                         ))
                       : song.artist}
+                    </MarqueeText>
               </p>
                   {/* Beside the title, as in Apple Music and Spotify: the action row keeps the tools. */}
                   <IconButton
@@ -592,9 +592,8 @@ export function PlayerPanel({
                   <div className="np-actions">
                     <IconButton
                       icon={Waves}
-                      label={!isNarrowViewport && noLyrics && tab === 'lyrics' ? 'No lyrics for this song' : isNarrowViewport ? (mode === 'workspace' ? 'Show cover' : 'Show lyrics') : lyricsFull ? 'Show cover' : desktopLyricsVisible ? 'Hide lyrics' : 'Show lyrics'}
+                      label={isNarrowViewport ? (mode === 'workspace' ? 'Show cover' : 'Show lyrics') : lyricsFull ? 'Show cover' : desktopLyricsVisible ? 'Hide lyrics' : 'Show lyrics'}
                       active={isNarrowViewport ? mode === 'workspace' : desktopLyricsVisible}
-                      disabled={!isNarrowViewport && noLyrics && tab === 'lyrics'}
                       onClick={() => {
                         if (isNarrowViewport) {
                           if (mode === 'workspace') onOpenImmersive();
@@ -956,16 +955,16 @@ function Scrubber({
 
 
 
-/** Pixels per second the title drifts at: slow enough to read, fast enough to finish a lap. */
-const MARQUEE_SPEED = 36;
+/** The title and credits share the same reading pace. */
+const MARQUEE_SPEED = motionTokens.marquee.pixelsPerSecond;
 /** Space between the end of one lap and the start of the next; keep in step with .np-marquee__track gap. */
-const MARQUEE_GAP = 48;
+const MARQUEE_GAP = motionTokens.marquee.gap;
 
 /**
- * One-line title. When it fits it sits still; when it does not, two copies drift right to
- * left in a seamless loop (translateX only). Reduced motion falls back to an ellipsis.
+ * One-line title or credits. Overflow loops left to right using translateX only.
+ * Reduced motion falls back to an ellipsis.
  */
-function MarqueeText({ text, children }: { readonly text: string; readonly children: ReactNode }) {
+export function MarqueeText({ text, children = text }: { readonly text: string; readonly children?: ReactNode }) {
   const frameRef = useRef<HTMLSpanElement | null>(null);
   const measureRef = useRef<HTMLSpanElement | null>(null);
   const [overflow, setOverflow] = useState<number | null>(null);
@@ -981,10 +980,11 @@ function MarqueeText({ text, children }: { readonly text: string; readonly child
     update();
     const observer = new ResizeObserver(update);
     observer.observe(frame);
+    observer.observe(measure);
     return () => observer.disconnect();
   }, [text]);
 
-  const style = overflow ? ({ '--marquee-duration': `${Math.max(8, (overflow + MARQUEE_GAP) / MARQUEE_SPEED)}s`, '--marquee-shift': `${overflow + MARQUEE_GAP}px` } as CSSProperties) : undefined;
+  const style = overflow ? ({ '--marquee-duration': `${Math.max(motionTokens.marquee.minimumDuration, (overflow + MARQUEE_GAP) / MARQUEE_SPEED)}s`, '--marquee-shift': `${overflow + MARQUEE_GAP}px` } as CSSProperties) : undefined;
 
   return (
     <span ref={frameRef} className={`np-marquee${overflow ? ' is-scrolling' : ''}`} style={style}>

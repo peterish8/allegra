@@ -36,6 +36,31 @@ export interface LyricsPayload {
   readonly lines: LyricLine[];
 }
 
+/** `latin` is the transliteration (shown first); `native` is the song's own script. */
+export type LyricsScript = 'latin' | 'native';
+
+/** One synced rendering listeners made and confirmed, as `GET /api/lyrics/verified` returns it. */
+export interface VerifiedLyricsVersion {
+  readonly script: LyricsScript;
+  /** ISO 639-1 code of the sung language ("ta", "te", "hi"…). */
+  readonly language: string;
+  /** Enhanced LRC: line `[mm:ss.xx]` stamps and word `<mm:ss.xxx>` tags (wordSync). */
+  readonly lrc: string;
+  /** Epoch milliseconds. */
+  readonly syncedAt: number;
+}
+
+export interface VerifiedLyrics {
+  /** SongRef, "saavn:<id>". */
+  readonly ref: string;
+  readonly title: string;
+  readonly artist: string;
+  /** Seconds. */
+  readonly duration: number;
+  /** Live versions only, latin first. */
+  readonly versions: readonly VerifiedLyricsVersion[];
+}
+
 /** A lead artist as the catalog knows them: a real photo when the provider has one. */
 export interface ArtistSummary {
   readonly id: string;

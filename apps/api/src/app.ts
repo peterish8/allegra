@@ -14,6 +14,8 @@ import { djRouter } from './routes/dj.js';
 import { djVoiceRouter } from './routes/djVoice.js';
 import { sendFailure } from './routes/common.js';
 import { lyricsRouter } from './routes/lyrics.js';
+import { lyricSyncRouter } from './routes/lyricSync.js';
+import { LyricSyncService } from './services/lyricSync.js';
 import { radioRouter } from './routes/radio.js';
 import { mcpRouter } from './mcp/server.js';
 import { OAuthClients } from './oauth/clients.js';
@@ -54,6 +56,9 @@ export interface AppOptions extends Omit<ServiceOptions, 'jwtSecret'> {
     readonly stream?: RateLimitConfig;
     readonly auth?: RateLimitConfig;
     readonly discovery?: RateLimitConfig;
+    readonly lyricsSources?: RateLimitConfig;
+    readonly lyricsSync?: RateLimitConfig;
+    readonly lyricsReport?: RateLimitConfig;
     readonly djTurn?: RateLimitConfig;
     readonly djTranscribe?: RateLimitConfig;
     readonly djSpeak?: RateLimitConfig;
@@ -110,6 +115,7 @@ export function createApp(options: AppOptions): Express {
 
   // A spoken request (a few seconds of WAV) is bigger than any other body; only this route takes it.
   app.use('/api/ai/dj/transcribe', express.json({ limit: '1mb' }));
+  app.use('/api/lyrics/sync', express.json({ limit: '512kb' }));
   app.use(express.json({ limit: '32kb' }));
 
   app.get('/api/health', (_request, response) => {
@@ -125,6 +131,7 @@ export function createApp(options: AppOptions): Express {
   app.use('/api', catalogRouter(services.catalog));
   app.use('/api', artworkRouter(services.artwork));
   app.use('/api', lyricsRouter(services.lyrics));
+  app.use('/api', lyricSyncRouter(services.auth, new LyricSyncService(services.catalog, services.lyrics, services.verifiedLyrics, new MemoryCacheStore())));
   app.use('/api', streamRouter(services.stream));
   app.use('/api', authRouter(services.auth, services.blends));
   app.use('/api', userRouter(services.auth, services.catalog, services.actions, services.covers, services.tally, services.blends));
@@ -188,6 +195,9 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
   const djSpeak = limiter(limits.djSpeak ?? { windowMs: 60_000, limit: 30 });
   // Search, lyrics and artist lookups each fan out to several providers.
   const lookup = limiter(limits.lookup ?? { windowMs: 60_000, limit: 90 });
+  const lyricsSources = limiter(limits.lyricsSources ?? { windowMs: 60_000, limit: 10 });
+  const lyricsSync = limiter(limits.lyricsSync ?? { windowMs: 60_000, limit: 6 });
+  const lyricsReport = limiter(limits.lyricsReport ?? { windowMs: 60_000, limit: 20 });
   // As-you-type search: a request per pause in typing, most answered by the edge cache before here.
   const typeahead = limiter(limits.typeahead ?? { windowMs: 60_000, limit: 240 });
   // Each recorded play is a profile read and write. Matches the song-change cap.
@@ -274,6 +284,9 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
       return;
     }
     if (path === '/api/search' || path.startsWith('/api/lyrics') || path.startsWith('/api/artists') || path.startsWith('/api/albums')) {
+      if (path === '/api/lyrics/sources') { lyricsSources(request, response, next); return; }
+      if (path === '/api/lyrics/sync') { lyricsSync(request, response, next); return; }
+      if (path === '/api/lyrics/report') { lyricsReport(request, response, next); return; }
       lookup(request, response, next);
       return;
     }

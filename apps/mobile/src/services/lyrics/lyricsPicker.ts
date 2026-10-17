@@ -3,7 +3,7 @@
  * SimpMusic, LRCLIB, KuGou — and the Lyrica backend), each answer shown the moment it lands, and the one the
  * listener taps used for the song.
  */
-import { DEFAULT_PROVIDER_ORDER, LYRICS_PROVIDERS, LyricsQuery, ProviderLyrics } from './providers';
+import { allegraVersions, DEFAULT_PROVIDER_ORDER, LYRICS_PROVIDERS, LyricsQuery, ProviderLyrics } from './providers';
 import { lyricsKind, LyricsOption, previewLines } from './lyricsChoice';
 import { lyricaService, LyricaResult } from '../LyricaService';
 import { SmartLyricMatcher } from '../SmartLyricMatcher';
@@ -16,6 +16,8 @@ export interface PickerTarget {
   artist: string;
   /** Seconds; 0 when unknown. */
   duration: number;
+  /** "saavn:<id>" for a streamed song: Allegra and JioSaavn look it up by it. */
+  ref?: string;
 }
 
 const cleanTitle = (title: string): string =>
@@ -65,7 +67,7 @@ export async function searchEveryProvider(
   onOption: (option: LyricsOption) => void,
   isCancelled: () => boolean = () => false,
 ): Promise<number> {
-  const query: LyricsQuery = { title: cleanTitle(target.title), artist: target.artist === 'Unknown Artist' ? '' : target.artist.trim(), duration: target.duration || undefined };
+  const query: LyricsQuery = { title: cleanTitle(target.title), artist: target.artist === 'Unknown Artist' ? '' : target.artist.trim(), duration: target.duration || undefined, ref: target.ref };
   if (!query.title) return 0;
   let found = 0;
   const report = (result: LyricaResult | null) => {
@@ -75,14 +77,18 @@ export async function searchEveryProvider(
     found += 1;
     onOption(option);
   };
-  const echo = DEFAULT_PROVIDER_ORDER.map(name =>
+  // Allegra can hold two versions (English and the song's own script): list both.
+  const shared = allegraVersions(query)
+    .then(hits => hits.forEach(hit => report(lyricaService.fromProvider(hit))))
+    .catch(() => undefined);
+  const echo = DEFAULT_PROVIDER_ORDER.filter(name => name !== 'Allegra').map(name =>
     (LYRICS_PROVIDERS[name]?.(query) ?? Promise.resolve(null))
       .then((hit: ProviderLyrics | null) => report(hit ? lyricaService.fromProvider(hit) : null))
       .catch(() => undefined));
   const backend = lyricaService.fetchLyrics(query.title, query.artist, false, target.duration || undefined, { skipEcho: true })
     .then(report)
     .catch(() => undefined);
-  await Promise.all([...echo, backend]);
+  await Promise.all([shared, ...echo, backend]);
   return found;
 }
 

@@ -118,7 +118,7 @@ function load(file: string): FileInfo | null {
 function resolveModule(fromFile: string, spec: string): string | null {
   let base: string;
   if (spec.startsWith('.')) base = path.resolve(path.dirname(fromFile), spec);
-  else if (spec.startsWith('@shared/')) base = path.resolve(SRC, '../../../packages', spec.slice('@shared/'.length));
+  else if (spec.startsWith('@shared/')) base = path.resolve(SRC, '../../../packages/shared', spec.slice('@shared/'.length));
   else return null;
   for (const candidate of [base, `${base}.ts`, `${base}.tsx`, path.join(base, 'index.ts'), path.join(base, 'index.tsx')]) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;

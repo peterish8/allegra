@@ -190,6 +190,27 @@ export const blendGift = v.object({
   song: songSnapshot
 });
 
+/**
+ * One synced rendering of a song's lyrics, timed on a listener's own computer (convex/verifiedLyrics.ts).
+ * `latin` is the transliteration listeners see first; `native` is the song's own script.
+ */
+export const lyricsVersion = v.object({
+  script: v.union(v.literal('latin'), v.literal('native')),
+  /** ISO 639-1 code of the sung language ("ta", "te", "hi"…). */
+  language: v.string(),
+  /** Enhanced LRC: `[mm:ss.xx]` per line and `<mm:ss.xxx>` per word (packages/shared/wordSync.ts). */
+  lrc: v.string(),
+  /** Where the words came from. Kept for moderation; never shown to listeners. */
+  source: v.object({ name: v.string(), url: v.optional(v.string()) }),
+  /** The aligner's mean line confidence, 0..1. A later sync replaces this one only when it beats it. */
+  confidence: v.number(),
+  syncedBy: v.string(),
+  syncedAt: v.number(),
+  /** Distinct listeners who reported this sync; at REPORTS_TO_HIDE it hides itself until the owner looks. */
+  reportedBy: v.array(v.string()),
+  hidden: v.boolean()
+});
+
 export default defineSchema({
   // Convex Auth owns `users`, `authAccounts`, `authSessions` and friends. It is the
   // identity record (who signed in with Google); `profiles` below is what they listen to.
@@ -368,6 +389,25 @@ export default defineSchema({
     songs: v.array(relatedSong),
     updatedAt: v.string()
   }).index('by_songId', ['songId']),
+
+  /**
+   * Lyrics a listener synced and confirmed ("Is this syncing good?"), shared with everyone who plays
+   * the song on the website and the phone. One row per recording; at most one version per script.
+   */
+  verifiedLyrics: defineTable({
+    /** SongRef, "saavn:<id>" (packages/shared/songRef.ts). */
+    ref: v.string(),
+    /** matchKey(title, artist), for a download on the phone that has no ref. */
+    matchKey: v.string(),
+    title: v.string(),
+    artist: v.string(),
+    /** Seconds. */
+    duration: v.number(),
+    versions: v.array(lyricsVersion),
+    updatedAt: v.number()
+  })
+    .index('by_ref', ['ref'])
+    .index('by_matchKey', ['matchKey']),
 
   /** A playlist someone chose to share. Live: it points at the owner's playlist, so edits show up for everyone with the link. */
   shares: defineTable({

@@ -4,6 +4,8 @@ import request from 'supertest';
 
 import { createApp } from './app.js';
 import { createServices } from './services.js';
+import { MemoryVerifiedLyricsStore } from './services/verifiedLyrics.js';
+import { matchKey } from './shared/songRef.js';
 import type { UserStore } from './user/store.js';
 
 const rawSong = {
@@ -284,4 +286,45 @@ test('catalog, artwork, lyrics, and home smoke endpoints keep the frozen envelop
   assert.equal(lyrics.status, 200);
   assert.equal(lyrics.body.data.type, 'synced');
   assert.ok(lyrics.body.data.lines.length >= 10);
+});
+
+test('listener-synced lyrics are served by ref on /api/lyrics, /alternatives and /verified', async () => {
+  const verifiedLyrics = new MemoryVerifiedLyricsStore();
+  await verifiedLyrics.submit(
+    { ref: 'saavn:song-1', matchKey: matchKey('Test Song', 'Test Artist'), title: 'Test Song', artist: 'Test Artist', duration: 180 },
+    { script: 'latin', language: 'ta', lrc: '[00:05.00]<00:05.000>Shared <00:05.600>line<00:06.200>', source: { name: 'site' }, confidence: 0.9, syncedBy: 'listener-1' }
+  );
+  const services = createServices({
+    jwtSecret: 'test-secret',
+    fetchImpl: fakeFetch,
+    saavnApiUrl: 'https://saavn.test/api',
+    gaanaApiUrl: 'https://gaana.test/api',
+    lrclibApiUrl: 'https://lrclib.test/api',
+    verifiedLyrics
+  });
+  const server = createApp({ version: 'test', jwtSecret: 'test-secret', services, rateLimit: false });
+
+  const lyrics = await request(server).get('/api/lyrics?title=Test%20Song&artist=Test%20Artist&duration=180&ref=saavn:song-1');
+  assert.equal(lyrics.status, 200);
+  assert.equal(lyrics.body.data.source, 'Allegra (English)');
+  assert.equal(lyrics.body.data.lines[0].words.length, 2);
+
+  const alternatives = await request(server).get('/api/lyrics/alternatives?title=Test%20Song&artist=Test%20Artist&duration=180&ref=saavn:song-1');
+  assert.equal(alternatives.status, 200);
+  assert.equal(alternatives.body.data[0].source, 'Allegra (English)');
+
+  const verified = await request(server).get('/api/lyrics/verified?ref=saavn:song-1');
+  assert.equal(verified.status, 200);
+  assert.equal(verified.body.data.versions[0].script, 'latin');
+  assert.equal(verified.body.data.versions[0].source, undefined, 'where the words came from stays private');
+
+  const byName = await request(server).get('/api/lyrics/verified?title=Test%20Song&artist=Test%20Artist&duration=181');
+  assert.equal(byName.body.data.ref, 'saavn:song-1');
+
+  const none = await request(server).get('/api/lyrics/verified?ref=saavn:nobody');
+  assert.equal(none.status, 200);
+  assert.equal(none.body.data, null);
+
+  const missing = await request(server).get('/api/lyrics/verified');
+  assert.equal(missing.status, 400);
 });
