@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LuvLyrics island (island/IslandService.kt). It only draws the island above the status bar:
+     no events, no screen content, no gestures. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:notificationTimeout="0"
+    android:isAccessibilityTool="false"
+    android:description="@string/island_service_description"
+    android:summary="@string/island_service_summary" />
