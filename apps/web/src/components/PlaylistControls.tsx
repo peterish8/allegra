@@ -98,8 +98,8 @@ export function ShareButton({ libraryId, isPublic, onChanged }: ShareButtonProps
 
   return (
     <div className="share-control" ref={root}>
-      <button type="button" className="btn-glass tactile-control" aria-expanded={open} onClick={() => void openPopover()}>
-        <Link2 size={16} strokeWidth={1.8} aria-hidden="true" /><span>{isPublic ? 'Shared' : 'Share'}</span>
+      <button type="button" className="btn-glass tactile-control" aria-expanded={open} title={isPublic ? 'Shared' : 'Share'} onClick={() => void openPopover()}>
+        <Link2 size={16} strokeWidth={1.8} aria-hidden="true" /><span className="control-label">{isPublic ? 'Shared' : 'Share'}</span>
       </button>
       <AnimatePresence>
         {open ? (
@@ -168,6 +168,7 @@ export function UndoDelete({ label, seconds = 5, onConfirm }: UndoDeleteProps) {
       type="button"
       layout={!reduced}
       className={`undo-delete ${pending ? 'is-pending' : ''}`}
+      title={pending ? undefined : label}
       onClick={() => setLeft(pending ? null : seconds)}
       transition={reduced ? { duration: 0 } : spring.tactile}
       aria-live="polite"
@@ -184,7 +185,7 @@ export function UndoDelete({ label, seconds = 5, onConfirm }: UndoDeleteProps) {
           </motion.span>
         ) : (
           <motion.span key="delete" className="undo-delete-inner" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: motionTokens.duration.fast }}>
-            <Trash2 size={15} aria-hidden="true" /> {label}
+            <Trash2 size={15} aria-hidden="true" /> <span className="control-label">{label}</span>
           </motion.span>
         )}
       </AnimatePresence>
@@ -260,8 +261,8 @@ export function ChangeCoverButton({ libraryId, coverUrl, onUpload }: ChangeCover
 
   return (
     <div className="share-control cover-control" ref={root}>
-      <button type="button" className="btn-glass tactile-control" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-        <ImagePlus size={16} strokeWidth={1.8} aria-hidden="true" /><span>{coverUrl ? 'Change cover' : 'Add cover'}</span>
+      <button type="button" className="btn-glass tactile-control" aria-expanded={open} title={coverUrl ? 'Change cover' : 'Add cover'} onClick={() => setOpen((value) => !value)}>
+        <ImagePlus size={16} strokeWidth={1.8} aria-hidden="true" /><span className="control-label">{coverUrl ? 'Change cover' : 'Add cover'}</span>
       </button>
       <AnimatePresence>
         {open ? (

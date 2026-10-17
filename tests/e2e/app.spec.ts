@@ -72,6 +72,22 @@ test('Browse: a top 10 row plays in Now Playing, and an overflowing shelf fades 
   expect(errors).toEqual([]);
 });
 
+// 2026-10-17: a playlist is a folder of its covers in Library, and opens a page led by its cover.
+test('Library: a new playlist is a folder card that opens its own page, cover first', async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await page.goto('/library');
+  const name = `Folder ${Date.now()}`;
+  await page.getByLabel('New playlist name').fill(name);
+  await page.getByRole('button', { name: 'Create playlist' }).click();
+  const folder = page.getByRole('article', { name: `Playlist ${name}` });
+  await expect(folder).toBeVisible({ timeout: 20_000 });
+  await expect(folder).toContainText('0 songs');
+  await folder.getByRole('link', { name: `Open ${name}` }).click();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.collection-cover')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('every section renders without a page error', async ({ page }) => {
   const errors = collectPageErrors(page);
   for (const path of ['/', '/discover', '/library', '/liked', '/artist/Arijit%20Singh', '/not-a-real-page']) {

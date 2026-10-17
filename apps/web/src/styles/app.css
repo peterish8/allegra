@@ -1186,10 +1186,98 @@ body::after,
 .library-loading-mark { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: var(--active-wash); color: var(--ink-muted); }
 .library-sync-notice { padding: 10px 14px; border-radius: 12px; background: var(--surface); color: var(--ink-muted); font-size: 13px; }
 
-.playlist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
-.playlist-card { display: flex; min-width: 0; flex-direction: column; gap: 12px; padding: 16px; border: 0; border-radius: var(--radius-panel); background: var(--surface); box-shadow: none; }
-.playlist-card-head { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 14px; }
-.playlist-card-actions { display: flex; gap: 4px; }
+.playlist-section { display: grid; gap: 22px; }
+.playlist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 30px 24px; }
+
+/* ---------- Playlist folder: its covers fanned out of a frosted pocket ---------- */
+.playlist-folder { display: grid; min-width: 0; gap: 14px; }
+.playlist-folder__frame { position: relative; }
+.playlist-folder__stage { position: relative; display: block; aspect-ratio: 1 / 0.84; color: inherit; text-decoration: none; isolation: isolate; }
+.playlist-folder__stage:focus-visible { border-radius: 22px; outline: 2px solid var(--wave); outline-offset: 6px; }
+.playlist-folder__back { position: absolute; inset: 7% 12% 34%; border-radius: 18px; background: rgba(255, 255, 255, 0.06); }
+.playlist-folder__cover {
+  position: absolute;
+  top: 5%;
+  left: 50%;
+  display: grid;
+  width: 40%;
+  aspect-ratio: 0.8;
+  place-items: center;
+  overflow: hidden;
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05));
+  color: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 20px 34px -20px rgba(0, 0, 0, 0.9);
+  transition: transform var(--d-base) var(--ease-spring);
+}
+.playlist-folder__cover img { width: 100%; height: 100%; object-fit: cover; }
+.playlist-folder__cover.is-left { transform: translateX(-112%) translateY(10%) rotate(-10deg); }
+.playlist-folder__cover.is-centre { z-index: 1; top: 0; transform: translateX(-50%); }
+.playlist-folder__cover.is-right { transform: translateX(12%) translateY(10%) rotate(10deg); }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .playlist-folder__stage:hover .playlist-folder__cover.is-left { transform: translateX(-122%) translateY(4%) rotate(-14deg); }
+  .playlist-folder__stage:hover .playlist-folder__cover.is-centre { transform: translateX(-50%) translateY(-7%); }
+  .playlist-folder__stage:hover .playlist-folder__cover.is-right { transform: translateX(22%) translateY(4%) rotate(14deg); }
+}
+/*
+ * The pocket and its tab share one glass so they read as a single folder front; the covers tuck
+ * inside it and show through only as soft colour. Only the standard backdrop-filter is written:
+ * the build adds the -webkit- copy, and writing both makes it keep only the one Chrome ignores.
+ */
+.playlist-folder__tab,
+.playlist-folder__pocket {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(46, 48, 56, 0.72);
+  backdrop-filter: blur(22px) saturate(170%);
+}
+.playlist-folder__tab { bottom: 54%; left: 0; width: 46%; height: 16px; border-bottom: 0; border-radius: 16px 22px 0 0; background: linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)), rgba(46, 48, 56, 0.72); }
+.playlist-folder__pocket {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 54%;
+  padding: 14px 70px 14px 16px;
+  border-radius: 0 22px 22px 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0)), rgba(46, 48, 56, 0.72);
+  box-shadow: var(--glass-edge), 0 26px 44px -26px rgba(0, 0, 0, 0.95);
+}
+/* The third song fades into the pocket, as a folder holding more than it shows. */
+.playlist-folder__lines { display: grid; height: 100%; align-content: start; gap: 7px; overflow: hidden; -webkit-mask-image: linear-gradient(180deg, #000 58%, transparent); mask-image: linear-gradient(180deg, #000 58%, transparent); }
+.playlist-folder__line { display: grid; min-width: 0; line-height: 1.2; }
+.playlist-folder__line strong,
+.playlist-folder__line small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.playlist-folder__line strong { color: var(--ink); font-size: 13px; font-weight: 600; }
+.playlist-folder__line small { color: var(--ink-muted); font-size: 12px; }
+.playlist-folder__play {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 3;
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: rgba(10, 11, 14, 0.82);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.9);
+  transition: transform var(--d-fast) var(--ease-spring), background-color var(--d-fast) var(--ease-standard);
+}
+.playlist-folder__play svg { margin-left: 2px; }
+.playlist-folder__play.is-playing { background: var(--wave); color: var(--wave-ink); }
+.playlist-folder__play.is-playing svg { margin-left: 0; }
+@media (hover: hover) { .playlist-folder__play:hover { transform: scale(1.06); }}
+.playlist-folder__play:active { transform: scale(0.94); }
+.playlist-folder__play:focus-visible { outline: 2px solid var(--wave); outline-offset: 3px; }
+.playlist-folder__name { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px; }
+.playlist-folder__name h3 { min-width: 0; margin: 0; overflow: hidden; font-size: 19px; font-weight: 700; letter-spacing: -0.02em; text-overflow: ellipsis; white-space: nowrap; }
+.playlist-folder__name h3 a { color: var(--ink); text-decoration: none; }
+.playlist-folder__count { flex: 0 0 auto; padding: 4px 11px; border-radius: 999px; background: var(--surface); color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 
 .playlist-queue-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .playlist-queue-actions > button { flex: 1 1 140px; justify-content: center; }
@@ -2760,8 +2848,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .collection-empty-cover { display: grid; place-items: center; color: rgba(255, 255, 255, 0.4); }
 .collection-delete { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; padding: 0 16px; border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 999px; background: rgba(0, 0, 0, 0.25); color: #fff; font: inherit; font-size: 14px; font-weight: 500; backdrop-filter: blur(10px); cursor: pointer; transition: background-color var(--d-fast) var(--ease-standard); }
 .collection-delete:hover { background: rgba(0, 0, 0, 0.45); }
-.playlist-card-head h3 a { color: inherit; text-decoration: none; }
-.playlist-card-head h3 a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .collection-page .artist-hero-copy p { margin-bottom: 0; }
 
 /* ---------- Banner: black base, dark cover-coloured shader glow ---------- */
@@ -2973,7 +3059,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .library-state,
 .state-card,
 .library-sync-notice,
-.playlist-card,
 .media-card,
 .playlist-new-inline input,
 .playlist-new input,
@@ -2984,13 +3069,10 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   -webkit-backdrop-filter: var(--glass-blur);
 }
 
-.playlist-card,
 .media-card,
 .library-stat { transition: background-color var(--d-base) var(--ease-standard), border-color var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-decelerate); }
-.playlist-card:hover,
 .media-card:hover { border-color: var(--border-strong); }
 @media (hover: hover) {
-  .playlist-card:hover,
   .media-card:hover { transform: translateY(-2px); }}
 
 .playlist-new-inline input,
@@ -3246,21 +3328,34 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .album-hero::before,
 .album-hero::after { display: none; }
 
-.collection-hero .artist-cover,
-.collection-hero .artist-cover--mosaic {
-  position: relative;
-  inset: auto;
-  z-index: auto;
-  flex: 0 0 auto;
-  width: clamp(190px, 21vw, 280px);
-  height: auto;
-  aspect-ratio: 1;
+/* The playlist's cover leads like an album's, its own colours glowing softly behind it. */
+.collection-cover { position: relative; flex: 0 0 auto; width: clamp(200px, 22vw, 300px); aspect-ratio: 1; isolation: isolate; }
+.collection-cover__glow {
+  position: absolute;
+  inset: 6%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, var(--art-primary), transparent 62%), radial-gradient(circle at 70% 75%, var(--art-secondary), transparent 60%);
+  filter: blur(42px);
+  opacity: 0.7;
+  transform: scale(1.18);
+}
+.collection-cover__art {
+  display: grid;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  border-radius: 18px;
-  -webkit-mask-image: none;
-  mask-image: none;
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
   box-shadow: 0 34px 70px -28px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
+.collection-cover__art.is-mosaic { grid-template-columns: 1fr 1fr; }
+/* Play and Shuffle carry words; cover, share and delete are round icons beside them (names kept for screen readers). */
+.collection-hero .share-control > .tactile-control,
+.collection-hero .undo-delete:not(.is-pending) { width: 48px; min-width: 48px; padding: 0; justify-content: center; }
+.collection-hero .share-control > .tactile-control .control-label,
+.collection-hero .undo-delete:not(.is-pending) .control-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.collection-cover__art img { display: block; width: 100%; height: 100%; min-height: 0; object-fit: cover; }
 
 .collection-hero .artist-hero-copy h1,
 .album-hero__copy h1 { font-size: clamp(36px, 5.6vw, 76px); letter-spacing: -0.045em; line-height: 0.98; text-shadow: none; color: var(--ink); }
@@ -3282,12 +3377,21 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 @media (max-width: 900px) {
   .collection-hero,
   .album-hero { flex-direction: column; align-items: flex-start; padding-top: 4px; }
-  .collection-hero .artist-cover,
-  .collection-hero .artist-cover--mosaic,
-  .album-hero__art { width: min(62vw, 240px); }}
+  .album-hero__art { width: min(62vw, 240px); }
+  /* Narrow screens: centred like an album on a phone, cover above, then the title and the buttons. */
+  .collection-hero { align-items: center; padding-top: 12px; text-align: center; }
+  .collection-cover { width: min(68vw, 280px); }
+  .collection-hero .artist-hero-copy { display: flex; flex-direction: column; align-items: center; }
+  .collection-hero .page-title-row { justify-content: center; }
+  .collection-page .artist-actions { justify-content: center; }}
 
-.collection-hero .collection-empty-cover { width: 100%; height: 100%; background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03)); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
-.collection-hero .artist-cover--mosaic > .collection-empty-cover { display: grid; place-items: center; }
+/* A phone keeps every action on one row: Shuffle joins the round icons, Play stays the one with words. */
+@media (max-width: 640px) {
+  .collection-hero .collection-shuffle { width: 48px; min-width: 48px; padding: 0; justify-content: center; }
+  .collection-hero .collection-shuffle > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .collection-page .artist-actions { flex-wrap: nowrap; gap: 8px; }}
+
+.collection-hero .collection-empty-cover { display: grid; width: 100%; height: 100%; place-items: center; }
 
 /* ---------- Rail docked full height on the left ----------
  * Expanded, the rail is a frosted column from the top edge to the bottom edge of the window, flush
@@ -3608,12 +3712,8 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .cover-drop.is-busy { opacity: 0.85; pointer-events: none; }
 .cover-progress { display: block; width: 100%; height: 4px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, 0.12); }
 .cover-progress > span { display: block; width: 100%; height: 100%; transform-origin: left center; background: var(--wave); transition: transform var(--d-fast) var(--ease-standard); }
-.collection-custom-cover { overflow: hidden; border-radius: 24px; box-shadow: var(--glass-edge), 0 24px 48px -24px rgba(0, 0, 0, 0.75); }
-.collection-custom-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .playlist-tile-custom { display: block; width: 100%; height: 100%; }
 .playlist-tile-custom img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.playlist-card-cover { flex: 0 0 56px; width: 56px; height: 56px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-.playlist-card-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
 /* ---------- Delete with a way back (Watermelon "Timed Undo Action") ---------- */
 .undo-delete { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; padding: 0 20px; overflow: hidden; border: 1px solid rgba(255, 130, 118, 0.35); border-radius: 999px; background: rgba(238, 107, 95, 0.12); color: #ff9088; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); transition: background-color var(--d-base) var(--ease-standard), border-color var(--d-base) var(--ease-standard); }
@@ -5743,13 +5843,11 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .shelf-link,
   .song-versions-toggle,
   .feature-open,
-  .show-more,
-  .playlist-open { position: relative; }
+  .show-more { position: relative; }
   .shelf-link::after,
   .song-versions-toggle::after,
   .feature-open::after,
-  .show-more::after,
-  .playlist-open::after { position: absolute; inset: -12px -6px; content: ''; }
+  .show-more::after { position: absolute; inset: -12px -6px; content: ''; }
 
   .library-stat { justify-content: flex-start; }
   .library-stat span { min-height: 2.5em; }
@@ -5852,6 +5950,9 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     --dock: calc(var(--tabbar-h) + var(--tabbar-bottom) + 12px);
   }
   .app-shell:has(.mini-player) { --dock: calc(var(--tabbar-h) + var(--tabbar-bottom) + 84px); }
+  /* Inside a playlist, album or Liked Songs the page is the whole screen: no tab bar, Back leads out. */
+  .app-shell:has(.content-wrap.is-collection) { --tabbar-h: 0px; }
+  .app-shell:has(.content-wrap.is-collection) .bottom-nav { display: none; }
 
   .bottom-nav {
     position: fixed;

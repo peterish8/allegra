@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { paths } from '../lib/routes';
-import { ArrowUpRight, Clock3, Heart, ListMusic, Play, RefreshCw, Trash2, Users } from 'lucide-react';
+import { ArrowUpRight, Clock3, Heart, ListMusic, Music2, Play, RefreshCw, Users } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -66,7 +66,7 @@ export function LibraryPage({ likedSongs, recentlyPlayed, likedIds, loading, err
             {likedSongs.length > 0 ? <SongGrid songs={likedSongs} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} /> : <EmptyState title="Make a small collection" copy="Tap the heart on any track and it will land here for the next listening session." action={<div className="library-empty-actions"><TactileButton variant="accent" icon={ArrowUpRight} onClick={onDiscover}>Find something to keep</TactileButton>{flags.import ? <Link className="import-link" href={paths.import}>Import your library</Link> : null}</div>} />}
           </LibrarySection>
           <LibrarySection eyebrow="Your rooms" title="Playlists" icon={<ListMusic size={15} aria-hidden="true" />}>
-            <PlaylistsSection likedIds={likedIds} currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} onLike={onLike} onDiscover={onDiscover} />
+            <PlaylistsSection currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} onDiscover={onDiscover} />
           </LibrarySection>
           {flags.blend ? (
             <LibrarySection eyebrow="Shared with friends" title="Blends" icon={<Users size={15} aria-hidden="true" />}>
@@ -90,8 +90,8 @@ function SongGrid({ songs, currentSongId, isPlaying, likedIds, onPlay, onLike }:
   return <div className="library-track-list">{songs.map((song, index) => <SongCard key={song.id} song={song} index={index} isCurrent={song.id === currentSongId} isPlaying={song.id === currentSongId && isPlaying} onPlay={(pick) => onPlay(pick, songs)} onLike={() => onLike(song)} liked={likedIds.has(song.id)} />)}</div>;
 }
 
-function PlaylistsSection({ likedIds, currentSongId, isPlaying, onPlay, onLike, onDiscover }: { readonly likedIds: Set<string>; readonly currentSongId?: string; readonly isPlaying: boolean; readonly onPlay: (song: UnifiedSong, queue?: UnifiedSong[]) => void; readonly onLike: (song: UnifiedSong) => void; readonly onDiscover: () => void }) {
-  const { playlists, songs, loading, error, actionError, reload, create, remove } = usePlaylistsContext();
+function PlaylistsSection({ currentSongId, isPlaying, onPlay, onDiscover }: { readonly currentSongId?: string; readonly isPlaying: boolean; readonly onPlay: (song: UnifiedSong, queue?: UnifiedSong[]) => void; readonly onDiscover: () => void }) {
+  const { playlists, songs, loading, error, actionError, reload, create } = usePlaylistsContext();
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
 
@@ -116,38 +116,63 @@ function PlaylistsSection({ likedIds, currentSongId, isPlaying, onPlay, onLike, 
       {actionError ? <p className="library-sync-notice" role="status">{actionError}</p> : null}
       {playlists.length === 0 ? <EmptyState title="Start a playlist" copy="Name one above, then use the list-plus button on any track to save it here." action={<TactileButton variant="accent" icon={ArrowUpRight} onClick={onDiscover}>Find something to save</TactileButton>} /> : (
         <div className="playlist-grid">
-          {playlists.map((playlist) => <PlaylistCard key={playlist.id} playlist={playlist} songs={playlist.songIds.map((id) => songs.get(id)).filter((song): song is LibrarySong => song !== undefined)} likedIds={likedIds} currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} onLike={onLike} onDelete={() => void remove(playlist.id)} />)}
+          {playlists.map((playlist) => <PlaylistFolder key={playlist.id} playlist={playlist} songs={playlist.songIds.map((id) => songs.get(id)).filter((song): song is LibrarySong => song !== undefined)} currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} />)}
         </div>
       )}
     </div>
   );
 }
 
-function PlaylistCard({ playlist, songs, likedIds, currentSongId, isPlaying, onPlay, onLike, onDelete }: { readonly playlist: LibraryRecord; readonly songs: UnifiedSong[]; readonly likedIds: Set<string>; readonly currentSongId?: string; readonly isPlaying: boolean; readonly onPlay: (song: UnifiedSong, queue?: UnifiedSong[]) => void; readonly onLike: (song: UnifiedSong) => void; readonly onDelete: () => void }) {
-  const [confirming, setConfirming] = useState(false);
+/** Where each cover sits in the fan, and which of the playlist's covers it shows (the lead in the middle). */
+const FOLDER_SLOTS = [['left', 1], ['centre', 0], ['right', 2]] as const;
+
+/**
+ * A playlist as a folder of its covers: three songs' artwork fanned out of a frosted pocket that
+ * names its first songs. The whole folder opens the playlist; the round button plays it.
+ */
+function PlaylistFolder({ playlist, songs, currentSongId, isPlaying, onPlay }: { readonly playlist: LibraryRecord; readonly songs: UnifiedSong[]; readonly currentSongId?: string; readonly isPlaying: boolean; readonly onPlay: (song: UnifiedSong, queue?: UnifiedSong[]) => void }) {
   const first = songs[0];
+  // A custom cover leads; then the first songs with their own artwork, one per cover.
+  const covers: string[] = [];
+  for (const url of [playlist.coverUrl, ...songs.map((song) => song.artwork)]) {
+    if (url && !covers.includes(url)) covers.push(url);
+    if (covers.length === 3) break;
+  }
+  const playing = currentSongId !== undefined && isPlaying && songs.some((song) => song.id === currentSongId);
+  const count = playlist.songIds.length;
   return (
-    <article className="playlist-card" aria-label={`Playlist ${playlist.name}`}>
-      <header className="playlist-card-head">
-        {playlist.coverUrl ? (
-          <Link className="playlist-card-cover" href={paths.playlist(playlist.id)} aria-hidden="true" tabIndex={-1}>
-            <img src={playlist.coverUrl} alt="" />
-          </Link>
+    <article className="playlist-folder" aria-label={`Playlist ${playlist.name}`}>
+      <div className="playlist-folder__frame">
+        <Link className="playlist-folder__stage" href={paths.playlist(playlist.id)} aria-label={`Open ${playlist.name}`}>
+          <span className="playlist-folder__back" aria-hidden="true" />
+          {FOLDER_SLOTS.map(([position, index]) => (
+            <span key={position} className={`playlist-folder__cover is-${position}`} aria-hidden="true">
+              {covers[index] ? <img src={covers[index]} alt="" loading="lazy" decoding="async" /> : <ListMusic size={22} strokeWidth={1.5} />}
+            </span>
+          ))}
+          {/* The tab is its own element: a backdrop blur on a pseudo-element outside its box would not render. */}
+          <span className="playlist-folder__tab" aria-hidden="true" />
+          <span className="playlist-folder__pocket">
+            <span className="playlist-folder__lines">
+              {songs.length > 0 ? songs.slice(0, 3).map((song) => (
+                <span key={song.id} className="playlist-folder__line">
+                  <strong>{song.title}</strong>
+                  <small>{song.artist}</small>
+                </span>
+              )) : <span className="playlist-folder__line"><strong>{count > 0 ? 'Loading songs' : 'Empty for now'}</strong><small>{count > 0 ? 'One moment' : 'Add songs with the list-plus button'}</small></span>}
+            </span>
+          </span>
+        </Link>
+        {first ? (
+          <button type="button" className={`playlist-folder__play${playing ? ' is-playing' : ''}`} aria-label={`Play ${playlist.name}`} onClick={() => onPlay(first, songs)}>
+            {playing ? <Music2 size={20} aria-hidden="true" /> : <Play size={19} fill="currentColor" aria-hidden="true" />}
+          </button>
         ) : null}
-        <div>
-          <h3 title={playlist.name}><Link className="playlist-open" href={paths.playlist(playlist.id)}>{playlist.name}</Link></h3>
-          <span>{playlist.songIds.length} {playlist.songIds.length === 1 ? 'track' : 'tracks'}</span>
-        </div>
-        <div className="playlist-card-actions">
-          {first ? <TactileButton variant="secondary" icon={Play} onClick={() => onPlay(first, songs)}>Play</TactileButton> : null}
-          {confirming
-            ? <><TactileButton variant="accent" icon={Trash2} onClick={onDelete}>Delete it</TactileButton><TactileButton variant="ghost" onClick={() => setConfirming(false)}>Keep</TactileButton></>
-            : <button type="button" className="icon-button" aria-label={`Delete playlist ${playlist.name}`} title="Delete playlist" onClick={() => setConfirming(true)}><Trash2 size={17} aria-hidden="true" /></button>}
-        </div>
-      </header>
-      {songs.length > 0
-        ? <SongGrid songs={songs} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} />
-        : <p className="playlist-note">{playlist.songIds.length > 0 ? 'Loading tracks' : 'Empty for now. Save a track with the list-plus button.'}</p>}
+      </div>
+      <div className="playlist-folder__name">
+        <h3 title={playlist.name}><Link href={paths.playlist(playlist.id)}>{playlist.name}</Link></h3>
+        <span className="playlist-folder__count">{count} {count === 1 ? 'song' : 'songs'}</span>
+      </div>
     </article>
   );
 }
