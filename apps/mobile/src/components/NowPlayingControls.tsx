@@ -95,7 +95,7 @@ interface NowPlayingControlsProps {
   onOutputPress?: () => void;
   /** Playback is on another device: the output button lights up. */
   outputActive?: boolean;
-  /** Lyrics-only view: keep just the title, timeline and transport on screen. */
+  /** Lyrics-only view: compact song identity at the top, words filling the screen. */
   lyricsFullscreen?: boolean;
   /** Leaves the lyrics-only view without hiding the lyrics themselves. */
   onExitLyricsFullscreen?: () => void;
@@ -368,66 +368,35 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   if (lyricsFullscreen) {
     return (
       <Animated.View
-        style={[styles.focusContainer, animatedStyle]}
+        style={[styles.focusContainer, { paddingTop: insets.top + 16 }, animatedStyle]}
         pointerEvents={controlsVisible ? 'box-none' : 'none'}
       >
-        <View style={[styles.focusContent, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
-          <View style={styles.focusTitleRow}>
-            <Tactile
-              onPress={() => { tick('light'); onExitLyricsFullscreen?.(); }}
-              hitSlop={10}
-              pressScale={0.88}
-              accessibilityRole="button"
-              accessibilityLabel="Exit lyrics fullscreen"
-              style={styles.roundGlass}
-            >
-              <MaterialCommunityIcons name="fullscreen-exit" size={20} color={INK} />
-            </Tactile>
-            <Text style={styles.focusTitle} numberOfLines={1}>{currentSongTitle || 'Not playing'}</Text>
+        <View style={styles.focusContent}>
+          <Artwork uri={coverImageUri} title={currentSongTitle ?? ''} artist={currentSongArtist} size={52} style={styles.focusArtwork} />
+          <View style={styles.focusMeta}>
+            {/* One line each, capped growth: the lyrics frame below clears a fixed header height. */}
+            <Text style={styles.focusTitle} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongTitle || 'Not playing'}</Text>
+            <Text style={styles.focusArtist} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongArtist}</Text>
           </View>
-
-          <View style={styles.focusScrubber}>
-            <AppleSlider
-              progress={progress}
-              onCommit={seek}
-              height={10}
-              accessibilityLabel="Song position"
-              renderBelow={display => <TimeLabels display={display} durationSV={durationSV} />}
-            />
-          </View>
-
-          <View style={styles.focusTransport}>
-            <Tactile
-              onPress={() => { tick('light'); setBackNudge(n => n + 1); onSkipBackward(); }}
-              hitSlop={12}
-              pressScale={0.84}
-              accessibilityRole="button"
-              accessibilityLabel="Previous"
-              style={styles.transportBtn}
-            >
-              <NudgeIcon name="play-back" size={40} color={INK} direction={-1} trigger={backNudge} />
-            </Tactile>
-            <Tactile
-              onPress={() => { tick('medium'); onTogglePlay(); }}
-              hitSlop={12}
-              pressScale={0.86}
-              accessibilityRole="button"
-              accessibilityLabel={storePlaying ? 'Pause' : 'Play'}
-              style={styles.transportBtn}
-            >
-              <MorphIcon on={storePlaying} onIcon="pause" offIcon="play" size={52} color={INK} offStyle={styles.playNudge} />
-            </Tactile>
-            <Tactile
-              onPress={() => { tick('light'); setForwardNudge(n => n + 1); onSkipForward(); }}
-              hitSlop={12}
-              pressScale={0.84}
-              accessibilityRole="button"
-              accessibilityLabel="Next"
-              style={styles.transportBtn}
-            >
-              <NudgeIcon name="play-forward" size={40} color={INK} direction={1} trigger={forwardNudge} />
-            </Tactile>
-          </View>
+          <Tactile
+            onPress={onMorePress}
+            hitSlop={FOCUS_HIT_SLOP}
+            accessibilityRole="button"
+            accessibilityLabel="Song options"
+            style={styles.roundGlass}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color={INK} />
+          </Tactile>
+          <Tactile
+            onPress={() => { tick('light'); onExitLyricsFullscreen?.(); }}
+            hitSlop={FOCUS_HIT_SLOP}
+            pressScale={0.88}
+            accessibilityRole="button"
+            accessibilityLabel="Exit lyrics fullscreen"
+            style={styles.roundGlass}
+          >
+            <MaterialCommunityIcons name="fullscreen-exit" size={20} color={INK} />
+          </Tactile>
         </View>
       </Animated.View>
     );
@@ -612,15 +581,17 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
 
 const CONTAINER_PAD_TOP = 40;
 
+/** The fullscreen header's 38pt glass buttons reach Android's 48dp touch target without growing. */
+const FOCUS_HIT_SLOP = 6;
+
 const styles = StyleSheet.create({
   container: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 15, paddingTop: CONTAINER_PAD_TOP },
-  focusContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 25 },
-  // No band behind the controls: the lyrics frame stops above them and fades its own edge.
-  focusContent: { paddingHorizontal: CONTENT_PAD },
-  focusTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  focusTitle: { flex: 1, color: INK, fontSize: 17, fontWeight: '700' },
-  focusScrubber: { marginTop: 16 },
-  focusTransport: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', marginTop: 8 },
+  focusContainer: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 25 },
+  focusContent: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: CONTENT_PAD },
+  focusArtwork: { borderRadius: 8, overflow: 'hidden' },
+  focusMeta: { flex: 1, minWidth: 0, gap: 3 },
+  focusTitle: { color: INK, fontSize: 16, fontWeight: '700' },
+  focusArtist: { color: INK_META, fontSize: 13 },
   content: { paddingHorizontal: CONTENT_PAD },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // The row's gap (10) plus this makes DOCK_GAP between the thumbnail and the title.

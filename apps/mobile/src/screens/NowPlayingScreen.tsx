@@ -777,7 +777,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
   return (
     <View style={styles.root}>
-      <StatusBar hidden={lyricsFullscreen} animated />
+      <StatusBar hidden={false} animated />
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
       <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, styles.sheetClip, sheetClipStyle]}>
       <GestureDetector gesture={playerGesture}>
