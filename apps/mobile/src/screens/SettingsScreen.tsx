@@ -36,6 +36,8 @@ import { AppBackground, LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, LyricsHig
 import { CustomAlert } from '../components/CustomAlert';
 import { Toast } from '../components/Toast';
 import LuvLinkSettings from '../components/settings/LuvLinkSettings';
+import DynamicIslandSettings from '../components/settings/DynamicIslandSettings';
+import { readIslandStatus } from '../services/NativeDynamicIsland';
 import AllegraAccountSettings from '../components/settings/AllegraAccountSettings';
 import { Colors } from '../constants/colors';
 import { SettingsStrings } from '../constants/uiStrings';
@@ -251,6 +253,7 @@ const SettingsScreen: React.FC<Props> = () => {
               items={[
                 { key: 'account', label: 'Account' },
                 { key: 'player', label: 'Player' },
+                ...(readIslandStatus() ? [{ key: 'island', label: 'Island' }] : []),
                 { key: 'playback', label: 'Playback' },
                 { key: 'lyrics', label: 'Lyrics' },
                 { key: 'nav', label: 'Navigation' },
@@ -333,6 +336,8 @@ const SettingsScreen: React.FC<Props> = () => {
             </Row>
           ) : null}
         </Section>
+
+        <DynamicIslandSettings onLayout={at('island')} onNotice={setNotice} />
 
         <Section id="playback" summary={summaries.playback} icon="musical-notes-outline" title="Playback" lead="What happens when you press play." onLayout={at('playback')}>
           <Kit.Switch

@@ -29,6 +29,8 @@ config.server = {
 // Increase resolver timeout
 config.resolver = {
   ...config.resolver,
+  // Gradle replaces these directories while compiling. They contain no Metro sources.
+  blockList: /[/\\]node_modules[/\\].*[/\\]android[/\\](?:build|\.cxx)[/\\].*/,
   resolverMainFields: ['react-native', 'browser', 'main'],
   nodeModulesPaths: [path.join(__dirname, 'node_modules')],
 };
