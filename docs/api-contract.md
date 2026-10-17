@@ -203,6 +203,29 @@ state's language's top songs (`packages/shared/regions.ts`); `trending` is repla
 catalog has at least 5 of them, and then `chart` says which state and language. Songs on the chart
 are dropped from the other two shelves.
 
+### `GET /api/charts/apple?country=IN&type=songs|playlists` → `ApiResponse<AppleChartPayload>` — additive
+Both query values are optional: `country` defaults to `IN` and must be a two-letter storefront;
+`type` defaults to `songs` and accepts only `songs` or `playlists`. The server builds a fixed-host
+Apple RSS URL and validates each returned Apple Music link and artwork URL. It returns the first
+50 feed entries as metadata, with the original chart rank. This feed does not contain playable
+audio, so these entries are not Allegra playback rows and are never sent to `/api/stream`.
+
+```ts
+interface AppleChartItem {
+  id: string; rank: number; title: string; artist: string | null;
+  artworkUrl: string | null; appleUrl: string; releaseDate: string | null; genres: string[];
+}
+interface AppleChartPayload {
+  source: 'Apple Music'; storefront: string; type: 'songs' | 'playlists';
+  available: boolean; updatedAt: string | null; items: AppleChartItem[];
+}
+```
+
+Upstream failure returns a successful envelope with `available: false` and an empty `items` array;
+provider error text is never exposed. Cache-Control is `public, max-age=300, s-maxage=3600,
+stale-while-revalidate=21600`. Apple items link directly to the related Apple Music item, keeping the
+artwork in its promotional context.
+
 ### `GET /api/artists/:name` → `ApiResponse<ArtistProfile>` · cache 6 h — added 2026-09-21
 Additive endpoint (no existing shape changed). `name` is the lead artist as shown on a song. Resolves the name through the provider's artist search (exact match preferred), then returns `ArtistProfile` from `packages/shared/types.ts`: a real `image` (500×500 photo or `null`), `isVerified`, `followerCount`, optional `bio`, `songs` (most popular first, all playable), `albums` (with cover + year) and `similar` artists. `404` when no artist matches.
 ### `GET /api/artists/faces?names=a,b,c` → `ApiResponse<ArtistSummary[]>` · cache 24 h — added 2026-09-21
