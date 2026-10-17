@@ -53,6 +53,25 @@ test('a genre sleeve on Browse searches for that sound, and a result opens the p
   expect(errors).toEqual([]);
 });
 
+// 2026-10-17: Browse's top 10 plays here (no outside chart links), and a shelf with more tiles fades at its edge.
+test('Browse: a top 10 row plays in Now Playing, and an overflowing shelf fades instead of cutting a tile', async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await page.goto('/discover');
+  const chart = page.locator('#browse-chart').locator('xpath=ancestor::section[1]');
+  const first = chart.getByRole('button', { name: /^Play / }).first();
+  await expect(first).toBeVisible({ timeout: 30_000 });
+  await expect(chart.locator('a[href^="http"]')).toHaveCount(0);
+  const title = ((await first.getAttribute('aria-label')) ?? '').replace(/^Play /, '');
+  await first.click();
+  await expect(page.locator(bar)).toContainText(title, { timeout: 20_000 });
+  await expectPlaying(page);
+
+  const shelf = page.locator('.shelf.has-after').first();
+  await expect(shelf).toBeVisible({ timeout: 20_000 });
+  expect(await shelf.evaluate((element) => getComputedStyle(element).maskImage)).toContain('linear-gradient');
+  expect(errors).toEqual([]);
+});
+
 test('every section renders without a page error', async ({ page }) => {
   const errors = collectPageErrors(page);
   for (const path of ['/', '/discover', '/library', '/liked', '/artist/Arijit%20Singh', '/not-a-real-page']) {

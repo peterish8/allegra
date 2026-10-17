@@ -607,7 +607,8 @@ function Shelf({ id, title, hint, href, eyebrow, songs, reduced, currentSongId, 
   };
   return (
     <Section {...sectionProps} actions={<ShelfArrows scroll={scroll} label={title} />}>
-      <div className="shelf" ref={scroll.ref}>
+      {/* A side with more songs off screen fades out instead of cutting a tile in half. */}
+      <div className={`shelf${scroll.atStart ? '' : ' has-before'}${scroll.atEnd ? '' : ' has-after'}`} ref={scroll.ref}>
         {songs.map((song) => {
           const current = song.id === currentSongId;
           return (
