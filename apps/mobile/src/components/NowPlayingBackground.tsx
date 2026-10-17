@@ -9,8 +9,9 @@
  *            Echo's drifting glow when lyrics open (the two cross-fade).
  *   youtube — YouTube Music: the cover's colour washing down into black, the
  *            artwork as a card (NowPlayingLyricsArea), no canvas.
- *   aura   — ours: that wash with the live shader pouring through the top half
- *            in the cover's colours (AuraBackdrop), no canvas.
+ *   aura   — "Cover glow", ours: black through the middle, two tones of the
+ *            cover pouring in at an angle from the top and bottom edges and
+ *            drifting slowly (allegra/EdgeGlow), the artwork as a card, no canvas.
  *
  * With "Apple Music inspired" off, the sharp hero is left out and the player
  * shows a floating artwork card instead (NowPlayingLyricsArea).
@@ -22,14 +23,13 @@ import Animated, { SharedValue, useAnimatedStyle, useSharedValue, withTiming } f
 import AppleBackdrop, { heroHeight, usePlayerFrame } from './player/AppleBackdrop';
 import GlowBackground from './player/GlowBackground';
 import YouTubeBackdrop from './player/YouTubeBackdrop';
-import AuraBackdrop from './player/AuraBackdrop';
+import EdgeGlow from './allegra/EdgeGlow';
+import { COVER_GLOW_BASE, PLAYER_LIGHTS } from './allegra/edgeGlowMath';
 import { useGlowColors } from './player/useGlowColors';
 import { useArtworkPalette } from './allegra/useArtworkPalette';
 import CanvasVideoLayer from './CanvasVideoLayer';
 import { CanvasArtwork } from '../services/canvas/types';
 import { isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
-import { isCoverFull } from './player/coverStage';
-import { fullCoverHeight } from './NowPlayingLyricsArea';
 import { useAppActive } from '../hooks/useAppActive';
 import { diag } from '../utils/diag';
 
@@ -113,10 +113,6 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   }, [canvasAllowed, onCanvasVisibleChange]);
 
   const heroH = heroHeight(width, height);
-  // Shader wash with the full cover up: its light leaks out from under the
-  // cover's reeded edge (NowPlayingLyricsArea's FullCover) rather than from the top.
-  const coverFull = useSettingsStore(s => isCoverFull(s.playerBackground, s.appleMusicInspired, s.playerCoverFull));
-  const auraLift = style === 'aura' && coverFull && !showLyrics ? Math.round(fullCoverHeight(width, height) * 0.5) : 0;
   const heroFollow = useAnimatedStyle(() => {
     const x = shift ? shift.value : 0;
     return { opacity: 1 - 0.6 * Math.min(1, Math.abs(x) / Math.max(1, width)), transform: [{ translateX: x }] as const };
@@ -144,7 +140,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   if (style === 'aura') {
     return (
       <View style={StyleSheet.absoluteFill} pointerEvents="none" onLayout={onLayout}>
-        <AuraBackdrop palette={palette} width={width} height={height} playing={playing} active={surfaceActive} quiet={showLyrics} lift={auraLift} />
+        <EdgeGlow palette={palette} lights={PLAYER_LIGHTS} base={COVER_GLOW_BASE} active={surfaceActive} />
       </View>
     );
   }

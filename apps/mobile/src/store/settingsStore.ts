@@ -19,8 +19,9 @@ type ScrollSpeed = 'slow' | 'medium' | 'fast';
 export type MiniPlayerBackground = 'glow' | 'tint' | 'glass' | 'black';
 /**
  * 'blend' is Apple + glow: the Apple Music room, gliding into the glow when lyrics open.
- * 'aura' is our own: YouTube Music's wash and artwork card, with the live shader
- * drifting through the top half in the cover's colours.
+ * 'aura' is our own, "Cover glow": black through the middle with two tones of the
+ * cover pouring in from the top and bottom edges, drifting slowly, and the artwork
+ * as a card. (It was the "Shader wash" until 2026-10; the stored value stayed.)
  */
 export type PlayerBackground = 'blend' | 'apple' | 'youtube' | 'aura';
 
@@ -53,6 +54,10 @@ export const migrateLyricsDelay = (version: number, saved: unknown): number => {
 
 export const normalizePlayerBackground = (value: unknown): PlayerBackground =>
   (value === 'apple' || value === 'youtube' || value === 'aura' ? value : 'blend');
+
+/** Choosing Cover glow shows its own layout, the artwork card on black; a tap on the cover still flips it. */
+export const playerBackgroundChange = (playerBackground: PlayerBackground): Pick<SettingsState, 'playerBackground'> & Partial<Pick<SettingsState, 'playerCoverFull'>> =>
+  (playerBackground === 'aura' ? { playerBackground, playerCoverFull: false } : { playerBackground });
 
 export const normalizeMiniPlayerBackground = (value: unknown): MiniPlayerBackground =>
   (value === 'tint' || value === 'glass' || value === 'black' ? value : 'glow');
@@ -154,7 +159,7 @@ interface SettingsState {
   appleMusicInspired: boolean;
   /** Echo's "Hide volume slider" (Apple Music player only). */
   hidePlayerVolume: boolean;
-  /** 'blend' = Apple Music for the cover, Glow animated once lyrics open; 'youtube' = YouTube Music's colour wash with an artwork card; 'aura' = that wash with the live shader across the top half. */
+  /** 'blend' = Apple Music for the cover, Glow animated once lyrics open; 'youtube' = YouTube Music's colour wash with an artwork card; 'aura' = Cover glow, black with the cover's two tones drifting in from the top and bottom edges. */
   playerBackground: PlayerBackground;
   setMiniPlayerBackground: (v: MiniPlayerBackground) => void;
   setAppleMusicInspired: (v: boolean) => void;
@@ -297,7 +302,7 @@ export const useSettingsStore = create<SettingsState>()(
       hidePlayerVolume: false,
       setHidePlayerVolume: (hidePlayerVolume) => set({ hidePlayerVolume }),
       playerBackground: 'blend',
-      setPlayerBackground: (playerBackground) => set({ playerBackground }),
+      setPlayerBackground: (playerBackground) => set(playerBackgroundChange(playerBackground)),
       playerCoverFull: true,
       setPlayerCoverFull: (playerCoverFull) => set({ playerCoverFull }),
       appleMusicToken: '',

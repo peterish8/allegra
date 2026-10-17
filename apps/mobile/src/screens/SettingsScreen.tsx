@@ -198,7 +198,7 @@ const SettingsScreen: React.FC<Props> = () => {
   const accordion = React.useMemo(() => ({ openId, toggle: toggleSection }), [openId, toggleSection]);
 
   // What each closed section says it is set to.
-  const BG_NAME: Record<PlayerBackground, string> = { apple: 'Apple Music', blend: 'Apple + glow', youtube: 'YouTube Music', aura: 'Shader wash' };
+  const BG_NAME: Record<PlayerBackground, string> = { apple: 'Apple Music', blend: 'Apple + glow', youtube: 'YouTube Music', aura: 'Cover glow' };
   const ALIGN_NAME: Record<LyricsAlign, string> = { left: 'left', center: 'centre', right: 'right' };
   const timing = Math.round(settings.lyricsDelay * 10) / 10;
   const summaries = {
@@ -215,12 +215,12 @@ const SettingsScreen: React.FC<Props> = () => {
     blend: 'The Apple Music room, blending into a soft glow when lyrics are open.',
     apple: 'The cover melting into its own blur, like Apple Music.',
     youtube: 'The cover\u2019s colour washing down into black, with the artwork as a card, like YouTube Music.',
-    aura: 'That wash with the live shader drifting through the top half, in the cover\u2019s colours.',
+    aura: 'Black through the middle, with two of the cover\u2019s colours glowing in from the top and bottom and drifting slowly.',
   };
   const appBgHint: Record<AppBackground, string> = {
     shader: 'The live shader, moving with the music.',
     glass: 'Dark frosted glass tinted by the song. Lighter on the battery.',
-    glow: 'The mini player’s animated glow across the top, fading into plain black.',
+    glow: 'Two of the cover’s colours drifting slowly across the top, fading into plain black.',
   };
   const miniHint: Record<MiniPlayerBackground, string> = {
     glow: 'Two glows drifting in the cover\u2019s colours.',
@@ -287,7 +287,7 @@ const SettingsScreen: React.FC<Props> = () => {
             label="Player background"
             hint={bgHint[settings.playerBackground]}
             value={settings.playerBackground}
-            options={[{ value: 'apple', label: 'Apple Music' }, { value: 'blend', label: 'Apple + glow' }, { value: 'youtube', label: 'YouTube Music' }, { value: 'aura', label: 'Shader wash' }]}
+            options={[{ value: 'apple', label: 'Apple Music' }, { value: 'blend', label: 'Apple + glow' }, { value: 'youtube', label: 'YouTube Music' }, { value: 'aura', label: 'Cover glow' }]}
             onChange={settings.setPlayerBackground}
           />
           <Choice<AppBackground>

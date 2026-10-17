@@ -1,8 +1,8 @@
 import React from 'react';
 import { Dimensions, InteractionManager, Pressable, Text, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import MaskedView from '@react-native-masked-view/masked-view';
 import Artwork from './allegra/Artwork';
+import { COVER_GLOW_BASE } from './allegra/edgeGlowMath';
 import { isCardPlayerBackground, lyricsTextStyle, useSettingsStore } from '../store/settingsStore';
 import { washAt, youtubeWash } from './allegra/palette';
 import { isCoverFull } from './player/coverStage';
@@ -71,57 +71,10 @@ const fadeAway = (_v: ExitAnimationsValues) => {
 /** The full-bleed cover's height: YouTube Music's, a little taller than wide, never past 62% of the screen. */
 export const fullCoverHeight = (width: number, height: number): number => Math.round(Math.min(width * 1.15, height * 0.62));
 
-/** How many glass reeds the Shader wash cover dissolves through. */
-const REEDS = 14;
-
-/**
- * Where each reed has fully let go of the cover (0 top .. 1 bottom of the
- * cover): a slow ripple across the pane, so the edge is fluted, never a
- * straight line. Pure, so the ripple is the same every render.
- */
-export const reedEnds = (count: number): number[] =>
-  Array.from({ length: count }, (_, i) => 0.9 + 0.07 * Math.sin(i * 1.3) + 0.03 * Math.sin(i * 3.7));
-
-/**
- * The Shader wash cover's mask: the cover seen through reeded glass. Each
- * reed is solid at the top and lets the cover go at its own depth.
- */
-const ReededMask: React.FC<{ width: number; height: number }> = React.memo(({ width, height }) => {
-  const ends = React.useMemo(() => reedEnds(REEDS), []);
-  return (
-    <View style={{ width, height, flexDirection: 'row' }}>
-      {ends.map((end, i) => (
-        <LinearGradient
-          key={i}
-          colors={['#000000', '#000000', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']}
-          locations={[0, end - 0.26, end - 0.11, end]}
-          style={styles.reed}
-        />
-      ))}
-    </View>
-  );
-});
-
-/** Light catching the edge of each reed, only where the cover is dissolving. */
-const ReedEdges: React.FC<{ width: number; height: number }> = React.memo(({ width, height }) => (
-  <View style={[styles.reedEdges, { height: Math.round(height * 0.36) }]} pointerEvents="none">
-    {Array.from({ length: REEDS - 1 }, (_, i) => (
-      <LinearGradient
-        key={i}
-        colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.12)', 'rgba(255,255,255,0)']}
-        locations={[0, 0.55, 1]}
-        style={[styles.reedEdge, { left: Math.round(((i + 1) * width) / REEDS) }]}
-      />
-    ))}
-  </View>
-));
-
 /**
  * The full cover for the card styles: edge to edge from the top of the
- * screen. YouTube Music's melts into the flat wash behind it. The Shader
- * wash's (`reeded`) is its own: the cover dissolves through reeded glass —
- * a fluted edge, light on each reed — into the shader's light, which leaks
- * out from under it (AuraBackdrop `lift`).
+ * screen, melting into whatever is behind it at its lower edge — YouTube
+ * Music's wash, or the Cover glow's black (`onBlack`).
  */
 const FullCover: React.FC<{
   width: number;
@@ -130,14 +83,14 @@ const FullCover: React.FC<{
   title: string;
   artist?: string;
   primary: string;
-  reeded?: boolean;
+  onBlack?: boolean;
   stageX?: SharedValue<number>;
   lyricsP?: SharedValue<number>;
-}> = ({ width, screenH, uri, title, artist, primary, reeded = false, stageX, lyricsP }) => {
+}> = ({ width, screenH, uri, title, artist, primary, onBlack = false, stageX, lyricsP }) => {
   const reduce = useReducedMotion();
   const h = fullCoverHeight(width, screenH);
-  // The wash's own colour where the cover ends, so there is no seam.
-  const meet = washAt(youtubeWash(primary), h / Math.max(1, screenH));
+  // The backdrop's own colour where the cover ends, so there is no seam.
+  const meet = onBlack ? COVER_GLOW_BASE : washAt(youtubeWash(primary), h / Math.max(1, screenH));
   // Lyrics opening: the full cover lifts a little and melts away under them.
   const follow = useAnimatedStyle(() => {
     const x = stageX ? stageX.value : 0;
@@ -149,21 +102,9 @@ const FullCover: React.FC<{
   });
   return (
     <Animated.View style={[styles.fullCover, { height: h }, follow]} entering={reduce ? undefined : growIn} exiting={reduce ? undefined : fadeAway} pointerEvents="none">
-      {reeded ? (
-        <>
-          <MaskedView style={{ width, height: h }} maskElement={<ReededMask width={width} height={h} />}>
-            <Artwork uri={uri} title={title} artist={artist} size={Math.max(width, h)} priority="high" continuous quiet style={{ width, height: h }} />
-          </MaskedView>
-          <ReedEdges width={width} height={h} />
-          <LinearGradient colors={['rgba(0,0,0,0.32)', 'rgba(0,0,0,0)']} style={[styles.fullShade, { height: Math.round(h * 0.22) }]} />
-        </>
-      ) : (
-        <>
-          <Artwork uri={uri} title={title} artist={artist} size={Math.max(width, h)} priority="high" continuous quiet style={{ width, height: h }} />
-          <LinearGradient colors={['rgba(0,0,0,0.32)', 'rgba(0,0,0,0)']} style={[styles.fullShade, { height: Math.round(h * 0.22) }]} />
-          <LinearGradient colors={[`${meet}00`, `${meet}cc`, meet]} locations={[0, 0.6, 1]} style={[styles.fullMelt, { height: Math.round(h * 0.42) }]} />
-        </>
-      )}
+      <Artwork uri={uri} title={title} artist={artist} size={Math.max(width, h)} priority="high" continuous quiet style={{ width, height: h }} />
+      <LinearGradient colors={['rgba(0,0,0,0.32)', 'rgba(0,0,0,0)']} style={[styles.fullShade, { height: Math.round(h * 0.22) }]} />
+      <LinearGradient colors={[`${meet}00`, `${meet}cc`, meet]} locations={[0, 0.6, 1]} style={[styles.fullMelt, { height: Math.round(h * 0.42) }]} />
     </Animated.View>
   );
 };
@@ -212,13 +153,13 @@ const Stage: React.FC<{
   uri?: string;
   title: string;
   artist?: string;
-  /** Shader wash: the full cover dissolves through reeded glass. */
-  reeded: boolean;
+  /** Cover glow: the full cover melts into black, not a wash. */
+  onBlack: boolean;
   stageX?: SharedValue<number>;
   lyricsP?: SharedValue<number>;
   dockX?: SharedValue<number>;
   dockY?: SharedValue<number>;
-}> = ({ mode, width, screenH, paddingTop, uri, title, artist, reeded, stageX, lyricsP, dockX, dockY }) => {
+}> = ({ mode, width, screenH, paddingTop, uri, title, artist, onBlack, stageX, lyricsP, dockX, dockY }) => {
   const reduce = useReducedMotion();
   const palette = useArtworkPalette(uri);
   // Short screens: the card also fits the height above the title, which used
@@ -249,7 +190,7 @@ const Stage: React.FC<{
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {mode === 'full' ? (
-        <FullCover key="full" width={width} screenH={screenH} uri={uri} title={title} artist={artist} primary={palette.primary} reeded={reeded} stageX={stageX} lyricsP={lyricsP} />
+        <FullCover key="full" width={width} screenH={screenH} uri={uri} title={title} artist={artist} primary={palette.primary} onBlack={onBlack} stageX={stageX} lyricsP={lyricsP} />
       ) : null}
       <View style={[styles.cardArea, { paddingTop }]}>
         <Animated.View style={[{ width: card, height: card, alignItems: 'center', justifyContent: 'center' }, stageStyle]}>
@@ -300,7 +241,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   // Tapping the cover flips it between full-bleed and a card (coverStage.isCoverFull).
   const full = useSettingsStore(s => isCoverFull(s.playerBackground, s.appleMusicInspired, s.playerCoverFull));
   const cardStyle = useSettingsStore(s => isCardPlayerBackground(s.playerBackground));
-  const reeded = useSettingsStore(s => s.playerBackground === 'aura');
+  const onBlack = useSettingsStore(s => s.playerBackground === 'aura');
   // Apple styles, full: the backdrop draws the cover full-bleed, so there is
   // nothing to draw here. The card styles draw their own full cover over the
   // wash. Otherwise a floating card. The stage stays mounted under the
@@ -363,7 +304,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
           uri={coverImageUri}
           title={songTitle ?? ''}
           artist={songArtist}
-          reeded={reeded}
+          onBlack={onBlack}
           stageX={stageX}
           lyricsP={lyricsP}
           dockX={dockX}
@@ -378,7 +319,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
           style={[
             styles.lyricsFrame,
             fullscreen
-              ? { paddingTop: insets.top + 64, marginBottom: 218 }
+              ? { paddingTop: insets.top + 92, marginBottom: Math.max(insets.bottom, 16) + 12 }
               : { paddingTop: insets.top + HEADER_CLEARANCE },
             linesStyle,
           ]}
@@ -414,9 +355,6 @@ const styles = StyleSheet.create({
   fullCover: { position: 'absolute', top: 0, left: 0, right: 0, overflow: 'hidden' },
   fullShade: { position: 'absolute', top: 0, left: 0, right: 0 },
   fullMelt: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  reed: { flex: 1 },
-  reedEdges: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  reedEdge: { position: 'absolute', top: 0, bottom: 0, width: StyleSheet.hairlineWidth },
   fallback: { flex: 1, justifyContent: 'center', paddingHorizontal: 28, gap: 6 },
   fallbackTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '700' },
   fallbackHint: { color: 'rgba(255,255,255,0.62)', fontSize: 15 },
