@@ -339,7 +339,6 @@ export default function App() {
       setDjLive(autoplaySimilarRef.current);
     }
   }, [connect.connectLoads]);
-  const aiPicksRef = useRef<UnifiedSong[]>([]);
   const reloadPlaylists = playlists.reload;
   /** Songs the listener queued with Play next / Add to queue: they stay in front of any radio. */
   const userQueuedRef = useRef(new Set<string>());
@@ -356,12 +355,16 @@ export default function App() {
     /** The upcoming ids the set produced; Undo only runs while the queue still matches them. */
     readonly applied?: readonly string[];
   } | null>(null);
-  const radio = useSongRadio(transportRef, userQueuedRef);
+  const radio = useSongRadio(transportRef);
+  // Turning "keep playing similar songs" off stops the radio now, not at the next song picked.
+  useEffect(() => {
+    if (settings.autoplaySimilar) return;
+    radioActiveRef.current = false;
+    radio.stop();
+  }, [radio, settings.autoplaySimilar]);
   // Lock screen, media keys, headset buttons and car head units, all through the same funnel.
   const fillRadioQueue = useCallback(async (signal?: AbortSignal): Promise<number> => {
-    const added = await radio.fill(signal);
-    if (added > 0 || signal?.aborted) return added;
-    return transportRef.current.appendQueue(aiPicksRef.current);
+    return radio.fill(signal);
   }, [radio]);
 
   const skipNextSmart = useCallback((): void => {
@@ -374,8 +377,8 @@ export default function App() {
     if (!song) return;
     const next = player.skipNext();
     if (!next && radioActiveRef.current) {
-      void fillRadioQueue().then((added) => {
-        if (added > 0) player.skipNext();
+      void fillRadioQueue().then(() => {
+        if (radioActiveRef.current && transportRef.current.currentSong?.id === song.id) transportRef.current.skipNext();
       });
       return;
     }
@@ -846,14 +849,12 @@ export default function App() {
     // Snapshot now-playing for prompt colouring on a cache miss; deps stay taste-stable.
     fetchAiRecommendations(currentSongIdRef.current, controller.signal)
       .then((response) => {
-        aiPicksRef.current = response.songs;
         setAiPicks(response.songs);
         setAiPicksReasoning(response.reasoning);
         setAiPicksProvider(response.provider);
       })
       .catch(() => {
         // Optional enhancement — quietly stay empty if unavailable (no key configured, no history yet, etc).
-        aiPicksRef.current = [];
         setAiPicks([]);
       });
     return () => controller.abort();
@@ -1186,15 +1187,16 @@ export default function App() {
       playable = matched;
     }
     const startRadio = forceRadio || (settings.autoplaySimilar && (fromSearch || shouldStartRadio(playable, queue)));
-    radioActiveRef.current = startRadio;
-    setDjLive(startRadio);
-    if (startRadio) radio.start(playable);
-    else radio.stop();
+    const continueRadio = forceRadio || settings.autoplaySimilar;
+    radioActiveRef.current = continueRadio;
+    setDjLive(continueRadio);
     const playableQueue = queue.map((item) => item.id === song.id ? playable : item).filter((item) => Boolean(item.streamUrl));
     // A new context replaces the old one; the listener's own queued songs stay next.
     const player = transportRef.current;
     const at = player.queue.findIndex((item) => item.id === player.currentSong?.id);
     const context = startRadio || fromSearch ? [playable] : uniqueByIdentity(playableQueue);
+    if (continueRadio) radio.start(playable, startRadio ? [] : context);
+    else radio.stop();
     const inContext = new Set(context.map((item) => item.id));
     const mine = (at >= 0 ? player.queue.slice(at + 1) : []).filter((item) => userQueuedRef.current.has(item.id) && !inContext.has(item.id));
     const cut = context.findIndex((item) => item.id === playable.id) + 1;
@@ -1210,7 +1212,7 @@ export default function App() {
     setRecentlyPlayed((current) => [playable, ...current.filter((item) => item.id !== playable.id)].slice(0, 25));
     void recordRecentlyPlayed(playable, 0).catch(() => undefined);
     tapHaptic();
-    if (startRadio) void fillRadioQueue();
+    if (continueRadio) void fillRadioQueue();
   };
 
   const playFromSearch = (song: UnifiedSong): Promise<void> => playSong(song, [song], true);
@@ -1533,17 +1535,11 @@ export default function App() {
   const djVoiceRef = useRef(djVoice);
   djVoiceRef.current = djVoice;
 
-  // Keep radio topped up so end-of-track advance always has a distinct next.
+  // Refresh on every track, even with a full queue: new candidates follow the listening session.
   useEffect(() => {
-    const song = audio.currentSong;
-    if (!song || !radioActiveRef.current) return undefined;
-    const index = audio.queue.findIndex((item) => item.id === song.id);
-    const remaining = index >= 0 ? audio.queue.length - index - 1 : 0;
-    if (remaining >= 3) return undefined;
-    const controller = new AbortController();
-    void fillRadioQueue(controller.signal);
-    return () => controller.abort();
-  }, [audio.currentSong?.id, audio.queue.length, fillRadioQueue]);
+    if (!audio.currentSong || !radioActiveRef.current || remotePlayback) return;
+    void fillRadioQueue();
+  }, [audio.currentSong?.id, fillRadioQueue, remotePlayback]);
 
   /** Plays a catalog album from its card: loads the whole album, then plays it in track order. */
   const playCatalogAlbum = (album: AlbumSummary): void => {
@@ -1570,7 +1566,7 @@ export default function App() {
     const key = likedKey(song);
     const wasLiked = likedIds.has(key);
     const nextLiked = !wasLiked;
-    if (nextLiked && song.id === audio.currentSong?.id) radio.love(song);
+    if (nextLiked && !remotePlayback && song.id === audio.currentSong?.id) radio.love(song);
     setPersonalActionError(null);
     setLikedIds((current) => {
       const next = new Set(current);
@@ -1866,7 +1862,7 @@ export default function App() {
             isPlaying={playerIsPlaying}
             likedIds={likedIds}
             loading={personalLoading || playlists.loading}
-            onPlay={(song, queue) => playSong(song, queue)}
+            onPlay={(song, queue) => playSong(song, queue, false, settings.autoplaySimilar)}
             onToggle={togglePlayer}
             onLike={toggleLike}
             onOpenArtist={openArtist}
