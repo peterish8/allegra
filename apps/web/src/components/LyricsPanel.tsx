@@ -290,6 +290,13 @@ export function LyricsPanel({
     if (!hasScroll || !container) return;
     const setLead = (): void => {
       container.style.setProperty('--lyrics-lead', `${Math.round(container.clientHeight * ACTIVE_LINE_ANCHOR)}px`);
+      const panel = container.closest<HTMLElement>('.ytm-lyrics');
+      if (!panel) return;
+      const box = container.getBoundingClientRect();
+      const parent = panel.getBoundingClientRect();
+      panel.style.setProperty('--lyrics-scroll-top', `${box.top - parent.top}px`);
+      panel.style.setProperty('--lyrics-scroll-bottom', `${parent.bottom - box.bottom}px`);
+      panel.style.setProperty('--lyrics-scroll-height', `${box.height}px`);
     };
     setLead();
     const observer = new ResizeObserver(setLead);
@@ -425,8 +432,26 @@ export function LyricsPanel({
   const isNarrow = useNarrowViewport();
   const collapsibleActions = hideBackdrop && !compact && !isNarrow;
   const actionsRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!actionsOpen) return;
+    const top = actionsSlot?.closest<HTMLElement>('.listening-top');
+    const tabs = top?.querySelector<HTMLElement>('.player-tabs');
+    const back = top?.querySelector<HTMLElement>('.listening-collapse');
+    const pill = actionsRef.current?.querySelector<HTMLElement>('.ytm-lyrics__chrome-actions');
+    const makeRoom = (): void => {
+      if (!actionsSlot || !top || !tabs || !back || !pill) return;
+      // Measure the resting position even during an interrupted slide.
+      const offset = new DOMMatrixReadOnly(getComputedStyle(tabs).transform).m41;
+      const box = tabs.getBoundingClientRect();
+      const pillLeft = actionsSlot.getBoundingClientRect().right - pill.offsetWidth;
+      const room = Math.max(0, box.left - offset - back.getBoundingClientRect().right - 12);
+      const shift = Math.min(room, Math.max(0, box.right - offset - pillLeft + 12));
+      top.style.setProperty('--tabs-shift', `${-shift}px`);
+    };
+    makeRoom();
+    const observer = new ResizeObserver(makeRoom);
+    for (const element of [top, tabs, back, pill]) if (element) observer.observe(element);
+    window.addEventListener('resize', makeRoom);
     const closeOutside = (event: PointerEvent): void => {
       if (!actionsRef.current?.contains(event.target as Node)) setActionsOpen(false);
     };
@@ -436,10 +461,13 @@ export function LyricsPanel({
     document.addEventListener('pointerdown', closeOutside);
     document.addEventListener('keydown', closeOnEscape);
     return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', makeRoom);
       document.removeEventListener('pointerdown', closeOutside);
       document.removeEventListener('keydown', closeOnEscape);
+      top?.style.removeProperty('--tabs-shift');
     };
-  }, [actionsOpen]);
+  }, [actionsOpen, actionsSlot]);
 
   const toggleBlackBackground = (): void => {
     updateSettings({ playerBlackBackground: !settings.playerBlackBackground });

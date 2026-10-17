@@ -4312,11 +4312,11 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   right: 0;
   left: 0;
   display: block;
-  height: 18%;
+  height: calc(var(--lyrics-scroll-height, 100%) * 0.18);
   pointer-events: none;
 }
-.ytm-lyrics__edge--top { top: 0; }
-.ytm-lyrics__edge--bottom { bottom: 0; }
+.ytm-lyrics__edge--top { top: var(--lyrics-scroll-top, 0px); }
+.ytm-lyrics__edge--bottom { bottom: var(--lyrics-scroll-bottom, 0px); }
 .ytm-lyrics__edge i { position: absolute; inset: 0; }
 
 .ytm-lyrics__edge--top i:nth-child(1) { -webkit-backdrop-filter: blur(0.6px); backdrop-filter: blur(0.6px); -webkit-mask-image: linear-gradient(180deg, transparent 50%, #000 68%, #000 84%, transparent 100%); mask-image: linear-gradient(180deg, transparent 50%, #000 68%, #000 84%, transparent 100%); }
@@ -4855,11 +4855,11 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .listening-world .blob-5::before { background: radial-gradient(closest-side, rgba(var(--music-deep-rgb, 8, 9, 11), 0.7) 0%, rgba(var(--music-deep-rgb, 8, 9, 11), 0.32) 45%, rgba(var(--music-deep-rgb, 8, 9, 11), 0) 100%); }
 .listening-world .ambient-blob { opacity: 1; }
 
-.listening-world .blob-1 { animation-name: lyric-drift-1; animation-duration: 16s; }
-.listening-world .blob-2 { animation-name: lyric-drift-2; animation-duration: 20s; }
-.listening-world .blob-3 { animation-name: lyric-drift-3; animation-duration: 24s; }
-.listening-world .blob-4 { animation-name: lyric-drift-4; animation-duration: 28s; }
-.listening-world .blob-5 { animation-name: lyric-drift-5; animation-duration: 32s; }
+.listening-world .blob-1 { animation-name: lyric-drift-1; animation-duration: var(--d-lyric-drift-1); }
+.listening-world .blob-2 { animation-name: lyric-drift-2; animation-duration: var(--d-lyric-drift-2); }
+.listening-world .blob-3 { animation-name: lyric-drift-3; animation-duration: var(--d-lyric-drift-3); }
+.listening-world .blob-4 { animation-name: lyric-drift-4; animation-duration: var(--d-lyric-drift-4); }
+.listening-world .blob-5 { animation-name: lyric-drift-5; animation-duration: var(--d-lyric-drift-5); }
 
 @keyframes lyric-drift-1 { 0%, 100% { transform: translate3d(0, 0, 0); } 25% { transform: translate3d(34vw, 14vh, 0); } 50% { transform: translate3d(12vw, 40vh, 0); } 75% { transform: translate3d(-22vw, 22vh, 0); } }
 @keyframes lyric-drift-2 { 0%, 100% { transform: translate3d(0, 0, 0); } 25% { transform: translate3d(-30vw, -20vh, 0); } 50% { transform: translate3d(-44vw, 12vh, 0); } 75% { transform: translate3d(-12vw, 28vh, 0); } }
@@ -5286,10 +5286,10 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   overscroll-behavior: contain;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 20px;
-  background: linear-gradient(145deg, rgba(25, 29, 34, 0.82), rgba(10, 12, 16, 0.8));
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 22px 50px -30px rgba(0, 0, 0, 0.82);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  backdrop-filter: blur(28px) saturate(150%);
 }
 
 .lyrics-alternatives__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 2px 12px 4px; }
@@ -6009,10 +6009,15 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 
 /* Lyrics stage: keep lines in front of the fog, give them room, and float the sync nudge bottom-right. */
 .ytm-lyrics--nobackdrop.ytm-lyrics--softfocus:not(.ytm-lyrics--compact) .ytm-lyrics__scroll {
-  padding-block: var(--lyrics-lead, 72px) 42dvh;
+  padding-block: 0;
   -webkit-mask-image: linear-gradient(180deg, transparent 0, rgba(0, 0, 0, 0.5) 6%, #000 14%, #000 70%, rgba(0, 0, 0, 0.4) 86%, transparent 100%);
   mask-image: linear-gradient(180deg, transparent 0, rgba(0, 0, 0, 0.5) 6%, #000 14%, #000 70%, rgba(0, 0, 0, 0.4) 86%, transparent 100%);
 }
+/* Scrollable space belongs to the content, so opening the picker can shrink the viewport. */
+.ytm-lyrics--nobackdrop.ytm-lyrics--softfocus:not(.ytm-lyrics--compact) .ytm-lyrics__scroll::before,
+.ytm-lyrics--nobackdrop.ytm-lyrics--softfocus:not(.ytm-lyrics--compact) .ytm-lyrics__scroll::after { content: ''; display: block; }
+.ytm-lyrics--nobackdrop.ytm-lyrics--softfocus:not(.ytm-lyrics--compact) .ytm-lyrics__scroll::before { height: var(--lyrics-lead, 72px); }
+.ytm-lyrics--nobackdrop.ytm-lyrics--softfocus:not(.ytm-lyrics--compact) .ytm-lyrics__scroll::after { height: 42dvh; }
 .ytm-lyrics--nobackdrop.ytm-lyrics--softfocus .ytm-lyrics__line { padding-block: 0.3em; text-wrap: balance; }
 
 /* Translation: the original stays the line; the English sits under it, small and quieter. Sized in
@@ -6162,10 +6167,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   position: relative;
   z-index: 4;
 }
-/* Only while the action row is in the panel. When the wide player lifts it into its top bar, the
-   fog starts at the edge, where the scroller's own fade hides its hard top — pushed down with
-   nothing above it, that top edge cut straight across the lines as a blurred band. */
-.ytm-lyrics--nobackdrop.ytm-lyrics--softfocus:not(.ytm-lyrics--compact):has(.ytm-lyrics__chrome .ytm-lyrics__actions) .ytm-lyrics__edge--top { top: 40px; }
 .player-sidepanel.is-lyrics .ytm-lyrics__chrome .tactile-control { opacity: 0.9; }
 .player-sidepanel.is-lyrics .ytm-lyrics__chrome .tactile-control { color: rgba(255, 255, 255, 0.9); }
 
@@ -6752,6 +6753,9 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   transition: transform var(--d-base) var(--ease-decelerate), opacity var(--d-fast) var(--ease-standard);
 }
 .ytm-lyrics__actions.is-collapsible.is-open .ytm-lyrics__chrome-actions { transform: none; opacity: 1; }
+/* The tabs step aside for the open pill (LyricsPanel measures --tabs-shift) and glide back on close. */
+.listening-top .player-tabs { transform: translateX(var(--tabs-shift, 0px)); transition: transform var(--d-base) var(--ease-press); }
+@media (prefers-reduced-motion: reduce) { .listening-top .player-tabs { transition: none; } }
 .ytm-lyrics__actions.is-collapsible .ytm-lyrics__chrome-actions .tactile-control {
   min-height: 36px;
   padding: 0 12px;
