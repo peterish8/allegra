@@ -7,7 +7,7 @@ import { pinoHttp } from 'pino-http';
 import { createServices, type AppServices, type ServiceOptions } from './services.js';
 import { createLogger, REDACTED_PATHS } from './lib/logger.js';
 import { artworkRouter } from './routes/artwork.js';
-import { appleChartsRouter } from './routes/appleCharts.js';
+import { chartsRouter } from './routes/charts.js';
 import { authRouter } from './routes/auth.js';
 import { catalogRouter } from './routes/catalog.js';
 import { discoveryRouter } from './routes/discovery.js';
@@ -130,7 +130,7 @@ export function createApp(options: AppOptions): Express {
   // Private by default: account data must never land in a shared cache. Routes that may be cached (stream) overwrite it.
   app.use('/api', (_request, response, next) => { response.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api', catalogRouter(services.catalog));
-  app.use('/api', appleChartsRouter(options.fetchImpl));
+  app.use('/api', chartsRouter(services.topChart));
   app.use('/api', artworkRouter(services.artwork));
   app.use('/api', lyricsRouter(services.lyrics));
   app.use('/api', lyricSyncRouter(services.auth, new LyricSyncService(services.catalog, services.lyrics, services.verifiedLyrics, new MemoryCacheStore())));

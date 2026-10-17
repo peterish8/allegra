@@ -3,6 +3,8 @@ import { ArtworkService } from './services/artwork.js';
 import { LyricsService } from './services/lyrics.js';
 import { RecommendationService } from './services/recommendations.js';
 import { RadioService } from './services/radio.js';
+import { TopChartService } from './services/topChart.js';
+import { AppleRssProvider } from './providers/appleRss.js';
 import { TranslationService } from './services/translation.js';
 import { CatalogService } from './catalog/catalog.js';
 import { ConvexCoverStorage, ConvexGrantLedger, ConvexUserStore } from './db/convex.js';
@@ -117,6 +119,8 @@ export interface AppServices {
   readonly recommendations: RecommendationService;
   /** Candidates for a song radio; the client ranks them as the listener skips and finishes. */
   readonly radio: RadioService;
+  /** Today's top songs for a country, matched to playable catalog songs. */
+  readonly topChart: TopChartService;
   /** Playlist cover storage (Convex). Undefined without Convex: uploads answer 503. */
   readonly covers?: CoverStorage;
   /** Single use for MCP OAuth codes and refresh tokens. */
@@ -236,6 +240,7 @@ export function createServices(options: ServiceOptions): AppServices {
     }),
     recommendations: new RecommendationService(catalog, cache),
     radio: new RadioService(catalog),
+    topChart: new TopChartService(new AppleRssProvider(fetchImpl), catalog, cache),
     ...(covers ? { covers } : {}),
     grants: convex ? new ConvexGrantLedger(convex) : new MemoryGrantLedger(),
     accountsEnabled: Boolean(convexVerifier)

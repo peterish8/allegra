@@ -1,13 +1,14 @@
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, ExternalLink, Heart, Music2, Pause, Play, Shuffle, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Heart, Pause, Play, Shuffle, Sparkles } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode, RefObject } from 'react';
 
 import type { AccountProfile, HomePayload, TasteSummary, UnifiedSong } from '@shared/types';
 import { genrePersonalNote, genreSearchQuery, recommendGenres } from '@shared/genres';
+import { identityKey } from '@shared/identity';
 
-import { fetchAppleCharts, searchSongs, type AppleChartPayload, type AppleChartType } from '../lib/api';
+import { fetchTopChart, searchSongs } from '../lib/api';
 import { ArtistPreviewCard } from './ArtistPreviewCard';
 import { TasteOnboarding } from './TasteOnboarding';
 import { Artwork, IconButton } from './ui';
@@ -312,6 +313,27 @@ const titleCase = (word: string): string => word.charAt(0).toUpperCase() + word.
 
 /** Each genre row's lead songs, by its genres and queries, for the life of the page. */
 const genreLeadCache = new Map<string, Readonly<Record<string, UnifiedSong>>>();
+/** Today's top songs across India, once fetched: coming back to Browse shows them at once. Null until then. */
+let topChartCache: readonly UnifiedSong[] | null = null;
+
+/** Today's top 10, as songs that play here. Empty when it could not be built; null while it loads. */
+function useTopChart(): readonly UnifiedSong[] | null {
+  const [songs, setSongs] = useState<readonly UnifiedSong[] | null>(topChartCache);
+  useEffect(() => {
+    if (topChartCache) return undefined;
+    const controller = new AbortController();
+    void fetchTopChart('IN', controller.signal)
+      .then((chart) => (chart.available ? chart.songs : []))
+      .catch(() => [])
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        if (next.length > 0) topChartCache = next;
+        setSongs(next);
+      });
+    return () => controller.abort();
+  }, []);
+  return songs;
+}
 /** "Tamil", "Tamil and English", "Tamil, Telugu and English". */
 const languageList = (languages: readonly string[]): string => {
   const names = languages.map(titleCase);
@@ -324,9 +346,17 @@ const languageList = (languages: readonly string[]): string => {
  */
 export function DiscoverSections({ taste, trending, madeForYou, recommended, currentSongId, isPlaying, likedIds, onPlay, onToggle, onLike, onExplore, chart: chartFor = null, languages = [], picks = [] }: DiscoverSectionsProps) {
   const reduced = useReducedMotion();
-  const chart = useMemo(() => trending.slice(0, 10), [trending]);
+  const topChart = useTopChart();
+  // Today's most played across India when it could be built, else the catalog's own list. Nothing
+  // while it loads, so one list never swaps for the other under the listener.
+  const fromTop = topChart !== null && topChart.length > 0;
+  const chart = useMemo(() => (topChart === null ? [] : (fromTop ? topChart : trending).slice(0, 10)), [topChart, fromTop, trending]);
+  // A song on the chart is not repeated on the shelves under it.
+  const charted = useMemo(() => new Set(chart.map((song) => identityKey(song.title, song.artist))), [chart]);
+  const loved = useMemo(() => madeForYou.filter((song) => !charted.has(identityKey(song.title, song.artist))), [madeForYou, charted]);
   // Somewhere new: the listener's own picks once there are enough of them, else the general shelf.
-  const wander = picks.length >= 6 ? picks : recommended;
+  const ownPicks = picks.length >= 6;
+  const wander = useMemo(() => (ownPicks ? picks : recommended).filter((song) => !charted.has(identityKey(song.title, song.artist))), [ownPicks, picks, recommended, charted]);
   const genres = useMemo(() => recommendGenres(taste).map((genre) => ({ genre, query: genreSearchQuery(genre, taste) })), [taste]);
   const genreKey = genres.map(({ genre, query }) => `${genre.id}=${query}`).join('|');
   // Picked genres or any listening make the row the listener's own; before that it is a tour.
@@ -389,7 +419,12 @@ export function DiscoverSections({ taste, trending, madeForYou, recommended, cur
       </Section>
 
       {chart.length > 0 ? (
-        <Section id="browse-chart" title={chartFor?.regionName ? `Top 10 in ${chartFor.regionName}` : 'Top 10 today'} hint={chartFor?.language ? `${titleCase(chartFor.language)} songs, today` : undefined} reduced={reduced}>
+        <Section
+          id="browse-chart"
+          title={!fromTop && chartFor?.regionName ? `Top 10 in ${chartFor.regionName}` : 'Top 10 today'}
+          hint={fromTop ? 'Most played across India' : chartFor?.language ? `${titleCase(chartFor.language)} songs, today` : undefined}
+          reduced={reduced}
+        >
           <ol className="chart-grid">
             {chart.map((song, index) => {
               const current = song.id === currentSongId;
@@ -430,81 +465,14 @@ export function DiscoverSections({ taste, trending, madeForYou, recommended, cur
         </Section>
       ) : null}
 
-      <AppleChartsSection reduced={reduced} />
-
-      {madeForYou.length > 0 ? (
-        <Shelf id="browse-loved" title="Loved right now" hint={languages.length > 0 ? `Popular in ${languageList(languages)}` : 'What everyone has on'} songs={madeForYou.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
+      {loved.length > 0 ? (
+        <Shelf id="browse-loved" title="Loved right now" hint={languages.length > 0 ? `Popular in ${languageList(languages)}` : 'What everyone has on'} songs={loved.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
       ) : null}
       {wander.length > 0 ? (
-        <Shelf id="browse-fresh" title="Somewhere new to wander" hint={wander === picks ? 'Picked from what you play' : undefined} songs={wander.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
+        <Shelf id="browse-fresh" title="Somewhere new to wander" hint={ownPicks ? 'Picked from what you play' : undefined} songs={wander.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
       ) : null}
 
     </>
-  );
-}
-
-function AppleChartsSection({ reduced }: { readonly reduced: boolean | null }) {
-  const [type, setType] = useState<AppleChartType>('songs');
-  const [payload, setPayload] = useState<AppleChartPayload | null>(null);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setStatus('loading');
-    void fetchAppleCharts(type, 'IN', controller.signal).then((result) => {
-      if (controller.signal.aborted) return;
-      setPayload(result);
-      setStatus(result.available ? 'ready' : 'unavailable');
-    }).catch(() => {
-      if (controller.signal.aborted) return;
-      setStatus('unavailable');
-    });
-    return () => controller.abort();
-  }, [type]);
-
-  const entries = payload?.type === type ? payload.items.slice(0, 10) : [];
-  const title = type === 'songs' ? 'Apple Music Top Songs' : 'Apple Music Playlists';
-
-  return (
-    <Section
-      id="browse-apple-chart"
-      title={title}
-      hint={`India · ${payload?.type === type && payload.updatedAt ? `Updated ${payload.updatedAt.slice(0, 10)}` : 'Apple Music'}`}
-      reduced={reduced}
-      actions={(
-        <div className="apple-chart-tabs" role="group" aria-label="Apple Music chart type">
-          <button type="button" aria-pressed={type === 'songs'} onClick={() => setType('songs')}>Songs</button>
-          <button type="button" aria-pressed={type === 'playlists'} onClick={() => setType('playlists')}>Playlists</button>
-        </div>
-      )}
-    >
-      {status === 'loading' ? <p className="apple-chart-message" role="status">Loading Apple Music {type}…</p> : null}
-      {status === 'unavailable' ? <p className="apple-chart-message" role="status">Apple Music charts are unavailable right now. Try again in a little while.</p> : null}
-      {status === 'ready' && entries.length === 0 ? <p className="apple-chart-message" role="status">There are no Apple Music {type} to show right now.</p> : null}
-      {status === 'ready' && entries.length > 0 ? (
-        <ol className="chart-grid apple-chart-grid">
-          {entries.map((entry) => {
-            const detail = entry.artist ?? (entry.genres.length ? entry.genres.slice(0, 2).join(' · ') : 'Apple Music playlist');
-            return (
-              <li key={entry.id} className="chart-row apple-chart-row">
-                <a className="chart-row-main apple-chart-main" href={entry.appleUrl} target="_blank" rel="noreferrer" aria-label={`Open ${entry.title} in Apple Music`}>
-                  <span className="chart-rank" aria-hidden="true">{entry.rank}</span>
-                  <span className="chart-art apple-chart-art" aria-hidden="true">
-                    <span className="apple-chart-placeholder"><Music2 size={18} /></span>
-                    {entry.artworkUrl ? <img className="apple-chart-artwork" src={entry.artworkUrl} alt="" loading="lazy" decoding="async" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
-                  </span>
-                  <span className="chart-copy">
-                    <strong title={entry.title}>{entry.title}</strong>
-                    <small title={detail}>{detail}</small>
-                  </span>
-                  <ExternalLink className="apple-chart-open" size={15} aria-hidden="true" />
-                </a>
-              </li>
-            );
-          })}
-        </ol>
-      ) : null}
-    </Section>
   );
 }
 

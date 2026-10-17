@@ -203,28 +203,27 @@ state's language's top songs (`packages/shared/regions.ts`); `trending` is repla
 catalog has at least 5 of them, and then `chart` says which state and language. Songs on the chart
 are dropped from the other two shelves.
 
-### `GET /api/charts/apple?country=IN&type=songs|playlists` → `ApiResponse<AppleChartPayload>` — additive
-Both query values are optional: `country` defaults to `IN` and must be a two-letter storefront;
-`type` defaults to `songs` and accepts only `songs` or `playlists`. The server builds a fixed-host
-Apple RSS URL and validates each returned Apple Music link and artwork URL. It returns the first
-50 feed entries as metadata, with the original chart rank. This feed does not contain playable
-audio, so these entries are not Allegra playback rows and are never sent to `/api/stream`.
+### `GET /api/charts/top?country=IN` → `ApiResponse<TopChartPayload>` — additive, 2026-10-17
+Today's most played songs in a country, as songs that play here. `country` is optional (default
+`IN`) and must be a two-letter storefront, else `400`. The server reads Apple's public most-played
+RSS feed for titles and artists only, finds each of the first 20 entries in the catalog with the
+import matcher's scoring (`exact` or `close`), and returns up to 10 in chart order; entries the
+catalog does not carry are skipped. Nothing from the feed (links, artwork, the Apple name) reaches
+the response, and the web shows it as plain "Top 10 today" rows that play like any other song.
 
 ```ts
-interface AppleChartItem {
-  id: string; rank: number; title: string; artist: string | null;
-  artworkUrl: string | null; appleUrl: string; releaseDate: string | null; genres: string[];
-}
-interface AppleChartPayload {
-  source: 'Apple Music'; storefront: string; type: 'songs' | 'playlists';
-  available: boolean; updatedAt: string | null; items: AppleChartItem[];
+interface TopChartPayload {
+  storefront: string;
+  available: boolean;          // false when the feed failed or fewer than 5 songs matched
+  updatedAt: string | null;    // the feed's own update time
+  songs: UnifiedSong[];        // playable, chart order; [] when not available
 }
 ```
 
-Upstream failure returns a successful envelope with `available: false` and an empty `items` array;
-provider error text is never exposed. Cache-Control is `public, max-age=300, s-maxage=3600,
-stale-while-revalidate=21600`. Apple items link directly to the related Apple Music item, keeping the
-artwork in its promotional context.
+A built chart is cached for an hour (`top-chart-v1:<storefront>`) and sent with
+`Cache-Control: public, max-age=300, s-maxage=3600, stale-while-revalidate=21600`. A chart that could
+not be built is a successful envelope with `available: false`, `no-store`, and is not cached, so the
+next request tries again. Browse falls back to the home payload's `trending` list then.
 
 ### `GET /api/artists/:name` → `ApiResponse<ArtistProfile>` · cache 6 h — added 2026-09-21
 Additive endpoint (no existing shape changed). `name` is the lead artist as shown on a song. Resolves the name through the provider's artist search (exact match preferred), then returns `ArtistProfile` from `packages/shared/types.ts`: a real `image` (500×500 photo or `null`), `isVerified`, `followerCount`, optional `bio`, `songs` (most popular first, all playable), `albums` (with cover + year) and `similar` artists. `404` when no artist matches.

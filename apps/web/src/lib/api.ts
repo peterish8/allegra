@@ -207,32 +207,17 @@ export async function searchSongs(query: string, signal?: AbortSignal, page = 0)
   return request(`/api/search?q=${encodeURIComponent(query)}&limit=20&page=${page}`, { signal });
 }
 
-export type AppleChartType = 'songs' | 'playlists';
-
-export interface AppleChartItem {
-  readonly id: string;
-  readonly rank: number;
-  readonly title: string;
-  readonly artist: string | null;
-  readonly artworkUrl: string | null;
-  readonly appleUrl: string;
-  readonly releaseDate: string | null;
-  readonly genres: readonly string[];
-}
-
-export interface AppleChartPayload {
-  readonly source: 'Apple Music';
+export interface TopChartPayload {
   readonly storefront: string;
-  readonly type: AppleChartType;
   readonly available: boolean;
   readonly updatedAt: string | null;
-  readonly items: readonly AppleChartItem[];
+  /** Playable catalog songs in chart order. */
+  readonly songs: readonly UnifiedSong[];
 }
 
-/** Official Apple Music chart metadata and links; this feed does not provide playable audio. */
-export async function fetchAppleCharts(type: AppleChartType, country = 'IN', signal?: AbortSignal): Promise<AppleChartPayload> {
-  const params = new URLSearchParams({ country, type });
-  return request(`/api/charts/apple?${params.toString()}`, { signal });
+/** `GET /api/charts/top`: today's most played songs in a country, as songs that play here. */
+export async function fetchTopChart(country = 'IN', signal?: AbortSignal): Promise<TopChartPayload> {
+  return request(`/api/charts/top?${new URLSearchParams({ country }).toString()}`, { signal });
 }
 
 /** As-you-type search: lean, relevance-ordered, edge-cached. */
