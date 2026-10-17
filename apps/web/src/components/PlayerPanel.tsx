@@ -961,7 +961,7 @@ const MARQUEE_SPEED = motionTokens.marquee.pixelsPerSecond;
 const MARQUEE_GAP = motionTokens.marquee.gap;
 
 /**
- * One-line title or credits. Overflow loops left to right using translateX only.
+ * One-line title or credits. Overflow drifts right to left in a seamless loop, translateX only.
  * Reduced motion falls back to an ellipsis.
  */
 export function MarqueeText({ text, children = text }: { readonly text: string; readonly children?: ReactNode }) {

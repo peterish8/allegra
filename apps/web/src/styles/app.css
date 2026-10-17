@@ -4370,7 +4370,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   mask-image: linear-gradient(90deg, transparent 0, #000 9%, #000 91%, transparent 100%);
 }
 .np-marquee.is-scrolling .np-marquee__track { animation: np-marquee var(--marquee-duration, 14s) linear infinite; }
-@keyframes np-marquee { from { transform: translateX(calc(var(--marquee-shift, 50%) * -1)); } to { transform: translateX(0); } }
+@keyframes np-marquee { from { transform: translateX(0); } to { transform: translateX(calc(var(--marquee-shift, 50%) * -1)); } }
 .am-meta > strong, .am-meta > .np-marquee { width: 100%; min-width: 0; }
 .am-meta .np-marquee__track, .am-meta .np-marquee__item { max-width: none; overflow: visible; }
 .am-meta strong .np-marquee, .am-meta strong .np-marquee span { color: inherit; font: inherit; }
