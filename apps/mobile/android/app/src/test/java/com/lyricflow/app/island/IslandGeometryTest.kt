@@ -66,21 +66,41 @@ class IslandGeometryTest {
     }
 
     @Test
-    fun `the open card is three quarters of the room it could take`() {
+    fun `the open card takes the full width it has room for`() {
         val density = 2.625f
         val g = IslandGeometry.compute(1080f, 79f, density, CameraCutout(486f, 0f, 594f, 79f))
         val room = minOf((1080f - 16f * density) / 1.05f - 12f * density, 440f * density)
-        assertEquals(room * 0.75f, g.cardWidth, 0.5f)
+        assertEquals(room, g.cardWidth, 0.5f)
     }
 
     @Test
-    fun `the listener's width and height resize the island, and the camera always stays inside`() {
+    fun `the notch shape hangs from the top edge and keeps the pill's bottom`() {
+        val density = 2.625f
+        val notch = CameraCutout(486f, 0f, 594f, 79f)
+        val pill = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f)
+        val hanging = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f, hanging = true)
+        assertTrue(pill.pillTop > 0f)
+        assertEquals("touches the top edge", 0f, hanging.pillTop, 0.01f)
+        assertEquals("same bottom", pill.pillTop + pill.pillHeight, hanging.pillTop + hanging.pillHeight, 0.01f)
+        assertEquals("same widths", pill.compactWidth, hanging.compactWidth, 0.01f)
+        assertEquals(pill.cardWidth, hanging.cardWidth, 0.01f)
+        assertTrue("content still below the camera", hanging.contentTop > notch.bottom)
+
+        val wide = CameraCutout(230f, 0f, 850f, 100f)
+        val below = IslandGeometry.compute(1080f, 100f, 3f, wide, 100f, hanging = true)
+        assertFalse("nothing to hang from below a wide notch", below.hanging)
+        assertTrue(below.pillTop > wide.bottom)
+    }
+
+    @Test
+    fun `the listener's width resizes only the closed island, height both, and the camera always stays inside`() {
         val density = 2.625f
         val notch = CameraCutout(486f, 0f, 594f, 79f)
         val base = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f)
         val wide = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f, widthScale = 1.2f, heightScale = 1.2f)
         val small = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f, widthScale = 0.8f, heightScale = 0.85f)
-        assertTrue(wide.cardWidth > base.cardWidth && small.cardWidth < base.cardWidth)
+        assertEquals("the open card keeps its full width", base.cardWidth, wide.cardWidth, 0.01f)
+        assertEquals(base.cardWidth, small.cardWidth, 0.01f)
         assertTrue(wide.compactWidth > base.compactWidth && small.compactWidth < base.compactWidth)
         assertTrue(wide.pillHeight > base.pillHeight)
         assertTrue(wide.fullHeight > base.fullHeight)
@@ -154,9 +174,9 @@ class IslandGeometryTest {
     }
 
     @Test
-    fun `a wide tablet card stops at 330 dp`() {
+    fun `a wide tablet card stops at 440 dp`() {
         val g = IslandGeometry.compute(2560f, 60f, 2f, null)
-        assertEquals(660f, g.cardWidth, 0.01f)
+        assertEquals(880f, g.cardWidth, 0.01f)
     }
 
     @Test

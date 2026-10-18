@@ -24,6 +24,11 @@ class IslandPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_LYRIC_STRIP, true)
         set(value) = prefs.edit().putBoolean(KEY_LYRIC_STRIP, value).apply()
 
+    /** The island's look: [STYLE_PILL] floating below the top edge, or [STYLE_NOTCH] hanging from it. */
+    var style: String
+        get() = prefs.getString(KEY_STYLE, STYLE_PILL) ?: STYLE_PILL
+        set(value) = prefs.edit().putString(KEY_STYLE, if (value == STYLE_NOTCH) STYLE_NOTCH else STYLE_PILL).apply()
+
     /** The island's size, in percent of its own (Settings → Dynamic island → Width / Height). */
     var widthPercent: Int
         get() = prefs.getInt(KEY_WIDTH, 100)
@@ -47,14 +52,17 @@ class IslandPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_ALLOW_NATIVE, false)
         set(value) = prefs.edit().putBoolean(KEY_ALLOW_NATIVE, value).apply()
 
-    private companion object {
-        const val KEY_ENABLED = "enabled"
-        const val KEY_IDLE = "show_when_idle"
-        const val KEY_ALLOW_NATIVE = "allow_on_native_island"
-        const val KEY_HIDE_IN_APP = "hide_in_app"
-        const val KEY_LYRIC_STRIP = "lyric_strip"
-        const val KEY_LOCK_SCREEN = "show_on_lock_screen"
-        const val KEY_WIDTH = "width_percent"
-        const val KEY_HEIGHT = "height_percent"
+    companion object {
+        const val STYLE_PILL = "pill"
+        const val STYLE_NOTCH = "notch"
+        private const val KEY_ENABLED = "enabled"
+        private const val KEY_IDLE = "show_when_idle"
+        private const val KEY_ALLOW_NATIVE = "allow_on_native_island"
+        private const val KEY_HIDE_IN_APP = "hide_in_app"
+        private const val KEY_LYRIC_STRIP = "lyric_strip"
+        private const val KEY_LOCK_SCREEN = "show_on_lock_screen"
+        private const val KEY_WIDTH = "width_percent"
+        private const val KEY_HEIGHT = "height_percent"
+        private const val KEY_STYLE = "style"
     }
 }

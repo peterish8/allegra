@@ -4,7 +4,7 @@
  * with the app closed. JavaScript only reads its status and flips its switches for Settings.
  */
 import { EMPTY_SUB, getNativeModule, nativeAddListener } from './nativeModule';
-import { IslandStatus, parseIslandStatus } from './dynamicIslandSetup';
+import { IslandStatus, IslandStyle, parseIslandStatus } from './dynamicIslandSetup';
 
 interface DynamicIslandModule {
   status?: () => unknown;
@@ -19,6 +19,7 @@ interface DynamicIslandModule {
   setShowLyricStrip?: (on: boolean) => void;
   setShowOnLockScreen?: (on: boolean) => void;
   setSize?: (widthPercent: number, heightPercent: number) => void;
+  setStyle?: (style: string) => void;
   setPlaylists?: (json: string) => void;
   setDownloads?: (json: string) => void;
   setSearchResults?: (query: string, json: string) => void;
@@ -65,6 +66,7 @@ export const setIslandLyrics = (songId: string, atMs: number[], texts: string[])
 export const clearIslandLyrics = () => call(m => (m.clearLyrics ? m.clearLyrics() : false));
 export const setIslandSize = (widthPercent: number, heightPercent: number) =>
   call(m => (m.setSize ? m.setSize(Math.round(widthPercent), Math.round(heightPercent)) : false));
+export const setIslandStyle = (style: IslandStyle) => call(m => (m.setStyle ? m.setStyle(style) : false));
 export const setIslandShowOnLockScreen = (on: boolean) =>
   call(m => (m.setShowOnLockScreen ? m.setShowOnLockScreen(on) : false));
 export const setIslandShowLyricStrip = (on: boolean) => call(m => (m.setShowLyricStrip ? m.setShowLyricStrip(on) : false));

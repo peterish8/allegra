@@ -596,7 +596,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const startSong = songs[startIndex];
     if (startSong?.audioUri && usesNativeQueue()) {
       noteTrackChange(startSong);
-      get().requestPlayback(autoplay);
+      // The engine starts the new queue itself (`setQueue(…, play)`). A play sent first would resume the old song
+      // for the moment before the new queue lands (heard as a blip of the last song after a pause); a pause still
+      // goes first, so nothing plays on while a paused queue is put in.
+      if (!autoplay) get().requestPlayback(false);
       fire(pushQueue(playlistId, songs, startIndex, autoplay));
       return;
     }

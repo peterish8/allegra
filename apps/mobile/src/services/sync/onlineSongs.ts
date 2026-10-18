@@ -104,23 +104,46 @@ export async function playList(playlistId: string, songs: readonly Song[], index
     return true;
   }
   const from = songs.slice(Math.max(0, index));
+  // A tapped song that is already on the phone starts at once, with the songs after it that are too; the online
+  // ones are looked up afterwards and join the queue. Waiting on the network first made a downloaded song sit
+  // silent for a second or more.
+  const ready = leadingPlayable(from);
+  if (ready.length > 0) {
+    player.setPlaylistQueue(playlistId, ready, 0);
+    appendWhenResolved(playlistId, from.slice(ready.length));
+    return true;
+  }
   const first = await resolveAll(from.slice(0, FIRST_WINDOW));
   if (first.length === 0) return false;
   usePlayerStore.getState().setPlaylistQueue(playlistId, first, 0);
+  appendWhenResolved(playlistId, from.slice(FIRST_WINDOW));
+  return true;
+}
 
-  const rest = from.slice(FIRST_WINDOW);
-  if (rest.length > 0) {
-    resolveAll(rest)
-      .then(more => {
-        const state = usePlayerStore.getState();
-        if (more.length === 0 || state.currentPlaylistId !== playlistId || !state.playlistQueue) return;
+/** The songs at the start of [songs] that need no lookup: up to the first online-only one. */
+export function leadingPlayable(songs: readonly Song[]): Song[] {
+  const end = songs.findIndex(isOnlineSong);
+  return [...(end < 0 ? songs : songs.slice(0, end))];
+}
+
+/**
+ * Resolves [rest] in the background and adds what it finds to the queue, if that queue is still playing: the
+ * next few first, so the song after the playing one is ready long before the whole list is.
+ */
+function appendWhenResolved(playlistId: string, rest: readonly Song[]): void {
+  if (rest.length === 0) return;
+  resolveAll(rest.slice(0, FIRST_WINDOW))
+    .then(more => {
+      const state = usePlayerStore.getState();
+      if (state.currentPlaylistId !== playlistId || !state.playlistQueue) return;
+      if (more.length > 0) {
         const queued = new Set(state.playlistQueue.map(song => song.id));
         state.updateQueue([...state.playlistQueue, ...more.filter(song => !queued.has(song.id))]);
         prepareNextInQueue();
-      })
-      .catch(() => undefined);
-  }
-  return true;
+      }
+      appendWhenResolved(playlistId, rest.slice(FIRST_WINDOW));
+    })
+    .catch(() => undefined);
 }
 
 /** Removes an online song from a playlist here and on the account. */

@@ -53,6 +53,7 @@ class DynamicIslandModule : Module() {
                 "hideInApp" to prefs.hideInApp,
                 "showLyricStrip" to prefs.showLyricStrip,
                 "showOnLockScreen" to prefs.showOnLockScreen,
+                "style" to prefs.style,
                 "widthPercent" to prefs.widthPercent,
                 "heightPercent" to prefs.heightPercent,
                 "nativeIsland" to NativeIsland.onThisPhone(),
@@ -80,9 +81,15 @@ class DynamicIslandModule : Module() {
         Function("setSize") { widthPercent: Int, heightPercent: Int ->
             context?.let {
                 val prefs = IslandPrefs(it)
-                prefs.widthPercent = widthPercent.coerceIn(80, 125)
+                prefs.widthPercent = widthPercent.coerceIn(80, 150)
                 prefs.heightPercent = heightPercent.coerceIn(85, 130)
             }
+            IslandService.refresh()
+        }
+
+        /** "pill" (floating below the top edge) or "notch" (hanging from it). */
+        Function("setStyle") { style: String ->
+            context?.let { IslandPrefs(it).style = style }
             IslandService.refresh()
         }
 

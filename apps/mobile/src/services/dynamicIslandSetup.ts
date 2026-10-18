@@ -20,7 +20,9 @@ export interface IslandStatus {
   showLyricStrip: boolean;
   /** The island stays on the lock screen (play, skip, seek and lyrics; the library waits for unlocking). */
   showOnLockScreen: boolean;
-  /** The island's size in percent of its own (width 80–125, height 85–130). */
+  /** A pill floating below the top edge, or a notch hanging from it. */
+  style: IslandStyle;
+  /** The island's size in percent of its own: width sizes the closed island (80–150), height both (85–130). */
   widthPercent: number;
   heightPercent: number;
   /** The phone's own island feature ("Xiaomi's Super Island", …), or null when it has none. */
@@ -28,6 +30,13 @@ export interface IslandStatus {
   /** Android 13+: a sideloaded app's accessibility switch can be greyed out until "Allow restricted settings". */
   restrictedSettings: boolean;
 }
+
+export type IslandStyle = 'pill' | 'notch';
+
+export const ISLAND_STYLES: readonly { value: IslandStyle; label: string }[] = [
+  { value: 'pill', label: 'Pill' },
+  { value: 'notch', label: 'Notch' },
+];
 
 export type IslandStep =
   /** The phone's system has its own island and the listener has not asked for ours. */
@@ -65,7 +74,7 @@ export const ISLAND_DISCLOSURE =
   'It does not read or record other apps’ screens, and sends no screen data anywhere.';
 
 /** The size sliders' ranges, in percent (IslandGeometry clamps to the same). */
-export const ISLAND_WIDTH_RANGE = { min: 80, max: 125 } as const;
+export const ISLAND_WIDTH_RANGE = { min: 80, max: 150 } as const;
 export const ISLAND_HEIGHT_RANGE = { min: 85, max: 130 } as const;
 
 const percent = (value: unknown, range: { min: number; max: number }): number =>
@@ -86,6 +95,8 @@ export function parseIslandStatus(raw: unknown): IslandStatus | null {
     // Older builds have no switch and always showed the lines.
     showLyricStrip: r.showLyricStrip !== false,
     showOnLockScreen: flag('showOnLockScreen'),
+    // Older builds only had the pill.
+    style: r.style === 'notch' ? 'notch' : 'pill',
     widthPercent: percent(r.widthPercent, ISLAND_WIDTH_RANGE),
     heightPercent: percent(r.heightPercent, ISLAND_HEIGHT_RANGE),
     nativeIsland: typeof r.nativeIsland === 'string' && r.nativeIsland.length > 0 ? r.nativeIsland : null,
@@ -125,6 +136,8 @@ export interface IslandSongRow {
   artist: string;
   /** A cover the island may load itself: a file or content on the phone, or https. Empty otherwise. */
   cover: string;
+  /** Search answers only: the song is on the phone and plays offline (the island marks it and lists it first). */
+  downloaded?: boolean;
 }
 
 export interface IslandPlaylistRow {
@@ -160,6 +173,46 @@ export function islandSongRow(song: {
     // The phone's own copy first: a downloaded song's cover shows offline and at once.
     cover: islandCover(song.coverImageUri) || islandCover(song.coverRemoteUri),
   };
+}
+
+/** Lower case, accents off, anything but letters and digits a single space (IslandLibrary.fold does the same). */
+export function foldForSearch(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Mn}+/gu, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+/** Downloaded songs matched in island search, at most this many (the online answers follow them). */
+export const ISLAND_SEARCH_DOWNLOADS = 8;
+
+/**
+ * The downloads whose title and artist hold every word of [query], best first: the title starting with it, then a
+ * title word starting with it, then the rest, in the order given (IslandLibrary.matchDownloads ranks the same).
+ */
+export function matchDownloads<T extends { readonly title?: string; readonly artist?: string }>(
+  songs: readonly T[], query: string, limit = ISLAND_SEARCH_DOWNLOADS,
+): T[] {
+  const q = foldForSearch(query);
+  if (!q) return [];
+  const words = q.split(' ');
+  const rank = (song: T): number => {
+    const title = foldForSearch(song.title ?? '');
+    if (title.startsWith(q)) return 0;
+    if (title.includes(` ${q}`)) return 1;
+    return title.includes(q) ? 2 : 3;
+  };
+  return songs
+    .filter(song => {
+      const key = foldForSearch(`${song.title ?? ''} ${song.artist ?? ''}`);
+      return words.every(word => key.includes(word));
+    })
+    .map((song, order) => ({ song, order, rank: rank(song) }))
+    .sort((a, b) => a.rank - b.rank || a.order - b.order)
+    .slice(0, limit)
+    .map(entry => entry.song);
 }
 
 /** A song the phone can play with no network: its audio is a file (or content) on the phone. */

@@ -165,6 +165,12 @@ faded out in one place and in at another.
 - [x] 16b. Light as a flowing mesh of the cover's colours (`IslandFlow`: domain warp, weights that sum to one, 40×56 px per frame, filtered large; only while playing)
 - [x] 16c. Width (80–125%) and height (85–130%) sliders; the island resizes at once, never smaller than the camera
 - [x] 17. Merge to `main` (owner approved 2026-10-18)
+- [x] 18. Island picks start at once: no `play()` to the old song before the new queue lands; a downloaded pick in a list with online songs plays without waiting on lookups (the rest join the queue a window at a time); playlist songs cached from the last snapshot
+- [x] 19. The open card is full width again; Width sizes only the closed island (80–150%)
+- [x] 20. Shape setting: Pill (floating) or Notch (hangs from the top edge; stays a pill below a wide notch)
+- [x] 21. Universal search: downloads match on the keystroke (accent- and case-folded, every word) and lead the list with a download mark; online answers join under them, each song once; the drawer shows just "Search for a song" until something is typed
+- [x] 22. Stray taps: a closing card stops taking touches at once and the closed island's tap window is the pill's own size, so taps meant for the app underneath never reopen it
+- [x] 23. Version 1.12.0, merge to `main`
 
 ## How it is checked here
 

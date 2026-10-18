@@ -1,11 +1,11 @@
 import {
-  IslandStatus, isDownloadedSong, islandCover, islandLyricsPayload, islandSetupStep, islandSongRow, parseIslandStatus,
+  IslandStatus, foldForSearch, isDownloadedSong, matchDownloads, islandCover, islandLyricsPayload, islandSetupStep, islandSongRow, parseIslandStatus,
 } from './dynamicIslandSetup';
 
 const ready: IslandStatus = {
   serviceEnabled: true, serviceRunning: true, showing: true, enabled: true,
   showWhenIdle: true, allowOnNativeIsland: false, hideInApp: true, showLyricStrip: true, showOnLockScreen: false,
-  widthPercent: 100, heightPercent: 100, nativeIsland: null,
+  style: 'pill', widthPercent: 100, heightPercent: 100, nativeIsland: null,
   restrictedSettings: false,
 };
 
@@ -29,10 +29,14 @@ test('Missing native flags are false and an empty island name is absent', () => 
     // A build without the switch always showed the lines, so that is what an absent value means.
     showLyricStrip: true,
     showOnLockScreen: false,
+    // Builds before the setting had only the pill.
+    style: 'pill',
     widthPercent: 100,
     heightPercent: 100,
   });
-  expect(parseIslandStatus({ widthPercent: 200, heightPercent: 10 })).toMatchObject({ widthPercent: 125, heightPercent: 85 });
+  expect(parseIslandStatus({ widthPercent: 200, heightPercent: 10 })).toMatchObject({ widthPercent: 150, heightPercent: 85 });
+  expect(parseIslandStatus({ style: 'notch' })?.style).toBe('notch');
+  expect(parseIslandStatus({ style: 'blob' })?.style).toBe('pill');
   expect(parseIslandStatus({ widthPercent: 112.4 })?.widthPercent).toBe(112);
   expect(parseIslandStatus({ showOnLockScreen: true })?.showOnLockScreen).toBe(true);
   expect(parseIslandStatus({ showLyricStrip: false })?.showLyricStrip).toBe(false);
@@ -81,5 +85,31 @@ describe('island lists', () => {
     expect(isDownloadedSong({ audioUri: 'https://stream/a' })).toBe(false);
     expect(isDownloadedSong({ audioUri: 'file:///music/a.m4a', isHidden: true })).toBe(false);
     expect(isDownloadedSong({})).toBe(false);
+  });
+});
+
+describe('island search over the downloads', () => {
+  const downloads = [
+    { id: '1', title: 'Tum Hi Ho', artist: 'Arijit Singh' },
+    { id: '2', title: 'Kesariya', artist: 'Arijit Singh, Pritam' },
+    { id: '3', title: 'Halo', artist: 'Beyoncé' },
+    { id: '4', title: "Arijit's Medley", artist: 'Various' },
+  ];
+  const ids = (query: string) => matchDownloads(downloads, query).map(song => song.id);
+
+  test('every typed word must match, in any case and without accents; title matches first', () => {
+    expect(ids('arijit')).toEqual(['4', '1', '2']);
+    expect(ids('KES arij')).toEqual(['2']);
+    expect(ids('beyonce')).toEqual(['3']);
+    expect(ids('  ')).toEqual([]);
+    expect(ids('zzz')).toEqual([]);
+  });
+
+  test('folds text the same way as the island', () => {
+    expect(foldForSearch('  Beyoncé – Halo! ')).toBe('beyonce halo');
+  });
+
+  test('stops at the limit', () => {
+    expect(matchDownloads(downloads, 'a', 2)).toHaveLength(2);
   });
 });
