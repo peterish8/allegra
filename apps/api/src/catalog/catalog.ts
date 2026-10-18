@@ -50,6 +50,16 @@ const SUGGEST_TIMEOUT_MS = 4_000;
 /** How far down a shelf's search a row is checked for its own release: enough to fill 10 after drops. */
 const SHELF_SCAN = 16;
 const OWN_RELEASE_CONCURRENCY = 4;
+/** Songs per `/songs?ids=` request: a few round trips for a long list, short enough for one URL. */
+const SONG_BATCH = 20;
+
+/** Where a song id (plain, or a `saavn:` / `gaana:` ref) is looked up, and its cache key. */
+function songLookup(id: string): { readonly source: 'Saavn' | 'Gaana'; readonly providerId: string; readonly key: string } {
+  const ref = parseSongRef(id);
+  const source = ref?.source === 'gaana' ? 'Gaana' : 'Saavn';
+  const providerId = ref?.id ?? id;
+  return { source, providerId, key: cacheKey('song', 'v2', source, providerId) };
+}
 /** Not the song as released: a stitched set ("Romantic Mashup", a non-stop medley) or a vocals-only cut. */
 const MEDLEY = /\b(mash-?up|medley|non-?stop|vocals?\s+only|a\s*cappella|acapella)\b/iu;
 
@@ -211,10 +221,7 @@ export class CatalogService {
   }
 
   public async getSong(id: string): Promise<UnifiedSong> {
-    const ref = parseSongRef(id);
-    const source = ref?.source === 'gaana' ? 'Gaana' : 'Saavn';
-    const providerId = ref?.id ?? id;
-    const key = cacheKey('song', 'v2', source, providerId);
+    const { source, providerId, key } = songLookup(id);
     const cached = await this.cache.get<UnifiedSong>(key);
     if (cached) {
       return cached;
@@ -237,15 +244,52 @@ export class CatalogService {
     return song;
   }
 
+  /**
+   * Several songs at once, in the order asked (unknown ids left out). Cached songs come from the cache;
+   * the rest of the Saavn ids go to the provider in batches (`/songs?ids=`), one request per batch rather
+   * than one per song. Gaana songs, and any a batch did not return, are looked up one by one.
+   */
   public async getSongs(ids: string[]): Promise<UnifiedSong[]> {
-    const songs = await Promise.all(ids.map(async (id) => {
+    const found = new Map<string, UnifiedSong>();
+    const lookups = new Map(ids.map((id) => [id, songLookup(id)] as const));
+    await Promise.all([...lookups].map(async ([id, { key }]) => {
+      const cached = await this.cache.get<UnifiedSong>(key);
+      if (cached) found.set(id, cached);
+    }));
+
+    // Asked-for ids by Saavn provider id: two spellings of one song ("x", "saavn:x") share a fetch.
+    const wanted = new Map<string, string[]>();
+    for (const [id, lookup] of lookups) {
+      if (found.has(id) || lookup.source !== 'Saavn') continue;
+      wanted.set(lookup.providerId, [...(wanted.get(lookup.providerId) ?? []), id]);
+    }
+    const providerIds = [...wanted.keys()];
+    const batches = Array.from({ length: Math.ceil(providerIds.length / SONG_BATCH) }, (_, i) => providerIds.slice(i * SONG_BATCH, (i + 1) * SONG_BATCH));
+    await Promise.all(batches.map(async (batch) => {
       try {
-        return await this.getSong(id);
+        const result = await this.call(this.saavnBreaker, () => this.saavn.getSongsByIds(batch));
+        if (!result.ok) return;
+        await Promise.all(result.data.map(async (raw) => {
+          const song = normalizeSong(raw, 'Saavn');
+          const askedAs = song ? wanted.get(String(raw.id)) : undefined;
+          if (!song || !askedAs) return;
+          for (const id of askedAs) found.set(id, song);
+          await this.cache.set(songLookup(String(raw.id)).key, song, 21_600);
+        }));
       } catch {
-        return null;
+        // The ones this batch missed are looked up one by one below.
       }
     }));
-    return songs.filter((song): song is UnifiedSong => song !== null);
+
+    const missing = [...lookups.keys()].filter((id) => !found.has(id));
+    await Promise.all(missing.map(async (id) => {
+      try {
+        found.set(id, await this.getSong(id));
+      } catch {
+        // Unknown or unavailable: left out.
+      }
+    }));
+    return ids.map((id) => found.get(id)).filter((song): song is UnifiedSong => song !== undefined);
   }
 
   /**

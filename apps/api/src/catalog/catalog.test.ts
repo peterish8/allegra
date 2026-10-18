@@ -214,3 +214,31 @@ test('artist faces omit names without a photo and unknown names', async () => {
   const faces = await service.getArtistFaces(['Known', 'NoPhoto', 'Nobody']);
   assert.deepEqual(faces.map((face) => face.name), ['Known']);
 });
+
+// 2026-10-18: getSongs asked the provider once per song; a Blend or library resolve of 40 songs was 40 requests.
+test('getSongs fetches uncached Saavn songs in one batch request, keeps the order asked and falls back per song', async () => {
+  const urls: string[] = [];
+  const song = (id: string): SaavnSong => ({ ...saavnSong, id, name: `Song ${id}` });
+  const service = catalog(async (input) => {
+    const url = new URL(String(input));
+    urls.push(`${url.hostname}${url.pathname}${url.search}`);
+    if (url.hostname === 'saavn.example' && url.pathname === '/api/songs') {
+      // The batch never returns "late": it is looked up on its own afterwards.
+      const ids = (url.searchParams.get('ids') ?? '').split(',').filter((id) => id !== 'late');
+      return json({ success: true, data: ids.reverse().map(song) });
+    }
+    if (url.pathname === '/api/songs/late') return json({ success: true, data: [song('late')] });
+    if (url.hostname === 'gaana.example') return json({ success: true, data: [gaanaSong] });
+    return json({ success: false }, 404);
+  });
+
+  const first = await service.getSongs(['a', 'saavn:b', 'late', 'c', 'a']);
+  assert.deepEqual(first.map((item) => item.id), ['a', 'b', 'late', 'c', 'a']);
+  assert.equal(urls.filter((url) => url.startsWith('saavn.example/api/songs?')).length, 1, 'one batch request');
+  assert.ok(urls.includes('saavn.example/api/songs/late'), 'a song the batch missed is looked up on its own');
+
+  urls.length = 0;
+  const again = await service.getSongs(['c', 'a']);
+  assert.deepEqual(again.map((item) => item.id), ['c', 'a']);
+  assert.equal(urls.length, 0, 'cached songs make no request');
+});
