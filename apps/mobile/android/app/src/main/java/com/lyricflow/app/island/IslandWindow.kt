@@ -2,6 +2,7 @@ package com.lyricflow.app.island
 
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
+import android.app.ActivityOptions
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -9,6 +10,13 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.graphics.Point
+import android.graphics.RectF
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Build
@@ -31,6 +39,11 @@ import kotlin.math.roundToInt
  * The drawing surface keeps a fixed horizontal frame on the camera. While closed it passes touches through;
  * a second, transparent window fits the pill and forwards its input. This avoids Android's asynchronous
  * surface move/resize jump at the end of a close without blocking the status shade beside the pill.
+ *
+ * A third window exists only while the search drawer is open: a real, focusable text field laid exactly over the
+ * field the island draws, so the keyboard comes up and types into it. The text itself is invisible there; the
+ * island draws what was typed. With "Hide while LuvLyrics is open" on, the island fades away while the app is in
+ * front and comes back when the listener leaves it.
  */
 class IslandWindow(private val service: AccessibilityService) : IslandView.Host {
     private val wm = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -46,6 +59,11 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     private var landscape = false
     private var touchable = true
     private var latestInsets: WindowInsets? = null
+    private var hideInApp = false
+    private var appInFront = false
+    private var searchField: EditText? = null
+    private var searchAdded = false
+    private val inputs = service.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
     private val displays = service.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(id: Int) = Unit
@@ -85,6 +103,15 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         flags = flags and WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH.inv()
         title = "LuvLyrics island touch"
     }
+    /** The search field's window: focusable (the keyboard needs it), touchable, nothing else. */
+    private val searchParams = WindowManager.LayoutParams().apply {
+        copyFrom(params)
+        flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+        softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        title = "LuvLyrics island search"
+    }
 
     private val keyguard = service.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
     private var locked = false
@@ -97,7 +124,10 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         }
     }
 
-    val isShowing get() = added && !landscape && !locked && power.isInteractive && touchable
+    val isShowing get() = added && !landscape && !locked && power.isInteractive && touchable && !hiddenForApp
+
+    /** The listener chose to hide the island while LuvLyrics itself is on screen, and it is. */
+    private val hiddenForApp get() = hideInApp && appInFront
 
     /** The lock screen has its own media controls: the island waits for the phone to be unlocked. */
     private fun refreshLock() {
@@ -107,10 +137,13 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         applyVisibility()
     }
 
-    fun show(showWhenIdle: Boolean) {
+    fun show(showWhenIdle: Boolean, hideInApp: Boolean, showLyricStrip: Boolean) {
+        this.hideInApp = hideInApp
         val existing = view
         if (existing != null) {
             existing.showWhenIdle = showWhenIdle
+            existing.showLyricStrip = showLyricStrip
+            applyVisibility()
             return
         }
         val v = IslandView(service, this)
@@ -128,6 +161,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
             setOnClickListener { v.performClick() }
         }
         v.showWhenIdle = showWhenIdle
+        v.showLyricStrip = showLyricStrip
         watchInsets(v)
         view = v
         touchView = tap
@@ -163,8 +197,16 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         applyVisibility()
     }
 
+    /** LuvLyrics came to the front (true) or left it (false). */
+    fun setAppInFront(inFront: Boolean) {
+        if (appInFront == inFront) return
+        appInFront = inFront
+        applyVisibility()
+    }
+
     fun destroy() {
         val v = view ?: return
+        showSearchInput(null)
         displays.unregisterDisplayListener(displayListener)
         latestInsets = null
         if (touchAdded) touchView?.let {
@@ -242,7 +284,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         val safeLeft = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) displayCutout?.safeInsetLeft ?: 0 else 0
         val safeRight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) displayCutout?.safeInsetRight ?: 0 else 0
         val g = IslandGeometry.compute(width, bars.toFloat(), dm.density, cutout,
-            safeTop.toFloat(), safeLeft.toFloat(), safeRight.toFloat())
+            safeTop.toFloat(), safeLeft.toFloat(), safeRight.toFloat(), height)
         if (geometry == g) return
         geometry = g
         if (com.lyricflow.app.BuildConfig.DEBUG) Log.d(TAG, "geometry=$g display=${width}x$height cutout=$cutout")
@@ -267,7 +309,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
 
     private fun applyVisibility() {
         val v = view ?: return
-        val visible = !landscape && !locked && power.isInteractive
+        val visible = !landscape && !locked && power.isInteractive && !hiddenForApp
         v.screenOn = visible
         if (!visible) v.collapse()
         v.animate().cancel()
@@ -315,13 +357,27 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         updateFlags()
     }
 
-    override fun openApp() {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("lyricflow://player")).apply {
+    /**
+     * Opens the app at [link]. With the island's outline [from], the app's window grows out of the island: the
+     * system compositor runs that animation, so it stays smooth on an older phone (nothing in this process draws
+     * during it), while the island folds back to its pill on its own spring.
+     */
+    override fun openApp(link: String, from: RectF?) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link)).apply {
             setPackage(service.packageName)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
+        val v = view
+        val reveal = if (from != null && v != null && v.isAttachedToWindow && !from.isEmpty) {
+            try {
+                ActivityOptions.makeScaleUpAnimation(v, from.left.roundToInt(), from.top.roundToInt(),
+                    from.width().roundToInt().coerceAtLeast(1), from.height().roundToInt().coerceAtLeast(1)).toBundle()
+            } catch (_: Exception) {
+                null
+            }
+        } else null
         try {
-            service.startActivity(intent)
+            service.startActivity(intent, reveal)
         } catch (_: Exception) {
             service.packageManager.getLaunchIntentForPackage(service.packageName)?.let {
                 it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -354,6 +410,55 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         }
         view?.importantForAccessibility = if (!hidden && expandedTouch) View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO
         touchView?.importantForAccessibility = if (!hidden && !expandedTouch) View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
+    override fun showSearchInput(field: RectF?) {
+        val v = view ?: return
+        if (field == null) {
+            val edit = searchField ?: return
+            inputs.hideSoftInputFromWindow(edit.windowToken, 0)
+            if (searchAdded) {
+                try { wm.removeViewImmediate(edit) } catch (_: Exception) { /* Gone with the service. */ }
+            }
+            searchAdded = false
+            searchField = null
+            v.setSearchText("")
+            return
+        }
+        val edit = searchField ?: EditText(service).apply {
+            // Invisible: the island draws the text, caret and hint itself, so the field and the drawing never drift.
+            background = null
+            setTextColor(android.graphics.Color.TRANSPARENT)
+            setHintTextColor(android.graphics.Color.TRANSPARENT)
+            isCursorVisible = false
+            setSingleLine()
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
+            imeOptions = EditorInfo.IME_ACTION_SEARCH or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            contentDescription = "Search songs"
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                override fun afterTextChanged(s: Editable?) = v.setSearchText(s?.toString().orEmpty())
+            })
+            setOnEditorActionListener { _, action, _ ->
+                if (action == EditorInfo.IME_ACTION_SEARCH) inputs.hideSoftInputFromWindow(windowToken, 0)
+                action == EditorInfo.IME_ACTION_SEARCH
+            }
+        }.also { searchField = it }
+        searchParams.x = params.x + field.left.roundToInt()
+        searchParams.y = field.top.roundToInt()
+        searchParams.width = field.width().roundToInt().coerceAtLeast(1)
+        searchParams.height = field.height().roundToInt().coerceAtLeast(1)
+        try {
+            if (searchAdded) wm.updateViewLayout(edit, searchParams) else wm.addView(edit, searchParams)
+            searchAdded = true
+        } catch (e: Exception) {
+            Log.w(TAG, "island search field refused: ${e.message}")
+            return
+        }
+        edit.requestFocus()
+        // The keyboard comes up once the field's window has focus.
+        edit.post { inputs.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT) }
     }
 
     private fun updateTouch() {

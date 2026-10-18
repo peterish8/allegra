@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import com.lyricflow.app.island.IslandLibrary
 import com.lyricflow.app.island.IslandLyrics
 import com.lyricflow.app.island.IslandPrefs
 import com.lyricflow.app.island.IslandService
@@ -24,6 +25,21 @@ class DynamicIslandModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("DynamicIsland")
 
+        // A song picked in the island, and what is typed in its search drawer: JavaScript plays and searches.
+        Events("onIslandPick", "onIslandSearch")
+
+        OnStartObserving {
+            IslandLibrary.onPick = { playlistId, songId ->
+                sendEvent("onIslandPick", mapOf("playlistId" to playlistId, "songId" to songId))
+            }
+            IslandLibrary.onSearch = { query -> sendEvent("onIslandSearch", mapOf("query" to query)) }
+        }
+
+        OnStopObserving {
+            IslandLibrary.onPick = null
+            IslandLibrary.onSearch = null
+        }
+
         Function("status") {
             val ctx = context ?: return@Function null
             val prefs = IslandPrefs(ctx)
@@ -34,6 +50,8 @@ class DynamicIslandModule : Module() {
                 "enabled" to prefs.enabled,
                 "showWhenIdle" to prefs.showWhenIdle,
                 "allowOnNativeIsland" to prefs.allowOnNativeIslandPhones,
+                "hideInApp" to prefs.hideInApp,
+                "showLyricStrip" to prefs.showLyricStrip,
                 "nativeIsland" to NativeIsland.onThisPhone(),
                 // Android 13+ blocks accessibility for apps installed outside a store until the listener allows it.
                 "restrictedSettings" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU),
@@ -53,6 +71,31 @@ class DynamicIslandModule : Module() {
         Function("setAllowOnNativeIsland") { on: Boolean ->
             context?.let { IslandPrefs(it).allowOnNativeIslandPhones = on }
             IslandService.refresh()
+        }
+
+        Function("setShowLyricStrip") { on: Boolean ->
+            context?.let { IslandPrefs(it).showLyricStrip = on }
+            IslandService.refresh()
+        }
+
+        Function("setHideInApp") { on: Boolean ->
+            context?.let { IslandPrefs(it).hideInApp = on }
+            IslandService.refresh()
+        }
+
+        /** The playlists with their songs, as JSON (`IslandLibrary.parse`), whenever they change. */
+        Function("setPlaylists") { json: String ->
+            IslandLibrary.set(json)
+        }
+
+        /** The downloaded songs, as JSON (`IslandLibrary.parseSongs`), for the island's offline list. */
+        Function("setDownloads") { json: String ->
+            IslandLibrary.setDownloads(json)
+        }
+
+        /** The answers to a search typed in the island; answers to an older query are dropped. */
+        Function("setSearchResults") { query: String, json: String ->
+            IslandLibrary.setSearchResults(query, json)
         }
 
         /** The playing song's timed lines (ms, already shifted by the lyrics delay), shown under the open card. */

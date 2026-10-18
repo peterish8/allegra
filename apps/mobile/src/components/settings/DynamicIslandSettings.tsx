@@ -4,7 +4,7 @@ import { Action, Row, Section, Switch } from './SettingsKit';
 import { ISLAND_DISCLOSURE, islandSetupStep, islandSummary } from '../../services/dynamicIslandSetup';
 import {
   openIslandAccessibilitySettings, openIslandAppInfo, readIslandStatus,
-  setIslandAllowOnNativeIsland, setIslandEnabled, setIslandShowWhenIdle,
+  setIslandAllowOnNativeIsland, setIslandEnabled, setIslandHideInApp, setIslandShowLyricStrip, setIslandShowWhenIdle,
 } from '../../services/NativeDynamicIsland';
 
 export default function DynamicIslandSettings({ onLayout, onNotice }: {
@@ -48,6 +48,10 @@ export default function DynamicIslandSettings({ onLayout, onNotice }: {
       </> : null}
       <Switch label="Show when nothing is playing" value={status.showWhenIdle}
         onChange={on => change(() => setIslandShowWhenIdle(on))} />
+      <Switch label="Two lines of lyrics on the card" hint="Pull the open island down for all the lyrics either way."
+        value={status.showLyricStrip} onChange={on => change(() => setIslandShowLyricStrip(on))} />
+      <Switch label="Hide while LuvLyrics is open" value={status.hideInApp}
+        onChange={on => change(() => setIslandHideInApp(on))} />
     </Section>
   );
 }

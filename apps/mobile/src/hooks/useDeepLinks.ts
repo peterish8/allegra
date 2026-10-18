@@ -5,9 +5,10 @@
  *       find the song (official YouTube Music match, catalog audio), play it
  *       and open Now Playing — on the cover, or on lyrics with lyrics=1
  *   lyricflow://open/<stream|luvs|library|playlists|search|settings>
- *   lyricflow://player[?sheet=menu|together|queue|timer][&lyrics=1]
+ *   lyricflow://player[?sheet=menu|together|queue|timer][&lyrics=1][&instant=1]
  *       open Now Playing on the current song (optionally with a sheet up, or
  *       switched to lyrics: on an open player that is the lyrics button's path)
+ *       instant=1 mounts it already open (the system island grows the app out of itself)
  *   lyricflow://together?code=<room>
  *       a LuvLink invite: opens the room sheet with the code filled in
  *   lyricflow://style?playerBackground=aura&miniPlayerBackground=glass&appBackground=glow&fps=1
@@ -101,7 +102,8 @@ const handle = async (url: string | null) => {
     const requested = link.action === 'together' ? 'together' : link.params.sheet;
     const sheet = SHEETS.find(s => s === requested);
     const lyrics = link.action === 'player' && link.params.lyrics === '1';
-    if (songId) navigationRef.navigate('NowPlaying', { songId, sheet, ...(lyrics ? { lyrics } : {}) });
+    const instant = link.action === 'player' && link.params.instant === '1';
+    if (songId) navigationRef.navigate('NowPlaying', { songId, sheet, ...(lyrics ? { lyrics } : {}), ...(instant ? { instant } : {}) });
     else if (link.action === 'together') useLuvLinkStore.getState().announce('Play a song, then open LuvLink to join');
     return;
   }

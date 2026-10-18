@@ -51,18 +51,36 @@ class IslandGeometryTest {
     }
 
     @Test
-    fun `a waterdrop notch on the top edge gets an island hanging from the edge round it`() {
+    fun `a waterdrop notch on the top edge gets a floating pill round it, never a hanging notch`() {
         // Galaxy M31: 1080 px wide, density 2.625, a U notch in the middle touching the top.
         val density = 2.625f
         val notch = CameraCutout(486f, 0f, 594f, 79f)
-        val g = IslandGeometry.compute(1080f, 79f, density, notch)
+        val g = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f)
         assertTrue(g.attached)
         assertEquals(540f, g.anchorX, 0.01f)
-        assertEquals(0f, g.pillTop, 0.01f)
-        assertTrue("covers the notch", g.pillHeight >= notch.bottom)
+        assertEquals("a gap above the pill", IslandGeometry.EDGE_GAP_DP * density, g.pillTop, 0.01f)
+        assertTrue("covers the notch", g.pillTop + g.pillHeight >= notch.bottom)
         assertTrue("wider than the notch", g.idleWidth > notch.width)
-        assertEquals(0f, g.cardTop, 0.01f)
+        assertEquals("the card floats from the pill's top", g.pillTop, g.cardTop, 0.01f)
         assertTrue("content starts below the notch", g.contentTop > notch.bottom)
+    }
+
+    @Test
+    fun `the open card is three quarters of the room it could take`() {
+        val density = 2.625f
+        val g = IslandGeometry.compute(1080f, 79f, density, CameraCutout(486f, 0f, 594f, 79f))
+        val room = minOf((1080f - 16f * density) / 1.05f - 12f * density, 440f * density)
+        assertEquals(room * 0.75f, g.cardWidth, 0.5f)
+    }
+
+    @Test
+    fun `full mode and the search drawer fit the screen above the keyboard`() {
+        val density = 2.625f
+        val g = IslandGeometry.compute(1080f, 79f, density, CameraCutout(486f, 0f, 594f, 79f), screenHeight = 2340f)
+        assertTrue(g.fullHeight > g.cardHeight)
+        assertTrue("full mode leaves the lower screen", g.cardTop + g.fullHeight <= 2340f * 0.62f + 0.5f)
+        assertTrue(g.searchHeight > g.cardHeight)
+        assertTrue("the drawer stops above the keyboard", g.cardTop + g.searchHeight <= 2340f * 0.46f + 0.5f)
     }
 
     @Test
@@ -115,9 +133,9 @@ class IslandGeometryTest {
     }
 
     @Test
-    fun `a wide tablet card stops at 440 dp`() {
+    fun `a wide tablet card stops at 330 dp`() {
         val g = IslandGeometry.compute(2560f, 60f, 2f, null)
-        assertEquals(880f, g.cardWidth, 0.01f)
+        assertEquals(660f, g.cardWidth, 0.01f)
     }
 
     @Test

@@ -14,6 +14,10 @@ export interface IslandStatus {
   enabled: boolean;
   showWhenIdle: boolean;
   allowOnNativeIsland: boolean;
+  /** The island steps aside while LuvLyrics itself is on screen. */
+  hideInApp: boolean;
+  /** The open card shows the sung line and the next one under its controls. */
+  showLyricStrip: boolean;
   /** The phone's own island feature ("Xiaomi's Super Island", …), or null when it has none. */
   nativeIsland: string | null;
   /** Android 13+: a sideloaded app's accessibility switch can be greyed out until "Allow restricted settings". */
@@ -66,6 +70,9 @@ export function parseIslandStatus(raw: unknown): IslandStatus | null {
     enabled: flag('enabled'),
     showWhenIdle: flag('showWhenIdle'),
     allowOnNativeIsland: flag('allowOnNativeIsland'),
+    hideInApp: flag('hideInApp'),
+    // Older builds have no switch and always showed the lines.
+    showLyricStrip: r.showLyricStrip !== false,
     nativeIsland: typeof r.nativeIsland === 'string' && r.nativeIsland.length > 0 ? r.nativeIsland : null,
     restrictedSettings: flag('restrictedSettings'),
   };
@@ -94,4 +101,53 @@ export function islandLyricsPayload(
     atMs: timed.map(line => Math.max(0, Math.round((line.timestamp - delay) * 1000))),
     texts: timed.map(line => line.text.trim()),
   };
+}
+
+/** One row in the island's lists (playlist songs, downloads, search answers). */
+export interface IslandSongRow {
+  id: string;
+  title: string;
+  artist: string;
+  /** A cover the island may load itself: a file or content on the phone, or https. Empty otherwise. */
+  cover: string;
+}
+
+export interface IslandPlaylistRow {
+  id: string;
+  name: string;
+  cover: string;
+  count: number;
+  songs: IslandSongRow[];
+}
+
+/** Songs listed per playlist: enough to scroll through, small enough to hand over on every change. */
+export const ISLAND_PLAYLIST_SONGS = 300;
+/** Downloads listed: the island is a quick pick, not the library. */
+export const ISLAND_DOWNLOADS = 500;
+
+/** Only covers the island loads natively and safely: the same rule as the engine's artwork (file, content, https). */
+export function islandCover(uri: string | null | undefined): string {
+  if (!uri || uri.length > 4096) return '';
+  return /^(file|content|https):/i.test(uri) ? uri : '';
+}
+
+export function islandSongRow(song: {
+  readonly id: string;
+  readonly title?: string;
+  readonly artist?: string;
+  readonly coverImageUri?: string;
+  readonly coverRemoteUri?: string;
+}): IslandSongRow {
+  return {
+    id: song.id,
+    title: song.title?.trim() || 'Unknown song',
+    artist: song.artist?.trim() ?? '',
+    // The phone's own copy first: a downloaded song's cover shows offline and at once.
+    cover: islandCover(song.coverImageUri) || islandCover(song.coverRemoteUri),
+  };
+}
+
+/** A song the phone can play with no network: its audio is a file (or content) on the phone. */
+export function isDownloadedSong(song: { readonly audioUri?: string; readonly isHidden?: boolean }): boolean {
+  return !song.isHidden && !!song.audioUri && /^(file|content):/i.test(song.audioUri);
 }

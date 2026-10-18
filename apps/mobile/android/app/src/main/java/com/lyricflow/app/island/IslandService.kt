@@ -61,7 +61,8 @@ class IslandService : AccessibilityService() {
             val wanted = prefs.enabled && (nativeIsland == null || prefs.allowOnNativeIslandPhones)
             if (wanted) {
                 val w = window ?: IslandWindow(this).also { window = it }
-                w.show(prefs.showWhenIdle)
+                w.show(prefs.showWhenIdle, prefs.hideInApp, prefs.showLyricStrip)
+                w.setAppInFront(appInFront)
             } else {
                 window?.destroy()
                 window = null
@@ -82,6 +83,16 @@ class IslandService : AccessibilityService() {
 
         /** The island is on screen right now. */
         val isShowing get() = instance?.window?.isShowing == true
+
+        /** LuvLyrics' own screen is in front (MainActivity resumed): the island may step aside (IslandPrefs.hideInApp). */
+        @Volatile
+        var appInFront = false
+            private set
+
+        fun setAppInFront(inFront: Boolean) {
+            appInFront = inFront
+            main.post { instance?.window?.setAppInFront(inFront) }
+        }
 
         /** Applies the switches in [IslandPrefs] (from the app's Settings). */
         fun refresh() {
