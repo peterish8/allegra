@@ -18,6 +18,11 @@ export interface IslandStatus {
   hideInApp: boolean;
   /** The open card shows the sung line and the next one under its controls. */
   showLyricStrip: boolean;
+  /** The island stays on the lock screen (play, skip, seek and lyrics; the library waits for unlocking). */
+  showOnLockScreen: boolean;
+  /** The island's size in percent of its own (width 80–125, height 85–130). */
+  widthPercent: number;
+  heightPercent: number;
   /** The phone's own island feature ("Xiaomi's Super Island", …), or null when it has none. */
   nativeIsland: string | null;
   /** Android 13+: a sideloaded app's accessibility switch can be greyed out until "Allow restricted settings". */
@@ -59,6 +64,13 @@ export const ISLAND_DISCLOSURE =
   'Android only lets an accessibility service draw above the status bar, so that is how the island gets there. ' +
   'It does not read or record other apps’ screens, and sends no screen data anywhere.';
 
+/** The size sliders' ranges, in percent (IslandGeometry clamps to the same). */
+export const ISLAND_WIDTH_RANGE = { min: 80, max: 125 } as const;
+export const ISLAND_HEIGHT_RANGE = { min: 85, max: 130 } as const;
+
+const percent = (value: unknown, range: { min: number; max: number }): number =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.min(range.max, Math.max(range.min, Math.round(value))) : 100;
+
 export function parseIslandStatus(raw: unknown): IslandStatus | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
@@ -73,6 +85,9 @@ export function parseIslandStatus(raw: unknown): IslandStatus | null {
     hideInApp: flag('hideInApp'),
     // Older builds have no switch and always showed the lines.
     showLyricStrip: r.showLyricStrip !== false,
+    showOnLockScreen: flag('showOnLockScreen'),
+    widthPercent: percent(r.widthPercent, ISLAND_WIDTH_RANGE),
+    heightPercent: percent(r.heightPercent, ISLAND_HEIGHT_RANGE),
     nativeIsland: typeof r.nativeIsland === 'string' && r.nativeIsland.length > 0 ? r.nativeIsland : null,
     restrictedSettings: flag('restrictedSettings'),
   };

@@ -61,7 +61,7 @@ class IslandService : AccessibilityService() {
             val wanted = prefs.enabled && (nativeIsland == null || prefs.allowOnNativeIslandPhones)
             if (wanted) {
                 val w = window ?: IslandWindow(this).also { window = it }
-                w.show(prefs.showWhenIdle, prefs.hideInApp, prefs.showLyricStrip)
+                w.show(prefs)
                 w.setAppInFront(appInFront)
             } else {
                 window?.destroy()

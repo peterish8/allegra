@@ -17,6 +17,8 @@ interface DynamicIslandModule {
   clearLyrics?: () => void;
   setHideInApp?: (on: boolean) => void;
   setShowLyricStrip?: (on: boolean) => void;
+  setShowOnLockScreen?: (on: boolean) => void;
+  setSize?: (widthPercent: number, heightPercent: number) => void;
   setPlaylists?: (json: string) => void;
   setDownloads?: (json: string) => void;
   setSearchResults?: (query: string, json: string) => void;
@@ -61,6 +63,10 @@ export const openIslandAppInfo = () => call(m => m.openAppInfo?.() ?? false);
 export const setIslandLyrics = (songId: string, atMs: number[], texts: string[]) =>
   call(m => (m.setLyrics ? m.setLyrics(songId, atMs, texts) : false));
 export const clearIslandLyrics = () => call(m => (m.clearLyrics ? m.clearLyrics() : false));
+export const setIslandSize = (widthPercent: number, heightPercent: number) =>
+  call(m => (m.setSize ? m.setSize(Math.round(widthPercent), Math.round(heightPercent)) : false));
+export const setIslandShowOnLockScreen = (on: boolean) =>
+  call(m => (m.setShowOnLockScreen ? m.setShowOnLockScreen(on) : false));
 export const setIslandShowLyricStrip = (on: boolean) => call(m => (m.setShowLyricStrip ? m.setShowLyricStrip(on) : false));
 export const setIslandHideInApp = (on: boolean) => call(m => (m.setHideInApp ? m.setHideInApp(on) : false));
 export const setIslandPlaylists = (json: string) => call(m => (m.setPlaylists ? m.setPlaylists(json) : false));

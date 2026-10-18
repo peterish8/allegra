@@ -74,6 +74,27 @@ class IslandGeometryTest {
     }
 
     @Test
+    fun `the listener's width and height resize the island, and the camera always stays inside`() {
+        val density = 2.625f
+        val notch = CameraCutout(486f, 0f, 594f, 79f)
+        val base = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f)
+        val wide = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f, widthScale = 1.2f, heightScale = 1.2f)
+        val small = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f, widthScale = 0.8f, heightScale = 0.85f)
+        assertTrue(wide.cardWidth > base.cardWidth && small.cardWidth < base.cardWidth)
+        assertTrue(wide.compactWidth > base.compactWidth && small.compactWidth < base.compactWidth)
+        assertTrue(wide.pillHeight > base.pillHeight)
+        assertTrue(wide.fullHeight > base.fullHeight)
+        for (g in listOf(wide, small)) {
+            assertTrue("camera inside", g.pillTop + g.pillHeight >= notch.bottom && g.compactWidth > notch.width)
+            assertTrue("card on screen", g.anchorX - g.cardWidth / 2f >= 8f * density - 0.01f && g.anchorX + g.cardWidth / 2f <= 1080f - 8f * density + 0.01f)
+            assertTrue("full mode on screen", g.cardTop + g.fullHeight <= 2340f * 0.8f + 0.5f)
+        }
+        val wild = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f, widthScale = 9f, heightScale = 9f)
+        assertEquals("out-of-range sizes are held to the range", IslandGeometry.compute(1080f, 79f, density, notch,
+            screenHeight = 2340f, widthScale = IslandGeometry.MAX_WIDTH_SCALE, heightScale = IslandGeometry.MAX_HEIGHT_SCALE), wild)
+    }
+
+    @Test
     fun `full mode and the search drawer fit the screen above the keyboard`() {
         val density = 2.625f
         val g = IslandGeometry.compute(1080f, 79f, density, CameraCutout(486f, 0f, 594f, 79f), screenHeight = 2340f)

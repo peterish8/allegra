@@ -27,7 +27,10 @@ It controls LuvLyrics playback; other apps' media sessions are not collected.
      line has no knob and swells under the finger.
    Without timed lyrics or with **Two lines of lyrics on the card** off, the card closes by itself after eight
    seconds without a touch (twenty while browsing); otherwise it stays until it is pushed up or tapped outside.
-5. Settings → Dynamic island → **Hide while LuvLyrics is open** (on by default) puts the island away while the app
+5. Settings → Dynamic island → **Width** and **Height** size the island (80–125% and 85–130%; the pill never
+   gets smaller than the camera). **Show on the lock screen** keeps it there for playing, skipping, seeking and
+   lyrics; playlists, downloads, search and opening the app wait until the phone is unlocked.
+6. Settings → Dynamic island → **Hide while LuvLyrics is open** (on by default) puts the island away while the app
    is in front (`MainActivity` resume/pause → `IslandService.setAppInFront`).
 
 The plan, requests and continuity rules behind this are in [`enhance-dynamic-island.md`](enhance-dynamic-island.md).
@@ -76,9 +79,9 @@ Hardware holes themselves cannot receive touch; tap the black area beside/below 
   (`services/playlistSongs.ts`, local and online), the downloads, and search answers as JSON snapshots;
   `IslandLibrary` holds them. A pick or a typed query comes back as `onIslandPick` / `onIslandSearch` and plays the
   way the app's own screens do. With JavaScript not running, a pick opens the app through the widget's play link.
-- The light behind the open card is the cover itself (`IslandGlow`: shrunk to 24 px, blurred, colours lifted and
-  held deep), drawn in three slowly turning layers pooled at the bottom (`IslandMotion.LAYERS`). Its clock runs only
-  while music plays. Titles that do not fit loop with eased starts and 4 s rests, and glide home on pause.
+- The light behind the open card is a flowing mesh of the cover's colours (`IslandFlow`: a domain-warped field
+  with weights that sum to one, computed at 40×56 px and drawn filtered, so no circles or edges). Android 12 has no
+  app GPU shaders, which is why it is computed. Its clock runs only while music plays. Titles that do not fit loop with eased starts and 4 s rests, and glide home on pause.
 - Covers load on the island's own two threads, never behind the media notification's network loads, and are
   cached with their colours and light; the next song's cover is decoded ahead (`IslandArt`).
 - Lyrics: `hooks/useIslandLyrics.ts` (mounted in `RootNavigator`) sends the playing song's timed lines

@@ -60,6 +60,8 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     private var touchable = true
     private var latestInsets: WindowInsets? = null
     private var hideInApp = false
+    /** The listener's width and height, as fractions (IslandPrefs). */
+    private var sizeScales = 1f to 1f
     private var appInFront = false
     private var searchField: EditText? = null
     private var searchAdded = false
@@ -124,25 +126,44 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         }
     }
 
-    val isShowing get() = added && !landscape && !locked && power.isInteractive && touchable && !hiddenForApp
+    val isShowing get() = added && !landscape && !hiddenForLock && power.isInteractive && touchable && !hiddenForApp
+
+    /** The listener chose to keep the island on the lock screen (IslandPrefs.showOnLockScreen). */
+    private var showOnLock = false
+
+    /** Locked, and the listener did not ask for the island there. */
+    private val hiddenForLock get() = locked && !showOnLock
 
     /** The listener chose to hide the island while LuvLyrics itself is on screen, and it is. */
     private val hiddenForApp get() = hideInApp && appInFront
 
-    /** The lock screen has its own media controls: the island waits for the phone to be unlocked. */
+    /**
+     * The lock screen has its own media controls, so by default the island waits for the phone to be unlocked. With
+     * "Show on the lock screen" on it stays, limited to playing, skipping, seeking and lyrics (IslandView.locked):
+     * nothing of the library or the app opens until the phone is unlocked.
+     */
     private fun refreshLock() {
         val now = keyguard.isKeyguardLocked
+        view?.locked = now
         if (now == locked) return
         locked = now
         applyVisibility()
     }
 
-    fun show(showWhenIdle: Boolean, hideInApp: Boolean, showLyricStrip: Boolean) {
-        this.hideInApp = hideInApp
+    /** Shows the island (or applies changed settings to it) with the listener's choices in [prefs]. */
+    fun show(prefs: IslandPrefs) {
+        val showWhenIdle = prefs.showWhenIdle
+        val showLyricStrip = prefs.showLyricStrip
+        hideInApp = prefs.hideInApp
+        showOnLock = prefs.showOnLockScreen
+        val scales = prefs.widthPercent / 100f to prefs.heightPercent / 100f
+        val resized = scales != sizeScales
+        sizeScales = scales
         val existing = view
         if (existing != null) {
             existing.showWhenIdle = showWhenIdle
             existing.showLyricStrip = showLyricStrip
+            if (resized) measure()
             applyVisibility()
             return
         }
@@ -162,6 +183,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         }
         v.showWhenIdle = showWhenIdle
         v.showLyricStrip = showLyricStrip
+        v.locked = keyguard.isKeyguardLocked
         watchInsets(v)
         view = v
         touchView = tap
@@ -284,7 +306,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         val safeLeft = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) displayCutout?.safeInsetLeft ?: 0 else 0
         val safeRight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) displayCutout?.safeInsetRight ?: 0 else 0
         val g = IslandGeometry.compute(width, bars.toFloat(), dm.density, cutout,
-            safeTop.toFloat(), safeLeft.toFloat(), safeRight.toFloat(), height)
+            safeTop.toFloat(), safeLeft.toFloat(), safeRight.toFloat(), height, sizeScales.first, sizeScales.second)
         if (geometry == g) return
         geometry = g
         if (com.lyricflow.app.BuildConfig.DEBUG) Log.d(TAG, "geometry=$g display=${width}x$height cutout=$cutout")
@@ -309,7 +331,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
 
     private fun applyVisibility() {
         val v = view ?: return
-        val visible = !landscape && !locked && power.isInteractive && !hiddenForApp
+        val visible = !landscape && !hiddenForLock && power.isInteractive && !hiddenForApp
         v.screenOn = visible
         if (!visible) v.collapse()
         v.animate().cancel()
@@ -391,7 +413,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     }
 
     private fun updateFlags() {
-        val hidden = landscape || locked || !power.isInteractive || !touchable
+        val hidden = landscape || hiddenForLock || !power.isInteractive || !touchable
         val flags = if (hidden || !expandedTouch) {
             params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         } else {

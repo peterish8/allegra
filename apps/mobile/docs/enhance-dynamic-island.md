@@ -50,7 +50,12 @@ Grouped and cleaned up from the owner's messages (2026-10-18).
 14. **Two lyric lines optional.** A setting to show or hide the two lines of lyrics on the open card.
 15. **Marquee rhythm.** After each loop, the title and artist rest 4 s with the start showing, then loop again
     smoothly. On pause they glide back to the start of the name. On play they loop again from there.
-16. **Proof.** Run it in a cloud emulator and send screenshots of every state (open, close, playlists, songs,
+16. **Lock screen.** A switch to keep the island on the lock screen, to change songs and read the lyrics without
+    unlocking. Ask for any permission it needs.
+17. **Livelier light.** The cover light felt bland: make it move like a shader, smooth flowing colour, still
+    premium (no cheap blobs).
+18. **Size.** Width and height of the island adjustable in Settings.
+19. **Proof.** Run it in a cloud emulator and send screenshots of every state (open, close, playlists, songs,
     downloads, search, lyrics) for review. Push to `main` only after approval.
 
 ## Gesture map (open island)
@@ -150,13 +155,16 @@ faded out in one place and in at another.
 - [x] 11. App opens out of the island (compositor reveal + island collapse; Now Playing mounted open; system animation, check on the phone)
 - [x] 12. JS bridge: playlists, downloads and search snapshots, pick and search events (`DynamicIslandModule`)
 - [x] 13. Continuity morphs: pill cover ↔ card cover, lyric strip ↔ full lyrics, cover row ↔ search field, picked row → card
-- [x] 13a. Light from the cover itself: tiny blurred cover, lifted colours, three slowly turning layers pooled at the bottom (`IslandGlow`)
+- [x] 13a. Light from the cover's colours (first a blurred cover, `IslandGlow`, replaced by `IslandFlow` in 16b)
 - [x] 13b. Setting "Two lines of lyrics on the card"
 - [x] 13c. Marquee: eased loops, 4 s rest, glides home on pause, loops again on play
 - [x] 14. Tests: geometry, library parsing, marquee/blob math, JS payload builders
 - [x] 15. Screenshot harness run: every state plus a motion video, sent for review
 - [x] 16. Docs (`dynamic-island.md`), version bump (1.11.0), typecheck/lint/jest, push the branch
-- [ ] 17. After the owner approves: merge to `main`
+- [x] 16a. Lock screen switch: play, pause, skip, seek and lyrics while locked; library, search and opening the app wait for unlock. Turning it on with the accessibility switch off opens Android's page for it. Accessibility overlays are allowed over the lock screen, so no other permission is needed (check on the phone)
+- [x] 16b. Light as a flowing mesh of the cover's colours (`IslandFlow`: domain warp, weights that sum to one, 40×56 px per frame, filtered large; only while playing)
+- [x] 16c. Width (80–125%) and height (85–130%) sliders; the island resizes at once, never smaller than the camera
+- [x] 17. Merge to `main` (owner approved 2026-10-18)
 
 ## How it is checked here
 

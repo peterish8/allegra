@@ -4,7 +4,8 @@ import {
 
 const ready: IslandStatus = {
   serviceEnabled: true, serviceRunning: true, showing: true, enabled: true,
-  showWhenIdle: true, allowOnNativeIsland: false, hideInApp: true, showLyricStrip: true, nativeIsland: null,
+  showWhenIdle: true, allowOnNativeIsland: false, hideInApp: true, showLyricStrip: true, showOnLockScreen: false,
+  widthPercent: 100, heightPercent: 100, nativeIsland: null,
   restrictedSettings: false,
 };
 
@@ -27,7 +28,13 @@ test('Missing native flags are false and an empty island name is absent', () => 
     showWhenIdle: false, allowOnNativeIsland: false, hideInApp: false, nativeIsland: null, restrictedSettings: false,
     // A build without the switch always showed the lines, so that is what an absent value means.
     showLyricStrip: true,
+    showOnLockScreen: false,
+    widthPercent: 100,
+    heightPercent: 100,
   });
+  expect(parseIslandStatus({ widthPercent: 200, heightPercent: 10 })).toMatchObject({ widthPercent: 125, heightPercent: 85 });
+  expect(parseIslandStatus({ widthPercent: 112.4 })?.widthPercent).toBe(112);
+  expect(parseIslandStatus({ showOnLockScreen: true })?.showOnLockScreen).toBe(true);
   expect(parseIslandStatus({ showLyricStrip: false })?.showLyricStrip).toBe(false);
   expect(parseIslandStatus({ enabled: 'true', serviceEnabled: 1 })?.enabled).toBe(false);
   expect(parseIslandStatus({ nativeIsland: '' })?.nativeIsland).toBeNull();

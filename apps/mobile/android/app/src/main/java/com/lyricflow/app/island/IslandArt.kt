@@ -28,7 +28,7 @@ import java.util.concurrent.Executors
  */
 @OptIn(UnstableApi::class)
 class IslandArt(context: Context) {
-    class Art(val bitmap: Bitmap, val colors: IslandColors?, val glow: Bitmap?)
+    class Art(val bitmap: Bitmap, val colors: IslandColors?)
 
     private val executor = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(2) { r ->
         Thread(r, "island-art").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
@@ -42,19 +42,19 @@ class IslandArt(context: Context) {
     /** The cover already decoded for [metadata], if any: shown on the same frame as the song's title. */
     fun cached(metadata: MediaMetadata): Art? = keyOf(metadata)?.let { cache.get(it) }
 
-    /** [onDone] runs on the main thread with the cover, its colours and its light (IslandGlow), or nulls when there is none. */
-    fun load(metadata: MediaMetadata, onDone: (Bitmap?, IslandColors?, Bitmap?) -> Unit) {
+    /** [onDone] runs on the main thread with the cover and its colours, or nulls when there is none. */
+    fun load(metadata: MediaMetadata, onDone: (Bitmap?, IslandColors?) -> Unit) {
         val request = ++generation
         val key = keyOf(metadata)
         if (key == null) {
-            onDone(null, null, null)
+            onDone(null, null)
             return
         }
         cache.get(key)?.let {
-            onDone(it.bitmap, it.colors, it.glow)
+            onDone(it.bitmap, it.colors)
             return
         }
-        fetch(key, metadata) { art -> if (request == generation) onDone(art?.bitmap, art?.colors, art?.glow) }
+        fetch(key, metadata) { art -> if (request == generation) onDone(art?.bitmap, art?.colors) }
     }
 
     /** Decodes the cover of a song that is about to play (the next one), so a skip finds it ready. */
@@ -93,19 +93,13 @@ class IslandArt(context: Context) {
             } catch (_: Throwable) {
                 null
             }
-            val art = bitmap?.let { Art(it, colorsOf(it), glowOf(it)) }
+            val art = bitmap?.let { Art(it, colorsOf(it)) }
             main.post {
                 pending -= key
                 if (art != null) cache.put(key, art)
                 onDone(art)
             }
         }, executor)
-    }
-
-    private fun glowOf(bitmap: Bitmap): Bitmap? = try {
-        IslandGlow.fromCover(bitmap)
-    } catch (_: Throwable) {
-        null
     }
 
     /** What identifies a cover: its address, or the embedded picture when the song has no address. */

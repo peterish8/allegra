@@ -114,6 +114,21 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             refit()
         }
 
+    /**
+     * The phone is locked and the island stays on the lock screen: it plays, pauses, skips, seeks and shows the
+     * lyrics, but the playlists, downloads, search and the app itself wait until the phone is unlocked.
+     */
+    var locked = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value && (searchOpen || page != Page.NOW)) {
+                closeSearch()
+                showPage(Page.NOW)
+            }
+            invalidate()
+        }
+
     var screenOn = true
         set(value) {
             if (field == value) return
@@ -205,12 +220,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private val morphRect = RectF()
 
     /** No cover arrived in time for a new song: its colours fade to neutral rather than keep the last song's. */
-    private val neutralColors = Runnable {
-        if (cover == null) {
-            setGlow(null)
-            setColors(IslandColors.NEUTRAL)
-        }
-    }
+    private val neutralColors = Runnable { if (cover == null) setColors(IslandColors.NEUTRAL) }
 
     // ── Motion ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -317,22 +327,12 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private val veilPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     /** What the card's wash and veil were built for (colour, height, width): rebuilt only when one changes. */
     private var gradientFor: Long? = null
-    private val layerState = FloatArray(2)
-    /** The light: this song's (and, while they cross-fade, the last song's) blurred cover, one paint per layer. */
-    private val glowPaints = Array(IslandMotion.LAYERS.size) { i ->
-        Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG).apply {
-            if (IslandMotion.LAYERS[i].screen) xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
-        }
+    /** The light: a flowing mesh of the song's colours (IslandFlow), drawn from one small bitmap, filtered large. */
+    private val flow = IslandFlow()
+    private val flowBitmap: Bitmap = Bitmap.createBitmap(IslandFlow.W, IslandFlow.H, Bitmap.Config.ARGB_8888)
+    private val flowPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG).apply {
+        shader = BitmapShader(flowBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
     }
-    private val oldGlowPaints = Array(IslandMotion.LAYERS.size) { i ->
-        Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG).apply {
-            if (IslandMotion.LAYERS[i].screen) xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
-        }
-    }
-    /** One shader per layer (each is moved by its own matrix within a frame). */
-    private var glow: Array<BitmapShader>? = null
-    private var oldGlow: Array<BitmapShader>? = null
-    private var neutralGlow: Array<BitmapShader>? = null
     private val fadePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OUT) }
     private var textFadeLeft: Shader? = null
     private var textFadeRight: Shader? = null
@@ -472,7 +472,6 @@ class IslandView(context: Context, private val host: Host) : View(context) {
                 // Decoded before (played earlier, or prefetched as the next song): it changes with the title.
                 art.cancel()
                 setCover(ready.bitmap)
-                setGlow(ready.glow)
                 setColors(ready.colors ?: IslandColors.NEUTRAL)
             } else if (meta != null && nowHasSong) {
                 // The same song's cover being replaced keeps the old one until the new one is ready.
@@ -480,18 +479,14 @@ class IslandView(context: Context, private val host: Host) : View(context) {
                     setCover(null)
                     main.postDelayed(neutralColors, NEUTRAL_AFTER_MS)
                 }
-                art.load(meta) { bitmap, colors, light ->
+                art.load(meta) { bitmap, colors ->
                     main.removeCallbacks(neutralColors)
-                    if (bitmap != null || !sameSong) {
-                        setCover(bitmap)
-                        setGlow(light)
-                    }
+                    if (bitmap != null || !sameSong) setCover(bitmap)
                     setColors(colors ?: IslandColors.NEUTRAL)
                 }
             } else {
                 art.cancel()
                 setCover(null)
-                setGlow(null)
                 setColors(IslandColors.NEUTRAL)
             }
             // A new song while the pill shows: a little bump, as the island does when something new arrives.
@@ -595,17 +590,6 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         coverShader = bitmap?.let { BitmapShader(it, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP) }
         invalidate()
     }
-
-    /** The new song's light; the last one's stays under it while the colours cross over (colorMix). */
-    private fun setGlow(light: Bitmap?) {
-        val next = light?.let { shadersFor(it) }
-        if (next == null && glow == null) return
-        oldGlow = glow
-        glow = next
-    }
-
-    private fun shadersFor(light: Bitmap) =
-        Array(IslandMotion.LAYERS.size) { BitmapShader(light, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP) }
 
     private fun setColors(next: IslandColors) {
         fromColors = blendedColors()
@@ -716,6 +700,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     /** LuvLyrics opens growing out of the island's outline as it is now, while the island folds to its pill. */
     private fun openApp(link: String = PLAYER_LINK) {
+        // Locked: the app would open behind the lock screen, so the island just stays.
+        if (locked) return
         val g = geometry
         val from = if (g == null) null else RectF().also {
             shape(it, open.value, wide.value, shown.value, 1f, lyricsRoom.value, full.value, searchP.value)
@@ -955,7 +941,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             updateGradient(g)
             gradientPaint.alpha = (255 * oc * presence).toInt()
             canvas.drawPath(shapePath, gradientPaint)
-            drawGlow(canvas, oc * presence)
+            drawFlow(canvas, oc * presence)
             veilPaint.alpha = (255 * oc * presence).toInt()
             canvas.drawPath(shapePath, veilPaint)
         }
@@ -998,59 +984,42 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             Shader.TileMode.CLAMP,
         )
         // The camera, the title and the controls stay in a dark room; the light pools along the bottom and melts
-        // upward into it. Built one unit tall and stretched to the island's height each frame (drawGlow), so the
+        // upward into it. Built one unit tall and stretched to the island's height each frame (drawFlow), so the
         // pool stays at the bottom edge however tall the island is, without a shader per frame.
         veilPaint.shader = LinearGradient(
             0f, 0f, 0f, 1f,
-            intArrayOf(Color.argb(240, 0, 0, 0), Color.argb(200, 0, 0, 0), Color.argb(90, 0, 0, 0), Color.TRANSPARENT),
-            floatArrayOf(0f, 0.38f, 0.66f, 0.9f),
+            intArrayOf(Color.argb(225, 0, 0, 0), Color.argb(150, 0, 0, 0), Color.argb(55, 0, 0, 0), Color.TRANSPARENT),
+            floatArrayOf(0f, 0.3f, 0.58f, 0.82f),
             Shader.TileMode.CLAMP,
         )
     }
 
     /**
-     * The light behind the open island: the song's cover, blurred into pure colour (IslandGlow), drawn in a few
-     * large layers that turn slowly against each other along the bottom, as Apple Music's backdrop flows. Shaders
-     * are built once per song and moved by their local matrix, so a frame allocates nothing. The clock runs only
-     * while music plays and eases to a stop on pause (blobSpeed), so a paused song's light holds still.
+     * The light behind the open island: the song's colours flowing as one liquid mesh (IslandFlow), stretched over
+     * the island's outline. The colours are the cover's, crossing over smoothly when the song changes (colorMix).
+     * The flow's clock runs only while music plays and eases to a stop on pause (blobSpeed), so a paused song's
+     * light holds still and nothing is recomputed.
      */
-    private fun drawGlow(canvas: Canvas, alpha: Float) {
+    private fun drawFlow(canvas: Canvas, alpha: Float) {
         val now = SystemClock.uptimeMillis()
         if (blobLastMs != 0L && screenOn) blobClock += ((now - blobLastMs) / 1000f).coerceAtMost(0.1f) * blobSpeed.value
         blobLastMs = now
-        val current = glow ?: neutralGlow ?: shadersFor(IslandGlow.fromColors(IslandColors.NEUTRAL)).also { neutralGlow = it }
-        val m = colorMix.value.coerceIn(0f, 1f)
-        val previous = oldGlow
-        if (previous != null && m < 0.999f) drawGlowLayers(canvas, oldGlowPaints, previous, alpha * (1f - m))
-        drawGlowLayers(canvas, glowPaints, current, if (previous != null) alpha * m else alpha)
-        if (m >= 0.999f) oldGlow = null
-        // The dark room over it, stretched to the island's height: the light pools at the bottom and melts upward.
+        val c = blendedColors()
+        // The deep corner sits behind the title, the vivid colours below, the light one low in a corner.
+        val deep = ColorUtils.blendARGB(c.bottom, Color.BLACK, 0.55f)
+        val light = ColorUtils.blendARGB(c.accent, c.bottom, 0.35f)
+        if (flow.render(blobClock, deep, c.second, c.bottom, light)) {
+            flowBitmap.setPixels(flow.pixels, 0, IslandFlow.W, 0, 0, IslandFlow.W, IslandFlow.H)
+        }
+        matrix.setScale(shapeRect.width() / (IslandFlow.W - 1), shapeRect.height() / (IslandFlow.H - 1))
+        matrix.postTranslate(shapeRect.left, shapeRect.top)
+        flowPaint.shader?.setLocalMatrix(matrix)
+        flowPaint.alpha = (255 * alpha * FLOW_STRENGTH).toInt()
+        canvas.drawPath(shapePath, flowPaint)
+        // The dark room over it, stretched to the island's height: the title and controls read on any colour.
         matrix.setScale(1f, shapeRect.height())
         matrix.postTranslate(0f, shapeRect.top)
         veilPaint.shader?.setLocalMatrix(matrix)
-    }
-
-    private fun drawGlowLayers(canvas: Canvas, paints: Array<Paint>, shaders: Array<BitmapShader>, alpha: Float) {
-        if (alpha <= 0.004f) return
-        val w = shapeRect.width()
-        val h = shapeRect.height()
-        val depth = max(w * 0.7f, h * 0.4f)
-        val poolTop = shapeRect.top + h - depth
-        val half = IslandGlow.SIZE / 2f
-        for (i in paints.indices) {
-            val layer = IslandMotion.LAYERS[i]
-            IslandMotion.layerAt(layer, blobClock, layerState)
-            val scale = layerState[1] * w / IslandGlow.SIZE
-            matrix.setTranslate(-half, -half)
-            matrix.postScale(scale, scale)
-            matrix.postRotate(layerState[0])
-            matrix.postTranslate(shapeRect.left + layer.x * w, poolTop + layer.y * depth)
-            val shader = shaders[i]
-            if (paints[i].shader !== shader) paints[i].shader = shader
-            shader.setLocalMatrix(matrix)
-            paints[i].alpha = (255 * alpha * layer.alpha * GLOW_STRENGTH).toInt()
-            canvas.drawPath(shapePath, paints[i])
-        }
     }
 
     /** Where the pill's round cover sits, for an outline [pill]. */
@@ -2057,9 +2026,10 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val sideways = abs(dx) > abs(dy) * 1.15f
         axis = when {
             searchOpen -> if (downY < resultsTop) Axis.SEARCH else Axis.VERTICAL
+            // Locked, the island's library stays shut: sideways is just a little give.
             sideways -> Axis.HORIZONTAL
             // A pull down from the top of the card opens search; from its middle or bottom, the lyrics.
-            page == Page.NOW && !lyricsFull && pageX.value.let { abs(it) < 0.5f } && dy > 0f &&
+            !locked && page == Page.NOW && !lyricsFull && pageX.value.let { abs(it) < 0.5f } && dy > 0f &&
                 downY < g.cardTop + (g.cardHeight + g.dp(LYRICS_ROOM_DP) * lyricsRoom.value) * SEARCH_ZONE -> Axis.SEARCH
             else -> Axis.VERTICAL
         }
@@ -2085,6 +2055,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             val first = Page.DOWNLOADS.at
             val last = if (songsOf != null) Page.SONGS.at else Page.PLAYLISTS.at
             var x = dragBase - dx / g.cardWidth
+            if (locked) x = dragBase - (dx / g.cardWidth) * RUBBER * 0.4f
             // Past either end the page resists, like a rubber band.
             if (x < first) x = first + (x - first) * RUBBER
             if (x > last) x = last + (x - last) * RUBBER
@@ -2138,7 +2109,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             val last = if (songsOf != null) Page.SONGS.at else Page.PLAYLISTS.at
             val speed = -vx / g.cardWidth
             val projected = pageX.value + speed * 0.18f
-            val next = projected.roundToInt().toFloat().coerceIn(Page.DOWNLOADS.at, last)
+            val next = if (locked) Page.NOW.at else projected.roundToInt().toFloat().coerceIn(Page.DOWNLOADS.at, last)
             page = Page.entries.first { it.at == next }
             pageX.target = next
             pageX.kick(speed.coerceIn(-MAX_FLING, MAX_FLING))
@@ -2404,7 +2375,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         private const val PLAYLIST_ROW_DP = 62f
         private const val SONG_ROW_DP = 56f
         /** How strongly the cover's light shows through the card. */
-        private const val GLOW_STRENGTH = 0.85f
+        private const val FLOW_STRENGTH = 1f
         private val BAR_SPEED = floatArrayOf(3.2f, 4.1f, 2.8f, 3.7f)
         private val BAR_PHASE = floatArrayOf(0f, 1.7f, 3.1f, 4.6f)
 

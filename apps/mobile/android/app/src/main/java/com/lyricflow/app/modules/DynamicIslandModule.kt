@@ -52,6 +52,9 @@ class DynamicIslandModule : Module() {
                 "allowOnNativeIsland" to prefs.allowOnNativeIslandPhones,
                 "hideInApp" to prefs.hideInApp,
                 "showLyricStrip" to prefs.showLyricStrip,
+                "showOnLockScreen" to prefs.showOnLockScreen,
+                "widthPercent" to prefs.widthPercent,
+                "heightPercent" to prefs.heightPercent,
                 "nativeIsland" to NativeIsland.onThisPhone(),
                 // Android 13+ blocks accessibility for apps installed outside a store until the listener allows it.
                 "restrictedSettings" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU),
@@ -70,6 +73,21 @@ class DynamicIslandModule : Module() {
 
         Function("setAllowOnNativeIsland") { on: Boolean ->
             context?.let { IslandPrefs(it).allowOnNativeIslandPhones = on }
+            IslandService.refresh()
+        }
+
+        /** The island's width and height in percent of its own size; the island resizes at once. */
+        Function("setSize") { widthPercent: Int, heightPercent: Int ->
+            context?.let {
+                val prefs = IslandPrefs(it)
+                prefs.widthPercent = widthPercent.coerceIn(80, 125)
+                prefs.heightPercent = heightPercent.coerceIn(85, 130)
+            }
+            IslandService.refresh()
+        }
+
+        Function("setShowOnLockScreen") { on: Boolean ->
+            context?.let { IslandPrefs(it).showOnLockScreen = on }
             IslandService.refresh()
         }
 
