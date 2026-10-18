@@ -14,15 +14,16 @@ data class CameraCutout(val left: Float, val top: Float, val right: Float, val b
 
 /**
  * Where the island sits and how big each of its shapes is, in screen pixels. Every shape is centred on
- * [anchorX] and hangs from the top of the screen, which is what lets the window stay centred on the same
- * point while it grows and shrinks (see IslandWindow).
+ * [anchorX] and grows down from [pillTop], which is what lets the window stay centred on the same point while
+ * it grows and shrinks (see IslandWindow). The island always floats, a pill with all four corners round, a
+ * little below the top edge: it never hangs from the edge like a notch, even round a waterdrop camera.
  *
  * Pure, so it is tested on the JVM (IslandGeometryTest).
  */
 data class IslandGeometry(
     /** The screen x the island is centred on: the camera when it is near the middle, else the middle. */
     val anchorX: Float,
-    /** A notch or waterdrop that touches the top edge: the island hangs from the edge instead of floating. */
+    /** A notch or waterdrop that touches the top edge: the pill starts just under the edge and encloses it. */
     val attached: Boolean,
     val pillTop: Float,
     val pillHeight: Float,
@@ -38,6 +39,10 @@ data class IslandGeometry(
     val cardRadius: Float,
     /** The first y the open card's content may use: below the camera. */
     val contentTop: Float,
+    /** The card's height in full mode (all the lyrics, the playlists, a playlist's songs). */
+    val fullHeight: Float,
+    /** The search drawer's height: it stops above where the keyboard comes up. */
+    val searchHeight: Float,
     val density: Float,
 ) {
     fun dp(value: Float) = value * density
@@ -45,10 +50,25 @@ data class IslandGeometry(
     companion object {
         /** Cover row, progress row and transport row of the open card, with the gaps between them. */
         const val CONTENT_HEIGHT_DP = 56f + 16f + 20f + 10f + 52f
-        const val CARD_PADDING_DP = 18f
+        const val CARD_PADDING_DP = 16f
+        /** The gap between the top edge and an island round a camera that touches it. */
+        const val EDGE_GAP_DP = 3f
+        /** The open card is three quarters of the room it could take, an island rather than a banner. */
+        const val CARD_SHARE = 0.75f
+        const val MAX_CARD_DP = 440f * CARD_SHARE
+        /** The compact pill keeps three quarters of the room it could take beside the camera, as the card does. */
+        const val COMPACT_SHARE = 0.75f
+        /** The listener's size settings (Settings → Dynamic island), as fractions of the island's own size. */
+        const val MIN_WIDTH_SCALE = 0.8f
+        const val MAX_WIDTH_SCALE = 1.25f
+        const val MIN_HEIGHT_SCALE = 0.85f
+        const val MAX_HEIGHT_SCALE = 1.3f
 
         fun compute(screenWidth: Float, statusBarHeight: Float, density: Float, cutout: CameraCutout?,
-                    safeInsetTop: Float = 0f, safeInsetLeft: Float = 0f, safeInsetRight: Float = 0f): IslandGeometry {
+                    safeInsetTop: Float = 0f, safeInsetLeft: Float = 0f, safeInsetRight: Float = 0f,
+                    screenHeight: Float = 0f, widthScale: Float = 1f, heightScale: Float = 1f): IslandGeometry {
+            val ws = widthScale.coerceIn(MIN_WIDTH_SCALE, MAX_WIDTH_SCALE)
+            val hs = heightScale.coerceIn(MIN_HEIGHT_SCALE, MAX_HEIGHT_SCALE)
             fun dp(v: Float) = v * density
             val hole = cutout?.takeIf { it.width > 0f && it.height > 0f }
             // A camera in a corner gets the island in the middle of the top, not round the camera.
@@ -64,8 +84,8 @@ data class IslandGeometry(
             var pillTop: Float
             when {
                 attached -> {
-                    pillHeight = max(hole!!.bottom + dp(6f), dp(30f))
-                    pillTop = 0f
+                    pillTop = dp(EDGE_GAP_DP)
+                    pillHeight = max(hole!!.bottom + dp(5f) - pillTop, dp(30f))
                 }
                 centred -> {
                     pillHeight = max(hole!!.height + dp(12f), dp(30f))
@@ -81,7 +101,9 @@ data class IslandGeometry(
             val idleWidth = max(cameraWidth + dp(56f), dp(80f)).coerceAtMost(centreSlot)
             // Leave the clock and the status icons their room either side.
             val widest = centreSlot
-            val compactWidth = max(idleWidth, min(idleWidth + dp(100f), widest))
+            val baseCompact = max(idleWidth, min(max(idleWidth + dp(44f), (idleWidth + dp(100f)) * COMPACT_SHARE), widest))
+            // The listener's width: the room beside the camera grows or shrinks; the camera is always inside.
+            val compactWidth = (idleWidth + (baseCompact - idleWidth) * ws).coerceIn(min(idleWidth + dp(24f), widest), widest)
             if (!centred && hole != null &&
                 hole.right > anchorX - compactWidth / 2f && hole.left < anchorX + compactWidth / 2f) {
                 pillTop = maxOf(statusBarHeight, safeInsetTop, hole.bottom) + dp(4f)
@@ -90,14 +112,41 @@ data class IslandGeometry(
                 pillTop = safeInsetTop + dp(4f)
             }
 
+            // The listener's height: the pill grows round its centre (or down from the edge round a waterdrop), and
+            // never gets so short that the camera pokes out of it.
+            if (hs != 1f) {
+                val enclose = when {
+                    attached -> hole!!.bottom + dp(2f) - pillTop
+                    centred -> hole!!.height + dp(4f)
+                    else -> dp(18f)
+                }
+                val scaled = max(pillHeight * hs, enclose)
+                if (!attached) pillTop = max(dp(2f), pillTop - (scaled - pillHeight) / 2f)
+                pillHeight = scaled
+            }
+
             val sideRoom = 2f * min(anchorX - safeInsetLeft, screenWidth - safeInsetRight - anchorX)
             // Keep the entire spring envelope (5% overshoot plus the window's 6dp pad) on-screen.
-            val cardWidth = minOf((screenWidth - dp(16f)) / 1.05f - dp(12f), dp(440f),
-                (sideRoom - dp(16f)) / 1.05f - dp(12f))
-            val cardTop = if (attached) 0f else pillTop
+            val room = minOf((screenWidth - dp(16f)) / 1.05f - dp(12f), dp(440f), (sideRoom - dp(16f)) / 1.05f - dp(12f))
+            val cardWidth = min(CARD_SHARE * room * ws, room)
+            val cardTop = pillTop
             val contentTop = maxOf(cardTop + dp(CARD_PADDING_DP), safeInsetTop + dp(8f),
                 hole?.let { it.bottom + dp(8f) } ?: 0f)
             val cardHeight = (contentTop - cardTop) + dp(CONTENT_HEIGHT_DP) + dp(CARD_PADDING_DP)
+            // Full mode takes most of the upper screen and leaves the bottom for the app underneath.
+            val baseFull = if (screenHeight > 0f) {
+                (screenHeight * 0.62f - cardTop).coerceIn(cardHeight + dp(220f), max(cardHeight + dp(220f), dp(600f)))
+            } else {
+                cardHeight + dp(320f)
+            }
+            // The listener's height also sets how tall full mode grows, within the screen.
+            val fullCap = if (screenHeight > 0f) max(cardHeight + dp(160f), screenHeight * 0.8f - cardTop) else baseFull * MAX_HEIGHT_SCALE
+            val fullHeight = (baseFull * hs).coerceIn(cardHeight + dp(160f), fullCap)
+            val searchHeight = if (screenHeight > 0f) {
+                (screenHeight * 0.46f - cardTop).coerceIn(cardHeight + dp(150f), max(cardHeight + dp(150f), fullHeight))
+            } else {
+                cardHeight + dp(220f)
+            }
 
             return IslandGeometry(
                 anchorX = anchorX,
@@ -112,6 +161,8 @@ data class IslandGeometry(
                 cardHeight = cardHeight,
                 cardRadius = dp(30f),
                 contentTop = contentTop,
+                fullHeight = fullHeight,
+                searchHeight = searchHeight,
                 density = density,
             )
         }

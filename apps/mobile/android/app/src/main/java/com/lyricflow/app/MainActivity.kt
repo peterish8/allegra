@@ -32,6 +32,17 @@ class MainActivity : ReactActivity() {
     super.onCreate(null)
   }
 
+  // The system island steps aside while the app is in front, when the listener chose that (Settings → Dynamic island).
+  override fun onResume() {
+    super.onResume()
+    com.lyricflow.app.island.IslandService.setAppInFront(true)
+  }
+
+  override fun onPause() {
+    com.lyricflow.app.island.IslandService.setAppInFront(false)
+    super.onPause()
+  }
+
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule
    * rendering of the component.

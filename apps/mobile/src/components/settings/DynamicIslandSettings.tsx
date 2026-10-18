@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { AppState, LayoutChangeEvent, Platform } from 'react-native';
+import { AppState, LayoutChangeEvent, Platform, StyleSheet } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { Action, Row, Section, Switch } from './SettingsKit';
-import { ISLAND_DISCLOSURE, islandSetupStep, islandSummary } from '../../services/dynamicIslandSetup';
+import { Signal } from '../../constants/allegraTheme';
+import {
+  ISLAND_DISCLOSURE, ISLAND_HEIGHT_RANGE, ISLAND_WIDTH_RANGE, islandSetupStep, islandSummary,
+} from '../../services/dynamicIslandSetup';
 import {
   openIslandAccessibilitySettings, openIslandAppInfo, readIslandStatus,
-  setIslandAllowOnNativeIsland, setIslandEnabled, setIslandShowWhenIdle,
+  setIslandAllowOnNativeIsland, setIslandEnabled, setIslandHideInApp, setIslandShowLyricStrip, setIslandShowOnLockScreen,
+  setIslandShowWhenIdle, setIslandSize,
 } from '../../services/NativeDynamicIsland';
 
 export default function DynamicIslandSettings({ onLayout, onNotice }: {
@@ -46,8 +51,59 @@ export default function DynamicIslandSettings({ onLayout, onNotice }: {
           hint="If Android blocks the switch, open App info, tap the three-dot menu, then Allow restricted settings."
           onPress={() => open(openIslandAppInfo)} /> : null}
       </> : null}
+      <SizeRow label="Width" hint="How wide the island is, closed and open." value={status.widthPercent}
+        range={ISLAND_WIDTH_RANGE} onChange={w => change(() => setIslandSize(w, status.heightPercent))} />
+      <SizeRow label="Height" hint="How tall the pill is, and how far full lyrics and lists open." value={status.heightPercent}
+        range={ISLAND_HEIGHT_RANGE} onChange={h => change(() => setIslandSize(status.widthPercent, h))} />
       <Switch label="Show when nothing is playing" value={status.showWhenIdle}
         onChange={on => change(() => setIslandShowWhenIdle(on))} />
+      <Switch label="Two lines of lyrics on the card" hint="Pull the open island down for all the lyrics either way."
+        value={status.showLyricStrip} onChange={on => change(() => setIslandShowLyricStrip(on))} />
+      <Switch label="Show on the lock screen"
+        hint="Play, pause, skip and read the lyrics without unlocking. Your playlists, downloads and search open once the phone is unlocked."
+        value={status.showOnLockScreen}
+        onChange={on => {
+          change(() => setIslandShowOnLockScreen(on));
+          // The island needs its accessibility switch on to draw anywhere, the lock screen included.
+          if (on && !status.serviceEnabled) {
+            onNotice(ISLAND_DISCLOSURE);
+            open(openIslandAccessibilitySettings);
+          }
+        }} />
+      <Switch label="Hide while LuvLyrics is open" value={status.hideInApp}
+        onChange={on => change(() => setIslandHideInApp(on))} />
     </Section>
   );
 }
+
+/** A size slider: the readout follows the thumb, the island resizes on release (it is live on screen). */
+function SizeRow({ label, hint, value, range, onChange }: {
+  label: string;
+  hint: string;
+  value: number;
+  range: { readonly min: number; readonly max: number };
+  onChange: (percent: number) => void;
+}) {
+  const [live, setLive] = useState(value);
+  useEffect(() => { setLive(value); }, [value]);
+  return (
+    <Row label={`${label}  ${Math.round(live)}%`} hint={hint} stack>
+      <Slider
+        style={styles.slider}
+        minimumValue={range.min}
+        maximumValue={range.max}
+        step={5}
+        value={value}
+        onValueChange={setLive}
+        onSlidingComplete={onChange}
+        minimumTrackTintColor={Signal.wave}
+        maximumTrackTintColor="rgba(244,241,234,0.18)"
+        thumbTintColor={Signal.wave}
+      />
+    </Row>
+  );
+}
+
+const styles = StyleSheet.create({
+  slider: { width: '100%', height: 36, marginTop: 4 },
+});

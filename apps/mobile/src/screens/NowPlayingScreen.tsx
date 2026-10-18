@@ -109,7 +109,10 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // sheet is scaled to the pill's width. It starts there, so the first frame
   // never flashes the player at rest.
   const { y: restY } = playerSheetRest(windowW, screenH, insets.bottom, pillNav);
-  const sheetY = useSharedValue(restY);
+  // Opened out of the system island: Android grows the app's window out of the island, so the sheet is
+  // already open in the first frame instead of rising a second time inside it.
+  const openedOpen = route.params.instant === true;
+  const sheetY = useSharedValue(openedOpen ? 0 : restY);
   const progress = useDerivedValue(() => Math.min(1, Math.max(0, 1 - sheetY.value / restY)));
   useAnimatedReaction(() => progress.value, p => { playerSheetProgress.value = p; });
   useEffect(() => () => { playerSheetProgress.value = 0; }, []);
@@ -121,6 +124,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
   useEffect(() => {
     const velocity = takeOpenVelocity();
+    if (openedOpen) return;
     sheetY.value = reduceMotion
       ? withTiming(0, { duration: 200 })
       : withSpring(0, { ...(velocity > FLICK ? FLING_SPRING : SOFT_SPRING), velocity: -velocity });

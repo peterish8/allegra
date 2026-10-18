@@ -12,12 +12,28 @@ It controls LuvLyrics playback; other apps' media sessions are not collected.
    (or **Installed services**) **→ LuvLyrics island → On**, then accept Android's confirmation.
 3. In LuvLyrics, open **Settings → Dynamic island**. Enable **Show the island**. Leave
    **Show when nothing is playing** on to keep a tappable island around the camera while idle.
-4. Tap the island or pull it down to expand; push it up or tap outside to close. A pull or push carries
-   its speed into the island's spring, so a flick opens faster than a slow drag and nothing jumps.
-   When the song has timed lyrics, the open card grows a strip under the controls with the sung line
-   and the next one (they glide up together as each line starts) and stays open until it is pushed up;
-   without lyrics it closes after eight seconds without interaction. Long-press the compact island to
-   open LuvLyrics. Drag the progress bar to seek.
+4. Tap the island or pull it down to open the card. It floats a little below the top edge, a pill with every corner
+   round, three quarters as wide as the room it could take. On the open card:
+   - **Pull down from its lower part** for the full lyrics (the two lines under the controls grow into the list,
+     which follows the song; tap a line to play from it). Push up to go back, push up again to close.
+   - **Pull down from its top part** (the cover and title) for search: the row stretches into a field and the
+     keyboard comes up. The best answer shows large with Play, the rest under it. A tap plays it with similar songs
+     queued after it (Stream's search pick, `StreamService.playFromSearch`).
+   - **Swipe left** for your playlists, tap one for its songs. **Swipe right** for your downloads (offline).
+     A tapped song's cover and title fly into the card while the list folds away, and it plays.
+   - Tap the cover or title to open LuvLyrics: Android grows the app's window out of the island
+     (`ActivityOptions.makeScaleUpAnimation`, run by the system compositor), onto Now Playing already open
+     (`lyricflow://player?instant=1`). Long-press the closed pill to open it too. Drag the scrubber to seek: the
+     line has no knob and swells under the finger.
+   Without timed lyrics or with **Two lines of lyrics on the card** off, the card closes by itself after eight
+   seconds without a touch (twenty while browsing); otherwise it stays until it is pushed up or tapped outside.
+5. Settings → Dynamic island → **Width** and **Height** size the island (80–125% and 85–130%; the pill never
+   gets smaller than the camera). **Show on the lock screen** keeps it there for playing, skipping, seeking and
+   lyrics; playlists, downloads, search and opening the app wait until the phone is unlocked.
+6. Settings → Dynamic island → **Hide while LuvLyrics is open** (on by default) puts the island away while the app
+   is in front (`MainActivity` resume/pause → `IslandService.setAppInFront`).
+
+The plan, requests and continuity rules behind this are in [`enhance-dynamic-island.md`](enhance-dynamic-island.md).
 
 If a sideloaded app's accessibility switch is blocked on Android 13+, open Android **Settings → Apps
 → LuvLyrics → three-dot menu → Allow restricted settings**, then enable the service again.
@@ -59,6 +75,15 @@ Hardware holes themselves cannot receive touch; tap the black area beside/below 
   as Android's notification, so queue skips work when JavaScript sleeps.
 - `playback/PlayerResume.kt` shares idle reprepare and audio-focus resume with `MainPlayerModule`.
 - `DynamicIslandModule` exposes preferences and Android settings shortcuts. It never draws the island.
+- Lists and search: `hooks/useIslandLibrary.ts` (mounted in `RootNavigator`) sends the playlists with their songs
+  (`services/playlistSongs.ts`, local and online), the downloads, and search answers as JSON snapshots;
+  `IslandLibrary` holds them. A pick or a typed query comes back as `onIslandPick` / `onIslandSearch` and plays the
+  way the app's own screens do. With JavaScript not running, a pick opens the app through the widget's play link.
+- The light behind the open card is a flowing mesh of the cover's colours (`IslandFlow`: a domain-warped field
+  with weights that sum to one, computed at 40×56 px and drawn filtered, so no circles or edges). Android 12 has no
+  app GPU shaders, which is why it is computed. Its clock runs only while music plays. Titles that do not fit loop with eased starts and 4 s rests, and glide home on pause.
+- Covers load on the island's own two threads, never behind the media notification's network loads, and are
+  cached with their colours and light; the next song's cover is decoded ahead (`IslandArt`).
 - Lyrics: `hooks/useIslandLyrics.ts` (mounted in `RootNavigator`) sends the playing song's timed lines
   once per song through `setLyrics` (`islandLyricsPayload` applies the app's lyrics delay); `IslandLyrics`
   holds them keyed by song id and the view finds the sung line from the player's own position, so they
@@ -97,5 +122,4 @@ apps/mobile/scripts/probe-dynamic-island.ps1 -Serial emulator-5554 -OutDir C:/te
 The probe reads the actual camera geometry, opens and closes the card three times, checks that it
 really expands and returns to compact height, and asserts that the drawing window's x and width
 never change. It saves the measured frames, an expanded screenshot and an optional motion recording.
-The compact bars use moderate, independent cycles; the card's cover-coloured light blooms from below
-the controls into a black surface, with no continuous background animation.
+The compact bars use moderate, independent cycles. The card's light moves only while music plays.

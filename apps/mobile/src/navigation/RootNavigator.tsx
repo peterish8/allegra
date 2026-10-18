@@ -30,6 +30,7 @@ import { useCoverArtBackfill } from '../hooks/useCoverArtBackfill';
 import { useDeepLinks } from '../hooks/useDeepLinks';
 import { useWidgetLinks, useWidgetSync } from '../widget/useWidgetSync';
 import { useIslandLyrics } from '../hooks/useIslandLyrics';
+import { useIslandLibrary } from '../hooks/useIslandLibrary';
 import ConnectDeviceSheet from '../components/connect/ConnectDeviceSheet';
 import ConnectNoticeHost from '../components/connect/ConnectNoticeHost';
 import ConnectMiniPlayer from '../components/connect/ConnectMiniPlayer';
@@ -44,6 +45,7 @@ export const RootNavigator: React.FC = () => {
   // Home-screen widgets: keep them current, and answer their taps.
   useWidgetSync();
   useIslandLyrics();
+  useIslandLibrary();
   useWidgetLinks();
 
   // The mini player sits above the tab bar on every tab/screen — except Luvs,
