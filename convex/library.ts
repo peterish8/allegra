@@ -143,14 +143,17 @@ function saavnId(ref: SongRef): string | null {
 
 /** Keep the compatibility copy in sync from the touched rows, without reading the whole library. */
 async function updateProfileCopy(ctx: MutationCtx, profile: Doc<'profiles'>, write: LibraryWrite): Promise<void> {
-  const likedSongIds = [...profile.likedSongIds];
+  // Insertion-ordered maps keep each list's order (a new like or song goes last, an unlike removes it,
+  // a re-like moves it to the end) with one lookup per row, instead of an indexOf and an array copy per
+  // row: an import of 500 songs into one playlist no longer copies that playlist 500 times.
+  const liked = new Map(profile.likedSongIds.map((id) => [id, true] as const));
   for (const row of write.likes) {
     const id = saavnId(row.ref);
     if (!id) continue;
-    const index = likedSongIds.indexOf(id);
-    if (row.liked && index < 0) likedSongIds.push(id);
-    else if (!row.liked && index >= 0) likedSongIds.splice(index, 1);
+    if (row.liked && !liked.has(id)) liked.set(id, true);
+    else if (!row.liked) liked.delete(id);
   }
+  const likedSongIds = [...liked.keys()];
 
   const libraries = new Map<string, ProfileLibrary>(profile.libraries.map((library) => [
     library.id,
@@ -173,15 +176,22 @@ async function updateProfileCopy(ctx: MutationCtx, profile: Doc<'profiles'>, wri
       ...(row.coverUrl ? { coverUrl: row.coverUrl } : {})
     });
   }
+  const songsByPlaylist = new Map<string, Map<string, true>>();
   for (const row of write.items) {
     const id = saavnId(row.ref);
     const library = libraries.get(row.playlistId);
     if (!id || !library) continue;
-    const songIds = [...library.songIds];
-    const index = songIds.indexOf(id);
-    if (row.deleted && index >= 0) songIds.splice(index, 1);
-    else if (!row.deleted && index < 0) songIds.push(id);
-    libraries.set(row.playlistId, { ...library, songIds });
+    let songs = songsByPlaylist.get(row.playlistId);
+    if (!songs) {
+      songs = new Map(library.songIds.map((songId) => [songId, true] as const));
+      songsByPlaylist.set(row.playlistId, songs);
+    }
+    if (row.deleted) songs.delete(id);
+    else if (!songs.has(id)) songs.set(id, true);
+  }
+  for (const [playlistId, songs] of songsByPlaylist) {
+    const library = libraries.get(playlistId);
+    if (library) libraries.set(playlistId, { ...library, songIds: [...songs.keys()] });
   }
 
   if (likedSongIds.length > MAX_LIKES || libraries.size > MAX_PLAYLISTS) {
@@ -233,40 +243,50 @@ export const apply = mutation({
       changed = true;
     }
 
-    // Load exactly the rows this batch can touch.
+    // Load exactly the rows this batch can touch: each distinct key once, all the reads at the same time
+    // (they are independent point reads on an index, so none waits behind another).
     const ops = asOps(args.ops);
+    const likeRefs = new Set<SongRef>();
+    const playlistIds = new Set<string>();
+    const itemRefs = new Map<string, { readonly playlistId: string; readonly ref: SongRef }>();
+    for (const op of ops) {
+      if (op.op === 'like' || op.op === 'unlike') {
+        likeRefs.add(op.ref);
+        continue;
+      }
+      playlistIds.add(op.playlistId);
+      if (op.op === 'playlist_add' || op.op === 'playlist_remove') {
+        itemRefs.set(itemKey(op.playlistId, op.ref), { playlistId: op.playlistId, ref: op.ref });
+      }
+    }
     const likeDocs = new Map<string, LikeDoc>();
     const playlistDocs = new Map<string, PlaylistDoc>();
     const itemDocs = new Map<string, ItemDoc>();
-    for (const op of ops) {
-      if (op.op === 'like' || op.op === 'unlike') {
-        if (likeDocs.has(op.ref)) continue;
+    await Promise.all([
+      ...[...likeRefs].map(async (ref) => {
         const doc = await ctx.db
           .query('libraryLikes')
-          .withIndex('by_userId_and_ref', (q) => q.eq('userId', args.userId).eq('ref', op.ref))
+          .withIndex('by_userId_and_ref', (q) => q.eq('userId', args.userId).eq('ref', ref))
           .unique();
-        if (doc) likeDocs.set(op.ref, doc);
-        continue;
-      }
-      if (!playlistDocs.has(op.playlistId)) {
+        if (doc) likeDocs.set(ref, doc);
+      }),
+      ...[...playlistIds].map(async (playlistId) => {
         const doc = await ctx.db
           .query('libraryPlaylists')
-          .withIndex('by_userId_and_playlistId', (q) => q.eq('userId', args.userId).eq('playlistId', op.playlistId))
+          .withIndex('by_userId_and_playlistId', (q) => q.eq('userId', args.userId).eq('playlistId', playlistId))
           .unique();
-        if (doc) playlistDocs.set(op.playlistId, doc);
-      }
-      if (op.op === 'playlist_add' || op.op === 'playlist_remove') {
-        const key = itemKey(op.playlistId, op.ref);
-        if (itemDocs.has(key)) continue;
+        if (doc) playlistDocs.set(playlistId, doc);
+      }),
+      ...[...itemRefs].map(async ([key, { playlistId, ref }]) => {
         const doc = await ctx.db
           .query('libraryItems')
           .withIndex('by_userId_and_playlistId_and_ref', (q) =>
-            q.eq('userId', args.userId).eq('playlistId', op.playlistId).eq('ref', op.ref)
+            q.eq('userId', args.userId).eq('playlistId', playlistId).eq('ref', ref)
           )
           .unique();
         if (doc) itemDocs.set(key, doc);
-      }
-    }
+      })
+    ]);
 
     const view: LibraryRowsView = {
       like: (ref) => {
