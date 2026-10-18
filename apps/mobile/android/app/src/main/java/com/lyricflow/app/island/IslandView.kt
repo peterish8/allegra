@@ -32,6 +32,7 @@ import com.lyricflow.app.playback.showsPlaying
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -122,7 +123,16 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private val bump = Spring(0f, stiffness = 600f, dampingRatio = 0.45f)
     private val press = Spring(0f, stiffness = 650f, dampingRatio = 1f)
     private val colorMix = Spring(1f, stiffness = 65f, dampingRatio = 1f)
-    private val springs = arrayOf(open, wide, shown, bump, press, colorMix)
+    // Lyrics: the card grows a strip for them (lyricsRoom), and each new line glides up into place (lineMove, 1 → 0).
+    private val lyricsRoom = Spring(0f, stiffness = 170f, dampingRatio = 1f)
+    private val lineMove = Spring(0f, stiffness = 220f, dampingRatio = 1f)
+    private val springs = arrayOf(open, wide, shown, bump, press, colorMix, lyricsRoom, lineMove)
+    private var lyricLines: List<IslandLyrics.Line> = emptyList()
+    private var lyricIndex = -1
+    private var lyricFrom = -1
+    /** Each line fitted to the card once (size, trimmed text, width), so a frame never measures or allocates. */
+    private class LyricFit(val text: String, val size: Float, val width: Float)
+    private val lyricFits = HashMap<Int, LyricFit>()
 
     private var looping = false
     private var lastFrameNanos = 0L
@@ -143,6 +153,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     private var downX = 0f
     private var downY = 0f
+    private var downTime = 0L
     private var moved = false
     private var longPressed = false
     private var touchTarget = Target.NONE
@@ -166,6 +177,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val artistPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    private val lyricPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val timePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         fontFeatureSettings = "tnum"
@@ -200,6 +212,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         stopWatching = IslandPlayback.watch { next -> bindPlayer(next) }
+        IslandLyrics.onChange = { refreshLyrics() }
         IslandFonts.load(context) {
             main.post {
                 applyFonts()
@@ -213,6 +226,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     override fun onDetachedFromWindow() {
         stopWatching?.invoke()
         stopWatching = null
+        IslandLyrics.onChange = null
         bindPlayer(null)
         art.cancel()
         main.removeCallbacksAndMessages(null)
@@ -260,7 +274,27 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         hasSong = nowHasSong
         contentDescription = if (hasSong) "Now playing $title by $artist" else "LuvLyrics island"
         layoutText()
+        refreshLyrics()
         retarget()
+        invalidate()
+    }
+
+    /**
+     * Picks up the lines for the playing song; the card grows room for them, or gives it back, on a spring.
+     * Player events call this often, so it does nothing unless the lines actually changed.
+     */
+    private fun refreshLyrics() {
+        val next = if (hasSong) IslandLyrics.linesFor(player?.currentMediaItem?.mediaId) else emptyList()
+        if (next === lyricLines) return
+        lyricLines = next
+        lyricIndex = -1
+        lyricFrom = -1
+        lyricFits.clear()
+        lineMove.snap(0f)
+        lyricsRoom.target = if (lyricLines.isEmpty()) 0f else 1f
+        if (wantOpen) holdOpen()
+        kickLoop()
+        refit()
         invalidate()
     }
 
@@ -306,9 +340,13 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         retarget()
     }
 
-    /** The card stays open while it is used, and closes by itself 8 s after the last touch. */
+    /**
+     * The card stays open while it is used, and closes by itself 8 s after the last touch. With lyrics it
+     * stays until it is pushed up or tapped outside: lyrics are there to be read along.
+     */
     private fun holdOpen() {
         main.removeCallbacks(autoClose)
+        if (lyricLines.isNotEmpty()) return
         main.postDelayed(autoClose, AUTO_CLOSE_MS)
     }
 
@@ -367,13 +405,13 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private fun refit(force: Boolean = false) {
         val g = geometry ?: return
         val pad = g.dp(6f)
-        shape(scratch, open.target, wide.target, shown.target, 1f)
+        shape(scratch, open.target, wide.target, shown.target, 1f, lyricsRoom.target)
         var half = scratch.width() / 2f + pad
         var bottom = scratch.bottom + pad
         if (looping) {
             val overshoot = if (open.target > 0.5f) 1.05f else 1.08f
             half = max(fitHalf, max(half * overshoot, currentHalf() + pad))
-            shape(scratch, open.value, wide.value, shown.value, currentScale())
+            shape(scratch, open.value, wide.value, shown.value, currentScale(), lyricsRoom.value)
             bottom = max(fitBottom, max(bottom * 1.04f, scratch.bottom + pad))
         }
         if (force || abs(half - fitHalf) > 0.5f || abs(bottom - fitBottom) > 0.5f) {
@@ -384,17 +422,17 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     }
 
     private fun currentHalf(): Float {
-        shape(scratch, open.value, wide.value, shown.value, currentScale())
+        shape(scratch, open.value, wide.value, shown.value, currentScale(), lyricsRoom.value)
         return scratch.width() / 2f
     }
 
     private fun currentScale() = 1f + 0.05f * bump.value - 0.05f * press.value
 
     /**
-     * The island's outline for open [o], width [w] (idle → compact) and presence [s], centred on x = 0.
-     * [o] may overshoot 1 a little: the card grows a touch past its size and settles back, as a spring does.
+     * The island's outline for open [o], width [w] (idle → compact), presence [s] and lyrics room [l], centred
+     * on x = 0. [o] may overshoot 1 a little: the card grows a touch past its size and settles back, as a spring does.
      */
-    private fun shape(out: RectF, o: Float, w: Float, s: Float, scale: Float) {
+    private fun shape(out: RectF, o: Float, w: Float, s: Float, scale: Float, l: Float) {
         val g = geometry ?: return out.setEmpty()
         val presence = s.coerceIn(0f, 1f)
         val pillW = lerp(g.idleWidth, g.compactWidth, w) * lerp(0.55f, 1f, presence)
@@ -402,7 +440,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val pillTop = if (g.attached) 0f else g.pillTop + (g.pillHeight - pillH) / 2f
         val half = lerp(pillW / 2f, g.cardWidth / 2f, o)
         val top = lerp(pillTop, g.cardTop, o)
-        val bottom = lerp(pillTop + pillH, g.cardTop + g.cardHeight, o)
+        val bottom = lerp(pillTop + pillH, g.cardTop + g.cardHeight + g.dp(LYRICS_ROOM_DP) * l, o)
         out.set(-half * scale, top, half * scale, bottom)
         if (scale != 1f) {
             // Grows and shrinks about its middle (a hanging island keeps its top on the edge).
@@ -422,6 +460,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         titlePaint.typeface = IslandFonts.semibold
         artistPaint.typeface = IslandFonts.regular
         timePaint.typeface = IslandFonts.regular
+        lyricPaint.typeface = IslandFonts.semibold
         titlePaint.textSize = sp(17f)
         artistPaint.textSize = sp(15f)
         timePaint.textSize = sp(12f)
@@ -449,6 +488,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val label = OPEN_LABEL
         val labelWidth = titlePaint.measureText(label) * 0.9f
         openButton.set(-labelWidth / 2f - g.dp(22f), controlsY - g.dp(22f), labelWidth / 2f + g.dp(22f), controlsY + g.dp(22f))
+        lyricFits.clear()
         layoutText()
     }
 
@@ -469,7 +509,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val o = open.value
         val oc = o.coerceIn(0f, 1f)
 
-        shape(shapeRect, o, wide.value, presence, currentScale())
+        shape(shapeRect, o, wide.value, presence, currentScale(), lyricsRoom.value)
         shapeRect.offset(cx, 0f)
         val radius = min(lerp(shapeRect.height() / 2f, g.cardRadius, oc), shapeRect.height() / 2f)
         shapePath.reset()
@@ -503,19 +543,22 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     private fun updateGradient(g: IslandGeometry) {
         val c = blendedColors()
-        val key = "${c.top}|${c.bottom}|${g.cardTop}|${g.cardHeight}|$width"
+        // The card is taller while it has lyrics: the wash and the glow are built once for where it is going
+        // (the target, not the moving value), so no shader is allocated on a frame of the motion.
+        val cardHeight = g.cardHeight + (g.dp(LYRICS_ROOM_DP) * lyricsRoom.target).roundToInt()
+        val key = "${c.top}|${c.bottom}|${g.cardTop}|$cardHeight|$width"
         if (key == gradientFor) return
         gradientFor = key
         gradientPaint.shader = LinearGradient(
-            0f, g.cardTop, 0f, g.cardTop + g.cardHeight,
+            0f, g.cardTop, 0f, g.cardTop + cardHeight,
             intArrayOf(Color.BLACK, c.top, Color.rgb(4, 4, 9)),
             floatArrayOf(0f, 0.40f, 1f),
             Shader.TileMode.CLAMP,
         )
         // Light blooms up from below the controls; the camera and title stay in a black room.
         glowPaint.shader = RadialGradient(
-            width / 2f, g.cardTop + g.cardHeight * 1.12f,
-            max(g.cardWidth * 0.68f, g.cardHeight * 1.03f),
+            width / 2f, g.cardTop + cardHeight * 1.12f,
+            max(g.cardWidth * 0.68f, cardHeight * 1.03f),
             intArrayOf(c.bottom, ColorUtils.setAlphaComponent(c.bottom, 125), Color.TRANSPARENT),
             floatArrayOf(0f, 0.40f, 1f), Shader.TileMode.CLAMP,
         )
@@ -578,6 +621,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             drawButton(canvas, -sideButtonX, sideRadius, IslandIcons.previous, g.dp(22f), alpha, Target.PREVIOUS)
             drawButton(canvas, 0f, playRadius, if (playing) IslandIcons.pause else IslandIcons.play, g.dp(26f), alpha, Target.PLAY)
             drawButton(canvas, sideButtonX, sideRadius, IslandIcons.next, g.dp(22f), alpha, Target.NEXT)
+            val room = lyricsRoom.value.coerceIn(0f, 1f)
+            if (room > 0.01f) drawLyrics(canvas, g, alpha * room)
         } else {
             val pressed = pressedButton == Target.OPEN
             fill.shader = null
@@ -616,6 +661,59 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         fill.alpha = (255 * alpha).toInt()
         canvas.drawRoundRect(barLeft, progressY - track / 2f, max(barLeft + track, x), progressY + track / 2f, track / 2f, track / 2f, fill)
         canvas.drawCircle(x, progressY, g.dp(if (scrubbing) 8f else 6f), fill)
+    }
+
+    /**
+     * The sung line and the next one, under the controls. Every line has the same weight; the sung one is
+     * only brighter. When the next line starts, both glide up together on one spring (lineMove 1 → 0) and
+     * the line before fades out above them; a seek elsewhere just shows the new lines.
+     */
+    private fun drawLyrics(canvas: Canvas, g: IslandGeometry, alpha: Float) {
+        val lines = lyricLines
+        if (lines.isEmpty()) return
+        val position = if (scrubbing) scrubMs else player?.currentPosition ?: 0L
+        val index = IslandLyrics.lineAt(lines, position)
+        if (index != lyricIndex) {
+            lyricFrom = lyricIndex
+            lyricIndex = index
+            if (index == lyricFrom + 1) {
+                lineMove.snap(1f)
+                lineMove.target = 0f
+                kickLoop()
+            } else {
+                lineMove.snap(0f)
+            }
+        }
+        val pad = g.dp(IslandGeometry.CARD_PADDING_DP)
+        val maxWidth = g.cardWidth - pad * 2f
+        val top = controlsY + playRadius + g.dp(LYRICS_GAP_DP)
+        val gap = g.dp(LYRICS_LINE_DP)
+        val baseline = top + gap * 0.66f
+        val k = lineMove.value.coerceIn(0f, 1f)
+        canvas.save()
+        canvas.clipRect(-g.cardWidth / 2f, top, g.cardWidth / 2f, g.cardTop + g.cardHeight + g.dp(LYRICS_ROOM_DP))
+        if (k > 0.01f) drawLyricLine(canvas, lyricFrom, baseline - gap * (1f - k), alpha * k, maxWidth)
+        drawLyricLine(canvas, index, baseline + gap * k, alpha * lerp(1f, NEXT_LINE_ALPHA, k), maxWidth)
+        drawLyricLine(canvas, index + 1, baseline + gap * (1f + k), alpha * NEXT_LINE_ALPHA, maxWidth)
+        canvas.restore()
+    }
+
+    /** Line [at], centred: a long one shrinks a little to fit, then trails off. Fitted once, then reused. */
+    private fun drawLyricLine(canvas: Canvas, at: Int, baseline: Float, alpha: Float, maxWidth: Float) {
+        if (alpha <= 0.01f) return
+        val line = lyricLines.getOrNull(at) ?: return
+        val fit = lyricFits.getOrPut(at) {
+            val size = sp(LYRIC_SP)
+            lyricPaint.textSize = size
+            val width = lyricPaint.measureText(line.text)
+            val fitted = if (width > maxWidth) max(size * 0.82f, size * maxWidth / width) else size
+            lyricPaint.textSize = fitted
+            val shown = TextUtils.ellipsize(line.text, lyricPaint, maxWidth, TextUtils.TruncateAt.END).toString()
+            LyricFit(shown, fitted, lyricPaint.measureText(shown))
+        }
+        lyricPaint.textSize = fit.size
+        lyricPaint.alpha = (255 * alpha).toInt()
+        canvas.drawText(fit.text, -fit.width / 2f, baseline, lyricPaint)
     }
 
     private fun drawButton(canvas: Canvas, x: Float, radius: Float, icon: Path, iconSize: Float, alpha: Float, which: Target) {
@@ -657,12 +755,15 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         imagePaint.shader?.setLocalMatrix(matrix)
     }
 
-    /** Level bars at 30 fps while they show and music plays; the open card's clock twice a second. */
+    /**
+     * Level bars at 30 fps while they show and music plays; the open card's clock twice a second, or about
+     * ten times a second with lyrics, so a line changes when it is sung rather than up to half a second late.
+     */
     private fun scheduleTicks(compactAlpha: Float, cardAlpha: Float) {
         if (looping || !screenOn || !playing) return
         when {
             compactAlpha > 0.01f -> postInvalidateDelayed(BAR_FRAME_MS)
-            cardAlpha > 0.5f -> postInvalidateDelayed(CLOCK_TICK_MS)
+            cardAlpha > 0.5f -> postInvalidateDelayed(if (lyricLines.isEmpty()) CLOCK_TICK_MS else LYRIC_TICK_MS)
         }
     }
 
@@ -713,6 +814,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 downX = x
                 downY = y
+                downTime = event.eventTime
                 moved = false
                 longPressed = false
                 touchTarget = hitTest(x, y)
@@ -743,18 +845,24 @@ class IslandView(context: Context, private val host: Host) : View(context) {
                         invalidate()
                     }
                 }
+                // The finger's speed so far, in card heights a second: the spring carries it on (as Apple's
+                // springs keep a gesture's velocity), so a flick opens or closes faster than a slow pull, never with a jump.
+                val seconds = max(MIN_GESTURE_S, (event.eventTime - downTime) / 1000f)
+                val speed = (dy / g.cardHeight) / seconds
                 if (!wantOpen) {
                     // Pull the pill down to open it.
                     if (!longPressed && dy > g.dp(14f)) {
                         main.removeCallbacks(longPress)
                         press.target = 0f
                         expand()
+                        open.kick(speed.coerceIn(0f, MAX_FLING))
                     }
                 } else if (scrubbing) {
                     moveScrub(x)
                 } else if (dy < -g.dp(24f)) {
                     // Push the card up to put it away.
                     collapse()
+                    open.kick(speed.coerceIn(-MAX_FLING, 0f))
                 }
                 return true
             }
@@ -856,7 +964,18 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         const val LONG_PRESS_MS = 450L
         const val BAR_FRAME_MS = 33L
         const val CLOCK_TICK_MS = 500L
+        const val LYRIC_TICK_MS = 90L
+        /** A gesture's carried speed is capped, so a hard flick still settles with the spring's own small overshoot. */
+        const val MAX_FLING = 4f
+        const val MIN_GESTURE_S = 0.03f
         const val OPEN_LABEL = "Open LuvLyrics"
+        /** How much taller the card grows for lyrics, the space above them, and each line's height. */
+        const val LYRICS_ROOM_DP = 62f
+        const val LYRICS_GAP_DP = 12f
+        const val LYRICS_LINE_DP = 26f
+        const val LYRIC_SP = 16f
+        /** The next line waits dimmer, as in the app's own lyrics. */
+        const val NEXT_LINE_ALPHA = 0.42f
         val BAR_SPEED = floatArrayOf(3.2f, 4.1f, 2.8f, 3.7f)
         val BAR_PHASE = floatArrayOf(0f, 1.7f, 3.1f, 4.6f)
 

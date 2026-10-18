@@ -70,3 +70,28 @@ export function parseIslandStatus(raw: unknown): IslandStatus | null {
     restrictedSettings: flag('restrictedSettings'),
   };
 }
+
+/** What the island needs of a song's lyrics: when each line starts (ms on the player's clock) and its words. */
+export interface IslandLyricsPayload {
+  atMs: number[];
+  texts: string[];
+}
+
+/**
+ * The lines the open island shows under its controls. Only timed lyrics: plain lyrics (every line at 0)
+ * have nothing to follow, so the island keeps its usual size for them. The app's lyrics delay is
+ * applied here, the way the in-app lyrics use it (a line is sung once position + delay reaches it),
+ * so the island and the app show the same line.
+ */
+export function islandLyricsPayload(
+  lines: readonly { readonly timestamp: number; readonly text: string }[] | undefined,
+  delaySeconds: number,
+): IslandLyricsPayload | null {
+  const timed = (lines ?? []).filter(line => Number.isFinite(line.timestamp) && line.text.trim().length > 0);
+  if (timed.length === 0 || timed.every(line => line.timestamp === 0)) return null;
+  const delay = Number.isFinite(delaySeconds) ? delaySeconds : 0;
+  return {
+    atMs: timed.map(line => Math.max(0, Math.round((line.timestamp - delay) * 1000))),
+    texts: timed.map(line => line.text.trim()),
+  };
+}

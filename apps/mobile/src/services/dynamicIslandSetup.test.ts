@@ -1,4 +1,4 @@
-import { IslandStatus, islandSetupStep, parseIslandStatus } from './dynamicIslandSetup';
+import { IslandStatus, islandLyricsPayload, islandSetupStep, parseIslandStatus } from './dynamicIslandSetup';
 
 const ready: IslandStatus = {
   serviceEnabled: true, serviceRunning: true, showing: true, enabled: true,
@@ -29,4 +29,21 @@ test('Missing native flags are false and an empty island name is absent', () => 
 });
 test.each([null, undefined, false, 'invalid'])('Unavailable status stays unavailable: %s', raw => {
   expect(parseIslandStatus(raw)).toBeNull();
+});
+
+describe('islandLyricsPayload', () => {
+  test('timed lines go to the island in ms, shifted by the lyrics delay the way the app reads them', () => {
+    const lines = [{ timestamp: 1.2, text: 'First line' }, { timestamp: 4.5, text: '  Second line ' }, { timestamp: 7, text: '   ' }];
+    expect(islandLyricsPayload(lines, 0.5)).toEqual({ atMs: [700, 4000], texts: ['First line', 'Second line'] });
+  });
+
+  test('plain lyrics (every line at 0) and no lyrics send nothing', () => {
+    expect(islandLyricsPayload([{ timestamp: 0, text: 'a' }, { timestamp: 0, text: 'b' }], 0)).toBeNull();
+    expect(islandLyricsPayload([], 0)).toBeNull();
+    expect(islandLyricsPayload(undefined, 0)).toBeNull();
+  });
+
+  test('a delay never pushes a line before the start of the song', () => {
+    expect(islandLyricsPayload([{ timestamp: 0.2, text: 'Hi' }], 1)?.atMs).toEqual([0]);
+  });
 });

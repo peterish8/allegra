@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import com.lyricflow.app.island.IslandLyrics
 import com.lyricflow.app.island.IslandPrefs
 import com.lyricflow.app.island.IslandService
 import com.lyricflow.app.island.NativeIsland
@@ -52,6 +53,15 @@ class DynamicIslandModule : Module() {
         Function("setAllowOnNativeIsland") { on: Boolean ->
             context?.let { IslandPrefs(it).allowOnNativeIslandPhones = on }
             IslandService.refresh()
+        }
+
+        /** The playing song's timed lines (ms, already shifted by the lyrics delay), shown under the open card. */
+        Function("setLyrics") { songId: String, atMs: List<Double>, texts: List<String> ->
+            IslandLyrics.set(songId, atMs.map { it.toLong() }, texts)
+        }
+
+        Function("clearLyrics") {
+            IslandLyrics.clear()
         }
 
         /** Our row in Android's accessibility settings where the phone can open it, else the accessibility page. */

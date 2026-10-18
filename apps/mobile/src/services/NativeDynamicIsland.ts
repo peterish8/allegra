@@ -13,6 +13,8 @@ interface DynamicIslandModule {
   setAllowOnNativeIsland?: (on: boolean) => void;
   openAccessibilitySettings?: () => boolean;
   openAppInfo?: () => boolean;
+  setLyrics?: (songId: string, atMs: number[], texts: string[]) => void;
+  clearLyrics?: () => void;
 }
 
 const mod = (): DynamicIslandModule | null => getNativeModule<DynamicIslandModule>('DynamicIsland');
@@ -40,3 +42,7 @@ export const setIslandShowWhenIdle = (on: boolean) => call(m => m.setShowWhenIdl
 export const setIslandAllowOnNativeIsland = (on: boolean) => call(m => m.setAllowOnNativeIsland ? m.setAllowOnNativeIsland(on) : false);
 export const openIslandAccessibilitySettings = () => call(m => m.openAccessibilitySettings?.() ?? false);
 export const openIslandAppInfo = () => call(m => m.openAppInfo?.() ?? false);
+/** Hands the playing song's timed lines to the island, which follows the player's clock itself. */
+export const setIslandLyrics = (songId: string, atMs: number[], texts: string[]) =>
+  call(m => (m.setLyrics ? m.setLyrics(songId, atMs, texts) : false));
+export const clearIslandLyrics = () => call(m => (m.clearLyrics ? m.clearLyrics() : false));

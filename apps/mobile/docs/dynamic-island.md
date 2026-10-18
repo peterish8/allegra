@@ -12,8 +12,12 @@ It controls LuvLyrics playback; other apps' media sessions are not collected.
    (or **Installed services**) **→ LuvLyrics island → On**, then accept Android's confirmation.
 3. In LuvLyrics, open **Settings → Dynamic island**. Enable **Show the island**. Leave
    **Show when nothing is playing** on to keep a tappable island around the camera while idle.
-4. Tap the island to expand, drag up or tap outside to close. It closes after eight seconds without
-   interaction. Long-press the compact island to open LuvLyrics. Drag the progress bar to seek.
+4. Tap the island or pull it down to expand; push it up or tap outside to close. A pull or push carries
+   its speed into the island's spring, so a flick opens faster than a slow drag and nothing jumps.
+   When the song has timed lyrics, the open card grows a strip under the controls with the sung line
+   and the next one (they glide up together as each line starts) and stays open until it is pushed up;
+   without lyrics it closes after eight seconds without interaction. Long-press the compact island to
+   open LuvLyrics. Drag the progress bar to seek.
 
 If a sideloaded app's accessibility switch is blocked on Android 13+, open Android **Settings → Apps
 → LuvLyrics → three-dot menu → Allow restricted settings**, then enable the service again.
@@ -55,6 +59,14 @@ Hardware holes themselves cannot receive touch; tap the black area beside/below 
   as Android's notification, so queue skips work when JavaScript sleeps.
 - `playback/PlayerResume.kt` shares idle reprepare and audio-focus resume with `MainPlayerModule`.
 - `DynamicIslandModule` exposes preferences and Android settings shortcuts. It never draws the island.
+- Lyrics: `hooks/useIslandLyrics.ts` (mounted in `RootNavigator`) sends the playing song's timed lines
+  once per song through `setLyrics` (`islandLyricsPayload` applies the app's lyrics delay); `IslandLyrics`
+  holds them keyed by song id and the view finds the sung line from the player's own position, so they
+  keep moving while JavaScript sleeps. Plain (untimed) lyrics are not sent.
+- Smoothness: the springs are Apple's feel (stiffness 170 at damping 0.86 ≈ SwiftUI's 0.5 s response,
+  0.825 damping). Window animations are off and the window only grows ahead of a move and fits at rest,
+  never per frame (an overlay resized every frame fights the system's own layout and flickers). Shaders
+  are built for the target size and each lyric line is measured once, so no frame allocates.
 - Accessibility XML requests no screen content, events, gestures or screenshot capability.
 
 Android's [window documentation](https://developer.android.com/reference/android/view/WindowManager.LayoutParams#TYPE_ACCESSIBILITY_OVERLAY)
