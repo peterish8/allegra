@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { AppState, LayoutChangeEvent, Platform, StyleSheet } from 'react-native';
 import Slider from '@react-native-community/slider';
-import { Action, Row, Section, Switch } from './SettingsKit';
+import { Action, Choice, Row, Section, Switch } from './SettingsKit';
 import { Signal } from '../../constants/allegraTheme';
 import {
-  ISLAND_DISCLOSURE, ISLAND_HEIGHT_RANGE, ISLAND_WIDTH_RANGE, islandSetupStep, islandSummary,
+  ISLAND_DISCLOSURE, ISLAND_HEIGHT_RANGE, ISLAND_STYLES, ISLAND_WIDTH_RANGE, IslandStyle, islandSetupStep, islandSummary,
 } from '../../services/dynamicIslandSetup';
 import {
   openIslandAccessibilitySettings, openIslandAppInfo, readIslandStatus,
   setIslandAllowOnNativeIsland, setIslandEnabled, setIslandHideInApp, setIslandShowLyricStrip, setIslandShowOnLockScreen,
-  setIslandShowWhenIdle, setIslandSize,
+  setIslandShowWhenIdle, setIslandSize, setIslandStyle,
 } from '../../services/NativeDynamicIsland';
 
 export default function DynamicIslandSettings({ onLayout, onNotice }: {
@@ -51,7 +51,10 @@ export default function DynamicIslandSettings({ onLayout, onNotice }: {
           hint="If Android blocks the switch, open App info, tap the three-dot menu, then Allow restricted settings."
           onPress={() => open(openIslandAppInfo)} /> : null}
       </> : null}
-      <SizeRow label="Width" hint="How wide the island is, closed and open." value={status.widthPercent}
+      <Choice<IslandStyle> label="Shape"
+        hint={status.style === 'notch' ? 'Hangs from the top edge of the screen.' : 'Floats just below the top edge.'}
+        value={status.style} options={ISLAND_STYLES} onChange={style => change(() => setIslandStyle(style))} />
+      <SizeRow label="Width" hint="How wide the closed island is. Open, it always takes the full width." value={status.widthPercent}
         range={ISLAND_WIDTH_RANGE} onChange={w => change(() => setIslandSize(w, status.heightPercent))} />
       <SizeRow label="Height" hint="How tall the pill is, and how far full lyrics and lists open." value={status.heightPercent}
         range={ISLAND_HEIGHT_RANGE} onChange={h => change(() => setIslandSize(status.widthPercent, h))} />

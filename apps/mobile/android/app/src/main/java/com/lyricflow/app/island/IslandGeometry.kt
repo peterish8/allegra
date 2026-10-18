@@ -15,8 +15,9 @@ data class CameraCutout(val left: Float, val top: Float, val right: Float, val b
 /**
  * Where the island sits and how big each of its shapes is, in screen pixels. Every shape is centred on
  * [anchorX] and grows down from [pillTop], which is what lets the window stay centred on the same point while
- * it grows and shrinks (see IslandWindow). The island always floats, a pill with all four corners round, a
- * little below the top edge: it never hangs from the edge like a notch, even round a waterdrop camera.
+ * it grows and shrinks (see IslandWindow). The listener picks its look (Settings → Dynamic island → Shape): a
+ * pill floating a little below the top edge with all four corners round, or a notch hanging from the edge
+ * ([hanging]: its top corners run off the screen).
  *
  * Pure, so it is tested on the JVM (IslandGeometryTest).
  */
@@ -25,6 +26,8 @@ data class IslandGeometry(
     val anchorX: Float,
     /** A notch or waterdrop that touches the top edge: the pill starts just under the edge and encloses it. */
     val attached: Boolean,
+    /** The notch look: the island hangs from the top edge instead of floating below it. */
+    val hanging: Boolean,
     val pillTop: Float,
     val pillHeight: Float,
     /** The pill with nothing playing: the camera and a little black either side. */
@@ -53,20 +56,20 @@ data class IslandGeometry(
         const val CARD_PADDING_DP = 16f
         /** The gap between the top edge and an island round a camera that touches it. */
         const val EDGE_GAP_DP = 3f
-        /** The open card is three quarters of the room it could take, an island rather than a banner. */
-        const val CARD_SHARE = 0.75f
-        const val MAX_CARD_DP = 440f * CARD_SHARE
-        /** The compact pill keeps three quarters of the room it could take beside the camera, as the card does. */
+        /** The open card is as wide as the screen allows (up to 440 dp), always: the size settings leave it be. */
+        const val MAX_CARD_DP = 440f
+        /** The closed pill keeps three quarters of the room it could take beside the camera; Width scales it. */
         const val COMPACT_SHARE = 0.75f
-        /** The listener's size settings (Settings → Dynamic island), as fractions of the island's own size. */
+        /** The listener's size settings (Settings → Dynamic island), as fractions of the closed island's own size. */
         const val MIN_WIDTH_SCALE = 0.8f
-        const val MAX_WIDTH_SCALE = 1.25f
+        const val MAX_WIDTH_SCALE = 1.5f
         const val MIN_HEIGHT_SCALE = 0.85f
         const val MAX_HEIGHT_SCALE = 1.3f
 
         fun compute(screenWidth: Float, statusBarHeight: Float, density: Float, cutout: CameraCutout?,
                     safeInsetTop: Float = 0f, safeInsetLeft: Float = 0f, safeInsetRight: Float = 0f,
-                    screenHeight: Float = 0f, widthScale: Float = 1f, heightScale: Float = 1f): IslandGeometry {
+                    screenHeight: Float = 0f, widthScale: Float = 1f, heightScale: Float = 1f,
+                    hanging: Boolean = false): IslandGeometry {
             val ws = widthScale.coerceIn(MIN_WIDTH_SCALE, MAX_WIDTH_SCALE)
             val hs = heightScale.coerceIn(MIN_HEIGHT_SCALE, MAX_HEIGHT_SCALE)
             fun dp(v: Float) = v * density
@@ -104,8 +107,9 @@ data class IslandGeometry(
             val baseCompact = max(idleWidth, min(max(idleWidth + dp(44f), (idleWidth + dp(100f)) * COMPACT_SHARE), widest))
             // The listener's width: the room beside the camera grows or shrinks; the camera is always inside.
             val compactWidth = (idleWidth + (baseCompact - idleWidth) * ws).coerceIn(min(idleWidth + dp(24f), widest), widest)
-            if (!centred && hole != null &&
-                hole.right > anchorX - compactWidth / 2f && hole.left < anchorX + compactWidth / 2f) {
+            val belowHardware = !centred && hole != null &&
+                hole.right > anchorX - compactWidth / 2f && hole.left < anchorX + compactWidth / 2f
+            if (belowHardware) {
                 pillTop = maxOf(statusBarHeight, safeInsetTop, hole.bottom) + dp(4f)
                 pillHeight = dp(30f)
             } else if (hole == null && safeInsetTop > statusBarHeight) {
@@ -125,10 +129,17 @@ data class IslandGeometry(
                 pillHeight = scaled
             }
 
+            // The notch look: the same pill, run up to the top edge (it hangs from it; its top corners leave the screen).
+            // Below a wide notch there is no edge to hang from (the hardware is there), so it stays a pill.
+            val hangs = hanging && !belowHardware
+            if (hangs && pillTop > 0f) {
+                pillHeight += pillTop
+                pillTop = 0f
+            }
+
             val sideRoom = 2f * min(anchorX - safeInsetLeft, screenWidth - safeInsetRight - anchorX)
             // Keep the entire spring envelope (5% overshoot plus the window's 6dp pad) on-screen.
-            val room = minOf((screenWidth - dp(16f)) / 1.05f - dp(12f), dp(440f), (sideRoom - dp(16f)) / 1.05f - dp(12f))
-            val cardWidth = min(CARD_SHARE * room * ws, room)
+            val cardWidth = minOf((screenWidth - dp(16f)) / 1.05f - dp(12f), dp(MAX_CARD_DP), (sideRoom - dp(16f)) / 1.05f - dp(12f))
             val cardTop = pillTop
             val contentTop = maxOf(cardTop + dp(CARD_PADDING_DP), safeInsetTop + dp(8f),
                 hole?.let { it.bottom + dp(8f) } ?: 0f)
@@ -151,6 +162,7 @@ data class IslandGeometry(
             return IslandGeometry(
                 anchorX = anchorX,
                 attached = attached,
+                hanging = hangs,
                 pillTop = pillTop,
                 pillHeight = pillHeight,
                 idleWidth = idleWidth,

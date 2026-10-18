@@ -12,13 +12,18 @@ It controls LuvLyrics playback; other apps' media sessions are not collected.
    (or **Installed services**) **→ LuvLyrics island → On**, then accept Android's confirmation.
 3. In LuvLyrics, open **Settings → Dynamic island**. Enable **Show the island**. Leave
    **Show when nothing is playing** on to keep a tappable island around the camera while idle.
-4. Tap the island or pull it down to open the card. It floats a little below the top edge, a pill with every corner
-   round, three quarters as wide as the room it could take. On the open card:
+4. Tap the island or pull it down to open the card. With **Shape → Pill** it floats a little below the top edge with
+   every corner round; with **Shape → Notch** it hangs from the edge. Open, the card always takes the full width it
+   has room for. A closing card lets go of touches at once, and the closed island only takes taps on the pill
+   itself, so a tap meant for the app underneath never opens it. On the open card:
    - **Pull down from its lower part** for the full lyrics (the two lines under the controls grow into the list,
      which follows the song; tap a line to play from it). Push up to go back, push up again to close.
-   - **Pull down from its top part** (the cover and title) for search: the row stretches into a field and the
-     keyboard comes up. The best answer shows large with Play, the rest under it. A tap plays it with similar songs
-     queued after it (Stream's search pick, `StreamService.playFromSearch`).
+   - **Pull down from its top part** (the cover and title) for search: the row stretches into a field ("Search for a
+     song") and the keyboard comes up. Search is universal: downloaded songs that match show on the keystroke, marked
+     with a download arrow and listed first (`IslandLibrary.matchDownloads`, no network, works with the app
+     closed); the online answers join under them once typing rests, each song once. A downloaded answer plays
+     offline from the downloads; an online one plays with similar songs queued after it (Stream's search pick,
+     `StreamService.playFromSearch`).
    - **Swipe left** for your playlists, tap one for its songs. **Swipe right** for your downloads (offline).
      A tapped song's cover and title fly into the card while the list folds away, and it plays.
    - Tap the cover or title to open LuvLyrics: Android grows the app's window out of the island
@@ -27,8 +32,8 @@ It controls LuvLyrics playback; other apps' media sessions are not collected.
      line has no knob and swells under the finger.
    Without timed lyrics or with **Two lines of lyrics on the card** off, the card closes by itself after eight
    seconds without a touch (twenty while browsing); otherwise it stays until it is pushed up or tapped outside.
-5. Settings → Dynamic island → **Width** and **Height** size the island (80–125% and 85–130%; the pill never
-   gets smaller than the camera). **Show on the lock screen** keeps it there for playing, skipping, seeking and
+5. Settings → Dynamic island → **Shape** (Pill or Notch), **Width** (the closed island, 80–150%) and **Height**
+   (85–130%; the pill never gets smaller than the camera). **Show on the lock screen** keeps it there for playing, skipping, seeking and
    lyrics; playlists, downloads, search and opening the app wait until the phone is unlocked.
 6. Settings → Dynamic island → **Hide while LuvLyrics is open** (on by default) puts the island away while the app
    is in front (`MainActivity` resume/pause → `IslandService.setAppInFront`).

@@ -24,6 +24,13 @@ object IslandIcons {
             "m3.66,6.82l5.77,4.07c0.66,0.47 1.58,-0.01 1.58,-0.82V7.93c0,-0.81 -0.91,-1.28 -1.58,-0.82l-5.77,4.07c-0.57,0.4 -0.57,1.24 0,1.64z",
     )
 
+    /** A song on the phone: an arrow into a tray. */
+    val downloaded: Path = PathParser.createPathFromPathData(
+        "M12,3.5a1.25,1.25 0 0 1 1.25,1.25v8.23l2.37,-2.37a1.25,1.25 0 1 1 1.77,1.77l-4.5,4.5a1.25,1.25 0 0 1 -1.77,0" +
+            "l-4.5,-4.5a1.25,1.25 0 1 1 1.77,-1.77l2.36,2.37V4.75A1.25,1.25 0 0 1 12,3.5z" +
+            "M5.75,18.5h12.5a1.25,1.25 0 0 1 0,2.5H5.75a1.25,1.25 0 0 1 0,-2.5z",
+    )
+
     private val matrix = Matrix()
     private val scratch = Path()
 

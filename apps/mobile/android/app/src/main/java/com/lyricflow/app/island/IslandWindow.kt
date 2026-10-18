@@ -62,6 +62,8 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     private var hideInApp = false
     /** The listener's width and height, as fractions (IslandPrefs). */
     private var sizeScales = 1f to 1f
+    /** The notch look (IslandPrefs.style): the island hangs from the top edge. */
+    private var hanging = false
     private var appInFront = false
     private var searchField: EditText? = null
     private var searchAdded = false
@@ -157,8 +159,10 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         hideInApp = prefs.hideInApp
         showOnLock = prefs.showOnLockScreen
         val scales = prefs.widthPercent / 100f to prefs.heightPercent / 100f
-        val resized = scales != sizeScales
+        val notch = prefs.style == IslandPrefs.STYLE_NOTCH
+        val resized = scales != sizeScales || notch != hanging
         sizeScales = scales
+        hanging = notch
         val existing = view
         if (existing != null) {
             existing.showWhenIdle = showWhenIdle
@@ -306,7 +310,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         val safeLeft = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) displayCutout?.safeInsetLeft ?: 0 else 0
         val safeRight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) displayCutout?.safeInsetRight ?: 0 else 0
         val g = IslandGeometry.compute(width, bars.toFloat(), dm.density, cutout,
-            safeTop.toFloat(), safeLeft.toFloat(), safeRight.toFloat(), height, sizeScales.first, sizeScales.second)
+            safeTop.toFloat(), safeLeft.toFloat(), safeRight.toFloat(), height, sizeScales.first, sizeScales.second, hanging)
         if (geometry == g) return
         geometry = g
         if (com.lyricflow.app.BuildConfig.DEBUG) Log.d(TAG, "geometry=$g display=${width}x$height cutout=$cutout")
@@ -341,7 +345,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
 
     // ── IslandView.Host ─────────────────────────────────────────────────────────────────────────────────────
 
-    override fun fitWindow(halfWidth: Float, bottom: Float) {
+    override fun fitWindow(halfWidth: Float, bottom: Float, restHalf: Float, restBottom: Float) {
         val g = geometry ?: return
         val anchor = g.anchorX.roundToInt()
         // Never resize horizontally during a morph. Android moves the Surface before its new buffer
@@ -356,11 +360,13 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
             params.y = 0
             update()
         }
-        val touchWidth = 2 * ceil(halfWidth).toInt().coerceAtLeast(1)
+        // The closed island's tap window: the pill it is becoming, never the card it was.
+        val touchWidth = 2 * ceil(restHalf).toInt().coerceAtLeast(1)
+        val touchHeight = ceil(restBottom).toInt().coerceAtLeast(1)
         val touchX = anchor - touchWidth / 2
-        if (touchParams.width != touchWidth || touchParams.height != h || touchParams.x != touchX) {
+        if (touchParams.width != touchWidth || touchParams.height != touchHeight || touchParams.x != touchX) {
             touchParams.width = touchWidth
-            touchParams.height = h
+            touchParams.height = touchHeight
             touchParams.x = touchX
             updateTouch()
         }

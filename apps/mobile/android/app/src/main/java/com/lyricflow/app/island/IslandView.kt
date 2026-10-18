@@ -66,11 +66,15 @@ import kotlin.math.sin
 class IslandView(context: Context, private val host: Host) : View(context) {
 
     interface Host {
-        /** Fit the shape's input bounds; keep the drawing surface's horizontal frame stable. */
-        fun fitWindow(halfWidth: Float, bottom: Float)
+        /**
+         * Fit the drawing surface round the moving shape ([halfWidth], [bottom]; its horizontal frame stays stable)
+         * and the closed island's tap window round the shape the island is heading for ([restHalf], [restBottom]),
+         * so a closing card never leaves a card-sized area that takes taps meant for the app underneath.
+         */
+        fun fitWindow(halfWidth: Float, bottom: Float, restHalf: Float, restBottom: Float)
         /** Off while there is nothing to show, so the empty window never takes a touch. */
         fun setTouchable(touchable: Boolean)
-        /** The drawing window takes touches only while the card opens or closes. */
+        /** The drawing window takes touches only while the card is open (or opening); never while it closes. */
         fun setExpandedTouch(expanded: Boolean)
         /**
          * Opens LuvLyrics at [link] (a `lyricflow://` link). [from] is the island's outline in this view's
@@ -89,6 +93,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             field = value
             fitHalf = 0f
             fitBottom = 0f
+            fitRestHalf = 0f
+            fitRestBottom = 0f
             gradientFor = null
             layoutContent()
             refit(force = true)
@@ -189,7 +195,11 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private var searchResults: List<IslandLibrary.Song> = emptyList()
     /** JavaScript is not there to search (the app is not running): the drawer says to open it. */
     private var searchUnavailable = false
-    private val runSearch = Runnable { searchUnavailable = !IslandLibrary.search(searchText.trim()); invalidate() }
+    private val runSearch = Runnable {
+        searchUnavailable = !IslandLibrary.search(searchText.trim())
+        syncSearchResults()
+        invalidate()
+    }
     private val fieldBox = RectF()
     private val bestBox = RectF()
     private val bestPlay = RectF()
@@ -530,11 +540,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private fun refreshLibrary() {
         playlists = IslandLibrary.playlists
         downloads = IslandLibrary.downloads
-        if (searchResults !== IslandLibrary.searchResults) {
-            searchResults = IslandLibrary.searchResults
-            resultTexts = arrayOfNulls(searchResults.size * 2)
-            searchScroll = 0f
-        }
+        syncSearchResults()
         clearRowTexts()
         playlistsCount = if (playlists.isEmpty()) "" else "${playlists.size}"
         downloadsCount = if (downloads.isEmpty()) "" else songsLabel(downloads.size)
@@ -676,7 +682,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             searchP.target = 0f
         }
         host.setTouchable(shown.target > 0f)
-        host.setExpandedTouch(wantOpen || open.value > 0.001f)
+        // A closing card lets go at once: a tap where it was belongs to the app underneath, not to the island.
+        host.setExpandedTouch(wantOpen)
         // Start moving first: a moving island only grows its window, so a closing card is never cut off.
         kickLoop()
         refit()
@@ -734,10 +741,15 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         retarget()
     }
 
-    /** What is typed in the drawer (from the host's text field); looked up a moment after typing stops. */
+    /**
+     * What is typed in the drawer (from the host's text field). Its downloads show on the keystroke; online it is
+     * looked up a moment after typing stops.
+     */
     fun setSearchText(text: String) {
         if (text == searchText) return
         searchText = text
+        IslandLibrary.query(text.trim())
+        syncSearchResults()
         main.removeCallbacks(runSearch)
         main.postDelayed(runSearch, SEARCH_DEBOUNCE_MS)
         invalidate()
@@ -782,6 +794,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     private var fitHalf = 0f
     private var fitBottom = 0f
+    private var fitRestHalf = 0f
+    private var fitRestBottom = 0f
 
     /** Grows the window ahead of the shape while it moves (with room for the spring's overshoot); fits it at rest. */
     private fun refit(force: Boolean = false) {
@@ -790,6 +804,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         shape(scratch, open.target, wide.target, shown.target, 1f, lyricsRoom.target, full.target, searchP.target)
         var half = scratch.width() / 2f + pad
         var bottom = scratch.bottom + pad
+        val restHalf = half
+        val restBottom = bottom
         if (dragging && wantOpen) {
             // A finger on the open card may pull it to full mode: grow once, now, rather than on every move.
             bottom = max(bottom, g.cardTop + g.fullHeight * 1.04f + pad)
@@ -800,10 +816,13 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             shape(scratch, open.value, wide.value, shown.value, currentScale(), lyricsRoom.value, full.value, searchP.value)
             bottom = max(fitBottom, max(bottom * 1.04f, scratch.bottom + pad))
         }
-        if (force || abs(half - fitHalf) > 0.5f || abs(bottom - fitBottom) > 0.5f) {
+        if (force || abs(half - fitHalf) > 0.5f || abs(bottom - fitBottom) > 0.5f ||
+            abs(restHalf - fitRestHalf) > 0.5f || abs(restBottom - fitRestBottom) > 0.5f) {
             fitHalf = half
             fitBottom = bottom
-            host.fitWindow(half, bottom)
+            fitRestHalf = restHalf
+            fitRestBottom = restBottom
+            host.fitWindow(half, bottom, restHalf, restBottom)
         }
     }
 
@@ -817,21 +836,25 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     /**
      * The island's outline for open [o], width [w] (idle → compact), presence [s], lyrics room [l] and full mode
      * [f] or search drawer [sd], centred on x = 0. [o] may overshoot 1 a little: the card grows a touch past its size
-     * and settles back, as a spring does. Every look floats: the pill and the card both start below the top edge.
+     * and settles back, as a spring does. The pill look floats: the pill and the card both start below the top edge.
+     * The notch look ([IslandGeometry.hanging]) keeps its top on the edge and grows and shrinks from there.
      */
     private fun shape(out: RectF, o: Float, w: Float, s: Float, scale: Float, l: Float, f: Float, sd: Float) {
         val g = geometry ?: return out.setEmpty()
         val presence = s.coerceIn(0f, 1f)
         val pillW = lerp(g.idleWidth, g.compactWidth, w) * lerp(0.55f, 1f, presence)
         val pillH = g.pillHeight * lerp(0.7f, 1f, presence)
-        val pillTop = g.pillTop + (g.pillHeight - pillH) / 2f
+        val pillTop = if (g.hanging) g.pillTop else g.pillTop + (g.pillHeight - pillH) / 2f
         val half = lerp(pillW / 2f, g.cardWidth / 2f, o)
         val top = lerp(pillTop, g.cardTop, o)
         val cardBottom = g.cardTop + g.cardHeight + g.dp(LYRICS_ROOM_DP) * l
         val openBottom = lerp(lerp(cardBottom, g.cardTop + g.fullHeight, f), g.cardTop + g.searchHeight, sd)
         val bottom = lerp(pillTop + pillH, openBottom, o)
         out.set(-half * scale, top, half * scale, bottom)
-        if (scale != 1f) out.inset(0f, -(bottom - top) * (scale - 1f) / 2f)
+        if (scale != 1f) {
+            val grow = (bottom - top) * (scale - 1f)
+            if (g.hanging) out.bottom += grow else out.inset(0f, -grow / 2f)
+        }
     }
 
     // ── Layout of the open card ─────────────────────────────────────────────────────────────────────────────
@@ -930,7 +953,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         shapeRect.offset(cx, 0f)
         val radius = min(lerp(shapeRect.height() / 2f, g.cardRadius, oc), shapeRect.height() / 2f)
         shapePath.reset()
-        shapePath.addRoundRect(shapeRect, radius, radius, Path.Direction.CW)
+        // The notch look runs its top corners off the top edge of the screen, so it hangs from it.
+        val top = if (g.hanging) shapeRect.top - radius else shapeRect.top
+        shapePath.addRoundRect(shapeRect.left, top, shapeRect.right, shapeRect.bottom, radius, radius, Path.Direction.CW)
 
         fill.shader = null
         fill.color = Color.BLACK
@@ -1489,10 +1514,17 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         else -> playlistScroll
     }
 
+    private fun searchFooter(): String? = when {
+        searchResults.isEmpty() -> null
+        IslandLibrary.searching -> "Searching online…"
+        searchUnavailable -> ONLINE_NEEDS_APP
+        else -> null
+    }
+
     private fun maxListScroll(): Float {
         val g = geometry ?: return 0f
         if (!searchOpen) return maxScroll(page)
-        val rows = max(0, searchResults.size - 1)
+        val rows = max(0, searchResults.size - 1) + (if (searchFooter() != null) 1 else 0)
         return max(0f, rows * g.dp(SONG_ROW_DP) + g.dp(8f) - (g.cardTop + g.searchHeight - g.dp(6f) - resultsTop))
     }
 
@@ -1652,7 +1684,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     /** One row: its cover, its name and a quiet line under it ([sub], or "N songs" from [count]). */
     private fun drawRow(canvas: Canvas, g: IslandGeometry, texts: Array<String?>, i: Int, top: Float, h: Float, thumb: Float,
-                        corner: Float, cover: String, name: String, sub: String?, count: Int, alpha: Float, highlight: Boolean) {
+                        corner: Float, cover: String, name: String, sub: String?, count: Int, alpha: Float, highlight: Boolean,
+                        badge: Boolean = false) {
         // The row a picked song flew out of stays empty while its list folds away.
         if (drawingGhost && i == flyRowIndex) return
         val pad = g.dp(IslandGeometry.CARD_PADDING_DP)
@@ -1666,16 +1699,25 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val barsRoom = if (sub != null) g.dp(26f) else 0f
         val room = right - x - barsRoom
         val shownName = texts.getOrNull(2 * i) ?: fitText(name, rowTitlePaint, room).also { if (2 * i < texts.size) texts[2 * i] = it }
+        val mark = if (badge) g.dp(BADGE_DP) else 0f
         val shownSub = texts.getOrNull(2 * i + 1)
-            ?: fitText(sub ?: songsLabel(count), rowSubPaint, room).also { if (2 * i + 1 < texts.size) texts[2 * i + 1] = it }
+            ?: fitText(sub ?: songsLabel(count), rowSubPaint, room - mark).also { if (2 * i + 1 < texts.size) texts[2 * i + 1] = it }
         val accent = blendedColors().accent
         rowTitlePaint.color = if (highlight) accent else Color.WHITE
         rowTitlePaint.alpha = (255 * alpha).toInt()
         canvas.drawText(shownName, x, cy - g.dp(2f), rowTitlePaint)
         rowTitlePaint.color = Color.WHITE
+        if (badge) drawBadge(canvas, g, x, cy + g.dp(11f), alpha * 0.55f)
         rowSubPaint.alpha = (255 * alpha * 0.55f).toInt()
-        canvas.drawText(shownSub, x, cy + g.dp(15f), rowSubPaint)
+        canvas.drawText(shownSub, x + mark, cy + g.dp(15f), rowSubPaint)
         if (highlight) drawBars(canvas, right, cy, g.dp(14f), g.dp(2.5f), g.dp(2f), accent, alpha, playing && screenOn)
+    }
+
+    /** The mark before a downloaded song's artist: it plays from the phone, offline. [cy] is the text's middle. */
+    private fun drawBadge(canvas: Canvas, g: IslandGeometry, x: Float, cy: Float, alpha: Float) {
+        iconPaint.alpha = (255 * alpha).toInt()
+        val size = g.dp(BADGE_DP - 3f)
+        IslandIcons.draw(canvas, IslandIcons.downloaded, x + size / 2f, cy, size, iconPaint)
     }
 
     private fun drawEmpty(canvas: Canvas, g: IslandGeometry, line: String, hint: String, alpha: Float,
@@ -1739,10 +1781,13 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val mid = bestBox.top + g.dp(40f)
         val query = searchText.trim()
         when {
-            searchUnavailable -> drawEmpty(canvas, g, "Open LuvLyrics to search", "Search runs while the app is open", alpha, mid)
-            query.isEmpty() -> drawEmpty(canvas, g, "Search for a song", "The best match plays, similar songs follow", alpha, mid)
-            searchResults.isEmpty() || IslandLibrary.searchQuery != query ->
-                drawEmpty(canvas, g, if (IslandLibrary.searching || IslandLibrary.searchQuery != query) "Searching…" else "No songs found", "", alpha, mid)
+            // The field's own "Search for a song" says it all until something is typed.
+            query.isEmpty() -> Unit
+            searchResults.isEmpty() || IslandLibrary.searchQuery != query -> when {
+                IslandLibrary.searching || IslandLibrary.searchQuery != query -> drawEmpty(canvas, g, "Searching…", "", alpha, mid)
+                searchUnavailable -> drawEmpty(canvas, g, "Not in your downloads", ONLINE_NEEDS_APP, alpha, mid)
+                else -> drawEmpty(canvas, g, "No songs found", "", alpha, mid)
+            }
             else -> drawResults(canvas, g, alpha)
         }
         canvas.restore()
@@ -1759,12 +1804,14 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val room = bestPlay.left - g.dp(10f) - x
         val texts = resultTexts
         val name = texts.getOrNull(0) ?: fitText(best.title, titlePaint, room).also { if (texts.isNotEmpty()) texts[0] = it }
-        val who = texts.getOrNull(1) ?: fitText(best.artist, artistPaint, room).also { if (texts.size > 1) texts[1] = it }
+        val mark = if (best.downloaded) g.dp(BADGE_DP) else 0f
+        val who = texts.getOrNull(1) ?: fitText(best.artist, artistPaint, room - mark).also { if (texts.size > 1) texts[1] = it }
         if (!(flying && flyRowIndex == 0)) {
             titlePaint.alpha = (255 * alpha).toInt()
             canvas.drawText(name, x, bestBox.centerY() - g.dp(3f), titlePaint)
+            if (best.downloaded) drawBadge(canvas, g, x, bestBox.centerY() + g.dp(12f), alpha * 0.62f)
             artistPaint.alpha = (255 * alpha * 0.62f).toInt()
-            canvas.drawText(who, x, bestBox.centerY() + g.dp(17f), artistPaint)
+            canvas.drawText(who, x + mark, bestBox.centerY() + g.dp(17f), artistPaint)
         }
         // The play pill: white, as the app's main play buttons are.
         val pressed = pressedButton == Target.BEST
@@ -1793,9 +1840,16 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             if (top + h >= resultsTop && !(flying && flyRowIndex == i)) {
                 val s = searchResults[i]
                 drawRow(canvas, g, texts, i, top, h, g.dp(40f), g.dp(8f), s.cover, s.title, s.artist, -1, alpha,
-                    highlight = s.id == playingId)
+                    highlight = s.id == playingId, badge = s.downloaded)
             }
             i++
+        }
+        // Under the downloads: that the online answers are coming, or that they need the app.
+        val footer = searchFooter()
+        if (footer != null) {
+            val top = resultsTop + (searchResults.size - 1) * h - searchScroll
+            rowSubPaint.alpha = (255 * alpha * 0.45f).toInt()
+            canvas.drawText(footer, -rowSubPaint.measureText(footer) / 2f, top + h / 2f + rowSubPaint.textSize * 0.35f, rowSubPaint)
         }
         canvas.restore()
     }
@@ -2212,6 +2266,13 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     }
 
     /** A search answer plays (similar songs queue after it in the app), and the drawer folds back into the card. */
+    private fun syncSearchResults() {
+        if (searchResults === IslandLibrary.searchResults) return
+        searchResults = IslandLibrary.searchResults
+        resultTexts = arrayOfNulls(searchResults.size * 2)
+        searchScroll = 0f
+    }
+
     private fun pickResult(i: Int) {
         val song = searchResults.getOrNull(i) ?: return
         val g = geometry ?: return
@@ -2224,7 +2285,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         } else {
             rowFlyer(g, song, resultsTop + (i - 1) * g.dp(SONG_ROW_DP) - searchScroll, g.dp(SONG_ROW_DP), null, i)
         }
-        if (!IslandLibrary.pick(IslandLibrary.SEARCH, song.id)) openApp()
+        if (!IslandLibrary.pick(IslandLibrary.SEARCH, song.id)) openApp(if (song.downloaded) LIBRARY_LINK else PLAYER_LINK)
         closeSearch()
     }
 
@@ -2247,8 +2308,11 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val g = geometry ?: return Target.NONE
         if (shown.target <= 0f) return Target.NONE
         if (!wantOpen) {
-            // The whole window round the pill counts: a tap near the camera is a tap on the island.
-            return Target.PILL
+            // The pill and a little round it (a tap near the camera is a tap on the island), never more: a touch that
+            // reaches the island while a card is still folding away is the app's, and must not open it again.
+            shape(scratch, 0f, wide.target, shown.target, 1f, 0f, 0f, 0f)
+            val reach = g.dp(PILL_REACH_DP)
+            return if (abs(x) <= scratch.width() / 2f + reach && y <= scratch.bottom + reach) Target.PILL else Target.NONE
         }
         val slop = g.dp(8f)
         if (searchOpen) {
@@ -2348,10 +2412,15 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         /** A new song with no cover yet keeps the last colours this long, then fades to neutral. */
         private const val NEUTRAL_AFTER_MS = 600L
         private const val SEARCH_DEBOUNCE_MS = 220L
+        /** How far round the closed pill a tap still counts as on it. */
+        private const val PILL_REACH_DP = 10f
         /** How long a picked song's own cover and title wait in the card for the player to start it. */
-        private const val FLY_HOLD_MS = 4_000L
+        private const val FLY_HOLD_MS = 6_000L
         private const val CARET_BLINK_MS = 530L
-        private const val SEARCH_HINT = "Songs, artists"
+        private const val SEARCH_HINT = "Search for a song"
+        private const val ONLINE_NEEDS_APP = "Open LuvLyrics to search online"
+        /** Room a downloaded mark takes before the artist. */
+        private const val BADGE_DP = 15f
         private const val PLAY_LABEL = "Play"
         private const val LIBRARY_LINK = "lyricflow://open/library"
         /** A pull down that starts in this top share of the card opens search; lower down it opens the lyrics. */

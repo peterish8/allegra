@@ -1,6 +1,7 @@
 package com.lyricflow.app.island
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,5 +41,49 @@ class IslandLibraryTest {
     @Test
     fun `the fallback link plays the picked song through the widget link`() {
         assertEquals("lyricflow://widget/play?playlist=p%201&song=s%2F2", IslandLibrary.link("p 1", "s/2"))
+    }
+
+    @Test
+    fun `search answers say which songs are on the phone`() {
+        val songs = IslandLibrary.parseSongs("""[{"id":"d1","title":"T","artist":"A","downloaded":true},{"id":"o1","title":"T2","artist":"A"}]""")
+        assertTrue(songs[0].downloaded)
+        assertFalse(songs[1].downloaded)
+        assertTrue("every row of the downloads is on the phone", IslandLibrary.parseSongs("""[{"id":"d2"}]""", downloaded = true)[0].downloaded)
+    }
+
+    private fun song(id: String, title: String, artist: String, downloaded: Boolean = true) =
+        IslandLibrary.Song(id, title, artist, "", downloaded)
+
+    @Test
+    fun `downloads match every word typed, in any case and without accents, title matches first`() {
+        val downloads = listOf(
+            song("1", "Tum Hi Ho", "Arijit Singh"),
+            song("2", "Kesariya", "Arijit Singh, Pritam"),
+            song("3", "Halo", "Beyoncé"),
+            song("4", "Arijit's Medley", "Various"),
+        )
+        assertEquals(listOf("4", "1", "2"), IslandLibrary.matchDownloads("arijit", downloads).map { it.id })
+        assertEquals(listOf("2"), IslandLibrary.matchDownloads("KES arij", downloads).map { it.id })
+        assertEquals(listOf("3"), IslandLibrary.matchDownloads("beyonce", downloads).map { it.id })
+        assertEquals("only songs holding the words", listOf("1"), IslandLibrary.matchDownloads("ho", downloads).map { it.id })
+        assertTrue(IslandLibrary.matchDownloads("  ", downloads).isEmpty())
+        assertTrue(IslandLibrary.matchDownloads("zzz", downloads).isEmpty())
+    }
+
+    @Test
+    fun `downloads lead the answers and a song shows once`() {
+        val local = listOf(song("d1", "Kesariya", "Arijit Singh"))
+        val answers = listOf(
+            song("o1", "Kesariya", "Arijit Singh", downloaded = false),
+            song("o2", "Kesariya (Remix)", "Arijit Singh", downloaded = false),
+            song("d9", "Kesariya Lofi", "Arijit Singh"),
+            song("d1", "Kesariya", "Arijit Singh"),
+        )
+        assertEquals(listOf("d1", "d9", "o2"), IslandLibrary.merge(local, answers).map { it.id })
+    }
+
+    @Test
+    fun `search folds text the way the app does`() {
+        assertEquals("beyonce halo", IslandLibrary.fold("  Beyoncé – Halo! "))
     }
 }

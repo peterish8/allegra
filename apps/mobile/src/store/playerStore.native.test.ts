@@ -95,6 +95,21 @@ describe('starting a queue', () => {
     expect(usePlayerStore.getState().currentSongId).toBe('c');
   });
 
+  it('never nudges the old song to play before the new queue lands (it would blip after a pause)', async () => {
+    usePlayerStore.setState({ isPlaying: false });
+    usePlayerStore.getState().setPlaylistQueue('library', queue, 2, true);
+    await flush();
+    expect(playerControls.play).not.toHaveBeenCalled();
+    expect(native.setQueue.mock.calls[0][3]).toBe(true);
+  });
+
+  it('pauses first when a queue is put in paused, so nothing plays on meanwhile', async () => {
+    usePlayerStore.getState().setPlaylistQueue('library', queue, 2, false);
+    await flush();
+    expect(playerControls.pause).toHaveBeenCalled();
+    expect(native.setQueue.mock.calls[0][3]).toBe(false);
+  });
+
   it('holds the load guard until the engine has the queue, and only then calls the song loaded', async () => {
     let answer: (ok: boolean) => void = () => undefined;
     native.setQueue.mockReturnValueOnce(new Promise<boolean>(r => { answer = r; }));

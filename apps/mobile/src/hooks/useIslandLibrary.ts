@@ -33,6 +33,7 @@ import {
   islandCover,
   islandSongRow,
   isDownloadedSong,
+  matchDownloads,
 } from '../services/dynamicIslandSetup';
 
 /** Changes come in bursts (a sync, a download finishing): one snapshot after they settle. */
@@ -41,12 +42,12 @@ const SEARCH_LIMIT = 12;
 /** The queue id the downloads play under: the Library's, so the queue behaves as it does from the Library. */
 const DOWNLOADS_QUEUE_ID = 'library';
 
-/** The downloads, newest first, as the island lists them (and as a pick indexes them). */
-export const downloadedSongs = (songs: readonly Song[]): Song[] =>
-  songs
-    .filter(isDownloadedSong)
-    .sort((a, b) => (b.dateCreated ?? '').localeCompare(a.dateCreated ?? ''))
-    .slice(0, ISLAND_DOWNLOADS);
+/** Every download, newest first: what a downloaded pick plays through, as the Library does. */
+export const allDownloadedSongs = (songs: readonly Song[]): Song[] =>
+  songs.filter(isDownloadedSong).sort((a, b) => (b.dateCreated ?? '').localeCompare(a.dateCreated ?? ''));
+
+/** The downloads as the island lists them: the newest, enough for a quick pick. */
+export const downloadedSongs = (songs: readonly Song[]): Song[] => allDownloadedSongs(songs).slice(0, ISLAND_DOWNLOADS);
 
 /** Plays [songs] from [index], or resumes it when it is the phone's own paused song (or sends it where music plays). */
 const playFrom = (playlistId: string, songs: Song[], index: number, online: boolean) => {
@@ -59,19 +60,32 @@ const playFrom = (playlistId: string, songs: Song[], index: number, online: bool
   else player.setPlaylistQueue(playlistId, songs, index);
 };
 
+/** Plays the download [songId] offline with the downloads queued round it. False when it is not a download. */
+const playDownload = (songId: string): boolean => {
+  const list = allDownloadedSongs(useSongsStore.getState().songs);
+  const index = list.findIndex(song => song.id === songId);
+  if (index < 0) return false;
+  playFrom(DOWNLOADS_QUEUE_ID, list, index, false);
+  return true;
+};
+
 export function useIslandLibrary(): void {
   const playlists = usePlaylistStore(state => state.playlists);
   const onlineVersion = useOnlineLibraryStore(state => state.playlistVersion + state.likes.length);
   const songs = useSongsStore(state => state.songs);
   const searchAnswers = useRef(new Map<string, UnifiedSong>());
+  /** Each playlist's songs as last listed, so a pick starts at once instead of reading the library again. */
+  const listed = useRef(new Map<string, Song[]>());
 
   // Playlists, with their songs.
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     let alive = true;
     const timer = setTimeout(async () => {
+      const lists = new Map<string, Song[]>();
       const rows = await Promise.all(playlists.map(async playlist => {
         const list = await loadPlaylistSongs(playlist.id).catch(() => [] as Song[]);
+        lists.set(playlist.id, list);
         return {
           id: playlist.id,
           name: playlist.isDefault ? 'Liked songs' : playlist.name,
@@ -80,7 +94,9 @@ export function useIslandLibrary(): void {
           songs: list.slice(0, ISLAND_PLAYLIST_SONGS).map(islandSongRow),
         };
       }));
-      if (alive) setIslandPlaylists(JSON.stringify(rows));
+      if (!alive) return;
+      listed.current = lists;
+      setIslandPlaylists(JSON.stringify(rows));
     }, SNAPSHOT_DELAY_MS);
     return () => { alive = false; clearTimeout(timer); };
   }, [playlists, onlineVersion]);
@@ -98,31 +114,38 @@ export function useIslandLibrary(): void {
     let searchRun = 0;
     const picks = onIslandPick(async ({ playlistId, songId }) => {
       if (playlistId === ISLAND_LISTS.search) {
+        // A downloaded answer plays from the phone, offline; an online one as a pick in Stream's search.
+        if (playDownload(songId)) return;
         const song = searchAnswers.current.get(songId);
         if (song) StreamService.playFromSearch(song);
         return;
       }
       if (playlistId === ISLAND_LISTS.downloads) {
-        const list = downloadedSongs(useSongsStore.getState().songs);
-        const index = list.findIndex(song => song.id === songId);
-        if (index >= 0) playFrom(DOWNLOADS_QUEUE_ID, list, index, false);
+        playDownload(songId);
         return;
       }
-      const list = await loadPlaylistSongs(playlistId);
+      const cached = listed.current.get(playlistId);
+      const list = cached?.some(song => song.id === songId) ? cached : await loadPlaylistSongs(playlistId);
       const index = list.findIndex(song => song.id === songId);
       if (index >= 0) playFrom(playlistId, list, index, true);
     });
     const searches = onIslandSearch(async query => {
       const run = ++searchRun;
+      // Search is universal: the downloads (all of them, not only the island's list) and the catalogue online. The
+      // island has already shown the downloads it knows; these join them, each song once.
+      const local = matchDownloads(allDownloadedSongs(useSongsStore.getState().songs), query);
       const found = query.trim() ? await searchOfficial(query, SEARCH_LIMIT).catch(() => [] as UnifiedSong[]) : [];
       if (run !== searchRun) return;
       searchAnswers.current = new Map(found.map(song => [song.id, song]));
-      const rows = found.map(song => ({
-        id: song.id,
-        title: song.title,
-        artist: song.artist,
-        cover: islandCover(song.highResArt) || islandCover(song.thumbnail),
-      }));
+      const rows = [
+        ...local.map(song => ({ ...islandSongRow(song), downloaded: true })),
+        ...found.map(song => ({
+          id: song.id,
+          title: song.title,
+          artist: song.artist,
+          cover: islandCover(song.highResArt) || islandCover(song.thumbnail),
+        })),
+      ];
       setIslandSearchResults(query, JSON.stringify(rows));
     });
     return () => { picks.remove(); searches.remove(); };
