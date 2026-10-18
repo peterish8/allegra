@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { StyleSheet, View, Text, FlatList, Pressable, ActivityIndicator, Alert, GestureResponderEvent } from 'react-native';
+import { StyleSheet, View, Text, FlatList, Pressable, ActivityIndicator, Alert, GestureResponderEvent, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -15,7 +15,6 @@ import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { getOnlinePlaylistSongs } from '../database/syncQueries';
 import { onlineRowToSong } from '../services/sync/onlineSongs';
 import { CustomMenu } from '../components/CustomMenu';
-import { MosaicCover } from '../components/MosaicCover';
 import DynamicAura from '../components/allegra/DynamicAura';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
 import { useThemeColors } from '../contexts/ThemeContext';
@@ -27,9 +26,17 @@ import { Glass, Radius, Signal } from '../constants/allegraTheme';
 import { Playlist, Song } from '../types/song';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { PLAYLISTS_TOUR, playlistsScene } from '../components/allegra/infoTours';
+import PlaylistFolder from '../components/allegra/PlaylistFolder';
+import { Tactile } from '../components/allegra/motion';
+
+/** The grid's side padding and each card's margin: two folders share what is left of the width. */
+const GRID_PADDING = 12;
+const CARD_MARGIN = 8;
 
 export const PlaylistsScreen: React.FC = () => {
   const colors = useThemeColors();
+  const { width: screenWidth } = useWindowDimensions();
+  const folderWidth = Math.floor((screenWidth - GRID_PADDING * 2 - CARD_MARGIN * 4) / 2);
   // This screen sits in the Library tab's nested stack: PlaylistDetail resolves
   // locally, everything else bubbles up to the root stack.
   const navigation = useNavigation<
@@ -193,20 +200,26 @@ export const PlaylistsScreen: React.FC = () => {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.gridList}
             renderItem={({ item }) => (
-              <Pressable
-                style={styles.playlistCard}
+              <Tactile
+                wrapperStyle={styles.playlistCard}
+                pressScale={0.98}
+                haptic="select"
                 onPress={() => handlePlaylistPress(item.id)}
                 onLongPress={(e) => handleLongPress(item, e)}
                 delayLongPress={300}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${displayPlaylistName(item.name)}, ${item.songCount || 0} ${item.songCount === 1 ? 'song' : 'songs'}`}
               >
-                <MosaicCover songs={playlistSongs[item.id] || []} size={160} name={displayPlaylistName(item.name)} />
-                <Text style={styles.playlistName} numberOfLines={2}>
-                  {displayPlaylistName(item.name)}
-                </Text>
-                <Text style={styles.playlistCount}>
-                  {item.songCount || 0} {item.songCount === 1 ? 'song' : 'songs'}
-                </Text>
-              </Pressable>
+                <PlaylistFolder songs={playlistSongs[item.id] || []} width={folderWidth} />
+                <View style={styles.playlistMeta}>
+                  <Text style={styles.playlistName} numberOfLines={1}>
+                    {displayPlaylistName(item.name)}
+                  </Text>
+                  <Text style={styles.playlistCount}>
+                    {item.songCount || 0} {item.songCount === 1 ? 'song' : 'songs'}
+                  </Text>
+                </View>
+              </Tactile>
             )}
           />
         )}
@@ -277,19 +290,32 @@ const styles = StyleSheet.create({
   },
   playlistCard: {
     flex: 1,
-    margin: 8,
+    margin: CARD_MARGIN,
     maxWidth: '46%',
+    marginBottom: 18,
+  },
+  playlistMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingHorizontal: 2,
   },
   playlistName: {
+    flex: 1,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: DarkColors.textPrimary,
-    marginTop: 12,
   },
   playlistCount: {
-    fontSize: 14,
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     color: DarkColors.textSecondary,
-    marginTop: 4,
+    fontSize: 11,
+    fontVariant: ['tabular-nums'],
   },
   emptyContainer: {
     flex: 1,

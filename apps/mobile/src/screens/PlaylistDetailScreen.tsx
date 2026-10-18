@@ -17,8 +17,10 @@ import {
   ActivityIndicator,
   TextInput,
   Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { MosaicCover } from '../components/MosaicCover';
 import { useRoute, useNavigation, RouteProp, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -84,6 +86,9 @@ export const PlaylistDetailScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const { playlistId } = route.params;
+  // The cover leads the page, about two thirds of the width as on an album page.
+  const { width: windowWidth } = useWindowDimensions();
+  const coverSize = Math.round(Math.min(windowWidth * 0.68, 300));
 
   const [songs, setSongs] = useState<Song[]>([]);
   const [playlistName, setPlaylistName] = useState('');
@@ -573,8 +578,11 @@ export const PlaylistDetailScreen: React.FC = () => {
         accessibilityRole={isEditMode ? 'button' : undefined}
         accessibilityLabel={isEditMode ? 'Change playlist cover' : undefined}
       >
-        <View style={styles.coverContainer}>
-          {headerImageUri ? (
+        <View style={[styles.coverContainer, { width: coverSize, height: coverSize }]}>
+          {/* The cover leads as on an album: the playlist's own, else a mosaic of four of its songs, as on the website. */}
+          {!playlistCover && songs.length >= 4 ? (
+            <MosaicCover songs={songs.slice(0, 4)} size={coverSize} />
+          ) : headerImageUri ? (
             <Image source={{ uri: headerImageUri }} style={styles.coverArt} contentFit="cover" cachePolicy="memory-disk" transition={0} />
           ) : (
             <LinearGradient colors={activeSongGradient as [string, string]} style={styles.coverArt}>
@@ -891,9 +899,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   coverContainer: {
-    width: 210,
-    height: 210,
-    borderRadius: 28,
+    borderRadius: 20,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
@@ -904,11 +910,11 @@ const styles = StyleSheet.create({
   coverArt: {
     width: '100%',
     height: '100%',
-    borderRadius: 28,
+    borderRadius: 20,
   },
   coverShade: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 28,
+    borderRadius: 20,
   },
   editOverlay: {
     ...StyleSheet.absoluteFillObject,
