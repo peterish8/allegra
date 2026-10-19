@@ -217,6 +217,11 @@ interface PlayerState {
   /** A tap on a row of Up next: `index` counts in the queue as shown (play order). */
   skipToQueueIndex: (index: number) => void;
   previousInPlaylist: () => void;
+  /**
+   * A native skip button already skipped in the engine (components/NativeSkip): the screen follows. `moved` is false
+   * when back past 3 s started the song over instead.
+   */
+  adoptNativeSkip: (direction: 1 | -1, moved: boolean) => void;
   /** The playing song changed under us (the engine advanced): update the queue cursor without reloading audio. */
   adoptPreparedTrack: (mediaId: string, index?: number) => void;
   /** The Kotlin engine reported its queue (Android): the screen's mirror follows it. */
@@ -242,6 +247,22 @@ function noteTrackChange(song: Song): void {
   queries.getSongById(song.id).then(full => {
     if (full && usePlayerStore.getState().currentSongId === song.id) usePlayerStore.setState({ currentSong: full });
   }).catch(() => {});
+}
+
+/**
+ * Android: moves the screen one song along the queue the engine is skipping through (its mirror is the engine's
+ * queue in play order), so a skip shows at once; the settled state is read afterwards.
+ */
+function showSkip(direction: 1 | -1): void {
+  const state = usePlayerStore.getState();
+  const queue = state.playlistQueue;
+  if (!queue || queue.length === 0) return;
+  songDirection = direction;
+  const index = (state.currentQueueIndex + direction + queue.length) % queue.length;
+  const song = queue[index];
+  pausedLoadSongId = null;
+  usePlayerStore.setState({ currentQueueIndex: index, currentSong: song, currentSongId: song.id, loadedAudioId: song.id });
+  noteTrackChange(song);
 }
 
 /** Which way a change of place in the queue went (wrapping at the ends counts as forward / back). */
@@ -678,13 +699,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       state.setPlaylistQueue(state.currentPlaylistId ?? 'queue', queue, index);
       return;
     }
-    // The engine moves to that place in its queue; the screen moves at once.
+    // The engine moves to that place in its queue first; the screen moves at once after.
+    fire(nativeQueue.skipTo(index).then(() => scheduleReconcile()));
     const song = queue[index];
     songDirection = directionOf(state.currentQueueIndex, index, queue.length);
     pausedLoadSongId = null;
     set({ currentQueueIndex: index, currentSong: song, currentSongId: song.id, loadedAudioId: song.id });
     noteTrackChange(song);
-    fire(nativeQueue.skipTo(index).then(() => scheduleReconcile()));
   },
 
   nextInPlaylist: async (automatic = false) => {
@@ -695,14 +716,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // order: its mirror is the engine's queue in play order), and the settled state is read afterwards.
     if (usesNativeQueue()) {
       fire(nativeQueue.next().then(() => scheduleReconcile()));
-      const queue = state.playlistQueue;
-      if (!queue || queue.length === 0) return;
-      songDirection = 1;
-      const nextIndex = (state.currentQueueIndex + 1) % queue.length;
-      const nextSong = queue[nextIndex];
-      pausedLoadSongId = null;
-      set({ currentQueueIndex: nextIndex, currentSong: nextSong, currentSongId: nextSong.id, loadedAudioId: nextSong.id });
-      noteTrackChange(nextSong);
+      showSkip(1);
       return;
     }
 
@@ -766,15 +780,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const repeat = usePlaybackModesStore.getState().repeatMode;
       const restart = !queue || queue.length === 0 || previousWillRestart(playerControls.getPosition(), state.currentQueueIndex, repeat);
       fire(nativeQueue.previous().then(() => scheduleReconcile()));
-      if (restart) return;
-      songDirection = -1;
-      const prevIndex = (state.currentQueueIndex - 1 + queue.length) % queue.length;
-      const prevSong = queue[prevIndex];
-      pausedLoadSongId = null;
-      set({ currentQueueIndex: prevIndex, currentSong: prevSong, currentSongId: prevSong.id, loadedAudioId: prevSong.id });
-      noteTrackChange(prevSong);
+      if (!restart) showSkip(-1);
       return;
     }
+
 
     if (!state.playlistQueue || state.playlistQueue.length === 0) return;
 
@@ -798,7 +807,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       console.log(`[PLAYER] Previous in playlist: ${prevSong.title}`);
     }
   },
-  
+
+  adoptNativeSkip: (direction: 1 | -1, moved: boolean) => {
+    if (!usesNativeQueue()) return;
+    if (moved) showSkip(direction);
+    scheduleReconcile();
+  },
+
   clearPlaylistQueue: () => {
     // The engine keeps the song that is playing and drops the rest.
     if (usesNativeQueue()) fire(nativeQueue.replace([]).then(() => scheduleReconcile()));
