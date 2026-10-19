@@ -1,7 +1,7 @@
 jest.mock('./nativeModule', () => ({ getNativeModule: jest.fn() }));
 
 import { getNativeModule } from './nativeModule';
-import { notifyIslandAppShown, notifyIslandAppShownAfterDraw } from './NativeDynamicIsland';
+import { notifyIslandAppShown, notifyIslandAppShownAfterDraw, setIslandLyrics } from './NativeDynamicIsland';
 
 const nativeModule = jest.mocked(getNativeModule);
 const appShown = jest.fn();
@@ -58,4 +58,17 @@ it('keeps the native readiness fallback usable on builds without the handshake',
   expect(notifyIslandAppShown()).toBe(false);
   nativeModule.mockReturnValue({ appShown: () => { throw new Error('context released'); } });
   expect(notifyIslandAppShown()).toBe(false);
+});
+
+it('sends word timing to an island that reads it, and plain line times to an older one', () => {
+  const setLyrics = jest.fn();
+  const setLyricsTiming = jest.fn();
+  nativeModule.mockReturnValue({ setLyrics, setLyricsTiming });
+  setIslandLyrics('song', [1000], ['Line'], '{"highlight":"letters","lines":[]}');
+  expect(setLyricsTiming).toHaveBeenCalledWith('song', '{"highlight":"letters","lines":[]}');
+  expect(setLyrics).not.toHaveBeenCalled();
+  // An APK built before the timing call still gets its lines, so the island never goes blank.
+  nativeModule.mockReturnValue({ setLyrics });
+  setIslandLyrics('song', [1000], ['Line'], '{"highlight":"letters","lines":[]}');
+  expect(setLyrics).toHaveBeenCalledWith('song', [1000], ['Line']);
 });

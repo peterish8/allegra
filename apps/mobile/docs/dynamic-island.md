@@ -143,3 +143,18 @@ The probe reads the attached drawing/touch windows and display density, opens an
 really expands and returns to compact height, and asserts that the drawing window's x and width
 never change. It saves the measured frames, an expanded screenshot and an optional motion recording.
 The compact bars use moderate, independent cycles. The card's light moves only while music plays.
+
+
+### Lyrics highlight parity
+
+The island receives word/syllable segments shaped by the same `displayWords` helper as
+Now Playing. Triple-tapping the app's lyrics button changes the shared `lyricsHighlight`
+setting and immediately resends the native sheet. Both views follow the Media3 position
+and the same lyrics delay. Real provider word timings are preserved; line-only lyrics
+use the same estimated letter sweep as the app. Plain lyrics remain untimed and are not
+sent to the island. Instrumental markers draw five bars instead of text; only the active
+break moves while playing, and Android Reduce Motion keeps the bars still.
+
+Device acceptance: switch lines/letters by triple tap while the island is visible, seek
+forward and backward, pause inside a word and inside a music break, change lyric delay,
+and compare the full island list and its two-line strip with Now Playing.

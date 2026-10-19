@@ -14,6 +14,7 @@ interface DynamicIslandModule {
   openAccessibilitySettings?: () => boolean;
   openAppInfo?: () => boolean;
   setLyrics?: (songId: string, atMs: number[], texts: string[]) => void;
+  setLyricsTiming?: (songId: string, json: string) => void;
   clearLyrics?: () => void;
   appShown?: () => void;
   setHideInApp?: (on: boolean) => void;
@@ -62,8 +63,8 @@ export const setIslandAllowOnNativeIsland = (on: boolean) => call(m => m.setAllo
 export const openIslandAccessibilitySettings = () => call(m => m.openAccessibilitySettings?.() ?? false);
 export const openIslandAppInfo = () => call(m => m.openAppInfo?.() ?? false);
 /** Hands the playing song's timed lines to the island, which follows the player's clock itself. */
-export const setIslandLyrics = (songId: string, atMs: number[], texts: string[]) =>
-  call(m => (m.setLyrics ? m.setLyrics(songId, atMs, texts) : false));
+export const setIslandLyrics = (songId: string, atMs: number[], texts: string[], timing?: string) =>
+  call(m => timing && m.setLyricsTiming ? m.setLyricsTiming(songId, timing) : m.setLyrics ? m.setLyrics(songId, atMs, texts) : false);
 export const clearIslandLyrics = () => call(m => (m.clearLyrics ? m.clearLyrics() : false));
 /** Now Playing has drawn: the native launch surface can leave the player visible. */
 export const notifyIslandAppShown = () => call(m => (m.appShown ? m.appShown() : false));

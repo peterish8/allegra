@@ -2,6 +2,7 @@ package com.lyricflow.app.island
 
 import android.os.Handler
 import android.os.Looper
+import org.json.JSONObject
 
 /**
  * The playing song's timed lyric lines, handed over by JavaScript once per song
@@ -9,7 +10,68 @@ import android.os.Looper
  * the lines keep moving while JavaScript sleeps. Lines show only for the song they were sent for.
  */
 object IslandLyrics {
-    class Line(val atMs: Long, val text: String)
+    class Segment(val from: Float, val to: Float, val startMs: Long, val endMs: Long)
+    class Line(val atMs: Long, val text: String, val segments: List<Segment> = emptyList(), val letters: Boolean = false) {
+        val instrumental = isInstrumental(text)
+    }
+
+    fun isInstrumental(text: String): Boolean = text.trim()
+        .replace(Regex("^[\\s\\[(【♪🎵🎤]+|[\\s\\])】♪🎵🎤]+$"), "").trim()
+        .matches(Regex("(?i)instrumental(?:\\s+(?:break|interlude|solo|outro|intro|section))?"))
+
+    /** Character offset on the same native player clock as lineAt, including pauses and seeks. */
+    fun highlightOffset(line: Line, positionMs: Long): Float {
+        var offset = 0f
+        for (segment in line.segments) {
+            if (positionMs < segment.startMs) break
+            if (positionMs >= segment.endMs) offset = segment.to
+            else return segment.from + (segment.to - segment.from) *
+                ((positionMs - segment.startMs).toFloat() / (segment.endMs - segment.startMs).coerceAtLeast(1))
+        }
+        return offset.coerceIn(0f, line.text.length.toFloat())
+    }
+
+    /**
+     * Whether a line fills letter by letter: the sung one, in letters mode, with timings. Never under
+     * Reduce Motion, which gets no redraw ticks, so a sweep would freeze mid-word; the line shows whole.
+     */
+    fun sweeps(line: Line, sung: Boolean, motionOff: Boolean): Boolean =
+        sung && line.letters && line.segments.isNotEmpty() && !line.instrumental && !motionOff
+
+    fun setTiming(songId: String, json: String) {
+        val lines = parseTiming(json) ?: return
+        sheet = Sheet(songId, lines)
+        notifyChange()
+    }
+
+    /** The lines in [json] (islandLyricsTiming in dynamicIslandSetup.ts), or null when it is malformed. */
+    fun parseTiming(json: String): List<Line>? {
+        if (json.length > 1_000_000) return null
+        return try {
+            val root = JSONObject(json)
+            val array = root.getJSONArray("lines")
+            val letters = root.optString("highlight") == "letters"
+            (0 until minOf(array.length(), 3000)).mapNotNull { i ->
+                val row = array.getJSONObject(i)
+                val text = row.getString("text").trim()
+                if (text.isEmpty()) return@mapNotNull null
+                val parts = row.optJSONArray("segments")
+                val segments = (0 until minOf(parts?.length() ?: 0, 300)).mapNotNull { j ->
+                    val part = parts!!.getJSONObject(j)
+                    val from = part.getDouble("from").toFloat()
+                    val to = part.getDouble("to").toFloat()
+                    val start = part.getLong("startMs")
+                    val end = part.getLong("endMs")
+                    // Fractional offsets from JavaScript can land a hair past the end.
+                    if (!from.isFinite() || !to.isFinite() || from < 0 || to <= from || to > text.length + 0.01f || start < 0 || end <= start) null
+                    else Segment(from, to.coerceAtMost(text.length.toFloat()), start, end)
+                }
+                Line(row.getLong("atMs").coerceAtLeast(0), text, segments, letters)
+            }.sortedBy { it.atMs }
+        } catch (_: Exception) {
+            null // Keep the previous valid sheet on malformed bridge input.
+        }
+    }
 
     /** One snapshot, swapped whole: a reader never sees one song's id with another song's lines. */
     private class Sheet(val songId: String, val lines: List<Line>)

@@ -1,5 +1,5 @@
 import {
-  IslandStatus, foldForSearch, isDownloadedSong, matchDownloads, islandAwakeMs, islandCover, islandLyricsPayload, islandSearchRows,
+  IslandStatus, foldForSearch, isDownloadedSong, matchDownloads, islandAwakeMs, islandCover, islandLyricsPayload, islandLyricsTiming, islandSearchRows,
   islandSetupStep, islandSongRow, parseIslandStatus,
 } from './dynamicIslandSetup';
 
@@ -135,5 +135,24 @@ describe('island search over the downloads', () => {
       { id: 'o1', title: 'Kesariya', artist: 'Arijit Singh', cover: 'https://yt/k.jpg' },
       { id: 'o2', title: 'Tum Hi Ho', artist: 'Arijit Singh', cover: 'https://yt/t.jpg' },
     ]);
+  });
+});
+
+
+describe('island word timing', () => {
+  test('keeps real word times and the triple-tap highlight mode on the same delayed clock', () => {
+    const lines = [{ timestamp: 2, text: 'First word', words: [{ text: 'First ', start: 2, end: 3 }, { text: 'word', start: 3.5, end: 4 }] }];
+    const payload = JSON.parse(islandLyricsTiming(lines, 0.5, 'letters'));
+    expect(payload.highlight).toBe('letters');
+    expect(payload.lines[0].atMs).toBe(1500);
+    expect(payload.lines[0].segments).toEqual([
+      { from: 0, to: 5, startMs: 1500, endMs: 2500 },
+      { from: 6, to: 10, startMs: 3000, endMs: 3500 },
+    ]);
+    expect(JSON.parse(islandLyricsTiming(lines, 0.5, 'lines')).highlight).toBe('lines');
+  });
+  test('preserves instrumental markers for the native symbol renderer', () => {
+    const payload = JSON.parse(islandLyricsTiming([{ timestamp: 3, text: '[INSTRUMENTAL]' }], 0, 'letters'));
+    expect(payload.lines[0].text).toBe('[INSTRUMENTAL]');
   });
 });

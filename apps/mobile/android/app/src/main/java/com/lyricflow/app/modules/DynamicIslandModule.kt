@@ -134,6 +134,10 @@ class DynamicIslandModule : Module() {
             IslandLyrics.clear()
         }
 
+        Function("setLyricsTiming") { songId: String, json: String ->
+            IslandLyrics.setTiming(songId, json)
+        }
+
         /** Now Playing, opened from the island, is on screen: the island's growing overlay fades off it. */
         Function("appShown") {
             IslandService.appShown()

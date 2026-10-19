@@ -1471,6 +1471,10 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private fun drawLyricLine(canvas: Canvas, at: Int, baseline: Float, alpha: Float, maxWidth: Float) {
         if (alpha <= 0.01f) return
         val line = lyricLines.getOrNull(at) ?: return
+        if (line.instrumental) {
+            drawInstrumental(canvas, 0f, baseline - sp(LYRIC_SP) * 0.35f, sp(LYRIC_SP), alpha, at == lyricIndex)
+            return
+        }
         val fit = lyricFits.getOrPut(at) {
             val size = sp(LYRIC_SP)
             lyricPaint.textSize = size
@@ -1481,8 +1485,60 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             LyricFit(shown, fitted, lyricPaint.measureText(shown))
         }
         lyricPaint.textSize = fit.size
-        lyricPaint.alpha = (255 * alpha).toInt()
+        val sweep = IslandLyrics.sweeps(line, at == lyricIndex, motionOff())
+        lyricPaint.alpha = (255 * alpha * if (sweep) FULL_DIM_ALPHA else 1f).toInt()
         canvas.drawText(fit.text, -fit.width / 2f, baseline, lyricPaint)
+        if (sweep) {
+            val offset = IslandLyrics.highlightOffset(line, lyricPosition()).coerceIn(0f, fit.text.length.toFloat())
+            val whole = offset.toInt()
+            val left = lyricPaint.measureText(fit.text, 0, whole)
+            val next = lyricPaint.measureText(fit.text, 0, min(whole + 1, fit.text.length))
+            canvas.save()
+            canvas.clipRect(-fit.width / 2f, baseline - fit.size * 1.4f,
+                -fit.width / 2f + left + (next - left) * (offset - whole), baseline + fit.size * 0.4f)
+            lyricPaint.alpha = (255 * alpha).toInt()
+            canvas.drawText(fit.text, -fit.width / 2f, baseline, lyricPaint)
+            canvas.restore()
+        }
+    }
+
+    private fun lyricPosition(): Long = if (scrubbing) scrubMs else player?.currentPosition ?: 0L
+
+    /** Five quiet bars for a music break; only the currently sung break moves, and only while playing. */
+    private fun drawInstrumental(canvas: Canvas, x: Float, y: Float, size: Float, alpha: Float, current: Boolean) {
+        val moving = current && playing && !motionOff()
+        val clock = if (moving) lyricPosition() / 1000f else 0f
+        lyricPaint.alpha = (255 * alpha).toInt()
+        val width = size * 0.16f
+        for (bar in 0..4) {
+            val envelope = 1f - abs(bar - 2) * 0.18f
+            val height = size * envelope * if (moving) (0.35f + 0.65f * (0.5f + 0.5f * sin(clock * (7f + bar * 0.4f) + bar))) else 0.25f
+            val left = x + (bar - 2) * size * 0.3f - width / 2f
+            canvas.drawRoundRect(left, y - height / 2f, left + width, y + height / 2f, width / 2f, width / 2f, lyricPaint)
+        }
+    }
+
+    private val lyricHighlightPath = Path()
+
+    private fun drawTimedLyric(canvas: Canvas, layout: StaticLayout, line: IslandLyrics.Line, alpha: Int) {
+        fullLyricPaint.alpha = (alpha * FULL_DIM_ALPHA).toInt()
+        layout.draw(canvas)
+        val offset = IslandLyrics.highlightOffset(line, lyricPosition()).coerceIn(0f, line.text.length.toFloat())
+        val whole = offset.toInt()
+        lyricHighlightPath.reset()
+        if (whole > 0) layout.getSelectionPath(0, whole, lyricHighlightPath)
+        if (whole < line.text.length) {
+            val row = layout.getLineForOffset(whole)
+            val from = layout.getPrimaryHorizontal(whole)
+            val to = layout.getPrimaryHorizontal(whole + 1)
+            val edge = from + (to - from) * (offset - whole)
+            lyricHighlightPath.addRect(min(from, edge), layout.getLineTop(row).toFloat(), max(from, edge), layout.getLineBottom(row).toFloat(), Path.Direction.CW)
+        }
+        canvas.save()
+        canvas.clipPath(lyricHighlightPath)
+        fullLyricPaint.alpha = alpha
+        layout.draw(canvas)
+        canvas.restore()
     }
 
     /** Lays every line out once for the card's width: the full lyrics list never measures on a frame. */
@@ -1494,7 +1550,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val tops = FloatArray(lyricLines.size)
         var y = 0f
         lyricLayouts = lyricLines.mapIndexed { i, line ->
-            val layout = StaticLayout.Builder.obtain(line.text, 0, line.text.length, fullLyricPaint, width)
+            val text = if (line.instrumental) " " else line.text
+            val layout = StaticLayout.Builder.obtain(text, 0, text.length, fullLyricPaint, width)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setIncludePad(false)
                 .setLineSpacing(0f, 1.04f)
@@ -1569,7 +1626,13 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             canvas.save()
             canvas.translate(x, y)
             if (scale != 1f) canvas.scale(scale, scale)
-            layout.draw(canvas)
+            val line = lyricLines[i]
+            when {
+                line.instrumental -> drawInstrumental(canvas, sp(FULL_LYRIC_SP) * 0.7f, layout.height / 2f,
+                    sp(FULL_LYRIC_SP), alpha * bright * arrive, i == lyricIndex)
+                IslandLyrics.sweeps(line, i == lyricIndex, motionOff()) -> drawTimedLyric(canvas, layout, line, fullLyricPaint.alpha)
+                else -> layout.draw(canvas)
+            }
             canvas.restore()
         }
         val fadeH = g.dp(28f)
