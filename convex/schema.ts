@@ -391,6 +391,19 @@ export default defineSchema({
   }).index('by_songId', ['songId']),
 
   /**
+   * Words a listener pasted after the admin passcode was accepted (verifiedLyrics:createPasted),
+   * kept for that account and recording until they are aligned and saved. The passcode is never stored.
+   */
+  pastedLyrics: defineTable({
+    candidateId: v.string(),
+    ref: v.string(),
+    userId: v.string(),
+    language: v.string(),
+    lines: v.array(v.string()),
+    createdAt: v.number()
+  }).index('by_candidateId_and_userId_and_ref', ['candidateId', 'userId', 'ref']).index('by_userId', ['userId']),
+
+  /**
    * Lyrics a listener synced and confirmed ("Is this syncing good?"), shared with everyone who plays
    * the song on the website and the phone. One row per recording; at most one version per script.
    */

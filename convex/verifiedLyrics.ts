@@ -4,6 +4,53 @@ import type { Doc } from './_generated/dataModel';
 
 import { requireSecret } from './profiles';
 import { lyricsVersion } from './schema';
+import { RateLimiter } from '@convex-dev/rate-limiter';
+import { components } from './_generated/api';
+
+const pasteLimiter = new RateLimiter(components.rateLimiter, {
+  pasteAttempts: { kind: 'fixed window', rate: 5, period: 300_000 },
+  pasteGlobal: { kind: 'fixed window', rate: 60, period: 300_000 }
+});
+
+export const createPasted = mutation({
+  args: { secret: v.string(), id: v.string(), ref: v.string(), userId: v.string(), language: v.string(), lines: v.array(v.string()), passcode: v.string() },
+  returns: v.object({ allowed: v.boolean() }),
+  handler: async (ctx, args) => {
+    requireSecret(args.secret);
+    const perUser = await pasteLimiter.limit(ctx, 'pasteAttempts', { key: args.userId });
+    const global = await pasteLimiter.limit(ctx, 'pasteGlobal', { key: 'all' });
+    // Return rejection so rate-limit writes commit, including wrong passcodes.
+    if (!perUser.ok || !global.ok) return { allowed: false };
+    const expected = process.env.LYRICS_ADMIN_PASSCODE_SHA256;
+    if (!expected || !/^[a-f0-9]{64}$/i.test(expected) || args.passcode.length > 256) return { allowed: false };
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(args.passcode));
+    const actual = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    let difference = 0;
+    for (let i = 0; i < actual.length; i++) difference |= actual.charCodeAt(i) ^ expected.toLowerCase().charCodeAt(i);
+    if (difference !== 0) return { allowed: false };
+    if (!args.userId || !/^(saavn|gaana):[^:]{1,70}$/.test(args.ref) || !/^[a-f0-9]{64}$/.test(args.id)
+      || args.language.length > 40 || !args.lines.length || args.lines.length > 3000
+      || args.lines.join('\n').length > 24_000 || args.lines.some(line => !line.trim())
+      || args.lines.flatMap(line => line.split(/\s+/u)).length > 3000
+      || /[^\p{Script=Latin}\p{M}\p{N}\p{P}\p{S}\p{Z}\s]/u.test(args.lines.join(' '))) return { allowed: false };
+    const existing = await ctx.db.query('pastedLyrics').withIndex('by_candidateId_and_userId_and_ref',
+      q => q.eq('candidateId', args.id).eq('userId', args.userId).eq('ref', args.ref)).unique();
+    if (!existing) await ctx.db.insert('pastedLyrics', { candidateId: args.id, ref: args.ref, userId: args.userId,
+      language: args.language, lines: args.lines, createdAt: Date.now() });
+    return { allowed: true };
+  }
+});
+
+export const getPasted = query({
+  args: { secret: v.string(), id: v.string(), ref: v.string(), userId: v.string() },
+  returns: v.union(v.null(), v.object({ language: v.string(), lines: v.array(v.string()) })),
+  handler: async (ctx, args) => {
+    requireSecret(args.secret);
+    const row = await ctx.db.query('pastedLyrics').withIndex('by_candidateId_and_userId_and_ref',
+      q => q.eq('candidateId', args.id).eq('userId', args.userId).eq('ref', args.ref)).unique();
+    return row ? { language: row.language, lines: row.lines } : null;
+  }
+});
 
 /**
  * Lyrics listeners synced on their own computers and confirmed, shared with everyone who plays the

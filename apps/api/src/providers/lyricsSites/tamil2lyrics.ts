@@ -12,7 +12,7 @@ const INDEX_TTL_MS = 86_400_000;
 const INDEX_RETRY_MS = 600_000;
 const PAGE_TTL_SECONDS = 86_400;
 /** Bump when parsing or cleanup changes, so pages read the old way are read again. */
-const PAGE_CACHE_VERSION = 'v1';
+const PAGE_CACHE_VERSION = 'v2';
 const MAX_PAGES_PER_SONG = 3;
 /** Fewer lines than this is a stub page, not lyrics. */
 const MIN_LINES = 4;
@@ -249,7 +249,7 @@ export class Tamil2Lyrics implements LyricSite {
       if (scored && (!best || scored.score > best.score)) {
         best = scored;
       }
-      if (best?.score === FULL_MATCH) {
+      if (best?.score === FULL_MATCH || (!filmKey && best !== null)) {
         break;
       }
     }

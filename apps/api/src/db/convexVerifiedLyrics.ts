@@ -7,10 +7,23 @@ import type {
   VerifiedLyricsSubmission
 } from '../services/verifiedLyrics.js';
 import type { ConvexGateway } from './convexGateway.js';
+import type { PastedLyrics } from '../services/verifiedLyrics.js';
 
 /** Convex-backed listener-synced lyrics; every operation is named in convexGateway.ts. */
 export class ConvexVerifiedLyricsStore implements VerifiedLyricsStore {
   public constructor(private readonly convex: ConvexGateway) {}
+
+  public async createPasted(candidate: PastedLyrics, passcode: string): Promise<boolean> {
+    const result = await this.convex.mutation('verifiedLyrics:createPasted', { ...candidate, passcode });
+    return isRecord(result) && result.allowed === true;
+  }
+
+  public async getPasted(id: string, ref: string, userId: string): Promise<PastedLyrics | null> {
+    const result = await this.convex.query('verifiedLyrics:getPasted', { id, ref, userId });
+    if (!isRecord(result) || typeof result.language !== 'string' || !Array.isArray(result.lines)
+      || !result.lines.every((line): line is string => typeof line === 'string')) return null;
+    return { id, ref, userId, language: result.language, lines: result.lines };
+  }
 
   public async get(ref: string): Promise<StoredVerifiedLyrics | null> {
     return parseRow(await this.convex.query('verifiedLyrics:get', { ref }));

@@ -42,11 +42,21 @@ export interface VerifiedLyricsSong {
 export type VerifiedLyricsSubmission = Pick<StoredLyricsVersion, 'script' | 'language' | 'lrc' | 'source' | 'confidence' | 'syncedBy'>;
 
 export interface VerifiedLyricsStore {
+  createPasted?(candidate: PastedLyrics, passcode: string): Promise<boolean>;
+  getPasted?(id: string, ref: string, userId: string): Promise<PastedLyrics | null>;
   get(ref: string): Promise<StoredVerifiedLyrics | null>;
   byMatchKey(matchKey: string): Promise<StoredVerifiedLyrics | null>;
   submit(song: VerifiedLyricsSong, version: VerifiedLyricsSubmission): Promise<{ readonly saved: boolean }>;
   report(ref: string, script: LyricsScript, reporter: string): Promise<{ readonly found: boolean; readonly hidden: boolean }>;
   setHidden(ref: string, script: LyricsScript, hidden: boolean): Promise<{ readonly found: boolean }>;
+}
+
+export interface PastedLyrics {
+  readonly id: string;
+  readonly ref: string;
+  readonly userId: string;
+  readonly language: string;
+  readonly lines: readonly string[];
 }
 
 const latinFirst = (left: { script: LyricsScript }, right: { script: LyricsScript }): number =>
