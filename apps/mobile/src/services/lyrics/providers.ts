@@ -8,7 +8,7 @@
 import { Buffer } from 'buffer';
 import { buildUrl, fetchJson } from '../net/fetchWithTimeout';
 import { ALLEGRA_API_URL } from '../account/config';
-import { parseSongRef } from '@shared/songRef';
+import { leadArtist, parseSongRef } from '@shared/songRef';
 import { alignSyllables, enhancedLine, LyricWord } from '@shared/wordSync';
 import { formatLrcTime, hasLrcTimestamps, toTimedLrc, ttmlToLrc } from './lrc';
 
@@ -300,23 +300,36 @@ interface LrcLibHit {
   plainLyrics?: string | null;
 }
 
-export const lrcLib: LyricsProvider = async q => {
-  const headers = { 'User-Agent': 'LuvLyrics/1.0 (https://github.com/LuvLyricsApp/LuvLyricsApp)' };
-  const d = durationSecs(q);
+const LRCLIB_HEADERS = { 'User-Agent': 'LuvLyrics/1.0 (https://github.com/LuvLyricsApp/LuvLyricsApp)' };
+
+const lrcLibLookup = async (q: LyricsQuery, artist: string, d: number | undefined): Promise<LrcLibHit | null> => {
   let hit: LrcLibHit | null = null;
   if (d) {
     hit = await fetchJson<LrcLibHit>(buildUrl(`${LRCLIB}/get`, {
       track_name: q.title,
-      artist_name: q.artist,
+      artist_name: artist,
       album_name: q.album,
       duration: d,
-    }), { headers });
+    }), { headers: LRCLIB_HEADERS });
   }
   if (!hit?.syncedLyrics && !hit?.plainLyrics) {
-    const list = await fetchJson<LrcLibHit[]>(buildUrl(`${LRCLIB}/search`, { track_name: q.title, artist_name: q.artist }), { headers });
+    const list = await fetchJson<LrcLibHit[]>(buildUrl(`${LRCLIB}/search`, { track_name: q.title, artist_name: artist }), { headers: LRCLIB_HEADERS });
     const candidates = (list ?? []).filter(h => !d || !h.duration || Math.abs(h.duration - d) <= 5);
     hit = candidates.find(h => h.syncedLyrics) ?? candidates.find(h => h.plainLyrics) ?? null;
   }
+  return hit;
+};
+
+/**
+ * The credited artists first, then the lead artist alone: a catalog credit such as
+ * "Anirudh Ravichander, Super Subu, M.S Krsna, Heisenberg" finds nothing on LRCLIB,
+ * which files the song under "Anirudh Ravichander".
+ */
+export const lrcLib: LyricsProvider = async q => {
+  const d = durationSecs(q);
+  const lead = leadArtist(q.artist);
+  let hit = await lrcLibLookup(q, q.artist, d);
+  if (!hit && lead && lead !== q.artist) hit = await lrcLibLookup(q, lead, d);
   if (!hit) return null;
   return result('LrcLib', hit.syncedLyrics || hit.plainLyrics, {
     trackName: hit.trackName,
