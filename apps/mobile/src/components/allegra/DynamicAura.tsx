@@ -135,3 +135,12 @@ const styles = StyleSheet.create({
 });
 
 export default React.memo(DynamicAura);
+
+/**
+ * The aura with its energy read from playback, for pages that would otherwise subscribe to play and pause only to
+ * pass it down: a pause then re-renders this, not the page and its lists.
+ */
+export const PlayingAura: React.FC<Omit<DynamicAuraProps, 'playing'>> = React.memo(props => {
+  const playing = usePlayerStore(s => s.isPlaying);
+  return <DynamicAura {...props} playing={playing} />;
+});
