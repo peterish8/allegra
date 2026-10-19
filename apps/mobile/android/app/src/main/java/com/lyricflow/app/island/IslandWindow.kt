@@ -427,7 +427,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         launch = null
         val animate = look != null && v != null && power.isInteractive &&
             (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || android.animation.ValueAnimator.areAnimatorsEnabled())
-        if (!animate || look == null) {
+        if (!animate) {
             startApp(link, morphed = false)
             v?.collapse()
             return
@@ -467,17 +467,20 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     }
 
     private fun startApp(link: String, morphed: Boolean) {
+        val withoutAnimation = morphed || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !android.animation.ValueAnimator.areAnimatorsEnabled())
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link)).apply {
             setPackage(service.packageName)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            // The island's overlay is the animation; the system's own would play a second one under it.
-            if (morphed) addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            // The island owns the launch motion. Reduce Motion also skips the system's activity transition.
+            if (withoutAnimation) addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
         }
         try {
             service.startActivity(intent)
         } catch (_: Exception) {
             service.packageManager.getLaunchIntentForPackage(service.packageName)?.let {
                 it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (withoutAnimation) it.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
                 try {
                     service.startActivity(it)
                 } catch (_: Exception) {

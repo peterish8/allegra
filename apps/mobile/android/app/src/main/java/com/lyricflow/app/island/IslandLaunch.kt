@@ -10,6 +10,7 @@ import android.graphics.ComposeShader
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.PorterDuff
 import android.graphics.RectF
@@ -107,6 +108,7 @@ class IslandLaunch(
 
     // Drawing, built once per launch so no frame allocates.
     private val shape = RectF()
+    private val shapeClip = Path()
     private val coverRect = RectF()
     private val snapRect = RectF()
     private val matrix = Matrix()
@@ -193,10 +195,6 @@ class IslandLaunch(
     /** Gone at once (the screen turned off, the island was switched off). */
     fun finishNow() {
         if (finished) return
-        if (!shownSent) {
-            shownSent = true
-            onShown()
-        }
         release()
     }
 
@@ -241,7 +239,8 @@ class IslandLaunch(
         if (finished) return
         val dt = if (lastFrameNanos == 0L) 1f / 60f else (nowNanos - lastFrameNanos) / 1_000_000_000f
         lastFrameNanos = nowNanos
-        val moving = grow.step(dt)
+        // The first presented frame must be the island itself, before the spring advances.
+        val moving = if (drewOnce) grow.step(dt) else true
         // This callback comes a frame after the first one was drawn: that frame is on screen now.
         if (!shownSent && drewOnce) {
             shownSent = true
@@ -288,11 +287,17 @@ class IslandLaunch(
         // overshoot past the screen is held at its edges.
         shape.set(
             max(screen.left, lerp(l.outline.left, screen.left, t)),
-            max(screen.top, lerp(l.outline.top, screen.top, t)),
+            lerp(l.outline.top, screen.top, t),
             min(screen.right, lerp(l.outline.right, screen.right, t)),
             min(screen.bottom, lerp(l.outline.bottom, screen.bottom, t)),
         )
         val r = lerp(l.outlineRadius, screenRadius, e).coerceAtMost(min(shape.width(), shape.height()) / 2f)
+
+        // Covers without a visible source and the scaled snapshot must stay inside the moving container.
+        shapeClip.reset()
+        shapeClip.addRoundRect(shape, r, r, Path.Direction.CW)
+        canvas.save()
+        canvas.clipPath(shapeClip)
 
         black.alpha = (255 * fade).toInt()
         canvas.drawRoundRect(shape, r, r, black)
@@ -356,6 +361,7 @@ class IslandLaunch(
             snapPaint.alpha = (255 * fade * dissolve * dissolve).toInt()
             canvas.drawBitmap(snapshot, null, snapRect, snapPaint)
         }
+        canvas.restore()
     }
 
     private val unit = Matrix()
@@ -381,11 +387,11 @@ class IslandLaunch(
         val density = context.resources.displayMetrics.density
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val corner = try {
-                context.display?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
+                wm.maximumWindowMetrics.windowInsets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
             } catch (_: Exception) {
                 null
             }
-            if (corner != null) return corner.radius.toFloat()
+            return corner?.radius?.toFloat() ?: 0f
         }
         return 24f * density
     }

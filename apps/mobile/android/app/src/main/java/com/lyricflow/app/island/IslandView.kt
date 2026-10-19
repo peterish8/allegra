@@ -719,7 +719,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private fun openApp(link: String = PLAYER_LINK) {
         // Locked: the app would open behind the lock screen, so the island just stays.
         if (locked) return
-        host.openApp(link, launchLook())
+        host.openApp(link, if (motionOff()) null else launchLook())
     }
 
     /** The island as it is now, in screen pixels, for the app to grow out of; null when it cannot be pictured. */
@@ -727,7 +727,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val g = geometry ?: return null
         if (!isAttachedToWindow || width <= 0) return null
         val outline = RectF()
-        shape(outline, open.value, wide.value, shown.value, 1f, lyricsRoom.value, full.value, searchP.value)
+        shape(outline, open.value, wide.value, shown.value, currentScale(), lyricsRoom.value, full.value, searchP.value)
         outline.offset(width / 2f, 0f)
         if (outline.isEmpty) return null
         val oc = open.value.coerceIn(0f, 1f)
@@ -744,6 +744,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             }
             else -> null
         }
+        // Match onDraw's hanging outline, including the part above the physical screen. Keep the cover's
+        // coordinates from the unextended pill: its content does not move up with the hidden corners.
+        if (g.hanging) outline.top -= radius
         val snapshot = snapshot(outline)
         val at = IntArray(2)
         getLocationOnScreen(at)
@@ -764,20 +767,27 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         capturing = true
         return try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                val picture = android.graphics.Picture()
-                val c = picture.beginRecording(w, h)
-                c.translate(-area.left, -area.top)
-                draw(c)
-                picture.endRecording()
-                Bitmap.createBitmap(picture, w, h, Bitmap.Config.HARDWARE)
-            } else {
-                Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
-                    val c = Canvas(it)
-                    c.translate(-area.left, -area.top)
-                    draw(c)
+                try {
+                    val picture = android.graphics.Picture()
+                    val c = picture.beginRecording(w, h)
+                    try {
+                        c.translate(-area.left, -area.top)
+                        draw(c)
+                    } finally {
+                        picture.endRecording()
+                    }
+                    return Bitmap.createBitmap(picture, w, h, Bitmap.Config.HARDWARE)
+                } catch (e: Exception) {
+                    android.util.Log.w("LyrFlowIsland", "hardware island snapshot failed; retrying software", e)
                 }
             }
-        } catch (_: Exception) {
+            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+                val c = Canvas(it)
+                c.translate(-area.left, -area.top)
+                draw(c)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("LyrFlowIsland", "island snapshot failed", e)
             null
         } finally {
             capturing = false
