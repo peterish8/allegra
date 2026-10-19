@@ -215,6 +215,25 @@ describe('resolveToCatalog / resolveMany', () => {
     expect(out.map(s => s.id)).toEqual(['s1', 's2', 's3']);
     expect(search.mock.calls.length).toBeLessThanOrEqual(4);
   });
+
+  it('reports matches as they settle, in order, so a list shown from them only grows at its end', async () => {
+    let releaseSlow: () => void = () => undefined;
+    const slow = new Promise<void>(resolve => { releaseSlow = resolve; });
+    const search = jest.fn(async (q: string) => {
+      const id = q.split(' ')[0];
+      if (id === 's1') await slow;
+      return id === 's3' ? [] : [catalog(id, id, 'A', 200)];
+    });
+    const mix = ['s1', 's2', 's3', 's4'].map(id => yt(id, id, ['A'], 200));
+    const seen: string[][] = [];
+    const done = resolveMany(mix, search, 10, 4, [], found => seen.push(found.map(s => s.id)));
+    await new Promise(resolve => setImmediate(resolve));
+    // s2..s4 are in, but s1 is still looking: nothing is shown ahead of it.
+    expect(seen).toEqual([]);
+    releaseSlow();
+    expect((await done).map(s => s.id)).toEqual(['s1', 's2', 's4']);
+    expect(seen).toEqual([['s1', 's2', 's4']]);
+  });
 });
 
 // ─── recommendFor ──────────────────────────────────────────────────────────

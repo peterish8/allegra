@@ -22,7 +22,7 @@ interface DynamicIslandModule {
   setStyle?: (style: string) => void;
   setPlaylists?: (json: string) => void;
   setDownloads?: (json: string) => void;
-  setSearchResults?: (query: string, json: string) => void;
+  setSearchResults?: (query: string, json: string, done: boolean) => void;
   addListener?: (event: string, cb: (data: unknown) => void) => { remove: () => void };
 }
 
@@ -73,8 +73,9 @@ export const setIslandShowLyricStrip = (on: boolean) => call(m => (m.setShowLyri
 export const setIslandHideInApp = (on: boolean) => call(m => (m.setHideInApp ? m.setHideInApp(on) : false));
 export const setIslandPlaylists = (json: string) => call(m => (m.setPlaylists ? m.setPlaylists(json) : false));
 export const setIslandDownloads = (json: string) => call(m => (m.setDownloads ? m.setDownloads(json) : false));
-export const setIslandSearchResults = (query: string, json: string) =>
-  call(m => (m.setSearchResults ? m.setSearchResults(query, json) : false));
+/** A search's answers so far; `done` false while more may come (the island keeps saying it is looking). */
+export const setIslandSearchResults = (query: string, json: string, done = true) =>
+  call(m => (m.setSearchResults ? m.setSearchResults(query, json, done) : false));
 
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 

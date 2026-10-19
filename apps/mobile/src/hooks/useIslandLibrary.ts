@@ -8,7 +8,7 @@
  * Mounted once in RootNavigator.
  */
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import type { Song, UnifiedSong } from '../types/song';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSongsStore } from '../store/songsStore';
@@ -31,6 +31,7 @@ import {
   ISLAND_DOWNLOADS,
   ISLAND_PLAYLIST_SONGS,
   islandCover,
+  islandSearchRows,
   islandSongRow,
   isDownloadedSong,
   matchDownloads,
@@ -39,6 +40,22 @@ import {
 /** Changes come in bursts (a sync, a download finishing): one snapshot after they settle. */
 const SNAPSHOT_DELAY_MS = 400;
 const SEARCH_LIMIT = 12;
+/** An island search stops waiting on its slowest lookups after this long and keeps what it found. */
+const SEARCH_BUDGET_MS = 12_000;
+
+/**
+ * Runs [run] after [ms], or at once while the app is in the background: Android holds JavaScript's timers there
+ * (the island is used from other apps), so a debounced snapshot would wait for the app to be opened again.
+ */
+function later(run: () => void, ms: number): () => void {
+  if (AppState.currentState === 'active') {
+    const timer = setTimeout(run, ms);
+    return () => clearTimeout(timer);
+  }
+  let live = true;
+  Promise.resolve().then(() => { if (live) run(); }).catch(() => undefined);
+  return () => { live = false; };
+}
 /** The queue id the downloads play under: the Library's, so the queue behaves as it does from the Library. */
 const DOWNLOADS_QUEUE_ID = 'library';
 
@@ -81,7 +98,7 @@ export function useIslandLibrary(): void {
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     let alive = true;
-    const timer = setTimeout(async () => {
+    const cancel = later(async () => {
       const lists = new Map<string, Song[]>();
       const rows = await Promise.all(playlists.map(async playlist => {
         const list = await loadPlaylistSongs(playlist.id).catch(() => [] as Song[]);
@@ -98,20 +115,20 @@ export function useIslandLibrary(): void {
       listed.current = lists;
       setIslandPlaylists(JSON.stringify(rows));
     }, SNAPSHOT_DELAY_MS);
-    return () => { alive = false; clearTimeout(timer); };
+    return () => { alive = false; cancel(); };
   }, [playlists, onlineVersion]);
 
   // Downloads.
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    const timer = setTimeout(() => setIslandDownloads(JSON.stringify(downloadedSongs(songs).map(islandSongRow))), SNAPSHOT_DELAY_MS);
-    return () => clearTimeout(timer);
+    return later(() => setIslandDownloads(JSON.stringify(downloadedSongs(songs).map(islandSongRow))), SNAPSHOT_DELAY_MS);
   }, [songs]);
 
   // Picks and searches from the island.
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     let searchRun = 0;
+    let searchAbort: AbortController | null = null;
     const picks = onIslandPick(async ({ playlistId, songId }) => {
       if (playlistId === ISLAND_LISTS.search) {
         // A downloaded answer plays from the phone, offline; an online one as a pick in Stream's search.
@@ -131,23 +148,32 @@ export function useIslandLibrary(): void {
     });
     const searches = onIslandSearch(async query => {
       const run = ++searchRun;
+      // A newer query takes over: the older one's lookups stop instead of competing with it for the network.
+      searchAbort?.abort();
+      const abort = new AbortController();
+      searchAbort = abort;
+      const budget = setTimeout(() => abort.abort(), SEARCH_BUDGET_MS);
       // Search is universal: the downloads (all of them, not only the island's list) and the catalogue online. The
       // island has already shown the downloads it knows; these join them, each song once.
       const local = matchDownloads(allDownloadedSongs(useSongsStore.getState().songs), query);
-      const found = query.trim() ? await searchOfficial(query, SEARCH_LIMIT).catch(() => [] as UnifiedSong[]) : [];
-      if (run !== searchRun) return;
-      searchAnswers.current = new Map(found.map(song => [song.id, song]));
-      const rows = [
-        ...local.map(song => ({ ...islandSongRow(song), downloaded: true })),
-        ...found.map(song => ({
-          id: song.id,
-          title: song.title,
-          artist: song.artist,
-          cover: islandCover(song.highResArt) || islandCover(song.thumbnail),
-        })),
-      ];
-      setIslandSearchResults(query, JSON.stringify(rows));
+      const answers = new Map<string, UnifiedSong>();
+      // Each online answer shows as soon as it is matched; one slow lookup no longer holds back the whole list.
+      const send = (found: readonly UnifiedSong[], done: boolean) => {
+        if (run !== searchRun) return;
+        for (const song of found) answers.set(song.id, song);
+        searchAnswers.current = answers;
+        setIslandSearchResults(query, JSON.stringify(islandSearchRows(local, found)), done);
+      };
+      try {
+        const found = query.trim()
+          ? await searchOfficial(query, SEARCH_LIMIT, undefined, abort.signal, partial => send(partial, false))
+            .catch(() => [] as UnifiedSong[])
+          : [];
+        send(found, true);
+      } finally {
+        clearTimeout(budget);
+      }
     });
-    return () => { picks.remove(); searches.remove(); };
+    return () => { picks.remove(); searches.remove(); searchAbort?.abort(); };
   }, []);
 }

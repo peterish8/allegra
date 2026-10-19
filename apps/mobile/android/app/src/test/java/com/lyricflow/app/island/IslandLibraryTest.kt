@@ -1,11 +1,70 @@
 package com.lyricflow.app.island
 
+import android.app.Application
+import android.os.Looper
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.After
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.LooperMode
 
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, application = Application::class, sdk = [28])
+@LooperMode(LooperMode.Mode.PAUSED)
 class IslandLibraryTest {
+
+    @Before
+    fun resetSearch() {
+        IslandLibrary.onSearch = {}
+        IslandLibrary.onChange = null
+        IslandLibrary.query("")
+        IslandLibrary.setDownloads("[]")
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    @After
+    fun releaseListeners() {
+        IslandLibrary.onSearch = null
+        IslandLibrary.onChange = null
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    @Test
+    fun `partial online answers keep the searching footer until the final answer`() {
+        IslandLibrary.setDownloads("""[{"id":"local","title":"Halo","artist":"Beyonce"}]""")
+        shadowOf(Looper.getMainLooper()).idle()
+        IslandLibrary.query("halo")
+        IslandLibrary.setSearchResults("halo", """[{"id":"online","title":"Halo live","artist":"Beyonce"}]""", done = false)
+        assertEquals("answers wait for the main looper", listOf("local"), IslandLibrary.searchResults.map { it.id })
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf("local", "online"), IslandLibrary.searchResults.map { it.id })
+        assertTrue(IslandLibrary.searching)
+        IslandLibrary.setSearchResults("halo", """[{"id":"online","title":"Halo live","artist":"Beyonce"}]""", done = true)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(IslandLibrary.searching)
+        assertEquals(listOf("local", "online"), IslandLibrary.searchResults.map { it.id })
+    }
+
+    @Test
+    fun `a new keystroke rejects an older answer already queued on the main looper`() {
+        IslandLibrary.query("old")
+        IslandLibrary.setSearchResults("old", """[{"id":"old-answer","title":"Old"}]""", done = true)
+        IslandLibrary.query("new")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("new", IslandLibrary.searchQuery)
+        assertTrue(IslandLibrary.searchResults.isEmpty())
+        assertTrue("the newer query is still waiting", IslandLibrary.searching)
+        IslandLibrary.setSearchResults("new", """[{"id":"new-answer","title":"New"}]""", done = true)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf("new-answer"), IslandLibrary.searchResults.map { it.id })
+        assertFalse(IslandLibrary.searching)
+    }
 
     @Test
     fun `playlists keep their songs and drop what cannot be shown`() {

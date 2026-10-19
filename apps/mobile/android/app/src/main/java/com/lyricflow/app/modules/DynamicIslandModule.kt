@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import com.facebook.react.bridge.ReactContext
 import com.lyricflow.app.island.IslandLibrary
 import com.lyricflow.app.island.IslandLyrics
 import com.lyricflow.app.island.IslandPrefs
@@ -29,16 +30,14 @@ class DynamicIslandModule : Module() {
         Events("onIslandPick", "onIslandSearch")
 
         OnStartObserving {
-            IslandLibrary.onPick = { playlistId, songId ->
-                sendEvent("onIslandPick", mapOf("playlistId" to playlistId, "songId" to songId))
-            }
-            IslandLibrary.onSearch = { query -> sendEvent("onIslandSearch", mapOf("query" to query)) }
+            IslandLibrary.onPick = pick
+            IslandLibrary.onSearch = search
+            IslandLibrary.onWake = wake
         }
 
-        OnStopObserving {
-            IslandLibrary.onPick = null
-            IslandLibrary.onSearch = null
-        }
+        // Only this instance's own: after a reload, the old instance stopping must not cut off the new one.
+        OnStopObserving { letGo() }
+        OnDestroy { letGo() }
 
         Function("status") {
             val ctx = context ?: return@Function null
@@ -118,9 +117,12 @@ class DynamicIslandModule : Module() {
             IslandLibrary.setDownloads(json)
         }
 
-        /** The answers to a search typed in the island; answers to an older query are dropped. */
-        Function("setSearchResults") { query: String, json: String ->
-            IslandLibrary.setSearchResults(query, json)
+        /**
+         * The answers to a search typed in the island, as they are found; [done] false while more may come.
+         * Answers to an older query are dropped.
+         */
+        Function("setSearchResults") { query: String, json: String, done: Boolean? ->
+            IslandLibrary.setSearchResults(query, json, done ?: true)
         }
 
         /** The playing song's timed lines (ms, already shifted by the lyrics delay), shown under the open card. */
@@ -130,6 +132,11 @@ class DynamicIslandModule : Module() {
 
         Function("clearLyrics") {
             IslandLyrics.clear()
+        }
+
+        /** Now Playing, opened from the island, is on screen: the island's growing overlay fades off it. */
+        Function("appShown") {
+            IslandService.appShown()
         }
 
         /** Our row in Android's accessibility settings where the phone can open it, else the accessibility page. */
@@ -147,6 +154,24 @@ class DynamicIslandModule : Module() {
             val ctx = appContext.currentActivity ?: context ?: return@Function false
             start(ctx, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")))
         }
+    }
+
+    // Picks, searches and song changes arrive while LuvLyrics is behind another app, where JavaScript's timers are
+    // held: each keeps them running while it is answered (IslandJsAwake).
+    private val wake: () -> Unit = { IslandJsAwake.hold(context as? ReactContext) }
+    private val pick: (String, String) -> Unit = { playlistId, songId ->
+        wake()
+        sendEvent("onIslandPick", mapOf("playlistId" to playlistId, "songId" to songId))
+    }
+    private val search: (String) -> Unit = { query ->
+        wake()
+        sendEvent("onIslandSearch", mapOf("query" to query))
+    }
+
+    private fun letGo() {
+        if (IslandLibrary.onPick === pick) IslandLibrary.onPick = null
+        if (IslandLibrary.onSearch === search) IslandLibrary.onSearch = null
+        if (IslandLibrary.onWake === wake) IslandLibrary.onWake = null
     }
 
     private fun start(ctx: Context, intent: Intent): Boolean = try {

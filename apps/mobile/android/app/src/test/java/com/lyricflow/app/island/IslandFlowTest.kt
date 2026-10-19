@@ -1,12 +1,18 @@
 package com.lyricflow.app.island
 
 import android.graphics.Color
+import android.app.Application
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import kotlin.math.abs
 
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, application = Application::class, sdk = [28])
 class IslandFlowTest {
     private val colors = intArrayOf(Color.rgb(60, 10, 30), Color.rgb(214, 110, 36), Color.rgb(196, 48, 104), Color.rgb(240, 170, 150))
 

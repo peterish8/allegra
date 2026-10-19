@@ -30,6 +30,8 @@ export async function searchOfficial(
   limit = 20,
   deps: OfficialSearchDeps = defaultDeps,
   signal?: AbortSignal,
+  /** The official answers found so far, as they are matched (the list only grows), before the full answer. */
+  onPartial?: (found: UnifiedSong[]) => void,
 ): Promise<UnifiedSong[]> {
   const q = query.trim();
   if (!q) return [];
@@ -37,7 +39,8 @@ export async function searchOfficial(
     deps.searchYT(q).catch(() => [] as YTSong[]),
     deps.searchCatalog(q, signal).catch(() => [] as UnifiedSong[]),
   ]);
-  const official = await resolveMany(yts, candidateQuery => deps.searchCatalog(candidateQuery, signal), limit, 6, catalog);
+  const progress = onPartial && ((found: UnifiedSong[]) => onPartial(dedupeStreamable(found).slice(0, limit)));
+  const official = await resolveMany(yts, candidateQuery => deps.searchCatalog(candidateQuery, signal), limit, 6, catalog, progress);
   // A YouTube Music song row is our authority for identity and album art.  Do
   // not pad a partial official answer with catalog rows: that was the path that
   // quietly reintroduced karaoke/playlist thumbnails beside official releases.

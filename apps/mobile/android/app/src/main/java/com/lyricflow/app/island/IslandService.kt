@@ -94,6 +94,11 @@ class IslandService : AccessibilityService() {
             main.post { instance?.window?.setAppInFront(inFront) }
         }
 
+        /** LuvLyrics has drawn the screen the island opened: the overlay growing it out of the island lets go. */
+        fun appShown() {
+            main.post { instance?.window?.appShown() }
+        }
+
         /** Applies the switches in [IslandPrefs] (from the app's Settings). */
         fun refresh() {
             main.post { instance?.refreshNow() }
