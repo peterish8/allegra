@@ -43,6 +43,13 @@ beforeEach(() => {
 });
 
 describe('queue commands', () => {
+  it('reach the native side in the same tick when nothing is in flight, before React can re-render', async () => {
+    native.skipToNext.mockResolvedValue(true);
+    const skip = NativeAudioPlayer.skipToNext();
+    expect(native.skipToNext).toHaveBeenCalledTimes(1);
+    expect(await skip).toBe(true);
+  });
+
   it('only reach the native side once the one before has been applied', async () => {
     const first = deferred();
     native.setQueue.mockReturnValueOnce(first.promise);
