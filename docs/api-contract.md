@@ -24,6 +24,7 @@ export interface UnifiedSong {
   title: string;          // HTML entities already decoded
   artist: string;         // decoded, comma-joined
   album?: string;
+  albumId?: string;       // Saavn's official album ID, when provided
   artwork: string;        // 1000x1000 when available
   streamUrl: string;      // ALWAYS our proxy: /api/stream/:id — never a CDN URL
   duration: number;       // SECONDS
@@ -123,6 +124,9 @@ are dropped from the other two shelves.
 Additive endpoint (no existing shape changed). `name` is the lead artist as shown on a song. Resolves the name through the provider's artist search (exact match preferred), then returns `ArtistProfile` from `packages/shared/types.ts`: a real `image` (500×500 photo or `null`), `isVerified`, `followerCount`, optional `bio`, `songs` (most popular first, all playable), `albums` (with cover + year) and `similar` artists. `404` when no artist matches.
 ### `GET /api/artists/faces?names=a,b,c` → `ApiResponse<ArtistSummary[]>` · cache 24 h — added 2026-09-21
 Up to 12 comma-separated names; returns `{ id, name, image }` for each one that has a photo. Unmatched names are simply omitted. Used for avatars on lists.
+
+### `GET /api/albums/:id` → `ApiResponse<UnifiedSong[]>` · cache 6 h
+Returns every playable track from the official Saavn release in the provider's track order. `id` is the Saavn album ID carried as the optional `albumId` on Saavn songs. A missing release or one with no playable tracks returns `404`.
 
 ### `GET /api/artwork`
 `title`, `artist`, `limit`=5 → `ApiResponse<{ urls: string[] }>` · cache 30 d

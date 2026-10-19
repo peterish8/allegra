@@ -18,7 +18,8 @@ export interface SaavnSong {
   readonly id?: string | number;
   readonly name?: string;
   readonly title?: string;
-  readonly album?: string | { readonly name?: string };
+  readonly albumId?: string | number;
+  readonly album?: string | { readonly id?: string | number; readonly name?: string };
   readonly duration?: number | string;
   readonly language?: string;
   readonly hasLyrics?: boolean;
@@ -44,6 +45,10 @@ export interface SaavnAlbumSummary {
   readonly name?: string;
   readonly year?: string | number;
   readonly image?: readonly SaavnAsset[];
+}
+
+export interface SaavnAlbum extends SaavnAlbumSummary {
+  readonly songs?: readonly SaavnSong[];
 }
 
 export interface SaavnArtist extends SaavnArtistSummary {
@@ -132,6 +137,27 @@ export class SaavnProvider {
     return this.requestResults(`songs/${encodeURIComponent(id)}/suggestions`, {
       limit: String(limit)
     });
+  }
+
+  /** Official release details (`/albums?id=`), including the release's ordered track list. */
+  public async getAlbum(id: string): Promise<ProviderResult<SaavnAlbum | null>> {
+    let reason: ProviderFailureReason = 'error';
+    for (const baseUrl of this.baseUrls) {
+      try {
+        const response = await this.request(baseUrl, 'albums', { id });
+        if (!response.ok) {
+          continue;
+        }
+        const body: unknown = await response.json();
+        const album = parseAlbumResponse(body);
+        if (album) {
+          return { ok: true, data: album };
+        }
+      } catch (error) {
+        reason = isAbortError(error) ? 'timeout' : 'error';
+      }
+    }
+    return { ok: false, data: null, reason };
   }
 
   /** Artist search (`/search/artists`): id, name and a real photo per match. */
@@ -254,6 +280,38 @@ function parseSongResponse(body: unknown): SaavnSong | null {
   }
 
   return null;
+}
+
+function parseAlbumResponse(body: unknown): SaavnAlbum | null {
+  if (!isRecord(body) || body.success !== true || body.data === undefined || body.data === null) {
+    return null;
+  }
+
+  const candidates = Array.isArray(body.data)
+    ? body.data
+    : isRecord(body.data) && Array.isArray(body.data.results)
+      ? body.data.results
+      : [body.data];
+  const payload = candidates.find(isRecord);
+  if (!payload) {
+    return null;
+  }
+
+  const album = isRecord(payload.album) ? payload.album : payload;
+  const songs = Array.isArray(payload.songs)
+    ? payload.songs
+    : Array.isArray(album.songs)
+      ? album.songs
+      : null;
+  if (!songs) {
+    return null;
+  }
+
+  return {
+    ...payload,
+    ...album,
+    songs: songs.filter(isRecord).map((song) => song as SaavnSong)
+  } as SaavnAlbum;
 }
 
 function isSongRecord(value: JsonRecord): boolean {

@@ -24,8 +24,10 @@ export function normalizeSong(
   const duration = toNonNegativeNumber(raw.duration);
   const playCount = source === 'Gaana' ? 0 : parsePlayCount(raw.playCount ?? raw.play_count);
   const album = getAlbum(raw);
+  const albumId = source === 'Saavn' ? getAlbumId(raw) : null;
   const optional = {
-    ...(raw.language ? { language: decodeHtml(raw.language) } : {})
+    ...(raw.language ? { language: decodeHtml(raw.language) } : {}),
+    ...(albumId ? { albumId } : {})
   };
 
   return {
@@ -259,6 +261,11 @@ function getAlbum(raw: SaavnSong): string | null {
     return raw.album.trim() || null;
   }
   return raw.album?.name?.trim() || null;
+}
+
+function getAlbumId(raw: SaavnSong): string | null {
+  const value = raw.albumId ?? (typeof raw.album === 'object' && raw.album !== null ? raw.album.id : undefined);
+  return value === undefined || String(value).trim() === '' ? null : String(value).trim();
 }
 
 function pickAsset(

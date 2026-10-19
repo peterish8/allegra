@@ -203,6 +203,30 @@ export class CatalogService {
     return songs.filter((song): song is UnifiedSong => song !== null);
   }
 
+  /** Full playable track list for an official Saavn album, in the catalog's release order. */
+  public async getAlbum(id: string): Promise<UnifiedSong[]> {
+    const key = cacheKey('album', 'v1', id);
+    const cached = await this.cache.get<UnifiedSong[]>(key);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.call(this.saavnBreaker, () => this.saavn.getAlbum(id));
+    if (!result.ok) {
+      throw unavailable(result.reason);
+    }
+    if (!result.data) {
+      throw new NotFoundError();
+    }
+
+    const tracks = normalizeMany([...(result.data.songs ?? [])], 'Saavn');
+    if (tracks.length === 0) {
+      throw new NotFoundError();
+    }
+    await this.cache.set(key, tracks, 21_600);
+    return tracks;
+  }
+
   /**
    * Songs like this one. With a language setting, only those languages; when that leaves the list
    * short (a Tamil song's suggestions for a Hindi-only listener), it is topped up with popular songs

@@ -1181,6 +1181,12 @@ body::before { display: none; }
   padding-top: 12px;
 }
 
+.album-tracklist__status {
+  padding: 18px 10px;
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
 .album-track {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 40px;

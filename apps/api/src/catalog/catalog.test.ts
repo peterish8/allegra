@@ -80,6 +80,27 @@ test('search caches results and does not leak provider fields', async () => {
   assert.deepEqual(first, second);
 });
 
+test('official album tracks keep release order and are cached', async () => {
+  const urls: string[] = [];
+  const tracks = [
+    { ...saavnSong, id: 'track-1', name: 'Opening track', album: { id: 'album-1', name: 'Official album' } },
+    { ...saavnSong, id: 'track-2', name: 'Closing track', album: { id: 'album-1', name: 'Official album' } }
+  ];
+  const service = catalog(async (input) => {
+    urls.push(String(input));
+    return json({ success: true, data: { id: 'album-1', name: 'Official album', songs: tracks } });
+  });
+
+  const first = await service.getAlbum('album-1');
+  const second = await service.getAlbum('album-1');
+
+  assert.deepEqual(first.map((track) => track.id), ['track-1', 'track-2']);
+  assert.equal(first[0]?.albumId, 'album-1');
+  assert.deepEqual(second, first);
+  assert.equal(urls.length, 1);
+  assert.equal(urls[0], 'https://saavn.example/api/albums?id=album-1');
+});
+
 test('Gaana catalog rows use a provider-qualified stream URL and ref lookup stays on Gaana', async () => {
   const urls: string[] = [];
   const service = catalog(async (input) => {

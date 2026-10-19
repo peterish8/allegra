@@ -78,6 +78,26 @@ test('hex apostrophe decoding is distinct from decimal', () => {
   assert.equal(song?.title, "It's Time");
 });
 
+test('Saavn rows retain their official album ID and Gaana rows do not', () => {
+  const saavn = normalizeSong({
+    id: 'saavn-track',
+    name: 'Saavn track',
+    primaryArtists: 'Artist',
+    album: { id: 123, name: 'Official album' },
+    downloadUrl: [{ quality: '320kbps', url: 'https://audio/saavn.mp4' }]
+  }, 'Saavn');
+  const gaana = normalizeSong({
+    id: 'gaana-track',
+    name: 'Gaana track',
+    primaryArtists: 'Artist',
+    album: { id: 456, name: 'Gaana album' },
+    downloadUrl: [{ quality: '320kbps', url: 'https://audio/gaana.mp4' }]
+  }, 'Gaana');
+
+  assert.equal(saavn?.albumId, '123');
+  assert.equal(gaana?.albumId, undefined);
+});
+
 test('Gaana play counts are always zero and songs without audio are dropped', () => {
   const song = normalizeSong({
     id: 'gaana',

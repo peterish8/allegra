@@ -68,6 +68,19 @@ export function catalogRouter(catalog: CatalogService): Router {
     }
   });
 
+  router.get('/albums/:id', async (request, response) => {
+    const id = boundedString(request.params.id);
+    if (!id) {
+      response.status(400).json({ success: false, data: null, error: "Something's missing from that request." });
+      return;
+    }
+    try {
+      sendSuccess(response, await catalog.getAlbum(id));
+    } catch (error) {
+      sendFailure(response, error);
+    }
+  });
+
   router.get('/songs', async (request, response) => {
     const ids = queryString(request.query.ids)?.split(',').map((id) => id.trim()).filter(Boolean) ?? [];
     if (ids.length === 0 || ids.length > 50) {

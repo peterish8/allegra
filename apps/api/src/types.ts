@@ -5,6 +5,8 @@ export interface UnifiedSong {
   readonly title: string;
   readonly artist: string;
   readonly album?: string;
+  /** Saavn's official release ID, when the source supplies one. */
+  readonly albumId?: string;
   readonly artwork: string;
   readonly streamUrl: string;
   readonly duration: number;

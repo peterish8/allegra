@@ -14,6 +14,7 @@ import { itemVariants, motionTokens, pageVariants, spring } from '../motion';
 interface AlbumPageProps {
   readonly seed: UnifiedSong;
   readonly tracks: UnifiedSong[];
+  readonly loading: boolean;
   readonly palette: Palette;
   readonly currentSongId: string | null;
   readonly isPlaying: boolean;
@@ -33,6 +34,7 @@ interface AlbumPageProps {
 export function AlbumPage({
   seed,
   tracks,
+  loading,
   palette,
   currentSongId,
   isPlaying,
@@ -79,13 +81,13 @@ export function AlbumPage({
           <p className="album-hero__artist">{seed.artist}</p>
           <p className="album-hero__meta">
             {yearGuess ? `${yearGuess} · ` : ''}
-            {tracks.length} {tracks.length === 1 ? 'Song' : 'Songs'} · {formatAlbumDuration(totalDuration)}
+            {loading ? 'Loading official tracks…' : `${tracks.length} ${tracks.length === 1 ? 'Song' : 'Songs'} · ${formatAlbumDuration(totalDuration)}`}
           </p>
           <div className="album-hero__actions">
-            <TactileButton variant="primary" icon={Play} onClick={onPlayAll}>
+            <TactileButton variant="primary" icon={Play} onClick={onPlayAll} disabled={loading}>
               Play
             </TactileButton>
-            <TactileButton variant="secondary" icon={Shuffle} onClick={onShuffle}>
+            <TactileButton variant="secondary" icon={Shuffle} onClick={onShuffle} disabled={loading}>
               Shuffle
             </TactileButton>
             <IconButton
@@ -98,8 +100,8 @@ export function AlbumPage({
         </div>
       </motion.section>
 
-      <motion.section className="album-tracklist" variants={itemVariants} aria-label="Album tracks">
-        {tracks.map((track, index) => {
+      <motion.section className="album-tracklist" variants={itemVariants} aria-label="Album tracks" aria-busy={loading}>
+        {loading ? <p className="album-tracklist__status" role="status">Loading the official album track list…</p> : tracks.map((track, index) => {
           const current = track.id === currentSongId;
           const playing = current && isPlaying;
           return (

@@ -216,6 +216,11 @@ export async function fetchArtist(name: string, signal?: AbortSignal): Promise<A
   return request(`/api/artists/${encodeURIComponent(name)}`, { signal });
 }
 
+/** Full playable track list for an official Saavn release, in release order. */
+export async function fetchAlbum(id: string, signal?: AbortSignal): Promise<UnifiedSong[]> {
+  return request(`/api/albums/${encodeURIComponent(id)}`, { signal });
+}
+
 /** Photos for a list of artist names (max 12). Names without a photo are omitted. */
 export async function fetchArtistFaces(names: readonly string[], signal?: AbortSignal): Promise<ArtistSummary[]> {
   return request(`/api/artists/faces?names=${encodeURIComponent(names.join(','))}`, { signal });

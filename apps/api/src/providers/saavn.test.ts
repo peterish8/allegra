@@ -70,6 +70,24 @@ test('Saavn song and suggestions calls parse their response shapes', async () =>
   ]);
 });
 
+test('Saavn album lookup returns the official release and its ordered songs', async () => {
+  const tracks = [song, { ...song, id: 'song-2', name: 'Second track' }];
+  let requestedUrl = '';
+  const provider = new SaavnProvider({
+    baseUrl: 'https://saavn.example/api',
+    fetchImpl: async (input) => {
+      requestedUrl = String(input);
+      return response({ success: true, data: { id: 'album-1', name: 'Official album', songs: tracks } });
+    }
+  });
+
+  const result = await provider.getAlbum('album-1');
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data?.songs, tracks);
+  assert.equal(requestedUrl, 'https://saavn.example/api/albums?id=album-1');
+});
+
 test('Saavn accepts live song and suggestion payloads with data arrays', async () => {
   const provider = new SaavnProvider({
     baseUrl: 'https://saavn.example/api',
