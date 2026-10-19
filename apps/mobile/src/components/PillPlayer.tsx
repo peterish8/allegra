@@ -41,7 +41,7 @@ import { useArtworkPalette } from './allegra/useArtworkPalette';
 import { pillTint } from './allegra/palette';
 import { Motion } from '../constants/allegraTheme';
 import { positionSV, durationSV } from '../playback/positionBus';
-import { isLowEndDevice } from '../utils/performanceTier';
+import { useLowEndDevice } from '../utils/performanceTier';
 import GlowBackground from './player/GlowBackground';
 import LiquidGlass, { GlassShadow } from './allegra/LiquidGlass';
 import { useGlowColors } from './player/useGlowColors';
@@ -62,7 +62,6 @@ const COOKIE = 40;
 /** The artwork on the liquid-glass pill: a small rounded square, as in Apple Music. */
 const GLASS_ART = 40;
 const SPIN_MS = 14000;
-const SPIN = !isLowEndDevice();
 /** The pill is gone once the player sheet is this fraction open: it fades over the first quarter. */
 const HAND_OVER_AT = 0.25;
 
@@ -164,9 +163,9 @@ const PillPlayer: React.FC<PillPlayerProps> = ({
 
   // ── Disc: turns slowly while playing and seen, holds its angle otherwise ──
   const spin = useSharedValue(0);
-  const spinning = SPIN && playing && shown && appActive;
+  const canSpin = !useLowEndDevice();
+  const spinning = canSpin && playing && shown && appActive;
   useEffect(() => {
-    if (!SPIN) return;
     if (spinning) {
       const from = spin.value % 360;
       spin.value = from;

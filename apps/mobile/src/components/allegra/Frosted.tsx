@@ -15,7 +15,7 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuraPalette, hexToRgb } from './palette';
-import { isLowEndDevice } from '../../utils/performanceTier';
+import { useLowEndDevice } from '../../utils/performanceTier';
 
 const rgba = (hex: string, alpha: number): string => {
   const [r, g, b] = hexToRgb(hex).map(c => Math.round(c * 255));
@@ -35,13 +35,13 @@ interface FrostedProps {
   edge?: boolean;
 }
 
-// A live Android blur re-renders whatever moves underneath it every frame. On
-// low-end phones the glass is a deeper tint instead — same material, no blur.
-const LIVE_BLUR = !isLowEndDevice();
-
-export const Frosted: React.FC<FrostedProps> = ({ radius, intensity = 60, palette, tint = 0.42, edge = true }) => (
+export const Frosted: React.FC<FrostedProps> = ({ radius, intensity = 60, palette, tint = 0.42, edge = true }) => {
+  // A live Android blur re-renders whatever moves underneath it every frame. On
+  // low-end phones the glass is a deeper tint instead — same material, no blur.
+  const liveBlur = !useLowEndDevice();
+  return (
   <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: 'hidden' }]}>
-    {LIVE_BLUR ? (
+    {liveBlur ? (
       <BlurView
         intensity={intensity}
         tint="dark"
@@ -49,7 +49,7 @@ export const Frosted: React.FC<FrostedProps> = ({ radius, intensity = 60, palett
         style={StyleSheet.absoluteFill}
       />
     ) : null}
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(14, 16, 20, ${LIVE_BLUR ? tint : Math.min(0.9, tint + 0.4)})` }]} />
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(14, 16, 20, ${liveBlur ? tint : Math.min(0.9, tint + 0.4)})` }]} />
     {palette ? (
       <LinearGradient
         colors={[rgba(palette.primary, 0.2), rgba(palette.secondary, 0.08), rgba(palette.tertiary, 0.14)]}
@@ -70,7 +70,8 @@ export const Frosted: React.FC<FrostedProps> = ({ radius, intensity = 60, palett
       </View>
     ) : null}
   </View>
-);
+  );
+};
 
 const styles = StyleSheet.create({
   edge: {

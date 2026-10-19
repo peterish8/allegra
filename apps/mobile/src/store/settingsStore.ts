@@ -34,6 +34,12 @@ export const isCardPlayerBackground = (value: PlayerBackground): boolean => valu
 export type AppBackground = 'shader' | 'glass' | 'glow';
 
 /**
+ * Settings → Reduce effects. 'auto' lets the phone decide (utils/performanceTier: old CPU cores, low memory, or
+ * frames that kept missing); 'on' always takes the light path; 'off' keeps the full visuals even on a slow phone.
+ */
+export type ReduceEffects = 'auto' | 'on' | 'off';
+
+/**
  * Stored settings from before "Glow animated" was retired still say 'glow';
  * the closest look left is Apple + glow. Anything unknown gets the default.
  */
@@ -182,6 +188,9 @@ interface SettingsState {
   luvsStartAtHook: boolean;
   setLuvsStartAtHook: (enabled: boolean) => void;
 
+  reduceEffects: ReduceEffects;
+  setReduceEffects: (v: ReduceEffects) => void;
+
   resetToDefaults: () => void;
 }
 
@@ -227,6 +236,7 @@ const DEFAULT_SETTINGS = {
   appleMusicToken: '',
   tidalToken: '',
   luvsStartAtHook: true,
+  reduceEffects: 'auto' as ReduceEffects,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -315,6 +325,8 @@ export const useSettingsStore = create<SettingsState>()(
       setTidalToken: (tidalToken) => set({ tidalToken: tidalToken.trim() }),
       luvsStartAtHook: true,
       setLuvsStartAtHook: (luvsStartAtHook) => set({ luvsStartAtHook }),
+      reduceEffects: 'auto',
+      setReduceEffects: (reduceEffects) => set({ reduceEffects }),
     }),
     {
       name: 'lyricflow-settings',
