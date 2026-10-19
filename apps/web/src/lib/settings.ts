@@ -10,10 +10,13 @@ export type LyricsSize = 'small' | 'medium' | 'large';
 export type LyricsHighlight = 'letters' | 'lines';
 /** `auto` tries the on-device model and falls back; `basic` always uses the light remover. */
 export type KaraokeMode = 'auto' | 'basic';
+/** Ambient field behind the app shell. */
+export type AppBackground = 'shader' | 'glow';
 
 export interface Settings {
   /** The shader behind the shell. Off keeps a still frame (the header pause button, remembered). */
   readonly animatedBackground: boolean;
+  readonly appBackground: AppBackground;
   /** When a song came from a search or a short list, keep queueing similar songs after it. */
   readonly autoplaySimilar: boolean;
   readonly lyricsSize: LyricsSize;
@@ -39,6 +42,7 @@ export const MAX_LYRICS_OFFSET_SECONDS = 5;
 
 export const DEFAULT_SETTINGS: Settings = {
   animatedBackground: true,
+  appBackground: 'shader',
   autoplaySimilar: true,
   lyricsSize: 'medium',
   lyricsHighlight: 'letters',
@@ -91,6 +95,7 @@ export function parseSettings(raw: string | null): Settings {
   }
   return {
     animatedBackground: flag(stored.animatedBackground, DEFAULT_SETTINGS.animatedBackground),
+    appBackground: oneOf(stored.appBackground, ['shader', 'glow'], DEFAULT_SETTINGS.appBackground),
     autoplaySimilar: flag(stored.autoplaySimilar, DEFAULT_SETTINGS.autoplaySimilar),
     lyricsSize: oneOf(stored.lyricsSize, ['small', 'medium', 'large'], DEFAULT_SETTINGS.lyricsSize),
     lyricsHighlight: oneOf(stored.lyricsHighlight, ['letters', 'lines'], DEFAULT_SETTINGS.lyricsHighlight),

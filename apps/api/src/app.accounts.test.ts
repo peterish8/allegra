@@ -134,9 +134,10 @@ test('liking and playing teach the taste profile, and onboarding seeds it', asyn
   assert.equal(learned.topArtists[0].name, 'Arijit Singh');
   assert.equal(learned.languages[0].name, 'hindi');
 
-  const seeded = await request(server).post('/api/me/taste/seed').set(auth).send({ artists: ['Anirudh Ravichander'], languages: ['tamil'] });
+  const seeded = await request(server).post('/api/me/taste/seed').set(auth).send({ artists: ['Anirudh Ravichander'], languages: ['tamil'], genres: ['southindian', 'invalid', 'southindian'] });
   assert.equal(seeded.body.data.onboarded, true);
   assert.equal(seeded.body.data.topArtists[0].name, 'Anirudh Ravichander');
+  assert.deepEqual(seeded.body.data.genres, ['southindian']);
 });
 
 test('a share link is public, live, revocable, and can be saved as a copy', async () => {

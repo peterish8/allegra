@@ -37,6 +37,7 @@ const tasteEntry = v.object({ name: v.string(), score: v.number() });
 const taste = v.object({
   artists: v.array(tasteEntry),
   languages: v.array(tasteEntry),
+  genres: v.optional(v.array(v.string())),
   signals: v.number(),
   onboarded: v.boolean(),
   updatedAt: v.string()

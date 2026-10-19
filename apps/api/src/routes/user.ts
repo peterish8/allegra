@@ -8,7 +8,7 @@ import { parseLibraryOps, parseSentAt, type PlaylistCover } from '../shared/libr
 import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef.js';
 import type { ListenerActions } from '../user/actions.js';
 import { isPersonalised, type UserData } from '../user/store.js';
-import { applySeeds, tasteSummary } from '../user/taste.js';
+import { applySeeds, normalizeGenreIds, tasteSummary } from '../user/taste.js';
 import { callerProfile, sendUnauthorized } from './auth.js';
 import { asRecord, positiveInt, sendFailure, sendSuccess, sanitizeSettings, songId } from './common.js';
 
@@ -270,13 +270,14 @@ export function userRouter(auth: AuthService, catalog: CatalogService, actions: 
     const body = asRecord(request.body);
     const artists = stringList(body.artists, 30);
     const languages = stringList(body.languages, 8);
+    const genres = normalizeGenreIds(stringList(body.genres, 10));
     // Onboarding's language picks become the language setting; Settings changes it later.
     const picked = parseLanguages(languages);
     try {
       const saved = await auth.updateProfile(user.userId, (current) => ({
         ...current,
         // With personalisation off only the language choice is kept; no taste is built.
-        ...(isPersonalised(current) ? { taste: applySeeds(current.taste, artists, languages) } : {}),
+        ...(isPersonalised(current) ? { taste: applySeeds(current.taste, artists, languages, new Date(), genres) } : {}),
         settings: picked.length > 0 ? { ...current.settings, languages: picked.join(',') } : current.settings
       }), user);
       sendSuccess(response, tasteSummary(saved?.taste));

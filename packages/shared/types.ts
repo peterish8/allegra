@@ -1,4 +1,5 @@
 import type { Consent } from './legal';
+import type { MusicGenreId } from './genres';
 import type { LyricWord } from './wordSync';
 
 export interface UnifiedSong {
@@ -87,6 +88,8 @@ export interface AccountProfile {
 export interface TasteSummary {
   readonly topArtists: { readonly name: string; readonly score: number }[];
   readonly languages: { readonly name: string; readonly score: number }[];
+  /** Explicit genre picks from onboarding, kept stable as catalogue ids. */
+  readonly genres?: readonly MusicGenreId[];
   readonly signals: number;
   /** False until they pick favourites or listen enough for us to know. */
   readonly onboarded: boolean;

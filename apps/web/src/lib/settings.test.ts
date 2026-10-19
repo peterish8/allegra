@@ -27,6 +27,7 @@ test('valid fields survive, invalid ones fall back one by one', () => {
       karaokeMode: 'ai-only',
       karaokeMix: { vocals: 0.4, instruments: 3 },
       animatedBackground: 'no',
+      appBackground: 'invalid',
       extra: 'dropped'
     })
   );
@@ -35,7 +36,12 @@ test('valid fields survive, invalid ones fall back one by one', () => {
   assert.equal(parsed.karaokeMode, DEFAULT_SETTINGS.karaokeMode);
   assert.deepEqual(parsed.karaokeMix, { vocals: 0.4, instruments: 1 });
   assert.equal(parsed.animatedBackground, true);
+  assert.equal(parsed.appBackground, 'shader');
   assert.equal('extra' in parsed, false);
+});
+
+test('the glow background choice is saved and restored', () => {
+  assert.equal(parseSettings(JSON.stringify({ appBackground: 'glow' })).appBackground, 'glow');
 });
 
 test('a theme saved by an older build is dropped: the site is dark only', () => {

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 
+import { MUSIC_GENRES } from '@shared/genres';
+
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { fetchArtistFaces } from '../lib/api';
 import type { Palette } from '../lib/palette';
@@ -16,23 +18,10 @@ import { MusicFlowShader } from './shader/MusicFlowShader';
  * artists, then languages — after Watermelon's "Onboarding Setup" card (step counter,
  * dashed divider, chips that pop a check) and "Emoji Spree Choice Chips" (the glyph-led
  * bubble chip). Genres are a pure client-side accelerator: picking one pre-selects a
- * few matching artists for the next step, but only artists + languages are ever sent
- * to the server, so no schema or contract change was needed for this step to exist.
+ * few matching artists for the next step. Artist and language signals continue to learn
+ * from listening; the selected genre ids remain as the listener's explicit preferences.
  * From here on taste is learned from listening, so this is only ever asked once.
  */
-
-const GENRES = [
-  { id: 'bollywood', label: 'Bollywood', emoji: '🎬', seedArtists: ['Arijit Singh', 'Shreya Ghoshal', 'Pritam'] },
-  { id: 'pop', label: 'Pop', emoji: '🎤', seedArtists: ['Taylor Swift', 'Dua Lipa', 'Ed Sheeran'] },
-  { id: 'hiphop', label: 'Hip-Hop', emoji: '🎧', seedArtists: ['Badshah'] },
-  { id: 'punjabi', label: 'Punjabi', emoji: '🥁', seedArtists: ['Diljit Dosanjh', 'Badshah'] },
-  { id: 'indie', label: 'Indie & Alt', emoji: '🌙', seedArtists: ['Sid Sriram'] },
-  { id: 'electronic', label: 'Electronic', emoji: '⚡', seedArtists: [] },
-  { id: 'rnb', label: 'R&B & Soul', emoji: '💫', seedArtists: ['The Weeknd', 'Sid Sriram'] },
-  { id: 'retro', label: 'Retro classics', emoji: '📻', seedArtists: ['Kishore Kumar', 'Lata Mangeshkar', 'Sonu Nigam'] },
-  { id: 'southindian', label: 'Tamil & Telugu', emoji: '🪘', seedArtists: ['Anirudh Ravichander', 'Sid Sriram', 'A. R. Rahman'] },
-  { id: 'acoustic', label: 'Acoustic', emoji: '🎸', seedArtists: ['Ed Sheeran', 'Atif Aslam'] }
-] as const;
 
 // Cycled per genre, in JS form of the same tokens DESIGN.md defines: --wave, --accent, --vibe-blue, --accent-bright, --accent-deep.
 const GENRE_ACCENTS = ['#d9e66a', '#ee6b5f', '#7bafd4', '#ffaaa0', '#783e44'] as const;
@@ -59,7 +48,7 @@ const TOTAL_STEPS = 3;
 
 interface TasteOnboardingProps {
   readonly open: boolean;
-  readonly onSubmit: (artists: string[], languages: string[]) => Promise<void>;
+  readonly onSubmit: (artists: string[], languages: string[], genres: string[]) => Promise<void>;
   readonly onSkip: () => void;
 }
 
@@ -157,7 +146,7 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
   };
 
   const continueFromGenres = (): void => {
-    const seeded = GENRES.filter((genre) => genres.includes(genre.id)).flatMap((genre) => genre.seedArtists);
+    const seeded = MUSIC_GENRES.filter((genre) => genres.includes(genre.id)).flatMap((genre) => genre.seedArtists);
     setArtists((current) => [...current, ...seeded.filter((name) => !current.includes(name))]);
     setStep(2);
   };
@@ -166,7 +155,7 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(artists, languages.map((item) => item.toLocaleLowerCase()));
+      await onSubmit(artists, languages.map((item) => item.toLocaleLowerCase()), genres);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not save that. Try again.');
       setBusy(false);
@@ -212,7 +201,7 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
               <AnimatePresence mode="wait" initial={false}>
                 {step === 1 ? (
                   <motion.div key="genres" className="taste-chips taste-bubbles" initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: motionTokens.duration.base, ease: motionTokens.ease.decelerate }}>
-                    {GENRES.map((genre, index) => {
+                    {MUSIC_GENRES.map((genre, index) => {
                       const active = genres.includes(genre.id);
                       const accent = GENRE_ACCENTS[index % GENRE_ACCENTS.length];
                       const palette = ONBOARDING_PALETTES[index % ONBOARDING_PALETTES.length];
@@ -274,7 +263,7 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
               </footer>
             </section>
 
-            <TastePreview step={step} genres={GENRES.filter((genre) => genres.includes(genre.id)).map((genre) => genre.label)} artists={artists} languages={languages} faces={faces} accent={lastAccent} reduced={Boolean(reduced)} />
+            <TastePreview step={step} genres={MUSIC_GENRES.filter((genre) => genres.includes(genre.id)).map((genre) => genre.label)} artists={artists} languages={languages} faces={faces} accent={lastAccent} reduced={Boolean(reduced)} />
           </motion.div>
         </div>
       ) : null}

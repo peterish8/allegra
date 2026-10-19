@@ -24,7 +24,7 @@ import { LEGAL_PATHS } from '@shared/legal';
 import { fetchAccountSettings, setPersonalization, fetchHealth } from '../lib/api';
 import { DEFAULT_KARAOKE_MIX, type KaraokeMix } from '../lib/karaokeMix';
 import { clearRoformerCache, detectLiveKaraokeCapabilities, roformerCacheBytes, type LiveKaraokeBackend } from '../lib/liveKaraoke';
-import { resetSettings, type KaraokeMode, type LyricsHighlight, type LyricsSize } from '../lib/settings';
+import { resetSettings, type AppBackground, type KaraokeMode, type LyricsHighlight, type LyricsSize } from '../lib/settings';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
 
 interface SettingsPageProps {
@@ -358,9 +358,18 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
       </Section>
 
       <Section id="settings-appearance" icon={<PaletteIcon size={18} />} title="Appearance" lead="The moving light behind the app.">
+        <Choice<AppBackground>
+          label="Background"
+          hint="Shader keeps the flowing field. Glow follows the playing cover across the top, then fades to black like the phone app."
+          value={settings.appBackground}
+          options={[{ value: 'shader', label: 'Shader' }, { value: 'glow', label: 'Glow' }]}
+          onChange={(appBackground) => update({ appBackground })}
+        />
         <Switch
           label="Animated background"
-          hint="The flowing light behind the app. Off saves battery on older devices. Your device’s reduce-motion setting is always respected."
+          hint={settings.appBackground === 'glow'
+            ? 'The aurora drifts gently and responds to music. Turn it off to hold the glow still. Your device’s reduce-motion setting is always respected.'
+            : 'The flowing light behind the app. Off saves battery on older devices. Your device’s reduce-motion setting is always respected.'}
           checked={settings.animatedBackground}
           onChange={(animatedBackground) => update({ animatedBackground })}
         />

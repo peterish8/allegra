@@ -261,11 +261,11 @@ fresh guest session.
 
 | Endpoint | Auth | Body → response |
 |---|---|---|
-| `GET /api/me/taste` | Bearer | → `{ topArtists: {name,score}[] (<=12), languages: {name,score}[] (<=5), signals: number, onboarded: boolean }` |
-| `POST /api/me/taste/seed` | Bearer | `{ artists: string[] (<=30), languages: string[] (<=8) }` → same as `GET`. Onboarding: strong weight, sets `onboarded: true`. |
+| `GET /api/me/taste` | Bearer | → `{ topArtists: {name,score}[] (<=12), languages: {name,score}[] (<=5), genres: MusicGenreId[] (<=10), signals: number, onboarded: boolean }` |
+| `POST /api/me/taste/seed` | Bearer | `{ artists: string[] (<=30), languages: string[] (<=8), genres?: MusicGenreId[] (<=10) }` → same as `GET`. Onboarding: strong weight, sets `onboarded: true`. Older clients may omit `genres`; older taste records read as an empty list. |
 | `POST /api/me/taste/signal` | Bearer | `{ songId, seconds }` or `{ songRef, song?, seconds }` → `204`. How long a song was really listened to: `<10 s` counts against the artist, most of a song counts for them. |
 
-Taste is also updated **automatically** by existing routes. Legacy songId writes resolve through the catalog; provider-aware writes include a validated `SongSnapshot`, so Gaana plays train the same account taste without a colliding bare ID. Recent rows retain the ref and snapshot for account history and recommendation seeds. A play adds +0.3 when `playDuration` is 0, else by listened time; a like adds +3; an unlike subtracts 2; a playlist add adds +2. Scores decay ×0.985 on every signal, so recent listening outweighs old. Artist credits: headline artist full weight, featured artists half. Recommendations consume this account taste context directly.
+`MusicGenreId` is one of `bollywood`, `pop`, `hiphop`, `punjabi`, `indie`, `electronic`, `rnb`, `retro`, `southindian`, or `acoustic`. Genre picks record the listener's explicit onboarding preferences; they are not inferred from or written by playback signals. Taste is also updated **automatically** by existing routes. Legacy songId writes resolve through the catalog; provider-aware writes include a validated `SongSnapshot`, so Gaana plays train the same account taste without a colliding bare ID. Recent rows retain the ref and snapshot for account history and recommendation seeds. A play adds +0.3 when `playDuration` is 0, else by listened time; a like adds +3; an unlike subtracts 2; a playlist add adds +2. Scores decay ×0.985 on every signal, so recent listening outweighs old. Artist credits: headline artist full weight, featured artists half. Recommendations consume this account taste context directly.
 
 ### Sharing a playlist
 

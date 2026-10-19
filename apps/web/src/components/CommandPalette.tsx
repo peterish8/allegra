@@ -231,7 +231,11 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     }
   };
 
-  const morph = reduced ? { duration: motionTokens.duration.instant } : spring.sheet;
+  // Keep the shared pill-to-sheet geometry in one clean pass; the corners settle with the panel
+  // instead of lingering in a soft capsule shape while the layout spring finishes.
+  const morph = reduced
+    ? { type: 'tween' as const, duration: motionTokens.duration.instant, ease: motionTokens.ease.standard }
+    : { type: 'tween' as const, duration: motionTokens.duration.slow, ease: motionTokens.ease.decelerate };
 
   return (
     <>

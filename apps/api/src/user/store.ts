@@ -37,6 +37,8 @@ export interface TasteEntry {
 export interface TasteProfile {
   readonly artists: TasteEntry[];
   readonly languages: TasteEntry[];
+  /** Explicit onboarding preferences; older profile rows may not have this field. */
+  readonly genres?: string[];
   /** How many signals have fed this profile; a cheap gauge of how much we know. */
   readonly signals: number;
   /** True once the listener picked favourites (or we have seen enough listening to skip asking). */

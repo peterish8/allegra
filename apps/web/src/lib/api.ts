@@ -543,8 +543,8 @@ export async function fetchTaste(signal?: AbortSignal): Promise<TasteSummary> {
   return request('/api/me/taste', { signal });
 }
 
-export async function seedTaste(artists: readonly string[], languages: readonly string[]): Promise<TasteSummary> {
-  return request('/api/me/taste/seed', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ artists, languages }) });
+export async function seedTaste(artists: readonly string[], languages: readonly string[], genres: readonly string[] = []): Promise<TasteSummary> {
+  return request('/api/me/taste/seed', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ artists, languages, genres }) });
 }
 
 /** How long a song was really listened to; the server counts it for or against the song's artist. */

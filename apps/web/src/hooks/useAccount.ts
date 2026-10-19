@@ -13,7 +13,7 @@ export interface AccountApi {
   /** Drops back to a fresh guest session. Called after Convex Auth signs the listener out. */
   readonly startGuest: () => Promise<void>;
   readonly rename: (displayName: string) => Promise<void>;
-  readonly seed: (artists: readonly string[], languages: readonly string[]) => Promise<void>;
+  readonly seed: (artists: readonly string[], languages: readonly string[], genres: readonly string[]) => Promise<void>;
 }
 
 /**
@@ -121,8 +121,8 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
     setProfile(await updateDisplayName(displayName));
   }, []);
 
-  const seed = useCallback(async (artists: readonly string[], languages: readonly string[]): Promise<void> => {
-    setTaste(await seedTaste(artists, languages));
+  const seed = useCallback(async (artists: readonly string[], languages: readonly string[], genres: readonly string[]): Promise<void> => {
+    setTaste(await seedTaste(artists, languages, genres));
     changed.current();
   }, []);
 
