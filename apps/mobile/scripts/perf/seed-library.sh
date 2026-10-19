@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Puts 500 short generated songs ("Perf Song 001".."500", 37 artists) on a device and imports them into the
-# installed app's library through Settings → Add songs from this phone, for low-end-baseline.sh. Needs ffmpeg.
+# Puts 500 short generated songs on a device and imports them into the installed app's library through
+# Settings → Add songs from this phone, for low-end-baseline.sh. The scan names each song after its file
+# ("perf_001".."perf_500"). Needs ffmpeg.
 #
 #   seed-library.sh <serial> <work-dir>
 set -u
@@ -41,10 +42,11 @@ if [ "$(adb shell ls /sdcard/Music/perf 2>/dev/null | wc -l)" -lt 500 ]; then
   adb shell content call --uri content://media --method scan_volume --arg external_primary >/dev/null
 fi
 
-adb shell pm grant "$PKG" android.permission.READ_MEDIA_AUDIO 2>/dev/null
+# expo-media-library asks for photos and videos as well as audio.
+for p in READ_MEDIA_AUDIO READ_MEDIA_IMAGES READ_MEDIA_VIDEO; do adb shell pm grant "$PKG" "android.permission.$p" 2>/dev/null; done
 link "lyricflow://open/settings"
 sleep 3
 tap_text 'Library and data' && sleep 1
 tap_text 'Add songs from this phone' && sleep 4
-tap_text 'Import [0-9]*' && sleep 15
-echo "seeded: open Library and check for Perf Song rows"
+tap_text 'Import [0-9]*' && sleep 90
+echo "seeded: open Library and check for perf_NNN rows (the import adds them one by one)"

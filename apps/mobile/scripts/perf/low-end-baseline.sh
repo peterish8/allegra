@@ -5,7 +5,7 @@
 #   low-end-baseline.sh <serial> <out-dir> [label] [runs]
 #
 # EMULATE_M31=1 sets the emulator's screen to the Galaxy M31's 1080x2340 at 420 dpi for the run, so the app draws
-# the same number of pixels. The library needs songs titled "Perf Song NNN" (seed-library.sh puts 500 on a device).
+# the same number of pixels. The library needs songs titled "perf_NNN" (seed-library.sh puts 500 on a device).
 # Output: <out-dir>/<scenario>.gfxinfo.txt (framestats) and rows appended to <out-dir>/summary.tsv.
 set -u
 SERIAL="${1:?serial}"
@@ -93,9 +93,17 @@ teardown() {
 }
 trap teardown EXIT
 
-# Taps the $1th library row on screen.
+# Taps the $1th song row on screen. The deck above the list shows the same titles, so the list is dragged up
+# first and only rows between the status bar and the tab bar count.
 play_library_row() {
-  ui_dump && b=$(text_bounds 'Perf Song [0-9]*' "$1") && [ -n "$b" ] && tap_bounds "$b"
+  adb shell input swipe 540 1700 540 500 700
+  sleep 1.5
+  ui_dump || return 1
+  local b
+  b=$(grep -o 'text="perf_[0-9]*"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' "$OUT/ui.xml" \
+    | grep -o 'bounds="[^"]*"' | grep -o '[0-9][0-9]*' | paste - - - - \
+    | awk '$2 > 300 && $4 < 1900' | sed -n "${1}p")
+  [ -n "$b" ] && tap_bounds "$b"
 }
 
 setup
@@ -142,10 +150,11 @@ for ((RUN = 1; RUN <= RUNS; RUN++)); do
     pause_music
     ui_dump && b=$(class_bounds 'android.widget.EditText') && tap_bounds "$b"
     sleep 0.5
-    adb shell input text "Perf%sSong%s04$try"
+    adb shell input text "perf_04$try"
     sleep 3
     adb logcat -c
-    ui_dump && b=$(text_bounds "Perf Song 04$try") && tap_bounds "$b"
+    # The first match is the search field itself, which holds the typed title.
+    ui_dump && b=$(text_bounds "perf_04$try" 2) && tap_bounds "$b"
     sleep 5
     ms=$(tap_to_audible); printf '%s\t%s\tsearch\t%s\t%s\n' "$LABEL" "$RUN" "$try" "$ms" | tee -a "$TAPS"
     adb shell input keyevent KEYCODE_BACK
