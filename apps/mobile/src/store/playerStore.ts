@@ -579,7 +579,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     songDirection = 0;
     const startSongId = songs[startIndex]?.id;
     pausedLoadSongId = startSongId && !autoplay ? startSongId : null;
-    set({ 
+
+    // Android: the engine takes the whole queue and starts the song. (`loadSong` is not used here: it clears
+    // `loadedAudioId`, and a load of one song would replace the queue the engine is being given.) It hears about
+    // the queue before `set` below: that re-renders every screen watching the player, and the tap's audio should not
+    // wait behind it.
+    const startSong = songs[startIndex];
+    const native = !!startSong?.audioUri && usesNativeQueue();
+    if (native) {
+      // The engine starts the new queue itself (`setQueue(…, play)`). A play sent first would resume the old song
+      // for the moment before the new queue lands (heard as a blip of the last song after a pause); a pause still
+      // goes first, so nothing plays on while a paused queue is put in.
+      if (!autoplay) get().requestPlayback(false);
+      fire(pushQueue(playlistId, songs, startIndex, autoplay));
+    }
+
+    set({
       playlistQueue: songs,
       currentPlaylistId: playlistId,
       currentQueueIndex: startIndex,
@@ -590,17 +605,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (__DEV__) {
       console.log(`[PLAYER] Set playlist queue: ${playlistId}, ${songs.length} songs, starting at ${startIndex}`);
     }
-    
-    // Android: the engine takes the whole queue and starts the song. (`loadSong` is not used here: it clears
-    // `loadedAudioId`, and a load of one song would replace the queue the engine is being given.)
-    const startSong = songs[startIndex];
-    if (startSong?.audioUri && usesNativeQueue()) {
+
+    if (native) {
       noteTrackChange(startSong);
-      // The engine starts the new queue itself (`setQueue(…, play)`). A play sent first would resume the old song
-      // for the moment before the new queue lands (heard as a blip of the last song after a pause); a pause still
-      // goes first, so nothing plays on while a paused queue is put in.
-      if (!autoplay) get().requestPlayback(false);
-      fire(pushQueue(playlistId, songs, startIndex, autoplay));
       return;
     }
 
@@ -684,21 +691,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (ownedRoomRoutingDisabled === 0 && ownedRoomRouter?.next(automatic)) return;
     const state = get();
 
-    // Android: the engine owns what plays next. The screen moves at once (it knows the order: its mirror is
-    // the engine's queue in play order), the engine does the skip, and the settled state is read afterwards.
+    // Android: the engine owns what plays next. The engine is told first, then the screen moves (it knows the
+    // order: its mirror is the engine's queue in play order), and the settled state is read afterwards.
     if (usesNativeQueue()) {
+      fire(nativeQueue.next().then(() => scheduleReconcile()));
       const queue = state.playlistQueue;
-      if (!queue || queue.length === 0) {
-        fire(nativeQueue.next().then(() => scheduleReconcile()));
-        return;
-      }
+      if (!queue || queue.length === 0) return;
       songDirection = 1;
       const nextIndex = (state.currentQueueIndex + 1) % queue.length;
       const nextSong = queue[nextIndex];
       pausedLoadSongId = null;
       set({ currentQueueIndex: nextIndex, currentSong: nextSong, currentSongId: nextSong.id, loadedAudioId: nextSong.id });
       noteTrackChange(nextSong);
-      fire(nativeQueue.next().then(() => scheduleReconcile()));
       return;
     }
 
@@ -760,17 +764,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (usesNativeQueue()) {
       const queue = state.playlistQueue;
       const repeat = usePlaybackModesStore.getState().repeatMode;
-      if (!queue || queue.length === 0 || previousWillRestart(playerControls.getPosition(), state.currentQueueIndex, repeat)) {
-        fire(nativeQueue.previous().then(() => scheduleReconcile()));
-        return;
-      }
+      const restart = !queue || queue.length === 0 || previousWillRestart(playerControls.getPosition(), state.currentQueueIndex, repeat);
+      fire(nativeQueue.previous().then(() => scheduleReconcile()));
+      if (restart) return;
       songDirection = -1;
       const prevIndex = (state.currentQueueIndex - 1 + queue.length) % queue.length;
       const prevSong = queue[prevIndex];
       pausedLoadSongId = null;
       set({ currentQueueIndex: prevIndex, currentSong: prevSong, currentSongId: prevSong.id, loadedAudioId: prevSong.id });
       noteTrackChange(prevSong);
-      fire(nativeQueue.previous().then(() => scheduleReconcile()));
       return;
     }
 
