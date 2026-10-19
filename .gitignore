@@ -37,3 +37,7 @@ replay_pid*
 .planning/**/*.mp4
 .planning/**/*.xml
 .planning/navigation-audit/fixed-probe/
+
+# Build output: the desktop shell's cargo target and the native libraries llama.rn copies into the APK assets
+apps/desktop/target/
+apps/mobile/android/app/src/main/assets/ggml-hexagon/
