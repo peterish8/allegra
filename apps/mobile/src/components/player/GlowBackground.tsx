@@ -22,9 +22,6 @@ import { useVisualBudget } from '../../hooks/useVisualBudget';
 
 import { Blob, BASE, CYCLE_S, FADE_MS, MINI_BLOBS, oscillate, PLAYER_BLOBS, rgba, rotatedColorAt, toRgb } from './glowMath';
 
-/** Surfaces bigger than this (points squared) are drawn at a reduced size. */
-const LARGE_AREA = 90_000;
-
 const styles = StyleSheet.create({
   clip: { overflow: 'hidden' },
 });
@@ -106,10 +103,11 @@ const GlowBackground: React.FC<GlowBackgroundProps> = ({ colors, variant = 'play
 
   const blobs = variant === 'mini' ? MINI_BLOBS : PLAYER_BLOBS;
   const { width, height } = size;
-  // The glows are soft gradients, so a big surface is drawn small and scaled up
-  // (about one device pixel per point): six full-screen radial gradients redrawn
-  // every frame under the lyrics were the heaviest thing on the GPU there.
-  const scale = width * height > LARGE_AREA ? budget.renderScale : 1;
+  // The glows are soft gradients, so every surface is drawn tiny and scaled up
+  // (GLOW_PIXELS_PER_POINT): six full-screen radial gradients redrawn every
+  // frame under the lyrics were the heaviest thing on the GPU there, and the
+  // mini player's glow redrew ~160k pixels a frame on every tab.
+  const scale = budget.glowScale;
   const cw = Math.max(1, Math.round(width * scale));
   const ch = Math.max(1, Math.round(height * scale));
   return (
