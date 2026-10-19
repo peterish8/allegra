@@ -5,8 +5,10 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SortOption, ViewMode } from '../types/song';
+import { createDebouncedStorage } from './debouncedStorage';
+
+const settingsStorage = createDebouncedStorage(1000);
 
 type Theme = 'dark' | 'light' | 'auto';
 export type LyricsAlign = 'left' | 'center' | 'right';
@@ -330,7 +332,9 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'lyricflow-settings',
-      storage: createJSONStorage(() => AsyncStorage),
+      // Every change rewrote the whole saved settings, and the playlist history changes with every song: writes are
+      // coalesced to one a second and flushed when the app leaves the foreground.
+      storage: createJSONStorage(() => settingsStorage),
       version: 5,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<SettingsState> & { lyricsFontSize?: string };
