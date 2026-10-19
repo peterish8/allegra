@@ -156,6 +156,13 @@ test('finds Mozhiye from its likeliest slug in one request, with an honest User-
   assert.deepEqual(stub.agents, [SITE_USER_AGENT]);
 });
 
+test('a title and credited singer match returns without waiting for the sitemap when the catalog has no film', async () => {
+  const stub = stubSite({ '/lyrics/mozhiye-song-lyrics/': MOZHIYE_PAGE });
+  const found = await tamil2Lyrics(stub).find({ title: 'Mozhiye', artist: 'Sai Abhyankkar, Sid Sriram' });
+  assert.equal(found?.versions[0]?.script, 'latin');
+  assert.deepEqual(stub.fetched, ['/lyrics/mozhiye-song-lyrics/']);
+});
+
 test('finds Vaazhanum Baththa by its two-word title, matched on film and composer', async () => {
   const stub = stubSite({ '/lyrics/vaazhanum-baththa-song-lyrics/': VAAZHANUM_PAGE });
   const found = await tamil2Lyrics(stub).find({ title: 'Vaazhanum Baththa', artist: 'Sai Abhyankkar, Karthik Netha', film: 'Baththa', language: 'tamil' });

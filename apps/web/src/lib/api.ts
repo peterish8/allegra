@@ -16,6 +16,11 @@ export function getLyricsSources(ref: string, signal?: AbortSignal): Promise<Lyr
   return request(`/api/lyrics/sources?ref=${encodeURIComponent(ref)}`, { signal });
 }
 
+export function pasteLyrics(ref: string, text: string, passcode: string, signal?: AbortSignal): Promise<LyricsSourcesResponse['candidates'][number]> {
+  return request('/api/lyrics/paste', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ref, text, passcode }), signal });
+}
+
 export function saveLyricsSync(body: LyricsSyncRequest, signal?: AbortSignal): Promise<LyricsSyncResult> {
   return request('/api/lyrics/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
 }

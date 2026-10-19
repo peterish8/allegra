@@ -292,7 +292,7 @@ reporting require a signed-in account (401 without a session, 403 for guests). A
 standard envelope, return `Cache-Control: no-store`, and have independent rate-limit buckets.
 
 - `GET /api/lyrics/sources?ref=saavn:<id>` → `{ song: { ref, title, artist, duration }, candidates }`.
-  Song metadata comes from the catalog. Each candidate is `{ id, origin: 'provider' | 'site',
+  Song metadata comes from the catalog. Each candidate is `{ id, origin: 'provider' | 'site' | 'manual',
   source, url: null, script: 'latin' | 'native', language, lines: string[], synced: boolean }`.
   Providers precede sites; already timed versions are marked `synced`. Site labels are
   "Found online"; actual names and URLs stay server-side. Raw site text is also readable as
@@ -313,6 +313,14 @@ standard envelope, return `Cache-Control: no-store`, and have independent rate-l
 - `POST /api/lyrics/report` accepts exactly `{ ref, script }` → `{ found, hidden }`.
   Each account counts once; three distinct reports hide that version. Successful save/report
   invalidates this instance's verified-lyrics memo. Other instances reconcile within 60 seconds.
+- `POST /api/lyrics/paste` (additive, 2026-10-20) accepts exactly `{ ref, text, passcode }` from a
+  signed-in account → one candidate with `origin: 'manual'`, `synced: false`. Convex checks the
+  passcode against `LYRICS_ADMIN_PASSCODE_SHA256` (5 attempts per account and 60 in all per five
+  minutes) and keeps the cleaned Latin-script words for that account and recording; the passcode
+  is never stored. A refused passcode or exhausted limit is a 400 with one message for both.
+  Its `candidateId` is accepted by `/lyrics/sync` for the same account and recording, so the
+  usual preview and "Yes, save timing" share it. The sources route answers within a bounded wait:
+  when site words arrive, slow providers get 0.5 s more rather than the full budget.
 
 ### `GET /api/lyrics/alternatives` — additive
 `ref`? (additive), `title` (req), `artist` (req), `album`? / `language`? (additive), `duration`?, `syncedOnly`=false

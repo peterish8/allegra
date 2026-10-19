@@ -175,10 +175,12 @@ export class LyricsService {
 
   /** Server-held sync sources: providers and sites are asked together, with provenance kept for saving. */
   public async sources(title: string, artist: string, duration: number, song: SongHints): Promise<LyricSource[]> {
-    const [providers, siteSettled] = await Promise.all([
-      this.alternatives(title, artist, duration, false, song),
-      withinBudget(this.siteVersions(title, artist, song), this.budgetMs)
-    ]);
+    const providerLookup = this.alternatives(title, artist, duration, false, song);
+    const siteSettled = await withinBudget(this.siteVersions(title, artist, song), this.budgetMs);
+    // Words already found online must not wait for every slow provider. No background work is
+    // required for correctness: another request can repeat any provider lookup that was late.
+    const providerSettled = await withinBudget(providerLookup, siteSettled && siteSettled !== LATE ? 500 : this.budgetMs);
+    const providers = providerSettled === LATE ? [] : providerSettled;
     const site = siteSettled === LATE ? null : siteSettled;
     const language = languageCode(song.language);
     const fromProviders: LyricSource[] = providers.flatMap(payload => {

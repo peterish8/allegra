@@ -4,7 +4,7 @@ import { MemoryCacheStore } from '../lib/cache.js';
 import { parseLyrics } from '../lib/lrc.js';
 import type { UnifiedSong } from '../types.js';
 import { LyricSyncService, rebuildLrc, type LyricSource } from './lyricSync.js';
-import { MemoryVerifiedLyricsStore } from './verifiedLyrics.js';
+import { MemoryVerifiedLyricsStore, type PastedLyrics } from './verifiedLyrics.js';
 
 const song: UnifiedSong = { id: 'song', title: 'Song', artist: 'Singer', duration: 200, artwork: '', streamUrl: '/api/stream/song', hasLyrics: false, playCount: 0, source: 'Saavn' };
 const source: LyricSource = { origin: 'site', source: { name: 'private-site', url: 'https://lyrics.example/song' },
@@ -90,4 +90,59 @@ test('equal or lower confidence preserves a live version, and three distinct rep
   assert.equal((await api.report('saavn:AbC', 'latin', 'a')).hidden, false);
   assert.equal((await api.report('saavn:AbC', 'latin', 'b')).hidden, false);
   assert.equal((await api.report('saavn:AbC', 'latin', 'c')).hidden, true);
+});
+
+/** A shared store that also keeps admin-approved pastes, as Convex does (convex/verifiedLyrics.ts). */
+class PastingStore extends MemoryVerifiedLyricsStore {
+  public readonly pasted = new Map<string, PastedLyrics>();
+  public async createPasted(candidate: PastedLyrics, passcode: string): Promise<boolean> {
+    if (passcode !== 'right-passcode') return false;
+    this.pasted.set(`${candidate.id}:${candidate.userId}:${candidate.ref}`, candidate);
+    return true;
+  }
+  public async getPasted(id: string, ref: string, userId: string): Promise<PastedLyrics | null> {
+    return this.pasted.get(`${id}:${userId}:${ref}`) ?? null;
+  }
+}
+
+function pastingFixture() {
+  const store = new PastingStore();
+  const lyrics = { sources: async (): Promise<LyricSource[]> => [], forgetVerified: async () => undefined };
+  return { store, make: () => new LyricSyncService({ getSong: async () => ({ ...song, language: 'tamil' }) }, lyrics, store, new MemoryCacheStore()) };
+}
+
+test('pasted words need the admin passcode, and a refusal stores nothing', async () => {
+  const f = pastingFixture();
+  await assert.rejects(f.make().paste('saavn:AbC', 'First word\nSecond line', 'wrong', 'listener'), /Passcode not accepted/);
+  await assert.rejects(f.make().paste('saavn:AbC', '   ', 'right-passcode', 'listener'), /Enter lyrics/);
+  await assert.rejects(f.make().paste('saavn:AbC', 'First word', '', 'listener'), /Enter lyrics/);
+  assert.equal(f.store.pasted.size, 0);
+});
+
+test('pasting without the shared backend is refused instead of silently keeping words in memory', async () => {
+  const lyrics = { sources: async (): Promise<LyricSource[]> => [], forgetVerified: async () => undefined };
+  const api = new LyricSyncService({ getSong: async () => song }, lyrics, new MemoryVerifiedLyricsStore(), new MemoryCacheStore());
+  await assert.rejects(api.paste('saavn:AbC', 'First word', 'right-passcode', 'listener'), /shared lyrics backend/);
+});
+
+test('native-script pastes are refused, since the alignment model reads Latin script only', async () => {
+  const f = pastingFixture();
+  await assert.rejects(f.make().paste('saavn:AbC', 'தமிழ் வரி', 'right-passcode', 'listener'), /romanized/);
+});
+
+test('approved words become a manual candidate that a cold instance syncs and shares, for that listener only', async () => {
+  const f = pastingFixture();
+  const candidate = await f.make().paste('saavn:AbC', 'First word\nSecond line', 'right-passcode', 'listener');
+  assert.equal(candidate.origin, 'manual');
+  assert.equal(candidate.synced, false);
+  assert.equal(candidate.language, 'ta');
+  assert.deepEqual(candidate.lines, ['First word', 'Second line']);
+  assert.ok(![...f.store.pasted.values()].some(row => JSON.stringify(row).includes('right-passcode')), 'the passcode is never stored');
+  const version = { candidateId: candidate.id, script: 'latin', wordTimes: times, confidence: 0.9 };
+  await assert.rejects(f.make().submit('saavn:AbC', [version], 'someone-else'), 'another account cannot use the pasted words');
+  const result = await f.make().submit('saavn:AbC', [version], 'listener');
+  assert.equal(result.versions[0]?.saved, true);
+  const stored = await f.store.get('saavn:AbC');
+  assert.equal(stored?.versions[0]?.source.name, 'Admin-approved paste');
+  assert.deepEqual(parseLyrics(stored?.versions[0]?.lrc ?? '', 200).map(line => line.text), candidate.lines);
 });

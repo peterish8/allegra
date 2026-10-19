@@ -4,7 +4,7 @@ export type LyricsSyncScript = 'latin' | 'native';
 
 export interface LyricsSyncCandidate {
   readonly id: string;
-  readonly origin: 'provider' | 'site';
+  readonly origin: 'provider' | 'site' | 'manual';
   readonly source: string;
   readonly url: null;
   readonly script: LyricsSyncScript;
