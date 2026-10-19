@@ -1,16 +1,16 @@
 # Handoff: dynamic island fixes (2026-10-19)
 
-Branch `fix/dynamic-island-audit`, cut from `main` at `deb4e0b` (pulled fresh the same day). Nothing is committed
-yet: every change below sits uncommitted in the working tree. Read root `CLAUDE.md`, `apps/mobile/CLAUDE.md`,
+Branch `fix/dynamic-island-audit`, cut from `main` at `deb4e0b` (pulled fresh the same day). At handoff creation, the work in section 2 was uncommitted. Continuation commits stay local until the owner approves pushing and opening a PR. Read root `CLAUDE.md`, `apps/mobile/CLAUDE.md`,
 `apps/mobile/docs/dynamic-island.md` and `apps/mobile/docs/enhance-dynamic-island.md` before touching anything.
 
 Work through the **Todo** section top to bottom. Tick a box only after its check in **Testing** has passed.
 
-Continuation evidence (2026-10-19): **T0 passed; T1 next.**
+Continuation evidence (2026-10-19): **T0 committed as `e36e7e6`; T1 implemented, verification running.**
 - TypeScript exit 0; ESLint exit 0 (78 existing warnings, 0 errors); Jest 97 suites / 825 tests passed (`C:/temp/allegra-island-t0-jest.log`).
 - Release Kotlin, x86_64: passed after fixing `Surface(context)` to `Surface()` in `IslandLaunch.kt` (`C:/temp/allegra-island-t0-kotlin-retry.log`). This shell did not inherit `JAVA_HOME`; set it from the user-level Adoptium JDK 17 path before Gradle.
 - Native unit tests: **72 passed, 0 failed, 0 skipped**, across 10 suites (`C:/temp/allegra-island-t0-native-tests-attempt3.log`). Added `IslandBudgetTest` and Robolectric-backed main-looper tests for partial/final search results and superseded queries. The first native run exposed Android Color/Uri JVM stubs; Robolectric fixes that test environment. One retry hit transient Maven Central DNS failure; an unchanged retry passed after DNS recovered. [Robolectric setup](https://robolectric.org/getting-started/).
-- No device acceptance boxes have been ticked. `DynamicIslandModule.appShown` was already present; T1 still needs the JavaScript handshake and morph verification.
+- T1 implementation adds the two-frame draw acknowledgment in the shared Now Playing wrapper; Connect also honors instant. Native launch content is clipped, notch snapshots retain off-screen corners and pressed size, snapshots retry in software, and cancelling before the first frame no longer launches. Reduce Motion skips capture/overlay and activity animation. Version is set to 1.13.0 for the upcoming review APK; installed-version verification is pending.
+- No device acceptance boxes have been ticked. `DynamicIslandModule.appShown` was already present; T1 automated checks passed: TypeScript, ESLint (78 warnings, 0 errors), Jest 98 suites / 829 tests, native 73 tests / 11 suites, no failures or skips. Release x86_64 APK assembly is running (`C:/temp/allegra-island-t1-release.log`). Emulator-5554 disconnected during the long build checks; its existing AVD must be restarted without wiping user data before device checks.
 ---
 
 ## 1. Everything the owner reported, and where each stands

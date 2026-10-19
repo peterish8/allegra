@@ -26,9 +26,10 @@ It controls LuvLyrics playback; other apps' media sessions are not collected.
      `StreamService.playFromSearch`).
    - **Swipe left** for your playlists, tap one for its songs. **Swipe right** for your downloads (offline).
      A tapped song's cover and title fly into the card while the list folds away, and it plays.
-   - Tap the cover or title to open LuvLyrics: Android grows the app's window out of the island
-     (`ActivityOptions.makeScaleUpAnimation`, run by the system compositor), onto Now Playing already open
-     (`lyricflow://player?instant=1`). Long-press the closed pill to open it too. Drag the scrubber to seek: the
+   - Tap the cover or title to open LuvLyrics: the island's own native launch surface grows from its current
+     shape and cover into Now Playing (`lyricflow://player?instant=1`). The player mounts already open and
+     acknowledges its drawn frame before the launch surface leaves it visible. Long-press the closed pill to
+     open it too. Reduce Motion opens the app directly. Drag the scrubber to seek: the
      line has no knob and swells under the finger.
    Without timed lyrics or with **Two lines of lyrics on the card** off, the card closes by itself after eight
    seconds without a touch (twenty while browsing); otherwise it stays until it is pushed up or tapped outside.
@@ -80,10 +81,24 @@ Hardware holes themselves cannot receive touch; tap the black area beside/below 
   as Android's notification, so queue skips work when JavaScript sleeps.
 - `playback/PlayerResume.kt` shares idle reprepare and audio-focus resume with `MainPlayerModule`.
 - `DynamicIslandModule` exposes preferences and Android settings shortcuts. It never draws the island.
+- `IslandLaunch` draws the app-opening morph in a separate, touch-through accessibility overlay. The first frame
+  is a snapshot of the island, including its pressed size and the notch's off-screen top corners. One spring
+  grows the outline to the display and moves the cover into the player's hero. Everything stays clipped to that
+  outline. Hardware snapshots fall back to `ARGB_8888` if capture fails.
+- The app starts after the first snapshot frame, with its activity transition suppressed. Now Playing's wrapper
+  calls `appShown` after two animation frames for either the local or Connect player; both honor `instant`.
+  The launch surface then leaves over 220 ms, with a 650 ms resume fallback and a 2.6 s maximum hold. Screen-off,
+  service teardown and a superseding launch remove it without starting a cancelled launch.
+- `IslandBudget` selects 20/30/60 fps ambient ticks and 15/30/60 fps light updates from memory, CPU count,
+  refresh rate, OS version and Battery Saver. LOW uses a plain cover-and-colour launch; MID/HIGH add the melted
+  hero and cover light. Reduce Motion skips capture and the launch overlay and suppresses the activity animation.
 - Lists and search: `hooks/useIslandLibrary.ts` (mounted in `RootNavigator`) sends the playlists with their songs
   (`services/playlistSongs.ts`, local and online), the downloads, and search answers as JSON snapshots;
   `IslandLibrary` holds them. A pick or a typed query comes back as `onIslandPick` / `onIslandSearch` and plays the
   way the app's own screens do. With JavaScript not running, a pick opens the app through the widget's play link.
+- `IslandJsAwake` runs a bounded headless task while a background island request is answered, keeping React
+  Native's timers available for search, queue lookups and lyrics. Search results arrive incrementally and carry
+  `done`; results for a superseded query are ignored on the main looper.
 - The light behind the open card is a flowing mesh of the cover's colours (`IslandFlow`: a domain-warped field
   with weights that sum to one, computed at 40×56 px and drawn filtered, so no circles or edges). Android 12 has no
   app GPU shaders, which is why it is computed. Its clock runs only while music plays. Titles that do not fit loop with eased starts and 4 s rests, and glide home on pause.
@@ -118,13 +133,13 @@ service, play music, go Home, tap the camera area, seek and skip, remove the tas
 pull down the shade beside the island, rotate, lock and unlock. Repeat with Developer options'
 display-cutout simulations and changed display density. A passing simulator is not proof of every OEM.
 
-For the closing-motion regression, run this from the repo root against an enabled debug build:
+For the closing-motion regression, run this from the repo root against an enabled release or debug build:
 
 ```powershell
 apps/mobile/scripts/probe-dynamic-island.ps1 -Serial emulator-5554 -OutDir C:/temp/island-probe -Record
 ```
 
-The probe reads the actual camera geometry, opens and closes the card three times, checks that it
+The probe reads the attached drawing/touch windows and display density, opens and closes the card three times, checks that it
 really expands and returns to compact height, and asserts that the drawing window's x and width
 never change. It saves the measured frames, an expanded screenshot and an optional motion recording.
 The compact bars use moderate, independent cycles. The card's light moves only while music plays.
