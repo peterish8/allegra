@@ -2,6 +2,7 @@ package com.lyricflow.app
 
 import android.os.Build
 import android.os.Bundle
+import android.view.MotionEvent
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -41,6 +42,11 @@ class MainActivity : ReactActivity() {
   override fun onPause() {
     com.lyricflow.app.island.IslandService.setAppInFront(false)
     super.onPause()
+  }
+
+  override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+    if (ev.actionMasked == MotionEvent.ACTION_UP) PerfMarks.tapUp(ev.eventTime)
+    return super.dispatchTouchEvent(ev)
   }
 
   /**
