@@ -3,7 +3,8 @@
  * catalog. The only place catalog-matching rules for Import live (PLAN.md I3).
  *
  * Results are not personal, so they are cached for everyone under the track's identity key. Only
- * Saavn rows can match: a Blend or a library row that will not play is a broken promise (D15).
+ * Only stream sources that Allegra can reopen can match: a Blend or a library row that will not
+ * play is a broken promise (D15).
  */
 import type { CatalogService } from '../catalog/catalog.js';
 import { cacheKey, cachedLookup, type CacheStore } from '../lib/cache.js';
@@ -91,7 +92,6 @@ function albumsAgree(a: string, b: string): boolean {
 
 /** Pure: how well a catalog row matches an imported track. */
 export function scoreCandidate(track: ImportedTrack, song: UnifiedSong): MatchConfidence {
-  if (song.source !== 'Saavn') return 'none';
   const title = normalText(track.title);
   const candidateTitle = normalText(song.title);
   if (!title || !candidateTitle) return 'none';
@@ -167,18 +167,28 @@ export class ImportMatcher {
   }
 
   private async find(track: ImportedTrack): Promise<CachedMatch | null> {
+    const title = track.title.split(' - ')[0] ?? track.title;
     const lead = creditedArtists(track.artist)[0] ?? track.artist;
-    const { results } = await this.catalog.search(`${track.title.split(' - ')[0] ?? track.title} ${lead}`.trim(), IMPORT_MATCH.searchLimit, 1, { enrich: false });
-    if (results.length === 0) throw new Uncacheable('empty search');
+    const queries = [...new Set([
+      `${title} ${lead}`.trim(),
+      `${title} ${track.artist}`.trim(),
+      track.album ? `${title} ${track.album}`.trim() : ''
+    ].filter(Boolean))];
     let close: CachedMatch | null = null;
-    for (const song of results) {
-      const confidence = scoreCandidate(track, song);
-      if (confidence === 'none') continue;
-      const snapshot = snapshotOf(song);
-      if (!snapshot) continue;
-      if (confidence === 'exact') return { song: snapshot, confidence };
-      close ??= { song: snapshot, confidence };
+    let foundAny = false;
+    for (const query of queries) {
+      const { results } = await this.catalog.search(query, IMPORT_MATCH.searchLimit, 0, { enrich: false });
+      foundAny ||= results.length > 0;
+      for (const song of results) {
+        const confidence = scoreCandidate(track, song);
+        if (confidence === 'none') continue;
+        const snapshot = snapshotOf(song);
+        if (!snapshot) continue;
+        if (confidence === 'exact') return { song: snapshot, confidence };
+        close ??= { song: snapshot, confidence };
+      }
     }
+    if (!foundAny) throw new Uncacheable('empty search');
     return close;
   }
 }

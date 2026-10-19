@@ -2,7 +2,7 @@ import { ProviderUnavailableError, NotFoundError, TimeoutError } from '../lib/er
 import { cacheKey, type CacheStore } from '../lib/cache.js';
 import { CircuitBreaker } from '../lib/circuitBreaker.js';
 import { isDerivative, queryWantsDerivative } from '../lib/derivative.js';
-import { collapseRecordings, needsCanonicalRelease, normalizeSong, songIdentity } from '../lib/normalize.js';
+import { collapseRecordings, normalizeSong, songIdentity } from '../lib/normalize.js';
 import type { GaanaProvider } from '../providers/gaana.js';
 import type { CanonicalRelease, ReleaseAuthority } from '../providers/musicbrainz.js';
 import type { ProviderResult, SaavnAsset, SaavnProvider, SaavnSong } from '../providers/saavn.js';
@@ -73,8 +73,10 @@ export class CatalogService {
   public async search(query: string, limit: number, page: number, options: SearchOptions = {}): Promise<CatalogSearch> {
     // v4: edits rank below originals, and the top row's album and cover are corrected
     // against the release authority when the provider only has it on a playlist.
-    // v6: the provider's relevance order is kept instead of re-sorting by play count.
-    const key = cacheKey('search', 'v6', query, String(limit), String(page));
+    // v7: the queried top result is always checked — provider album names can look
+    // legitimate while their image is still a playlist or fan-uploaded thumbnail.
+    // The provider's relevance order is kept instead of re-sorting by play count.
+    const key = cacheKey('search', 'v7', query, String(limit), String(page));
     const cached = await this.cache.get<CatalogSearch>(key);
     if (cached) {
       return cached;
@@ -133,13 +135,14 @@ export class CatalogService {
   /**
    * Put the real record's name and cover on the top row.
    *
-   * Only the top row, and only when it needs it: the authority is rate limited to
-   * about one request a second, so this is at most one round trip per uncached query.
+   * Only the top row: the authority is rate limited to about one request a second,
+   * so this is at most one round trip per uncached query. A plausible-looking
+   * provider album is not enough evidence that its image belongs to this release.
    * Any failure returns the provider's own data untouched.
    */
   private async withCanonicalRelease(results: readonly UnifiedSong[]): Promise<UnifiedSong[]> {
     const top = results[0];
-    if (!this.releaseAuthority || !top || !needsCanonicalRelease(top)) {
+    if (!this.releaseAuthority || !top) {
       return [...results];
     }
 

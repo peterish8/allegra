@@ -187,6 +187,8 @@ interface NowPlayingLyricsAreaProps {
   /** The title's thumbnail centre, where the cover flies to under lyrics. */
   dockX?: SharedValue<number>;
   dockY?: SharedValue<number>;
+  /** Removes the cover morph and gives the synchronized list the full player. */
+  fullscreen?: boolean;
 }
 
 /**
@@ -278,6 +280,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   lyricsP,
   dockX,
   dockY,
+  fullscreen = false,
 }) => {
   const routeFocused = useIsFocused();
   const appActive = useAppActive();
@@ -343,6 +346,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   ), []);
   // The lines rise in once the cover is on its way, and sink out first on the way back.
   const linesStyle = useAnimatedStyle(() => {
+    if (fullscreen) return { opacity: 1, transform: [{ translateY: 0 }] };
     const p = lyricsP ? lyricsP.value : showLyrics ? 1 : 0;
     const t = clamp01((p - 0.3) / 0.7);
     return { opacity: t, transform: [{ translateY: 28 * (1 - t) }] };
@@ -350,25 +354,36 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      <Stage
-        mode={mode}
-        width={width}
-        screenH={screenH}
-        paddingTop={insets.top + HEADER_CLEARANCE + 24}
-        uri={coverImageUri}
-        title={songTitle ?? ''}
-        artist={songArtist}
-        reeded={reeded}
-        stageX={stageX}
-        lyricsP={lyricsP}
-        dockX={dockX}
-        dockY={dockY}
-      />
+      {!fullscreen ? (
+        <Stage
+          mode={mode}
+          width={width}
+          screenH={screenH}
+          paddingTop={insets.top + HEADER_CLEARANCE + 24}
+          uri={coverImageUri}
+          title={songTitle ?? ''}
+          artist={songArtist}
+          reeded={reeded}
+          stageX={stageX}
+          lyricsP={lyricsP}
+          dockX={dockX}
+          dockY={dockY}
+        />
+      ) : null}
       {lyricsMounted ? (
         // Apple Music's lyrics view: the lines own the space between the header
         // and the controls, and the sung line's centre rides at 35% of that
         // space — not in the middle of a list whose lower half sits under the controls.
-        <Animated.View style={[styles.lyricsFrame, { paddingTop: insets.top + HEADER_CLEARANCE }, linesStyle]} pointerEvents={showLyrics ? 'auto' : 'none'}>
+        <Animated.View
+          style={[
+            styles.lyricsFrame,
+            fullscreen
+              ? { paddingTop: insets.top + 64, marginBottom: 218 }
+              : { paddingTop: insets.top + HEADER_CLEARANCE },
+            linesStyle,
+          ]}
+          pointerEvents={showLyrics ? 'auto' : 'none'}
+        >
       <ErrorBoundary name="lyrics" resetKey={processedLyrics} fallback={lyricsFallback}>
       <SynchronizedLyrics
         ref={flatListRef}
@@ -377,9 +392,9 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
         currentTime={currentTime}
         onLyricPress={onLyricPress}
         songTitle={songTitle}
-        activeLinePosition={0.35}
+        activeLinePosition={fullscreen ? 0.42 : 0.35}
         topSpacerHeight={24}
-        edgeFade={56}
+        edgeFade={fullscreen ? 80 : 56}
         live={lyricsLive}
         scrollOffset={scrollOffset}
         isUserScrolling={isUserScrollingRef.current}

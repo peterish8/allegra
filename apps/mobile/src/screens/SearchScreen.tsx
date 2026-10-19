@@ -40,7 +40,7 @@ import { useSearchHistoryStore } from '../store/searchHistoryStore';
 import { useDownloadQueueStore } from '../store/downloadQueueStore';
 import { Playlist, Song, UnifiedSong } from '../types/song';
 import { PrefixCache, TYPEAHEAD_DEBOUNCE_MS } from '@shared/typeahead';
-import { searchMusic } from '../services/MultiSourceSearchService';
+import { searchOfficial } from '../services/stream/officialSearch';
 import { androidPerformance } from '../services/performanceTrace';
 import type { PerformanceAttempt } from '@shared/performanceTrace';
 import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
@@ -240,7 +240,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
       const startedAt = androidPerformance.trace.enabled ? performance.now() : 0;
       const elapsed = () => (androidPerformance.trace.enabled ? { durationMs: Math.max(0, performance.now() - startedAt) } : {});
       let failed = false;
-      searchMusic(q, undefined, undefined, { signal: controller.signal, relevance: true }).catch(() => {
+      searchOfficial(q, 20, undefined, controller.signal).catch(() => {
         failed = true;
         return [] as UnifiedSong[];
       }).then(found => {
@@ -524,7 +524,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
           <>
             <SectionHeading
               title="Online"
-              subtitle={onlineBusy ? 'Searching the catalog…' : online ? `${onlineFresh.length} to stream` : undefined}
+              subtitle={onlineBusy ? 'Finding official releases…' : online ? `${onlineFresh.length} to stream` : undefined}
               action={scope === 'All' && onlineFresh.length > PREVIEW * 2 ? 'See all' : undefined}
               onAction={() => changeScope('Online')}
             />

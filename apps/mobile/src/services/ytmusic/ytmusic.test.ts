@@ -278,6 +278,18 @@ describe('searchOfficial', () => {
     expect(searchCatalog).toHaveBeenCalledTimes(1); // every song matched from the primed results
   });
 
+  it('never pads a partial official answer with catalog artwork', async () => {
+    const found = await searchOfficial('blinding lights', 20, {
+      searchYT: async () => [{ ...yt('official', 'Blinding Lights', ['The Weeknd'], 200), thumbnail: 'https://yt/after-hours.jpg' }],
+      searchCatalog: async () => [
+        catalog('official-audio', 'Blinding Lights', 'The Weeknd', 200),
+        { ...catalog('playlist-copy', 'Blinding Lights', 'The Weeknd', 200), highResArt: 'https://catalog/fan-playlist.jpg' },
+      ],
+    });
+    expect(found).toHaveLength(1);
+    expect(found[0]).toEqual(expect.objectContaining({ id: 'official-audio', highResArt: 'https://yt/after-hours.jpg' }));
+  });
+
   it('falls back to catalog results without unasked-for versions when YouTube Music is unreachable', async () => {
     const found = await searchOfficial('pasoori', 20, {
       searchYT: async () => { throw new Error('offline'); },

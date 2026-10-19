@@ -6,6 +6,7 @@ import { MemoryCacheStore } from '../lib/cache.js';
 import { ProviderUnavailableError } from '../lib/errors.js';
 import { GaanaProvider } from '../providers/gaana.js';
 import { SaavnProvider, type SaavnSong } from '../providers/saavn.js';
+import type { ReleaseAuthority } from '../providers/musicbrainz.js';
 
 const saavnSong: SaavnSong = {
   id: 's1',
@@ -26,11 +27,12 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function catalog(fetchImpl: typeof fetch): CatalogService {
+function catalog(fetchImpl: typeof fetch, releaseAuthority?: ReleaseAuthority): CatalogService {
   return new CatalogService({
     saavn: new SaavnProvider({ baseUrl: 'https://saavn.example/api', fetchImpl }),
     gaana: new GaanaProvider({ baseUrl: 'https://gaana.example/api', fetchImpl }),
-    cache: new MemoryCacheStore()
+    cache: new MemoryCacheStore(),
+    ...(releaseAuthority ? { releaseAuthority } : {})
   });
 }
 
@@ -78,6 +80,21 @@ test('search caches results and does not leak provider fields', async () => {
   assert.equal(first.results[0]?.streamUrl, '/api/stream/s1');
   assert.equal('downloadUrl' in (first.results[0] ?? {}), false);
   assert.deepEqual(first, second);
+});
+
+test('search replaces the queried top row artwork with the authoritative release even when the provider album looks plausible', async () => {
+  const authority: ReleaseAuthority = {
+    canonical: async () => ({ album: 'Official Single', year: 2024, coverUrl: 'https://coverart.example/official.jpg' })
+  };
+  const service = catalog(async () => json({ success: true, data: { results: [{
+    ...saavnSong,
+    album: { name: 'Saavn Presents', url: '' },
+    image: [{ quality: '500x500', url: 'https://provider.example/playlist.jpg' }]
+  }] } }), authority);
+
+  const result = await service.search('Saavn Hit Artist', 20, 0);
+  assert.equal(result.results[0]?.album, 'Official Single');
+  assert.equal(result.results[0]?.artwork, 'https://coverart.example/official.jpg');
 });
 
 test('Gaana catalog rows use a provider-qualified stream URL and ref lookup stays on Gaana', async () => {

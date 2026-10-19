@@ -167,8 +167,10 @@ export function PlayerPanel({
   const playPress = usePress();
   const dragControls = useDragControls();
   const isNarrowViewport = useNarrowViewport();
-  // Same cut-off as the phone player rules in app.css.
-  const isPhone = useNarrowViewport(768);
+  // Keep the rendered surface state in lock-step with the phone player rules in app.css.
+  // A 768–900px viewport is still styled as phone; treating it as desktop left the cover controls
+  // visible while LyricsPanel also rendered below them.
+  const isPhone = isNarrowViewport;
   // Swipe-down-to-dismiss mirrors Apple Music / YT Music on a phone; desktop has no
   // equivalent affordance, and reduced-motion listeners keep the Back button + Escape
   // as their dismiss path rather than a springy drag-to-close.
