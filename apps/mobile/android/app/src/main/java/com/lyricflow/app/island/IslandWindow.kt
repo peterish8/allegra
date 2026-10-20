@@ -2,7 +2,6 @@ package com.lyricflow.app.island
 
 import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
-import android.app.ActivityOptions
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -20,6 +19,7 @@ import android.widget.EditText
 import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import android.view.Display
 import android.view.Gravity
@@ -65,6 +65,10 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     /** The notch look (IslandPrefs.style): the island hangs from the top edge. */
     private var hanging = false
     private var appInFront = false
+    /** The app growing out of the island, while it does (IslandLaunch). */
+    private var launch: IslandLaunch? = null
+    /** How much the island may draw on this phone; read again at every screen-on (Battery Saver). */
+    private var budget = IslandBudget.of(service)
     private var searchField: EditText? = null
     private var searchAdded = false
     private val inputs = service.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -121,10 +125,22 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     private var locked = false
     private val power = service.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
 
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private val recheckLock = Runnable { refreshLock() }
+
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) launch?.finishNow()
+            if (intent?.action == Intent.ACTION_SCREEN_ON || intent?.action == PowerManager.ACTION_POWER_SAVE_MODE_CHANGED) {
+                budget = IslandBudget.of(service)
+                view?.budget = budget
+            }
             refreshLock()
             applyVisibility()
+            // The keyguard is still on its way out (or in) when these arrive on some phones: read it again once it
+            // has settled, so the island never stays "locked" after an unlock.
+            main.removeCallbacks(recheckLock)
+            main.postDelayed(recheckLock, LOCK_SETTLE_MS)
         }
     }
 
@@ -151,6 +167,12 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         locked = now
         applyVisibility()
     }
+
+    /**
+     * The island is about to be used: read the lock again. Broadcasts alone left it "locked" after an unlock whose
+     * USER_PRESENT came early or not at all, and a locked island refuses its pages and search until rebuilt.
+     */
+    override fun checkLock() = refreshLock()
 
     /** Shows the island (or applies changed settings to it) with the listener's choices in [prefs]. */
     fun show(prefs: IslandPrefs) {
@@ -188,6 +210,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         v.showWhenIdle = showWhenIdle
         v.showLyricStrip = showLyricStrip
         v.locked = keyguard.isKeyguardLocked
+        v.budget = budget
         watchInsets(v)
         view = v
         touchView = tap
@@ -205,6 +228,8 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
             added = false
             touchView = null
             view = null
+            // Measured again for the next view: an unchanged geometry would otherwise never reach it.
+            geometry = null
             return
         }
         ContextCompat.registerReceiver(
@@ -214,6 +239,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(Intent.ACTION_USER_PRESENT)
+                addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
             },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -227,11 +253,15 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     fun setAppInFront(inFront: Boolean) {
         if (appInFront == inFront) return
         appInFront = inFront
+        if (inFront) launch?.appResumed()
         applyVisibility()
     }
 
     fun destroy() {
+        launch?.finishNow()
+        launch = null
         val v = view ?: return
+        main.removeCallbacks(recheckLock)
         showSearchInput(null)
         displays.unregisterDisplayListener(displayListener)
         latestInsets = null
@@ -386,29 +416,71 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     }
 
     /**
-     * Opens the app at [link]. With the island's outline [from], the app's window grows out of the island: the
-     * system compositor runs that animation, so it stays smooth on an older phone (nothing in this process draws
-     * during it), while the island folds back to its pill on its own spring.
+     * Opens the app at [link]. With the island as it is now ([look]), the app grows out of it (IslandLaunch): the
+     * overlay's first frame is the island itself, the app starts underneath once it is up, with no system animation
+     * of its own, and the island folds to its pill under the growing shape. Under Reduce Motion, or when the overlay
+     * cannot be shown, the app simply opens and the island folds away.
      */
-    override fun openApp(link: String, from: RectF?) {
+    override fun openApp(link: String, look: IslandLaunch.Look?) {
+        val v = view
+        launch?.finishNow()
+        launch = null
+        val animate = look != null && v != null && power.isInteractive &&
+            (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || android.animation.ValueAnimator.areAnimatorsEnabled())
+        if (!animate) {
+            startApp(link, morphed = false)
+            v?.collapse()
+            return
+        }
+        val size = screenSize()
+        val l = IslandLaunch(service, wm, budget,
+            onShown = {
+                startApp(link, morphed = true)
+                view?.collapse()
+            },
+            onDone = { launch = null })
+        if (!l.play(look, size.x, size.y)) {
+            startApp(link, morphed = false)
+            v.collapse()
+            return
+        }
+        launch = l
+        // Already in front (the island stays over the app): there is no resume to wait for.
+        if (appInFront) l.appResumed()
+    }
+
+    /** LuvLyrics has drawn the screen the island opened: the growing overlay can let go of it. */
+    fun appShown() {
+        launch?.appShown()
+    }
+
+    private fun screenSize(): Point {
+        val size = Point()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = wm.maximumWindowMetrics.bounds
+            size.set(bounds.width(), bounds.height())
+        } else {
+            @Suppress("DEPRECATION")
+            display?.getRealSize(size)
+        }
+        return size
+    }
+
+    private fun startApp(link: String, morphed: Boolean) {
+        val withoutAnimation = morphed || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !android.animation.ValueAnimator.areAnimatorsEnabled())
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link)).apply {
             setPackage(service.packageName)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            // The island owns the launch motion. Reduce Motion also skips the system's activity transition.
+            if (withoutAnimation) addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
         }
-        val v = view
-        val reveal = if (from != null && v != null && v.isAttachedToWindow && !from.isEmpty) {
-            try {
-                ActivityOptions.makeScaleUpAnimation(v, from.left.roundToInt(), from.top.roundToInt(),
-                    from.width().roundToInt().coerceAtLeast(1), from.height().roundToInt().coerceAtLeast(1)).toBundle()
-            } catch (_: Exception) {
-                null
-            }
-        } else null
         try {
-            service.startActivity(intent, reveal)
+            service.startActivity(intent)
         } catch (_: Exception) {
             service.packageManager.getLaunchIntentForPackage(service.packageName)?.let {
                 it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (withoutAnimation) it.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
                 try {
                     service.startActivity(it)
                 } catch (_: Exception) {
@@ -419,7 +491,8 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     }
 
     private fun updateFlags() {
-        val hidden = landscape || hiddenForLock || !power.isInteractive || !touchable
+        // Hidden inside LuvLyrics too: an invisible island must not keep a tap window over the app's header.
+        val hidden = landscape || hiddenForLock || hiddenForApp || !power.isInteractive || !touchable
         val flags = if (hidden || !expandedTouch) {
             params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         } else {
@@ -472,6 +545,13 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
                 if (action == EditorInfo.IME_ACTION_SEARCH) inputs.hideSoftInputFromWindow(windowToken, 0)
                 action == EditorInfo.IME_ACTION_SEARCH
             }
+            // The field's window has focus, so Back comes here once the keyboard is down: it closes the drawer,
+            // rather than the app underneath getting no Back until the island is tapped away.
+            setOnKeyListener { _, keyCode, event ->
+                if (keyCode != android.view.KeyEvent.KEYCODE_BACK) return@setOnKeyListener false
+                if (event.action == android.view.KeyEvent.ACTION_UP) v.backFromSearch()
+                true
+            }
         }.also { searchField = it }
         searchParams.x = params.x + field.left.roundToInt()
         searchParams.y = field.top.roundToInt()
@@ -508,5 +588,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
 
     private companion object {
         const val TAG = "LyrFlowIsland"
+        /** How long after a screen or unlock broadcast the keyguard is read again, once its animation is over. */
+        const val LOCK_SETTLE_MS = 900L
     }
 }

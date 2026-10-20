@@ -104,6 +104,14 @@ export function parseIslandStatus(raw: unknown): IslandStatus | null {
   };
 }
 
+const MAX_AWAKE_MS = 60_000;
+
+/** How long the island's keep-awake task holds (`islandJsAwake.ts`), from the native data (`{ ms }`), bounded. */
+export function islandAwakeMs(data: unknown): number {
+  const ms = data && typeof data === 'object' ? (data as { ms?: unknown }).ms : undefined;
+  return typeof ms === 'number' && Number.isFinite(ms) ? Math.min(MAX_AWAKE_MS, Math.max(0, ms)) : 0;
+}
+
 /** What the island needs of a song's lyrics: when each line starts (ms on the player's clock) and its words. */
 export interface IslandLyricsPayload {
   atMs: number[];
@@ -173,6 +181,25 @@ export function islandSongRow(song: {
     // The phone's own copy first: a downloaded song's cover shows offline and at once.
     cover: islandCover(song.coverImageUri) || islandCover(song.coverRemoteUri),
   };
+}
+
+/**
+ * A search's rows for the island: the matching downloads first (marked, they play offline), then the online
+ * answers with their official art. The island drops an online answer a download already stands for.
+ */
+export function islandSearchRows(
+  downloads: readonly Parameters<typeof islandSongRow>[0][],
+  online: readonly { readonly id: string; readonly title: string; readonly artist: string; readonly highResArt?: string; readonly thumbnail?: string }[],
+): IslandSongRow[] {
+  return [
+    ...downloads.map(song => ({ ...islandSongRow(song), downloaded: true })),
+    ...online.map(song => ({
+      id: song.id,
+      title: song.title,
+      artist: song.artist,
+      cover: islandCover(song.highResArt) || islandCover(song.thumbnail),
+    })),
+  ];
 }
 
 /** Lower case, accents off, anything but letters and digits a single space (IslandLibrary.fold does the same). */

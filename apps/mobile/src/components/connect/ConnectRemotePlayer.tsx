@@ -102,7 +102,7 @@ function useRemoteLike(song: SongSnapshot | undefined): { liked: boolean; toggle
   return { liked: copyLiked || onlineLiked, toggle };
 }
 
-export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
+export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
   const connect = useConnect();
   const view = connect.view;
   const song = view?.song;
@@ -116,7 +116,8 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
 
   // ── Sheet: grow out of the pill, follow the finger, shrink back ──────────
   const { y: restY } = playerSheetRest(windowW, screenH, insets.bottom, pillNav);
-  const sheetY = useSharedValue(restY);
+  const openedOpen = route.params.instant === true;
+  const sheetY = useSharedValue(openedOpen ? 0 : restY);
   const progress = useDerivedValue(() => Math.min(1, Math.max(0, 1 - sheetY.value / restY)));
   useAnimatedReaction(() => progress.value, p => { playerSheetProgress.value = p; });
   useEffect(() => () => { playerSheetProgress.value = 0; }, []);
@@ -125,6 +126,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation }) => {
 
   useEffect(() => {
     const velocity = takeOpenVelocity();
+    if (openedOpen) return;
     sheetY.value = reduceMotion
       ? withTiming(0, { duration: 200 })
       : withSpring(0, { ...(velocity > FLICK ? FLING_SPRING : SOFT_SPRING), velocity: -velocity });

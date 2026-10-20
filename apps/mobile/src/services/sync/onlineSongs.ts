@@ -4,10 +4,11 @@
  * the catalog is asked for the song (by its exact id, else by the same title and lead
  * artist) when it is played, a few at a time, and remembered.
  */
-import { matchKey, parseSongRef, songRef, toMobileId, type SongRef } from '@shared/songRef';
+import { fromMobileId, matchKey, parseSongRef, songRef, toMobileId, type SongRef } from '@shared/songRef';
 
 import type { OnlineSongRow } from '../../database/syncQueries';
 import { removeOnlinePlaylistSong } from '../../database/syncQueries';
+import { ALLEGRA_API_URL } from '../account/config';
 import { searchMusic } from '../MultiSourceSearchService';
 import { StreamService } from '../stream/StreamService';
 import { toStreamSong } from '../stream/streamSong';
@@ -22,7 +23,14 @@ const FIRST_WINDOW = 12;
 const PARALLEL = 4;
 
 const resolved = new Map<string, UnifiedSong>();
-const failed = new Set<string>();
+/**
+ * When a song last found no match. The catalog search answers [] offline too, so a miss is only trusted for a
+ * while: one tap on a bad network used to leave the song unplayable until the app restarted.
+ */
+const failedAt = new Map<string, number>();
+const RETRY_MISS_MS = 10 * 60_000;
+/** Bumped by every playList: a lookup that finishes after a newer pick never replaces it. */
+let playRun = 0;
 
 export const isOnlineSong = (song: { id: string; audioUri?: string }): boolean => song.id.startsWith('stream:') && !song.audioUri;
 
@@ -52,7 +60,8 @@ async function resolveOne(song: Song): Promise<UnifiedSong | null> {
   if (!ref || !parseSongRef(ref)) return null;
   const hit = resolved.get(ref);
   if (hit) return hit;
-  if (failed.has(ref)) return null;
+  const missed = failedAt.get(ref);
+  if (missed !== undefined && Date.now() - missed < RETRY_MISS_MS) return null;
   try {
     const key = matchKey(song.title, song.artist);
     const hits = await searchMusic(`${song.title} ${song.artist ?? ''}`.trim(), song.artist || undefined);
@@ -66,7 +75,7 @@ async function resolveOne(song: Song): Promise<UnifiedSong | null> {
     // Offline: try again next time it is played.
     return null;
   }
-  failed.add(ref);
+  failedAt.set(ref, Date.now());
   return null;
 }
 
@@ -98,6 +107,7 @@ async function resolveAll(songs: readonly Song[]): Promise<Song[]> {
  * go straight to the queue as before. Resolves to false when nothing could be played.
  */
 export async function playList(playlistId: string, songs: readonly Song[], index: number): Promise<boolean> {
+  const run = ++playRun;
   const player = usePlayerStore.getState();
   if (!songs.some(isOnlineSong)) {
     player.setPlaylistQueue(playlistId, [...songs], index);
@@ -113,11 +123,52 @@ export async function playList(playlistId: string, songs: readonly Song[], index
     appendWhenResolved(playlistId, from.slice(ready.length));
     return true;
   }
+  // The tapped song is online: it starts from its catalog id at once, and the songs after it are looked up behind
+  // it. Looking up the first window (twelve title searches) before playing anything kept a tap silent, with the
+  // last song still playing, for up to 40 s.
+  const tapped = instantStreamSong(from[0]);
+  if (tapped) {
+    const following = leadingPlayable(from.slice(1));
+    player.setPlaylistQueue(playlistId, [tapped, ...following], 0);
+    appendWhenResolved(playlistId, from.slice(1 + following.length));
+    return true;
+  }
+  const songBefore = player.currentSongId;
   const first = await resolveAll(from.slice(0, FIRST_WINDOW));
+  // Something else was picked meanwhile (here or anywhere in the app): that pick stands.
+  if (run !== playRun || usePlayerStore.getState().currentSongId !== songBefore) return false;
   if (first.length === 0) return false;
   usePlayerStore.getState().setPlaylistQueue(playlistId, first, 0);
   appendWhenResolved(playlistId, from.slice(FIRST_WINDOW));
   return true;
+}
+
+/**
+ * An online song ready to play from its catalog id alone: Allegra's stream route (`/api/stream/:id`, the same one
+ * Connect plays a ref through) finds the audio itself, so nothing is looked up first. A song looked up before
+ * keeps its catalog link. Null for an id that names no catalog song. Should the route fail, playback recovery
+ * finds the song in the catalog (`refreshStreamLink`).
+ */
+export function instantStreamSong(song: Song): Song | null {
+  if (!isOnlineSong(song)) return song.audioUri ? song : null;
+  const ref = fromMobileId(song.id);
+  const parsed = ref ? parseSongRef(ref) : null;
+  if (!ref || !parsed) return null;
+  const known = resolved.get(ref);
+  if (known) return { ...song, audioUri: toStreamSong(known).audioUri };
+  const streamUrl = `${ALLEGRA_API_URL}/api/stream/${encodeURIComponent(parsed.source === 'gaana' ? ref : parsed.id)}`;
+  // Remembered as a stream, so its lyrics and radio find it like any other.
+  StreamService.register([{
+    id: parsed.id,
+    title: song.title,
+    artist: song.artist ?? '',
+    highResArt: song.coverImageUri ?? '',
+    downloadUrl: streamUrl,
+    streamUrl,
+    source: parsed.source === 'gaana' ? 'Gaana' : 'Saavn',
+    duration: song.duration,
+  }]);
+  return { ...song, audioUri: streamUrl };
 }
 
 /** The songs at the start of [songs] that need no lookup: up to the first online-only one. */

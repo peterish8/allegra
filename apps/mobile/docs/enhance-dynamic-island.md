@@ -5,8 +5,9 @@ Kotlin accessibility overlay drawn by hand on one canvas (see `dynamic-island.md
 This file records the owner's requests and the plan to build them. Tick a box only once the work is built
 **and** checked in the screenshot harness (below).
 
-Branch: `claude/dynamic-island-player-e765z5`. Nothing goes to `main` until the owner has reviewed the
-screenshots and said it is good enough.
+Current branch: `fix/dynamic-island-audit`. Continuation and verification are tracked in
+[`handoff-dynamic-island-2026-10-19.md`](handoff-dynamic-island-2026-10-19.md). Commits stay local until the owner
+approves pushing and opening the PR; the owner reviews before merge.
 
 ## What the owner asked for
 
@@ -80,24 +81,18 @@ speed. The springs use the island's Apple-like tuning: stiffness 170, damping 0.
 
 ## Research: opening the app from the island
 
-- Android can launch an activity so that its window grows out of a rectangle on screen:
-  `ActivityOptions.makeScaleUpAnimation(source, x, y, w, h)` or `makeClipRevealAnimation(...)`. The rectangle
-  is in the source view's coordinates
-  ([ActivityOptions](https://developer.android.com/reference/android/app/ActivityOptions),
-  [ActivityOptionsCompat](https://developer.android.com/reference/androidx/core/app/ActivityOptionsCompat)).
-  The **system compositor** runs this animation, not the app. That is why it can stay smooth on an old phone:
-  nothing in our process draws or lays out during it.
-- Plan: the source view is the island view, which is attached to its own overlay window. The source rectangle
-  is the card's current outline, and the app reveals from the island's exact shape. At the same moment the
-  island collapses to its pill on its own spring, so the two look like one motion. The link mounts Now Playing
-  already open (no second sheet slide inside the app).
-- Fallback: if a ROM ignores options from an overlay window, the launch is a plain start with the island's
-  collapse. That still works, it is just less pretty.
-- Third-party island clones (dynamicSpot) only open the target app without a morph, and reviewers note their
-  stutter ([MobileSyrup](https://mobilesyrup.com/2022/09/22/android-app-dynamicspot-mimics-dynamic-island/)).
-  Apple's version is part of the system's animation layer
-  ([iMore](https://www.imore.com/iphone/android-is-already-copying-the-dynamic-island)). The compositor-run
-  reveal is the closest an app can get.
+- The earlier implementation used activity launch options. The handoff records that launches from the service
+  could ignore that reveal and expose the app's previous screen before Now Playing mounted.
+- The morph now belongs to `IslandLaunch`: one native Canvas surface in a touch-through accessibility overlay.
+  It first draws the island snapshot at the exact pill/card outline, including the hanging notch's hidden top
+  corners, then grows on one spring to the display's corners. The cover travels into the hero, with clipping
+  around the moving outline. Richer device budgets melt the hero into the cover light.
+- The app starts underneath after the first island frame. The `instant` link mounts local or Connect Now Playing
+  open; after two animation frames JavaScript acknowledges `appShown`, and the native surface leaves over 220 ms.
+  A resume fallback and maximum hold keep a failed acknowledgment from covering the app indefinitely.
+- Reduce Motion opens the app directly, without capture, overlay or an activity animation. A refused overlay
+  also falls back to opening the app. Cancellation removes the surface without launching a cancelled request.
+- Device verification, including hardware snapshot alpha and per-ROM behavior, is recorded in the handoff.
 
 ## Research: continuity
 
@@ -125,7 +120,7 @@ faded out in one place and in at another.
 | Card ↔ search | The cover-and-title row **stretches into** the search field. The answers rise in under it. |
 | Card ↔ playlists / downloads, playlists ↔ songs | Places side by side: they slide with the finger (shared axis), and the island's height follows. |
 | Tap a song in a list or a search answer | The tapped row's cover, title and artist **fly into** the card's cover, title and artist while the list folds away and the island shrinks. The card shows the picked song from the first frame and does not wait for the app to start it. |
-| Card → app | The app's window grows out of the island's outline (system compositor). |
+| Card → app | The native launch surface grows from the island snapshot into the player, then leaves over the drawn Now Playing frame. |
 | Pause / play | The light eases to a stop and starts again. A title caught mid-loop glides home to its start. |
 
 ## Research: the cover bug (item 9)
@@ -152,7 +147,7 @@ faded out in one place and in at another.
 - [x] 8. Knob-less scrubber that swells under the finger
 - [x] 9. Cover bug: own loader pool, cache, prefetch, neutral fallback, embedded-art reload
 - [x] 10. Setting "Hide while LuvLyrics is open" (native pref + Settings row; window-level, check on the phone)
-- [x] 11. App opens out of the island (compositor reveal + island collapse; Now Playing mounted open; system animation, check on the phone)
+- [ ] 11. App opens out of the island (`IslandLaunch` Canvas morph + drawn-frame acknowledgment; local/Connect Now Playing mounted open; emulator and phone checks tracked in the handoff)
 - [x] 12. JS bridge: playlists, downloads and search snapshots, pick and search events (`DynamicIslandModule`)
 - [x] 13. Continuity morphs: pill cover ↔ card cover, lyric strip ↔ full lyrics, cover row ↔ search field, picked row → card
 - [x] 13a. Light from the cover's colours (first a blurred cover, `IslandGlow`, replaced by `IslandFlow` in 16b)

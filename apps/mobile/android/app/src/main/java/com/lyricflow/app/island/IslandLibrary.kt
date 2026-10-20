@@ -50,6 +50,16 @@ object IslandLibrary {
     /** Set while JavaScript listens for picks; null when it does not (the island then opens the app). */
     @Volatile var onPick: ((playlistId: String, songId: String) -> Unit)? = null
 
+    /**
+     * Set while JavaScript listens: keeps its timers running for a moment (`IslandJsAwake`). The island calls it
+     * when the song changes behind another app, so that song's lyrics, fetched by JavaScript, still reach it.
+     */
+    @Volatile var onWake: (() -> Unit)? = null
+
+    fun wakeJs() {
+        onWake?.invoke()
+    }
+
     private val main by lazy { Handler(Looper.getMainLooper()) }
 
     fun set(json: String) {
@@ -62,12 +72,20 @@ object IslandLibrary {
         main.post { onChange?.invoke() }
     }
 
-    /** Online answers for [query], joined under its downloads; answers to an older query are dropped. */
-    fun setSearchResults(query: String, json: String) {
-        if (query != searchQuery) return
-        searchResults = merge(localResults, parseSongs(json))
-        searching = false
-        main.post { onChange?.invoke() }
+    /**
+     * Online answers for [query], joined under its downloads; answers to an older query are dropped. They come in
+     * as they are found: until [done] the island still says it is looking. Parsed on the caller's (JavaScript's)
+     * thread, applied on the main thread, where typing changes the query, so a keystroke in between never leaves
+     * the last query's answers under the new one.
+     */
+    fun setSearchResults(query: String, json: String, done: Boolean = true) {
+        val answers = parseSongs(json)
+        main.post {
+            if (query != searchQuery) return@post
+            searchResults = merge(localResults, answers)
+            searching = !done && onSearch != null
+            onChange?.invoke()
+        }
     }
 
     /** Typed [query]: its downloads show at once. The online answers are asked for with [search] once typing rests. */

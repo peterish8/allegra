@@ -6,32 +6,36 @@ param(
 
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+$adbCommand = Get-Command adb -ErrorAction SilentlyContinue
+$adbExe = if ($adbCommand) { $adbCommand.Source } else { Join-Path $env:LOCALAPPDATA 'Android/Sdk/platform-tools/adb.exe' }
+if (!(Test-Path -LiteralPath $adbExe)) { throw 'Android SDK platform-tools/adb.exe is required.' }
 function Invoke-Adb {
-    $result = & adb -s $Serial @args
+    $result = & $adbExe -s $Serial @args
     if ($LASTEXITCODE -ne 0) { throw "adb failed: $args" }
     return $result
 }
-function Get-IslandFrame {
+function Get-IslandFrame([string]$Title = 'LuvLyrics island') {
     $windows = (Invoke-Adb shell dumpsys window windows) -join "`n"
-    $block = [regex]::Match($windows, '(?s)Window #\d+ Window\{[^\n]* u0 LuvLyrics island\}:(.*?)(?=\n\s*Window #|\z)').Groups[1].Value
+    $name = [regex]::Escape($Title)
+    $block = [regex]::Match($windows, "(?s)Window #\d+ Window\{[^\n]* u0 $name\}:(.*?)(?=\n\s*Window #|\z)").Groups[1].Value
     $frame = [regex]::Match($block, 'mAttrs=\{\((-?\d+),(-?\d+)\)\((\d+)x(\d+)\)')
-    if (!$frame.Success) { throw 'No drawing window. Enable the LuvLyrics island accessibility service and Show the island.' }
+    if (!$frame.Success) { throw "No '$Title' window. Enable the LuvLyrics island accessibility service and Show the island." }
     return @{ x = [int]$frame.Groups[1].Value; width = [int]$frame.Groups[3].Value; height = [int]$frame.Groups[4].Value }
 }
 
-$windows = (Invoke-Adb shell dumpsys window windows) -join "`n"
-if ($windows -notmatch 'LuvLyrics island touch') { throw 'Install a build with the stable drawing surface and compact touch window first.' }
-$geometry = ((Invoke-Adb logcat -d -s LyrFlowIsland) | Select-String 'geometry=IslandGeometry' | Select-Object -Last 1).Line
-function Read-Geometry([string]$Key) {
-    $match = [regex]::Match($geometry, "$Key=([0-9.]+)")
-    if (!$match.Success) { throw "Missing $Key in the debug geometry log. Re-enable the service on a debug build." }
-    return [double]::Parse($match.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
-}
-$anchor = Read-Geometry 'anchorX'
-$density = Read-Geometry 'density'
-$tapX = [int]($anchor + (Read-Geometry 'cameraWidth') / 2 + 12 * $density)
-$tapY = [int]((Read-Geometry 'pillTop') + (Read-Geometry 'pillHeight') / 2)
-$outsideY = [int]((Read-Geometry 'cardTop') + (Read-Geometry 'cardHeight') + 80 * $density)
+# Read attached windows rather than a debug-only (or stale) geometry log, so the release APK is testable too.
+$touchFrame = Get-IslandFrame 'LuvLyrics island touch'
+$drawingFrame = Get-IslandFrame
+$densityMatches = [regex]::Matches(((Invoke-Adb shell wm density) -join "`n"), '(?:Physical|Override) density:\s*(\d+)')
+$sizeMatches = [regex]::Matches(((Invoke-Adb shell wm size) -join "`n"), '(?:Physical|Override) size:\s*(\d+)x(\d+)')
+if (!$densityMatches.Count -or !$sizeMatches.Count) { throw 'Could not read the display size and density.' }
+$density = [int]$densityMatches[$densityMatches.Count - 1].Groups[1].Value / 160.0
+$screenHeight = [int]$sizeMatches[$sizeMatches.Count - 1].Groups[2].Value
+$anchor = $touchFrame.x + $touchFrame.width / 2.0
+# The right side clears the camera; twenty dp above the window's bottom is inside the resting pill.
+$tapX = [int]($touchFrame.x + $touchFrame.width * 0.84)
+$tapY = [int][Math]::Max(1, $touchFrame.height - 20 * $density)
+$outsideY = [int][Math]::Min($screenHeight - 64 * $density, $drawingFrame.height + 80 * $density)
 $baseline = $null
 $frames = [Collections.Generic.List[object]]::new()
 function Assert-Stable([string]$State) {
@@ -54,10 +58,11 @@ $remoteVideo = '/sdcard/luvlyrics-island-' + [DateTime]::UtcNow.ToString('yyyyMM
 try {
     Invoke-Adb shell input keyevent KEYCODE_HOME | Out-Null
     Invoke-Adb shell input tap ([int]$anchor) $outsideY | Out-Null
+    Invoke-Adb shell input keyevent KEYCODE_HOME | Out-Null
     Start-Sleep -Milliseconds 1200
     $baseline = Get-IslandFrame
     if ($Record) {
-        $recording = Start-Process -FilePath (Get-Command adb).Source -WindowStyle Hidden -PassThru -ArgumentList @(
+        $recording = Start-Process -FilePath $adbExe -WindowStyle Hidden -PassThru -ArgumentList @(
             '-s', $Serial, 'shell', 'screenrecord', '--size', '720x1600', '--bit-rate', '4000000', '--time-limit', '18', $remoteVideo
         )
     }
@@ -72,6 +77,8 @@ try {
             Invoke-Adb shell screencap -p /sdcard/luvlyrics-island-expanded.png | Out-Null
             Invoke-Adb pull /sdcard/luvlyrics-island-expanded.png (Join-Path $OutDir 'glow-expanded.png') | Out-Null
         }
+        $expandedHeight = $frames[$frames.Count - 1].height
+        $outsideY = [int][Math]::Min($screenHeight - 64 * $density, $expandedHeight + 80 * $density)
         Invoke-Adb shell input tap ([int]$anchor) $outsideY | Out-Null
         Start-Sleep -Milliseconds 100
         Assert-Stable "closing $cycle"

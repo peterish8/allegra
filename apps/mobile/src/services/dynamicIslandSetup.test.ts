@@ -1,6 +1,15 @@
 import {
-  IslandStatus, foldForSearch, isDownloadedSong, matchDownloads, islandCover, islandLyricsPayload, islandSetupStep, islandSongRow, parseIslandStatus,
+  IslandStatus, foldForSearch, isDownloadedSong, matchDownloads, islandAwakeMs, islandCover, islandLyricsPayload, islandSearchRows,
+  islandSetupStep, islandSongRow, parseIslandStatus,
 } from './dynamicIslandSetup';
+
+test('the island keeps JavaScript awake only as long as asked, within a minute', () => {
+  expect(islandAwakeMs({ ms: 20_000 })).toBe(20_000);
+  expect(islandAwakeMs({ ms: 10 * 60_000 })).toBe(60_000);
+  expect(islandAwakeMs({ ms: -5 })).toBe(0);
+  expect(islandAwakeMs({ ms: 'soon' })).toBe(0);
+  expect(islandAwakeMs(null)).toBe(0);
+});
 
 const ready: IslandStatus = {
   serviceEnabled: true, serviceRunning: true, showing: true, enabled: true,
@@ -111,5 +120,20 @@ describe('island search over the downloads', () => {
 
   test('stops at the limit', () => {
     expect(matchDownloads(downloads, 'a', 2)).toHaveLength(2);
+  });
+
+  test('search rows list the downloads first, marked, then the online answers with their own art', () => {
+    const rows = islandSearchRows(
+      [{ id: 'd1', title: 'Kesariya', artist: 'Arijit Singh', coverImageUri: 'file:///c.jpg' }],
+      [
+        { id: 'o1', title: 'Kesariya', artist: 'Arijit Singh', highResArt: 'https://yt/k.jpg' },
+        { id: 'o2', title: 'Tum Hi Ho', artist: 'Arijit Singh', highResArt: '', thumbnail: 'https://yt/t.jpg' },
+      ],
+    );
+    expect(rows).toEqual([
+      { id: 'd1', title: 'Kesariya', artist: 'Arijit Singh', cover: 'file:///c.jpg', downloaded: true },
+      { id: 'o1', title: 'Kesariya', artist: 'Arijit Singh', cover: 'https://yt/k.jpg' },
+      { id: 'o2', title: 'Tum Hi Ho', artist: 'Arijit Singh', cover: 'https://yt/t.jpg' },
+    ]);
   });
 });

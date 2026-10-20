@@ -77,15 +77,17 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         /** The drawing window takes touches only while the card is open (or opening); never while it closes. */
         fun setExpandedTouch(expanded: Boolean)
         /**
-         * Opens LuvLyrics at [link] (a `lyricflow://` link). [from] is the island's outline in this view's
-         * coordinates: the app's window grows out of it.
+         * Opens LuvLyrics at [link] (a `lyricflow://` link), growing out of the island as it is now ([look], null
+         * when it cannot be pictured). The host folds the island away ([collapse]) once the app is on its way.
          */
-        fun openApp(link: String = PLAYER_LINK, from: RectF? = null)
+        fun openApp(link: String = PLAYER_LINK, look: IslandLaunch.Look? = null)
         /**
          * The search drawer's text field, in this view's coordinates, or null to put it away: the host lays a real
          * text field over it, so the keyboard comes up, and hands each change to [setSearchText].
          */
         fun showSearchInput(field: RectF?)
+        /** Reads whether the phone is locked now (sets [locked]): asked before the island is opened or touched. */
+        fun checkLock()
     }
 
     var geometry: IslandGeometry? = null
@@ -280,6 +282,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     /** The light's own clock, in seconds: it advances only while music plays, so a pause holds the room still. */
     private var blobClock = 0f
     private var blobLastMs = 0L
+    /** When the light's field was last computed (IslandBudget.flowFrameMs apart). */
+    private var flowRenderedMs = 0L
     /** The marquee's own clock, in seconds: it runs only while music plays (see drawNowPlaying). */
     private var marqueeClock = 0f
     private var marqueeLastMs = 0L
@@ -503,6 +507,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             if (previousId != null && !sameSong && nowHasSong && !wantOpen) {
                 bump.kick(4f)
             }
+            // Its lyrics come from JavaScript, which needs its timers to fetch them behind another app.
+            if (!sameSong && nowHasSong) IslandLibrary.wakeJs()
             prefetchNext(p)
         }
         hasSong = nowHasSong
@@ -619,6 +625,10 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     private fun expand() {
         if (wantOpen) return
+        host.checkLock()
+        // Whatever JavaScript was fetching for the island behind another app (this song's lyrics) finishes now,
+        // rather than when LuvLyrics is next opened.
+        IslandLibrary.wakeJs()
         wantOpen = true
         if (resetPagesWhenClosed) resetPages()
         resetMarquee()
@@ -705,18 +715,94 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         retarget()
     }
 
-    /** LuvLyrics opens growing out of the island's outline as it is now, while the island folds to its pill. */
+    /** LuvLyrics opens growing out of the island as it is now (IslandLaunch), while the island folds to its pill. */
     private fun openApp(link: String = PLAYER_LINK) {
         // Locked: the app would open behind the lock screen, so the island just stays.
         if (locked) return
-        val g = geometry
-        val from = if (g == null) null else RectF().also {
-            shape(it, open.value, wide.value, shown.value, 1f, lyricsRoom.value, full.value, searchP.value)
-            it.offset(width / 2f, 0f)
-        }
-        host.openApp(link, from)
-        collapse()
+        host.openApp(link, if (motionOff()) null else launchLook())
     }
+
+    /** The island as it is now, in screen pixels, for the app to grow out of; null when it cannot be pictured. */
+    private fun launchLook(): IslandLaunch.Look? {
+        val g = geometry ?: return null
+        if (!isAttachedToWindow || width <= 0) return null
+        val outline = RectF()
+        shape(outline, open.value, wide.value, shown.value, currentScale(), lyricsRoom.value, full.value, searchP.value)
+        outline.offset(width / 2f, 0f)
+        if (outline.isEmpty) return null
+        val oc = open.value.coerceIn(0f, 1f)
+        val radius = min(lerp(outline.height() / 2f, g.cardRadius, oc), outline.height() / 2f)
+        // Where the cover shows now, if it does: the card's, or the closed pill's little round one.
+        var coverRadius = g.dp(12f)
+        val coverFrom = when {
+            !hasSong || cover == null -> null
+            oc > 0.5f && lyricsP.value < 0.5f && abs(pageX.value) < 0.05f && searchP.value < 0.05f && flyer == null ->
+                RectF(coverBox).apply { offset(width / 2f, 0f) }
+            oc < 0.05f && wide.value > 0.9f -> RectF().also {
+                compactCover(g, outline, it)
+                coverRadius = it.width() / 2f
+            }
+            else -> null
+        }
+        // Match onDraw's hanging outline, including the part above the physical screen. Keep the cover's
+        // coordinates from the unextended pill: its content does not move up with the hidden corners.
+        if (g.hanging) outline.top -= radius
+        val snapshot = snapshot(outline)
+        val at = IntArray(2)
+        getLocationOnScreen(at)
+        outline.offset(at[0].toFloat(), at[1].toFloat())
+        coverFrom?.offset(at[0].toFloat(), at[1].toFloat())
+        val light = if (budget.richLaunch) try { flowBitmap.copy(Bitmap.Config.ARGB_8888, false) } catch (_: Exception) { null } else null
+        return IslandLaunch.Look(outline, radius, snapshot, cover, coverFrom, coverRadius, light, blendedColors())
+    }
+
+    /**
+     * The island drawn as it is, cropped to [area]: recorded as a picture and rendered on the GPU where Android
+     * can (9+), else in software. Null when it cannot be drawn; the morph then starts from the bare shape.
+     */
+    private fun snapshot(area: RectF): Bitmap? {
+        val w = area.width().roundToInt()
+        val h = area.height().roundToInt()
+        if (w <= 0 || h <= 0) return null
+        capturing = true
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                try {
+                    val picture = android.graphics.Picture()
+                    val c = picture.beginRecording(w, h)
+                    try {
+                        c.translate(-area.left, -area.top)
+                        draw(c)
+                    } finally {
+                        picture.endRecording()
+                    }
+                    return Bitmap.createBitmap(picture, w, h, Bitmap.Config.HARDWARE)
+                } catch (e: Exception) {
+                    android.util.Log.w("LyrFlowIsland", "hardware island snapshot failed; retrying software", e)
+                }
+            }
+            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+                val c = Canvas(it)
+                c.translate(-area.left, -area.top)
+                draw(c)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("LyrFlowIsland", "island snapshot failed", e)
+            null
+        } finally {
+            capturing = false
+        }
+    }
+
+    /** Drawing for a snapshot, not the screen: no ticks are scheduled from it. */
+    private var capturing = false
+
+    /** How much the island may draw on this phone (IslandBudget); the host sets it. */
+    var budget = IslandBudget.MID
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     // ── Search ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -735,10 +821,17 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private fun closeSearch() {
         if (!searchOpen) return
         searchOpen = false
-        main.removeCallbacks(runSearch)
         host.showSearchInput(null)
+        // After the field is put away: clearing it hands back an empty text, which would ask for one more search.
+        main.removeCallbacks(runSearch)
         holdOpen()
         retarget()
+    }
+
+    /** Back pressed in the search field (the keyboard already down): the drawer folds back into the card. */
+    fun backFromSearch() {
+        closeSearch()
+        kickLoop()
     }
 
     /**
@@ -1027,14 +1120,21 @@ class IslandView(context: Context, private val host: Host) : View(context) {
      */
     private fun drawFlow(canvas: Canvas, alpha: Float) {
         val now = SystemClock.uptimeMillis()
-        if (blobLastMs != 0L && screenOn) blobClock += ((now - blobLastMs) / 1000f).coerceAtMost(0.1f) * blobSpeed.value
+        if (blobLastMs != 0L && screenOn && !motionOff()) {
+            blobClock += ((now - blobLastMs) / 1000f).coerceAtMost(0.1f) * blobSpeed.value * FLOW_TEMPO
+        }
         blobLastMs = now
-        val c = blendedColors()
-        // The deep corner sits behind the title, the vivid colours below, the light one low in a corner.
-        val deep = ColorUtils.blendARGB(c.bottom, Color.BLACK, 0.55f)
-        val light = ColorUtils.blendARGB(c.accent, c.bottom, 0.35f)
-        if (flow.render(blobClock, deep, c.second, c.bottom, light)) {
-            flowBitmap.setPixels(flow.pixels, 0, IslandFlow.W, 0, 0, IslandFlow.W, IslandFlow.H)
+        // The field is recomputed at the phone's budget (15–60 fps), not on every frame a scrolling title asks for:
+        // filtered large, a few frames a second already read as smooth light.
+        if (flowRenderedMs == 0L || now - flowRenderedMs >= budget.flowFrameMs || capturing) {
+            flowRenderedMs = now
+            val c = blendedColors()
+            // The deep corner sits behind the title, the vivid colours below, the light one low in a corner.
+            val deep = ColorUtils.blendARGB(c.bottom, Color.BLACK, 0.55f)
+            val light = ColorUtils.blendARGB(c.accent, c.bottom, 0.35f)
+            if (flow.render(blobClock, deep, c.second, c.bottom, light)) {
+                flowBitmap.setPixels(flow.pixels, 0, IslandFlow.W, 0, 0, IslandFlow.W, IslandFlow.H)
+            }
         }
         matrix.setScale(shapeRect.width() / (IslandFlow.W - 1), shapeRect.height() / (IslandFlow.H - 1))
         matrix.postTranslate(shapeRect.left, shapeRect.top)
@@ -1066,7 +1166,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         }
 
         val right = pill.right - inset - g.dp(4f)
-        drawBars(canvas, right, cy, size * 0.78f, g.dp(3f), g.dp(2.6f), blendedColors().accent, alpha, playing && screenOn)
+        drawBars(canvas, right, cy, size * 0.78f, g.dp(3f), g.dp(2.6f), blendedColors().accent, alpha, playing && screenOn && !motionOff())
     }
 
     /** Four level bars ending at [right], dancing while [live]. */
@@ -1216,7 +1316,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         }
 
         val now = SystemClock.uptimeMillis()
-        if (playing && screenOn && marqueeLastMs != 0L) marqueeClock += ((now - marqueeLastMs) / 1000f).coerceAtMost(0.1f)
+        if (playing && screenOn && !motionOff() && marqueeLastMs != 0L) marqueeClock += ((now - marqueeLastMs) / 1000f).coerceAtMost(0.1f)
         marqueeLastMs = now
         if (picked == null) {
             drawMarquee(canvas, g, titleShown, titleWidth, titlePaint, titleY,
@@ -1710,7 +1810,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         if (badge) drawBadge(canvas, g, x, cy + g.dp(11f), alpha * 0.55f)
         rowSubPaint.alpha = (255 * alpha * 0.55f).toInt()
         canvas.drawText(shownSub, x + mark, cy + g.dp(15f), rowSubPaint)
-        if (highlight) drawBars(canvas, right, cy, g.dp(14f), g.dp(2.5f), g.dp(2f), accent, alpha, playing && screenOn)
+        if (highlight) drawBars(canvas, right, cy, g.dp(14f), g.dp(2.5f), g.dp(2f), accent, alpha, playing && screenOn && !motionOff())
     }
 
     /** The mark before a downloaded song's artist: it plays from the phone, offline. [cy] is the text's middle. */
@@ -1899,17 +1999,20 @@ class IslandView(context: Context, private val host: Host) : View(context) {
      * move again or, paused, twice a second for the clock.
      */
     private fun scheduleTicks(compactAlpha: Float, cardAlpha: Float) {
-        if (looping || !screenOn) return
+        if (looping || !screenOn || capturing) return
+        val still = motionOff()
         if (compactAlpha > 0.01f && cardAlpha <= 0.01f) {
-            if (playing) postInvalidateDelayed(BAR_FRAME_MS)
+            if (playing && !still) tickIn(budget.tickMs)
             return
         }
         if (cardAlpha <= 0.5f) return
         val g = geometry ?: return
         if (searchOpen) {
-            postInvalidateDelayed(if (playing) BAR_FRAME_MS else CARET_BLINK_MS)
+            tickIn(if (playing && !still) budget.tickMs else CARET_BLINK_MS)
             return
         }
+        // Reduce Motion: the light, the bars and the titles hold still; nothing needs a tick.
+        if (still) return
         var wait = -1f
         if (page == Page.NOW && ghostPage == null && playing) {
             val a = IslandMotion.marqueeWait(marqueeClock, titleWidth, textWidth, g.density)
@@ -1918,10 +2021,26 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         }
         when {
             wait == 0f -> postInvalidateOnAnimation()
-            playing -> postInvalidateDelayed(BAR_FRAME_MS)
-            wait > 0f -> postInvalidateDelayed((wait * 1000f).toLong().coerceAtLeast(16L))
+            playing -> tickIn(budget.tickMs)
+            wait > 0f -> tickIn((wait * 1000f).toLong().coerceAtLeast(16L))
         }
     }
+
+    /**
+     * One pending redraw at a time. Each draw asks for the next; a delayed invalidate per draw stacked a new chain
+     * on every outside redraw (a player event, a cover landing), and the "30 fps" bars climbed to the screen's rate.
+     */
+    private val tick = Runnable { invalidate() }
+
+    private fun tickIn(ms: Long) {
+        main.removeCallbacks(tick)
+        main.postDelayed(tick, ms)
+    }
+
+    /** Android's Reduce Motion (animations off): ambient motion holds still, the shape's moves just snap. */
+    private fun motionOff(): Boolean = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        !android.animation.ValueAnimator.areAnimatorsEnabled()
+    } else false
 
     // ── Touch ───────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1986,6 +2105,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
                 moved = false
                 longPressed = false
                 axis = Axis.NONE
+                // A missed unlock must not leave the pages and search shut until the island is switched off and on.
+                if (locked) host.checkLock()
                 touchTarget = hitTest(x, y)
                 if (touchTarget == Target.NONE) return false
                 if (!wantOpen) {
@@ -2401,7 +2522,6 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         private const val AUTO_CLOSE_MS = 8_000L
         private const val BROWSE_CLOSE_MS = 20_000L
         private const val LONG_PRESS_MS = 450L
-        private const val BAR_FRAME_MS = 33L
         /** A gesture's carried speed is capped, so a hard flick still settles with the spring's own small overshoot. */
         private const val MAX_FLING = 4f
         private const val MIN_GESTURE_S = 0.03f
@@ -2445,6 +2565,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         private const val SONG_ROW_DP = 56f
         /** How strongly the cover's light shows through the card. */
         private const val FLOW_STRENGTH = 1f
+        /** How fast the light flows against its own clock: twice its first tempo, which read as too sleepy. */
+        private const val FLOW_TEMPO = 2f
         private val BAR_SPEED = floatArrayOf(3.2f, 4.1f, 2.8f, 3.7f)
         private val BAR_PHASE = floatArrayOf(0f, 1.7f, 3.1f, 4.6f)
 

@@ -58,6 +58,7 @@ import ConnectRemotePlayer from '../components/connect/ConnectRemotePlayer';
 import { useConnect } from '../services/connect/ConnectProvider';
 import { prefetchCover } from '../components/player/coverImages';
 import { Song } from '../types/song';
+import { notifyIslandAppShownAfterDraw } from '../services/NativeDynamicIsland';
 
 const { Gesture, GestureDetector } = GestureHandler;
 
@@ -109,7 +110,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // sheet is scaled to the pill's width. It starts there, so the first frame
   // never flashes the player at rest.
   const { y: restY } = playerSheetRest(windowW, screenH, insets.bottom, pillNav);
-  // Opened out of the system island: Android grows the app's window out of the island, so the sheet is
+  // Opened out of the system island: its native launch surface grows over the app, so the sheet is
   // already open in the first frame instead of rising a second time inside it.
   const openedOpen = route.params.instant === true;
   const sheetY = useSharedValue(openedOpen ? 0 : restY);
@@ -958,6 +959,9 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 const NowPlayingScreen: React.FC<Props> = (props) => {
   const connect = useConnect();
   const fromConnect = Boolean(parseSongRef(props.route.params.songId));
+  const openedOpen = props.route.params.instant === true;
+  // Both local and Connect players acknowledge only once their first frame has been drawn.
+  useEffect(() => openedOpen ? notifyIslandAppShownAfterDraw() : undefined, [openedOpen]);
   return connect.remotePlayback || fromConnect
     ? <ConnectRemotePlayer {...props} />
     : <LocalNowPlayingScreen {...props} />;

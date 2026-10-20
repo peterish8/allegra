@@ -15,6 +15,7 @@ interface DynamicIslandModule {
   openAppInfo?: () => boolean;
   setLyrics?: (songId: string, atMs: number[], texts: string[]) => void;
   clearLyrics?: () => void;
+  appShown?: () => void;
   setHideInApp?: (on: boolean) => void;
   setShowLyricStrip?: (on: boolean) => void;
   setShowOnLockScreen?: (on: boolean) => void;
@@ -22,7 +23,7 @@ interface DynamicIslandModule {
   setStyle?: (style: string) => void;
   setPlaylists?: (json: string) => void;
   setDownloads?: (json: string) => void;
-  setSearchResults?: (query: string, json: string) => void;
+  setSearchResults?: (query: string, json: string, done: boolean) => void;
   addListener?: (event: string, cb: (data: unknown) => void) => { remove: () => void };
 }
 
@@ -64,6 +65,20 @@ export const openIslandAppInfo = () => call(m => m.openAppInfo?.() ?? false);
 export const setIslandLyrics = (songId: string, atMs: number[], texts: string[]) =>
   call(m => (m.setLyrics ? m.setLyrics(songId, atMs, texts) : false));
 export const clearIslandLyrics = () => call(m => (m.clearLyrics ? m.clearLyrics() : false));
+/** Now Playing has drawn: the native launch surface can leave the player visible. */
+export const notifyIslandAppShown = () => call(m => (m.appShown ? m.appShown() : false));
+
+/** Wait for a committed frame, then a drawn frame; unmounting cancels either pending acknowledgment. */
+export function notifyIslandAppShownAfterDraw(): () => void {
+  let second: number | undefined;
+  const first = requestAnimationFrame(() => {
+    second = requestAnimationFrame(() => { notifyIslandAppShown(); });
+  });
+  return () => {
+    cancelAnimationFrame(first);
+    if (second !== undefined) cancelAnimationFrame(second);
+  };
+}
 export const setIslandSize = (widthPercent: number, heightPercent: number) =>
   call(m => (m.setSize ? m.setSize(Math.round(widthPercent), Math.round(heightPercent)) : false));
 export const setIslandStyle = (style: IslandStyle) => call(m => (m.setStyle ? m.setStyle(style) : false));
@@ -73,8 +88,9 @@ export const setIslandShowLyricStrip = (on: boolean) => call(m => (m.setShowLyri
 export const setIslandHideInApp = (on: boolean) => call(m => (m.setHideInApp ? m.setHideInApp(on) : false));
 export const setIslandPlaylists = (json: string) => call(m => (m.setPlaylists ? m.setPlaylists(json) : false));
 export const setIslandDownloads = (json: string) => call(m => (m.setDownloads ? m.setDownloads(json) : false));
-export const setIslandSearchResults = (query: string, json: string) =>
-  call(m => (m.setSearchResults ? m.setSearchResults(query, json) : false));
+/** A search's answers so far; `done` false while more may come (the island keeps saying it is looking). */
+export const setIslandSearchResults = (query: string, json: string, done = true) =>
+  call(m => (m.setSearchResults ? m.setSearchResults(query, json, done) : false));
 
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
