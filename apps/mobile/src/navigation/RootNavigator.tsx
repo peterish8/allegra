@@ -31,6 +31,7 @@ import { useDeepLinks } from '../hooks/useDeepLinks';
 import { useWidgetLinks, useWidgetSync } from '../widget/useWidgetSync';
 import { useIslandLyrics } from '../hooks/useIslandLyrics';
 import { useIslandLibrary } from '../hooks/useIslandLibrary';
+import { useLyricsUpgrade } from '../hooks/useLyricsUpgrade';
 import ConnectDeviceSheet from '../components/connect/ConnectDeviceSheet';
 import ConnectNoticeHost from '../components/connect/ConnectNoticeHost';
 import ConnectMiniPlayer from '../components/connect/ConnectMiniPlayer';
@@ -45,6 +46,8 @@ export const RootNavigator: React.FC = () => {
   // Home-screen widgets: keep them current, and answer their taps.
   useWidgetSync();
   useIslandLyrics();
+  // Plain lyrics showing: look once more for synced ones and swap them in.
+  useLyricsUpgrade();
   useIslandLibrary();
   useWidgetLinks();
 

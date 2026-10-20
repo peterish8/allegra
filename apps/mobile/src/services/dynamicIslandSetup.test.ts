@@ -1,6 +1,5 @@
-import { displayWords } from '@shared/wordSync';
 import {
-  IslandStatus, foldForSearch, isDownloadedSong, matchDownloads, islandAwakeMs, islandCover, islandLyricsPayload, islandSearchRows,
+  IslandStatus, foldForSearch, isDownloadedSong, matchDownloads, islandAwakeMs, islandCover, islandLyricsPayload, islandLyricsTiming, islandSearchRows,
   islandSetupStep, islandSongRow, parseIslandStatus,
 } from './dynamicIslandSetup';
 
@@ -61,32 +60,7 @@ test.each([null, undefined, false, 'invalid'])('Unavailable status stays unavail
 describe('islandLyricsPayload', () => {
   test('timed lines go to the island in ms, shifted by the lyrics delay the way the app reads them', () => {
     const lines = [{ timestamp: 1.2, text: 'First line' }, { timestamp: 4.5, text: '  Second line ' }, { timestamp: 7, text: '   ' }];
-    expect(islandLyricsPayload(lines, 0.5)).toEqual({ atMs: [700, 4000], texts: ['First line', 'Second line'], marks: [[], []] });
-  });
-
-  test('letter by letter sends each word with its time, on the same delayed clock', () => {
-    const lines = [
-      { timestamp: 1, text: 'Uyire uyire', words: [{ text: 'Uyire', start: 1, end: 2 }, { text: 'uyire', start: 2, end: 3 }] },
-      { timestamp: 4, text: '[Instrumental Break]' },
-      { timestamp: 9, text: 'Thaene mozhiye' },
-    ];
-    const payload = islandLyricsPayload(lines, 0.5, true)!;
-    expect(payload.texts).toEqual(['Uyire uyire', '♪', 'Thaene mozhiye']);
-    // Exactly the timing the app's own sweep reads, shifted by the delay.
-    const app = displayWords(lines[0], lines[1].timestamp, true)!;
-    const ms = (s: number) => Math.round((s - 0.5) * 1000);
-    expect(payload.marks[0]).toEqual([6, ms(app[0].start), ms(app[0].end), 11, ms(app[1].start), ms(app[1].end)]);
-    expect(payload.marks[0][1]).toBe(500);
-    expect(payload.marks[1]).toEqual([]);
-    // No word timing of its own: estimated across the line, like the app's sweep.
-    expect(payload.marks[2]).toHaveLength(6);
-    expect(payload.marks[2][0]).toBe(7);
-    expect(payload.marks[2][1]).toBe(8500);
-  });
-
-  test('line by line sends no word timing', () => {
-    const lines = [{ timestamp: 1, text: 'Uyire uyire', words: [{ text: 'Uyire', start: 1, end: 2 }, { text: 'uyire', start: 2, end: 3 }] }];
-    expect(islandLyricsPayload(lines, 0, false)?.marks).toEqual([[]]);
+    expect(islandLyricsPayload(lines, 0.5)).toEqual({ atMs: [700, 4000], texts: ['First line', 'Second line'] });
   });
 
   test('plain lyrics (every line at 0) and no lyrics send nothing', () => {
@@ -162,4 +136,28 @@ describe('island search over the downloads', () => {
       { id: 'o2', title: 'Tum Hi Ho', artist: 'Arijit Singh', cover: 'https://yt/t.jpg' },
     ]);
   });
+});
+
+
+describe('island word timing', () => {
+  test('keeps real word times and the triple-tap highlight mode on the same delayed clock', () => {
+    const lines = [{ timestamp: 2, text: 'First word', words: [{ text: 'First ', start: 2, end: 3 }, { text: 'word', start: 3.5, end: 4 }] }];
+    const payload = JSON.parse(islandLyricsTiming(lines, 0.5, 'letters'));
+    expect(payload.highlight).toBe('letters');
+    expect(payload.lines[0].atMs).toBe(1500);
+    expect(payload.lines[0].segments).toEqual([
+      { from: 0, to: 5, startMs: 1500, endMs: 2500 },
+      { from: 6, to: 10, startMs: 3000, endMs: 3500 },
+    ]);
+    expect(JSON.parse(islandLyricsTiming(lines, 0.5, 'lines')).highlight).toBe('lines');
+  });
+  test('preserves instrumental markers for the native symbol renderer', () => {
+    const payload = JSON.parse(islandLyricsTiming([{ timestamp: 3, text: '[INSTRUMENTAL]' }], 0, 'letters'));
+    expect(payload.lines[0].text).toBe('[INSTRUMENTAL]');
+  });
+});
+
+test('every way of writing a music break reaches the island as the marker it draws as bars', () => {
+  const lines = [{ timestamp: 1, text: 'Uyire' }, { timestamp: 5, text: '♪ ♪' }, { timestamp: 9, text: '[Music]' }];
+  expect(islandLyricsPayload(lines, 0)?.texts).toEqual(['Uyire', '[INSTRUMENTAL]', '[INSTRUMENTAL]']);
 });

@@ -1471,6 +1471,10 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private fun drawLyricLine(canvas: Canvas, at: Int, baseline: Float, alpha: Float, maxWidth: Float) {
         if (alpha <= 0.01f) return
         val line = lyricLines.getOrNull(at) ?: return
+        if (line.instrumental) {
+            drawInstrumental(canvas, 0f, baseline - sp(LYRIC_SP) * 0.35f, sp(LYRIC_SP), alpha, at == lyricIndex)
+            return
+        }
         val fit = lyricFits.getOrPut(at) {
             val size = sp(LYRIC_SP)
             lyricPaint.textSize = size
@@ -1481,54 +1485,60 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             LyricFit(shown, fitted, lyricPaint.measureText(shown))
         }
         lyricPaint.textSize = fit.size
-        val lit = if (at == lyricIndex) IslandLyrics.litChars(line, lyricPositionMs()) else -1f
-        if (lit < 0f) {
+        val sweep = IslandLyrics.sweeps(line, at == lyricIndex, motionOff())
+        lyricPaint.alpha = (255 * alpha * if (sweep) FULL_DIM_ALPHA else 1f).toInt()
+        canvas.drawText(fit.text, -fit.width / 2f, baseline, lyricPaint)
+        if (sweep) {
+            val offset = IslandLyrics.highlightOffset(line, lyricPosition()).coerceIn(0f, fit.text.length.toFloat())
+            val whole = offset.toInt()
+            val left = lyricPaint.measureText(fit.text, 0, whole)
+            val next = lyricPaint.measureText(fit.text, 0, min(whole + 1, fit.text.length))
+            canvas.save()
+            canvas.clipRect(-fit.width / 2f, baseline - fit.size * 1.4f,
+                -fit.width / 2f + left + (next - left) * (offset - whole), baseline + fit.size * 0.4f)
             lyricPaint.alpha = (255 * alpha).toInt()
             canvas.drawText(fit.text, -fit.width / 2f, baseline, lyricPaint)
-            return
-        }
-        // Letter by letter, as the app's triple-tap setting: the whole line dim, the sung letters bright over it.
-        val left = -fit.width / 2f
-        lyricPaint.alpha = (255 * alpha * SWEEP_DIM_ALPHA).toInt()
-        canvas.drawText(fit.text, left, baseline, lyricPaint)
-        val litX = left + sweepWidth(fit.text, lit.coerceAtMost(fit.text.length.toFloat()), lyricPaint)
-        if (litX <= left) return
-        canvas.save()
-        canvas.clipRect(left, baseline - fit.size * 1.3f, litX, baseline + fit.size * 0.5f)
-        lyricPaint.alpha = (255 * alpha).toInt()
-        canvas.drawText(fit.text, left, baseline, lyricPaint)
-        canvas.restore()
-    }
-
-    /** Width of the first [lit] characters of [text], the last one counted in part. */
-    private fun sweepWidth(text: String, lit: Float, paint: Paint): Float {
-        val whole = lit.toInt().coerceIn(0, text.length)
-        val part = if (whole < text.length) (lit - whole) * paint.measureText(text, whole, whole + 1) else 0f
-        return paint.measureText(text, 0, whole) + part
-    }
-
-    private fun lyricPositionMs(): Long = if (scrubbing) scrubMs else player?.currentPosition ?: 0L
-
-    /** The sung line of the full list, swept letter by letter across each of its wrapped rows. */
-    private fun drawSweptLayout(canvas: Canvas, layout: StaticLayout, lit: Float, alpha: Int) {
-        fullLyricPaint.alpha = (alpha * SWEEP_DIM_ALPHA).toInt()
-        layout.draw(canvas)
-        fullLyricPaint.alpha = alpha
-        for (row in 0 until layout.lineCount) {
-            val rowStart = layout.getLineStart(row)
-            if (lit <= rowStart) break
-            val rowEnd = layout.getLineEnd(row)
-            val left = layout.getLineLeft(row)
-            val right = if (lit >= rowEnd) layout.getLineRight(row) else {
-                val whole = lit.toInt()
-                val x = layout.getPrimaryHorizontal(whole)
-                x + (lit - whole) * (layout.getPrimaryHorizontal(min(whole + 1, rowEnd)) - x).coerceAtLeast(0f)
-            }
-            canvas.save()
-            canvas.clipRect(left, layout.getLineTop(row).toFloat(), right, layout.getLineBottom(row).toFloat())
-            layout.draw(canvas)
             canvas.restore()
         }
+    }
+
+    private fun lyricPosition(): Long = if (scrubbing) scrubMs else player?.currentPosition ?: 0L
+
+    /** Five quiet bars for a music break; only the currently sung break moves, and only while playing. */
+    private fun drawInstrumental(canvas: Canvas, x: Float, y: Float, size: Float, alpha: Float, current: Boolean) {
+        val moving = current && playing && !motionOff()
+        val clock = if (moving) lyricPosition() / 1000f else 0f
+        lyricPaint.alpha = (255 * alpha).toInt()
+        val width = size * 0.16f
+        for (bar in 0..4) {
+            val envelope = 1f - abs(bar - 2) * 0.18f
+            val height = size * envelope * if (moving) (0.35f + 0.65f * (0.5f + 0.5f * sin(clock * (7f + bar * 0.4f) + bar))) else 0.25f
+            val left = x + (bar - 2) * size * 0.3f - width / 2f
+            canvas.drawRoundRect(left, y - height / 2f, left + width, y + height / 2f, width / 2f, width / 2f, lyricPaint)
+        }
+    }
+
+    private val lyricHighlightPath = Path()
+
+    private fun drawTimedLyric(canvas: Canvas, layout: StaticLayout, line: IslandLyrics.Line, alpha: Int) {
+        fullLyricPaint.alpha = (alpha * FULL_DIM_ALPHA).toInt()
+        layout.draw(canvas)
+        val offset = IslandLyrics.highlightOffset(line, lyricPosition()).coerceIn(0f, line.text.length.toFloat())
+        val whole = offset.toInt()
+        lyricHighlightPath.reset()
+        if (whole > 0) layout.getSelectionPath(0, whole, lyricHighlightPath)
+        if (whole < line.text.length) {
+            val row = layout.getLineForOffset(whole)
+            val from = layout.getPrimaryHorizontal(whole)
+            val to = layout.getPrimaryHorizontal(whole + 1)
+            val edge = from + (to - from) * (offset - whole)
+            lyricHighlightPath.addRect(min(from, edge), layout.getLineTop(row).toFloat(), max(from, edge), layout.getLineBottom(row).toFloat(), Path.Direction.CW)
+        }
+        canvas.save()
+        canvas.clipPath(lyricHighlightPath)
+        fullLyricPaint.alpha = alpha
+        layout.draw(canvas)
+        canvas.restore()
     }
 
     /** Lays every line out once for the card's width: the full lyrics list never measures on a frame. */
@@ -1540,7 +1550,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val tops = FloatArray(lyricLines.size)
         var y = 0f
         lyricLayouts = lyricLines.mapIndexed { i, line ->
-            val layout = StaticLayout.Builder.obtain(line.text, 0, line.text.length, fullLyricPaint, width)
+            val text = if (line.instrumental) " " else line.text
+            val layout = StaticLayout.Builder.obtain(text, 0, text.length, fullLyricPaint, width)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setIncludePad(false)
                 .setLineSpacing(0f, 1.04f)
@@ -1615,8 +1626,13 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             canvas.save()
             canvas.translate(x, y)
             if (scale != 1f) canvas.scale(scale, scale)
-            val lit = if (i == lyricIndex) IslandLyrics.litChars(lyricLines[i], lyricPositionMs()) else -1f
-            if (lit >= 0f) drawSweptLayout(canvas, layout, lit, (255 * alpha * arrive).toInt()) else layout.draw(canvas)
+            val line = lyricLines[i]
+            when {
+                line.instrumental -> drawInstrumental(canvas, sp(FULL_LYRIC_SP) * 0.7f, layout.height / 2f,
+                    sp(FULL_LYRIC_SP), alpha * bright * arrive, i == lyricIndex)
+                IslandLyrics.sweeps(line, i == lyricIndex, motionOff()) -> drawTimedLyric(canvas, layout, line, fullLyricPaint.alpha)
+                else -> layout.draw(canvas)
+            }
             canvas.restore()
         }
         val fadeH = g.dp(28f)
@@ -2599,8 +2615,6 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         private const val LYRIC_SP = 16f
         /** The next line waits dimmer, as in the app's own lyrics. */
         private const val NEXT_LINE_ALPHA = 0.42f
-        /** Letters not yet sung on the swept line: the app's dim for unsung letters. */
-        private const val SWEEP_DIM_ALPHA = 0.42f
         /** Full lyrics: the app's bold lines, the sung one bright and a third of the way down. */
         private const val FULL_LYRIC_SP = 21f
         private const val FULL_LYRIC_GAP_DP = 12f
