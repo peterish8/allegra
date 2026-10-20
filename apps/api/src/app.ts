@@ -117,6 +117,8 @@ export function createApp(options: AppOptions): Express {
   // A spoken request (a few seconds of WAV) is bigger than any other body; only this route takes it.
   app.use('/api/ai/dj/transcribe', express.json({ limit: '1mb' }));
   app.use('/api/lyrics/sync', express.json({ limit: '512kb' }));
+  // 24,000 characters of pasted words, some of them several bytes long.
+  app.use('/api/lyrics/paste', express.json({ limit: '128kb' }));
   app.use(express.json({ limit: '32kb' }));
 
   app.get('/api/health', (_request, response) => {
@@ -287,7 +289,8 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
     }
     if (path === '/api/search' || path.startsWith('/api/lyrics') || path.startsWith('/api/artists') || path.startsWith('/api/albums')) {
       if (path === '/api/lyrics/sources') { lyricsSources(request, response, next); return; }
-      if (path === '/api/lyrics/sync') { lyricsSync(request, response, next); return; }
+      // A paste is the first half of a sync and reaches Convex, so it shares the sync bucket.
+      if (path === '/api/lyrics/sync' || path === '/api/lyrics/paste') { lyricsSync(request, response, next); return; }
       if (path === '/api/lyrics/report') { lyricsReport(request, response, next); return; }
       lookup(request, response, next);
       return;

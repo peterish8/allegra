@@ -18,7 +18,7 @@ const HOST_SPACING_MS = 1_000;
 const FOUND_TTL_SECONDS = 86_400;
 const MISS_TTL_SECONDS = 86_400;
 /** Bump when an adapter's matching or cleanup changes, so old answers do not outlive the fix. */
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 
 export type SiteScript = 'latin' | 'native';
 

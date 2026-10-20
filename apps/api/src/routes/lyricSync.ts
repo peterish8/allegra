@@ -20,6 +20,14 @@ export function lyricSyncRouter(auth: AuthService, sync: LyricSyncService): Rout
     if (!exactKeys(body, ['ref', 'versions']) || !validLyricsRef(body.ref)) { invalid(response); return; }
     try { sendSuccess(response, await sync.submit(body.ref, body.versions, user.userId)); } catch (error) { failure(response, error); }
   });
+  router.post('/lyrics/paste', async (request, response) => {
+    const user = await accountUser(auth, request, response, SIGNIN);
+    if (!user) return;
+    const body = asRecord(request.body);
+    if (!exactKeys(body, ['ref', 'text', 'passcode']) || !validLyricsRef(body.ref)
+      || typeof body.text !== 'string' || typeof body.passcode !== 'string') { invalid(response); return; }
+    try { sendSuccess(response, await sync.paste(body.ref, body.text, body.passcode, user.userId)); } catch (error) { failure(response, error); }
+  });
   router.post('/lyrics/report', async (request, response) => {
     const user = await accountUser(auth, request, response, SIGNIN);
     if (!user) return;

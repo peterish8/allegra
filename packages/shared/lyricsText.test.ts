@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cleanLyricStanzas, foldLatin, lyricStanzasText, normaliseLyricLine } from './lyricsText';
+import { cleanLyricStanzas, foldLatin, isInstrumentalLine, lyricStanzasText, normaliseLyricLine } from './lyricsText';
 
 test('drops the intro paragraph, credits and the music breaks', () => {
   const stanzas = cleanLyricStanzas([
@@ -68,4 +68,13 @@ test('folds romanised spelling variants together', () => {
   assert.equal(foldLatin('Thaene'), foldLatin('Thene'));
   assert.equal(foldLatin('Vaazhanum'), foldLatin('Vazhanum'));
   assert.notEqual(foldLatin('Mozhiye'), foldLatin('Uyire'));
+});
+
+test('music-break markers read as instrumental, words never do', () => {
+  for (const text of ['[INSTRUMENTAL]', '[Instrumental Break]', '(instrumental solo)', '♪ Instrumental ♪', '🎵', '♪ ♪', '[Music]']) {
+    assert.equal(isInstrumentalLine(text), true, text);
+  }
+  for (const text of ['', 'Instrumental love', 'Uyire uyire', 'Music of my heart']) {
+    assert.equal(isInstrumentalLine(text), false, text);
+  }
 });

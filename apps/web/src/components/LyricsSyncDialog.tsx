@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { LyricLine, LyricsPayload, UnifiedSong } from '@shared/types';
 import type { LyricsSyncCandidate } from '@shared/lyricSync';
 import { fromAllegraSong } from '@shared/songRef';
-import { getLyricsSources, saveLyricsSync } from '../lib/api';
+import { getLyricsSources, pasteLyrics, saveLyricsSync } from '../lib/api';
 import { syncInBrowser, type AlignedVersion } from '../lib/lyricAlign/client';
 import type { AlignProgress } from '../lib/lyricAlign/config';
 import type { Playhead } from '../lib/playhead';
@@ -54,6 +54,12 @@ export function LyricsSyncDialog({ song, signedIn, onSignIn, onClose, onSaved, o
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [lookup, setLookup] = useState(0);
+  const [finding, setFinding] = useState(true);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [passcode, setPasscode] = useState('');
+  const [pasting, setPasting] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -64,20 +70,39 @@ export function LyricsSyncDialog({ song, signedIn, onSignIn, onClose, onSaved, o
     return () => { controller.current?.abort(); unlock(); if (previous instanceof HTMLElement) previous.focus(); };
   }, []);
   useEffect(() => {
-    if (!ref || narrow) return;
+    if (!ref || narrow) { setFinding(false); return; }
     const abort = new AbortController();
+    setFinding(true);
+    const timer = window.setTimeout(() => {
+      abort.abort(); setFinding(false);
+      setError('Finding online lyrics took too long. Retry, or paste the words below.');
+    }, 12_000);
     void getLyricsSources(ref, abort.signal).then((response) => {
-      setCandidates(response.candidates);
+      if (abort.signal.aborted) return;
+      setCandidates(previous => [...(previous?.filter(candidate => candidate.origin === 'manual') ?? []), ...response.candidates]);
       const first = response.candidates.find((c) => c.script === 'latin' && !c.synced) ?? response.candidates.find((c) => c.script === 'latin');
-      setSelected(first ? [first.id] : []);
-    }).catch((e: unknown) => { if (!abort.signal.aborted) setError(e instanceof Error ? e.message : 'Could not find lyrics.'); });
-    return () => abort.abort();
-  }, [signedIn, ref, narrow]);
+      setSelected(previous => previous.length ? previous : first ? [first.id] : []);
+    }).catch((e: unknown) => { if (!abort.signal.aborted) setError(e instanceof Error ? e.message : 'Could not find lyrics.'); })
+      .finally(() => { window.clearTimeout(timer); if (!abort.signal.aborted) setFinding(false); });
+    return () => { window.clearTimeout(timer); abort.abort(); };
+  }, [ref, narrow, lookup]);
   const chosen = candidates?.filter((c) => selected.includes(c.id)) ?? [];
   const active = versions?.[preview];
   const lines = active ? alignedLines(active) : [];
   const reviewCount = active?.lineConfidence.filter((confidence) => confidence < 0.7).length ?? 0;
   const canSave = versions?.every((v) => v.confidence >= 0.7) ?? false;
+  const addPaste = async (): Promise<void> => {
+    if (!ref || pasting) return;
+    setPasting(true); setError(null);
+    const abort = new AbortController(); controller.current = abort;
+    try {
+      const candidate = await pasteLyrics(ref, pasteText, passcode, abort.signal);
+      if (abort.signal.aborted) return;
+      setCandidates(previous => [...(previous ?? []).filter(item => item.id !== candidate.id), candidate]);
+      setSelected([candidate.id]); setPasteOpen(false); setPasscode(''); setPasteText('');
+    } catch (e) { if (!abort.signal.aborted) setError(e instanceof Error ? e.message : 'Could not approve these lyrics.'); }
+    finally { if (!abort.signal.aborted) setPasting(false); }
+  };
   const start = async (): Promise<void> => {
     controller.current?.abort();
     const abort = new AbortController(); controller.current = abort;
@@ -103,7 +128,7 @@ export function LyricsSyncDialog({ song, signedIn, onSignIn, onClose, onSaved, o
   return createPortal(<div className="lyric-sync-backdrop" onKeyDown={(event) => {
     if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
     if (event.key === 'Tab') {
-      const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),[tabindex="0"]'));
+      const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),summary,[tabindex="0"]'));
       const first = controls[0]; const last = controls.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -138,8 +163,17 @@ export function LyricsSyncDialog({ song, signedIn, onSignIn, onClose, onSaved, o
         <footer><button type="button" onClick={() => setVersions(null)} disabled={saving}>Discard and retry</button>{signedIn ? <button type="button" disabled={!canSave || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Yes, save timing'}</button> : <button type="button" disabled={!canSave} onClick={onSignIn}>Sign in to share timing</button>}</footer>
       </> : <>
         <p>Choose the words for this recording. The model finds when each word is sung.</p>
-        {!candidates && !error ? <p role="status">Finding lyric versions…</p> : null}
-        {candidates?.length === 0 ? <p>No words found yet. Try this recording again later.</p> : null}
+        {finding ? <p role="status">Finding lyric versions… You can also paste the words below.</p> : null}
+        {!finding && !candidates?.length ? <p>No online words available. Retry discovery or paste the lyrics.</p> : null}
+        {!finding ? <button type="button" onClick={() => { setError(null); setLookup(value => value + 1); }}>Retry finding lyrics</button> : null}
+        <button type="button" aria-expanded={pasteOpen} onClick={() => setPasteOpen(value => !value)}>Paste lyrics</button>
+        {pasteOpen ? <form className="lyric-sync-paste" onSubmit={event => { event.preventDefault(); void addPaste(); }}>
+          <p>Paste English or romanized words, one sung line per line. An admin passcode is required before these words can be synced and shared.</p>
+          <label>Lyrics<textarea value={pasteText} onChange={event => setPasteText(event.target.value)} maxLength={24000} rows={8} required disabled={pasting}/></label>
+          <label>Admin passcode<input type="password" value={passcode} onChange={event => setPasscode(event.target.value)} maxLength={256} autoComplete="off" required disabled={pasting}/></label>
+          {signedIn ? <button type="submit" disabled={pasting || !pasteText.trim() || !passcode}>{pasting ? 'Checking passcode…' : 'Approve words for syncing'}</button>
+            : <button type="button" onClick={onSignIn}>Sign in to paste lyrics</button>}
+        </form> : null}
         <div className="lyric-sync-candidates">{candidates?.map((candidate) => <label key={candidate.id}>
           <input type="checkbox" checked={selected.includes(candidate.id)} disabled={candidate.script !== 'latin'} onChange={(event) => setSelected(event.target.checked ? [...selected.filter((id) => candidates.find((c) => c.id === id)?.script !== candidate.script), candidate.id] : selected.filter((id) => id !== candidate.id))}/>
           <span><strong>{candidate.script === 'latin' ? 'English / romanized' : candidate.language} · {candidate.source}</strong><small>{candidate.synced ? 'Already synced · can align again' : `${candidate.lines.length} lines`}{candidate.script !== 'latin' ? ' · Native-script support pending' : ''}</small><details><summary>Show words</summary>{candidate.lines.map((line, i) => <p key={i}>{line}</p>)}</details></span>

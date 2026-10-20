@@ -7766,3 +7766,9 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 @media (prefers-reduced-motion: reduce) {
   .dj-nav-icon, .dj-nav-icon::before, .dj-nav-icon__eye { transition-duration: .01ms; }
 }
+
+.lyric-sync-paste { display: grid; gap: 14px; padding: 16px; margin: 16px 0; border: 1px solid rgb(255 255 255 / 12%); border-radius: 16px; }
+.lyric-sync-paste label { display: grid; gap: 8px; font-size: 14px; }
+.lyric-sync-paste textarea, .lyric-sync-paste input { box-sizing: border-box; width: 100%; border: 1px solid rgb(255 255 255 / 22%); border-radius: 10px; background: rgb(0 0 0 / 20%); color: inherit; padding: 12px; font: inherit; }
+.lyric-sync-paste textarea { resize: vertical; min-height: 160px; }
+.lyric-sync-paste :focus-visible { outline: 2px solid #f5eee4; outline-offset: 3px; }

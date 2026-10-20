@@ -68,6 +68,7 @@ import { ImportChip } from './components/import/ImportChip';
 import { lockScroll } from './lib/scrollLock';
 import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
+import { syncedUpgrade } from './lib/lyricsUpgrade';
 import { ApiError, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
 import { catalogSongId, shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
 import { resolveSnapshotForPlayback, snapshotForSong, snapshotToDisplaySong, useConnect } from './hooks/useConnect';
@@ -237,6 +238,9 @@ export default function App() {
   const nowPlayingRef = useRef<HTMLElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const lyricsGeneration = useRef(0);
+  /** The payload on screen, so a late synced upgrade never overrides a version the listener picked. */
+  const lyricsPayloadShown = useRef<LyricsPayload | null>(null);
+  useEffect(() => { lyricsPayloadShown.current = lyricsPayload; }, [lyricsPayload]);
   const audio = useAudioPlayer();
   const connect = useConnect(audio);
   const connectView = connect.view;
@@ -784,10 +788,20 @@ export default function App() {
     setLyricsAlternativesError(null);
     void fetchLyrics(song, controller.signal)
       .then((response) => {
-        if (generation === lyricsGeneration.current) {
-          setLyrics(response.lines);
-          setLyricsPayload(response);
-        }
+        if (generation !== lyricsGeneration.current) return;
+        setLyrics(response.lines);
+        setLyricsPayload(response);
+        lyricsPayloadShown.current = response;
+        if (response.type !== 'plain') return;
+        // Plain words are shown now; switch to a synced version as soon as one is found,
+        // unless the listener picked another version meanwhile.
+        void fetchLyricsAlternatives(song, controller.signal).then((alternatives) => {
+          const upgrade = syncedUpgrade(alternatives);
+          if (!upgrade || generation !== lyricsGeneration.current || lyricsPayloadShown.current !== response) return;
+          setLyrics(upgrade.lines);
+          setLyricsPayload(upgrade);
+          lyricsPayloadShown.current = upgrade;
+        }).catch(() => undefined);
       })
       .catch((error: unknown) => {
         if (generation !== lyricsGeneration.current || (error instanceof DOMException && error.name === 'AbortError')) return;

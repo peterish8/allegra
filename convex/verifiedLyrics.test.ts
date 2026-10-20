@@ -80,3 +80,41 @@ describe('verified lyrics', () => {
     await expect(t.mutation(api.verifiedLyrics.submit, { secret, song, version: version('latin', 1.5) })).rejects.toThrow('Invalid confidence');
   });
 });
+
+
+describe('admin-approved pasted words', () => {
+  const candidate = { secret, id: 'a'.repeat(64), ref: song.ref, userId: 'listener-1', language: 'ta', lines: ['First word', 'Second line'] };
+  const passcode = 'test-only-admin-passcode';
+  beforeEach(async () => {
+    vi.stubEnv('CONVEX_SERVER_SECRET', secret);
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(passcode));
+    vi.stubEnv('LYRICS_ADMIN_PASSCODE_SHA256', Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join(''));
+  });
+
+  it('fails closed without configuration and refuses the wrong server secret or passcode', async () => {
+    const t = backend();
+    await expect(t.mutation(api.verifiedLyrics.createPasted, { ...candidate, secret: 'wrong', passcode })).rejects.toThrow('Unauthorized');
+    expect(await t.mutation(api.verifiedLyrics.createPasted, { ...candidate, passcode: 'wrong' })).toEqual({ allowed: false });
+    vi.stubEnv('LYRICS_ADMIN_PASSCODE_SHA256', '');
+    expect(await t.mutation(api.verifiedLyrics.createPasted, { ...candidate, passcode })).toEqual({ allowed: false });
+    expect(await t.query(api.verifiedLyrics.getPasted, { secret, id: candidate.id, ref: song.ref, userId: candidate.userId })).toBeNull();
+  });
+
+  it('persists words privately for the account and recording without persisting the passcode', async () => {
+    const t = backend();
+    expect(await t.mutation(api.verifiedLyrics.createPasted, { ...candidate, passcode })).toEqual({ allowed: true });
+    const args = { secret, id: candidate.id, ref: song.ref, userId: candidate.userId };
+    expect(await t.query(api.verifiedLyrics.getPasted, args)).toEqual({ language: 'ta', lines: candidate.lines });
+    expect(await t.query(api.verifiedLyrics.getPasted, { ...args, userId: 'other' })).toBeNull();
+    expect(await t.query(api.verifiedLyrics.getPasted, { ...args, ref: 'saavn:other' })).toBeNull();
+    const rows = await t.run(ctx => ctx.db.query('pastedLyrics').take(10));
+    expect(JSON.stringify(rows)).not.toContain(passcode);
+    expect(rows[0]).not.toHaveProperty('passcode');
+  });
+
+  it('commits failed attempts so repeated guesses are limited even when the next passcode is correct', async () => {
+    const t = backend();
+    for (let i = 0; i < 5; i++) expect(await t.mutation(api.verifiedLyrics.createPasted, { ...candidate, passcode: 'wrong' })).toEqual({ allowed: false });
+    expect(await t.mutation(api.verifiedLyrics.createPasted, { ...candidate, passcode })).toEqual({ allowed: false });
+  });
+});

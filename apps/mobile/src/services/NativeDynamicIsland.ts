@@ -13,7 +13,7 @@ interface DynamicIslandModule {
   setAllowOnNativeIsland?: (on: boolean) => void;
   openAccessibilitySettings?: () => boolean;
   openAppInfo?: () => boolean;
-  setLyrics?: (songId: string, atMs: number[], texts: string[]) => void;
+  setLyrics?: (songId: string, atMs: number[], texts: string[], marks: number[][]) => void;
   clearLyrics?: () => void;
   appShown?: () => void;
   setHideInApp?: (on: boolean) => void;
@@ -61,9 +61,12 @@ export const setIslandShowWhenIdle = (on: boolean) => call(m => m.setShowWhenIdl
 export const setIslandAllowOnNativeIsland = (on: boolean) => call(m => m.setAllowOnNativeIsland ? m.setAllowOnNativeIsland(on) : false);
 export const openIslandAccessibilitySettings = () => call(m => m.openAccessibilitySettings?.() ?? false);
 export const openIslandAppInfo = () => call(m => m.openAppInfo?.() ?? false);
-/** Hands the playing song's timed lines to the island, which follows the player's clock itself. */
-export const setIslandLyrics = (songId: string, atMs: number[], texts: string[]) =>
-  call(m => (m.setLyrics ? m.setLyrics(songId, atMs, texts) : false));
+/**
+ * Hands the playing song's timed lines to the island, which follows the player's clock itself. [marks] carries
+ * each line's word timing when the player shows lyrics letter by letter (empty lists: line by line).
+ */
+export const setIslandLyrics = (songId: string, atMs: number[], texts: string[], marks: number[][]) =>
+  call(m => (m.setLyrics ? m.setLyrics(songId, atMs, texts, marks) : false));
 export const clearIslandLyrics = () => call(m => (m.clearLyrics ? m.clearLyrics() : false));
 /** Now Playing has drawn: the native launch surface can leave the player visible. */
 export const notifyIslandAppShown = () => call(m => (m.appShown ? m.appShown() : false));

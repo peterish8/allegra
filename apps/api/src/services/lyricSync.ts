@@ -5,9 +5,10 @@ import { matchKey, parseSongRef } from '../shared/songRef.js';
 import type { LyricsScript, UnifiedSong } from '../types.js';
 import type { LyricsService } from './lyrics.js';
 import type { VerifiedLyricsStore, VerifiedLyricsSubmission } from './verifiedLyrics.js';
+import { cleanLyricStanzas } from '../shared/lyricsText.js';
 
 export interface LyricSource {
-  readonly origin: 'provider' | 'site';
+  readonly origin: 'provider' | 'site' | 'manual';
   readonly source: { readonly name: string; readonly url?: string };
   readonly script: LyricsScript;
   readonly language: string;
@@ -90,6 +91,21 @@ export class LyricSyncService {
     };
   }
 
+  public async paste(ref: string, text: string, passcode: string, userId: string): Promise<LyricsSourcesResponse['candidates'][number]> {
+    if (!this.store.createPasted) throw new LyricSyncInputError('Pasting lyrics requires the shared lyrics backend.');
+    if (!text.trim() || text.length > MAX_TEXT || !passcode || passcode.length > 256) throw new LyricSyncInputError('Enter lyrics and the admin passcode.');
+    const lines = cleanLyricStanzas(text.split(/\n\s*\n/u).map(stanza => stanza.split('\n'))).flat();
+    if (!lines.length || lines.flatMap(line => line.split(/\s+/u)).length > MAX_WORDS) throw new LyricSyncInputError('Use between 1 and 3000 words.');
+    if (/[^\p{Script=Latin}\p{M}\p{N}\p{P}\p{S}\p{Z}\s]/u.test(lines.join(' '))) throw new LyricSyncInputError('Paste English or romanized lyrics for this alignment model.');
+    const song = await this.song(ref);
+    const language = song.language?.toLowerCase() === 'tamil' ? 'ta' : song.language?.toLowerCase() ?? 'und';
+    const value: LyricSource = { origin: 'manual', source: { name: 'Admin-approved paste' }, script: 'latin', language, lines, synced: false };
+    const id = candidateId(ref, value);
+    const allowed = await this.store.createPasted({ id, ref, userId, language, lines }, passcode);
+    if (!allowed) throw new LyricSyncInputError('Passcode not accepted, or too many attempts. Try again later.');
+    return { id, origin: 'manual', source: value.source.name, url: null, script: 'latin', language, lines, synced: false };
+  }
+
   public async submit(ref: string, versions: unknown, userId: string): Promise<LyricsSyncResult> {
     if (!Array.isArray(versions) || versions.length < 1 || versions.length > 2) throw new LyricSyncInputError('Choose one or two lyric versions.');
     const parsed = versions.map(raw => {
@@ -103,7 +119,10 @@ export class LyricSyncService {
     let rebuilt: Awaited<ReturnType<LyricSyncService['candidates']>> | undefined;
     const submissions: VerifiedLyricsSubmission[] = [];
     for (const version of parsed) {
-      let candidate = await this.cache.get<LyricSource>(`lyric-candidate:${CANDIDATE_VERSION}:${ref}:${version.candidateId}`).catch(() => null);
+      const pasted = await this.store.getPasted?.(version.candidateId, ref, userId);
+      let candidate: LyricSource | null = pasted
+        ? { origin: 'manual', source: { name: 'Admin-approved paste' }, script: 'latin', language: pasted.language, lines: pasted.lines, synced: false }
+        : await this.cache.get<LyricSource>(`lyric-candidate:${CANDIDATE_VERSION}:${ref}:${version.candidateId}`).catch(() => null);
       if (!candidate) {
         rebuilt ??= await this.candidates(ref, song);
         candidate = rebuilt.find(item => item.id === version.candidateId)?.value ?? null;

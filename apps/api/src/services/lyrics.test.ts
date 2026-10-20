@@ -478,3 +478,14 @@ test('a site answer still arrives when the budget is shorter than the grace peri
   const payload = await service.find('Mozhiye', 'Sid Sriram', 232, false, { language: 'tamil' });
   assert.equal(payload?.source, 'Found online (English)');
 });
+
+test('the sync finder shows site words without waiting the whole budget for a slow provider', async () => {
+  // LRCLIB never answers within the budget: before the fix the finder held the site words for all of it.
+  const slow = new LrclibProvider({ baseUrl: 'https://lrclib.test/api', fetchImpl: () => new Promise<Response>(() => undefined) });
+  const service = new LyricsService(slow, new MemoryCacheStore(), { lyricSites: fakeSite([]), budgetMs: 4_000 });
+  const started = Date.now();
+  const candidates = await service.sources('Mozhiye (From "Baththa")', 'Sai Abhyankkar, Sid Sriram, Karthik Netha', 232,
+    { ref: MOZHIYE.ref, album: 'Mozhiye (From "Baththa")', language: 'tamil' });
+  assert.ok(Date.now() - started < 2_000, `answered in ${Date.now() - started} ms`);
+  assert.deepEqual(candidates.map(candidate => candidate.origin), ['site', 'site']);
+});

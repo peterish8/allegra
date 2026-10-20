@@ -7,10 +7,9 @@ import { MemoryCacheStore } from './lib/cache.js';
 import { LyricSites } from './providers/lyricsSites/lyricSites.js';
 import { LrclibProvider } from './providers/lrclib.js';
 import { LyricsService } from './services/lyrics.js';
-import { MemoryVerifiedLyricsStore } from './services/verifiedLyrics.js';
+import { MemoryVerifiedLyricsStore, type PastedLyrics } from './services/verifiedLyrics.js';
 
-function fixture(rateLimit: AppOptions['rateLimit'] = false) {
-  const store = new MemoryVerifiedLyricsStore();
+function fixture(rateLimit: AppOptions['rateLimit'] = false, store: MemoryVerifiedLyricsStore = new MemoryVerifiedLyricsStore()) {
   const fetchImpl: typeof fetch = async input => {
     const url = String(input);
     const body = url.includes('/songs/') ? { success: true, data: { id: 'B4-hLCKJ', name: 'Mozhiye (From "Baththa")',
@@ -73,4 +72,47 @@ test('finder, sync and report have independent limits and do not consume the ord
     assert.equal(limited.body.success, false);
   }
   assert.equal((await request(app).get('/api/lyrics/verified?ref=saavn:B4-hLCKJ')).status, 200);
+});
+
+class PastingStore extends MemoryVerifiedLyricsStore {
+  private readonly pasted = new Map<string, PastedLyrics>();
+  public async createPasted(candidate: PastedLyrics, passcode: string): Promise<boolean> {
+    if (passcode !== 'right-passcode') return false;
+    this.pasted.set(`${candidate.id}:${candidate.userId}:${candidate.ref}`, candidate);
+    return true;
+  }
+  public async getPasted(id: string, ref: string, userId: string): Promise<PastedLyrics | null> {
+    return this.pasted.get(`${id}:${userId}:${ref}`) ?? null;
+  }
+}
+
+test('pasting needs an account and the passcode, takes a long paste, and its words sync like found ones', async () => {
+  const app = fixture(false, new PastingStore());
+  const paste = { ref: 'saavn:B4-hLCKJ', text: 'Pasted word\nAnother line', passcode: 'right-passcode' };
+  assert.equal((await request(app).post('/api/lyrics/paste').send(paste)).status, 401);
+  const wrong = await request(app).post('/api/lyrics/paste').set('Authorization', auth).send({ ...paste, passcode: 'nope' });
+  assert.equal(wrong.status, 400);
+  assert.equal(wrong.body.success, false);
+  assert.equal((await request(app).post('/api/lyrics/paste').set('Authorization', auth).send({ ...paste, extra: 1 })).status, 400);
+  // Near the 24,000-character cap with accented letters: more than the ordinary 32 KB body limit.
+  const long = Array.from({ length: 1400 }, () => 'éèàùñéèàùñ éèàù').join('\n');
+  assert.ok(Buffer.byteLength(JSON.stringify({ ...paste, text: long })) > 32 * 1024);
+  assert.equal((await request(app).post('/api/lyrics/paste').set('Authorization', auth).send({ ...paste, text: long })).status, 200);
+  const approved = await request(app).post('/api/lyrics/paste').set('Authorization', auth).send(paste);
+  assert.equal(approved.status, 200);
+  assert.equal(approved.headers['cache-control'], 'no-store');
+  assert.equal(approved.body.data.origin, 'manual');
+  assert.ok(!JSON.stringify(approved.body).includes('right-passcode'));
+  const version = { candidateId: approved.body.data.id, script: 'latin', wordTimes: times, confidence: 0.95 };
+  const saved = await request(app).post('/api/lyrics/sync').set('Authorization', auth).send({ ref: 'saavn:B4-hLCKJ', versions: [version] });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.data.versions[0].saved, true);
+  assert.ok((await request(app).get('/api/lyrics/verified?ref=saavn:B4-hLCKJ')).body.data.versions[0].lrc.includes('Pasted'));
+});
+
+test('pastes share the sync rate limit, so passcode guesses cannot use the lookup bucket', async () => {
+  const app = fixture({ lyricsSync: { windowMs: 60000, limit: 1 } }, new PastingStore());
+  const paste = { ref: 'saavn:B4-hLCKJ', text: 'Pasted word', passcode: 'nope' };
+  assert.equal((await request(app).post('/api/lyrics/paste').set('Authorization', auth).send(paste)).status, 400);
+  assert.equal((await request(app).post('/api/lyrics/paste').set('Authorization', auth).send(paste)).status, 429);
 });

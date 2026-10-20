@@ -192,3 +192,16 @@ export function foldLatin(text: string): string {
     .replace(/y(?=[aeiou])/g, '')
     .replace(/(.)\1+/g, '$1');
 }
+
+/**
+ * A line that marks a music break rather than words: "[INSTRUMENTAL]", "[Instrumental Break]",
+ * "(instrumental solo)", "♪ Instrumental ♪", or only music notes. Players draw a moving mark for it,
+ * never the word. Empty text is not a break here (callers decide what a blank line means).
+ */
+export function isInstrumentalLine(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/^[\s♪♫♬🎵🎶]+$/u.test(trimmed)) return true;
+  const stripped = trimmed.replace(/^[\s[(【♪♫🎵🎶🎤]+/u, '').replace(/[\s\])】♪♫🎵🎶🎤]+$/u, '').trim();
+  return /^(?:instrumental|music)(?:\s+(?:break|interlude|solo|outro|intro|section))?$/i.test(stripped);
+}

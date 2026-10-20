@@ -19,6 +19,7 @@ import { createPortal } from 'react-dom';
 import type { LyricLine, LyricsPayload } from '@shared/types';
 import { displayWords, isRtlText, sweepAt, type DisplayWord } from '@shared/wordSync';
 import { continuePlainLyrics, plainLyricsScroll, PLAIN_SCROLL_SETTLE_MS } from '@shared/plainLyrics';
+import { isInstrumentalLine } from '@shared/lyricsText';
 
 import type { KaraokeStage } from '../hooks/useLiveKaraoke';
 import { KaraokeProgress } from './KaraokeProgress';
@@ -1043,7 +1044,7 @@ function LyricsMessage({ tone, title, copy, children }: { readonly tone: 'empty'
 function alternativePreview(alternative: LyricsPayload): string {
   const line = alternative.lines.find((item) => {
     const text = item.text.trim();
-    return text && text !== '[INSTRUMENTAL]' && text !== '🎵';
+    return text && !isInstrumentalLine(text);
   });
   return line?.text.trim() ?? '';
 }
@@ -1121,7 +1122,7 @@ const LyricLineButton = memo(function LyricLineButton({
 /** The translation worth showing under a line: none for breaks, blanks, or a line already in English. */
 function translationFor(line: LyricLine, translated: string | undefined): string | null {
   const text = translated?.trim();
-  if (!text || text === '[INSTRUMENTAL]' || text === '🎵') return null;
+  if (!text || isInstrumentalLine(text) || isInstrumentalLine(line.text)) return null;
   return text.toLowerCase() === line.text.trim().toLowerCase() ? null : text;
 }
 
@@ -1139,7 +1140,7 @@ function lineOpacity(distance: number, active: boolean): number {
 }
 
 function isInstrumental(text: string): boolean {
-  return text === '[INSTRUMENTAL]' || text === '🎵';
+  return isInstrumentalLine(text);
 }
 
 /**
