@@ -68,8 +68,8 @@ import { ImportChip } from './components/import/ImportChip';
 import { lockScroll } from './lib/scrollLock';
 import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
-import { syncedUpgrade } from './lib/lyricsUpgrade';
 import { ApiError, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
+import { isLyricsUpgrade, LYRICS_UPGRADE_DELAYS_MS, wantsLyricsUpgrade } from './lib/lyricsUpgrade';
 import { catalogSongId, shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
 import { resolveSnapshotForPlayback, snapshotForSong, snapshotToDisplaySong, useConnect } from './hooks/useConnect';
 import { useSnapshotArtworks } from './hooks/useSnapshotArtwork';
@@ -238,9 +238,9 @@ export default function App() {
   const nowPlayingRef = useRef<HTMLElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const lyricsGeneration = useRef(0);
-  /** The payload on screen, so a late synced upgrade never overrides a version the listener picked. */
-  const lyricsPayloadShown = useRef<LyricsPayload | null>(null);
-  useEffect(() => { lyricsPayloadShown.current = lyricsPayload; }, [lyricsPayload]);
+  /** What the panel shows, for the later re-asks; and whether the listener picked a version by hand. */
+  const lyricsShown = useRef<LyricsPayload | null>(null);
+  const lyricsPicked = useRef(false);
   const audio = useAudioPlayer();
   const connect = useConnect(audio);
   const connectView = connect.view;
@@ -782,29 +782,45 @@ export default function App() {
     }
     const generation = ++lyricsGeneration.current;
     const controller = new AbortController();
+    lyricsPicked.current = false;
+    let upgradeTimer = 0;
+    // Plain or missing lyrics are asked for again a few times: a synced provider that was late,
+    // or a listener's shared timing, then replaces them while the song plays.
+    const askAgain = (attempt: number): void => {
+      const wait = LYRICS_UPGRADE_DELAYS_MS[attempt];
+      if (wait === undefined || lyricsPicked.current || !wantsLyricsUpgrade(lyricsShown.current)) return;
+      upgradeTimer = window.setTimeout(() => {
+        void fetchLyrics(song, controller.signal)
+          .then((next) => {
+            if (generation !== lyricsGeneration.current || lyricsPicked.current || !isLyricsUpgrade(lyricsShown.current, next)) return;
+            lyricsShown.current = next;
+            setLyrics(next.lines);
+            setLyricsPayload(next);
+            setLyricsError(null);
+            setTranslatedLyrics(null);
+            setShowTranslated(false);
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            if (generation === lyricsGeneration.current && !controller.signal.aborted) askAgain(attempt + 1);
+          });
+      }, wait);
+    };
     setLyricsLoading(true);
     setLyricsError(null);
     setLyricsAlternatives(null);
     setLyricsAlternativesError(null);
     void fetchLyrics(song, controller.signal)
       .then((response) => {
-        if (generation !== lyricsGeneration.current) return;
-        setLyrics(response.lines);
-        setLyricsPayload(response);
-        lyricsPayloadShown.current = response;
-        if (response.type !== 'plain') return;
-        // Plain words are shown now; switch to a synced version as soon as one is found,
-        // unless the listener picked another version meanwhile.
-        void fetchLyricsAlternatives(song, controller.signal).then((alternatives) => {
-          const upgrade = syncedUpgrade(alternatives);
-          if (!upgrade || generation !== lyricsGeneration.current || lyricsPayloadShown.current !== response) return;
-          setLyrics(upgrade.lines);
-          setLyricsPayload(upgrade);
-          lyricsPayloadShown.current = upgrade;
-        }).catch(() => undefined);
+        if (generation === lyricsGeneration.current) {
+          lyricsShown.current = response;
+          setLyrics(response.lines);
+          setLyricsPayload(response);
+        }
       })
       .catch((error: unknown) => {
         if (generation !== lyricsGeneration.current || (error instanceof DOMException && error.name === 'AbortError')) return;
+        lyricsShown.current = null;
         if (error instanceof ApiError && error.status === 404) {
           // No lyrics is an answer, not an error: the panel shows its empty state.
           setLyrics([]);
@@ -817,9 +833,14 @@ export default function App() {
         }
       })
       .finally(() => {
-        if (generation === lyricsGeneration.current) setLyricsLoading(false);
+        if (generation !== lyricsGeneration.current) return;
+        setLyricsLoading(false);
+        if (!controller.signal.aborted) askAgain(0);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      window.clearTimeout(upgradeTimer);
+    };
   }, [playerSong?.id, playerSong?.source, playerSong?.title, playerSong?.artist, playerSong?.artwork]);
 
   // Related tracks for the player sheet. A failure just leaves the AI picks in place,
@@ -1616,12 +1637,14 @@ export default function App() {
     setLyricsError(null);
     void fetchLyrics(song)
       .then((response) => {
+        lyricsShown.current = response;
         setLyrics(response.lines);
         setLyricsPayload(response);
       })
       .catch((error: unknown) => {
         if (error instanceof ApiError && error.status === 404) {
           // No lyrics is an answer, not an error: the panel shows its empty state.
+          lyricsShown.current = null;
           setLyrics([]);
           setLyricsPayload(null);
         }
@@ -1651,6 +1674,9 @@ export default function App() {
   };
 
   const selectLyricsAlternative = (alternative: LyricsPayload): void => {
+    // A version chosen by hand stays, even if a synced one turns up later.
+    lyricsPicked.current = true;
+    lyricsShown.current = alternative;
     setLyrics(alternative.lines);
     setLyricsPayload(alternative);
     setTranslatedLyrics(null);

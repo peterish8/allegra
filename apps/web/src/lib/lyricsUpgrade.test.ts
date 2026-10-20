@@ -1,22 +1,38 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
 import type { LyricsPayload } from '@shared/types';
-import { syncedUpgrade } from './lyricsUpgrade';
+import { isLyricsUpgrade, LYRICS_UPGRADE_DELAYS_MS, wantsLyricsUpgrade } from './lyricsUpgrade.ts';
 
-const payload = (source: string, type: LyricsPayload['type'], matchScore: number, lines = 2): LyricsPayload => ({
-  source, type, matchScore, matchReason: '', lines: Array.from({ length: lines }, (_, i) => ({ text: `line ${i}`, timestamp: i * 4, lineOrder: i }))
+const payload = (type: LyricsPayload['type'], lines = 3): LyricsPayload => ({
+  source: type === 'synced' ? 'LRCLIB' : 'JioSaavn',
+  type,
+  matchScore: 40,
+  matchReason: '',
+  lines: Array.from({ length: lines }, (_, i) => ({ timestamp: type === 'synced' ? i * 4 + 2 : 0, text: `Line ${i}` }))
 });
 
-test('plain words give way to the best synced version, Allegra listener syncs first', () => {
-  const lrclib = payload('LRCLIB', 'synced', 60);
-  const lyrica = payload('Lyrica(synced-slow)', 'synced', 50);
-  assert.equal(syncedUpgrade([payload('JioSaavn', 'plain', 30), lyrica, lrclib]), lrclib);
-  const allegra = payload('Allegra (English)', 'synced', 40);
-  assert.equal(syncedUpgrade([lrclib, allegra]), allegra);
+test('JioSaavn plain words are replaced once synced lines turn up', () => {
+  assert.equal(wantsLyricsUpgrade(payload('plain')), true);
+  assert.equal(isLyricsUpgrade(payload('plain'), payload('synced')), true);
 });
 
-test('no synced alternative, or an empty one, keeps the plain words', () => {
-  assert.equal(syncedUpgrade([payload('Found online', 'plain', 30)]), null);
-  assert.equal(syncedUpgrade([payload('LRCLIB', 'synced', 90, 0)]), null);
-  assert.equal(syncedUpgrade([]), null);
+test('a missing answer is filled by plain or synced words', () => {
+  assert.equal(wantsLyricsUpgrade(null), true);
+  assert.equal(isLyricsUpgrade(null, payload('plain')), true);
+  assert.equal(isLyricsUpgrade(payload('plain', 0), payload('plain')), true);
+});
+
+test('synced lines are kept and never swapped for plain, empty or another synced answer', () => {
+  assert.equal(wantsLyricsUpgrade(payload('synced')), false);
+  assert.equal(isLyricsUpgrade(payload('synced'), payload('plain')), false);
+  assert.equal(isLyricsUpgrade(payload('synced'), payload('synced')), false);
+  assert.equal(isLyricsUpgrade(payload('plain'), payload('plain')), false);
+  assert.equal(isLyricsUpgrade(payload('plain'), payload('synced', 0)), false);
+  assert.equal(isLyricsUpgrade(payload('plain'), null), false);
+});
+
+test('asks are few and spread out, so one song never polls for long', () => {
+  assert.ok(LYRICS_UPGRADE_DELAYS_MS.length <= 4);
+  assert.ok(LYRICS_UPGRADE_DELAYS_MS.every((ms, i) => i === 0 || ms > LYRICS_UPGRADE_DELAYS_MS[i - 1]!));
 });
