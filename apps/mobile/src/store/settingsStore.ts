@@ -5,8 +5,10 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SortOption, ViewMode } from '../types/song';
+import { createDebouncedStorage } from './debouncedStorage';
+
+const settingsStorage = createDebouncedStorage(1000);
 
 type Theme = 'dark' | 'light' | 'auto';
 export type LyricsAlign = 'left' | 'center' | 'right';
@@ -32,6 +34,12 @@ export const isCardPlayerBackground = (value: PlayerBackground): boolean => valu
  * song, or the glow (the mini player's animated glow across the top, black below).
  */
 export type AppBackground = 'shader' | 'glass' | 'glow';
+
+/**
+ * Settings → Reduce effects. 'auto' lets the phone decide (utils/performanceTier: old CPU cores, low memory, or
+ * frames that kept missing); 'on' always takes the light path; 'off' keeps the full visuals even on a slow phone.
+ */
+export type ReduceEffects = 'auto' | 'on' | 'off';
 
 /**
  * Stored settings from before "Glow animated" was retired still say 'glow';
@@ -182,6 +190,9 @@ interface SettingsState {
   luvsStartAtHook: boolean;
   setLuvsStartAtHook: (enabled: boolean) => void;
 
+  reduceEffects: ReduceEffects;
+  setReduceEffects: (v: ReduceEffects) => void;
+
   resetToDefaults: () => void;
 }
 
@@ -227,6 +238,7 @@ const DEFAULT_SETTINGS = {
   appleMusicToken: '',
   tidalToken: '',
   luvsStartAtHook: true,
+  reduceEffects: 'auto' as ReduceEffects,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -315,10 +327,14 @@ export const useSettingsStore = create<SettingsState>()(
       setTidalToken: (tidalToken) => set({ tidalToken: tidalToken.trim() }),
       luvsStartAtHook: true,
       setLuvsStartAtHook: (luvsStartAtHook) => set({ luvsStartAtHook }),
+      reduceEffects: 'auto',
+      setReduceEffects: (reduceEffects) => set({ reduceEffects }),
     }),
     {
       name: 'lyricflow-settings',
-      storage: createJSONStorage(() => AsyncStorage),
+      // Every change rewrote the whole saved settings, and the playlist history changes with every song: writes are
+      // coalesced to one a second and flushed when the app leaves the foreground.
+      storage: createJSONStorage(() => settingsStorage),
       version: 5,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<SettingsState> & { lyricsFontSize?: string };

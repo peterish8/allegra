@@ -33,7 +33,7 @@ import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { TabParamList } from '../types/navigation';
 import { Radius, Signal, Space } from '../constants/allegraTheme';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
-import DynamicAura from '../components/allegra/DynamicAura';
+import { PlayingAura } from '../components/allegra/DynamicAura';
 import { AuraMood } from '../components/allegra/MusicFlowField';
 import { RiseIn, Tactile } from '../components/allegra/motion';
 import AboutSheet from '../components/about/AboutSheet';
@@ -105,7 +105,7 @@ const StreamScreen: React.FC = () => {
   const history = useStreamHistoryStore(s => s.plays);
   const languages = useLuvsPreferencesStore(s => s.preferredLanguages);
   const currentSongId = usePlayerStore(s => s.currentSongId);
-  const currentSong = usePlayerStore(s => s.currentSong);
+  const currentCover = usePlayerStore(s => s.currentSong?.coverImageUri);
   const addToDownloads = useDownloadQueueStore(s => s.addToQueue);
   const account = useAccount();
   const isFocused = useIsFocused();
@@ -400,11 +400,10 @@ const StreamScreen: React.FC = () => {
 
   // Clear the tab bar pill plus the mini player pill stacked above it.
   const bottomClearance = pillBarTop(insets.bottom) + PILL_STACK_GAP + CLASSIC_MINI_PLAYER_HEIGHT + Space.lg;
-  const isPlaying = usePlayerStore(s => s.isPlaying);
   const shaderMood: AuraMood = (mood && (SHADER_MOOD[mood] ?? (/relax|chill|sleep|focus|romance|sad|calm/i.test(mood) ? 'chill' : undefined))) || 'energy';
 
   // The shader takes its colours from whatever is playing (or the top pick).
-  const washArt = currentSong?.coverImageUri ?? feed?.keepListening[0]?.highResArt ?? feed?.quickPicks[0]?.highResArt;
+  const washArt = currentCover ?? feed?.keepListening[0]?.highResArt ?? feed?.quickPicks[0]?.highResArt;
   const palette = useArtworkPalette(washArt);
   const searchActive = results !== null || searching;
   backHome.current = () => {
@@ -414,15 +413,17 @@ const StreamScreen: React.FC = () => {
     if (showingSearch || isFocused) scrollRef.current?.scrollTo({ y: 0, animated: false });
   };
 
-  const track = (s: UnifiedSong): TrackItem => ({
+  // The shelves below are memoised on what they show: a keystroke in search, the scroll, or lyrics landing for the
+  // playing song re-render this page, and every shelf used to rebuild its items each time.
+  const track = useCallback((s: UnifiedSong): TrackItem => ({
     key: streamIdFor(s),
     title: s.title,
     artist: s.artist,
     artwork: s.highResArt,
     isCurrent: currentSongId === streamIdFor(s),
     download: s,
-  });
-  const accountPicksSection = !searchActive && accountPicks.length > 0 ? (
+  }), [currentSongId]);
+  const accountPicksSection = useMemo(() => (!searchActive && accountPicks.length > 0 ? (
     <>
       <SectionHeading
         title="Quick picks for you"
@@ -437,21 +438,83 @@ const StreamScreen: React.FC = () => {
         onSave={i => save(accountPicks[i])}
       />
     </>
-  ) : null;
-  const localTrack = (s: Song): TrackItem => ({
+  ) : null), [searchActive, accountPicks, track, play, queueNext, save]);
+  const localTrack = useCallback((s: Song): TrackItem => ({
     key: s.id,
     title: s.title,
     artist: s.artist,
     artwork: s.coverImageUri,
     isCurrent: currentSongId === s.id,
-  });
+  }), [currentSongId]);
 
-  const followedShelf: Shelf | null = followed.length > 0
+  const followedShelf: Shelf | null = useMemo(() => (followed.length > 0
     ? { title: 'Your artists', items: followed.map(a => ({ kind: 'artist' as const, browseId: a.browseId, title: a.name, thumbnail: a.thumbnail })) }
-    : null;
-  const ytShelves = (ytHome?.shelves ?? []).map((shelf, i) => (
+    : null), [followed]);
+  const ytShelves = useMemo(() => (ytHome?.shelves ?? []).map((shelf, i) => (
     <BrowseShelf key={`yt-${shelf.title}-${i}`} shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />
-  ));
+  )), [ytHome, openItem, playYT, pendingSong]);
+
+  const homeFeed = useMemo(() => {
+    if (!feed) return null;
+    // An even count so the two-column grid never ends on a hole.
+    const listenAgain = feed.keepListening.slice(0, Math.min(6, feed.keepListening.length - (feed.keepListening.length % 2)));
+    const discover = feed.dailyDiscover.map(d => d.recommendation);
+    return (
+      <RiseIn>
+        {accountPicksSection}
+        {listenAgain.length >= 2 ? (
+          <View style={styles.firstSection}>
+            <ShortcutGrid
+              items={listenAgain.map(track)}
+              onPress={i => play(listenAgain, i)}
+              onLongPress={i => queueNext(listenAgain[i])}
+            />
+          </View>
+        ) : null}
+
+        {feed.quickPicks.length > 0 ? (
+          <>
+            <SectionHeading
+              title="Quick picks"
+              subtitle={feed.coldStart ? 'Trending now' : 'Radio from your favourites'}
+              action="Play all"
+              onAction={() => play(feed.quickPicks, 0)}
+            />
+            <QuickPicks
+              items={feed.quickPicks.map(track)}
+              onPress={i => play(feed.quickPicks, i)}
+              onLongPress={i => queueNext(feed.quickPicks[i])}
+              onSave={i => save(feed.quickPicks[i])}
+            />
+          </>
+        ) : null}
+
+        {discover.length > 0 ? (
+          <>
+            <SectionHeading title="Daily discover" subtitle="New songs that follow ones you play" />
+            <CoverShelf items={discover.map(track)} onPress={i => play(discover, i)} onLongPress={i => queueNext(discover[i])} />
+          </>
+        ) : null}
+
+        {feed.similar.map(shelf => (
+          <View key={shelf.artist}>
+            <SectionHeading title={`More like ${shelf.artist}`} action="Play" onAction={() => play(shelf.songs, 0)} />
+            <CoverShelf items={shelf.songs.map(track)} onPress={i => play(shelf.songs, i)} onLongPress={i => queueNext(shelf.songs[i])} />
+          </View>
+        ))}
+
+        {feed.forgottenFavorites.length > 0 ? (
+          <>
+            <SectionHeading title="Forgotten favourites" subtitle="From your downloads" action="See all" onAction={openDownloads} />
+            <CoverShelf items={feed.forgottenFavorites.map(localTrack)} onPress={i => playLocal(feed.forgottenFavorites, i)} />
+          </>
+        ) : null}
+
+        {followedShelf ? <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} /> : null}
+        {ytShelves}
+      </RiseIn>
+    );
+  }, [feed, accountPicksSection, track, localTrack, play, queueNext, save, playLocal, openDownloads, followedShelf, openItem, playYT, ytShelves]);
 
   const mixSection = mood ? (
     moodMix === null ? (
@@ -559,71 +622,14 @@ const StreamScreen: React.FC = () => {
       </>
     );
   } else {
-    // An even count so the two-column grid never ends on a hole.
-    const listenAgain = feed.keepListening.slice(0, Math.min(6, feed.keepListening.length - (feed.keepListening.length % 2)));
-    const discover = feed.dailyDiscover.map(d => d.recommendation);
-    body = (
-      <RiseIn>
-        {accountPicksSection}
-        {listenAgain.length >= 2 ? (
-          <View style={styles.firstSection}>
-            <ShortcutGrid
-              items={listenAgain.map(track)}
-              onPress={i => play(listenAgain, i)}
-              onLongPress={i => queueNext(listenAgain[i])}
-            />
-          </View>
-        ) : null}
-
-        {feed.quickPicks.length > 0 ? (
-          <>
-            <SectionHeading
-              title="Quick picks"
-              subtitle={feed.coldStart ? 'Trending now' : 'Radio from your favourites'}
-              action="Play all"
-              onAction={() => play(feed.quickPicks, 0)}
-            />
-            <QuickPicks
-              items={feed.quickPicks.map(track)}
-              onPress={i => play(feed.quickPicks, i)}
-              onLongPress={i => queueNext(feed.quickPicks[i])}
-              onSave={i => save(feed.quickPicks[i])}
-            />
-          </>
-        ) : null}
-
-        {discover.length > 0 ? (
-          <>
-            <SectionHeading title="Daily discover" subtitle="New songs that follow ones you play" />
-            <CoverShelf items={discover.map(track)} onPress={i => play(discover, i)} onLongPress={i => queueNext(discover[i])} />
-          </>
-        ) : null}
-
-        {feed.similar.map(shelf => (
-          <View key={shelf.artist}>
-            <SectionHeading title={`More like ${shelf.artist}`} action="Play" onAction={() => play(shelf.songs, 0)} />
-            <CoverShelf items={shelf.songs.map(track)} onPress={i => play(shelf.songs, i)} onLongPress={i => queueNext(shelf.songs[i])} />
-          </View>
-        ))}
-
-        {feed.forgottenFavorites.length > 0 ? (
-          <>
-            <SectionHeading title="Forgotten favourites" subtitle="From your downloads" action="See all" onAction={openDownloads} />
-            <CoverShelf items={feed.forgottenFavorites.map(localTrack)} onPress={i => playLocal(feed.forgottenFavorites, i)} />
-          </>
-        ) : null}
-
-        {followedShelf ? <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} /> : null}
-        {ytShelves}
-      </RiseIn>
-    );
+    body = homeFeed;
   }
 
   return (
     <View style={styles.screen}>
       {/* Allegra's live shader: the playing cover's colours, full energy while
           music plays, and the picked mood's motion. Frames stop off-screen. */}
-      <DynamicAura palette={palette} playing={isPlaying} active={isFocused} mood={shaderMood} dim={0.18} />
+      <PlayingAura palette={palette} active={isFocused} mood={shaderMood} dim={0.18} />
       <ScrollView
         ref={scrollRef}
         keyboardShouldPersistTaps="handled"

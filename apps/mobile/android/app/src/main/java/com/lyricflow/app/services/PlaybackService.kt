@@ -149,6 +149,7 @@ class PlaybackService : MediaSessionService() {
             if (isPlaying) {
                 stallReloads = 0
                 stalledTicks = 0
+                com.lyricflow.app.PerfMarks.playing()
             }
         }
 

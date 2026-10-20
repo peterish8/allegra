@@ -14,7 +14,8 @@
  * delete. Blends, Import, the download queue and Playlists are the four header icons.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, LayoutChangeEvent, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { LayoutChangeEvent, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { FlashList, type FlashListProps, type FlashListRef } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { Extrapolation, interpolate, runOnJS, useAnimatedReaction, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,7 +32,7 @@ import GlassDeck from '../components/library/GlassDeck';
 import ArtistOrbit from '../components/library/ArtistOrbit';
 import AlphabetRail from '../components/library/AlphabetRail';
 import { groupArtists, keepDeckOrder, leadArtist, letterIndex, pickDeck } from '../components/library/libraryShape';
-import DynamicAura from '../components/allegra/DynamicAura';
+import { PlayingAura } from '../components/allegra/DynamicAura';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
 import { RiseIn, Tactile } from '../components/allegra/motion';
 import { PrimaryButton, SectionHeading } from '../components/allegra/home';
@@ -49,8 +50,6 @@ import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { LIBRARY_TOUR, libraryScene, librarySleeves } from '../components/allegra/infoTours';
 
 const LIBRARY_QUEUE_ID = 'library';
-/** TrackRow's fixed height, so the A–Z rail can jump straight to a row. */
-const ROW_H = 64;
 const DECK_MAX = 8;
 
 type Nav = CompositeNavigationProp<NativeStackNavigationProp<LibraryStackParamList>, NativeStackNavigationProp<RootStackParamList>>;
@@ -63,7 +62,9 @@ const sorters: Record<SortMode, (a: Song, b: Song) => number> = {
   artist: (a, b) => (a.artist ?? '').localeCompare(b.artist ?? ''),
 };
 
-const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Song>);
+// The FlashList type shim (apps/mobile/CLAUDE.md): Reanimated's wrapper drops FlashList's generic props.
+const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as unknown as React.FC<FlashListProps<Song> & { ref?: React.Ref<FlashListRef<Song>> }>;
+const keyOf = (song: Song) => song.id;
 
 /** A song still arriving. It reads its own queue item, so its progress ticks re-render this row alone. */
 const ActiveDownloadRow: React.FC<{ id: string; onRetry: (id: string) => void }> = ({ id, onRetry }) => {
@@ -85,6 +86,42 @@ const ActiveDownloadRow: React.FC<{ id: string; onRetry: (id: string) => void }>
   );
 };
 
+/**
+ * One song row. Its handlers are built from stable callbacks and the row's index, so a parent render (the scroll
+ * crossing the deck, a download finishing) leaves every row alone but the ones whose song or highlight changed.
+ */
+const LibraryRow: React.FC<{
+  song: Song;
+  index: number;
+  isCurrent: boolean;
+  besideRail: boolean;
+  onPlay: (index: number) => void;
+  onMenu: (song: Song) => void;
+}> = React.memo(({ song, index, isCurrent, besideRail, onPlay, onMenu }) => {
+  const press = useCallback(() => onPlay(index), [onPlay, index]);
+  const longPress = useCallback(() => onMenu(song), [onMenu, song]);
+  return (
+    <View style={besideRail ? styles.rowBesideRail : undefined}>
+      <TrackRow
+        title={song.title}
+        artist={song.artist}
+        artwork={song.coverImageUri}
+        duration={song.duration}
+        meta={song.lyrics?.length ? 'Lyrics' : undefined}
+        isCurrent={isCurrent}
+        onPress={press}
+        onLongPress={longPress}
+      />
+    </View>
+  );
+});
+
+/** Play and pause re-render only the deck, not the page and its list. */
+const PlayingGlassDeck: React.FC<Omit<React.ComponentProps<typeof GlassDeck>, 'isPlaying'>> = props => {
+  const isPlaying = usePlayerStore(s => s.isPlaying);
+  return <GlassDeck {...props} isPlaying={isPlaying} />;
+};
+
 const LibraryScreen: React.FC = () => {
   const { width: screenW, height: screenH } = useWindowDimensions();
   // The middle glass card's width; its neighbours peek out either side.
@@ -104,7 +141,6 @@ const LibraryScreen: React.FC = () => {
   const clearCompleted = useDownloadQueueStore(s => s.clearCompleted);
   const currentSongId = usePlayerStore(s => s.currentSongId);
   const currentCover = usePlayerStore(s => s.currentSong?.coverImageUri);
-  const isPlaying = usePlayerStore(s => s.isPlaying);
   const isFocused = useIsFocused();
   const [sort, setSort] = useState<SortMode>('recent');
   const [filter, setFilter] = useState('');
@@ -149,6 +185,13 @@ const LibraryScreen: React.FC = () => {
     usePlayerStore.getState().setPlaylistQueue(LIBRARY_QUEUE_ID, shuffle ? shuffled(items) : items, shuffle ? 0 : index);
   }, []);
   const playAll = useCallback((shuffle = false) => playList(list, 0, shuffle), [list, playList]);
+  // Rows play from the list as it is when tapped, through callbacks that never change.
+  const listNow = useRef(list);
+  listNow.current = list;
+  const playAt = useCallback((index: number) => playList(listNow.current, index), [playList]);
+  const actionsNow = useRef(actions);
+  actionsNow.current = actions;
+  const openMenu = useCallback((song: Song) => actionsNow.current.open(song), []);
   const togglePlayback = useCallback(() => {
     usePlayerStore.getState().requestPlayback(!usePlayerStore.getState().isPlaying);
   }, []);
@@ -161,10 +204,9 @@ const LibraryScreen: React.FC = () => {
   const lengthText = totalMinutes >= 90 ? `${Math.round(totalMinutes / 60)} h` : `${totalMinutes} min`;
 
   // ── Scroll: the sticky play bar and the A–Z rail ────────────────────────
-  const listRef = useRef<FlatList<Song>>(null);
+  const listRef = useRef<FlashListRef<Song>>(null);
   // A tap on the Library tab while this is already in front scrolls it to the top (navigation/TabNavigator).
   useEffect(() => registerLibraryScrollToTop(() => listRef.current?.scrollToOffset({ offset: 0, animated: true })), []);
-  const headerH = useRef(0);
   const [heroBottom, setHeroBottom] = useState(420);
   const scrollY = useSharedValue(0);
   const [inList, setInList] = useState(false);
@@ -185,11 +227,11 @@ const LibraryScreen: React.FC = () => {
     return letterIndex(list, s => (sort === 'title' ? s.title : leadArtist(s.artist) || s.artist));
   }, [list, sort]);
   const jumpTo = useCallback((index: number) => {
-    listRef.current?.scrollToIndex({ index, animated: false, viewOffset: insets.top + 72 });
+    listRef.current?.scrollToIndex({ index, animated: false, viewOffset: insets.top + 72 }).catch(() => undefined);
   }, [insets.top]);
 
   // Four equal glass circles, top right: Blends, Import, Downloads, Playlists. The words live in the labels.
-  const headerButtons = (
+  const headerButtons = useMemo(() => (
     <View style={styles.topActions}>
       <Tactile onPress={() => navigation.navigate('Blends')} hitSlop={5} pressScale={0.9} haptic="select" accessibilityRole="button" accessibilityLabel="Blends" style={styles.iconButton}>
         <Ionicons name="people-outline" size={20} color={Signal.ink} />
@@ -205,13 +247,11 @@ const LibraryScreen: React.FC = () => {
         <Ionicons name="albums-outline" size={20} color={Signal.ink} />
       </Tactile>
     </View>
-  );
+  ), [navigation, activeIds.length]);
 
-  const header = (
-    <View
-      style={{ paddingTop: insets.top + Space.sm }}
-      onLayout={(e: LayoutChangeEvent) => { headerH.current = e.nativeEvent.layout.height; }}
-    >
+  // Built again only when what it shows changes: the list hands the same element back on every other render.
+  const header = useMemo(() => (
+    <View style={{ paddingTop: insets.top + Space.sm }}>
       <View style={styles.topBar}>
         <InfoTitleRow><Text style={styles.title} accessibilityRole="header" numberOfLines={1}>Library</Text><InfoTour label="About your library" steps={LIBRARY_TOUR} scene={libraryScene} persist={librarySleeves} /></InfoTitleRow>
         {headerButtons}
@@ -220,11 +260,10 @@ const LibraryScreen: React.FC = () => {
       {visible.length > 0 ? (
         <RiseIn style={styles.hero}>
           <View onLayout={(e: LayoutChangeEvent) => setHeroBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
-            <GlassDeck
+            <PlayingGlassDeck
               songs={deck}
               size={deckSize}
               currentId={currentSongId}
-              isPlaying={isPlaying}
               onPlay={playFromDeck}
               onTogglePlay={togglePlayback}
               onShuffle={() => playAll(true)}
@@ -307,38 +346,29 @@ const LibraryScreen: React.FC = () => {
         </>
       ) : null}
     </View>
-  );
+  ), [
+    insets.top, headerButtons, visible.length, deck, deckSize, currentSongId, playFromDeck, togglePlayback, playAll,
+    artists, artist, activeIds, doneCount, clearCompleted, retryItem, list.length, totalMinutes, lengthText, filter, sort,
+  ]);
+
+  const besideRail = railLetters.length > 0;
+  const renderItem = useCallback(({ item, index }: { item: Song; index: number }) => (
+    <LibraryRow song={item} index={index} isCurrent={currentSongId === item.id} besideRail={besideRail} onPlay={playAt} onMenu={openMenu} />
+  ), [currentSongId, besideRail, playAt, openMenu]);
 
   return (
     <View style={styles.screen}>
-      <DynamicAura palette={palette} playing={isPlaying} active={isFocused} dim={0.2} />
-      <AnimatedFlatList
+      <PlayingAura palette={palette} active={isFocused} dim={0.2} />
+      <AnimatedFlashList
         ref={listRef}
         data={list}
-        keyExtractor={s => s.id}
+        keyExtractor={keyOf}
         ListHeaderComponent={header}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        initialNumToRender={14}
-        windowSize={9}
         onScroll={onScroll}
         scrollEventThrottle={16}
-        getItemLayout={(_, index) => ({ length: ROW_H, offset: headerH.current + ROW_H * index, index })}
-        onScrollToIndexFailed={({ index }) => listRef.current?.scrollToOffset({ offset: headerH.current + ROW_H * index, animated: false })}
-        renderItem={({ item, index }) => (
-          <View style={railLetters.length > 0 ? styles.rowBesideRail : undefined}>
-          <TrackRow
-            title={item.title}
-            artist={item.artist}
-            artwork={item.coverImageUri}
-            duration={item.duration}
-            meta={item.lyrics?.length ? 'Lyrics' : undefined}
-            isCurrent={currentSongId === item.id}
-            onPress={() => playList(list, index)}
-            onLongPress={() => actions.open(item)}
-          />
-          </View>
-        )}
+        renderItem={renderItem}
         ListEmptyComponent={
           <View style={styles.emptyCard}>
             <Ionicons name={filter || artist ? 'search' : 'cloud-download-outline'} size={28} color={Signal.inkMuted} />

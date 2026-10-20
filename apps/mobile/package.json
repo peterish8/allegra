@@ -78,6 +78,11 @@
     "ts-jest": "^29.4.6",
     "typescript": "~5.9.2"
   },
+  "reanimated": {
+    "staticFeatureFlags": {
+      "ANDROID_SYNCHRONOUSLY_UPDATE_UI_PROPS": true
+    }
+  },
   "private": true,
   "license": "GPL-3.0-only"
 }

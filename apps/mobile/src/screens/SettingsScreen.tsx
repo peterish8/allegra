@@ -32,7 +32,8 @@ import * as Haptics from '../utils/haptics';
 import appConfig from '../../app.json';
 import { TabScreenProps } from '../types/navigation';
 import { usePlayerStore } from '../store/playerStore';
-import { AppBackground, LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, LyricsHighlight, MiniPlayerBackground, PlayerBackground, isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
+import { AppBackground, LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, LyricsHighlight, MiniPlayerBackground, PlayerBackground, ReduceEffects, isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
+import { deviceTier } from '../utils/performanceTier';
 import { CustomAlert } from '../components/CustomAlert';
 import { Toast } from '../components/Toast';
 import LuvLinkSettings from '../components/settings/LuvLinkSettings';
@@ -230,6 +231,13 @@ const SettingsScreen: React.FC<Props> = () => {
     glass: 'Clear liquid glass that bends and lights whatever is behind it.',
     black: 'Plain black, nothing behind the text.',
   };
+  const reduceHint: Record<ReduceEffects, string> = {
+    auto: deviceTier() === 'low'
+      ? 'This phone gets the lighter effects: glass without live blur and calmer motion, for smoother scrolling.'
+      : 'Full effects. The phone switches to lighter ones by itself if it starts dropping frames.',
+    on: 'Lighter effects everywhere: glass without live blur and calmer motion, for smoother scrolling.',
+    off: 'Full effects, even if this phone struggles with them.',
+  };
 
   return (
     <View style={styles.container}>
@@ -306,6 +314,13 @@ const SettingsScreen: React.FC<Props> = () => {
             value={settings.miniPlayerBackground}
             options={[{ value: 'glow', label: 'Glow animated' }, { value: 'tint', label: 'Cover tint' }, { value: 'glass', label: 'Liquid glass' }, { value: 'black', label: 'Pure black' }]}
             onChange={settings.setMiniPlayerBackground}
+          />
+          <Choice<ReduceEffects>
+            label="Reduce effects"
+            hint={reduceHint[settings.reduceEffects]}
+            value={settings.reduceEffects}
+            options={[{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
+            onChange={settings.setReduceEffects}
           />
           <Kit.Switch
             label="Canvas"

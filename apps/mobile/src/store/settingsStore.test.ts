@@ -1,3 +1,5 @@
+jest.mock('react-native', () => ({ AppState: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) } }));
+
 import { DEFAULT_LYRICS_DELAY, isCardPlayerBackground, lyricsTextStyle, migrateLyricsDelay, normalizeMiniPlayerBackground, normalizePlayerBackground, playerBackgroundChange } from './settingsStore';
 
 describe('lyrics timing', () => {

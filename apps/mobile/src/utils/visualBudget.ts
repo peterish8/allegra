@@ -58,3 +58,11 @@ export const resolveVisualBudget = ({ tier, batterySaver, playing, appActive = t
  */
 export const renderScaleFor = (pixelsPerPoint: number, pixelRatio: number): number =>
   Math.min(0.5, pixelsPerPoint / Math.max(1, pixelRatio));
+
+/**
+ * Device pixels per point for the glows (player/GlowBackground, allegra/EdgeGlow), on every phone. They are radial
+ * gradients with no detail to lose, so they are drawn the way the dynamic island draws its light (IslandFlow: 40×56
+ * pixels stretched smoothly over the card): tiny, then scaled up. The mini player's glow is about 90×16 pixels
+ * instead of ~950×170, redrawn every frame it moves.
+ */
+export const GLOW_PIXELS_PER_POINT = 0.25;

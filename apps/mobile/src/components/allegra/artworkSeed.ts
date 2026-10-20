@@ -40,3 +40,11 @@ export const monogramOf = (title: string): string => {
 };
 
 export const duotoneFor = (seed: string): [string, string, string] => DUOTONES[hashString(seed) % DUOTONES.length];
+
+/**
+ * What sits under a cover: the generated cover when there is no image (or it failed), only its base colour while a
+ * real image loads over it, nothing for a quiet cover. The full generated cover is ~15 views, and every list row
+ * used to build one under an image that covers it.
+ */
+export const artworkUnderlay = (showImage: boolean, quiet: boolean): 'generated' | 'base' | 'none' =>
+  !showImage ? 'generated' : quiet ? 'none' : 'base';

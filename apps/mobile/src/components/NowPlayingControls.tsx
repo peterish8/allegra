@@ -44,6 +44,7 @@ import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { useSettingsStore } from '../store/settingsStore';
 import { lastSongDirection } from '../store/playerStore';
 import { LYRICS_TAP_WINDOW_MS, lyricsButtonTap, LyricsTapRun, NO_TAPS } from './player/lyricsButtonTaps';
+import { NativeSkip } from './NativeSkip';
 
 interface NowPlayingControlsProps {
   animatedStyle: React.ComponentProps<typeof Animated.View>['style'];
@@ -57,6 +58,8 @@ interface NowPlayingControlsProps {
   onTogglePlay: () => void;
   onSkipForward: () => void;
   onSkipBackward: () => void;
+  /** Skips go straight to the engine on Android's main thread (components/NativeSkip); the local player only. */
+  nativeSkip?: boolean;
   onToggleLike: () => void;
   onToggleLyrics: () => void;
   /** Long press on the lyrics button: the lyrics picker (every source, choose one). */
@@ -241,6 +244,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   onOutputPress,
   outputActive = false,
   lyricsFullscreen = false,
+  nativeSkip = false,
   onExitLyricsFullscreen,
   onEnterLyricsFullscreen,
 }) => {
@@ -488,16 +492,18 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
         </Animated.View>
 
         <Animated.View style={styles.transport} onLayout={e => { transportEnd.value = e.nativeEvent.layout.y + e.nativeEvent.layout.height; }}>
-          <Tactile
-            onPress={() => { tick('light'); setBackNudge(n => n + 1); onSkipBackward(); }}
-            hitSlop={12}
-            pressScale={0.84}
-            accessibilityRole="button"
-            accessibilityLabel="Previous"
-            style={styles.transportBtn}
-          >
-            <NudgeIcon name="play-back" size={42} color={INK} direction={-1} trigger={backNudge} />
-          </Tactile>
+          <NativeSkip direction={-1} enabled={nativeSkip} slop={12}>
+            <Tactile
+              onPress={() => { tick('light'); setBackNudge(n => n + 1); if (!nativeSkip) onSkipBackward(); }}
+              hitSlop={12}
+              pressScale={0.84}
+              accessibilityRole="button"
+              accessibilityLabel="Previous"
+              style={styles.transportBtn}
+            >
+              <NudgeIcon name="play-back" size={42} color={INK} direction={-1} trigger={backNudge} />
+            </Tactile>
+          </NativeSkip>
           <Tactile
             onPress={() => { tick('medium'); onTogglePlay(); }}
             hitSlop={12}
@@ -508,16 +514,18 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
           >
             <MorphIcon on={storePlaying} onIcon="pause" offIcon="play" size={54} color={INK} offStyle={styles.playNudge} />
           </Tactile>
-          <Tactile
-            onPress={() => { tick('light'); setForwardNudge(n => n + 1); onSkipForward(); }}
-            hitSlop={12}
-            pressScale={0.84}
-            accessibilityRole="button"
-            accessibilityLabel="Next"
-            style={styles.transportBtn}
-          >
-            <NudgeIcon name="play-forward" size={42} color={INK} direction={1} trigger={forwardNudge} />
-          </Tactile>
+          <NativeSkip direction={1} enabled={nativeSkip} slop={12}>
+            <Tactile
+              onPress={() => { tick('light'); setForwardNudge(n => n + 1); if (!nativeSkip) onSkipForward(); }}
+              hitSlop={12}
+              pressScale={0.84}
+              accessibilityRole="button"
+              accessibilityLabel="Next"
+              style={styles.transportBtn}
+            >
+              <NudgeIcon name="play-forward" size={42} color={INK} direction={1} trigger={forwardNudge} />
+            </Tactile>
+          </NativeSkip>
         </Animated.View>
         </Animated.View>
 

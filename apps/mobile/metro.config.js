@@ -35,4 +35,12 @@ config.resolver = {
   nodeModulesPaths: [path.join(__dirname, 'node_modules')],
 };
 
-module.exports = config;
+// Sentry ships its web session replay, its user feedback widget and server-only AI modules in the same package. None
+// of them runs here (replay stays off; bug reports go through services/feedback), so they stay out of the bundle.
+const {
+  withSentryExcludeServerOnlyResolver,
+  withSentryFeedbackResolver,
+  withSentryResolver,
+} = require('@sentry/react-native/metro');
+
+module.exports = withSentryExcludeServerOnlyResolver(withSentryFeedbackResolver(withSentryResolver(config, false), false));

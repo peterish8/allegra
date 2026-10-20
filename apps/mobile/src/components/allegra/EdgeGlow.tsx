@@ -20,8 +20,6 @@ import { rgba } from '../player/glowMath';
 import { hexToRgb, type AuraPalette } from './palette';
 import { lightPose, type EdgeLight, type GlowTone } from './edgeGlowMath';
 
-/** Surfaces bigger than this (points squared) are drawn at a reduced size. */
-const LARGE_AREA = 90_000;
 const TONES: readonly GlowTone[] = ['primary', 'secondary', 'tertiary'];
 /** The unit gradient every light stretches; colour fades to nothing at its rim. */
 const STOPS = [0, 0.46, 1];
@@ -117,8 +115,8 @@ const EdgeGlow: React.FC<EdgeGlowProps> = ({ palette, lights, base, active = tru
   }, [running, frame]);
 
   const { width, height } = size;
-  // Soft gradients: a big surface is drawn small and scaled up.
-  const scale = width * height > LARGE_AREA ? budget.renderScale : 1;
+  // Soft gradients: drawn tiny and scaled up, like the island's light (GLOW_PIXELS_PER_POINT).
+  const scale = budget.glowScale;
   const cw = Math.max(1, Math.round(width * scale));
   const ch = Math.max(1, Math.round(height * scale));
   return (

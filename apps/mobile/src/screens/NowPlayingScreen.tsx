@@ -57,6 +57,7 @@ import { fromMobileId, parseSongRef } from '@shared/songRef';
 import ConnectRemotePlayer from '../components/connect/ConnectRemotePlayer';
 import { useConnect } from '../services/connect/ConnectProvider';
 import { prefetchCover } from '../components/player/coverImages';
+import { useNativeSkip } from '../components/NativeSkip';
 import { Song } from '../types/song';
 import { notifyIslandAppShownAfterDraw } from '../services/NativeDynamicIsland';
 
@@ -399,6 +400,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     isUserScrolling,
     scrollTimeoutRef,
   } = useNowPlayingLogic(songId, route.params.lyrics === true);
+  const nativeSkip = useNativeSkip();
 
   // With the lyrics hidden there is nothing to scroll, so a drag always dismisses.
   useEffect(() => {
@@ -876,6 +878,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           onTogglePlay={togglePlay}
           onSkipForward={skipForward}
           onSkipBackward={skipBackward}
+          nativeSkip={nativeSkip}
           onToggleLike={onToggleLike}
           onToggleLyrics={() => setShowLyrics(!showLyrics)}
           onLyricsLongPress={() => setSheet('lyrics')}
