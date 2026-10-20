@@ -26,6 +26,7 @@ import { Song, UnifiedSong } from '../../types/song';
 import { recommendFor } from './recommend';
 import { getRecommendations } from '../MultiSourceSearchService';
 import { lyricaService } from '../LyricaService';
+import { upgradeToSynced } from '../lyrics/syncedUpgrade';
 import { ALLEGRA_API_URL } from '../account/config';
 import { fromMobileId } from '@shared/songRef';
 import {
@@ -355,13 +356,19 @@ async function loadLyrics(streamId: string, meta: UnifiedSong | undefined): Prom
       ref: fromMobileId(streamId) ?? undefined,
     });
     if (!result) return;
-    const lyrics = lyricaService.parseLrc(result.lyrics, meta?.duration ?? current.duration);
+    const duration = meta?.duration ?? current.duration;
+    const lyrics = lyricaService.parseLrc(result.lyrics, duration);
     if (lyrics.length === 0) return;
     const state = usePlayerStore.getState();
     // A skip while fetching must not paint these lyrics on the next song.
     if (state.currentSong?.id === streamId) state.updateCurrentSong({ lyrics, lyricSource: result.source });
     if (state.playlistQueue) {
       state.updateQueue(state.playlistQueue.map(s => (s.id === streamId ? { ...s, lyrics, lyricSource: result.source } : s)));
+    }
+    // Plain words are shown now; a synced version replaces them when one turns up.
+    if (!lyricaService.hasTimestamps(result.lyrics)) {
+      upgradeToSynced({ id: streamId, title: current.title, artist: current.artist ?? '', duration, ref: fromMobileId(streamId) ?? undefined }, result.source)
+        .catch(() => false);
     }
   } catch {
     // Lyrics are a nice-to-have for a stream; playback carries on without them.
