@@ -1,6 +1,6 @@
 import { Buffer } from 'buffer';
 import { EchoLyricsCascade } from './EchoLyricsCascade';
-import { allegraVersions, firstNonNull, jioSaavn, kuGou, simpMusic, youLyPlus } from './providers';
+import { allegraVersions, firstNonNull, jioSaavn, kuGou, lrcLib, simpMusic, youLyPlus } from './providers';
 import { mockFetch } from '../testing/mockFetch';
 
 afterEach(() => EchoLyricsCascade.clearCache());
@@ -77,6 +77,54 @@ describe('kuGou', () => {
     const hit = await kuGou(query);
     f.restore();
     expect(hit?.lyrics).toBe('[00:10.00]First real line\n[00:12.00]Second');
+  });
+});
+
+describe('lrcLib', () => {
+  const credited = { title: 'One Sun One Moon', artist: 'Anirudh Ravichander, Super Subu, M.S Krsna, Heisenberg', duration: 217 };
+  const synced = '[00:02.81] Halki lagan';
+
+  it('falls back to the lead artist when LRCLIB has nothing under the full credit', async () => {
+    const f = mockFetch([
+      ['https://lrclib.net/api/get', url => (url.includes('Super%20Subu') ? null : {
+        trackName: 'One Sun One Moon', artistName: 'Anirudh Ravichander', duration: 217, syncedLyrics: synced,
+      })],
+      ['https://lrclib.net/api/search', []],
+    ]);
+    const hit = await lrcLib(credited);
+    f.restore();
+    expect(hit?.lyrics).toBe(synced);
+    expect(hit?.synced).toBe(true);
+    expect(f.calls.some(url => url.includes('artist_name=Anirudh%20Ravichander&'))).toBe(true);
+  });
+
+  it('asks only once when the credit is a single artist', async () => {
+    const f = mockFetch([['https://lrclib.net/api/search', []]]);
+    const hit = await lrcLib({ title: 'Nothing', artist: 'Anirudh Ravichander', duration: 217 });
+    f.restore();
+    expect(hit).toBeNull();
+    expect(f.calls).toHaveLength(2);
+  });
+
+  it('keeps a full-credit match without looking up the lead artist', async () => {
+    const f = mockFetch([['https://lrclib.net/api/get', {
+      trackName: credited.title, artistName: credited.artist, duration: 217, syncedLyrics: synced,
+    }]]);
+    const hit = await lrcLib(credited);
+    f.restore();
+    expect(hit?.lyrics).toBe(synced);
+    expect(f.calls).toHaveLength(1);
+    expect(f.calls[0]).toContain('Super%20Subu');
+  });
+
+  it('rejects lead-artist search results with a different duration', async () => {
+    const f = mockFetch([['https://lrclib.net/api/search', url => url.includes('Super%20Subu') ? [] : [{
+      trackName: credited.title, artistName: 'Anirudh Ravichander', duration: 300, syncedLyrics: synced,
+    }]]]);
+    const hit = await lrcLib(credited);
+    f.restore();
+    expect(hit).toBeNull();
+    expect(f.calls).toHaveLength(4);
   });
 });
 
