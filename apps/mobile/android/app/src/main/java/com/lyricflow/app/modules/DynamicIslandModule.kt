@@ -126,8 +126,9 @@ class DynamicIslandModule : Module() {
         }
 
         /** The playing song's timed lines (ms, already shifted by the lyrics delay), shown under the open card. */
-        Function("setLyrics") { songId: String, atMs: List<Double>, texts: List<String> ->
-            IslandLyrics.set(songId, atMs.map { it.toLong() }, texts)
+        /** [marks]: letter by letter only, one `[charEnd, startMs, endMs, …]` list per line (empty for line by line). */
+        Function("setLyrics") { songId: String, atMs: List<Double>, texts: List<String>, marks: List<List<Double>> ->
+            IslandLyrics.set(songId, atMs.map { it.toLong() }, texts, marks)
         }
 
         Function("clearLyrics") {

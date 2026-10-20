@@ -14,11 +14,13 @@ export function useIslandLyrics(): void {
   const songId = usePlayerStore(state => state.currentSong?.id ?? null);
   const lyrics = usePlayerStore(state => state.currentSong?.lyrics);
   const delay = useSettingsStore(state => state.lyricsDelay);
+  // The player's triple tap switches lines ↔ letters; the island follows the same setting.
+  const letters = useSettingsStore(state => state.lyricsHighlight === 'letters');
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    const payload = songId ? islandLyricsPayload(lyrics, delay) : null;
-    if (songId && payload) setIslandLyrics(songId, payload.atMs, payload.texts);
+    const payload = songId ? islandLyricsPayload(lyrics, delay, letters) : null;
+    if (songId && payload) setIslandLyrics(songId, payload.atMs, payload.texts, payload.marks);
     else clearIslandLyrics();
-  }, [songId, lyrics, delay]);
+  }, [songId, lyrics, delay, letters]);
 }
