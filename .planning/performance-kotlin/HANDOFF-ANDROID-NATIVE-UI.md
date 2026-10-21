@@ -76,11 +76,12 @@ Done and committed (each verified on the emulator, no unit test possible for the
 - `0c38769` Fullscreen lyrics header: the cover was invisible (`Artwork` sizes its frame from `style`, and the header's style had no width or height). Fixed, and the header now mirrors the bottom row: cover, title, artist, exit fullscreen, options, heart.
 - `bbe9fd8` Island: the full lyrics opened with the first line jammed under the top fade; the list now rests with the first line at the sung-line place from the start (`IslandView.drawFullLyrics`).
 
+- 1.18.4 Island full lyrics: a vertical drag inside the lyrics now scrolls them (new `Axis.LYRICS`, with fling and rubber band past the last line) instead of folding the card. Pulled down past the first line, the card grows 72 dp below the scrubber (`shape(..., pk)`) and shows previous / play-pause / next there; pushing back up tucks the row away. The lyrics hand back to the song 3.5 s after the finger lifts (a tap on a line resumes at once). Verified on the emulator with screenshots: scroll up and down, row revealed under the scrubber, pause and resume by tapping it, row tucked away. Kotlin unit tests, `tsc`, Jest (878) pass; eslint reports 0 errors (78 old warnings). Not verified: TalkBack itself (the island already exposes previous / play-pause / next as custom accessibility actions on the view, so they work in the lyrics state; the revealed buttons are canvas-drawn without their own virtual nodes), the cover-to-lyrics morph with the row open, a real device.
+
 Still open (not started, one slice each):
 
-1. Dynamic island card: add play/pause/previous/next controls to the full-lyrics state (today they are hidden there; the compact open card has them). A vertical drag inside the lyrics must scroll the lyrics instead of closing the card (`IslandView.onTouchEvent` and `drag`: on the NOW page the vertical drag drives `full`, not a lyrics scroll). A drag down on the card at the lyrics' top should extend it a little and reveal the controls.
-2. In-app Apple + glow background (`NowPlayingBackground`, `GlowBackground`, `useGlowColors`): the glow behind the lyrics should look like the island's glow (`IslandFlow`).
-3. Animated canvas video (`CanvasVideoLayer`, `AppleBackdrop`): its colours should drive the wash in the bottom half of Now Playing as the video plays; today the bottom keeps the artwork palette (seen on "Animals": blue/teal video, pink wash below). Needs a way to sample the video's colours without a second decoder.
+1. In-app Apple + glow background (`NowPlayingBackground`, `GlowBackground`, `useGlowColors`): the glow behind the lyrics should look like the island's glow (`IslandFlow`).
+2. Animated canvas video (`CanvasVideoLayer`, `AppleBackdrop`): its colours should drive the wash in the bottom half of Now Playing as the video plays; today the bottom keeps the artwork palette (seen on "Animals": blue/teal video, pink wash below). Needs a way to sample the video's colours without a second decoder.
 
 ## Remaining screens (in order)
 
