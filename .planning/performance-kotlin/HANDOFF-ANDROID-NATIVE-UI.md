@@ -72,15 +72,15 @@ Not verified, so do not claim it: TalkBack itself; release-build font parity; a 
 
 Done and committed (each verified on the emulator, no unit test possible for the layout ones; the dumpsys bounds are the evidence):
 
--  Mini player: the skip icons sat about 9 dp left of centre because  (an Expo LinearLayout) re-laid its React Native child from its own origin and dropped the slop padding. It now leaves placement to React Native. dumpsys: child at 21,21 in its wrapper; play button 99 px / 100 px from the two icons.
--  Fullscreen lyrics header: the cover was invisible (Artwork sizes its frame from , and the header's style had no width or height). Fixed, and the header now mirrors the bottom row: cover, title, artist, exit fullscreen, options, heart.
--  Island: the full lyrics opened with the first line jammed under the top fade; the list now rests with the first line at the sung-line place from the start.
+- `67d63fd` Mini player: the skip icons sat about 9 dp left of centre because `NativeSkipView` (an Expo LinearLayout) re-laid its React Native child from its own origin and dropped the slop padding. It now leaves placement to React Native. dumpsys: child at 21,21 in its wrapper; play button 99 px / 100 px from the two icons.
+- `0c38769` Fullscreen lyrics header: the cover was invisible (`Artwork` sizes its frame from `style`, and the header's style had no width or height). Fixed, and the header now mirrors the bottom row: cover, title, artist, exit fullscreen, options, heart.
+- `bbe9fd8` Island: the full lyrics opened with the first line jammed under the top fade; the list now rests with the first line at the sung-line place from the start (`IslandView.drawFullLyrics`).
 
 Still open (not started, one slice each):
 
-1. Dynamic island card: add play/pause/previous/next controls to the full-lyrics state (today they are hidden there; the compact open card has them). A vertical drag inside the lyrics must scroll the lyrics instead of closing the card ( / : in the NOW page the vertical drag drives , not a lyrics scroll). A drag down on the card at the lyrics' top should extend it a little and reveal the controls.
-2. In-app Apple + glow background (, , ): the glow behind the lyrics should look like the island's glow ().
-3. Animated canvas video (, ): its colours should drive the wash in the bottom half of Now Playing as the video plays; today the bottom keeps the artwork palette (seen on Animals: blue/teal video, pink wash below). Needs a way to sample the video's colours without a second decoder.
+1. Dynamic island card: add play/pause/previous/next controls to the full-lyrics state (today they are hidden there; the compact open card has them). A vertical drag inside the lyrics must scroll the lyrics instead of closing the card (`IslandView.onTouchEvent` and `drag`: on the NOW page the vertical drag drives `full`, not a lyrics scroll). A drag down on the card at the lyrics' top should extend it a little and reveal the controls.
+2. In-app Apple + glow background (`NowPlayingBackground`, `GlowBackground`, `useGlowColors`): the glow behind the lyrics should look like the island's glow (`IslandFlow`).
+3. Animated canvas video (`CanvasVideoLayer`, `AppleBackdrop`): its colours should drive the wash in the bottom half of Now Playing as the video plays; today the bottom keeps the artwork palette (seen on "Animals": blue/teal video, pink wash below). Needs a way to sample the video's colours without a second decoder.
 
 ## Remaining screens (in order)
 
