@@ -36,6 +36,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppleSlider from './player/AppleSlider';
 import NativeScrubber, { NativeVolumeSlider, nativeScrubberAvailable } from './player/NativeScrubber';
 import { shouldUseNativeScrubber, shouldUseNativeVolume } from './player/nativeScrubberProps';
+import NativePlayerFooter, { nativePlayerFooterAvailable } from './player/NativePlayerFooter';
+import { footerSleepLabel, shouldUseNativeFooter, type FooterAction } from './player/nativeFooterProps';
 import { TIME_ROW_STYLE, TIME_TEXT_STYLE } from './player/scrubberLayout';
 import { MorphIcon, NudgeIcon, Tactile } from './allegra/motion';
 import { SwapMarquee } from './allegra/Marquee';
@@ -385,6 +387,23 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
     NativeAudioPlayer.openOutputSwitcher();
   }, []);
 
+  // The Kotlin bottom row only says which control was used; the same handlers as the React Native row run here.
+  const nativeFooter = shouldUseNativeFooter(nativePlayerFooterAvailable());
+  const onFooterAction = useCallback((action: FooterAction) => {
+    if (action === 'queue') {
+      tick('light');
+      onOpenQueue();
+    } else if (action === 'output') {
+      if (onOutputPress) { tick('light'); onOutputPress(); } else output();
+    } else if (action === 'timer') {
+      if (onOpenTimer) { tick('light'); onOpenTimer(); }
+    } else if (action === 'lyrics') {
+      lyricsTap();
+    } else {
+      lyricsLongPress();
+    }
+  }, [onOpenQueue, onOutputPress, onOpenTimer, output, lyricsTap, lyricsLongPress]);
+
   if (lyricsFullscreen) {
     return (
       <Animated.View
@@ -582,6 +601,19 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
           </Animated.View>
         )}
 
+        {nativeFooter ? (
+          <NativePlayerFooter
+            style={styles.footerNative}
+            hasTimer={!!onOpenTimer}
+            sleepLabel={footerSleepLabel(!!onOpenTimer, sleepLabel)}
+            outputDevices={!!onOutputPress}
+            outputActive={outputActive}
+            showLyrics={showLyrics}
+            lyricsLongPress={!!onLyricsLongPress}
+            waveColor={Signal.wave}
+            onAction={onFooterAction}
+          />
+        ) : (
         <View style={styles.footer}>
           <Tactile onPress={() => { tick('light'); onOpenQueue(); }} hitSlop={10} pressScale={0.86} style={styles.footerBtn} accessibilityRole="button" accessibilityLabel="Up next">
             <Ionicons name="list" size={26} color={INK_SOFT} />
@@ -623,6 +655,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             <MaterialCommunityIcons name="comment-quote-outline" size={24} color={showLyrics ? '#15151a' : INK_SOFT} />
           </Tactile>
         </View>
+        )}
         </Animated.View>
       </Animated.View>
     </Animated.View>
@@ -678,6 +711,7 @@ const styles = StyleSheet.create({
   volumeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
   volumeSlider: { flex: 1 },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 26 },
+  footerNative: { marginTop: 26 },
   footerBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   footerBtnOn: { backgroundColor: 'rgba(255,255,255,0.9)' },
   segment: { flexDirection: 'row', alignItems: 'center', height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.14)', overflow: 'hidden' },
