@@ -22,6 +22,7 @@ import android.os.SystemClock
 import android.text.TextPaint
 import android.text.TextUtils
 import android.util.LruCache
+import android.util.TypedValue
 import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.VelocityTracker
@@ -202,9 +203,9 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     private fun applyFonts() {
         titlePaint.typeface = IslandFonts.semibold
         subPaint.typeface = IslandFonts.regular
-        val scale = resources.configuration.fontScale
-        titlePaint.textSize = TITLE_SP * density * scale
-        subPaint.textSize = SUB_SP * density * scale
+        // React Native converts sp with the platform (nonlinear above 100% from Android 14), not density x fontScale.
+        titlePaint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, TITLE_SP, resources.displayMetrics)
+        subPaint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, SUB_SP, resources.displayMetrics)
     }
 
     private fun textRight() = width - sideM - (if (movable) handleW else 0f)
@@ -622,6 +623,16 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
         imagePaint.shader = null
     }
 
+    /** contentFit "cover" at the slot's own pixels: the centre square of the picture, scaled to `art` (never enlarged). */
+    private fun squareCover(src: Bitmap): Bitmap {
+        val side = min(src.width, src.height)
+        val x = (src.width - side) / 2
+        val y = (src.height - side) / 2
+        val target = art.roundToInt().coerceAtLeast(1)
+        val square = if (side == src.width && side == src.height) src else Bitmap.createBitmap(src, x, y, side, side)
+        return if (square.width > target) Bitmap.createScaledBitmap(square, target, target, true) else square
+    }
+
     private fun request(uri: String) {
         if (!pending.add(uri)) return
         val future = try {
@@ -632,8 +643,9 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
             return
         }
         future.addListener({
+            // Cropped and scaled to the slot here, off the main thread: the cache holds small squares.
             val bitmap = try {
-                future.get()
+                future.get()?.let { squareCover(it) }
             } catch (_: Throwable) {
                 null
             }
@@ -804,8 +816,8 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
         DataSourceBitmapLoader(
             MoreExecutors.listeningDecorator(executor),
             DefaultDataSource.Factory(context.applicationContext), null,
-            // The slot's own pixels (the React Native cover decodes at view size) with some room for a non-square picture to be cropped.
-            max(MIN_COVER_PX, (art * 1.5f).roundToInt()),
+            // Media3 halves the decode until the longer side fits, so ask for plenty: `squareCover` crops and scales it to the slot.
+            max(MIN_COVER_PX, (art * 4f).roundToInt()),
         )
     }
 }

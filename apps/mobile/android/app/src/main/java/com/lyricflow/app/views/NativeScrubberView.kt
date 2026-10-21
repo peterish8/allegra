@@ -11,10 +11,12 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.text.TextPaint
+import android.util.TypedValue
 import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.accessibility.AccessibilityEvent
 import androidx.core.view.AccessibilityDelegateCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
@@ -55,6 +57,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
     private var seedSec = 0.0
     private var durationSeedSec = 0.0
     private var live = false
+    private var visible = true
     private var trackDp = 10f
     private var label = "Song position"
     private var propsDirty = false
@@ -154,7 +157,8 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
 
     private fun applyFonts() {
         labelPaint.typeface = IslandFonts.semibold
-        labelPaint.textSize = LABEL_SP * density * resources.configuration.fontScale
+        // React Native converts sp with the platform (nonlinear above 100% from Android 14), not density x fontScale.
+        labelPaint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, LABEL_SP, resources.displayMetrics)
     }
 
     // ── The clock ───────────────────────────────────────────────────────────
@@ -209,7 +213,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
 
     /** Frames while something moves; a gentle tick while the song plays; nothing when it is paused and still. */
     private fun schedule() {
-        if (!isAttachedToWindow || !live) return
+        if (!isAttachedToWindow || !live || !visible) return
         if (busy()) {
             postFrame()
             return
@@ -217,6 +221,20 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
         if (isPlaying() && !tickPosted) {
             tickPosted = true
             main.postDelayed(tick, TICK_MS)
+        }
+    }
+
+    /** Nothing ticks when nothing is watching: the app in the background or the screen off stops the clock. */
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        if (visible == isVisible) return
+        visible = isVisible
+        if (visible) {
+            invalidate()
+            schedule()
+        } else {
+            main.removeCallbacks(tick)
+            tickPosted = false
         }
     }
 
@@ -409,7 +427,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
             info.stateDescription = "${ScrubberMath.formatTime(at)} of ${ScrubberMath.formatTime(d)}"
             if (d > 0.0) {
                 info.rangeInfo = AccessibilityNodeInfoCompat.RangeInfoCompat.obtain(
-                    AccessibilityNodeInfoCompat.RangeInfoCompat.RANGE_TYPE_INT, 0f, d.toFloat(), at.toFloat(),
+                    AccessibilityNodeInfoCompat.RangeInfoCompat.RANGE_TYPE_FLOAT, 0f, d.toFloat(), at.toFloat(),
                 )
                 info.addAction(AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_SET_PROGRESS)
             }
@@ -419,6 +437,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
             if (action == AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_SET_PROGRESS.id) {
                 val value = args?.getFloat(AccessibilityNodeInfoCompat.ACTION_ARGUMENT_PROGRESS_VALUE) ?: return false
                 commitSeconds(value.toDouble())
+                host.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SELECTED)
                 return true
             }
             return super.performAccessibilityAction(host, action, args)

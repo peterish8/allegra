@@ -8,7 +8,7 @@
  * The view is laid over an invisible spacer built from the same layout numbers as the React Native labels, so the
  * rows around it do not move by a pixel.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { runOnJS, useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
 import { requireNativeView } from 'expo';
@@ -67,9 +67,13 @@ const NativeScrubber: React.FC<NativeScrubberProps> = ({
       if (next !== prev) runOnJS(takeDuration)(next);
     },
   );
-  // Not read during render (a shared value is for worklets): picked up once per song, for the moments the player is elsewhere.
+  // Not read during render (a shared value is for worklets). The first song takes the position JavaScript knows; a song
+  // that replaces it starts at 0, since the position still held for a moment is the previous song's.
+  const seededFor = useRef<string | null>(null);
   useEffect(() => {
-    setSeedSec(cleanSeconds(positionSV.value, 0.1));
+    const first = seededFor.current === null;
+    seededFor.current = songId;
+    setSeedSec(first ? cleanSeconds(positionSV.value, 0.1) : 0);
   }, [songId, positionSV]);
 
   const onCommit = useCallback((event: { nativeEvent: { seconds: number } }) => {
