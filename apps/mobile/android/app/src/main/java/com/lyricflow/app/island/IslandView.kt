@@ -1576,7 +1576,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         if (lyricLines.isEmpty()) return
         ensureLyricLayouts(g)
         val area = lyricsBottom - lyricsTop
-        val target = if (lyricIndex >= 0) lyricTops[lyricIndex] - area * SUNG_LINE_AT else 0f
+        // Before the first line is sung the list already rests where that line will be, at the sung-line place, so the
+        // song does not open with the first line jammed under the top fade and then slide down.
+        val target = lyricTops[max(lyricIndex, 0)] - area * SUNG_LINE_AT
         if (!lyricScrollPlaced) {
             lyricScroll.snap(target)
             lyricScrollPlaced = true
