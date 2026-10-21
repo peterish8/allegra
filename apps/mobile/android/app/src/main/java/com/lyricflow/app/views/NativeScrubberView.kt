@@ -1,11 +1,16 @@
 package com.lyricflow.app.views
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -44,6 +49,9 @@ import kotlin.math.roundToInt
  * existing flow (which resumes playback if it was playing).
  *
  * The view is laid over an invisible React Native spacer that gives it exactly the old layout's height.
+ *
+ * `mode` "volume" makes the same slider the system media volume's: no clock and no labels, the stream is read and set
+ * directly (rounded down, as `MainPlayerModule.setVolume` does), and the hardware keys move it while it is on screen.
  */
 class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
     private val onCommit by EventDispatcher<Map<String, Any>>()
@@ -62,6 +70,11 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
     private var label = "Song position"
     private var propsDirty = false
     private var appliedSong = ""
+
+    // Volume mode: the same slider over the system media volume (no clock, no labels).
+    private var volumeMode = false
+    private val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private var volumeReceiver: BroadcastReceiver? = null
 
     // ── Clock ───────────────────────────────────────────────────────────────
     private var player: Player? = null
@@ -141,6 +154,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
     fun setLive(on: Boolean?) { live = on ?: false; propsDirty = true }
     fun setTrackHeight(dp: Double?) { trackDp = (dp ?: 10.0).toFloat(); propsDirty = true }
     fun setLabel(text: String?) { label = text ?: "Song position"; propsDirty = true }
+    fun setMode(mode: String?) { volumeMode = mode == "volume"; propsDirty = true }
 
     fun commit() {
         if (!propsDirty) return
@@ -151,6 +165,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
             cancelGesture()
             settling = false
         }
+        syncVolumeReceiver()
         invalidate()
         schedule()
     }
@@ -183,8 +198,49 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
 
     private fun isPlaying(): Boolean = player?.let { it.isPlaying && onSong() } == true
 
-    private fun shownValue(): Float =
-        ScrubberMath.display(dragging, settling, dragValue, ScrubberMath.progress(positionSec(), durationSec()))
+    private fun shownValue(): Float = ScrubberMath.display(dragging, settling, dragValue, playedFraction())
+
+    private fun playedFraction(): Float =
+        if (volumeMode) systemVolume() else ScrubberMath.progress(positionSec(), durationSec())
+
+    // ── System volume (volume mode) ─────────────────────────────────────────
+
+    private fun systemVolume(): Float {
+        val am = audio ?: return 0f
+        return ScrubberMath.volumeFraction(am.getStreamVolume(AudioManager.STREAM_MUSIC), am.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+    }
+
+    /** Sets the media volume as `MainPlayerModule.setVolume` does: the index rounded down, no system UI. */
+    private fun setSystemVolume(fraction: Float) {
+        val am = audio ?: return
+        val index = ScrubberMath.volumeIndex(fraction, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+        runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0) }
+    }
+
+    /** The hardware volume keys move the slider while it is on screen; nothing listens otherwise. */
+    private fun syncVolumeReceiver() {
+        val want = volumeMode && isAttachedToWindow && visible
+        if ((volumeReceiver != null) == want) return
+        if (want) {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(c: Context?, intent: Intent?) {
+                    if (intent?.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1) != AudioManager.STREAM_MUSIC) return
+                    invalidate()
+                }
+            }
+            val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                context.registerReceiver(receiver, filter)
+            }
+            volumeReceiver = receiver
+            invalidate()
+        } else {
+            volumeReceiver?.let { r -> runCatching { context.unregisterReceiver(r) } }
+            volumeReceiver = null
+        }
+    }
 
     private fun checkSettled() {
         if (!settling) return
@@ -218,7 +274,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
             postFrame()
             return
         }
-        if (isPlaying() && !tickPosted) {
+        if (!volumeMode && isPlaying() && !tickPosted) {
             tickPosted = true
             main.postDelayed(tick, TICK_MS)
         }
@@ -229,6 +285,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
         super.onVisibilityAggregated(isVisible)
         if (visible == isVisible) return
         visible = isVisible
+        syncVolumeReceiver()
         if (visible) {
             invalidate()
             schedule()
@@ -248,6 +305,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
             schedule()
         }
         if (removeFonts == null) removeFonts = IslandFonts.load(context) { main.post { applyFonts(); invalidate() } }
+        syncVolumeReceiver()
         schedule()
     }
 
@@ -263,6 +321,8 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
         tickPosted = false
         removeFonts?.invoke()
         removeFonts = null
+        volumeReceiver?.let { r -> runCatching { context.unregisterReceiver(r) } }
+        volumeReceiver = null
         super.onDetachedFromWindow()
     }
 
@@ -289,7 +349,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 // Only the strip around the track is the slider's; the labels below it take no touches.
-                if (event.y > hitPx() || durationSec() <= 0.0) return false
+                if (event.y > hitPx() || (!volumeMode && durationSec() <= 0.0)) return false
                 touching = true
                 claimed = false
                 yielded = false
@@ -317,6 +377,8 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
                 }
                 if (claimed) {
                     dragValue = ScrubberMath.fractionAt(event.x, width.toFloat())
+                    // The volume follows the finger as it moves (the React Native slider's onChange did the same).
+                    if (volumeMode) setSystemVolume(dragValue)
                     invalidate()
                 }
                 return true
@@ -354,6 +416,11 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
 
     /** The finger chose a place: hold it on screen and hand the seconds to JavaScript, which seeks. */
     private fun commitFraction(fraction: Float) {
+        if (volumeMode) {
+            // Applied at once, nothing to wait for: the slider shows the stream's own step again when the finger lifts.
+            setSystemVolume(fraction)
+            return
+        }
         val d = durationSec()
         if (d <= 0.0) return
         commitSeconds(fraction * d)
@@ -403,6 +470,8 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
         canvas.restore()
         canvas.restore()
 
+        if (volumeMode) return
+
         // Elapsed on the left, the song's length on the right; React Native's Text keeps the font padding (top..bottom).
         val metrics = labelPaint.fontMetrics
         val base = (ScrubberMath.HIT_DP + ScrubberMath.LABEL_GAP_DP) * density - metrics.top
@@ -420,6 +489,17 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
     private inner class Access : AccessibilityDelegateCompat() {
         override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
             super.onInitializeAccessibilityNodeInfo(host, info)
+            if (volumeMode) {
+                val percent = (shownValue() * 100f).roundToInt()
+                info.className = "android.widget.SeekBar"
+                info.contentDescription = label
+                info.stateDescription = "$percent percent"
+                info.rangeInfo = AccessibilityNodeInfoCompat.RangeInfoCompat.obtain(
+                    AccessibilityNodeInfoCompat.RangeInfoCompat.RANGE_TYPE_PERCENT, 0f, 100f, percent.toFloat(),
+                )
+                info.addAction(AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_SET_PROGRESS)
+                return
+            }
             val d = durationSec()
             val at = shownValue() * d
             info.className = "android.widget.SeekBar"
@@ -436,7 +516,12 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
         override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean {
             if (action == AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_SET_PROGRESS.id) {
                 val value = args?.getFloat(AccessibilityNodeInfoCompat.ACTION_ARGUMENT_PROGRESS_VALUE) ?: return false
-                commitSeconds(value.toDouble())
+                if (volumeMode) {
+                    setSystemVolume(value / 100f)
+                    invalidate()
+                } else {
+                    commitSeconds(value.toDouble())
+                }
                 host.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SELECTED)
                 return true
             }

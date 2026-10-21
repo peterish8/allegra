@@ -18,6 +18,7 @@ class NativeScrubberModule : Module() {
             Prop("live") { view: NativeScrubberView, on: Boolean? -> view.setLive(on) }
             Prop("trackHeight") { view: NativeScrubberView, dp: Double? -> view.setTrackHeight(dp) }
             Prop("label") { view: NativeScrubberView, text: String? -> view.setLabel(text) }
+            Prop("mode") { view: NativeScrubberView, mode: String? -> view.setMode(mode) }
 
             OnViewDidUpdateProps { view: NativeScrubberView -> view.commit() }
         }
