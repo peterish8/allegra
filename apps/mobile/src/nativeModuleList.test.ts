@@ -17,6 +17,11 @@ interface ExpoModuleConfig {
 }
 
 describe('ExpoModulesPackageList.kt', () => {
+  it('registers Allegra local native view modules', () => {
+    const list = fs.readFileSync(listPath, 'utf8');
+    expect(list).toContain('com.lyricflow.app.modules.NativeTabBarModule::class.java');
+  });
+
   it('lists the Android native module of every Expo package the app depends on', () => {
     const list = fs.readFileSync(listPath, 'utf8');
     const deps = Object.keys((JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }).dependencies);

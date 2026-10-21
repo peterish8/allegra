@@ -8,6 +8,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { TabParamList, LibraryStackParamList, BrowseStackParamList } from '../types/navigation';
 import { ModernPillTabBar } from '../components/ModernPillTabBar';
 import { CustomTabBar } from '../components/CustomTabBar';
+import { NativeTabBar } from '../components/NativeTabBar';
 import { useSettingsStore } from '../store/settingsStore';
 import { useThemeColors, useIsDark } from '../contexts/ThemeContext';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
@@ -150,6 +151,7 @@ const SearchIcon = ({ color, focused }: { color: string; focused: boolean }) => 
 // audio pool and a transport for a different player would be misleading.
 const renderModernPillTabBar = (props: BottomTabBarProps) => <ModernPillTabBar {...props} />;
 const renderCustomTabBar = (props: BottomTabBarProps) => <CustomTabBar {...props} />;
+const renderNativeTabBar = (props: BottomTabBarProps) => <NativeTabBar {...props} />;
 
 export const TabNavigator: React.FC = () => {
   const colors = useThemeColors();
@@ -166,7 +168,9 @@ export const TabNavigator: React.FC = () => {
         initialRouteName="Stream"
         // Back from Settings returns to the tab you came from.
         backBehavior="history"
-        tabBar={navBarStyle === 'modern-pill' ? renderModernPillTabBar : renderCustomTabBar}
+        tabBar={Platform.OS === 'android'
+            ? renderNativeTabBar
+            : navBarStyle === 'modern-pill' ? renderModernPillTabBar : renderCustomTabBar}
         screenOptions={{
           headerShown: false,
           ...TAB_TRANSITION,
