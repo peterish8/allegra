@@ -888,6 +888,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           positionSV={positionSV}
           durationSV={durationSV}
           onSeek={handleScrub}
+          localSongId={currentSong?.id}
           showLyrics={showLyrics}
           compact={showLyrics}
           lyricsFullscreen={lyricsFullscreen}

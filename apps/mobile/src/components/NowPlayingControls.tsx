@@ -34,6 +34,9 @@ import Animated, {
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppleSlider from './player/AppleSlider';
+import NativeScrubber, { nativeScrubberAvailable } from './player/NativeScrubber';
+import { shouldUseNativeScrubber } from './player/nativeScrubberProps';
+import { TIME_ROW_STYLE, TIME_TEXT_STYLE } from './player/scrubberLayout';
 import { MorphIcon, NudgeIcon, Tactile } from './allegra/motion';
 import { SwapMarquee } from './allegra/Marquee';
 import Artwork from './allegra/Artwork';
@@ -70,6 +73,11 @@ interface NowPlayingControlsProps {
   positionSV: SharedValue<number>;
   durationSV: SharedValue<number>;
   onSeek: (seconds: number) => void | Promise<void>;
+  /**
+   * The song this phone's own player is playing. When given (Now Playing, never Connect's remote player) and the
+   * Kotlin view exists, the scrubber is drawn natively and follows the Media3 clock itself.
+   */
+  localSongId?: string;
   showLyrics?: boolean;
   /** Opens the player menu; receives the press event for menu anchoring. */
   onMorePress?: (event: GestureResponderEvent) => void;
@@ -227,6 +235,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   positionSV,
   durationSV,
   onSeek,
+  localSongId,
   showLyrics = false,
   onMorePress,
   onOpenQueue,
@@ -313,8 +322,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   const [forwardNudge, setForwardNudge] = useState(0);
 
   const progress = useDerivedValue(() => (durationSV.value > 0 ? positionSV.value / durationSV.value : 0));
-  const seek = useCallback(async (fraction: number) => {
-    const seconds = fraction * durationSV.value;
+  const seekSeconds = useCallback(async (seconds: number) => {
     isSeeking.value = true;
     positionSV.value = seconds;
     try {
@@ -325,7 +333,9 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
     } finally {
       setTimeout(() => { isSeeking.value = false; }, 280);
     }
-  }, [durationSV, positionSV, onSeek]);
+  }, [positionSV, onSeek]);
+  const seek = useCallback((fraction: number) => seekSeconds(fraction * durationSV.value), [seekSeconds, durationSV]);
+  const nativeScrubber = shouldUseNativeScrubber(nativeScrubberAvailable(), localSongId);
 
   // The lyrics button: one tap shows or hides lyrics, three quick ones switch letter by letter ↔ line by line,
   // a long press opens the picker (player/lyricsButtonTaps).
@@ -499,13 +509,25 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
         </Animated.View>
 
         <Animated.View style={styles.scrubber}>
-          <AppleSlider
-            progress={progress}
-            onCommit={seek}
-            height={10}
-            accessibilityLabel="Song position"
-            renderBelow={display => <TimeLabels display={display} durationSV={durationSV} />}
-          />
+          {nativeScrubber && localSongId ? (
+            <NativeScrubber
+              songId={localSongId}
+              positionSV={positionSV}
+              durationSV={durationSV}
+              onSeekSeconds={seekSeconds}
+              live={focused}
+              trackHeight={10}
+              accessibilityLabel="Song position"
+            />
+          ) : (
+            <AppleSlider
+              progress={progress}
+              onCommit={seek}
+              height={10}
+              accessibilityLabel="Song position"
+              renderBelow={display => <TimeLabels display={display} durationSV={durationSV} />}
+            />
+          )}
         </Animated.View>
 
         <Animated.View style={styles.transport} onLayout={e => { transportEnd.value = e.nativeEvent.layout.y + e.nativeEvent.layout.height; }}>
@@ -639,8 +661,9 @@ const styles = StyleSheet.create({
   // Echo's rhythm: 24 between the title and the bar, 24 under the times,
   // ~30 between the transport and the bottom row.
   scrubber: { marginTop: 24 },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, paddingHorizontal: 4 },
-  time: { fontWeight: '600', fontSize: 13, fontVariant: ['tabular-nums'], color: INK_META },
+  // Shared with the native scrubber's spacer, so both are the same height.
+  timeRow: TIME_ROW_STYLE,
+  time: TIME_TEXT_STYLE,
   transport: { flexDirection: 'row', alignItems: 'center', marginTop: 18 },
   transportSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   transportBtn: { width: 76, height: 72, alignItems: 'center', justifyContent: 'center' },
