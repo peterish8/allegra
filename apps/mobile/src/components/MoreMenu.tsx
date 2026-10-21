@@ -34,35 +34,21 @@ import { usePlayerStore } from '../store/playerStore';
 import Frosted from './allegra/Frosted';
 import { Tactile } from './allegra/motion';
 import { useArtworkPalette } from './allegra/useArtworkPalette';
+import NativeMoreItems, { nativeMoreItemsAvailable } from './NativeMoreItems';
+import { moreItemsHeight, moreItemsPayload, morePalette } from './moreMenuPayload';
+import { MORE_ITEMS, MORE_ROWS, MORE_TILES, type MoreItem } from './moreItems';
 
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
-type MoreIconName = IconName | 'dj-mascot';
-
-export interface MoreItem {
-  key: string;
-  label: string;
-  icon: MoreIconName;
-  /** Rows carry a one-line hint; tiles don't. */
-  hint?: string;
-}
-
-/** The places people jump to most — big tiles across the top. */
-export const MORE_TILES: readonly MoreItem[] = [
-  { key: 'Dj', label: 'Your DJ', icon: 'dj-mascot' },
-  { key: 'Search', label: 'Search', icon: 'search' },
-  { key: 'Playlists', label: 'Playlists', icon: 'albums-outline' },
-];
-
-/** Less frequent destinations, listed below the tiles. */
-export const MORE_ROWS: readonly MoreItem[] = [
-  { key: 'Settings', label: 'Settings', icon: 'settings-outline', hint: 'Playback, lyrics, look' },
-];
-
-/** Everything behind •••, in the order people reach for it. */
-export const MORE_ITEMS: readonly MoreItem[] = [...MORE_TILES, ...MORE_ROWS];
+// The menu's entries are plain data in ./moreItems (re-exported here for the importers that always had them from this file).
+export { MORE_ITEMS, MORE_ROWS, MORE_TILES } from './moreItems';
+export type { MoreItem } from './moreItems';
 
 const STAGGER_MS = 30;
 const RADIUS = 26;
+
+// Where the Kotlin view exists and can draw every entry, the tiles and rows are drawn by it (the card, the blur and the
+// backdrop stay here); null falls back to the React Native items below.
+const NATIVE_ITEMS = nativeMoreItemsAvailable() ? moreItemsPayload(MORE_TILES, MORE_ROWS) : null;
+const NATIVE_PALETTE = morePalette(Signal);
 
 function DjMascotIcon({ active }: { readonly active: boolean }) {
   return (
@@ -174,7 +160,16 @@ export const MoreMenu: React.FC<MoreMenuProps> = ({ open, activeKey, anchorBotto
         accessibilityRole="menu"
       >
         <Frosted radius={RADIUS} palette={palette} />
-        {open ? (
+        {open && NATIVE_ITEMS ? (
+          <NativeMoreItems
+            items={NATIVE_ITEMS}
+            activeKey={activeKey}
+            palette={NATIVE_PALETTE}
+            animateIn={!reduce}
+            height={moreItemsHeight(MORE_ROWS.length, StyleSheet.hairlineWidth)}
+            onSelect={choose}
+          />
+        ) : open ? (
           <>
             <View style={styles.tiles}>
               {MORE_TILES.map((item, i) => {
