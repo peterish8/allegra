@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
@@ -19,7 +18,6 @@ import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
 import android.view.accessibility.AccessibilityEvent
-import androidx.core.graphics.PathParser
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.customview.widget.ExploreByTouchHelper
@@ -102,11 +100,10 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
 
     // ── Drawing ─────────────────────────────────────────────────────────────
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val glyphs = GlyphPainter(density)
     private val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val rect = RectF()
     private val clip = Path()
-    private val matrix = Matrix()
     private var removeFonts: (() -> Unit)? = null
     private val access = Access(this)
 
@@ -406,19 +403,8 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
     // ── Icons ───────────────────────────────────────────────────────────────
 
     /** A glyph [sizeDp] big, centred on ([cxDp], [cyDp]); its outline is on a 512 grid centred on (0, 0). */
-    private fun icon(canvas: Canvas, data: String, sizeDp: Float, cxDp: Float, cyDp: Float, color: Int) {
-        val path = paths.getOrPut(data) { runCatching { PathParser.createPathFromPathData(data) }.getOrNull() } ?: return
-        val k = sizeDp * density / IconGlyphs.GRID
-        matrix.setScale(k, k)
-        matrix.postTranslate(cxDp * density, cyDp * density)
-        val out = scratch
-        out.reset()
-        path.transform(matrix, out)
-        iconPaint.color = color
-        canvas.drawPath(out, iconPaint)
-    }
-
-    private val scratch = Path()
+    private fun icon(canvas: Canvas, data: String, sizeDp: Float, cxDp: Float, cyDp: Float, color: Int) =
+        glyphs.draw(canvas, data, sizeDp, cxDp, cyDp, color)
 
     // ── Accessibility ───────────────────────────────────────────────────────
 
@@ -511,7 +497,5 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
 
         val INK_SOFT = Color.argb(158, 255, 255, 255)
         val LYRICS_ON_INK = Color.parseColor("#15151A")
-
-        val paths = HashMap<String, Path?>()
     }
 }
