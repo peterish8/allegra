@@ -1,6 +1,16 @@
 # Android native UI migration handoff
 
-Updated: 2026-10-21
+Updated: 2026-10-21 (pushed for a cloud session)
+
+## Start here (cloud continuation)
+
+- Repository: `https://github.com/peterish8/allegra` (remote `origin`). Work on the branch **`perf/mobile-player-responsiveness`**, pushed to `origin`. It is 13 commits ahead of `origin/main` (merge base `74b4b47`) and there is **no PR**. Do not open a PR, merge, or push to `main` without the user's approval. Pushing more commits to this branch is expected.
+- Newest commit on the branch: `0fdb780 feat(mobile): draw the Up next queue rows in Kotlin on Android` (app version 1.21.0). Everything before it was verified on an emulator; **that one was not** (see slice 7).
+- First steps: `git fetch origin && git checkout perf/mobile-player-responsiveness && git status`, read `CLAUDE.md` and `apps/mobile/CLAUDE.md`, then this file. The mobile app is not a root workspace: `cd apps/mobile && npm install` (own lockfile).
+- What a cloud session can and cannot do: it can write Kotlin and TypeScript, run `npx tsc --noEmit`, `npx eslint`, `npx jest`, and (if the Android SDK is available) `./gradlew :app:compileDebugKotlin :app:testDebugUnitTest`. It **cannot** run the user's Windows emulator (`LowEnd_M31`), so it cannot do the emulator checks the goal requires. For every slice done in the cloud: finish the code and the automated checks, commit, and add a **"Needs a device check"** list to the slice's section below saying exactly what to look at (alignment, safe areas, transparency, gestures, animation). Never write "verified on an emulator" for something that was not. The user (or a local session) does that check on the Windows machine and then marks the slice verified.
+- Never commit `apps/mobile/metro.config.js` (a local Windows shim) or stage `apps/mobile/.expo-export-check/`. They are not in the pushed branch and must stay out of it. No `Co-Authored-By` or AI footers in commits; conventional messages (`feat(mobile):`, `fix(mobile):`, `docs(planning):`). Bump `expo.version` in `apps/mobile/app.json` for every change that rebuilds the APK (minor for a feature, patch for a fix).
+- Order of work from here: (1) the queue slice below needs its device check first; (2) then the remaining Now Playing pieces, one vertical slice at a time: cover/background stage, gestures and the player sheet, the header and controls rows still in React Native; (3) then the content screens behind the tab bar: Stream, Library, Luvs, More. Route handling stays JavaScript-owned until a slice explicitly changes it.
+- The goal is complete only when every requested Android screen is migrated and verified on a device or emulator. As of this push it is not: queue (unverified), the header/controls rows, cover stage, gestures/sheet, Stream, Library, Luvs and More remain, and nothing has TalkBack, release-build, real-device or performance evidence yet.
 
 ## Current objective
 
@@ -12,9 +22,9 @@ The user also requested that synced lyrics remain responsive across phone and Dy
 
 - Main checkout: `C:\dev\allegra`, branch `main`.
 - Active feature checkout: `C:\dev\allegra-mobile-responsiveness`, branch `perf/mobile-player-responsiveness`.
-- Commits on the branch so far (newest first): the island first-line fix, the fullscreen header fix, the mini player skip fix, the native synchronized lyrics slice, `b2b2cfb feat(mobile): render Android tab bar in Kotlin`, `e2003b4 feat(mobile): render Android transport controls in Kotlin`.
+- Commits on the branch so far (newest first): `0fdb780` queue rows in Kotlin (unverified), `b184600` canvas colours drive the bottom wash, `fc4ff7a` Apple + glow with the island's light, `dea965c` island lyrics scroll and controls, the docs commits, `bbe9fd8` island first-line fix, `0c38769` fullscreen header fix, `67d63fd` mini player skip fix, `faca34c` native synchronized lyrics, `b2b2cfb` tab bar, `e2003b4` transport controls, `7491020` aligned transport controls.
 - Local-only, never commit: `apps/mobile/metro.config.js` carries a Windows shim appended after the Sentry wrappers (Sentry's feedback stub matches origin paths with forward slashes, so on Windows the dev bundle pulled in the real feedback widget and crashed). A real fix should be its own commit. `apps/mobile/.expo-export-check/` is generated output; keep it out of commits. `apps/mobile/android/app/debug.keystore` was copied into the worktree and is git-ignored.
-- Nothing has been pushed and no PR is open. Do not push or open one without the user's approval.
+- The branch was pushed to `origin` (`peterish8/allegra`) on 2026-10-21 at the user's request, for a cloud session. No PR is open. Do not open one, merge, or push to `main` without the user's approval.
 
 ## Slices done
 
@@ -82,19 +92,37 @@ Done and committed (each verified on the emulator, no unit test possible for the
 
 - 1.20.0 Animated canvas colours now drive the bottom wash of Now Playing. New `NativeCanvasWashView` (module `NativeCanvasWash`, JS `components/player/NativeCanvasWash.tsx`): it finds the canvas's `TextureView` (the video is drawn into one on Android) through the native ID the canvas layer's wrapper carries (`nativeID`, set only by `NowPlayingBackground`), reads it four times a second into a 16x24 bitmap (no second decoder, the video is untouched), takes the lower half, blurs it (3 passes), caps brightness at 150/255 so it stays a room, eases between readings each display frame, and draws it filtered large under the same shade as the cover room, melting into the video's own dissolve. It samples only while the canvas is on screen and the song plays; paused it holds the last colours; with no view (iOS, older builds) the still cover room stays. Verified on the emulator on "Animals" (Apple Music HLS canvas): bottom wash is plum/magenta continuing the video (the cover palette gave blue/teal and pink before), two frames 9 s apart differ slightly. A first version showed blocky white blobs from the video's bright strokes: fixed by the blur and the cap. Kotlin tests, `tsc`, eslint on touched files, Jest (878) pass. Not verified: other canvases (dark or very bright clips), a song change while the canvas plays, the sheet drag, a real device and its cost (nothing measured: `TextureView.getBitmap` at 4 Hz into a tiny bitmap should be cheap, but no number was taken), release build. The emulator was very slow during this run (the JS thread lagged by minutes), so timing and animation smoothness are not judged.
 
-Still open (not started):
+Still open from the user's follow-up list: nothing. Continue with slice 7's device check, then the remaining screens below.
 
-1. Nothing left from the user's follow-up list. Continue with the remaining screens below.
+### 7. Up next queue rows in Kotlin (app version 1.21.0, commit `0fdb780`) — BUILT, NOT DEVICE-VERIFIED
+
+What it is. `views/NativeQueueListView.kt` (Expo view `NativeQueueList`, module `NativeQueueListModule`, JS wrapper `components/player/NativeQueueList.tsx`) draws, scrolls and re-orders the rows of `UpNextPanel`: cover (loaded small through Media3's `DataSourceBitmapLoader`, 150 ms fade over the base colour; the generated duotone cover when there is no picture or it fails, seeded like `Artwork`), title, `artist · m:ss`, the playing row's mark (three still bars) and tint, the pressed highlight, the two-bar handle. The panel's glass, header (Playing from, Shuffle), filter chips and swipe-down-to-close stay React Native; the `FlatList` is the fallback (iOS, builds without the view).
+
+Contracts kept:
+
+- Tap -> `onPick(index)` -> the existing `pick` (`skipToQueueIndex`). Nothing in Kotlin touches the queue or the player.
+- Re-order: a touch on a row's handle (right 52 dp) lifts it (spring scale 1.03 on a lit pane, haptic), the others step aside on `Motion.spring.tactile` springs, release settles it into its slot, then `onMove(from, to)` -> `onNativeMove` -> `updateQueue(moveItem(...))` + `prepareNextInQueue()`, the same calls the old drop made. The new order comes back as new `rows`; the native list clears its offsets in that same update (a 900 ms timeout clears them if no update arrives). Geometry and rules are ported from `coverStage.ts` (`dropIndex`, `rowShift`, `moveItem`) in the JVM-tested `queue/QueueModel.kt`.
+- The panel's dismiss pan still fails when the list is scrolled: the native list emits `onAtTop` and the panel writes `scrolled` (0 at the top, 3 otherwise; the pan fails past 2). A touch on a handle disallows parent interception, and the pan still fails in the handle column.
+- Opening or changing the filter scrolls to the playing row minus one: the panel bumps `scrollToken` and passes `startRow`.
+- Accessibility: one virtual Button per visible row ("Play <title>" / "Now playing: <title>") and, when movable, a "Move <title>" node with Move up / Move down actions (new; the React Native handle had a label but no way to move a row without dragging).
+
+Automated, passing at this commit: `:app:compileDebugKotlin`, `:app:testDebugUnitTest` (new `QueueModelTest`, 8 tests), `nativeQueuePayload.test.ts` (5), `nativeModuleList.test.ts`, `tsc --noEmit`, `eslint` on the touched folders. The debug APK built and installed on the emulator; the emulator then stalled and the checks below were never run.
+
+**Needs a device check (do this first, on the Windows emulator or a phone):** open Now Playing, swipe up for Up next, and confirm: the rows match the React Native list pixel for pixel in look (row height 64 dp, 48 dp cover, 14 dp row radius, text left edge, the lit current row, the playing mark); covers load and fade in, and a song with no cover shows the duotone tile; the list opens on the playing song with one row above; scrolling and fling feel right and the panel's swipe down closes it only from the top; tap plays the row; lift/drag/drop on the handle with the others stepping aside and the order persisting (check the queue in the notification and the island too); the Familiar and Discover chips show no handles; safe area at the bottom (last row clears the gesture bar); transparency over the frosted panel; TalkBack reads rows and the move actions. Fix what is off, then record the evidence here and in the commit.
+
+Not measured: no frame time or CPU number was taken, so no performance gain is claimed. Reduce Motion and large font scale were not checked (rows are a fixed 64 dp, like the React Native rows).
 
 ## Remaining screens (in order)
 
-After these, continue one vertical slice at a time through the rest of Now Playing and then the main screens: cover/background, gestures and the player sheet, queue (Up next), the header and controls rows still in React Native, then the content screens behind the tab bar (Stream, Library, Luvs, More). Route handling stays JavaScript-owned until a slice explicitly changes it.
+After slice 7's device check, continue one vertical slice at a time through the rest of Now Playing and then the main screens: cover/background stage (`AppleBackdrop`, `CoverStage`), gestures and the player sheet (`PlayerSheet`, the dismiss and swipe-up pans), the header and controls rows still in React Native (`NowPlayingControls`), then the content screens behind the tab bar (Stream, Library, Luvs, More). Route handling stays JavaScript-owned until a slice explicitly changes it.
+
+Pattern every slice so far follows (copy it): a pure, JVM-tested Kotlin model/math file; one Expo view (`views/Native<Name>View.kt`) that draws on a Canvas, owns its touch handling and a Choreographer loop that runs only while it has something to animate, uses `ExploreByTouchHelper` for accessibility, overrides `onMeasure`/`onLayout` so it never re-lays out React Native children, and applies props in one `commit()` via `OnViewDidUpdateProps`; a module in `modules/` registered in `ExpoModulesPackageList.kt` and guarded by `nativeModuleList.test.ts`; a JS wrapper that uses `requireNativeView` inside try/catch and exposes an `available()` check; a pure TypeScript payload builder with a Jest test; the React Native component kept as the fallback; and a version bump.
 
 ## Constraints for continuation
 
 1. Work in `C:\dev\allegra-mobile-responsiveness`; first re-check `git status`, branch, HEAD, and the diff. Do not overwrite or stage unrelated work.
 2. Read `C:\dev\allegra\CLAUDE.md` and `C:\dev\allegra\apps\mobile\CLAUDE.md` first. One vertical slice at a time. All existing behaviors are contracts.
-3. No `Co-Authored-By`, AI attribution, or similar footers in commits. No push or PR without the user's approval. Never stage `apps/mobile/.expo-export-check/`. Bump `expo.version` in `apps/mobile/app.json` for every APK-reaching change (minor for features).
+3. No `Co-Authored-By`, AI attribution, or similar footers in commits. Commits may be pushed to `origin/perf/mobile-player-responsiveness` (the user approved that for the cloud session); no PR, merge, or push to any other branch without the user's approval. Never stage `apps/mobile/.expo-export-check/`. Bump `expo.version` in `apps/mobile/app.json` for every APK-reaching change (minor for features).
 4. Android native rendering is additive: keep the React Native fallback for iOS and for when the native view is missing.
 5. One playback authority. No second player and no JavaScript per-frame clock. Connect remote has its own session clock.
 6. Never fabricate lyric timing; reject results for another recording.
