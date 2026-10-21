@@ -2,17 +2,14 @@ package com.lyricflow.app.island
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.util.LruCache
 import androidx.annotation.OptIn
-import androidx.core.graphics.ColorUtils
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.DefaultDataSource
-import androidx.palette.graphics.Palette
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import java.util.concurrent.Executors
@@ -93,7 +90,7 @@ class IslandArt(context: Context) {
             } catch (_: Throwable) {
                 null
             }
-            val art = bitmap?.let { Art(it, colorsOf(it)) }
+            val art = bitmap?.let { Art(it, IslandPalette.colorsOf(it)) }
             main.post {
                 pending -= key
                 if (art != null) cache.put(key, art)
@@ -107,37 +104,6 @@ class IslandArt(context: Context) {
         metadata.artworkUri?.let { return it.toString() }
         val data = metadata.artworkData ?: return null
         return "data:${data.size}:${data.contentHashCode()}"
-    }
-
-    private fun colorsOf(bitmap: Bitmap): IslandColors? = try {
-        val palette = Palette.from(bitmap).maximumColorCount(12).generate()
-        val main = palette.vibrantSwatch ?: palette.darkVibrantSwatch ?: palette.dominantSwatch
-        val deep = palette.darkMutedSwatch ?: palette.darkVibrantSwatch ?: palette.dominantSwatch
-        val light = palette.lightVibrantSwatch ?: palette.vibrantSwatch ?: palette.dominantSwatch
-        // The second light, as the website's second field: another of the cover's colours where it has one.
-        val other = palette.mutedSwatch ?: palette.darkVibrantSwatch ?: palette.lightMutedSwatch ?: main
-        if (main == null || deep == null) {
-            null
-        } else {
-            IslandColors(
-                // White text has to read on both, so the tones are held dark whatever the cover is.
-                top = tone(deep.rgb, 0.01f, 0.025f, minSaturation = 0.3f),
-                bottom = tone(main.rgb, 0.34f, 0.48f, minSaturation = 0.55f),
-                accent = tone(light?.rgb ?: Color.WHITE, 0.62f, 0.84f, minSaturation = 0f),
-                second = tone(other?.rgb ?: main.rgb, 0.30f, 0.46f, minSaturation = 0.45f),
-            )
-        }
-    } catch (_: Throwable) {
-        null
-    }
-
-    private fun tone(color: Int, minLight: Float, maxLight: Float, minSaturation: Float): Int {
-        val hsl = FloatArray(3)
-        ColorUtils.colorToHSL(color, hsl)
-        // A grey cover stays grey; a coloured one is lifted to a colour you can see under the text.
-        if (hsl[1] > 0.12f) hsl[1] = maxOf(hsl[1], minSaturation)
-        hsl[2] = hsl[2].coerceIn(minLight, maxLight)
-        return ColorUtils.HSLToColor(hsl)
     }
 
     private companion object {

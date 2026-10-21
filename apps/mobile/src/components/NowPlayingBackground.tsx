@@ -22,6 +22,7 @@ import { useIsFocused } from '@react-navigation/native';
 import Animated, { SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import AppleBackdrop, { heroHeight, usePlayerFrame } from './player/AppleBackdrop';
 import GlowBackground from './player/GlowBackground';
+import NativeFlowGlow, { nativeFlowGlowAvailable } from './player/NativeFlowGlow';
 import YouTubeBackdrop from './player/YouTubeBackdrop';
 import EdgeGlow from './allegra/EdgeGlow';
 import { COVER_GLOW_BASE, PLAYER_LIGHTS } from './allegra/edgeGlowMath';
@@ -89,7 +90,9 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
     }, GLOW_PREMOUNT_MS);
     return () => { clearTimeout(t); task?.cancel(); };
   }, [glowOn, glowWanted, style, surfaceActive]);
-  const glowColors = useGlowColors(style === 'blend' && glowWanted ? coverImageUri : null);
+  // On Android the glow is the island's own light, drawn natively; the Skia glow (and its palette read) is the fallback.
+  const nativeGlow = nativeFlowGlowAvailable();
+  const glowColors = useGlowColors(style === 'blend' && glowWanted && !nativeGlow ? coverImageUri : null);
 
   // Apple <-> glow cross-fade.
   const glowOpacity = useSharedValue(glowOn ? 1 : 0);
@@ -178,7 +181,11 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
 
       {style === 'blend' && glowWanted ? (
         <Animated.View style={[StyleSheet.absoluteFill, glowStyle]}>
-          <GlowBackground colors={glowColors} variant="player" active={glowOn && surfaceActive} />
+          {nativeGlow ? (
+            <NativeFlowGlow coverUri={coverImageUri} active={glowOn && surfaceActive} playing={playing} />
+          ) : (
+            <GlowBackground colors={glowColors} variant="player" active={glowOn && surfaceActive} />
+          )}
         </Animated.View>
       ) : null}
     </View>
