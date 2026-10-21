@@ -383,15 +383,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             <Text style={styles.focusTitle} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongTitle || 'Not playing'}</Text>
             <Text style={styles.focusArtist} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongArtist}</Text>
           </View>
-          <Tactile
-            onPress={onMorePress}
-            hitSlop={FOCUS_HIT_SLOP}
-            accessibilityRole="button"
-            accessibilityLabel="Song options"
-            style={styles.roundGlass}
-          >
-            <Ionicons name="ellipsis-horizontal" size={20} color={INK} />
-          </Tactile>
+          {/* The same buttons, in the same order, as the row under the lyrics. */}
           <Tactile
             onPress={() => { tick('light'); onExitLyricsFullscreen?.(); }}
             hitSlop={FOCUS_HIT_SLOP}
@@ -400,7 +392,31 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             accessibilityLabel="Exit lyrics fullscreen"
             style={styles.roundGlass}
           >
-            <MaterialCommunityIcons name="fullscreen-exit" size={20} color={INK} />
+            <MaterialCommunityIcons name="fullscreen-exit" size={19} color={INK} />
+          </Tactile>
+          {onMorePress ? (
+            <Tactile
+              onPress={e => { tick('light'); onMorePress(e); }}
+              hitSlop={FOCUS_HIT_SLOP}
+              pressScale={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Song options"
+              style={styles.roundGlass}
+            >
+              <Ionicons name="ellipsis-vertical" size={18} color={INK} />
+            </Tactile>
+          ) : null}
+          <Tactile
+            onPress={() => { tick(isCurrentSongLiked ? 'light' : 'success'); onToggleLike(); }}
+            hitSlop={FOCUS_HIT_SLOP}
+            pressScale={0.88}
+            accessibilityRole="button"
+            accessibilityLabel={isLikeSaving ? 'Saving to Liked songs, tap to cancel' : isCurrentSongLiked ? 'Unlike' : 'Like'}
+            style={styles.roundGlass}
+          >
+            <SavingPulse saving={isLikeSaving}>
+              <MorphIcon on={isCurrentSongLiked} onIcon="heart" offIcon="heart-outline" size={20} color={INK} />
+            </SavingPulse>
           </Tactile>
         </View>
       </Animated.View>
@@ -595,7 +611,9 @@ const styles = StyleSheet.create({
   container: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 15, paddingTop: CONTAINER_PAD_TOP },
   focusContainer: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 25 },
   focusContent: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: CONTENT_PAD },
-  focusArtwork: { borderRadius: 8, overflow: 'hidden' },
+  // Artwork takes its size from `style` (its `size` only scales the generated placeholder): without a width and a
+  // height the cover collapsed to nothing and the header showed an empty gap.
+  focusArtwork: { width: 52, height: 52, borderRadius: 8, overflow: 'hidden' },
   focusMeta: { flex: 1, minWidth: 0, gap: 3 },
   focusTitle: { color: INK, fontSize: 16, fontWeight: '700' },
   focusArtist: { color: INK_META, fontSize: 13 },
