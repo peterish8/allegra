@@ -12,7 +12,7 @@ The user also requested that synced lyrics remain responsive across phone and Dy
 
 - Main checkout: `C:\dev\allegra`, branch `main`.
 - Active feature checkout: `C:\dev\allegra-mobile-responsiveness`, branch `perf/mobile-player-responsiveness`.
-- Commits on the branch so far (newest first): the native synchronized lyrics slice (this document ships with it), `b2b2cfb feat(mobile): render Android tab bar in Kotlin`, `e2003b4 feat(mobile): render Android transport controls in Kotlin`.
+- Commits on the branch so far (newest first): the island first-line fix, the fullscreen header fix, the mini player skip fix, the native synchronized lyrics slice, `b2b2cfb feat(mobile): render Android tab bar in Kotlin`, `e2003b4 feat(mobile): render Android transport controls in Kotlin`.
 - Local-only, never commit: `apps/mobile/metro.config.js` carries a Windows shim appended after the Sentry wrappers (Sentry's feedback stub matches origin paths with forward slashes, so on Windows the dev bundle pulled in the real feedback widget and crashed). A real fix should be its own commit. `apps/mobile/.expo-export-check/` is generated output; keep it out of commits. `apps/mobile/android/app/debug.keystore` was copied into the worktree and is git-ignored.
 - Nothing has been pushed and no PR is open. Do not push or open one without the user's approval.
 
@@ -68,14 +68,19 @@ Emulator (`LowEnd_M31`, x86_64 Android 16 image, debug build against Metro), obs
 
 Not verified, so do not claim it: TalkBack itself; release-build font parity; a real device and any performance numbers (no frame-time or CPU measurement was taken, so no gain is claimed); the cover-to-lyrics morph and dismiss-pan interplay were seen only in passing; fullscreen lyrics mode; Reduce Motion; large font scale; RTL lines; a delay change at runtime; the Connect fallback. The emulator closed the player sheet on every song change, which cut several checks short.
 
-## Open requests from the user (not started; one slice each, in this order)
+## Follow-up fixes the user asked for during the lyrics slice
 
-1. Mini player pill: the white play button sits off-centre between previous and next (previous icon ~45 px from it, next ~12 px on the emulator screenshot). Suspect the `NativeSkip` wrapper (`margin: -slop, padding: slop` inside the Expo `LinearLayout`-based view) in `PillPlayer.tsx`. Measure bounds, then fix without changing the press feel.
-2. Dynamic island card: add play/pause/previous/next controls; a vertical drag inside the lyrics area must scroll the lyrics (it currently closes the card); a drag down on the card should extend it a little to reveal the hidden controls. (`island/IslandView.kt`.)
-3. Dynamic island lyrics start: the first line should start centred and move smoothly instead of starting at the top and looking cut off.
-4. In-app Apple + glow background: the glow behind the lyrics should look like the island's glow.
-5. Animated canvas video: its colours should drive the bottom half of Now Playing (the wash behind title and controls) as the video plays; today the bottom keeps the artwork palette.
-6. Fullscreen lyrics header: shows title, artist and buttons but no cover art; the user wants the cover art shown properly.
+Done and committed (each verified on the emulator, no unit test possible for the layout ones; the dumpsys bounds are the evidence):
+
+-  Mini player: the skip icons sat about 9 dp left of centre because  (an Expo LinearLayout) re-laid its React Native child from its own origin and dropped the slop padding. It now leaves placement to React Native. dumpsys: child at 21,21 in its wrapper; play button 99 px / 100 px from the two icons.
+-  Fullscreen lyrics header: the cover was invisible (Artwork sizes its frame from , and the header's style had no width or height). Fixed, and the header now mirrors the bottom row: cover, title, artist, exit fullscreen, options, heart.
+-  Island: the full lyrics opened with the first line jammed under the top fade; the list now rests with the first line at the sung-line place from the start.
+
+Still open (not started, one slice each):
+
+1. Dynamic island card: add play/pause/previous/next controls to the full-lyrics state (today they are hidden there; the compact open card has them). A vertical drag inside the lyrics must scroll the lyrics instead of closing the card ( / : in the NOW page the vertical drag drives , not a lyrics scroll). A drag down on the card at the lyrics' top should extend it a little and reveal the controls.
+2. In-app Apple + glow background (, , ): the glow behind the lyrics should look like the island's glow ().
+3. Animated canvas video (, ): its colours should drive the wash in the bottom half of Now Playing as the video plays; today the bottom keeps the artwork palette (seen on Animals: blue/teal video, pink wash below). Needs a way to sample the video's colours without a second decoder.
 
 ## Remaining screens (in order)
 
