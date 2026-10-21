@@ -38,6 +38,8 @@ import NativeScrubber, { NativeVolumeSlider, nativeScrubberAvailable } from './p
 import { shouldUseNativeScrubber, shouldUseNativeVolume } from './player/nativeScrubberProps';
 import NativePlayerFooter, { NATIVE_FOOTER_SLOP, nativePlayerFooterAvailable } from './player/NativePlayerFooter';
 import { footerSleepLabel, shouldUseNativeFooter, type FooterAction } from './player/nativeFooterProps';
+import NativeSongActions, { nativeSongActionsAvailable } from './player/NativeSongActions';
+import { likeLabelOf, shouldUseNativeSongActions, type SongAction } from './player/nativeSongActionsProps';
 import { TIME_ROW_STYLE, TIME_TEXT_STYLE } from './player/scrubberLayout';
 import { MorphIcon, NudgeIcon, Tactile } from './allegra/motion';
 import { SwapMarquee } from './allegra/Marquee';
@@ -82,7 +84,7 @@ interface NowPlayingControlsProps {
   localSongId?: string;
   showLyrics?: boolean;
   /** Opens the player menu; receives the press event for menu anchoring. */
-  onMorePress?: (event: GestureResponderEvent) => void;
+  onMorePress?: (event?: GestureResponderEvent) => void;
   onOpenQueue: () => void;
   /** Leave out to drop the sleep timer (it pauses this phone, not a remote player). */
   onOpenTimer?: () => void;
@@ -404,6 +406,21 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
     }
   }, [onOpenQueue, onOutputPress, onOpenTimer, output, lyricsTap, lyricsLongPress]);
 
+  // The Kotlin buttons at the end of the title row only say which was used; the same handlers as the React Native ones run here.
+  const nativeActions = shouldUseNativeSongActions(nativeSongActionsAvailable());
+  const onSongAction = useCallback((action: SongAction) => {
+    if (action === 'fullscreen') {
+      tick('light');
+      (lyricsFullscreen ? onExitLyricsFullscreen : onEnterLyricsFullscreen)?.();
+    } else if (action === 'more') {
+      tick('light');
+      onMorePress?.();
+    } else {
+      tick(isCurrentSongLiked ? 'light' : 'success');
+      onToggleLike();
+    }
+  }, [lyricsFullscreen, onExitLyricsFullscreen, onEnterLyricsFullscreen, onMorePress, isCurrentSongLiked, onToggleLike]);
+
   if (lyricsFullscreen) {
     return (
       <Animated.View
@@ -418,6 +435,19 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             <Text style={styles.focusArtist} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongArtist}</Text>
           </View>
           {/* The same buttons, in the same order, as the row under the lyrics. */}
+          {nativeActions ? (
+            <NativeSongActions
+              fullscreen="exit"
+              hasMore={!!onMorePress}
+              liked={isCurrentSongLiked}
+              saving={isLikeSaving}
+              likeLabel={likeLabelOf(isCurrentSongLiked, isLikeSaving)}
+              slop={FOCUS_HIT_SLOP}
+              reduceMotion={reduceMotion}
+              onAction={onSongAction}
+            />
+          ) : (
+            <>
           <Tactile
             onPress={() => { tick('light'); onExitLyricsFullscreen?.(); }}
             hitSlop={FOCUS_HIT_SLOP}
@@ -452,6 +482,8 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
               <MorphIcon on={isCurrentSongLiked} onIcon="heart" offIcon="heart-outline" size={20} color={INK} />
             </SavingPulse>
           </Tactile>
+            </>
+          )}
         </View>
       </Animated.View>
     );
@@ -471,9 +503,9 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
 
       {/* Echo keeps the bottom row a clear step above the system bar. */}
       <Animated.View style={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 14 }, liftStyle]} pointerEvents="box-none">
-        <Animated.View style={dropStyle} pointerEvents="box-none">
+        <Animated.View style={[dropStyle, nativeActions && styles.metaRowNative]} pointerEvents="box-none">
         <Animated.View
-          style={styles.metaRow}
+          style={[styles.metaRow, nativeActions && styles.metaRowNative]}
           onLayout={e => { metaY.value = e.nativeEvent.layout.y; metaH.value = e.nativeEvent.layout.height; syncDock(); }}
         >
           {docked ? (
@@ -494,6 +526,19 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             </View>
           </AnimatedPressable>
 
+          {nativeActions ? (
+            <NativeSongActions
+              fullscreen={onEnterLyricsFullscreen ? 'enter' : 'none'}
+              hasMore={!!onMorePress}
+              liked={isCurrentSongLiked}
+              saving={isLikeSaving}
+              likeLabel={likeLabelOf(isCurrentSongLiked, isLikeSaving)}
+              slop={8}
+              reduceMotion={reduceMotion}
+              onAction={onSongAction}
+            />
+          ) : (
+            <>
           {onEnterLyricsFullscreen ? (
             <Tactile
               onPress={() => { tick('light'); onEnterLyricsFullscreen(); }}
@@ -530,6 +575,8 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
               <MorphIcon on={isCurrentSongLiked} onIcon="heart" offIcon="heart-outline" size={20} color={INK} />
             </SavingPulse>
           </Tactile>
+            </>
+          )}
         </Animated.View>
 
         <Animated.View style={styles.scrubber}>
@@ -680,6 +727,10 @@ const styles = StyleSheet.create({
   focusArtist: { color: INK_META, fontSize: 13 },
   content: { paddingHorizontal: CONTENT_PAD },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  // The native buttons carry their 8 dp hit slop outside the row's right edge: Android hands a child only the touches
+  // inside its parent, so the row and the block that holds it (`dropStyle`) are each padded by the slop and pulled back
+  // by an equal negative margin (nothing moves).
+  metaRowNative: { marginRight: -8, paddingRight: 8 },
   // The row's gap (10) plus this makes DOCK_GAP between the thumbnail and the title.
   dockSlot: { width: DOCK_THUMB, height: DOCK_THUMB, marginRight: DOCK_GAP - 10 },
   dockThumb: { position: 'absolute', left: 0, top: 0, width: DOCK_THUMB, height: DOCK_THUMB },

@@ -25,6 +25,7 @@ describe('ExpoModulesPackageList.kt', () => {
     expect(list).toContain('com.lyricflow.app.modules.NativeCanvasWashModule::class.java');
     expect(list).toContain('com.lyricflow.app.modules.NativeQueueListModule::class.java');
     expect(list).toContain('com.lyricflow.app.modules.NativeScrubberModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeSongActionsModule::class.java');
     expect(list).toContain('com.lyricflow.app.modules.NativePlayerFooterModule::class.java');
   });
 
