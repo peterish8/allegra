@@ -492,40 +492,46 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
         </Animated.View>
 
         <Animated.View style={styles.transport} onLayout={e => { transportEnd.value = e.nativeEvent.layout.y + e.nativeEvent.layout.height; }}>
-          <NativeSkip direction={-1} enabled={nativeSkip} slop={12}>
+          <View style={styles.transportSlot}>
+            <NativeSkip direction={-1} enabled={nativeSkip} slop={12}>
+              <Tactile
+                onPress={() => { tick('light'); setBackNudge(n => n + 1); if (!nativeSkip) onSkipBackward(); }}
+                hitSlop={12}
+                pressScale={0.84}
+                accessibilityRole="button"
+                accessibilityLabel="Previous"
+                style={styles.transportBtn}
+              >
+                <NudgeIcon name="play-back" size={42} color={INK} direction={-1} trigger={backNudge} />
+              </Tactile>
+            </NativeSkip>
+          </View>
+          <View style={styles.transportSlot}>
             <Tactile
-              onPress={() => { tick('light'); setBackNudge(n => n + 1); if (!nativeSkip) onSkipBackward(); }}
+              onPress={() => { tick('medium'); onTogglePlay(); }}
               hitSlop={12}
-              pressScale={0.84}
+              pressScale={0.86}
               accessibilityRole="button"
-              accessibilityLabel="Previous"
+              accessibilityLabel={storePlaying ? 'Pause' : 'Play'}
               style={styles.transportBtn}
             >
-              <NudgeIcon name="play-back" size={42} color={INK} direction={-1} trigger={backNudge} />
+              <MorphIcon on={storePlaying} onIcon="pause" offIcon="play" size={54} color={INK} offStyle={styles.playNudge} />
             </Tactile>
-          </NativeSkip>
-          <Tactile
-            onPress={() => { tick('medium'); onTogglePlay(); }}
-            hitSlop={12}
-            pressScale={0.86}
-            accessibilityRole="button"
-            accessibilityLabel={storePlaying ? 'Pause' : 'Play'}
-            style={styles.transportBtn}
-          >
-            <MorphIcon on={storePlaying} onIcon="pause" offIcon="play" size={54} color={INK} offStyle={styles.playNudge} />
-          </Tactile>
-          <NativeSkip direction={1} enabled={nativeSkip} slop={12}>
-            <Tactile
-              onPress={() => { tick('light'); setForwardNudge(n => n + 1); if (!nativeSkip) onSkipForward(); }}
-              hitSlop={12}
-              pressScale={0.84}
-              accessibilityRole="button"
-              accessibilityLabel="Next"
-              style={styles.transportBtn}
-            >
-              <NudgeIcon name="play-forward" size={42} color={INK} direction={1} trigger={forwardNudge} />
-            </Tactile>
-          </NativeSkip>
+          </View>
+          <View style={styles.transportSlot}>
+            <NativeSkip direction={1} enabled={nativeSkip} slop={12}>
+              <Tactile
+                onPress={() => { tick('light'); setForwardNudge(n => n + 1); if (!nativeSkip) onSkipForward(); }}
+                hitSlop={12}
+                pressScale={0.84}
+                accessibilityRole="button"
+                accessibilityLabel="Next"
+                style={styles.transportBtn}
+              >
+                <NudgeIcon name="play-forward" size={42} color={INK} direction={1} trigger={forwardNudge} />
+              </Tactile>
+            </NativeSkip>
+          </View>
         </Animated.View>
         </Animated.View>
 
@@ -624,7 +630,8 @@ const styles = StyleSheet.create({
   scrubber: { marginTop: 24 },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, paddingHorizontal: 4 },
   time: { fontWeight: '600', fontSize: 13, fontVariant: ['tabular-nums'], color: INK_META },
-  transport: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', marginTop: 18 },
+  transport: { flexDirection: 'row', alignItems: 'center', marginTop: 18 },
+  transportSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   transportBtn: { width: 76, height: 72, alignItems: 'center', justifyContent: 'center' },
   // The play triangle's optical centre sits left of its box.
   playNudge: { marginLeft: 5 },
