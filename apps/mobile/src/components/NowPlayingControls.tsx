@@ -45,6 +45,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { lastSongDirection } from '../store/playerStore';
 import { LYRICS_TAP_WINDOW_MS, lyricsButtonTap, LyricsTapRun, NO_TAPS } from './player/lyricsButtonTaps';
 import { NativeSkip } from './NativeSkip';
+import { hasNativeTransportBar, NativeTransportBar } from './NativeTransportBar';
 
 interface NowPlayingControlsProps {
   animatedStyle: React.ComponentProps<typeof Animated.View>['style'];
@@ -492,46 +493,38 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
         </Animated.View>
 
         <Animated.View style={styles.transport} onLayout={e => { transportEnd.value = e.nativeEvent.layout.y + e.nativeEvent.layout.height; }}>
-          <View style={styles.transportSlot}>
-            <NativeSkip direction={-1} enabled={nativeSkip} slop={12}>
-              <Tactile
-                onPress={() => { tick('light'); setBackNudge(n => n + 1); if (!nativeSkip) onSkipBackward(); }}
-                hitSlop={12}
-                pressScale={0.84}
-                accessibilityRole="button"
-                accessibilityLabel="Previous"
-                style={styles.transportBtn}
-              >
-                <NudgeIcon name="play-back" size={42} color={INK} direction={-1} trigger={backNudge} />
-              </Tactile>
-            </NativeSkip>
-          </View>
-          <View style={styles.transportSlot}>
-            <Tactile
-              onPress={() => { tick('medium'); onTogglePlay(); }}
-              hitSlop={12}
-              pressScale={0.86}
-              accessibilityRole="button"
-              accessibilityLabel={storePlaying ? 'Pause' : 'Play'}
-              style={styles.transportBtn}
-            >
-              <MorphIcon on={storePlaying} onIcon="pause" offIcon="play" size={54} color={INK} offStyle={styles.playNudge} />
-            </Tactile>
-          </View>
-          <View style={styles.transportSlot}>
-            <NativeSkip direction={1} enabled={nativeSkip} slop={12}>
-              <Tactile
-                onPress={() => { tick('light'); setForwardNudge(n => n + 1); if (!nativeSkip) onSkipForward(); }}
-                hitSlop={12}
-                pressScale={0.84}
-                accessibilityRole="button"
-                accessibilityLabel="Next"
-                style={styles.transportBtn}
-              >
-                <NudgeIcon name="play-forward" size={42} color={INK} direction={1} trigger={forwardNudge} />
-              </Tactile>
-            </NativeSkip>
-          </View>
+          {hasNativeTransportBar ? (
+            <NativeTransportBar
+              playing={storePlaying}
+              nativeSkip={nativeSkip}
+              onTogglePlay={onTogglePlay}
+              onSkipForward={onSkipForward}
+              onSkipBackward={onSkipBackward}
+              style={styles.nativeTransport}
+            />
+          ) : (
+            <>
+              <View style={styles.transportSlot}>
+                <NativeSkip direction={-1} enabled={nativeSkip} slop={12}>
+                  <Tactile onPress={() => { tick('light'); setBackNudge(n => n + 1); if (!nativeSkip) onSkipBackward(); }} hitSlop={12} pressScale={0.84} accessibilityRole="button" accessibilityLabel="Previous" style={styles.transportBtn}>
+                    <NudgeIcon name="play-back" size={42} color={INK} direction={-1} trigger={backNudge} />
+                  </Tactile>
+                </NativeSkip>
+              </View>
+              <View style={styles.transportSlot}>
+                <Tactile onPress={() => { tick('medium'); onTogglePlay(); }} hitSlop={12} pressScale={0.86} accessibilityRole="button" accessibilityLabel={storePlaying ? 'Pause' : 'Play'} style={styles.transportBtn}>
+                  <MorphIcon on={storePlaying} onIcon="pause" offIcon="play" size={54} color={INK} offStyle={styles.playNudge} />
+                </Tactile>
+              </View>
+              <View style={styles.transportSlot}>
+                <NativeSkip direction={1} enabled={nativeSkip} slop={12}>
+                  <Tactile onPress={() => { tick('light'); setForwardNudge(n => n + 1); if (!nativeSkip) onSkipForward(); }} hitSlop={12} pressScale={0.84} accessibilityRole="button" accessibilityLabel="Next" style={styles.transportBtn}>
+                    <NudgeIcon name="play-forward" size={42} color={INK} direction={1} trigger={forwardNudge} />
+                  </Tactile>
+                </NativeSkip>
+              </View>
+            </>
+          )}
         </Animated.View>
         </Animated.View>
 
@@ -633,6 +626,7 @@ const styles = StyleSheet.create({
   transport: { flexDirection: 'row', alignItems: 'center', marginTop: 18 },
   transportSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   transportBtn: { width: 76, height: 72, alignItems: 'center', justifyContent: 'center' },
+  nativeTransport: { width: '100%', height: 72 },
   // The play triangle's optical centre sits left of its box.
   playNudge: { marginLeft: 5 },
   volumeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
