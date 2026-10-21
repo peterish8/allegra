@@ -36,6 +36,8 @@ import * as Haptics from '../../utils/haptics';
 import { diag } from '../../utils/diag';
 import { Song } from '../../types/song';
 import { dropIndex, filterQueue, moveItem, playingFromLabel, rowShift, UpNextFilter } from './coverStage';
+import NativeQueueList, { nativeQueueListAvailable } from './NativeQueueList';
+import { queueClock as clock, queueRowsJson } from './nativeQueuePayload';
 
 const { Gesture, GestureDetector } = GestureHandler;
 
@@ -47,13 +49,6 @@ const FILTERS: { value: UpNextFilter; label: string }[] = [
   { value: 'familiar', label: 'Familiar' },
   { value: 'discover', label: 'Discover' },
 ];
-
-const clock = (s?: number): string => {
-  if (!s || !Number.isFinite(s) || s <= 0) return '';
-  const m = Math.floor(s / 60);
-  const r = Math.floor(s % 60);
-  return `${m}:${r < 10 ? '0' : ''}${r}`;
-};
 
 /**
  * The row being dragged, handed to every row so the others can step aside.
@@ -191,6 +186,8 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
   const playlistName = usePlaylistStore(s => s.playlists.find(p => p.id === playlistId)?.name);
   const keys = useSongsStore(s => libraryKeys(s.songs));
   const [filter, setFilter] = useState<UpNextFilter>('all');
+  // On Android the rows are drawn, scrolled and re-ordered natively (NativeQueueListView); the FlatList is the fallback.
+  const native = nativeQueueListAvailable();
 
   const songs = useMemo(() => queue ?? [], [queue]);
   const familiar = useMemo(
@@ -209,12 +206,13 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
     scrolled.value = e.nativeEvent.contentOffset.y;
   }, [scrolled]);
   const panelW = useSharedValue(0);
-  const pan = Gesture.Pan()
+  const panBase = Gesture.Pan()
     .enabled(open)
     .activeOffsetY(10)
     .failOffsetY(-8)
-    .failOffsetX([-22, 22])
-    .simultaneousWithExternalGesture(list)
+    .failOffsetX([-22, 22]);
+  // The native list handles its own touches; the FlatList is wrapped by `list`, which the pan must run alongside.
+  const pan = (native ? panBase : panBase.simultaneousWithExternalGesture(list))
     .onTouchesDown((e, state) => {
       'worklet';
       const t = e.allTouches[0];
@@ -290,6 +288,20 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
     s.skipToQueueIndex(i);
   }, []);
 
+  // The native list hands a finished move back: JavaScript owns the queue and sends the new order down again.
+  const onNativeMove = useCallback((a: number, b: number) => {
+    const q = usePlayerStore.getState().playlistQueue;
+    if (!q || a === b) return;
+    diag('upnext', `moved ${a} -> ${b}`);
+    Haptics.selectionAsync().catch(() => {});
+    usePlayerStore.getState().updateQueue(moveItem(q, a, b));
+    prepareNextInQueue();
+  }, []);
+  // A scrolled list keeps the panel's swipe down from closing it (the pan fails past 2).
+  const onNativeAtTop = useCallback((atTop: boolean) => {
+    scrolled.value = atTop ? 0 : 3;
+  }, [scrolled]);
+
   const shuffle = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     onNotice(shuffleUpcoming() > 0 ? 'Shuffled what plays next' : 'Nothing queued to shuffle');
@@ -298,9 +310,12 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
   // Opens on the song that's playing, one row of history above it.
   const listRef = useRef<FlatList<number>>(null);
   const startAt = movable ? Math.max(0, Math.min(index - 1, shown.length - 1)) : 0;
+  const [scrollToken, setScrollToken] = useState(0);
+  const rowsJson = useMemo(() => (native ? queueRowsJson(songs, shown) : ''), [native, songs, shown]);
   useEffect(() => {
     if (!open || shown.length === 0) return;
-    listRef.current?.scrollToOffset({ offset: startAt * ROW_H, animated: false });
+    if (native) setScrollToken(t => t + 1);
+    else listRef.current?.scrollToOffset({ offset: startAt * ROW_H, animated: false });
     // Only when it opens or the filter changes, not on every queue change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, filter]);
@@ -351,6 +366,19 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
         </View>
         {shown.length === 0 ? (
           <Text style={styles.empty}>{songs.length === 0 ? 'Nothing queued after this song.' : filter === 'familiar' ? 'None of these are on your phone yet.' : 'Everything here is already on your phone.'}</Text>
+        ) : native ? (
+          <NativeQueueList
+            style={styles.nativeList}
+            rows={rowsJson}
+            currentIndex={index}
+            movable={movable && songs.length > 1}
+            bottomPad={insets.bottom + 24}
+            startRow={startAt}
+            scrollToken={scrollToken}
+            onPick={pick}
+            onMove={onNativeMove}
+            onAtTop={onNativeAtTop}
+          />
         ) : (
           <GestureDetector gesture={list}>
               <FlatList
@@ -418,6 +446,7 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: 'rgba(255,255,255,0.92)', borderColor: 'rgba(255,255,255,0.92)' },
   chipText: { color: Signal.ink, fontSize: 14, fontWeight: '600' },
   chipTextOn: { color: '#0B0B0F' },
+  nativeList: { flex: 1 },
   empty: { color: 'rgba(255,255,255,0.6)', fontSize: 15, paddingVertical: 28, textAlign: 'center' },
   rowWrap: { height: ROW_H, paddingHorizontal: 8 },
   lifted: { marginHorizontal: 8, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.12)' },

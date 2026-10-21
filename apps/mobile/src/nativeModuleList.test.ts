@@ -23,6 +23,7 @@ describe('ExpoModulesPackageList.kt', () => {
     expect(list).toContain('com.lyricflow.app.modules.NativeLyricsModule::class.java');
     expect(list).toContain('com.lyricflow.app.modules.NativeFlowGlowModule::class.java');
     expect(list).toContain('com.lyricflow.app.modules.NativeCanvasWashModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeQueueListModule::class.java');
   });
 
   it('lists the Android native module of every Expo package the app depends on', () => {
