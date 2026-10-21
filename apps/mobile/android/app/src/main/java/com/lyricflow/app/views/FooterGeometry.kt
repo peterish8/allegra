@@ -17,8 +17,9 @@ object FooterGeometry {
     /** `hitSlop={10}` on the queue and lyrics buttons. */
     const val SLOP = 10f
 
-    /** Pressable keeps a press alive while the finger is within this much of the target (its default retention). */
+    /** Pressable keeps a press alive while the finger is within this much of the target (its default retention offsets). */
     const val RETAIN = 20f
+    const val RETAIN_BOTTOM = 30f
 
     enum class Target { NONE, QUEUE, OUTPUT, TIMER, LYRICS }
 
@@ -33,18 +34,39 @@ object FooterGeometry {
         Row(0f, BUTTON + (width - 2 * BUTTON - segmentW) / 2f, segmentW, width - BUTTON)
 
     /**
-     * What a touch at ([x], [y]) (row coordinates, y from the row's top) lands on, [extra] dp more generous on every
-     * side (0 for a press, [RETAIN] to keep one). Later siblings sit on top in React Native, so lyrics wins over the
-     * segment, which wins over the queue button.
+     * What a touch at ([x], [y]) (row coordinates, y from the row's top) lands on. Later siblings sit on top in React
+     * Native, so lyrics wins over the segment, which wins over the queue button where their areas overlap.
      */
-    fun hit(x: Float, y: Float, row: Row, outputW: Float, timerW: Float, hasTimer: Boolean, extra: Float = 0f): Target {
-        val s = SLOP + extra
-        if (x >= row.lyricsX - s && x <= row.lyricsX + BUTTON + s && y >= -s && y <= ROW_H + s) return Target.LYRICS
-        if (y >= -extra && y <= ROW_H + extra) {
-            if (x >= row.segmentX - extra && x < row.segmentX + outputW) return Target.OUTPUT
-            if (hasTimer && x >= row.segmentX + outputW && x <= row.segmentX + outputW + timerW + extra) return Target.TIMER
+    fun hit(x: Float, y: Float, row: Row, outputW: Float, timerW: Float, hasTimer: Boolean): Target {
+        if (inButton(x, y, row.lyricsX)) return Target.LYRICS
+        if (y >= 0f && y <= ROW_H) {
+            if (x >= row.segmentX && x < row.segmentX + outputW) return Target.OUTPUT
+            if (hasTimer && x >= row.segmentX + outputW && x <= row.segmentX + outputW + timerW) return Target.TIMER
         }
-        if (x >= row.queueX - s && x <= row.queueX + BUTTON + s && y >= -s && y <= ROW_H + s) return Target.QUEUE
+        if (inButton(x, y, row.queueX)) return Target.QUEUE
         return Target.NONE
+    }
+
+    private fun inButton(x: Float, y: Float, left: Float) =
+        x >= left - SLOP && x <= left + BUTTON + SLOP && y >= -SLOP && y <= ROW_H + SLOP
+
+    /**
+     * Whether a press that started on [target] is still alive with the finger at ([x], [y]): inside that item's own
+     * area (the buttons with their slop) widened by Pressable's retention (20 on three sides, 30 below). It tests only
+     * the pressed item, so sliding over a neighbour does not end the press.
+     */
+    fun within(target: Target, x: Float, y: Float, row: Row, outputW: Float, timerW: Float): Boolean {
+        val left: Float
+        val right: Float
+        val top: Float
+        val bottom: Float
+        when (target) {
+            Target.QUEUE -> { left = row.queueX - SLOP; right = row.queueX + BUTTON + SLOP; top = -SLOP; bottom = ROW_H + SLOP }
+            Target.LYRICS -> { left = row.lyricsX - SLOP; right = row.lyricsX + BUTTON + SLOP; top = -SLOP; bottom = ROW_H + SLOP }
+            Target.OUTPUT -> { left = row.segmentX; right = row.segmentX + outputW; top = 0f; bottom = ROW_H }
+            Target.TIMER -> { left = row.segmentX + outputW; right = row.segmentX + outputW + timerW; top = 0f; bottom = ROW_H }
+            Target.NONE -> return false
+        }
+        return x >= left - RETAIN && x <= right + RETAIN && y >= top - RETAIN && y <= bottom + RETAIN_BOTTOM
     }
 }

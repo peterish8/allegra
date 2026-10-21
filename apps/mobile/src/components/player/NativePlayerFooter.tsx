@@ -3,11 +3,10 @@
  * (android/.../views/NativePlayerFooterView.kt). The view only reports which control was used; `NowPlayingControls`
  * runs the same handlers as for its React Native row, which stays as the fallback (`nativePlayerFooterAvailable()`).
  *
- * The view is 10 dp larger than the row on every side (negative margins, so the layout around it does not change): the
- * buttons' hit slop lies inside its bounds.
+ * The view is 10 dp larger than the row on every side, so the buttons' hit slop lies inside its bounds.
  */
 import React, { useCallback } from 'react';
-import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { requireNativeView } from 'expo';
 import { footerActionOf, type FooterAction } from './nativeFooterProps';
 
@@ -19,6 +18,7 @@ interface NativePlayerFooterViewProps {
   showLyrics: boolean;
   lyricsLongPress: boolean;
   waveColor: string;
+  reduceMotion: boolean;
   onAction: (event: { nativeEvent: { action: string } }) => void;
   style?: StyleProp<ViewStyle>;
 }
@@ -51,6 +51,8 @@ interface NativePlayerFooterProps {
   /** The lyrics button has a long press (the lyrics picker). */
   lyricsLongPress: boolean;
   waveColor: string;
+  /** Reduce Motion: the press dims and never moves. */
+  reduceMotion: boolean;
   onAction: (action: FooterAction) => void;
   style?: StyleProp<ViewStyle>;
 }
@@ -61,16 +63,16 @@ const NativePlayerFooter: React.FC<NativePlayerFooterProps> = ({ onAction, style
     if (action) onAction(action);
   }, [onAction]);
   if (!NativeView) return null;
-  return (
-    <View style={[styles.row, style]}>
-      <NativeView {...rest} style={styles.view} onAction={onEvent} />
-    </View>
-  );
+  return <NativeView {...rest} style={[styles.view, style]} onAction={onEvent} />;
 };
 
+// The view is the row plus the buttons' hit slop on every side. The slop must lie inside the bounds of every parent
+// (Android only hands a child the touches inside its parent), so the caller pads the parent by SLOP and pulls it back
+// with an equal negative margin (`NATIVE_FOOTER_PARENT` in NowPlayingControls) and leaves SLOP of the row's own top margin.
 const styles = StyleSheet.create({
-  row: { height: ROW_H },
-  view: { height: ROW_H + 2 * SLOP, marginHorizontal: -SLOP, marginVertical: -SLOP },
+  view: { height: ROW_H + 2 * SLOP, marginHorizontal: -SLOP },
 });
+
+export const NATIVE_FOOTER_SLOP = SLOP;
 
 export default React.memo(NativePlayerFooter);

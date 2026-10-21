@@ -18,6 +18,7 @@ class NativePlayerFooterModule : Module() {
             Prop("outputActive") { view: NativePlayerFooterView, on: Boolean? -> view.setOutputActive(on) }
             Prop("showLyrics") { view: NativePlayerFooterView, on: Boolean? -> view.setShowLyrics(on) }
             Prop("lyricsLongPress") { view: NativePlayerFooterView, on: Boolean? -> view.setLyricsLongPress(on) }
+            Prop("reduceMotion") { view: NativePlayerFooterView, on: Boolean? -> view.setReduceMotion(on) }
             Prop("waveColor") { view: NativePlayerFooterView, hex: String? -> view.setWaveColor(hex) }
 
             OnViewDidUpdateProps { view: NativePlayerFooterView -> view.commit() }

@@ -5,7 +5,10 @@ glyphs that Kotlin views draw, so a native view shows the same shapes as the Rea
 
 Each outline is an SVG path on the font's own grid (512 units to the em), moved so the icon's centre is (0, 0) and y points
 down: a view scales it by `size / 512` and translates it to the icon's centre, which is where React Native centres the
-glyph's text box (both fonts keep their em square centred at y = 192, the middle of hhea ascent 448 and descent -64).
+glyph's text box. Both fonts design their em square centred at y = 192 (ascent 448, descent -64: MaterialCommunityIcons'
+hhea, Ionicons' typo metrics, which its USE_TYPO_METRICS bit makes Android use). React Native's font-padded text box is
+the head table's bounding box, whose centre is 191 (Ionicons) and 193.5 (MaterialCommunityIcons): under 0.1 dp off at
+the sizes drawn, so 192 is used for both.
 
 Needs `pip install fonttools` and `npm ci` in apps/mobile. Run from apps/mobile:  python3 scripts/extract-icon-glyphs.py
 Add a glyph by adding its (font, name) below and rerunning; commit the generated file.
@@ -19,7 +22,7 @@ from fontTools.ttLib import TTFont
 
 VENDOR = 'node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons'
 OUT = 'android/app/src/main/java/com/lyricflow/app/views/IconGlyphs.kt'
-CENTRE_Y = 192  # the em square's middle in font units (hhea ascent 448, descent -64)
+CENTRE_Y = 192  # the em square's middle in font units (ascent 448, descent -64)
 
 GLYPHS = [
     ('Ionicons', 'list'),

@@ -36,7 +36,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppleSlider from './player/AppleSlider';
 import NativeScrubber, { NativeVolumeSlider, nativeScrubberAvailable } from './player/NativeScrubber';
 import { shouldUseNativeScrubber, shouldUseNativeVolume } from './player/nativeScrubberProps';
-import NativePlayerFooter, { nativePlayerFooterAvailable } from './player/NativePlayerFooter';
+import NativePlayerFooter, { NATIVE_FOOTER_SLOP, nativePlayerFooterAvailable } from './player/NativePlayerFooter';
 import { footerSleepLabel, shouldUseNativeFooter, type FooterAction } from './player/nativeFooterProps';
 import { TIME_ROW_STYLE, TIME_TEXT_STYLE } from './player/scrubberLayout';
 import { MorphIcon, NudgeIcon, Tactile } from './allegra/motion';
@@ -590,7 +590,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
         </Animated.View>
         </Animated.View>
 
-        <Animated.View style={lowerStyle} pointerEvents={upNextOpen ? 'none' : 'box-none'}>
+        <Animated.View style={[lowerStyle, nativeFooter && styles.lowerNative]} pointerEvents={upNextOpen ? 'none' : 'box-none'}>
         {hideVolume ? null : (
           <Animated.View
             style={volumeStyle}
@@ -611,6 +611,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             showLyrics={showLyrics}
             lyricsLongPress={!!onLyricsLongPress}
             waveColor={Signal.wave}
+            reduceMotion={reduceMotion}
             onAction={onFooterAction}
           />
         ) : (
@@ -711,7 +712,11 @@ const styles = StyleSheet.create({
   volumeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
   volumeSlider: { flex: 1 },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 26 },
-  footerNative: { marginTop: 26 },
+  // The native row is the row plus its 10 dp hit slop on every side. Android hands a child only the touches inside its
+  // parent, so the parent is padded by the slop and pulled back by an equal negative margin (its children keep their
+  // places), and the row's own top margin gives up the slop it now carries.
+  lowerNative: { marginHorizontal: -NATIVE_FOOTER_SLOP, paddingHorizontal: NATIVE_FOOTER_SLOP, marginBottom: -NATIVE_FOOTER_SLOP, paddingBottom: NATIVE_FOOTER_SLOP },
+  footerNative: { marginTop: 26 - NATIVE_FOOTER_SLOP },
   footerBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   footerBtnOn: { backgroundColor: 'rgba(255,255,255,0.9)' },
   segment: { flexDirection: 'row', alignItems: 'center', height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.14)', overflow: 'hidden' },

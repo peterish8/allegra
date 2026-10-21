@@ -18,6 +18,7 @@ import android.util.TypedValue
 import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityEvent
 import androidx.core.graphics.PathParser
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
@@ -59,6 +60,7 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
     private var showLyrics = false
     private var lyricsLongPress = false
     private var waveColor = Color.WHITE
+    private var reduceMotion = false
     private var propsDirty = false
 
     // ── Geometry (dp, row coordinates) ──────────────────────────────────────
@@ -123,6 +125,7 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
     fun setOutputActive(on: Boolean?) { outputActive = on ?: false; propsDirty = true }
     fun setShowLyrics(on: Boolean?) { showLyrics = on ?: false; propsDirty = true }
     fun setLyricsLongPress(on: Boolean?) { lyricsLongPress = on ?: false; propsDirty = true }
+    fun setReduceMotion(on: Boolean?) { reduceMotion = on ?: false; propsDirty = true }
     fun setWaveColor(hex: String?) {
         waveColor = runCatching { Color.parseColor(hex) }.getOrDefault(Color.WHITE)
         propsDirty = true
@@ -138,6 +141,8 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
 
     private fun applyFonts() {
         labelPaint.typeface = IslandFonts.semibold
+        // `sfTracking(13)` is -0.08 dp of letter spacing on the label, in em.
+        labelPaint.letterSpacing = -0.08f / LABEL_SP
         // React Native converts sp with the platform (nonlinear above 100% from Android 14), not density x fontScale.
         labelPaint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, LABEL_SP, resources.displayMetrics)
     }
@@ -176,6 +181,11 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
         releaseLyrics?.let { main.removeCallbacks(it) }
         removeFonts?.invoke()
         removeFonts = null
+        // A press cut short by the detach must not come back sunk and dimmed.
+        pressed = Target.NONE
+        active = false
+        queuePress.snap(0f)
+        lyricsPress.snap(0f)
         super.onDetachedFromWindow()
     }
 
@@ -201,8 +211,12 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
 
     // ── Touch ───────────────────────────────────────────────────────────────
 
-    private fun target(x: Float, y: Float, extra: Float): Target =
-        FooterGeometry.hit(x / density - FooterGeometry.SLOP, y / density - FooterGeometry.SLOP, row, outputW, timerW, hasTimer, extra)
+    private fun target(x: Float, y: Float): Target =
+        FooterGeometry.hit(x / density - FooterGeometry.SLOP, y / density - FooterGeometry.SLOP, row, outputW, timerW, hasTimer)
+
+    /** Whether the press that began on [t] is still alive with the finger here (Pressable's retention around that item). */
+    private fun stillOn(t: Target, x: Float, y: Float): Boolean =
+        FooterGeometry.within(t, x / density - FooterGeometry.SLOP, y / density - FooterGeometry.SLOP, row, outputW, timerW)
 
     private fun setPress(which: Target, down: Boolean) {
         when (which) {
@@ -213,17 +227,22 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
         invalidate()
     }
 
+    /** The press value to [on] (1) or off (0): a spring, or a jump under Reduce Motion (Reanimated's springs jump there). */
+    private fun moveSpring(spring: Spring, on: Boolean) {
+        if (reduceMotion) spring.snap(if (on) 1f else 0f) else spring.target = if (on) 1f else 0f
+        wake()
+    }
+
     /** Down springs in at once; up waits out what is left of MIN_PRESS_MS so a quick tap is still seen. */
     private fun pressTo(spring: Spring, down: Boolean, isQueue: Boolean) {
         val pending = if (isQueue) releaseQueue else releaseLyrics
         pending?.let { main.removeCallbacks(it) }
         if (down) {
-            spring.target = 1f
-            wake()
+            moveSpring(spring, true)
             return
         }
         val held = SystemClock.uptimeMillis() - downAt
-        val release = Runnable { spring.target = 0f; wake() }
+        val release = Runnable { moveSpring(spring, false) }
         if (isQueue) releaseQueue = release else releaseLyrics = release
         main.postDelayed(release, max(0L, MIN_PRESS_MS - held))
     }
@@ -231,7 +250,7 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                val t = target(event.x, event.y, 0f)
+                val t = target(event.x, event.y)
                 if (t == Target.NONE) return false
                 pressed = t
                 active = true
@@ -244,15 +263,14 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
             MotionEvent.ACTION_MOVE -> {
                 if (pressed == Target.NONE) return false
                 // The press stays alive while the finger is near the item (Pressable's retention) and lights again on return.
-                val now = target(event.x, event.y, FooterGeometry.RETAIN) == pressed
+                val now = stillOn(pressed, event.x, event.y)
                 if (now != active) {
                     active = now
+                    // Leaving the item cancels a long press that was still counting down (as Pressable does).
+                    if (!now) main.removeCallbacks(longRunnable)
                     when (pressed) {
-                        Target.QUEUE, Target.LYRICS -> {
-                            val spring = if (pressed == Target.QUEUE) queuePress else lyricsPress
-                            spring.target = if (now) 1f else 0f
-                            wake()
-                        }
+                        Target.QUEUE -> moveSpring(queuePress, now)
+                        Target.LYRICS -> moveSpring(lyricsPress, now)
                         else -> Unit
                     }
                     invalidate()
@@ -305,8 +323,14 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
 
     /** `Tactile`: sinks to `pressScale` and dims by 14% on one spring value, about the box's centre. */
     private inline fun tactile(canvas: Canvas, x: Float, press: Float, scale: Float, draw: () -> Unit) {
+        // At rest nothing is scaled or dimmed, so no offscreen layer is needed.
+        if (press < 0.001f) {
+            draw()
+            return
+        }
         val box = FooterGeometry.BUTTON * density
-        val s = 1f + (scale - 1f) * press
+        // Reduce Motion: it dims only, never moves.
+        val s = if (reduceMotion) 1f else 1f + (scale - 1f) * press
         val layer = canvas.saveLayerAlpha(x * density - 2, -2f, x * density + box + 2, box + 2, (255 * (1f - PRESS_DIM * press)).roundToInt())
         canvas.scale(s, s, x * density + box / 2f, box / 2f)
         draw()
@@ -405,7 +429,7 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
             add(LYRICS_ID)
         }
 
-        override fun getVirtualViewAt(x: Float, y: Float): Int = when (target(x, y, 0f)) {
+        override fun getVirtualViewAt(x: Float, y: Float): Int = when (target(x, y)) {
             Target.QUEUE -> QUEUE_ID
             Target.OUTPUT -> OUTPUT_ID
             Target.TIMER -> TIMER_ID
@@ -450,7 +474,11 @@ class NativePlayerFooterView(context: Context, appContext: AppContext) : ExpoVie
                 else -> Target.LYRICS
             }
             return when (action) {
-                AccessibilityNodeInfoCompat.ACTION_CLICK -> { emit(t); true }
+                AccessibilityNodeInfoCompat.ACTION_CLICK -> {
+                    emit(t)
+                    sendEventForVirtualView(id, AccessibilityEvent.TYPE_VIEW_CLICKED)
+                    true
+                }
                 AccessibilityNodeInfoCompat.ACTION_LONG_CLICK ->
                     if (t == Target.LYRICS && lyricsLongPress) { onAction(mapOf("action" to "lyricsLong")); true } else false
                 else -> false
