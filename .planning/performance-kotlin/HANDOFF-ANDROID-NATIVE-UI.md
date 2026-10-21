@@ -1,11 +1,11 @@
 # Android native UI migration handoff
 
-Updated: 2026-10-21 (pushed for a cloud session)
+Updated: 2026-10-21 (cloud session: slice 7 parity review)
 
 ## Start here (cloud continuation)
 
 - Repository: `https://github.com/peterish8/allegra` (remote `origin`). Work on the branch **`perf/mobile-player-responsiveness`**, pushed to `origin`. It is 14 commits ahead of `origin/main` (merge base `74b4b47`) and there is **no PR**. Do not open a PR, merge, or push to `main` without the user's approval. Pushing more commits to this branch is expected.
-- Newest code commit on the branch: `0fdb780 feat(mobile): draw the Up next queue rows in Kotlin on Android` (app version 1.21.0). Everything before it was verified on an emulator; **that one was not** (see slice 7).
+- Slice 7 (`0fdb780`, 1.21.0) and its cloud parity-review fixes (1.21.1) were **not** run on a device (see slice 7). Everything before them was verified on an emulator.
 - First steps: `git fetch origin && git checkout perf/mobile-player-responsiveness && git status`, read `CLAUDE.md` and `apps/mobile/CLAUDE.md`, then this file. The mobile app is not a root workspace: `cd apps/mobile && npm install` (own lockfile).
 - What a cloud session can and cannot do: it can write Kotlin and TypeScript, run `npx tsc --noEmit`, `npx eslint`, `npx jest`, and (if the Android SDK is available) `./gradlew :app:compileDebugKotlin :app:testDebugUnitTest`. It **cannot** run the user's Windows emulator (`LowEnd_M31`), so it cannot do the emulator checks the goal requires. For every slice done in the cloud: finish the code and the automated checks, commit, and add a **"Needs a device check"** list to the slice's section below saying exactly what to look at (alignment, safe areas, transparency, gestures, animation). Never write "verified on an emulator" for something that was not. The user (or a local session) does that check on the Windows machine and then marks the slice verified.
 - Never commit `apps/mobile/metro.config.js` (a local Windows shim) or stage `apps/mobile/.expo-export-check/`. They are not in the pushed branch and must stay out of it. No `Co-Authored-By` or AI footers in commits; conventional messages (`feat(mobile):`, `fix(mobile):`, `docs(planning):`). Bump `expo.version` in `apps/mobile/app.json` for every change that rebuilds the APK (minor for a feature, patch for a fix).
@@ -94,7 +94,7 @@ Done and committed (each verified on the emulator, no unit test possible for the
 
 Still open from the user's follow-up list: nothing. Continue with slice 7's device check, then the remaining screens below.
 
-### 7. Up next queue rows in Kotlin (app version 1.21.0, commit `0fdb780`) — BUILT, NOT DEVICE-VERIFIED
+### 7. Up next queue rows in Kotlin (app version 1.21.0, commit `0fdb780`; review fixes in 1.21.1) — BUILT, NOT DEVICE-VERIFIED
 
 What it is. `views/NativeQueueListView.kt` (Expo view `NativeQueueList`, module `NativeQueueListModule`, JS wrapper `components/player/NativeQueueList.tsx`) draws, scrolls and re-orders the rows of `UpNextPanel`: cover (loaded small through Media3's `DataSourceBitmapLoader`, 150 ms fade over the base colour; the generated duotone cover when there is no picture or it fails, seeded like `Artwork`), title, `artist · m:ss`, the playing row's mark (three still bars) and tint, the pressed highlight, the two-bar handle. The panel's glass, header (Playing from, Shuffle), filter chips and swipe-down-to-close stay React Native; the `FlatList` is the fallback (iOS, builds without the view).
 
@@ -106,11 +106,36 @@ Contracts kept:
 - Opening or changing the filter scrolls to the playing row minus one: the panel bumps `scrollToken` and passes `startRow`.
 - Accessibility: one virtual Button per visible row ("Play <title>" / "Now playing: <title>") and, when movable, a "Move <title>" node with Move up / Move down actions (new; the React Native handle had a label but no way to move a row without dragging).
 
-Automated, passing at this commit: `:app:compileDebugKotlin`, `:app:testDebugUnitTest` (new `QueueModelTest`, 8 tests), `nativeQueuePayload.test.ts` (5), `nativeModuleList.test.ts`, `tsc --noEmit`, `eslint` on the touched folders. The debug APK built and installed on the emulator; the emulator then stalled and the checks below were never run.
+#### Parity review (cloud session, 1.21.1) — read from code, not seen on a screen
 
-**Needs a device check (do this first, on the Windows emulator or a phone):** open Now Playing, swipe up for Up next, and confirm: the rows match the React Native list pixel for pixel in look (row height 64 dp, 48 dp cover, 14 dp row radius, text left edge, the lit current row, the playing mark); covers load and fade in, and a song with no cover shows the duotone tile; the list opens on the playing song with one row above; scrolling and fling feel right and the panel's swipe down closes it only from the top; tap plays the row; lift/drag/drop on the handle with the others stepping aside and the order persisting (check the queue in the notification and the island too); the Familiar and Discover chips show no handles; safe area at the bottom (last row clears the gesture bar); transparency over the frosted panel; TalkBack reads rows and the move actions. Fix what is off, then record the evidence here and in the commit.
+`NativeQueueListView.kt` was re-read against `UpNextPanel.tsx`, `Artwork.tsx`, `coverStage.ts` and the verified `NativeLyricsView`. Geometry (row 64, side 8, art 48 at +12, text at +14, handle column 52, radii 14 / 8, fills and alphas, the playing mark, the lifted pane and the 1.03 scale, `dropIndex` / `rowShift` rounding) matched. These were wrong, and are fixed:
 
-Not measured: no frame time or CPU number was taken, so no performance gain is claimed. Reduce Motion and large font scale were not checked (rows are a fixed 64 dp, like the React Native rows).
+- **The panel's swipe down could be cancelled by the list.** The view called `requestDisallowInterceptTouchEvent(true)` as soon as a drag passed the touch slop (8 dp). Gesture Handler's root view cancels all handlers when a native view does that (my reading of RNGH's root helper; not observed), and the panel's pan only activates at 10 dp, so a pull down from the top would have killed it. Now a drag that starts downward while the list is at its top is *yielded* (`QueueMath.yieldsToPanel`): the list claims nothing, scrolls nothing, and the pan gets the gesture. A drag up, or any drag in a scrolled list, still claims it.
+- The first scroll frame jumped by the touch slop; the slop is now subtracted as React Native's ScrollView does (`QueueMath.scrollOrigin`).
+- The lift haptic used the system `performHapticFeedback`, which ignores Settings → Haptics. The view now emits `onLift` and the panel ticks through `utils/haptics`.
+- Covers were decoded at most 96 px (soft on most phones) and a non-square picture was squashed, not cropped. They now decode at 1.5 x the slot's pixels (never under 96) and are centre-cropped like `contentFit="cover"`; the cover cache is bounded by bytes (10 MB), not by count.
+- The handle glyph was hand-drawn too long, too far apart and too heavy. It now uses Ionicons' `reorder-two` geometry (bars x 118..394, y 208 / 304, stroke 44, on 512, at 24 dp), read from the `ionicons` package.
+- Explore-by-touch never reached the row nodes: `dispatchHoverEvent` is now forwarded to the `ExploreByTouchHelper`, as `NativeLyricsView` does.
+- A tap on the handle column during the settle window played the row; the React Native handle does nothing on a tap, so the native one now matches.
+- The text block now uses the font's top..bottom (React Native's Text keeps font padding), and the generated monogram's letter spacing is -4 dp in em, as `GeneratedArtwork`.
+
+Automated, passing at 1.21.1: `:app:testDebugUnitTest` (117 tests; `QueueModelTest` is now 10; `IslandFlowTest`, a Robolectric test, failed once when its runtime jar would not download through the proxy and passed on a rerun), `tsc --noEmit`, `eslint` on the touched files, `jest` (105 suites, 884 tests), `nativeModuleList.test.ts`. `:app:assembleDebug` was **not** run in this container (the full Gradle app build needs the NDK and a long native build); the unit-test task compiles all main Kotlin, including this view.
+
+**Needs a device check (do this first, on the Windows emulator or a phone).** Open Now Playing, swipe up for Up next, and look at:
+
+1. Look: rows against the React Native list (turn the native view off by building without it, or compare with the previous APK): row height, cover size and corner, the text's left edge and baseline (the font-padding change moves the two text lines by about a dp at most), the lit current row, the playing mark, the handle glyph's length and weight.
+2. Covers: they load, fade in over the base colour, are sharp (the decode size changed), a non-square cover is cropped not squashed, and a song with no cover shows the duotone tile with the monogram (its letter spacing changed).
+3. **Closing:** with the list at the top, drag down on a row (not the handle): the panel must follow the finger and close. Scroll the list down a few rows, drag down: the list must scroll back and the panel must **not** close until it reaches the top. Drag down from the header too. This is the one most likely to be wrong, since it rests on a reading of Gesture Handler.
+4. Scrolling and fling feel (no jump when a drag begins), the list opening on the playing song with one row above, safe area at the bottom (the last row clears the gesture bar).
+5. Tap plays the row; tap on the handle column does nothing.
+6. Re-order: lift (a haptic only if Settings → Haptics is on), the others step aside on springs, release settles into the slot, the order persists (check the notification and the island), the dragged row draws over its neighbours, and the pane under it is lit. Also: a drop that leaves the order unchanged (back where it started), and a drop when the engine is slow.
+7. Familiar and Discover chips: no handles, rows are tappable, no re-order.
+8. TalkBack: touch-explore reads rows ("Play <title>", "Now playing: <title>"), the "Move <title>" node offers Move up / Move down, and the actions re-order the queue.
+9. Transparency over the frosted panel (the rows have no background of their own).
+
+Known differences from the React Native list: no overscroll glow; a row is not recycled (it is drawn, so the cost is per visible row, not measured).
+
+Not measured: no frame time or CPU number was taken, so no performance gain is claimed. Reduce Motion and large font scale were not checked (rows are a fixed 64 dp, like the React Native rows). A lead for the gesture slice, not changed here: `NativeLyricsView` claims the touch with the same `requestDisallowInterceptTouchEvent` call after the slop, so a drag down on lyrics that sit at their top may cancel the player's dismiss pan the same way; check it when the player gestures are migrated.
 
 ## Remaining screens (in order)
 
@@ -129,6 +154,8 @@ Pattern every slice so far follows (copy it): a pure, JVM-tested Kotlin model/ma
 7. Verify native visual changes on an Android emulator/device (alignment, safe areas, transparency, gestures, animation). Measure before claiming performance gains, and say plainly what lacks device proof.
 
 ## Environment notes
+
+- **Cloud container recipe (worked 2026-10-21):** `cd apps/mobile && npm ci --ignore-scripts`; install the Android SDK with Google's command-line tools (`https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip`, then `sdkmanager --licenses "platforms;android-36" "build-tools;36.0.0" "platform-tools"`; the NDK is not needed for unit tests); export `ANDROID_HOME` and `ANDROID_SDK_ROOT`; run `gradle --no-daemon :app:testDebugUnitTest` from `apps/mobile/android` (JDK 21 works; the system Gradle 8.14.3 matches the wrapper). The first run takes many minutes and Maven Central answers some requests with **429** through the proxy: just rerun, Gradle keeps what it resolved (it took 8 tries); wrap it in a retry loop. Keep Gradle's output in a file: the Expo autolinking banner is long.
 
 - Emulator `LowEnd_M31` (its data was wiped on 2026-10-21 after a disk-full corruption). Start it with `-gpu host -cores 6`. Stop the Gradle daemon before using it on this machine (RAM). Run one Gradle at a time.
 - Metro: from `apps/mobile`, `node node_modules/expo/bin/cli start --port 8081 --offline`, then `adb reverse tcp:8081 tcp:8081`. In the dev launcher, tap the 10.0.2.2:8081 server.

@@ -297,6 +297,9 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
     usePlayerStore.getState().updateQueue(moveItem(q, a, b));
     prepareNextInQueue();
   }, []);
+  const onNativeLift = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }, []);
   // A scrolled list keeps the panel's swipe down from closing it (the pan fails past 2).
   const onNativeAtTop = useCallback((atTop: boolean) => {
     scrolled.value = atTop ? 0 : 3;
@@ -378,6 +381,7 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
             onPick={pick}
             onMove={onNativeMove}
             onAtTop={onNativeAtTop}
+            onLift={onNativeLift}
           />
         ) : (
           <GestureDetector gesture={list}>

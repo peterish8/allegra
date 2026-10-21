@@ -81,6 +81,19 @@ object QueueMath {
 
     fun maxScroll(contentH: Float, viewportH: Float): Float = max(0f, contentH - viewportH)
 
+    /**
+     * A drag that starts pulling down while the list is at its top is not the list's: it is the panel's swipe down to
+     * close. The list must not claim it (claiming a touch cancels the gesture handlers above it), so the panel's pan
+     * gets it. [dy] is the finger's travel since it touched down (down is positive).
+     */
+    fun yieldsToPanel(scrollY: Float, dy: Float, slack: Float): Boolean = dy > 0f && scrollY <= slack
+
+    /**
+     * Where the finger counts as having started a scroll, once it has travelled past [slop]: the slop itself is not
+     * scrolled, as React Native's ScrollView does, so the list does not jump when the drag begins.
+     */
+    fun scrollOrigin(downY: Float, y: Float, slop: Float): Float = if (y < downY) downY - slop else downY + slop
+
     /** The queue after the row at [from] moves to [to] (moveItem in coverStage.ts), for the local settle. */
     fun <T> move(items: List<T>, from: Int, to: Int): List<T> {
         if (from < 0 || from >= items.size) return items

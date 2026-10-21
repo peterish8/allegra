@@ -23,7 +23,6 @@ import android.text.TextPaint
 import android.text.TextUtils
 import android.util.LruCache
 import android.view.Choreographer
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
@@ -66,6 +65,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     private val onPick by EventDispatcher<Map<String, Any>>()
     private val onMove by EventDispatcher<Map<String, Any>>()
     private val onAtTop by EventDispatcher<Map<String, Any>>()
+    private val onLift by EventDispatcher<Map<String, Any>>()
 
     private val density = resources.displayMetrics.density
     private val main = Handler(Looper.getMainLooper())
@@ -102,6 +102,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     private var downY = 0f
     private var lastY = 0f
     private var scrolling = false
+    private var yielded = false
     private var grabbedFling = false
     private var flinging = false
     private var pressedPos = -1
@@ -296,6 +297,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
                 downX = event.x
                 downY = event.y
                 lastY = event.y
+                yielded = false
                 grabbedFling = !scroller.isFinished
                 if (grabbedFling) {
                     scroller.abortAnimation()
@@ -306,7 +308,8 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
                     // A touch on a handle moves the row, never the panel or the list.
                     handleDownPos = p
                     parent?.requestDisallowInterceptTouchEvent(true)
-                } else if (p >= 0 && !grabbedFling) {
+                } else if (p >= 0 && !grabbedFling && !inHandle(event.x)) {
+                    // The handle column only moves a row: a tap there plays nothing, as in the React Native row.
                     pressedPos = p
                     invalidate()
                 }
@@ -324,10 +327,17 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
                     }
                     return true
                 }
-                if (!scrolling && abs(event.y - downY) > configuration.scaledTouchSlop) {
-                    scrolling = true
+                if (!scrolling && !yielded && abs(event.y - downY) > configuration.scaledTouchSlop) {
                     pressedPos = -1
-                    parent?.requestDisallowInterceptTouchEvent(true)
+                    if (QueueMath.yieldsToPanel(scrollY, event.y - downY, TOP_SLACK_DP * density)) {
+                        // The panel's swipe down to close: claiming this touch would cancel the panel's gesture.
+                        yielded = true
+                        invalidate()
+                    } else {
+                        scrolling = true
+                        lastY = QueueMath.scrollOrigin(downY, event.y, configuration.scaledTouchSlop.toFloat())
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                    }
                 }
                 if (scrolling) {
                     scrollY = (scrollY + (lastY - event.y)).coerceIn(0f, maxScroll())
@@ -347,6 +357,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
                 }
                 pressedPos = -1
                 scrolling = false
+                yielded = false
                 recycleVelocity()
                 invalidate()
             }
@@ -355,6 +366,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
                 handleDownPos = -1
                 pressedPos = -1
                 scrolling = false
+                yielded = false
                 recycleVelocity()
                 invalidate()
             }
@@ -410,7 +422,8 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
         shifts.clear()
         settling = false
         awaitingRows = false
-        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        // JavaScript ticks (utils/haptics honours the Haptics switch in Settings; the system call here would not).
+        onLift(mapOf("index" to rows[pos].index))
         wake()
     }
 
@@ -471,6 +484,8 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) = Unit
 
+    override fun dispatchHoverEvent(event: MotionEvent): Boolean = access.dispatchHoverEvent(event) || super.dispatchHoverEvent(event)
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         buildText()
@@ -529,24 +544,25 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
         // The text, centred as a block.
         val titleM = titlePaint.fontMetrics
         val subM = subPaint.fontMetrics
-        val titleH = titleM.descent - titleM.ascent
-        val subH = subM.descent - subM.ascent
+        // React Native's Text keeps the font padding (includeFontPadding is on), so a line is top..bottom, not ascent..descent.
+        val titleH = titleM.bottom - titleM.top
+        val subH = subM.bottom - subM.top
         val gap = 3 * density
         val block = titleH + gap + subH
         val blockTop = top + (rowH - block) / 2f
         val textX = textLeft()
-        canvas.drawText(titleText[p], 0, titleText[p].length, textX, blockTop - titleM.ascent, titlePaint)
-        canvas.drawText(subText[p], 0, subText[p].length, textX, blockTop + titleH + gap - subM.ascent, subPaint)
+        canvas.drawText(titleText[p], 0, titleText[p].length, textX, blockTop - titleM.top, titlePaint)
+        canvas.drawText(subText[p], 0, subText[p].length, textX, blockTop + titleH + gap - subM.top, subPaint)
         if (movable && rows.size > 1) drawHandle(canvas, right - handleW / 2f, top + rowH / 2f)
         canvas.restore()
     }
 
-    /** Ionicons' reorder-two: two bars. */
+    /** Ionicons' reorder-two at 24 dp: two round-capped bars (x 118..394, y 208 and 304, stroke 44 on a 512 grid). */
     private fun drawHandle(canvas: Canvas, cx: Float, cy: Float) {
         stroke.color = Color.argb(158, 255, 255, 255)
-        stroke.strokeWidth = 2.4f * density
-        val half = 8f * density
-        val gap = 3.4f * density
+        stroke.strokeWidth = 44f / 512f * 24f * density
+        val half = 138f / 512f * 24f * density
+        val gap = 48f / 512f * 24f * density
         canvas.drawLine(cx - half, cy - gap, cx + half, cy - gap, stroke)
         canvas.drawLine(cx - half, cy + gap, cx + half, cy + gap, stroke)
     }
@@ -595,8 +611,10 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
             fill.color = row.tile.base
             canvas.drawRoundRect(rect, artRadius, artRadius, fill)
         }
-        matrix.setScale(art / entry.bitmap.width, art / entry.bitmap.height)
-        matrix.postTranslate(left, top)
+        // contentFit "cover": fill the square, crop the longer side evenly.
+        val scale = max(art / entry.bitmap.width, art / entry.bitmap.height)
+        matrix.setScale(scale, scale)
+        matrix.postTranslate(left + (art - entry.bitmap.width * scale) / 2f, top + (art - entry.bitmap.height * scale) / 2f)
         entry.shader.setLocalMatrix(matrix)
         imagePaint.shader = entry.shader
         imagePaint.alpha = (255 * a).roundToInt()
@@ -676,7 +694,8 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
             glyph.typeface = IslandFonts.bold
             glyph.textSize = size * 0.9f
             glyph.color = withAlpha(t.spark, 0.28f)
-            glyph.letterSpacing = -0.08f
+            // GeneratedArtwork: letterSpacing -4 on a 48 dp cover with a 0.9 x size glyph, in em.
+            glyph.letterSpacing = -4f / (48f * 0.9f)
             val w = glyph.measureText(t.glyph)
             canvas.drawText(t.glyph, size - w + size * 0.08f, size + size * 0.2f - glyph.descent(), glyph)
         }
@@ -763,6 +782,8 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
         const val TOP_SLACK_DP = 2f
         const val FADE_MS = 150L
         const val AWAIT_MS = 900L
+        const val COVER_CACHE_BYTES = 10 * 1024 * 1024
+        const val MIN_COVER_PX = 96
         // Motion.spring.tactile: stiffness 700, damping 40, mass 0.8.
         const val SPRING_K = 875f
         const val SPRING_ZETA = 0.845f
@@ -772,7 +793,9 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
         val executor = Executors.newFixedThreadPool(2) { r ->
             Thread(r, "queue-art").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
         }
-        val covers = LruCache<String, Cover>(80)
+        val covers = object : LruCache<String, Cover>(COVER_CACHE_BYTES) {
+            override fun sizeOf(key: String, value: Cover) = value.bitmap.byteCount
+        }
         val failed = HashSet<String>()
         val pending = HashSet<String>()
     }
@@ -780,7 +803,9 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     private val loader by lazy {
         DataSourceBitmapLoader(
             MoreExecutors.listeningDecorator(executor),
-            DefaultDataSource.Factory(context.applicationContext), null, 96,
+            DefaultDataSource.Factory(context.applicationContext), null,
+            // The slot's own pixels (the React Native cover decodes at view size) with some room for a non-square picture to be cropped.
+            max(MIN_COVER_PX, (art * 1.5f).roundToInt()),
         )
     }
 }

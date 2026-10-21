@@ -73,4 +73,18 @@ class QueueModelTest {
         assertEquals(0f, QueueMath.maxScroll(300f, 500f), 0f)
         assertEquals(200f, QueueMath.maxScroll(700f, 500f), 0f)
     }
+
+    @Test fun `a pull down from the top is the panel's, a pull up or a scrolled list is the list's`() {
+        assertTrue(QueueMath.yieldsToPanel(0f, 12f, 4f))
+        assertTrue(QueueMath.yieldsToPanel(4f, 12f, 4f))
+        assertTrue(!QueueMath.yieldsToPanel(0f, -12f, 4f))
+        assertTrue(!QueueMath.yieldsToPanel(300f, 12f, 4f))
+    }
+
+    @Test fun `the touch slop is not scrolled`() {
+        // Finger dragged up 20 with an 8 slop: the first delta is 12.
+        assertEquals(12f, QueueMath.scrollOrigin(100f, 80f, 8f) - 80f, 0f)
+        // Finger dragged down 20: the first delta is -12.
+        assertEquals(-12f, QueueMath.scrollOrigin(100f, 120f, 8f) - 120f, 0f)
+    }
 }
