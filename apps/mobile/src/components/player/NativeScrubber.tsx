@@ -16,13 +16,15 @@ import { cleanSeconds, commitSeconds } from './nativeScrubberProps';
 import { SCRUBBER_HIT_H, TIME_ROW_STYLE, TIME_TEXT_STYLE } from './scrubberLayout';
 
 interface NativeScrubberViewProps {
-  songId: string;
-  seedSec: number;
-  durationSec: number;
+  /** "volume" makes the slider the system media volume's (no clock, no labels, no commit event). */
+  mode?: 'position' | 'volume';
+  songId?: string;
+  seedSec?: number;
+  durationSec?: number;
   live: boolean;
   trackHeight: number;
   label: string;
-  onCommit: (event: { nativeEvent: { seconds: number; fraction: number } }) => void;
+  onCommit?: (event: { nativeEvent: { seconds: number; fraction: number } }) => void;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -104,9 +106,27 @@ const NativeScrubber: React.FC<NativeScrubberProps> = ({
   );
 };
 
+interface NativeVolumeSliderProps {
+  live: boolean;
+  trackHeight?: number;
+  accessibilityLabel?: string;
+  style?: StyleProp<ViewStyle>;
+}
+
+/**
+ * The system media volume as the same Kotlin slider: it reads and sets the stream itself and follows the hardware keys
+ * while on screen, so nothing crosses the bridge per move. `VolumeRow` falls back to `AppleSlider` where this is missing.
+ */
+export const NativeVolumeSlider: React.FC<NativeVolumeSliderProps> = React.memo(({ live, trackHeight = 6, accessibilityLabel = 'Volume', style }) => {
+  if (!NativeView) return null;
+  return <NativeView mode="volume" style={[styles.volume, style]} live={live} trackHeight={trackHeight} label={accessibilityLabel} />;
+});
+NativeVolumeSlider.displayName = 'NativeVolumeSlider';
+
 const styles = StyleSheet.create({
   strip: { height: SCRUBBER_HIT_H },
   spacerText: { ...TIME_TEXT_STYLE, opacity: 0 },
+  volume: { height: SCRUBBER_HIT_H },
 });
 
 export default React.memo(NativeScrubber);

@@ -14,6 +14,9 @@ export const cleanSeconds = (value: unknown, step: number): number => {
 export const shouldUseNativeScrubber = (available: boolean, localSongId?: string | null): boolean =>
   available && typeof localSongId === 'string' && localSongId.length > 0;
 
+/** The volume slider is native where the view exists and the phone has a media volume to move. */
+export const shouldUseNativeVolume = (viewAvailable: boolean, hasSystemVolume: boolean): boolean => viewAvailable && hasSystemVolume;
+
 /** The place to seek to from a native commit, or null when the event is not a usable place. */
 export const commitSeconds = (event: { nativeEvent?: { seconds?: unknown } } | undefined, durationSec: number): number | null => {
   const raw = event?.nativeEvent?.seconds;

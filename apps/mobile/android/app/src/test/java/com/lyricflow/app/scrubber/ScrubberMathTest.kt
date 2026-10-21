@@ -44,6 +44,19 @@ class ScrubberMathTest {
         assertEquals("0:00", ScrubberMath.formatTime(Double.POSITIVE_INFINITY))
     }
 
+    @Test fun `the volume slider sets the stream the way the module does`() {
+        assertEquals(0, ScrubberMath.volumeIndex(0f, 15))
+        assertEquals(7, ScrubberMath.volumeIndex(0.5f, 15))
+        assertEquals(14, ScrubberMath.volumeIndex(0.99f, 15))
+        assertEquals(15, ScrubberMath.volumeIndex(1f, 15))
+        assertEquals(15, ScrubberMath.volumeIndex(3f, 15))
+        assertEquals(0, ScrubberMath.volumeIndex(-1f, 15))
+        assertEquals(0, ScrubberMath.volumeIndex(0.5f, 0))
+        assertEquals(0.4f, ScrubberMath.volumeFraction(6, 15), 1e-6f)
+        assertEquals(0f, ScrubberMath.volumeFraction(6, 0), 0f)
+        assertEquals(1f, ScrubberMath.volumeFraction(20, 15), 0f)
+    }
+
     @Test fun `a sideways drag is the scrubber's, a vertical one is the player's`() {
         assertEquals(Move.WAIT, ScrubberMath.classify(2f, 3f, 4f, 14f))
         assertEquals(Move.CLAIM, ScrubberMath.classify(6f, 3f, 4f, 14f))

@@ -56,6 +56,12 @@ object ScrubberMath {
         return "$m:${if (s < 10) "0" else ""}$s"
     }
 
+    /** The stream index a fraction sets, as `MainPlayerModule.setVolume` rounds it (down), within 0..[max]. */
+    fun volumeIndex(fraction: Float, max: Int): Int = (clamp01(fraction) * max).toInt().coerceIn(0, max.coerceAtLeast(0))
+
+    /** The fraction a stream at [index] of [max] steps shows; 0 when the stream has no steps. */
+    fun volumeFraction(index: Int, max: Int): Float = if (max > 0) clamp01(index.toFloat() / max) else 0f
+
     enum class Move { WAIT, CLAIM, YIELD }
 
     /**

@@ -1,4 +1,4 @@
-import { cleanSeconds, commitSeconds, shouldUseNativeScrubber } from './nativeScrubberProps';
+import { cleanSeconds, commitSeconds, shouldUseNativeScrubber, shouldUseNativeVolume } from './nativeScrubberProps';
 
 describe('nativeScrubberProps', () => {
   it('cleans seconds to a step and rejects anything unusable', () => {
@@ -17,6 +17,12 @@ describe('nativeScrubberProps', () => {
     expect(shouldUseNativeScrubber(true, undefined)).toBe(false);
     expect(shouldUseNativeScrubber(true, null)).toBe(false);
     expect(shouldUseNativeScrubber(false, 'song-1')).toBe(false);
+  });
+
+  it('moves the volume natively only with the view and a system volume', () => {
+    expect(shouldUseNativeVolume(true, true)).toBe(true);
+    expect(shouldUseNativeVolume(true, false)).toBe(false);
+    expect(shouldUseNativeVolume(false, true)).toBe(false);
   });
 
   it('reads the place to seek to from a commit', () => {

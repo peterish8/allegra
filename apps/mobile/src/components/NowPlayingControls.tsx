@@ -34,8 +34,8 @@ import Animated, {
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppleSlider from './player/AppleSlider';
-import NativeScrubber, { nativeScrubberAvailable } from './player/NativeScrubber';
-import { shouldUseNativeScrubber } from './player/nativeScrubberProps';
+import NativeScrubber, { NativeVolumeSlider, nativeScrubberAvailable } from './player/NativeScrubber';
+import { shouldUseNativeScrubber, shouldUseNativeVolume } from './player/nativeScrubberProps';
 import { TIME_ROW_STYLE, TIME_TEXT_STYLE } from './player/scrubberLayout';
 import { MorphIcon, NudgeIcon, Tactile } from './allegra/motion';
 import { SwapMarquee } from './allegra/Marquee';
@@ -166,14 +166,17 @@ const TimeLabels: React.FC<{ display: DerivedValue<number>; durationSV: SharedVa
 /** The system media volume, kept in step with the hardware keys. */
 const VolumeRow: React.FC = () => {
   const [available] = useState(() => NativeAudioPlayer.getVolume() !== null);
+  // Where the Kotlin view exists it reads and sets the stream itself (and follows the hardware keys): no bridge traffic.
+  const native = shouldUseNativeVolume(nativeScrubberAvailable(), available);
+  const focused = useIsFocused();
   const volume = useSharedValue(NativeAudioPlayer.getVolume() ?? 0);
   useEffect(() => {
-    if (!available) return;
+    if (!available || native) return;
     const sub = NativeAudioPlayer.addListener('onVolumeChanged', (e: { volume?: number }) => {
       if (typeof e?.volume === 'number') volume.value = e.volume;
     });
     return () => sub.remove();
-  }, [available, volume]);
+  }, [available, native, volume]);
   const set = useCallback((v: number) => {
     volume.value = v;
     NativeAudioPlayer.setVolume(v);
@@ -182,7 +185,9 @@ const VolumeRow: React.FC = () => {
   return (
     <View style={styles.volumeRow}>
       <Ionicons name="volume-low" size={18} color={INK_SOFT} />
-      <AppleSlider progress={volume} onChange={set} onCommit={set} height={6} accessibilityLabel="Volume" style={styles.volumeSlider} />
+      {native
+        ? <NativeVolumeSlider live={focused} trackHeight={6} accessibilityLabel="Volume" style={styles.volumeSlider} />
+        : <AppleSlider progress={volume} onChange={set} onCommit={set} height={6} accessibilityLabel="Volume" style={styles.volumeSlider} />}
       <Ionicons name="volume-high" size={20} color={INK_SOFT} />
     </View>
   );
