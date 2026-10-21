@@ -850,6 +850,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
             dockX={dockX}
             dockY={dockY}
             fullscreen={lyricsFullscreen}
+            localClock
+            songId={currentSong?.id}
           />
         </Animated.View>
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, upNextShadeStyle]}>
