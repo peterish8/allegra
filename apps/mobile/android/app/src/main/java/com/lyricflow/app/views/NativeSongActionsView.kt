@@ -24,6 +24,7 @@ import expo.modules.kotlin.views.ExpoView
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * The round glass buttons at the end of Now Playing's title row, drawn in Kotlin: fullscreen lyrics, song options and
@@ -54,7 +55,7 @@ class NativeSongActionsView(context: Context, appContext: AppContext) : ExpoView
     private var reduceMotion = false
     private var propsDirty = false
     private var appliedLiked: Boolean? = null
-    private var appliedSaving = false
+    private var appliedPulsing = false
     private var buttons: List<Button> = listOf(Button.LIKE)
 
     // ── Press state ─────────────────────────────────────────────────────────
@@ -117,17 +118,20 @@ class NativeSongActionsView(context: Context, appContext: AppContext) : ExpoView
             // MorphIcon: a spring, or an instant timing under Reduce Motion; the first draw has nothing to animate.
             if (first || reduceMotion) morph.snap(if (liked) 1f else 0f) else morph.target = if (liked) 1f else 0f
         }
-        if (appliedSaving != saving) {
-            appliedSaving = saving
+        // SavingPulse's effect depends on both `saving` and Reduce Motion, so either changing re-decides the pulse.
+        val pulsing = saving && !reduceMotion
+        if (appliedPulsing != pulsing) {
+            appliedPulsing = pulsing
             val now = SystemClock.uptimeMillis()
-            if (saving && !reduceMotion) {
+            if (pulsing) {
+                // Start the breathing from where the heart is now (a restart during the return must not jump to full).
                 pulseMode = Pulse.LOOP
-                pulseStart = now
+                pulseStart = now - (phaseOf(pulse) * PULSE_HALF_MS).toLong()
             } else {
-                pulseMode = if (pulse < 1f && !reduceMotion) Pulse.RETURN else Pulse.REST
+                // withTiming(1, 160) from the current value, Reduce Motion or not.
+                pulseMode = if (pulse < 1f) Pulse.RETURN else Pulse.REST
                 pulseFrom = pulse
                 pulseStart = now
-                if (pulseMode == Pulse.REST) pulse = 1f
             }
         }
         access.invalidateRoot()
@@ -155,6 +159,12 @@ class NativeSongActionsView(context: Context, appContext: AppContext) : ExpoView
     }
 
     private fun easeInOutQuad(t: Float) = if (t < 0.5f) 2f * t * t else 1f - (-2f * t + 2f).let { it * it } / 2f
+
+    /** Where in the downward half of the breath (0..1) the heart is at opacity [v]: the inverse of the ease. */
+    private fun phaseOf(v: Float): Float {
+        val e = ((1f - v) / 0.6f).coerceIn(0f, 1f)
+        return if (e < 0.5f) sqrt(e / 2f) else 1f - sqrt((1f - e) / 2f)
+    }
 
     private fun wake() {
         if (framePosted || !isAttachedToWindow || !visible) return

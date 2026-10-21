@@ -503,7 +503,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
 
       {/* Echo keeps the bottom row a clear step above the system bar. */}
       <Animated.View style={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 14 }, liftStyle]} pointerEvents="box-none">
-        <Animated.View style={dropStyle} pointerEvents="box-none">
+        <Animated.View style={[dropStyle, nativeActions && styles.metaRowNative]} pointerEvents="box-none">
         <Animated.View
           style={[styles.metaRow, nativeActions && styles.metaRowNative]}
           onLayout={e => { metaY.value = e.nativeEvent.layout.y; metaH.value = e.nativeEvent.layout.height; syncDock(); }}
@@ -728,7 +728,8 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: CONTENT_PAD },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // The native buttons carry their 8 dp hit slop outside the row's right edge: Android hands a child only the touches
-  // inside its parent, so the row is padded by the slop and pulled back by an equal negative margin (nothing moves).
+  // inside its parent, so the row and the block that holds it (`dropStyle`) are each padded by the slop and pulled back
+  // by an equal negative margin (nothing moves).
   metaRowNative: { marginRight: -8, paddingRight: 8 },
   // The row's gap (10) plus this makes DOCK_GAP between the thumbnail and the title.
   dockSlot: { width: DOCK_THUMB, height: DOCK_THUMB, marginRight: DOCK_GAP - 10 },
