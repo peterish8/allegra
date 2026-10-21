@@ -1,4 +1,4 @@
-import { moreItemsHeight, moreItemsPayload, morePalette, moreSelectionOf, type MoreMenuEntry } from './moreMenuPayload';
+import { moreItemsFitFontScale, moreItemsHeight, moreItemsPayload, morePalette, moreSelectionOf, type MoreMenuEntry } from './moreMenuPayload';
 import { MORE_ROWS, MORE_TILES } from './moreItems';
 
 const tile = (key: string, icon = 'search'): MoreMenuEntry => ({ key, label: key, icon });
@@ -26,6 +26,14 @@ describe('moreMenuPayload', () => {
     expect(palette.wave).toBe('#555555');
     expect(palette.ink).toBe('#111111');
     expect(Object.keys(palette).sort()).toEqual(['ink', 'inkFaint', 'inkMuted', 'inkSoft', 'wave']);
+  });
+
+  it('keeps the React Native items when the text would outgrow the fixed rows', () => {
+    expect(moreItemsFitFontScale(1)).toBe(true);
+    expect(moreItemsFitFontScale(1.3)).toBe(true);
+    expect(moreItemsFitFontScale(1.31)).toBe(false);
+    expect(moreItemsFitFontScale(2)).toBe(false);
+    expect(moreItemsFitFontScale(NaN)).toBe(false);
   });
 
   it('sizes the items like the React Native layout', () => {

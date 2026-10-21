@@ -12,7 +12,7 @@
  * Reduce Motion: the card and rows just fade.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { BackHandler, PixelRatio, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import Animated, {
   EntryAnimationsValues,
   LayoutAnimation,
@@ -35,7 +35,7 @@ import Frosted from './allegra/Frosted';
 import { Tactile } from './allegra/motion';
 import { useArtworkPalette } from './allegra/useArtworkPalette';
 import NativeMoreItems, { nativeMoreItemsAvailable } from './NativeMoreItems';
-import { moreItemsHeight, moreItemsPayload, morePalette } from './moreMenuPayload';
+import { moreItemsFitFontScale, moreItemsHeight, moreItemsPayload, morePalette } from './moreMenuPayload';
 import { MORE_ITEMS, MORE_ROWS, MORE_TILES, type MoreItem } from './moreItems';
 
 // The menu's entries are plain data in ./moreItems (re-exported here for the importers that always had them from this file).
@@ -160,7 +160,7 @@ export const MoreMenu: React.FC<MoreMenuProps> = ({ open, activeKey, anchorBotto
         accessibilityRole="menu"
       >
         <Frosted radius={RADIUS} palette={palette} />
-        {open && NATIVE_ITEMS ? (
+        {open && NATIVE_ITEMS && moreItemsFitFontScale(PixelRatio.getFontScale()) ? (
           <NativeMoreItems
             items={NATIVE_ITEMS}
             activeKey={activeKey}

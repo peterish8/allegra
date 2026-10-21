@@ -207,7 +207,7 @@ Ported (JVM-tested `MoreMenuGeometry` / `MoreMenuItems`): three tiles, 78 dp hig
 
 Guard: `moreItemsPayload` returns null (so the React Native items stay) unless the menu has exactly three tiles and every icon is one the view can draw, so adding a menu entry with a new icon cannot silently break the native menu. The menu's entries moved to the plain-data `components/moreItems.ts` (re-exported by `MoreMenu`, no importer changed) so they can be tested without importing the menu's components.
 
-Not ported: a row grows past 58 dp in React Native when the text needs it (very large font sizes); the native rows stay 58 dp. A device check should look at the largest font scale.
+Rows: a row grows past 58 dp in React Native when its text needs it (large font sizes); the native rows stay 58 dp, so above a font scale of 1.3 (`moreItemsFitFontScale`) the menu keeps the React Native items. An Opus code review found no blockers and led to: the rise's fade layer opens after the rise transform (opened before it, it clipped the bottom of an item that had moved down); the app's SF Pro letter spacing on the three text styles; the hairline rounded like `StyleSheet.hairlineWidth`; TalkBack's "Menu item" role description; and that large-font fallback.
 
 Automated, passing: `MoreMenuGeometryTest` (6), `MoreMenuItemsTest` (2), the whole `:app:testDebugUnitTest` (151), `moreMenuPayload.test.ts` (5), `nativeModuleList.test.ts`, `tsc`, `eslint` (0 errors), `jest` (109 suites, 902 tests).
 

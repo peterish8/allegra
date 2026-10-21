@@ -16,6 +16,15 @@ export const NATIVE_MORE_ICONS: readonly string[] = ['dj-mascot', 'search', 'alb
 /** The view lays out exactly three tiles across the top. */
 export const NATIVE_MORE_TILES = 3;
 
+/**
+ * A row is 58 dp at least and grows in React Native when its label and hint need more (large font sizes); the native
+ * rows stay 58. Up to this font scale the two lines fit, above it the menu keeps the React Native items.
+ */
+export const NATIVE_MORE_MAX_FONT_SCALE = 1.3;
+
+export const moreItemsFitFontScale = (fontScale: number): boolean =>
+  Number.isFinite(fontScale) && fontScale <= NATIVE_MORE_MAX_FONT_SCALE;
+
 /** `items` JSON for the native view, or null when this menu is not something it can draw. */
 export const moreItemsPayload = (tiles: readonly MoreMenuEntry[], rows: readonly MoreMenuEntry[]): string | null => {
   if (tiles.length !== NATIVE_MORE_TILES) return null;

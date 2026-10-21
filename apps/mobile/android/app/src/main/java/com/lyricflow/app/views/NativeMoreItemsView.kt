@@ -46,7 +46,8 @@ class NativeMoreItemsView(context: Context, appContext: AppContext) : ExpoView(c
     private val onSelect by EventDispatcher<Map<String, Any>>()
 
     private val density = resources.displayMetrics.density
-    private val hairlineDp = 1f / density
+    /** `StyleSheet.hairlineWidth`: 0.4 dp rounded to a whole pixel (at least one). */
+    private val hairlineDp = max(1f, (0.4f * density).roundToInt().toFloat()) / density
     private val main = Handler(Looper.getMainLooper())
     private val glyphs = GlyphPainter(density)
 
@@ -172,6 +173,10 @@ class NativeMoreItemsView(context: Context, appContext: AppContext) : ExpoView(c
         labelPaint.textSize = sp(TILE_LABEL_SP)
         rowLabelPaint.textSize = sp(ROW_LABEL_SP)
         hintPaint.textSize = sp(ROW_HINT_SP)
+        // The app's SF Pro tracking (`sfTracking`), in em: -0.04 dp at 12.5, -0.32 dp at 16.
+        labelPaint.letterSpacing = -0.04f / TILE_LABEL_SP
+        rowLabelPaint.letterSpacing = -0.32f / ROW_LABEL_SP
+        hintPaint.letterSpacing = -0.04f / ROW_HINT_SP
     }
 
     private fun sp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, resources.displayMetrics)
@@ -324,15 +329,19 @@ class NativeMoreItemsView(context: Context, appContext: AppContext) : ExpoView(c
             val cy = (a.top + a.bottom) / 2f * density
             val opacity = rise?.opacity ?: 1f
             if (opacity <= 0.001f) continue
-            val layer = if (opacity < 0.999f) canvas.saveLayerAlpha(a.left * density - 2, a.top * density - 14, a.right * density + 2, a.bottom * density + 14, (255 * opacity).roundToInt()) else -1
             val save = canvas.save()
             if (rise != null && !rise.done) {
                 canvas.translate(0f, rise.ty.value * density)
                 canvas.scale(rise.sc.value, rise.sc.value, cx, cy)
             }
+            // The fade layer opens after the rise's transform, so its bounds are the item's own area (opened before it,
+            // the layer clipped the bottom of an item that had moved down).
+            if (opacity < 0.999f) {
+                canvas.saveLayerAlpha(a.left * density - 2, a.top * density - 2, a.right * density + 2, a.bottom * density + 2, (255 * opacity).roundToInt())
+            }
             if (i < MoreMenuGeometry.TILES) drawTile(canvas, i, item, a) else drawRow(canvas, i, item, a, w)
+            // Restoring to `save` closes the layer (if opened) and the transform together.
             canvas.restoreToCount(save)
-            if (layer >= 0) canvas.restoreToCount(layer)
         }
     }
 
@@ -470,7 +479,8 @@ class NativeMoreItemsView(context: Context, appContext: AppContext) : ExpoView(c
             }
             val a = MoreMenuGeometry.area(id, widthDp(), hairlineDp)
             node.setBoundsInParent(Rect((a.left * density).roundToInt(), (a.top * density).roundToInt(), (a.right * density).roundToInt(), (a.bottom * density).roundToInt()))
-            node.className = "android.widget.Button"
+            // React Native's `menuitem` role: the plain view class and the role description "menu item".
+            node.roleDescription = "Menu item"
             node.isClickable = true
             node.isSelected = item.key == activeKey
             node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK)
