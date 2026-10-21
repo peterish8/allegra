@@ -263,8 +263,20 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private val blobSpeed = Spring(0f, stiffness = 40f, dampingRatio = 1f)
     /** Paused mid-loop: the title and artist glide home to their start, from where they were (1 → 0). */
     private val marqueeHome = Spring(0f, stiffness = 120f, dampingRatio = 1f)
+    /**
+     * Full lyrics: the row of previous / play / next that a pull down past the first line reveals (0 hidden, 1 shown).
+     * The lyrics slide down by its height to make room; pushing back up tucks it away again.
+     */
+    private val peekP = Spring(0f, stiffness = 170f, dampingRatio = 0.9f)
     private val springs = arrayOf(open, wide, shown, bump, press, colorMix, lyricsRoom, lineMove, full, lyricsP, pageX,
-        ghost, scrubGrow, lyricScroll, blobSpeed, searchP, fly, marqueeHome)
+        ghost, scrubGrow, lyricScroll, blobSpeed, searchP, fly, marqueeHome, peekP)
+    /** The reader took the lyrics: they stay where the finger left them until [lyricResume] gives them back to the song. */
+    private var lyricManual = false
+    private val lyricResume = Runnable {
+        lyricManual = false
+        kickLoop()
+        invalidate()
+    }
     private var lyricLines: List<IslandLyrics.Line> = emptyList()
     private var lyricIndex = -1
     private var lyricFrom = -1
@@ -304,7 +316,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     // ── Touch ───────────────────────────────────────────────────────────────────────────────────────────────
 
     private enum class Target { PILL, PREVIOUS, PLAY, NEXT, PROGRESS, OPEN, CARD, BACK, ROW, LYRICS, FIELD, BEST, NONE }
-    private enum class Axis { NONE, HORIZONTAL, VERTICAL, SEARCH }
+    private enum class Axis { NONE, HORIZONTAL, VERTICAL, SEARCH, LYRICS }
 
     private var downX = 0f
     private var downY = 0f
@@ -691,6 +703,12 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             lyricsP.target = 0f
             searchP.target = 0f
         }
+        if (!wantOpen || !lyricsFull) {
+            // The controls row and a reader's place belong to the full lyrics; leaving them gives both back.
+            peekP.target = 0f
+            lyricManual = false
+            main.removeCallbacks(lyricResume)
+        }
         host.setTouchable(shown.target > 0f)
         // A closing card lets go at once: a tap where it was belongs to the app underneath, not to the island.
         host.setExpandedTouch(wantOpen)
@@ -894,14 +912,14 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private fun refit(force: Boolean = false) {
         val g = geometry ?: return
         val pad = g.dp(6f)
-        shape(scratch, open.target, wide.target, shown.target, 1f, lyricsRoom.target, full.target, searchP.target)
+        shape(scratch, open.target, wide.target, shown.target, 1f, lyricsRoom.target, full.target, searchP.target, peekP.target)
         var half = scratch.width() / 2f + pad
         var bottom = scratch.bottom + pad
         val restHalf = half
         val restBottom = bottom
         if (dragging && wantOpen) {
             // A finger on the open card may pull it to full mode: grow once, now, rather than on every move.
-            bottom = max(bottom, g.cardTop + g.fullHeight * 1.04f + pad)
+            bottom = max(bottom, g.cardTop + g.fullHeight * 1.04f + g.dp(PEEK_DP) + pad)
         }
         if (looping || dragging) {
             val overshoot = if (open.target > 0.5f) 1.05f else 1.08f
@@ -932,7 +950,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
      * and settles back, as a spring does. The pill look floats: the pill and the card both start below the top edge.
      * The notch look ([IslandGeometry.hanging]) keeps its top on the edge and grows and shrinks from there.
      */
-    private fun shape(out: RectF, o: Float, w: Float, s: Float, scale: Float, l: Float, f: Float, sd: Float) {
+    private fun shape(
+        out: RectF, o: Float, w: Float, s: Float, scale: Float, l: Float, f: Float, sd: Float, pk: Float = peekP.value,
+    ) {
         val g = geometry ?: return out.setEmpty()
         val presence = s.coerceIn(0f, 1f)
         val pillW = lerp(g.idleWidth, g.compactWidth, w) * lerp(0.55f, 1f, presence)
@@ -941,7 +961,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val half = lerp(pillW / 2f, g.cardWidth / 2f, o)
         val top = lerp(pillTop, g.cardTop, o)
         val cardBottom = g.cardTop + g.cardHeight + g.dp(LYRICS_ROOM_DP) * l
-        val openBottom = lerp(lerp(cardBottom, g.cardTop + g.fullHeight, f), g.cardTop + g.searchHeight, sd)
+        // Pulling the full lyrics down grows the card a little, below the scrubber, for the controls row.
+        val peekExtra = g.dp(PEEK_DP) * pk.coerceIn(0f, 1f) * f
+        val openBottom = lerp(lerp(cardBottom, g.cardTop + g.fullHeight, f) + peekExtra, g.cardTop + g.searchHeight, sd)
         val bottom = lerp(pillTop + pillH, openBottom, o)
         out.set(-half * scale, top, half * scale, bottom)
         if (scale != 1f) {
@@ -1576,15 +1598,18 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         if (lyricLines.isEmpty()) return
         ensureLyricLayouts(g)
         val area = lyricsBottom - lyricsTop
-        val target = if (lyricIndex >= 0) lyricTops[lyricIndex] - area * SUNG_LINE_AT else 0f
+        // Before the first line is sung the list already rests where that line will be, at the sung-line place, so the
+        // song does not open with the first line jammed under the top fade and then slide down.
+        val target = lyricTops[max(lyricIndex, 0)] - area * SUNG_LINE_AT
         if (!lyricScrollPlaced) {
             lyricScroll.snap(target)
             lyricScrollPlaced = true
-        } else if (lyricScroll.target != target) {
+        } else if (!lyricManual && lyricScroll.target != target) {
             lyricScroll.target = target
             kickLoop()
         }
         val scroll = lyricScroll.value
+        val peek = peekP.value.coerceIn(0f, 1f)
         val k = lineMove.value.coerceIn(0f, 1f)
         val e = lp.coerceIn(0f, 1f)
         val morphing = e < 0.999f
@@ -1638,11 +1663,21 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val fadeH = g.dp(28f)
         fadePaint.alpha = (255 * e).toInt()
         fadePaint.shader = lyricFadeTop
-        canvas.drawRect(-g.cardWidth / 2f, lyricsTop, g.cardWidth / 2f, lyricsTop + fadeH, fadePaint)
+        canvas.drawRect(-g.cardWidth / 2f, areaTop, g.cardWidth / 2f, areaTop + fadeH, fadePaint)
         fadePaint.shader = lyricFadeBottom
         canvas.drawRect(-g.cardWidth / 2f, lyricsBottom - fadeH, g.cardWidth / 2f, lyricsBottom, fadePaint)
         fadePaint.alpha = 255
         canvas.restore()
+        if (peek > 0.01f && hasSong) {
+            // The same three buttons as the card's, in the row the card grew below the scrubber.
+            val controlsAlpha = alpha * peek
+            canvas.save()
+            canvas.translate(0f, peekRowY(g) - controlsY)
+            drawButton(canvas, -sideButtonX, sideRadius, IslandIcons.previous, g.dp(21f), controlsAlpha, Target.PREVIOUS)
+            drawButton(canvas, 0f, playRadius, if (playing) IslandIcons.pause else IslandIcons.play, g.dp(25f), controlsAlpha, Target.PLAY)
+            drawButton(canvas, sideButtonX, sideRadius, IslandIcons.next, g.dp(21f), controlsAlpha, Target.NEXT)
+            canvas.restore()
+        }
     }
 
     // ── Playlists ───────────────────────────────────────────────────────────────────────────────────────────
@@ -1661,8 +1696,33 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         return max(0f, rowCount(p) * rowHeight(p, g) + g.dp(8f) - (listBottom - listTop))
     }
 
+    /** The full lyrics are on the now-playing page and can be read by hand. */
+    private fun lyricsScrolling() = lyricsFull && page == Page.NOW && !searchOpen && lyricLayouts.isNotEmpty()
+
+    /** Where the lyrics rest with their first line at the sung-line place: the top of what can be scrolled. */
+    private fun lyricMin() = -(lyricsBottom - lyricsTop) * SUNG_LINE_AT
+
+    /** The last line at the sung-line place: the end of what can be scrolled. */
+    private fun lyricMax() = max(lyricMin(), (lyricTops.lastOrNull() ?: 0f) - (lyricsBottom - lyricsTop) * SUNG_LINE_AT)
+
+    private fun peekHeight() = (geometry?.dp(PEEK_DP) ?: 0f)
+
+    /** The middle of the controls row that grows out under the scrubber. */
+    private fun peekRowY(g: IslandGeometry) = fullProgressY + g.dp(PEEK_ROW_DP)
+
+    /** Hands the lyrics back to the song a few seconds after the reader lets go. */
+    private fun scheduleLyricResume() {
+        main.removeCallbacks(lyricResume)
+        main.postDelayed(lyricResume, LYRIC_RESUME_MS)
+    }
+
     private fun setListScroll(value: Float) {
         when {
+            // The lyrics scroll between lyricMin (first line at its place) and lyricMax, counted from zero like a list.
+            lyricsScrolling() -> {
+                lyricManual = true
+                lyricScroll.snap(value + lyricMin())
+            }
             searchOpen -> searchScroll = value
             page == Page.SONGS -> songScroll = value
             page == Page.DOWNLOADS -> downloadScroll = value
@@ -1671,6 +1731,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     }
 
     private fun listScroll() = when {
+        lyricsScrolling() -> lyricScroll.value - lyricMin()
         searchOpen -> searchScroll
         page == Page.SONGS -> songScroll
         page == Page.DOWNLOADS -> downloadScroll
@@ -1686,6 +1747,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     private fun maxListScroll(): Float {
         val g = geometry ?: return 0f
+        if (lyricsScrolling()) return lyricMax() - lyricMin()
         if (!searchOpen) return maxScroll(page)
         val rows = max(0, searchResults.size - 1) + (if (searchFooter() != null) 1 else 0)
         return max(0f, rows * g.dp(SONG_ROW_DP) + g.dp(8f) - (g.cardTop + g.searchHeight - g.dp(6f) - resultsTop))
@@ -2266,14 +2328,23 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             searchOpen -> if (downY < resultsTop) Axis.SEARCH else Axis.VERTICAL
             // Locked, the island's library stays shut: sideways is just a little give.
             sideways -> Axis.HORIZONTAL
+            // In the full lyrics a drag on the lines reads them (past the first line it pulls the controls out), it
+            // does not close the card: that is the header's drag.
+            lyricsScrolling() && touchTarget == Target.LYRICS -> Axis.LYRICS
             // A pull down from the top of the card opens search; from its middle or bottom, the lyrics.
             !locked && page == Page.NOW && !lyricsFull && pageX.value.let { abs(it) < 0.5f } && dy > 0f &&
                 downY < g.cardTop + (g.cardHeight + g.dp(LYRICS_ROOM_DP) * lyricsRoom.value) * SEARCH_ZONE -> Axis.SEARCH
             else -> Axis.VERTICAL
         }
+        if (axis == Axis.LYRICS) {
+            main.removeCallbacks(lyricResume)
+            lyricManual = true
+        }
         dragBase = when {
             axis == Axis.HORIZONTAL -> pageX.value
             axis == Axis.SEARCH -> searchP.value
+            // Counted from the first line's place, minus the controls row already pulled out.
+            axis == Axis.LYRICS -> listScroll() - peekP.value * peekHeight()
             !searchOpen && page == Page.NOW -> full.value
             else -> listScroll()
         }
@@ -2283,6 +2354,29 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     /** The finger moves the island directly: pages follow it sideways, the card stretches into lyrics and back. */
     private fun drag(g: IslandGeometry, dx: Float, dy: Float, event: MotionEvent) {
+        if (axis == Axis.LYRICS) {
+            // The finger reads the lyrics. Pulled past the first line it takes the controls row out instead (and
+            // pushing back up tucks the row away before the lines move again); past the last line it gives, like a list.
+            val t = dragBase - dy
+            val maxS = maxListScroll()
+            val room = max(1f, peekHeight())
+            when {
+                t < 0f -> {
+                    peekP.snap((-t / room).coerceIn(0f, 1f))
+                    setListScroll(0f)
+                }
+                t > maxS -> {
+                    peekP.snap(0f)
+                    setListScroll(maxS + (t - maxS) * RUBBER)
+                }
+                else -> {
+                    peekP.snap(0f)
+                    setListScroll(t)
+                }
+            }
+            invalidate()
+            return
+        }
         if (axis == Axis.SEARCH) {
             val travel = max(1f, g.searchHeight - g.cardHeight)
             var f = dragBase + dy / travel
@@ -2343,6 +2437,20 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             val keep = if (searchOpen) f > 0.7f && speed > -2f else f > 0.3f || speed > 2f
             if (keep) openSearch() else closeSearch()
             searchP.kick(speed.coerceIn(-MAX_FLING, MAX_FLING))
+        } else if (axis == Axis.LYRICS) {
+            if (peekP.value > 0.001f) {
+                // Controls row half out: a pull or a flick down keeps it, a push back up tucks it away.
+                peekP.target = if (peekP.value > 0.45f || vy > g.dp(900f)) 1f else 0f
+            } else {
+                val maxS = maxListScroll()
+                val s = listScroll()
+                if (s < 0f || s > maxS) {
+                    listScroller.springBack(0, s.roundToInt(), 0, 0, 0, maxS.roundToInt())
+                } else {
+                    listScroller.fling(0, s.roundToInt(), 0, (-vy).roundToInt(), 0, 0, 0, maxS.roundToInt())
+                }
+            }
+            scheduleLyricResume()
         } else if (axis == Axis.HORIZONTAL) {
             val last = if (songsOf != null) Page.SONGS.at else Page.PLAYLISTS.at
             val speed = -vx / g.cardWidth
@@ -2480,6 +2588,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val listY = y - lyricsTop + lyricScroll.value
         for (i in lyricLayouts.indices) {
             if (listY >= lyricTops[i] && listY <= lyricTops[i] + lyricLayouts[i].height) {
+                lyricManual = false
                 p.seekTo(lyricLines[i].atMs)
                 performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                 invalidate()
@@ -2515,6 +2624,13 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         }
         if (lyricsFull) {
             if (x in (barLeft - slop)..(barRight + slop) && abs(y - fullProgressY) <= g.dp(16f)) return Target.PROGRESS
+            if (hasSong && peekP.value > 0.5f) {
+                val rowY = peekRowY(g)
+                fun inRow(cx: Float, r: Float) = (x - cx) * (x - cx) + (y - rowY) * (y - rowY) <= (r + slop) * (r + slop)
+                if (inRow(0f, playRadius)) return Target.PLAY
+                if (inRow(-sideButtonX, sideRadius)) return Target.PREVIOUS
+                if (inRow(sideButtonX, sideRadius)) return Target.NEXT
+            }
             if (y in lyricsTop..lyricsBottom) return Target.LYRICS
             if (openBox.contains(x, y)) return Target.OPEN
             return Target.CARD
@@ -2590,6 +2706,11 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         private const val MIN_GESTURE_S = 0.03f
         /** How much a drag past the end of its travel still moves the island. */
         private const val RUBBER = 0.3f
+        /** The controls row a pull down past the first line reveals in the full lyrics: its height. */
+        private const val PEEK_DP = 72f
+        private const val PEEK_ROW_DP = 58f
+        /** Hands the full lyrics back to the song this long after the reader lets go (the app's own 3.5 s). */
+        private const val LYRIC_RESUME_MS = 3_500L
         private const val OPEN_LABEL = "Open LuvLyrics"
         private const val ELLIPSIS = "\u2026"
         /** A new song with no cover yet keeps the last colours this long, then fades to neutral. */

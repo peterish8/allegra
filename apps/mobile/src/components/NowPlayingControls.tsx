@@ -34,6 +34,9 @@ import Animated, {
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppleSlider from './player/AppleSlider';
+import NativeScrubber, { nativeScrubberAvailable } from './player/NativeScrubber';
+import { shouldUseNativeScrubber } from './player/nativeScrubberProps';
+import { TIME_ROW_STYLE, TIME_TEXT_STYLE } from './player/scrubberLayout';
 import { MorphIcon, NudgeIcon, Tactile } from './allegra/motion';
 import { SwapMarquee } from './allegra/Marquee';
 import Artwork from './allegra/Artwork';
@@ -45,6 +48,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { lastSongDirection } from '../store/playerStore';
 import { LYRICS_TAP_WINDOW_MS, lyricsButtonTap, LyricsTapRun, NO_TAPS } from './player/lyricsButtonTaps';
 import { NativeSkip } from './NativeSkip';
+import { hasNativeTransportBar, NativeTransportBar } from './NativeTransportBar';
 
 interface NowPlayingControlsProps {
   animatedStyle: React.ComponentProps<typeof Animated.View>['style'];
@@ -69,6 +73,11 @@ interface NowPlayingControlsProps {
   positionSV: SharedValue<number>;
   durationSV: SharedValue<number>;
   onSeek: (seconds: number) => void | Promise<void>;
+  /**
+   * The song this phone's own player is playing. When given (Now Playing, never Connect's remote player) and the
+   * Kotlin view exists, the scrubber is drawn natively and follows the Media3 clock itself.
+   */
+  localSongId?: string;
   showLyrics?: boolean;
   /** Opens the player menu; receives the press event for menu anchoring. */
   onMorePress?: (event: GestureResponderEvent) => void;
@@ -226,6 +235,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   positionSV,
   durationSV,
   onSeek,
+  localSongId,
   showLyrics = false,
   onMorePress,
   onOpenQueue,
@@ -312,8 +322,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   const [forwardNudge, setForwardNudge] = useState(0);
 
   const progress = useDerivedValue(() => (durationSV.value > 0 ? positionSV.value / durationSV.value : 0));
-  const seek = useCallback(async (fraction: number) => {
-    const seconds = fraction * durationSV.value;
+  const seekSeconds = useCallback(async (seconds: number) => {
     isSeeking.value = true;
     positionSV.value = seconds;
     try {
@@ -324,7 +333,9 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
     } finally {
       setTimeout(() => { isSeeking.value = false; }, 280);
     }
-  }, [durationSV, positionSV, onSeek]);
+  }, [positionSV, onSeek]);
+  const seek = useCallback((fraction: number) => seekSeconds(fraction * durationSV.value), [seekSeconds, durationSV]);
+  const nativeScrubber = shouldUseNativeScrubber(nativeScrubberAvailable(), localSongId);
 
   // The lyrics button: one tap shows or hides lyrics, three quick ones switch letter by letter ↔ line by line,
   // a long press opens the picker (player/lyricsButtonTaps).
@@ -382,15 +393,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             <Text style={styles.focusTitle} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongTitle || 'Not playing'}</Text>
             <Text style={styles.focusArtist} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongArtist}</Text>
           </View>
-          <Tactile
-            onPress={onMorePress}
-            hitSlop={FOCUS_HIT_SLOP}
-            accessibilityRole="button"
-            accessibilityLabel="Song options"
-            style={styles.roundGlass}
-          >
-            <Ionicons name="ellipsis-horizontal" size={20} color={INK} />
-          </Tactile>
+          {/* The same buttons, in the same order, as the row under the lyrics. */}
           <Tactile
             onPress={() => { tick('light'); onExitLyricsFullscreen?.(); }}
             hitSlop={FOCUS_HIT_SLOP}
@@ -399,7 +402,31 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             accessibilityLabel="Exit lyrics fullscreen"
             style={styles.roundGlass}
           >
-            <MaterialCommunityIcons name="fullscreen-exit" size={20} color={INK} />
+            <MaterialCommunityIcons name="fullscreen-exit" size={19} color={INK} />
+          </Tactile>
+          {onMorePress ? (
+            <Tactile
+              onPress={e => { tick('light'); onMorePress(e); }}
+              hitSlop={FOCUS_HIT_SLOP}
+              pressScale={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Song options"
+              style={styles.roundGlass}
+            >
+              <Ionicons name="ellipsis-vertical" size={18} color={INK} />
+            </Tactile>
+          ) : null}
+          <Tactile
+            onPress={() => { tick(isCurrentSongLiked ? 'light' : 'success'); onToggleLike(); }}
+            hitSlop={FOCUS_HIT_SLOP}
+            pressScale={0.88}
+            accessibilityRole="button"
+            accessibilityLabel={isLikeSaving ? 'Saving to Liked songs, tap to cancel' : isCurrentSongLiked ? 'Unlike' : 'Like'}
+            style={styles.roundGlass}
+          >
+            <SavingPulse saving={isLikeSaving}>
+              <MorphIcon on={isCurrentSongLiked} onIcon="heart" offIcon="heart-outline" size={20} color={INK} />
+            </SavingPulse>
           </Tactile>
         </View>
       </Animated.View>
@@ -482,50 +509,60 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
         </Animated.View>
 
         <Animated.View style={styles.scrubber}>
-          <AppleSlider
-            progress={progress}
-            onCommit={seek}
-            height={10}
-            accessibilityLabel="Song position"
-            renderBelow={display => <TimeLabels display={display} durationSV={durationSV} />}
-          />
+          {nativeScrubber && localSongId ? (
+            <NativeScrubber
+              songId={localSongId}
+              positionSV={positionSV}
+              durationSV={durationSV}
+              onSeekSeconds={seekSeconds}
+              live={focused}
+              trackHeight={10}
+              accessibilityLabel="Song position"
+            />
+          ) : (
+            <AppleSlider
+              progress={progress}
+              onCommit={seek}
+              height={10}
+              accessibilityLabel="Song position"
+              renderBelow={display => <TimeLabels display={display} durationSV={durationSV} />}
+            />
+          )}
         </Animated.View>
 
         <Animated.View style={styles.transport} onLayout={e => { transportEnd.value = e.nativeEvent.layout.y + e.nativeEvent.layout.height; }}>
-          <NativeSkip direction={-1} enabled={nativeSkip} slop={12}>
-            <Tactile
-              onPress={() => { tick('light'); setBackNudge(n => n + 1); if (!nativeSkip) onSkipBackward(); }}
-              hitSlop={12}
-              pressScale={0.84}
-              accessibilityRole="button"
-              accessibilityLabel="Previous"
-              style={styles.transportBtn}
-            >
-              <NudgeIcon name="play-back" size={42} color={INK} direction={-1} trigger={backNudge} />
-            </Tactile>
-          </NativeSkip>
-          <Tactile
-            onPress={() => { tick('medium'); onTogglePlay(); }}
-            hitSlop={12}
-            pressScale={0.86}
-            accessibilityRole="button"
-            accessibilityLabel={storePlaying ? 'Pause' : 'Play'}
-            style={styles.transportBtn}
-          >
-            <MorphIcon on={storePlaying} onIcon="pause" offIcon="play" size={54} color={INK} offStyle={styles.playNudge} />
-          </Tactile>
-          <NativeSkip direction={1} enabled={nativeSkip} slop={12}>
-            <Tactile
-              onPress={() => { tick('light'); setForwardNudge(n => n + 1); if (!nativeSkip) onSkipForward(); }}
-              hitSlop={12}
-              pressScale={0.84}
-              accessibilityRole="button"
-              accessibilityLabel="Next"
-              style={styles.transportBtn}
-            >
-              <NudgeIcon name="play-forward" size={42} color={INK} direction={1} trigger={forwardNudge} />
-            </Tactile>
-          </NativeSkip>
+          {hasNativeTransportBar ? (
+            <NativeTransportBar
+              playing={storePlaying}
+              nativeSkip={nativeSkip}
+              onTogglePlay={onTogglePlay}
+              onSkipForward={onSkipForward}
+              onSkipBackward={onSkipBackward}
+              style={styles.nativeTransport}
+            />
+          ) : (
+            <>
+              <View style={styles.transportSlot}>
+                <NativeSkip direction={-1} enabled={nativeSkip} slop={12}>
+                  <Tactile onPress={() => { tick('light'); setBackNudge(n => n + 1); if (!nativeSkip) onSkipBackward(); }} hitSlop={12} pressScale={0.84} accessibilityRole="button" accessibilityLabel="Previous" style={styles.transportBtn}>
+                    <NudgeIcon name="play-back" size={42} color={INK} direction={-1} trigger={backNudge} />
+                  </Tactile>
+                </NativeSkip>
+              </View>
+              <View style={styles.transportSlot}>
+                <Tactile onPress={() => { tick('medium'); onTogglePlay(); }} hitSlop={12} pressScale={0.86} accessibilityRole="button" accessibilityLabel={storePlaying ? 'Pause' : 'Play'} style={styles.transportBtn}>
+                  <MorphIcon on={storePlaying} onIcon="pause" offIcon="play" size={54} color={INK} offStyle={styles.playNudge} />
+                </Tactile>
+              </View>
+              <View style={styles.transportSlot}>
+                <NativeSkip direction={1} enabled={nativeSkip} slop={12}>
+                  <Tactile onPress={() => { tick('light'); setForwardNudge(n => n + 1); if (!nativeSkip) onSkipForward(); }} hitSlop={12} pressScale={0.84} accessibilityRole="button" accessibilityLabel="Next" style={styles.transportBtn}>
+                    <NudgeIcon name="play-forward" size={42} color={INK} direction={1} trigger={forwardNudge} />
+                  </Tactile>
+                </NativeSkip>
+              </View>
+            </>
+          )}
         </Animated.View>
         </Animated.View>
 
@@ -596,7 +633,9 @@ const styles = StyleSheet.create({
   container: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 15, paddingTop: CONTAINER_PAD_TOP },
   focusContainer: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 25 },
   focusContent: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: CONTENT_PAD },
-  focusArtwork: { borderRadius: 8, overflow: 'hidden' },
+  // Artwork takes its size from `style` (its `size` only scales the generated placeholder): without a width and a
+  // height the cover collapsed to nothing and the header showed an empty gap.
+  focusArtwork: { width: 52, height: 52, borderRadius: 8, overflow: 'hidden' },
   focusMeta: { flex: 1, minWidth: 0, gap: 3 },
   focusTitle: { color: INK, fontSize: 16, fontWeight: '700' },
   focusArtist: { color: INK_META, fontSize: 13 },
@@ -622,10 +661,13 @@ const styles = StyleSheet.create({
   // Echo's rhythm: 24 between the title and the bar, 24 under the times,
   // ~30 between the transport and the bottom row.
   scrubber: { marginTop: 24 },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, paddingHorizontal: 4 },
-  time: { fontWeight: '600', fontSize: 13, fontVariant: ['tabular-nums'], color: INK_META },
-  transport: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', marginTop: 18 },
+  // Shared with the native scrubber's spacer, so both are the same height.
+  timeRow: TIME_ROW_STYLE,
+  time: TIME_TEXT_STYLE,
+  transport: { flexDirection: 'row', alignItems: 'center', marginTop: 18 },
+  transportSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   transportBtn: { width: 76, height: 72, alignItems: 'center', justifyContent: 'center' },
+  nativeTransport: { width: '100%', height: 72 },
   // The play triangle's optical centre sits left of its box.
   playNudge: { marginLeft: 5 },
   volumeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
