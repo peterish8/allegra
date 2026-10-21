@@ -165,6 +165,7 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
             cancelGesture()
             settling = false
         }
+        if (volumeMode) refreshVolume()
         syncVolumeReceiver()
         invalidate()
         schedule()
@@ -198,33 +199,46 @@ class NativeScrubberView(context: Context, appContext: AppContext) : ExpoView(co
 
     private fun isPlaying(): Boolean = player?.let { it.isPlaying && onSong() } == true
 
-    private fun shownValue(): Float = ScrubberMath.display(dragging, settling, dragValue, playedFraction())
+    private fun shownValue(): Float = if (dragging || settling) dragValue else playedFraction()
 
     private fun playedFraction(): Float =
         if (volumeMode) systemVolume() else ScrubberMath.progress(positionSec(), durationSec())
 
     // ── System volume (volume mode) ─────────────────────────────────────────
 
-    private fun systemVolume(): Float {
-        val am = audio ?: return 0f
-        return ScrubberMath.volumeFraction(am.getStreamVolume(AudioManager.STREAM_MUSIC), am.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+    // The stream's step and range are read from the AudioManager (a binder call) when they may have changed, never per
+    // frame or per move: drawing and dragging use these.
+    private var volumeStep = 0
+    private var volumeSteps = 0
+
+    private fun refreshVolume() {
+        val am = audio ?: return
+        volumeSteps = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        volumeStep = am.getStreamVolume(AudioManager.STREAM_MUSIC)
     }
+
+    private fun systemVolume(): Float = ScrubberMath.volumeFraction(volumeStep, volumeSteps)
 
     /** Sets the media volume as `MainPlayerModule.setVolume` does: the index rounded down, no system UI. */
     private fun setSystemVolume(fraction: Float) {
         val am = audio ?: return
-        val index = ScrubberMath.volumeIndex(fraction, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+        if (volumeSteps <= 0) refreshVolume()
+        val index = ScrubberMath.volumeIndex(fraction, volumeSteps)
+        if (index == volumeStep) return
+        volumeStep = index
         runCatching { am.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0) }
     }
 
-    /** The hardware volume keys move the slider while it is on screen; nothing listens otherwise. */
+    /** The hardware volume keys move the slider while it is on screen and in front; nothing listens otherwise. */
     private fun syncVolumeReceiver() {
-        val want = volumeMode && isAttachedToWindow && visible
+        val want = volumeMode && live && isAttachedToWindow && visible
         if ((volumeReceiver != null) == want) return
         if (want) {
+            refreshVolume()
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(c: Context?, intent: Intent?) {
                     if (intent?.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1) != AudioManager.STREAM_MUSIC) return
+                    refreshVolume()
                     invalidate()
                 }
             }
