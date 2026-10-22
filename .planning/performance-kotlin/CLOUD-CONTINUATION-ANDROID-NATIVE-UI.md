@@ -11,6 +11,7 @@ Updated: 2026-10-22
   - `7e17262 test(mobile): mock catalog recommendations in stream tests` — prevents the StreamService Jest test from making a real catalog request.
   - `9385c6d feat(mobile): migrate Android Apple backdrop` — Slice 16 renderer, version bump to 1.30.0, tests and relevant handoff/architecture updates.
 - No PR was opened. Push only to `origin/perf/mobile-player-responsiveness`; do not open a PR, merge, or push elsewhere without a new instruction.
+- The repository goal command is `/goal`, defined in `.claude/commands/goal.md`; it resumes from the current handoff and keeps planning notes current.
 
 ## What was checked
 

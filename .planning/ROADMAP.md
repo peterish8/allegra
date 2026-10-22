@@ -38,7 +38,7 @@ still has it afterwards — that is the path most likely to be wrong in a way te
 
 ## Active mobile migration
 
-Continue from `.planning/performance-kotlin/HANDOFF-ANDROID-NATIVE-UI.md` on `perf/mobile-player-responsiveness`. Check Slice 7's Up next gestures first when an Android device is available, including short horizontal and vertical drags at the 1 dp handle threshold. Then continue one Now Playing and content-screen slice at a time, updating the handoff and keeping iOS / missing-module fallbacks.
+Run `/goal` in Claude Code to continue from `.planning/performance-kotlin/HANDOFF-ANDROID-NATIVE-UI.md` on `perf/mobile-player-responsiveness`. Check Slice 7's Up next gestures first when an Android device is available, including short horizontal and vertical drags at the 1 dp handle threshold. Then continue one Now Playing and content-screen slice at a time, updating the handoff and keeping iOS / missing-module fallbacks.
 
 ## Deliberately not doing
 
