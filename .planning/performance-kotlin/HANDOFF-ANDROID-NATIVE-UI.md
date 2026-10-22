@@ -21,11 +21,11 @@ The user also requested that synced lyrics remain responsive across phone and Dy
 
 ## Worktree and Git state
 
-- Main checkout: `C:\dev\allegra`, branch `main`.
-- Active feature checkout: `C:\dev\allegra-mobile-responsiveness`, branch `perf/mobile-player-responsiveness`.
-- Commits on the branch so far (newest first): `0fdb780` queue rows in Kotlin (unverified), `b184600` canvas colours drive the bottom wash, `fc4ff7a` Apple + glow with the island's light, `dea965c` island lyrics scroll and controls, the docs commits, `bbe9fd8` island first-line fix, `0c38769` fullscreen header fix, `67d63fd` mini player skip fix, `faca34c` native synchronized lyrics, `b2b2cfb` tab bar, `e2003b4` transport controls, `7491020` aligned transport controls.
+- Local continuation checkout: `C:\dev\allegra`, branch `perf/mobile-player-responsiveness`; it was synchronized from `origin/perf/mobile-player-responsiveness` at `1a2898c` for this Windows continuation.
+- The checkout's previous local branch pointer at `0b8d38d` is retained on the local-only branch `backup/perf-mobile-player-responsiveness-0b8d38d`; the requested branch now tracks the fetched remote branch.
+- This local environment has one worktree (`C:\dev\allegra`); the former cloud worktree path `C:\dev\allegra-mobile-responsiveness` is not present here.
 - Local-only, never commit: `apps/mobile/metro.config.js` carries a Windows shim appended after the Sentry wrappers (Sentry's feedback stub matches origin paths with forward slashes, so on Windows the dev bundle pulled in the real feedback widget and crashed). A real fix should be its own commit. `apps/mobile/.expo-export-check/` is generated output; keep it out of commits. `apps/mobile/android/app/debug.keystore` was copied into the worktree and is git-ignored.
-- The branch was pushed to `origin` (`peterish8/allegra`) on 2026-10-21 at the user's request, for a cloud session. No PR is open. Do not open one, merge, or push to `main` without the user's approval.
+- The branch is `peterish8/allegra`'s `origin/perf/mobile-player-responsiveness`. No PR is open. Push only to this branch; do not open a PR, merge, or push to `main` without the user's approval.
 
 ## Slices done
 
@@ -260,7 +260,7 @@ Pattern every slice so far follows (copy it): a pure, JVM-tested Kotlin model/ma
 
 ## Constraints for continuation
 
-1. Work in `C:\dev\allegra-mobile-responsiveness`; first re-check `git status`, branch, HEAD, and the diff. Do not overwrite or stage unrelated work.
+1. Work in the checkout provided by the current session. First re-check `git status`, branch, HEAD, and the diff; fetch `origin` and continue on `perf/mobile-player-responsiveness`. Do not assume a path from an older local or cloud session, overwrite work, or stage unrelated files.
 2. Read `C:\dev\allegra\CLAUDE.md` and `C:\dev\allegra\apps\mobile\CLAUDE.md` first. One vertical slice at a time. All existing behaviors are contracts.
 3. No `Co-Authored-By`, AI attribution, or similar footers in commits. Commits may be pushed to `origin/perf/mobile-player-responsiveness` (the user approved that for the cloud session); no PR, merge, or push to any other branch without the user's approval. Never stage `apps/mobile/.expo-export-check/`. Bump `expo.version` in `apps/mobile/app.json` for every APK-reaching change (minor for features).
 4. Android native rendering is additive: keep the React Native fallback for iOS and for when the native view is missing.
