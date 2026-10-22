@@ -16,6 +16,19 @@ class HeaderGeometryTest {
         assertEquals(59f, HeaderGeometry.chipTop(1), 0f)
     }
 
+    @Test fun `the view reaches the grabber's slop above and below the stack`() {
+        // 12 above, then the stack (17) or the grabber's slop below it (29), whichever reaches further.
+        assertEquals(41f, HeaderGeometry.viewHeight(0), 0f)
+        assertEquals(65f, HeaderGeometry.viewHeight(1), 0f)
+        assertEquals(101f, HeaderGeometry.viewHeight(2), 0f)
+        // Every touch target lies inside the view: stack y + ORIGIN is view y.
+        val g = HeaderGeometry.grabberHit(360f)
+        assertEquals(0f, g.top + HeaderGeometry.ORIGIN, 0f)
+        assertTrue(g.bottom + HeaderGeometry.ORIGIN <= HeaderGeometry.viewHeight(0))
+        val chip = HeaderGeometry.chipRect(1, 100f, 360f)
+        assertTrue(chip.bottom + HeaderGeometry.ORIGIN <= HeaderGeometry.viewHeight(2))
+    }
+
     @Test fun `a chip fits its content but never passes 80 percent`() {
         // 12 + 15 + 6 + 100 + 12
         assertEquals(145f, HeaderGeometry.chipWidth(100f, w), 0f)

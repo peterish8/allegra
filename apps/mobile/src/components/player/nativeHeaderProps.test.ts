@@ -19,11 +19,11 @@ describe('nativeHeaderProps', () => {
     expect(headerChipCount(null, 'Laptop')).toBe(1);
   });
 
-  it('sizes the stack like the React Native header', () => {
-    expect(headerHeight(0)).toBe(17);
-    expect(headerHeight(1)).toBe(53);
-    expect(headerHeight(2)).toBe(89);
-    expect(headerHeight(-1)).toBe(17);
+  it('sizes the view: the stack plus the grabber slop above, and below when no chip reaches further', () => {
+    expect(headerHeight(0)).toBe(41);
+    expect(headerHeight(1)).toBe(65);
+    expect(headerHeight(2)).toBe(101);
+    expect(headerHeight(-1)).toBe(41);
   });
 
   it('picks the playing-on icon kind', () => {

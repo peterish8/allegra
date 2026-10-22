@@ -7,7 +7,7 @@
 import React, { useCallback } from 'react';
 import { Platform, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { requireNativeView } from 'expo';
-import { headerActionOf, headerChipCount, headerHeight, headerPlayingKind, type HeaderAction } from './nativeHeaderProps';
+import { HEADER_SLOP_V, headerActionOf, headerChipCount, headerHeight, headerPlayingKind, type HeaderAction } from './nativeHeaderProps';
 
 interface NativeHeaderViewProps {
   /** Listeners in the room; -1 for no chip. */
@@ -60,7 +60,8 @@ const NativeHeader: React.FC<NativeHeaderProps> = ({ together, playingOn, waveCo
 };
 
 const styles = StyleSheet.create({
-  view: { alignSelf: 'stretch' },
+  // The view reaches the grabber's hit slop above the stack, so Android delivers touches there to it.
+  view: { alignSelf: 'stretch', marginTop: -HEADER_SLOP_V },
 });
 
 export default React.memo(NativeHeader);

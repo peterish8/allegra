@@ -16,11 +16,15 @@ export const headerActionOf = (event: { nativeEvent?: { action?: unknown } } | u
 /** The grabber's box (5 dp with 6 dp above and below) and each chip with the 6 dp above it, in dp. */
 const GRABBER_BOX_H = 17;
 const CHIP_STEP = 36;
+/** The grabber's hit slop above and below it; the view reaches this far above the stack (see `HeaderGeometry.ORIGIN`). */
+export const HEADER_SLOP_V = 12;
 
 export const headerChipCount = (together: number | null | undefined, playingOn: string | null | undefined): number =>
   (typeof together === 'number' ? 1 : 0) + (playingOn ? 1 : 0);
 
-export const headerHeight = (chips: number): number => GRABBER_BOX_H + Math.max(0, chips) * CHIP_STEP;
+/** The view's height: the stack, or the grabber's slop below it when that reaches further, plus the slop above. */
+export const headerHeight = (chips: number): number =>
+  HEADER_SLOP_V + Math.max(GRABBER_BOX_H + HEADER_SLOP_V, GRABBER_BOX_H + Math.max(0, chips) * CHIP_STEP);
 
 /** The device kind the Playing on chip's icon follows: a laptop for the web, a phone otherwise. */
 export const headerPlayingKind = (kind: 'web' | 'android' | 'ios' | undefined): 'web' | 'phone' => (kind === 'web' ? 'web' : 'phone');

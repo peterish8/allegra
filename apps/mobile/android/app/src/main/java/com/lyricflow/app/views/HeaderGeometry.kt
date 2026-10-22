@@ -35,8 +35,18 @@ object HeaderGeometry {
         data class Chip(val index: Int) : Target
     }
 
+    /**
+     * The view starts [ORIGIN] above the stack (the JS side gives it that much negative margin), so the grabber's slop
+     * above it lies inside the view: Android only sends a child touches that land inside its own bounds. Stack y +
+     * [ORIGIN] is view y.
+     */
+    const val ORIGIN = SLOP_V
+
     /** The stack's height: the grabber's box, then each chip with the 6 dp above it. */
     fun height(chips: Int): Float = GRABBER_BOX_H + chips * (CHIP_GAP + CHIP_H)
+
+    /** The view's height: the stack, or the grabber's slop below it when that reaches further, plus [ORIGIN] above. */
+    fun viewHeight(chips: Int): Float = ORIGIN + max(GRABBER_BOX_H + SLOP_V, height(chips))
 
     /** A chip as wide as its icon, gap, text and padding, but never past 80% of the container. */
     fun chipWidth(textW: Float, width: Float): Float =
@@ -70,9 +80,9 @@ object HeaderGeometry {
     }
 
     /**
-     * The area that counts as the view for React Native's hit test: the box that holds the grabber's slop and every chip,
-     * so the rest of the header's strip lets touches through to the cover below. Relative to the view: how far the box
-     * lies inside each edge (negative = shrunk in, positive = grown out), left/top/right/bottom.
+     * The box that holds the grabber's slop and every chip, in stack coordinates: React Native's hit test uses it
+     * (`ReactHitSlopView`) so the rest of the header's strip is not this view's. Gesture Handler ignores that and
+     * tests plain bounds, which is why the touch targets are also real child views sized to the same rectangles.
      */
     fun targetBox(width: Float, chipTextWidths: List<Float>): Rect {
         var left = grabberHit(width).left
