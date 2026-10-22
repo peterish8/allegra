@@ -1883,7 +1883,6 @@ export default function App() {
             audioRef={audio.audioRef}
             onToggle={togglePlayer}
             onLike={toggleLike}
-            onPlayPlaylist={(playlistSongs) => { void playDjList(playlistSongs, false); }}
             onOpenLibrary={() => router.push(paths.library)}
           />
         ) : view === 'home' ? (
