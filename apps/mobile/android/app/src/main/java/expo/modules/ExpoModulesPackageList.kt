@@ -74,6 +74,7 @@ class ExpoModulesPackageList : ModulesProvider {
         com.lyricflow.app.modules.NativeLyricsModule::class.java,
         com.lyricflow.app.modules.NativeFlowGlowModule::class.java,
         com.lyricflow.app.modules.NativeCanvasWashModule::class.java,
+        com.lyricflow.app.modules.NativeAppleBackdropModule::class.java,
         com.lyricflow.app.modules.NativeQueueListModule::class.java,
         com.lyricflow.app.modules.NativeScrubberModule::class.java,
         com.lyricflow.app.modules.NativeSongActionsModule::class.java,
