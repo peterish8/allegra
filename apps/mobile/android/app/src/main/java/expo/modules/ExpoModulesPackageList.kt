@@ -80,6 +80,7 @@ class ExpoModulesPackageList : ModulesProvider {
         com.lyricflow.app.modules.NativeMoreItemsModule::class.java,
         com.lyricflow.app.modules.NativeAlphabetRailModule::class.java,
         com.lyricflow.app.modules.NativeHeaderModule::class.java,
+        com.lyricflow.app.modules.NativeTrackRowModule::class.java,
         com.lyricflow.app.modules.NativePlayerFooterModule::class.java,
         com.lyricflow.app.modules.LuvsPlayerModule::class.java,
         com.lyricflow.app.modules.LuvsPagerModule::class.java,

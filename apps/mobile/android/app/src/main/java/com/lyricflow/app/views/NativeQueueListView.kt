@@ -2,26 +2,17 @@ package com.lyricflow.app.views
 
 import android.content.Context
 import android.content.res.Configuration
-import android.graphics.Bitmap
-import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.RadialGradient
 import android.graphics.Rect
 import android.graphics.RectF
-import android.graphics.Shader
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.text.TextPaint
 import android.text.TextUtils
-import android.util.LruCache
 import android.util.TypedValue
 import android.view.Choreographer
 import android.view.MotionEvent
@@ -29,14 +20,9 @@ import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
 import android.widget.OverScroller
-import androidx.annotation.OptIn
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.customview.widget.ExploreByTouchHelper
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSourceBitmapLoader
-import androidx.media3.datasource.DefaultDataSource
-import com.google.common.util.concurrent.MoreExecutors
 import com.lyricflow.app.island.IslandFonts
 import com.lyricflow.app.island.Spring
 import com.lyricflow.app.queue.QueueMath
@@ -45,7 +31,6 @@ import com.lyricflow.app.queue.QueueRow
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
-import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -61,7 +46,6 @@ import kotlin.math.roundToInt
  * which owns the queue. The list tells JavaScript when it is scrolled away from the top (`onAtTop`) so the panel's
  * swipe down leaves it alone.
  */
-@OptIn(UnstableApi::class)
 class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
     private val onPick by EventDispatcher<Map<String, Any>>()
     private val onMove by EventDispatcher<Map<String, Any>>()
@@ -136,14 +120,12 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val subPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(153, 255, 255, 255) }
-    private val glyphPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
-    private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val rect = RectF()
     private val clip = Path()
-    private val matrix = Matrix()
-    private val tiles = HashMap<String, Tile>()
-    private val shownAt = HashMap<String, Long>()
+    private val covers = CoverPainter(context, art, artRadius, FADE_MS)
+    private var coverFading = false
+    private val coverLanded = Runnable { invalidate(); wake() }
     private var fontRemover: (() -> Unit)? = null
     private val access = Access(this)
 
@@ -173,8 +155,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
             // rows draw their own places again, with no offsets left over.
             if (dragPos >= 0 || awaitingRows) clearDrag()
             shifts.clear()
-            val live = rows.mapTo(HashSet()) { it.id }
-            tiles.keys.retainAll(live)
+            covers.keepOnly(rows.mapTo(HashSet()) { tileKey(it) })
             buildText()
             clampScroll()
             access.invalidateRoot()
@@ -206,6 +187,9 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
         // React Native converts sp with the platform (nonlinear above 100% from Android 14), not density x fontScale.
         titlePaint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, TITLE_SP, resources.displayMetrics)
         subPaint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, SUB_SP, resources.displayMetrics)
+        // The app's SF Pro tracking (`sfTracking`: -0.24 at 15, -0.08 at 13), in em.
+        titlePaint.letterSpacing = -0.24f / TITLE_SP
+        subPaint.letterSpacing = -0.08f / SUB_SP
     }
 
     private fun textRight() = width - sideM - (if (movable) handleW else 0f)
@@ -248,14 +232,14 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
         return busy
     }
 
-    private fun fading(): Boolean {
-        val now = SystemClock.uptimeMillis()
-        for (t in shownAt.values) if (now - t < FADE_MS) return true
-        return false
-    }
+    /** Whether a cover was still fading in at the last draw. */
+    private fun fading() = coverFading
+
+    private fun tileKey(row: QueueRow) = row.id + "|" + row.title
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        CoverCache.addListener(coverLanded)
         if (fontRemover == null) {
             fontRemover = IslandFonts.load(context) { main.post { applyFonts(); buildText(); invalidate() } }
         }
@@ -263,6 +247,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     }
 
     override fun onDetachedFromWindow() {
+        CoverCache.removeListener(coverLanded)
         Choreographer.getInstance().removeFrameCallback(frame)
         framePosted = false
         lastFrameNanos = 0L
@@ -496,6 +481,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     // ── Drawing ─────────────────────────────────────────────────────────────
 
     override fun onDraw(canvas: Canvas) {
+        coverFading = false
         if (rows.isEmpty()) return
         val first = max(0, (scrollY / rowH).toInt())
         val last = min(rows.size - 1, ((scrollY + height) / rowH).toInt())
@@ -590,132 +576,8 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     // ── Covers ──────────────────────────────────────────────────────────────
 
     private fun drawCover(canvas: Canvas, row: QueueRow, left: Float, top: Float) {
-        rect.set(left, top, left + art, top + art)
-        val uri = row.cover
-        val entry = if (uri != null) covers.get(uri) else null
-        if (entry == null) {
-            if (uri != null && uri !in failed) request(uri)
-            if (uri != null && uri !in failed) {
-                // The base colour while the picture loads, as the React Native cover does.
-                fill.color = row.tile.base
-                canvas.drawRoundRect(rect, artRadius, artRadius, fill)
-            } else {
-                drawGenerated(canvas, row, left, top)
-            }
-            return
-        }
-        // The picture fades in over the base colour.
-        val now = SystemClock.uptimeMillis()
-        val since = shownAt.getOrPut(uri!!) { now }
-        val a = ((now - since) / FADE_MS.toFloat()).coerceIn(0f, 1f)
-        if (a < 1f) {
-            fill.color = row.tile.base
-            canvas.drawRoundRect(rect, artRadius, artRadius, fill)
-        }
-        // contentFit "cover": fill the square, crop the longer side evenly.
-        val scale = max(art / entry.bitmap.width, art / entry.bitmap.height)
-        matrix.setScale(scale, scale)
-        matrix.postTranslate(left + (art - entry.bitmap.width * scale) / 2f, top + (art - entry.bitmap.height * scale) / 2f)
-        entry.shader.setLocalMatrix(matrix)
-        imagePaint.shader = entry.shader
-        imagePaint.alpha = (255 * a).roundToInt()
-        canvas.drawRoundRect(rect, artRadius, artRadius, imagePaint)
-        imagePaint.shader = null
+        if (covers.draw(canvas, row.cover, row.tile, tileKey(row), left, top)) coverFading = true
     }
-
-    /** contentFit "cover" at the slot's own pixels: the centre square of the picture, scaled to `art` (never enlarged). */
-    private fun squareCover(src: Bitmap): Bitmap {
-        val side = min(src.width, src.height)
-        val x = (src.width - side) / 2
-        val y = (src.height - side) / 2
-        val target = art.roundToInt().coerceAtLeast(1)
-        val square = if (side == src.width && side == src.height) src else Bitmap.createBitmap(src, x, y, side, side)
-        return if (square.width > target) Bitmap.createScaledBitmap(square, target, target, true) else square
-    }
-
-    private fun request(uri: String) {
-        if (!pending.add(uri)) return
-        val future = try {
-            loader.loadBitmap(Uri.parse(uri))
-        } catch (_: Throwable) {
-            pending.remove(uri)
-            failed.add(uri)
-            return
-        }
-        future.addListener({
-            // Cropped and scaled to the slot here, off the main thread: the cache holds small squares.
-            val bitmap = try {
-                future.get()?.let { squareCover(it) }
-            } catch (_: Throwable) {
-                null
-            }
-            main.post {
-                pending.remove(uri)
-                if (bitmap != null) {
-                    covers.put(uri, Cover(bitmap, BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)))
-                } else {
-                    failed.add(uri)
-                }
-                // Every list showing this cover redraws.
-                invalidate()
-                wake()
-            }
-        }, executor)
-    }
-
-    /** What GeneratedArtwork draws: a duotone from the song's own title, a spark, grooves and a monogram. */
-    private fun drawGenerated(canvas: Canvas, row: QueueRow, left: Float, top: Float) {
-        val key = row.id + "|" + row.title
-        val tile = tiles.getOrPut(key) { Tile(row.tile, art) }
-        canvas.save()
-        clip.reset()
-        clip.addRoundRect(rect, artRadius, artRadius, Path.Direction.CW)
-        canvas.clipPath(clip)
-        canvas.translate(left, top)
-        tile.draw(canvas, art, glyphPaint, stroke, fill, rect)
-        canvas.restore()
-    }
-
-    private class Tile(private val t: com.lyricflow.app.queue.QueueTile, size: Float) {
-        private val base = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = if (t.variant == 1) {
-                LinearGradient(size, 0f, 0f, size, t.base, t.mid, Shader.TileMode.CLAMP)
-            } else {
-                LinearGradient(0f, 0f, size, size, t.base, t.mid, Shader.TileMode.CLAMP)
-            }
-        }
-        private val spark = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            val cx = if (t.variant == 2) 0.22f else 0.78f
-            shader = RadialGradient(cx * size, 0.22f * size, 0.62f * size, withAlpha(t.spark, 0.55f), withAlpha(t.spark, 0f), Shader.TileMode.CLAMP)
-        }
-        private val dark = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = RadialGradient(0.3f * size, size, 0.7f * size, withAlpha(t.base, 0.7f), withAlpha(t.base, 0f), Shader.TileMode.CLAMP)
-        }
-
-        fun draw(canvas: Canvas, size: Float, glyph: TextPaint, stroke: Paint, fill: Paint, scratch: RectF) {
-            canvas.drawRect(0f, 0f, size, size, base)
-            canvas.drawRect(0f, 0f, size, size, spark)
-            canvas.drawRect(0f, 0f, size, size, dark)
-            stroke.shader = null
-            stroke.strokeWidth = 0.008f * size
-            val cx = if (t.variant == 2) 0.86f * size else 0.14f * size
-            for ((n, r) in floatArrayOf(34f, 46f, 58f).withIndex()) {
-                stroke.color = withAlpha(t.spark, 0.14f - n * 0.03f)
-                canvas.drawCircle(cx, 0.86f * size, r / 100f * size, stroke)
-            }
-            glyph.typeface = IslandFonts.bold
-            glyph.textSize = size * 0.9f
-            glyph.color = withAlpha(t.spark, 0.28f)
-            // GeneratedArtwork: letterSpacing -4 on a 48 dp cover with a 0.9 x size glyph, in em.
-            glyph.letterSpacing = -4f / (48f * 0.9f)
-            val w = glyph.measureText(t.glyph)
-            canvas.drawText(t.glyph, size - w + size * 0.08f, size + size * 0.2f - glyph.descent(), glyph)
-        }
-
-        private fun withAlpha(color: Int, a: Float) = Color.argb((255 * a).roundToInt().coerceIn(0, 255), Color.red(color), Color.green(color), Color.blue(color))
-    }
-
-    private class Cover(val bitmap: Bitmap, val shader: BitmapShader)
 
     // ── Accessibility ───────────────────────────────────────────────────────
 
@@ -794,30 +656,10 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
         const val TOP_SLACK_DP = 2f
         const val FADE_MS = 150L
         const val AWAIT_MS = 900L
-        const val COVER_CACHE_BYTES = 10 * 1024 * 1024
-        const val MIN_COVER_PX = 96
         // Motion.spring.tactile: stiffness 700, damping 40, mass 0.8.
         const val SPRING_K = 875f
         const val SPRING_ZETA = 0.845f
         const val ACTION_MOVE_UP = 0x7101
         const val ACTION_MOVE_DOWN = 0x7102
-
-        val executor = Executors.newFixedThreadPool(2) { r ->
-            Thread(r, "queue-art").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
-        }
-        val covers = object : LruCache<String, Cover>(COVER_CACHE_BYTES) {
-            override fun sizeOf(key: String, value: Cover) = value.bitmap.byteCount
-        }
-        val failed = HashSet<String>()
-        val pending = HashSet<String>()
-    }
-
-    private val loader by lazy {
-        DataSourceBitmapLoader(
-            MoreExecutors.listeningDecorator(executor),
-            DefaultDataSource.Factory(context.applicationContext), null,
-            // Media3 halves the decode until the longer side fits, so ask for plenty: `squareCover` crops and scales it to the slot.
-            max(MIN_COVER_PX, (art * 4f).roundToInt()),
-        )
     }
 }

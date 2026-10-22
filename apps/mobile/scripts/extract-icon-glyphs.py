@@ -33,6 +33,8 @@ GLYPHS = [
     ('Ionicons', 'albums-outline'),
     ('Ionicons', 'settings-outline'),
     ('Ionicons', 'chevron-forward'),
+    ('Ionicons', 'refresh'),
+    ('Ionicons', 'volume-medium'),
     ('MaterialCommunityIcons', 'speaker'),
     ('MaterialCommunityIcons', 'devices'),
     ('MaterialCommunityIcons', 'timer-outline'),
