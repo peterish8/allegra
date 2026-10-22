@@ -1,31 +1,48 @@
 # Allegra Android UI migration — cloud continuation handoff
 
-## Checkout and checkpoint
+Updated: 2026-10-22
 
-- Repository: `https://github.com/peterish8/allegra` (`origin`). Continue on `perf/mobile-player-responsiveness` only.
-- This Windows checkout was `C:\dev\allegra`; the feature branch was synchronized with `origin` at `1a2898c` before the checkpoint edits.
-- Latest checkpoint commit: `10c024c fix(mobile): align native queue reorder gesture`.
-- A docs commit will contain this file and the updated worktree note in `HANDOFF-ANDROID-NATIVE-UI.md`.
-- The local `npm ci` in `apps/mobile` was interrupted at the user's request while retrying corrupt-tarball downloads. It may have left partial ignored `node_modules`; in the cloud, inspect the environment and install dependencies there as needed.
-- No tests, Gradle build, APK build, emulator run, or device check were performed for `10c024c`. `git diff --check` passed before committing.
+## Checkout and commits
 
-## What changed at the checkpoint
+- Repository: `https://github.com/peterish8/allegra` (`origin`). Work only on `perf/mobile-player-responsiveness`.
+- Checkout: `/workspace/allegra`; current branch tip before this handoff edit: `9385c6d feat(mobile): migrate Android Apple backdrop`.
+- The remote-tracking branch was `b769904` before this session. Fetching the target branch returned HTTP 503 from GitHub's proxy; retry before assuming the remote tip is current.
+- Local commits created in this session:
+  - `7e17262 test(mobile): mock catalog recommendations in stream tests` — prevents the StreamService Jest test from making a real catalog request.
+  - `9385c6d feat(mobile): migrate Android Apple backdrop` — Slice 16 renderer, version bump to 1.30.0, tests and relevant handoff/architecture updates.
+- No PR was opened. Push only to `origin/perf/mobile-player-responsiveness`; do not open a PR, merge, or push elsewhere without a new instruction.
 
-`QueueMath.beginsReorderDrag(dxPx, dyPx, density)` now activates the native queue handle drag at a 1 dp Euclidean movement threshold in any direction, matching React Native Gesture Handler's `Gesture.Pan().minDistance(1)` behavior. `NativeQueueListView` previously checked only vertical movement and compared against 1 physical pixel; the X displacement was recorded but unused. A JVM test covers horizontal and vertical movement at densities 1 and 3. `apps/mobile/app.json` is now version `1.29.1` for this Android fix.
+## What was checked
 
-The earlier queue parity review is recorded in `HANDOFF-ANDROID-NATIVE-UI.md`. The queue slice remains **not device-verified**. The 1 dp adjustment itself also needs to be exercised on an Android device.
+- Read `CLAUDE.md`, `apps/mobile/CLAUDE.md`, `HANDOFF-ANDROID-NATIVE-UI.md`, and this continuation file.
+- `/workspace/.android-sdk/platform-tools/adb devices -l` returned only `List of devices attached`. No Android phone or emulator is available in this cloud checkout. Slice 7's queue check remains first, including short horizontal and vertical drags around the 1 dp handle threshold.
+- `cd apps/mobile && npm run typecheck`: passed (`tsc --noEmit`).
+- `cd apps/mobile && npm run lint`: passed with 0 errors and 78 warnings.
+- `cd apps/mobile && npm test -- --runInBand`: passed, 113 suites and 926 tests. Jest reported an open-handle warning after the passing run.
+- Focused backdrop props and native-module registration tests: 2 suites, 5 tests passed.
+- Standalone Kotlin compiler check of `AppleBackdropGeometry.kt`: passed; all 9 geometry assertions passed. This does not compile the Android Expo view or run Gradle unit tests.
+- `:app:compileDebugKotlin :app:testDebugUnitTest`: failed before Kotlin compilation during dependency resolution. Google Maven and `plugins.gradle.org` returned HTTP 503 for Android Gradle Plugin transitives (48 additional dependency failures reported).
+- `:app:assembleDebug`: also failed before compilation during dependency resolution with HTTP 503 responses. No APK was built.
+- `git diff --check`: passed before the Slice 16 commit.
+
+## Slice 16 now in the branch
+
+`NativeAppleBackdropView` and `NativeAppleBackdropModule` draw Android's Apple-style Now Playing room and hero. They use Media3's existing bitmap loader with a 2048 px cap, byte-bounded decoded-art and reduced-room caches, a cached blur, the 65% sharp hero and dissolve, cover/hero transitions, and the inverse mask over canvas video. Reanimated supplies horizontal cover shift on the UI thread. The view does not own playback, routing, lyrics, or gestures. iOS and missing-module builds retain the Skia renderer. `apps/mobile/app.json` is 1.30.0.
+
+The Slice 16 Android compilation, APK, visual parity, accessibility, memory behavior, and frame pacing are not verified. The exact device checklist is in `HANDOFF-ANDROID-NATIVE-UI.md`, section 16. No performance improvement is claimed.
 
 ## Resume in this order
 
-1. Check `git status --short --branch`, `git log -3 --oneline`, and `git remote -v`; fetch `origin` and confirm the feature branch contains both checkpoint commits. Do not discard any cloud-session changes.
-2. Read `CLAUDE.md`, `apps/mobile/CLAUDE.md`, and `HANDOFF-ANDROID-NATIVE-UI.md`. This file is the current machine/session handoff; use the actual current checkout path rather than assuming the old cloud or Windows worktree path.
-3. Complete the **Slice 7 queue device check first** using the checklist under “Needs a device check” in `HANDOFF-ANDROID-NATIVE-UI.md`. Include a short-drag check around the 1 dp handle threshold in both horizontal and vertical directions, plus reordering, scroll/panel gesture arbitration, TalkBack, covers, and safe areas. Mark only the checks actually observed. If cloud has no Android device/emulator, leave the list explicitly unverified and hand back the device steps.
-4. Run the required checks for the current queue fix and branch: mobile TypeScript, lint, Jest, and Android `:app:testDebugUnitTest` (the cloud recipe and environment notes are in the main handoff). Report exact results; do not treat an interrupted process or compile-only result as a passing full gate.
-5. After Slice 7 is checked and the current patch is verified, continue one vertical slice at a time in the order and constraints from the main handoff. Each APK-reaching change needs an `expo.version` bump, focused automated checks, a conventional commit without AI/co-author footers, and a specific “Needs a device check” list if physical UI proof is unavailable.
-6. Push only to `origin/perf/mobile-player-responsiveness` when the work is ready. Do not open a PR, merge, or push to `main` unless the user explicitly asks.
+1. Inspect `git status --short --branch`, `git log -5 --oneline`, and `git remote -v`; preserve the existing commits and files. Fetch `origin/perf/mobile-player-responsiveness` when the proxy responds.
+2. Finish Slice 7's device check first, including short horizontal and vertical handle drags around the 1 dp threshold, then the rest of its queue parity checklist. If no device is available, keep it explicitly pending.
+3. Run `:app:compileDebugKotlin :app:testDebugUnitTest` and `:app:assembleDebug` when Google Maven and the Gradle Plugin Portal recover. Do not mark the Android compile, unit tests, or APK as passing until their full tasks succeed.
+4. Check Slice 16 on an Android device using section 16 of the main handoff.
+5. Continue one vertical slice at a time through the remaining Now Playing title/artist, gestures and sheet, controls, then Stream, Library, Luvs and More. Keep JavaScript routing/playback ownership and iOS/missing-module fallbacks unless an approved slice changes them. Bump `expo.version` for every APK-reaching change and add a specific device checklist.
+6. Make small conventional commits with no AI attribution footer. Push only to `origin/perf/mobile-player-responsiveness`; no PR or merge without the user's instruction.
 
-## Starter prompt
+## Environment notes
 
-Paste this into the cloud session:
-
-> Continue the Allegra Android native UI migration on `peterish8/allegra`, branch `perf/mobile-player-responsiveness`, from the latest remote state. First inspect `git status`, branch, recent commits, and `origin`; preserve existing work. Read `CLAUDE.md`, `apps/mobile/CLAUDE.md`, `.planning/performance-kotlin/HANDOFF-ANDROID-NATIVE-UI.md`, and `.planning/performance-kotlin/CLOUD-CONTINUATION-ANDROID-NATIVE-UI.md`. The latest checkpoint is `10c024c`, which aligns the native queue handle's 1 dp drag threshold with Gesture Handler and bumps the app to 1.29.1. Its tests/build/device behavior are unverified. Finish the Slice 7 queue device check first if an Android device/emulator is available, including the new horizontal/vertical short-drag threshold; otherwise record that proof as unavailable. Run the mobile TS/lint/Jest gates and Android `:app:testDebugUnitTest`, report exact outcomes, then continue the remaining native UI migration one vertical slice at a time as the main handoff specifies. Commit with conventional messages and no AI footer. Push only to `origin/perf/mobile-player-responsiveness`; do not open a PR, merge, or push to `main` without my instruction.
+- Dependencies are installed with `cd apps/mobile && npm ci --ignore-scripts`; use a writable cache such as `/tmp/allegra-npm-cache`.
+- JDK 17.0.20.1+1, Gradle 8.14.3, Android SDK 36, build tools 36.0.0, platform-tools, and NDK 27.1.12297006 are available under `/workspace`.
+- Set `ANDROID_HOME` and `ANDROID_SDK_ROOT` to `/workspace/.android-sdk`, `ANDROID_USER_HOME=/tmp/allegra-android-user` (do not also set `ANDROID_SDK_HOME`), and `GRADLE_USER_HOME` to a writable directory. The system Java trust store at `/etc/ssl/certs/java/cacerts` is needed for the proxy CA. Do not disable TLS checks.
+- Gradle and GitHub requests have returned HTTP 503 from the proxy in this session. These are external service failures, not test failures; retry when the repositories recover.
