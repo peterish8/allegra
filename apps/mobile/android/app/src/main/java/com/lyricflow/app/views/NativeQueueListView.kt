@@ -303,7 +303,9 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
             }
             MotionEvent.ACTION_MOVE -> {
                 if (handleDownPos >= 0) {
-                    if (dragPos < 0 && abs(event.y - downY) >= 1f) beginDrag(handleDownPos)
+                    if (dragPos < 0 && QueueMath.beginsReorderDrag(event.x - downX, event.y - downY, density)) {
+                        beginDrag(handleDownPos)
+                    }
                     if (dragPos >= 0 && !settling) {
                         val dy = event.y - downY
                         dragDy.snap(dy)
