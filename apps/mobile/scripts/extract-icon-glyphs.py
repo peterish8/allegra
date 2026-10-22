@@ -39,6 +39,9 @@ GLYPHS = [
     ('MaterialCommunityIcons', 'comment-quote-outline'),
     ('MaterialCommunityIcons', 'fullscreen'),
     ('MaterialCommunityIcons', 'fullscreen-exit'),
+    ('MaterialCommunityIcons', 'account-multiple'),
+    ('MaterialCommunityIcons', 'laptop'),
+    ('MaterialCommunityIcons', 'cellphone'),
 ]
 
 
