@@ -14,6 +14,7 @@ class NativeAlphabetRailModule : Module() {
 
             Prop("letters") { view: NativeAlphabetRailView, json: String? -> view.setLetters(json) }
             Prop("palette") { view: NativeAlphabetRailView, json: String? -> view.setPalette(json) }
+            Prop("lineHeight") { view: NativeAlphabetRailView, dp: Double? -> view.setLineHeight(dp) }
 
             OnViewDidUpdateProps { view: NativeAlphabetRailView -> view.commit() }
         }

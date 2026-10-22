@@ -17,6 +17,7 @@ import android.view.animation.PathInterpolator
 import androidx.core.view.AccessibilityDelegateCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import com.facebook.react.touch.ReactHitSlopView
 import com.lyricflow.app.island.IslandFonts
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
@@ -34,11 +35,23 @@ import kotlin.math.roundToInt
  * handler (the selection haptic and the list's jump). The view is larger than the rail (the bubble sits outside it);
  * only the rail takes touches, the rest of the view lets them through.
  */
-class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
+class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoView(context, appContext), ReactHitSlopView {
     private val onPick by EventDispatcher<Map<String, Any>>()
 
     private val density = resources.displayMetrics.density
     private val hairlineDp = max(1f, (0.4f * density).roundToInt().toFloat()) / density
+
+    /**
+     * React Native finds the target of a touch by walking views whose children may lie outside their parent (overflow
+     * is visible), so this view, which is larger than the rail to make room for the bubble, would otherwise be the
+     * target of taps on the list rows beside the rail. A negative hit slop shrinks its target to the rail itself.
+     */
+    override val hitSlopRect: Rect = Rect(
+        -(AlphabetRailMath.REACH_LEFT * density).roundToInt(),
+        -(AlphabetRailMath.REACH_V * density).roundToInt(),
+        0,
+        -(AlphabetRailMath.REACH_V * density).roundToInt(),
+    )
 
     // ── Props, applied in one batch (commit) ────────────────────────────────
     private var lettersJson = ""
@@ -47,6 +60,7 @@ class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoVie
     private var appliedPaletteJson = ""
     private var propsDirty = false
     private var letters: List<RailLetter> = emptyList()
+    private var lineH = AlphabetRailMath.LETTER_H
 
     private var inkSoft = Color.LTGRAY
     private var wave = Color.YELLOW
@@ -97,6 +111,7 @@ class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoVie
 
     fun setLetters(json: String?) { lettersJson = json.orEmpty(); propsDirty = true }
     fun setPalette(json: String?) { paletteJson = json.orEmpty(); propsDirty = true }
+    fun setLineHeight(dp: Double?) { lineH = (dp ?: AlphabetRailMath.LETTER_H.toDouble()).toFloat(); propsDirty = true }
 
     fun commit() {
         if (!propsDirty) return
@@ -112,10 +127,11 @@ class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoVie
         }
         if (lettersJson != appliedLettersJson) {
             appliedLettersJson = lettersJson
+            val before = letters.getOrNull(lastPicked)
             letters = AlphabetRailMath.parse(lettersJson)
-            // The letters changed under a thumb (or a step): nothing is picked any more.
+            // The letters changed under a thumb: the same letter is still the last pick, so it does not fire again.
             if (active >= letters.size) active = -1
-            lastPicked = -1
+            if (letters.getOrNull(lastPicked) != before) lastPicked = -1
         }
         invalidate()
     }
@@ -145,6 +161,7 @@ class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoVie
         if (visible == isVisible) return
         visible = isVisible
         if (visible) {
+            resumeFade()
             invalidate()
         } else {
             Choreographer.getInstance().removeFrameCallback(frame)
@@ -152,9 +169,18 @@ class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoVie
         }
     }
 
+    /** A fade that was cut short by the view being hidden carries on from where it stopped. */
+    private fun resumeFade() {
+        if (bubbleAlpha == fadeTo) return
+        fadeFrom = bubbleAlpha
+        fadeStart = SystemClock.uptimeMillis()
+        wake()
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         if (removeFonts == null) removeFonts = IslandFonts.load(context) { post { applyFonts(); invalidate() } }
+        resumeFade()
     }
 
     override fun onDetachedFromWindow() {
@@ -182,7 +208,7 @@ class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoVie
 
     private fun railLeft() = AlphabetRailMath.REACH_LEFT * density
     private fun railTop() = AlphabetRailMath.REACH_V * density
-    private fun railHeightPx() = AlphabetRailMath.railHeight(letters.size, hairlineDp) * density
+    private fun railHeightPx() = AlphabetRailMath.railHeight(letters.size, hairlineDp, lineH) * density
 
     // ── Touch ───────────────────────────────────────────────────────────────
 
@@ -192,6 +218,8 @@ class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoVie
         val at = AlphabetRailMath.pick(y - railTop(), h, letters.size)
         val entry = letters.getOrNull(at) ?: return
         active = at
+        // TalkBack steps carry on from where the thumb is.
+        stepFrom = at
         bubbleLetter = entry.letter
         bubbleY = AlphabetRailMath.bubbleY(y - railTop(), h)
         fade(1f)
@@ -264,12 +292,12 @@ class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoVie
 
         // Letters on 15 dp lines (explicit lineHeight: the spare leading is split evenly above and below the glyphs).
         val m = letterPaint.fontMetrics
-        val baseline = AlphabetRailMath.baselineInLine(m.ascent / density, m.descent / density) * density
+        val baseline = AlphabetRailMath.baselineInLine(m.ascent / density, m.descent / density, lineH) * density
         val cx = left + AlphabetRailMath.RAIL_W * density / 2f
         for ((i, l) in letters.withIndex()) {
             letterPaint.color = if (i == active) wave else inkSoft
             val tw = letterPaint.measureText(l.letter)
-            canvas.drawText(l.letter, cx - tw / 2f, top + AlphabetRailMath.letterTop(i, hairlineDp) * density + baseline, letterPaint)
+            canvas.drawText(l.letter, cx - tw / 2f, top + AlphabetRailMath.letterTop(i, hairlineDp, lineH) * density + baseline, letterPaint)
         }
 
         if (bubbleAlpha > 0.001f && bubbleLetter.isNotEmpty()) drawBubble(canvas, left, top)
@@ -298,6 +326,10 @@ class NativeAlphabetRailView(context: Context, appContext: AppContext) : ExpoVie
             super.onInitializeAccessibilityNodeInfo(host, info)
             info.className = "android.widget.SeekBar"
             info.contentDescription = "Jump to a letter"
+            // The node is the rail, not the larger view that makes room for the bubble.
+            val l = railLeft().roundToInt()
+            val t = railTop().roundToInt()
+            info.setBoundsInParent(Rect(l, t, l + (AlphabetRailMath.RAIL_W * density).roundToInt(), t + railHeightPx().roundToInt()))
             // The React Native rail had the label and the adjustable role but no way to move: letters can be stepped here.
             if (letters.isNotEmpty()) {
                 info.stateDescription = letters.getOrNull(stepFrom)?.letter

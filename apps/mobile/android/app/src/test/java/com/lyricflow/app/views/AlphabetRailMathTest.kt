@@ -10,6 +10,12 @@ class AlphabetRailMathTest {
         assertEquals(16f, AlphabetRailMath.railHeight(0, 0f), 0f)
     }
 
+    @Test fun `the rail and the letters follow the line height JavaScript hands down`() {
+        assertEquals(16f + 26 * 15.2381f + 1f, AlphabetRailMath.railHeight(26, 0.5f, 15.2381f), 1e-3f)
+        assertEquals(8.5f + 2 * 15.2381f, AlphabetRailMath.letterTop(2, 0.5f, 15.2381f), 1e-3f)
+        assertEquals(1f + 10f, AlphabetRailMath.baselineInLine(-10f, 3f, 15f), 1e-4f)
+    }
+
     @Test fun `a touch picks the letter under it like railPick`() {
         // 10 letters on a 200 dp rail: each owns 20 dp.
         assertEquals(0, AlphabetRailMath.pick(0f, 200f, 10))

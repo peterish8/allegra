@@ -5,7 +5,7 @@
  * (`nativeAlphabetRailAvailable()`).
  */
 import React, { useCallback, useMemo } from 'react';
-import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { PixelRatio, Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { requireNativeView } from 'expo';
 import {
   RAIL_REACH_LEFT,
@@ -14,6 +14,7 @@ import {
   railHeight,
   railIndexOf,
   railLettersJson,
+  railLineHeight,
   railPalette,
   type RailEntry,
 } from './railPayload';
@@ -21,6 +22,8 @@ import {
 interface NativeAlphabetRailViewProps {
   letters: string;
   palette: string;
+  /** One letter's line in dp (`railLineHeight`). */
+  lineHeight: number;
   onPick: (event: { nativeEvent: { index: number } }) => void;
   style?: StyleProp<ViewStyle>;
 }
@@ -53,14 +56,17 @@ const NativeAlphabetRail: React.FC<NativeAlphabetRailProps> = ({ letters, palett
     if (index !== null) onPick(index);
   }, [onPick]);
   if (!NativeView) return null;
-  // The box is the rail's own size; the view reaches out of it (overflow is visible) so the bubble has room.
-  const h = railHeight(letters.length, StyleSheet.hairlineWidth);
+  // The box is the rail's own size; the view reaches out of it (overflow is visible) so the bubble has room. Its lines
+  // are React Native's: 15 dp scaled by the font scale and rounded up to a pixel.
+  const lineHeight = railLineHeight(PixelRatio.getFontScale(), PixelRatio.get());
+  const h = railHeight(letters.length, StyleSheet.hairlineWidth, lineHeight);
   return (
     <View style={{ width: RAIL_W, height: h }}>
       <NativeView
         style={[styles.view, { left: -RAIL_REACH_LEFT, top: -RAIL_REACH_V, width: RAIL_W + RAIL_REACH_LEFT, height: h + 2 * RAIL_REACH_V }]}
         letters={json}
         palette={palette}
+        lineHeight={lineHeight}
         onPick={onEvent}
       />
     </View>

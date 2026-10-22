@@ -3,6 +3,7 @@ import {
   RAIL_REACH_V,
   railHeight,
   railIndexOf,
+  railLineHeight,
   railLettersJson,
   railPalette,
   shouldUseNativeRail,
@@ -23,6 +24,17 @@ describe('railPayload', () => {
   it('sizes the rail like its styles', () => {
     expect(railHeight(5, 0.5)).toBe(16 + 75 + 1);
     expect(railHeight(26, 1)).toBe(16 + 390 + 2);
+    expect(railHeight(10, 0.5, 15.5)).toBe(16 + 155 + 1);
+  });
+
+  it('rounds a line up to a whole pixel after the font scale, as React Native does', () => {
+    // 15 dp at density 2.625 is 39.375 px: rounded up to 40 px = 15.238 dp.
+    expect(railLineHeight(1, 2.625)).toBeCloseTo(40 / 2.625, 6);
+    expect(railLineHeight(1, 2)).toBe(15);
+    expect(railLineHeight(1.3, 3)).toBeCloseTo(Math.ceil(15 * 1.3 * 3) / 3, 6);
+    // Nonsense inputs keep the plain 15.
+    expect(railLineHeight(0, 3)).toBe(15);
+    expect(railLineHeight(1, NaN)).toBe(15);
   });
 
   it('keeps the view reach in step with the bubble (56 dp, 40 dp left of a 26 dp rail)', () => {

@@ -26,8 +26,12 @@ object AlphabetRailMath {
     const val REACH_LEFT = BUBBLE_RIGHT + BUBBLE - RAIL_W
     const val REACH_V = BUBBLE / 2f
 
-    /** The rail's height: padding, the letters on a 15 dp line each, and the hairline border either side. */
-    fun railHeight(count: Int, hairline: Float): Float = 2 * PAD_V + count * LETTER_H + 2 * hairline
+    /**
+     * The rail's height: padding, the letters on a [lineH] dp line each, and the hairline border either side. React
+     * Native scales `lineHeight: 15` by the font scale and rounds it up to a whole pixel, so JavaScript works out the
+     * line (`railLineHeight`) and hands it down; it is 15 only by default.
+     */
+    fun railHeight(count: Int, hairline: Float, lineH: Float = LETTER_H): Float = 2 * PAD_V + count * lineH + 2 * hairline
 
     /** Which letter a touch at [y] (0 = the rail's top) lands on: `railPick`. */
     fun pick(y: Float, railHeight: Float, count: Int): Int {
@@ -39,7 +43,7 @@ object AlphabetRailMath {
     fun bubbleY(y: Float, railHeight: Float): Float = max(0f, min(railHeight, y))
 
     /** Top of letter [i]'s line, from the rail's top. */
-    fun letterTop(i: Int, hairline: Float): Float = hairline + PAD_V + i * LETTER_H
+    fun letterTop(i: Int, hairline: Float, lineH: Float = LETTER_H): Float = hairline + PAD_V + i * lineH
 
     /** The letter a step of [delta] from [current] (-1 for none) reaches, kept on the rail. */
     fun step(current: Int, delta: Int, count: Int): Int {
@@ -52,7 +56,7 @@ object AlphabetRailMath {
      * Where the explicit 15 dp line puts a letter's baseline, from the line's top: React Native splits the spare
      * leading evenly above and below the glyphs' ascent and descent (both passed in dp, ascent negative as Android has it).
      */
-    fun baselineInLine(ascent: Float, descent: Float): Float = (LETTER_H - (descent - ascent)) / 2f - ascent
+    fun baselineInLine(ascent: Float, descent: Float, lineH: Float = LETTER_H): Float = (lineH - (descent - ascent)) / 2f - ascent
 
     /** The `letters` JSON from `railLettersJson` (TypeScript); malformed input gives no letters. */
     fun parse(json: String?): List<RailLetter> {
