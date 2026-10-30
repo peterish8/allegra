@@ -56,6 +56,35 @@ describe('LuvLink rooms', () => {
     }), 'stale_revision');
   });
 
+  it('allows controllers to pause and the leader to checkpoint a consumed queue entry', async () => {
+    const t = backend();
+    const host = asUser(t, 'users:queue-host');
+    const guest = asUser(t, 'users:queue-guest');
+    const { roomId, code } = await host.mutation(api.luvLink.createRoom, { displayName: 'Host' });
+    await guest.mutation(api.luvLink.joinRoom, { code, displayName: 'Guest' });
+    await host.mutation(api.luvLink.setController, { roomId, targetUserId: 'users:queue-guest', canControl: true });
+    const { entryId } = await host.mutation(api.luvLink.addQueueItem, { roomId, commandId: 'queue-add-test-001', song, next: false });
+    await host.mutation(api.luvLink.publishPlayback, {
+      roomId, commandId: 'queue-play-test-01', expectedLeaderEpoch: 1, expectedSequence: 0,
+      trackEpoch: 1, intent: 'control', queueEntryId: entryId, song, positionSec: 0, playing: true, playbackRate: 1, effectiveAtMs: Date.now()
+    });
+    await host.mutation(api.luvLink.reportReady, { roomId, trackEpoch: 1, ready: true });
+    await guest.mutation(api.luvLink.reportReady, { roomId, trackEpoch: 1, ready: true });
+    const anchor = await host.query(api.luvLink.getPlayback, { roomId });
+    const pause = await guest.mutation(api.luvLink.publishPlayback, {
+      roomId, commandId: 'queue-pause-test-1', expectedLeaderEpoch: 1, expectedSequence: anchor!.sequence,
+      trackEpoch: 1, intent: 'control', queueEntryId: entryId, song, positionSec: 12, playing: false, playbackRate: 1, effectiveAtMs: Date.now()
+    });
+    await host.mutation(api.luvLink.publishPlayback, {
+      roomId, commandId: 'queue-checkpoint-1', expectedLeaderEpoch: 1, expectedSequence: pause.sequence,
+      trackEpoch: 1, intent: 'checkpoint', queueEntryId: entryId, song, positionSec: 12, playing: false, playbackRate: 1, effectiveAtMs: Date.now()
+    });
+    await expectCode(host.mutation(api.luvLink.publishPlayback, {
+      roomId, commandId: 'queue-reuse-test-1', expectedLeaderEpoch: 1, expectedSequence: pause.sequence + 1,
+      trackEpoch: 2, intent: 'control', queueEntryId: entryId, song, positionSec: 0, playing: true, playbackRate: 1, effectiveAtMs: Date.now()
+    }), 'queue_item_missing');
+  });
+
   it('builds bounded Blend-ranked group picks only from opted-in members and clears cache on withdrawal', async () => {
     const t = backend();
     const host = asUser(t, 'users:host');
@@ -218,6 +247,20 @@ describe('LuvLink rooms', () => {
       trackEpoch: 2, intent: 'natural_end', queueEntryId: queued.entryId, song: nextSong, positionSec: 0, playing: true, playbackRate: 1, effectiveAtMs: Date.now()
     });
     expect((await host.query(api.luvLink.getQueue, { roomId: created.roomId })).entries).toHaveLength(0);
+  });
+
+  it('prevents changing room mode until the old speaker confirms its handoff', async () => {
+    const t = backend();
+    const host = asUser(t, 'users:handoff-host');
+    const guest = asUser(t, 'users:handoff-guest');
+    const { roomId, code } = await host.mutation(api.luvLink.createRoom, { displayName: 'Host' });
+    await guest.mutation(api.luvLink.joinRoom, { code, displayName: 'Guest' });
+    await host.mutation(api.luvLink.setRoomMode, { roomId, mode: 'speaker' });
+    const { leaderEpoch } = await host.mutation(api.luvLink.setSpeaker, { roomId, commandId: 'mode-handoff-test', targetUserId: 'users:handoff-guest' });
+    await expectCode(host.mutation(api.luvLink.setRoomMode, { roomId, mode: 'listen' }), 'handoff_pending');
+    await host.mutation(api.luvLink.acknowledgeSpeakerHandoff, { roomId, expectedLeaderEpoch: leaderEpoch });
+    await host.mutation(api.luvLink.setRoomMode, { roomId, mode: 'listen' });
+    expect((await host.query(api.luvLink.getRoom, { roomId }))?.mode).toBe('listen');
   });
 
   it('revokes member reads immediately when a listener leaves', async () => {

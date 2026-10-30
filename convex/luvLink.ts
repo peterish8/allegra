@@ -467,8 +467,13 @@ export const publishPlayback = mutation({
       if (args.positionSec > args.song.duration + 1) fail('invalid_playback', 'Playback position is outside the song.');
     } else if (args.positionSec !== 0 || args.playing) fail('invalid_playback', 'Playback needs a song.');
     if (args.queueEntryId !== null) {
-      const entry = await ctx.db.query('luvLinkQueue').withIndex('by_roomId_and_entryId', q => q.eq('roomId', room._id).eq('entryId', args.queueEntryId!)).unique();
-      if (!entry || !args.song || entry.song.ref !== args.song.ref) fail('queue_item_missing', 'The requested song is no longer queued.');
+      // The current anchor keeps its queue identity after the entry is consumed. Controls for
+      // that same track must not require the deleted queue row to still exist.
+      const currentEntry = old && args.trackEpoch === old.trackEpoch && args.queueEntryId === old.queueEntryId && args.song?.ref === old.song?.ref;
+      if (!currentEntry) {
+        const entry = await ctx.db.query('luvLinkQueue').withIndex('by_roomId_and_entryId', q => q.eq('roomId', room._id).eq('entryId', args.queueEntryId!)).unique();
+        if (!entry || !args.song || entry.song.ref !== args.song.ref) fail('queue_item_missing', 'The requested song is no longer queued.');
+      }
     }
     if (args.trackEpoch < (old?.trackEpoch ?? 0) || args.trackEpoch > (old?.trackEpoch ?? 0) + 1) fail('stale_track', 'The track changed. Refresh and try again.');
     if (args.intent === 'natural_end' && (userId !== room.leaderUserId || !old?.playing || !old.song || args.queueEntryId === null || args.trackEpoch !== old.trackEpoch + 1)) fail('not_leader', 'Only the elected output can commit one natural queue advance.');
@@ -699,6 +704,7 @@ export const setRoomMode = mutation({
     const userId = await requireUser(ctx);
     const { room, member } = await requireMember(ctx, args.roomId, userId);
     if (member.role !== 'host') fail('not_allowed', 'Only the LuvLink host can change room mode.');
+    if (room.handoffFromUserId && args.mode !== room.mode) fail('handoff_pending', 'Wait for the previous speaker to pause before changing LuvLink mode.');
     const rows = await ctx.db.query('luvLinkMembers').withIndex('by_roomId_and_joinedAtMs', q => q.eq('roomId', room._id)).take(MAX_MEMBERS);
     for (const row of rows) await ctx.db.patch(row._id, { mode: args.mode === 'speaker' && row.userId === room.leaderUserId ? 'speaker' : 'listen' });
     await ctx.db.patch(room._id, { mode: args.mode, revision: room.revision + 1 });
