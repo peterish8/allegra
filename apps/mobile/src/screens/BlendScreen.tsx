@@ -112,7 +112,11 @@ export const BlendScreen: React.FC = () => {
   if (error || !detail) {
     return (
       <SafeAreaView style={s.screen} edges={['top']}>
-        <View style={s.panel}><Text style={s.panelBody}>{error ?? 'Loading your Blend…'}</Text></View>
+        <View style={s.panel}>
+          <Text style={s.panelBody}>{error ?? (!account.loading && !account.signedIn ? 'Sign in to see this Blend.' : 'Loading your Blend…')}</Text>
+          {error && token ? <Pressable accessibilityRole="button" accessibilityLabel="Retry loading Blend" onPress={() => { setError(null); void load(); }}><Text style={s.panelBody}>Try again</Text></Pressable> : null}
+          {!account.loading && !account.signedIn ? <Pressable accessibilityRole="button" accessibilityLabel="Sign in to see this Blend" onPress={() => { void account.signInWithGoogle(); }}><Text style={s.panelBody}>Sign in</Text></Pressable> : null}
+        </View>
       </SafeAreaView>
     );
   }
