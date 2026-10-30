@@ -214,4 +214,18 @@ describe('first-party LuvLink playback', () => {
     expect(commitOwnedLuvLinkPlayback).toHaveBeenCalledTimes(1);
     expect(commitOwnedLuvLinkPlayback).toHaveBeenCalledWith(expect.objectContaining({ intent: 'natural_end', queueEntryId: 'entry-1', song: next.song }));
   });
+
+  it('advances the queue once when native playback reports the song finished', async () => {
+    const next: LuvLinkQueueEntry = { entryId: 'entry-finished', roomId: 'room-1', order: 0, song: { ...song, ref: 'saavn:track-2' as typeof song.ref }, addedByUserId: 'guest', addedByName: 'G', createdAtMs: Date.now() };
+    readyPlayer(true);
+    setRoom(room('listen'), anchor({ playing: true, trackEpoch: 42 }));
+    useLuvLinkStore.setState({ ownedQueue: { revision: 2, entries: [next] } });
+    stop = startOwnedLuvLinkSync();
+    const native = jest.requireMock('../NativeAudioPlayer') as { emitStatus: (event: { finished: boolean }) => void };
+    native.emitStatus({ finished: true });
+    native.emitStatus({ finished: true });
+    await Promise.resolve();
+    expect(commitOwnedLuvLinkPlayback).toHaveBeenCalledTimes(1);
+    expect(commitOwnedLuvLinkPlayback).toHaveBeenCalledWith(expect.objectContaining({ intent: 'natural_end', queueEntryId: 'entry-finished' }));
+  });
 });
