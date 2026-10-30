@@ -1,6 +1,7 @@
 # Roadmap — state, blockers, next
 
-Updated 2026-10-22.
+Updated 2026-10-22. See the [integration status and recheck list](./INTEGRATION-STATUS.md) for
+what each area's evidence does and does not establish.
 
 ## Where things stand
 
