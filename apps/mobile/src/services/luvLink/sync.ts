@@ -451,8 +451,7 @@ export function startOwnedLuvLinkSync(): () => void {
     if (!event?.finished || !state().ownedRoom || !shouldOutput()) return;
     const anchor = state().ownedPlayback;
     if (!anchor || anchor.leaderUserId !== state().ownedUserId || lastAdvanceEpoch === anchor.trackEpoch) return;
-    lastAdvanceEpoch = anchor.trackEpoch;
-    void handleOwnedLuvLinkNext('natural_end');
+    void handleOwnedLuvLinkNext('natural_end').catch(error => state().announce(error instanceof Error ? error.message : 'LuvLink skip could not sync.'));
   });
   checkpoint = setInterval(() => {
     const current = state();
