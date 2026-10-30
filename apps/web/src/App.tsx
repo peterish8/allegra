@@ -9,6 +9,7 @@ import type { CSSProperties, MouseEvent } from 'react';
 
 import type { AlbumSummary, ArtistProfile, HomePayload, LyricLine, LyricsPayload, SharedPlaylist, UnifiedSong } from '@shared/types';
 import type { DjTurnResponse } from '@shared/dj';
+import type { LuvLinkPlaybackAnchor } from '@shared/luvLink';
 import type { PerformanceAttempt } from '@shared/performanceTrace';
 import { deriveMoodPrompts } from '@shared/moodPrompts';
 import { recommendArtistNames } from '@shared/genres';
@@ -31,6 +32,9 @@ import { LibraryPage } from './components/LibraryPage';
 import { ImportPage } from './components/import/ImportPage';
 import { BlendJoinPage } from './components/blend/BlendJoinPage';
 import { LuvLinkPage } from './components/luvLink/LuvLinkPage';
+import { LuvLinkSessionProvider } from './components/luvLink/LuvLinkSession';
+import { waitForAudioMetadata, waitForAudioSource } from './components/luvLink/audioReady';
+import { needsSeek } from './components/luvLink/sync';
 import { BlendPage } from './components/blend/BlendPage';
 import { BlendsPage } from './components/blend/BlendsPage';
 import { DynamicAura } from './components/DynamicAura';
@@ -68,7 +72,7 @@ import { ImportChip } from './components/import/ImportChip';
 import { lockScroll } from './lib/scrollLock';
 import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
-import { ApiError, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
+import { ApiError, resolveApiUrl, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
 import { isLyricsUpgrade, LYRICS_UPGRADE_DELAYS_MS, wantsLyricsUpgrade } from './lib/lyricsUpgrade';
 import { catalogSongId, shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
 import { resolveSnapshotForPlayback, snapshotForSong, snapshotToDisplaySong, useConnect } from './hooks/useConnect';
@@ -1821,11 +1825,39 @@ export default function App() {
     />
   );
 
+  /** Puts a committed LuvLink anchor into the layout's player. False means the browser wants a tap first. */
+  const applyLuvLinkPlayback = async (anchor: LuvLinkPlaybackAnchor, resolvePositionSec: () => number): Promise<boolean> => {
+    if (remotePlayback) return false;
+    if (!anchor.song) { await audio.requestPlayback(false); return true; }
+    const currentRef = audio.currentSong ? snapshotForSong(audio.currentSong)?.ref : null;
+    if (currentRef !== anchor.song.ref) {
+      const match = await resolveSnapshotForPlayback(anchor.song).catch(() => null);
+      if (!match) return false;
+      // The room owns what plays next: no local radio or queue behind the room's song.
+      radioActiveRef.current = false;
+      setDjLive(false);
+      radio.stop();
+      // Loaded without autoplay: the room decides when it starts. The element only points at the new
+      // stream after React renders, so a seek made now would land on the previous track.
+      audio.loadForConnect(match, [match], false);
+      const element = audio.audioRef.current;
+      if (!element || !(await waitForAudioSource(element, resolveApiUrl(match.streamUrl)))) return false;
+    }
+    const element = audio.audioRef.current;
+    if (!element || !(await waitForAudioMetadata(element))) return false;
+    // Read after loading: a slow stream must not start behind the room by however long it took to open.
+    const positionSec = resolvePositionSec();
+    if (needsSeek(element.currentTime, positionSec, anchor.playing)) await audio.seek(positionSec);
+    await audio.requestPlayback(anchor.playing);
+    return !anchor.playing || audio.audioRef.current?.paused === false;
+  };
+
   return (
     <PlaylistsContext.Provider value={playlists}>
     <QueueActionsContext.Provider value={queueActions}>
     <DjSessionContext.Provider value={dj}>
     <DjVoiceContext.Provider value={djVoice}>
+    <LuvLinkSessionProvider signedIn={knownAccount !== null} userId={knownAccount?.userId ?? null} currentSong={remotePlayback || !audio.currentSong ? null : snapshotForSong(audio.currentSong)} currentSongKey={remotePlayback ? null : audio.currentSong?.id ?? null} isPlaying={audio.isPlaying} isBuffering={audio.isBuffering} audioRef={audio.audioRef} onStopOutput={stopLuvLinkOutput} onApplyPlayback={applyLuvLinkPlayback}>
     <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme="dark" data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
       {immersiveOpen ? null : (
         <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={settings.appBackground === 'glow' ? playingPalette : shaderPalette} variant={settings.appBackground} />
@@ -1951,24 +1983,7 @@ export default function App() {
         ) : view === 'blendJoin' && inviteCode ? (
           <BlendJoinPage key={`${knownAccount?.userId ?? 'guest'}:${inviteCode}`} code={inviteCode} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} />
         ) : view === 'luvLink' ? (
-          <LuvLinkPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} displayName={knownAccount ? accountDisplayName(knownAccount) : 'Listener'} userId={knownAccount?.userId ?? null} inviteCode={inviteCode} roomId={luvLinkRoomId} currentSong={playerSong ? snapshotForSong(playerSong) : null} currentSongKey={playerSong?.id ?? null} isPlaying={playerIsPlaying} positionSec={audio.audioRef.current?.currentTime ?? 0} audioElement={audio.audioRef.current} onSignIn={() => setAuthOpen(true)} onStopOutput={stopLuvLinkOutput} onApplyPlayback={async (anchor, positionSec) => {
-            if (remotePlayback) return false;
-            if (!anchor.song) { await audio.requestPlayback(false); return true; }
-            const currentRef = audio.currentSong ? snapshotForSong(audio.currentSong)?.ref : null;
-            if (currentRef !== anchor.song.ref) {
-              const match = await resolveSnapshotForPlayback(anchor.song).catch(() => null);
-              if (!match) return false;
-              // The room owns what plays next: no local radio or queue behind the room's song.
-              radioActiveRef.current = false;
-              setDjLive(false);
-              radio.stop();
-              audio.selectSong(match, [match]);
-            }
-            await audio.seek(positionSec);
-            if (anchor.playing) await audio.requestPlayback(true);
-            else await audio.requestPlayback(false);
-            return !anchor.playing || audio.audioRef.current?.paused === false;
-          }} />
+          <LuvLinkPage key={knownAccount?.userId ?? 'guest'} displayName={knownAccount ? accountDisplayName(knownAccount) : 'Listener'} inviteCode={inviteCode} roomId={luvLinkRoomId} currentSong={playerSong ? snapshotForSong(playerSong) : null} onSignIn={() => setAuthOpen(true)} />
         ) : view === 'settings' ? (
           <SettingsPage
             account={account.profile && !accountResolving ? { isGuest: account.profile.isGuest, name: account.profile.displayName ?? null, email: account.profile.email ?? null } : null}
@@ -2350,6 +2365,7 @@ export default function App() {
       <OfflineToast visible={offline} />
       <NoticeToast notice={connect.notice} onDone={connect.dismissNotice} />
     </div>
+    </LuvLinkSessionProvider>
     </DjVoiceContext.Provider>
     </DjSessionContext.Provider>
     </QueueActionsContext.Provider>
