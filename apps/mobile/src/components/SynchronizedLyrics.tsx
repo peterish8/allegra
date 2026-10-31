@@ -37,7 +37,6 @@
  */
 import React, { useEffect, useRef, useCallback, useMemo, useState, forwardRef, useImperativeHandle } from 'react';
 import { View, Dimensions, Text, Pressable, StyleSheet, LayoutChangeEvent, TextStyle, ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -54,6 +53,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { FrameCallback, FrameInfo } from 'react-native-reanimated';
 import { DisplayWord, displayWords, isRtlText, LyricWord } from '@shared/wordSync';
+import { continuePlainLyrics, plainLyricsScroll, PLAIN_SCROLL_SETTLE_MS } from '@shared/plainLyrics';
 import { useSettingsStore } from '../store/settingsStore';
 import { usePlayerStore } from '../store/playerStore';
 import { lyricClockAt } from '../playback/lyricClock';
@@ -61,8 +61,8 @@ import { featherAlphas, featherAt, glideSettled, glideStep, lineRestOpacity, LIN
 import { isLowEndDevice } from '../utils/performanceTier';
 import { anchorFooter, anchorScrollY, LineBox, lineOffsets } from '../playback/lyricLayout';
 import InstrumentalWaveform, { isInstrumentalLyric, useIsActiveLine } from './InstrumentalWaveform';
-import { Frosted } from './allegra/Frosted';
-import { Motion, Signal } from '../constants/allegraTheme';
+import { LyricsResumePill } from './LyricsResumePill';
+import { Motion } from '../constants/allegraTheme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -452,6 +452,7 @@ interface SynchronizedLyricsProps {
    * with no glide from where it was when it was hidden). Default on.
    */
   live?: boolean;
+  duration?: number;
 }
 
 export interface SynchronizedLyricsRef {
@@ -474,7 +475,15 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   edgeFade = 0,
   scrollOffset,
   live = true,
+  duration,
 }, ref) => {
+  const plain = lyrics.length > 0 && lyrics.every(line => line.timestamp === 0 && !line.words?.length);
+  const autoScrollPlain = useSettingsStore(s => s.autoScrollPlainLyrics);
+  const setAutoScrollPlain = useSettingsStore(s => s.setAutoScrollPlainLyrics);
+  const songDuration = usePlayerStore(s => s.currentSong?.duration ?? 0);
+  const [plainPaused, setPlainPaused] = useState(false);
+  const [readingPlain, setReadingPlain] = useState(false);
+  useEffect(() => { setPlainPaused(false); setReadingPlain(false); }, [lyrics]);
   // The gap is padding on each row (the same for every line); the text itself
   // carries no margin, so a row's height is exactly text + 2 × gap.
   const { textStyle, gap } = useMemo(() => {
@@ -549,7 +558,8 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
 
   // Selector, not the whole store: this component re-renders while lyrics scroll.
   const lyricsDelay = useSettingsStore(s => s.lyricsDelay);
-  const letters = useSettingsStore(s => s.lyricsHighlight) !== 'lines';
+  const highlight = useSettingsStore(s => s.lyricsHighlight);
+  const letters = !plain && highlight !== 'lines';
   const reduceMotion = useReducedMotion();
   const delaySV = useSharedValue(lyricsDelay);
   useEffect(() => { delaySV.value = lyricsDelay; }, [lyricsDelay, delaySV]);
@@ -604,6 +614,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
 
   // A line goes live LINE_LEAD_S before it is sung, so the page is already on its way.
   const activeIndexDV = useDerivedValue(() => {
+    if (plain) return -1;
     const et = clockSV.value + delaySV.value + LINE_LEAD_S;
     if (timestamps.length === 0) return -1;
     let left = 0, right = timestamps.length - 1, result = -1;
@@ -631,6 +642,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
 
   /** Where the list wants to be: the sung line's centre at `activeLinePosition`. */
   const activeTargetYSV = useDerivedValue(() => {
+    if (plain) return -1;
     const idx = activeIndexDV.value;
     const offsets = itemOffsetsSV.value;
     const heights = itemHeightsSV.value;
@@ -644,6 +656,32 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
 
   // ─── Following the sung line ─────────────────────────────────────
   const scrollYSV = useSharedValue(0);
+  const lastPlainPositionSV = useSharedValue(-1);
+  const plainAnchorTimeSV = useSharedValue(-1);
+  const plainAnchorTopSV = useSharedValue(0);
+  useEffect(() => {
+    plainAnchorTimeSV.value = -1;
+    lastPlainPositionSV.value = -1;
+  }, [lyrics, plainAnchorTimeSV, lastPlainPositionSV]);
+  useAnimatedReaction(
+    () => ({ time: clockSV.value, position: currentTimeSV.value, content: contentHeightSV.value, viewport: containerHeightSV.value, live: liveSV.value, user: isUserScrollingSV.value, paused: plainPaused, enabled: autoScrollPlain }),
+    (now, prev) => {
+      if (!plain || !now.live) return;
+      const seek = lastPlainPositionSV.value >= 0 && Math.abs(now.position - lastPlainPositionSV.value) > 1;
+      lastPlainPositionSV.value = now.position;
+      if (seek) plainAnchorTimeSV.value = -1;
+      else if (prev && ((prev.user && !now.user) || (prev.paused && !now.paused) || (!prev.enabled && now.enabled))) {
+        plainAnchorTimeSV.value = now.time;
+        plainAnchorTopSV.value = scrollYSV.value;
+      }
+      if (!seek && (!autoScrollPlain || plainPaused || now.user)) return;
+      const target = plainAnchorTimeSV.value < 0
+        ? plainLyricsScroll(seek ? now.position : now.time, duration ?? songDuration, now.content, now.viewport)
+        : continuePlainLyrics(now.time, duration ?? songDuration, now.content, now.viewport, plainAnchorTimeSV.value, plainAnchorTopSV.value);
+      scrollYSV.value = target;
+      scrollTo(scrollRef, 0, target, false);
+    },
+  );
   const lastIndexSV = useSharedValue(-1);
   /** How far the list still is from the sung line's place, px. The glide scrolls the list itself, so there is one
    *  channel and nothing to fall out of step (a jump plus a compensating transform flashed one frame a line too high). */
@@ -749,6 +787,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
   );
 
   const notifyScrollState = useCallback((scrolling: boolean) => {
+    setReadingPlain(scrolling);
     onScrollStateChange?.(scrolling);
   }, [onScrollStateChange]);
 
@@ -764,15 +803,16 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
 
   const resumeFollowing = useCallback(() => {
     clearResume();
+    if (plain && (draggingSV.value || flingingSV.value)) return;
     isUserScrollingSV.value = false;
     notifyScrollState(false);
-  }, [clearResume, isUserScrollingSV, notifyScrollState]);
+  }, [clearResume, plain, draggingSV, flingingSV, isUserScrollingSV, notifyScrollState]);
   resumeFollowingRef.current = resumeFollowing;
 
   const scheduleResume = useCallback(() => {
     clearResume();
-    resumeTimer.current = setTimeout(resumeFollowing, AUTO_RESUME_MS);
-  }, [clearResume, resumeFollowing]);
+    resumeTimer.current = setTimeout(resumeFollowing, plain ? PLAIN_SCROLL_SETTLE_MS : AUTO_RESUME_MS);
+  }, [clearResume, resumeFollowing, plain]);
 
   // Scrolling back to the playing line re-attaches on its own — no tap needed.
   useAnimatedReaction(
@@ -819,7 +859,10 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
     onMomentumEnd: () => {
       flingingSV.value = false;
       scrollEndAtSV.value = Date.now();
-      if (isUserScrollingSV.value) runOnJS(scheduleResume)();
+      if (isUserScrollingSV.value) {
+        if (plain) runOnJS(requestResume)();
+        else runOnJS(scheduleResume)();
+      }
     },
   });
 
@@ -834,7 +877,11 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
     },
   }));
 
-  const renderLyricLine = useCallback((item: SyncedLyric, index: number) => (
+  const renderLyricLine = useCallback((item: SyncedLyric, index: number) => plain ? (
+    <View key={`lyric_${index}`} style={{ paddingVertical: gap, paddingHorizontal: 28 }}>
+      <Text style={[styles.lyricText, textStyle]}>{item.text}</Text>
+    </View>
+  ) : (
     <LyricLine
       key={`lyric_${index}`}
       activeIndexSV={activeIndexSV}
@@ -855,7 +902,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
       gap={gap}
       songTitle={songTitle}
     />
-  ), [activeIndexSV, isUserScrollingSV, liveSV, clockSV, delaySV, lyrics, letters, reduceMotion, onLyricPress, handleItemMeasured, textStyle, gap, songTitle]);
+  ), [plain, activeIndexSV, isUserScrollingSV, liveSV, clockSV, delaySV, lyrics, letters, reduceMotion, onLyricPress, handleItemMeasured, textStyle, gap, songTitle]);
 
   return (
     <View style={styles.container}>
@@ -864,6 +911,13 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         scrollEnabled={scrollEnabled}
+        onTouchStart={plain ? () => {
+          clearResume();
+          isUserScrollingSV.value = true;
+          notifyScrollState(true);
+        } : undefined}
+        onTouchEnd={plain ? scheduleResume : undefined}
+        onTouchCancel={plain ? scheduleResume : undefined}
         showsVerticalScrollIndicator={false}
         // Native alpha dissolve of children at the clip edges — no MaskedView.
         // Android only; iOS ignores this prop.
@@ -877,48 +931,39 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
           contentHeightSV.value = h;
         }}
       >
-        <View style={{ height: topSpacerHeight }} />
+        <View style={{ height: plain ? 24 : topSpacerHeight }} />
         {headerContent}
         <View onLayout={handleLinesLayout}>{lyrics.map(renderLyricLine)}</View>
-        <View style={{ height: anchorFooter(viewportHeight, activeLinePosition, bottomSpacerHeight) }} />
+        <View style={{ height: plain ? 48 : anchorFooter(viewportHeight, activeLinePosition, bottomSpacerHeight) }} />
       </Animated.ScrollView>
 
-      {pillDirection !== 0 && (
-        <Pressable
-          style={styles.resumePill}
+      {plain && lyrics.length > 0 ? (
+        <LyricsResumePill
+          icon={plainPaused || readingPlain || !autoScrollPlain ? 'play' : 'pause'}
+          label="Auto-scroll"
+          accessibilityLabel={plainPaused || readingPlain || !autoScrollPlain ? 'Resume lyrics auto-scroll' : 'Pause lyrics auto-scroll'}
+          onPress={() => {
+            if (plainPaused || readingPlain || !autoScrollPlain) {
+              setAutoScrollPlain(true);
+              setPlainPaused(false);
+              resumeFollowing();
+            } else setPlainPaused(true);
+          }}
+        />
+      ) : pillDirection !== 0 && (
+        <LyricsResumePill
+          icon={pillDirection > 0 ? 'arrow-down' : 'arrow-up'}
+          label="Now playing"
+          accessibilityLabel="Back to the playing line"
           onPress={resumeFollowing}
           hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Back to the playing line"
-        >
-          <Frosted radius={18} intensity={50} tint={0.35} />
-          <Ionicons name={pillDirection > 0 ? 'arrow-down' : 'arrow-up'} size={14} color={Signal.wave} />
-          <Text style={styles.resumePillText}>Now playing</Text>
-        </Pressable>
+        />
       )}
     </View>
   );
 });
 
 const styles = StyleSheet.create({
-  // Floating over the lyrics, clear of the transport row below.
-  resumePill: {
-    position: 'absolute',
-    alignSelf: 'center',
-    bottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  resumePillText: {
-    color: Signal.ink,
-    fontSize: 13,
-    fontWeight: '600',
-  },
   container: {
     flex: 1,
     width: '100%',

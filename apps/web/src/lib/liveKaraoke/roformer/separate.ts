@@ -21,6 +21,8 @@ export type SeparateProgress = {
   readonly phase: string;
   readonly ratio: number;
   readonly message?: string;
+  readonly loadedBytes?: number;
+  readonly totalBytes?: number;
 };
 
 let ortModule: typeof OrtNamespace | null = null;
@@ -53,11 +55,15 @@ export async function getSession(
       const ort = await loadOrt();
       const model = await ensureRoformerModel((mp: ModelProgress) => {
         onProgress?.({
-          phase: mp.phase,
+          // Distinguish the on-disk model being verified from the inference session being ready.
+          phase: mp.phase === 'ready' ? 'model-ready' : mp.phase,
           ratio: mp.ratio * 0.8,
-          message: mp.file ? `Model ${mp.file}` : mp.message
+          message: mp.file ? `Model ${mp.file}` : mp.message,
+          loadedBytes: mp.loadedBytes,
+          totalBytes: mp.totalBytes
         });
       }, signal);
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
       onProgress?.({ phase: 'session', ratio: 0.85, message: 'Creating inference session' });
       // ORT Web does not fetch a sibling .onnx.data on its own; hand it the weights.

@@ -1,6 +1,6 @@
 import { Buffer } from 'buffer';
 import { EchoLyricsCascade } from './EchoLyricsCascade';
-import { firstNonNull, kuGou, simpMusic, youLyPlus } from './providers';
+import { allegraVersions, firstNonNull, jioSaavn, kuGou, lrcLib, simpMusic, youLyPlus } from './providers';
 import { mockFetch } from '../testing/mockFetch';
 
 afterEach(() => EchoLyricsCascade.clearCache());
@@ -80,6 +80,54 @@ describe('kuGou', () => {
   });
 });
 
+describe('lrcLib', () => {
+  const credited = { title: 'One Sun One Moon', artist: 'Anirudh Ravichander, Super Subu, M.S Krsna, Heisenberg', duration: 217 };
+  const synced = '[00:02.81] Halki lagan';
+
+  it('falls back to the lead artist when LRCLIB has nothing under the full credit', async () => {
+    const f = mockFetch([
+      ['https://lrclib.net/api/get', url => (url.includes('Super%20Subu') ? null : {
+        trackName: 'One Sun One Moon', artistName: 'Anirudh Ravichander', duration: 217, syncedLyrics: synced,
+      })],
+      ['https://lrclib.net/api/search', []],
+    ]);
+    const hit = await lrcLib(credited);
+    f.restore();
+    expect(hit?.lyrics).toBe(synced);
+    expect(hit?.synced).toBe(true);
+    expect(f.calls.some(url => url.includes('artist_name=Anirudh%20Ravichander&'))).toBe(true);
+  });
+
+  it('asks only once when the credit is a single artist', async () => {
+    const f = mockFetch([['https://lrclib.net/api/search', []]]);
+    const hit = await lrcLib({ title: 'Nothing', artist: 'Anirudh Ravichander', duration: 217 });
+    f.restore();
+    expect(hit).toBeNull();
+    expect(f.calls).toHaveLength(2);
+  });
+
+  it('keeps a full-credit match without looking up the lead artist', async () => {
+    const f = mockFetch([['https://lrclib.net/api/get', {
+      trackName: credited.title, artistName: credited.artist, duration: 217, syncedLyrics: synced,
+    }]]);
+    const hit = await lrcLib(credited);
+    f.restore();
+    expect(hit?.lyrics).toBe(synced);
+    expect(f.calls).toHaveLength(1);
+    expect(f.calls[0]).toContain('Super%20Subu');
+  });
+
+  it('rejects lead-artist search results with a different duration', async () => {
+    const f = mockFetch([['https://lrclib.net/api/search', url => url.includes('Super%20Subu') ? [] : [{
+      trackName: credited.title, artistName: 'Anirudh Ravichander', duration: 300, syncedLyrics: synced,
+    }]]]);
+    const hit = await lrcLib(credited);
+    f.restore();
+    expect(hit).toBeNull();
+    expect(f.calls).toHaveLength(4);
+  });
+});
+
 describe('EchoLyricsCascade.fetchBest', () => {
   it('skips plain results until a synced provider answers', async () => {
     const f = mockFetch([
@@ -106,6 +154,53 @@ describe('EchoLyricsCascade.fetchBest', () => {
     const f = mockFetch([]);
     await expect(EchoLyricsCascade.fetchBest(query)).resolves.toBeNull();
     f.restore();
+  });
+});
+
+describe('Allegra and JioSaavn', () => {
+  const mozhiye = { title: 'Mozhiye', artist: 'Sai Abhyankkar', duration: 232, ref: 'saavn:B4-hLCKJ' };
+  const verified = {
+    success: true,
+    data: {
+      ref: 'saavn:B4-hLCKJ', title: 'Mozhiye', artist: 'Sai Abhyankkar', duration: 232,
+      versions: [
+        { script: 'latin', language: 'ta', lrc: '[00:12.00]<00:12.000>Mozhiye <00:12.800>mozhiye<00:13.600>', syncedAt: 1 },
+        { script: 'native', language: 'ta', lrc: '[00:12.00]மொழியே', syncedAt: 1 },
+      ],
+    },
+  };
+
+  it('lists every listener-synced version, English first, labelled by script', async () => {
+    const f = mockFetch([['https://allegravibe.vercel.app/api/lyrics/verified', verified]]);
+    const hits = await allegraVersions(mozhiye);
+    f.restore();
+    expect(hits.map(h => h.label)).toEqual(['Allegra · English', 'Allegra · Tamil']);
+    expect(hits[0]).toEqual(expect.objectContaining({ provider: 'Allegra', synced: true }));
+    expect(hits[0]?.lyrics).toContain('<00:12.800>mozhiye');
+    expect(f.calls[0]).toContain('ref=saavn%3AB4-hLCKJ');
+  });
+
+  it('puts a listener sync ahead of every other provider', async () => {
+    const f = mockFetch([
+      ['https://allegravibe.vercel.app/api/lyrics/verified', verified],
+      ['https://lrclib.net/api/get', { trackName: 'Mozhiye', syncedLyrics: '[00:05.00]someone else' }],
+    ]);
+    const hit = await EchoLyricsCascade.fetchBest(mozhiye);
+    f.restore();
+    expect(hit?.label).toBe('Allegra · English');
+  });
+
+  it('answers JioSaavn plain text only for a Saavn ref', async () => {
+    const f = mockFetch([['https://www.jiosaavn.com/api.php', { lyrics: 'Hey yen goli sodave<br>Ra you&#039;re my only<br><br><br>Rowdy baby' }]]);
+    const hit = await jioSaavn({ title: 'Rowdy Baby', artist: 'Dhanush', ref: 'saavn:_GIuQbB_' });
+    const gaana = await jioSaavn({ title: 'Rowdy Baby', artist: 'Dhanush', ref: 'gaana:abc' });
+    const none = await jioSaavn({ title: 'Rowdy Baby', artist: 'Dhanush' });
+    f.restore();
+    expect(hit).toEqual(expect.objectContaining({ provider: 'JioSaavn', synced: false, lyrics: "Hey yen goli sodave\nRa you're my only\n\nRowdy baby" }));
+    expect(gaana).toBeNull();
+    expect(none).toBeNull();
+    expect(f.calls).toHaveLength(1);
+    expect(f.calls[0]).toContain('lyrics_id=_GIuQbB_');
   });
 });
 

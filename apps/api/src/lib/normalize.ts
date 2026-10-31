@@ -106,11 +106,19 @@ function electCanonical(
   group: readonly UnifiedSong[],
   albumDiversity: ReadonlyMap<string, number>
 ): UnifiedSong {
+  // Any row's title may name the release ("Tum Hi Ho (From "Aashiqui 2")"); the film's own row is
+  // often titled plainly ("Tum Hi Ho" on "Aashiqui 2").
+  const credited = group.map((song) => creditedRelease(song.title)).find((name): name is string => name !== null) ?? null;
   return [...group].sort((left, right) => {
     // An edit — sped up, slowed, live, karaoke — is never the canonical take of a
     // recording, however many plays it has collected.
     const edit = Number(isDerivative(left)) - Number(isDerivative(right));
     if (edit !== 0) return edit;
+
+    // The release the title names beats any play count: playlists re-list a hit with its plays
+    // under their own cover.
+    const named = Number(onRelease(right.album, credited)) - Number(onRelease(left.album, credited));
+    if (named !== 0) return named;
 
     // Day-lists / "best of" shells often outrank the studio cut on raw plays.
     // Prefer a real release unless the compilation has a clear blowout (~5×).
@@ -143,6 +151,37 @@ function electCanonical(
     // Stable leftover: higher playCount even inside the near-tie band.
     return right.playCount - left.playCount;
   })[0]!;
+}
+
+/** The film or album a title credits: `Tum Hi Ho (From "Aashiqui 2")` → "aashiqui 2". */
+function creditedRelease(title: string): string | null {
+  const named = title.match(/[([]\s*from\s+["“'‘]?([^"”'’)\]]+)["”'’]?\s*[)\]]/iu)?.[1];
+  return named ? flatten(named) || null : null;
+}
+
+/** True when `album` is the credited release ("aashiqui 2" on "Aashiqui 2 (Original Motion Picture Soundtrack)"). */
+function onRelease(album: string | undefined, credited: string | null): boolean {
+  if (!credited || !album) return false;
+  const name = flatten(album);
+  return name === credited || name.startsWith(`${credited} `);
+}
+
+/**
+ * True when `row` sits on the song's own release, by the song's own words: the album `title` (the
+ * song as asked for) or the row's title credits, or the song's single (a film's advance single too).
+ */
+export function isOwnReleaseOf(title: string, row: UnifiedSong): boolean {
+  if (!row.album || isCompilationAlbum(row.album)) return false;
+  return onRelease(row.album, creditedRelease(title)) || onRelease(row.album, creditedRelease(row.title)) || albumMatchesTitle(row);
+}
+
+/**
+ * The year a release came out, from the catalog's cover name (`Aashiqui-2-Hindi-2013-500x500.jpg`).
+ * A recording's earliest release is its original; playlists re-list it years later. Null if unknown.
+ */
+export function releaseYear(song: UnifiedSong): number | null {
+  const year = song.artwork.match(/-((?:19|20)\d{2})(?:-\d{8,14})?-\d+x\d+\.\w+$/u)?.[1];
+  return year ? Number(year) : null;
 }
 
 /** True when album is the song's own single (title ≈ album), not a playlist placement. */
@@ -195,10 +234,13 @@ function isVariousArtists(artist: string): boolean {
   return /\bvarious\s+artists\b/i.test(artist);
 }
 
-/** Playlist / themed day-list / "best of" shells — not the song's own release. */
-function isCompilationAlbum(album: string | undefined): boolean {
+/**
+ * Playlist / themed day-list / "best of" shells — not the song's own release. Includes
+ * "… Classics", "… Mix" / "… Chillout" sets and decade sets ("2010s Party", "90s Love").
+ */
+export function isCompilationAlbum(album: string | undefined): boolean {
   if (!album) return false;
-  return /\b(best of|greatest hits|hits|playlist|world music day|valentine|holi|diwali|christmas|new year|top\s*\d+|chartbusters?|jukebox|collection|anthology|various|tik\s*tok|viral|throwbacks?|trending|essentials|mega\s*mix|party\s*mix|sad\s*songs|love\s*songs|workout|road\s*trip|vibes|moods?)\b/i.test(
+  return /\b(best of|greatest hits|hits|classics|mix|chill\s*out|playlist|world music day|valentine|holi|diwali|christmas|new year|top\s*\d+|(?:19|20)?\d0s|chartbusters?|jukebox|collection|anthology|various|tik\s*tok|viral|throwbacks?|trending|essentials|mega\s*mix|party\s*mix|sad\s*songs|love\s*songs|workout|road\s*trip|vibes|moods?)\b/i.test(
     album
   );
 }

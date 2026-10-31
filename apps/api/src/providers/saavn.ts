@@ -133,6 +133,11 @@ export class SaavnProvider {
     return { ok: false, data: null, reason };
   }
 
+  /** Several songs in one request (`/songs?ids=a,b,c`); the reply's order is not promised. */
+  public async getSongsByIds(ids: readonly string[]): Promise<ProviderResult<SaavnSong[]>> {
+    return this.requestResults('songs', { ids: ids.join(',') });
+  }
+
   public async getSuggestions(
     id: string,
     limit = 10

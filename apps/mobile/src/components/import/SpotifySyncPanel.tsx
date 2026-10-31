@@ -31,6 +31,9 @@ const apiMessage = (error: unknown): string => error instanceof SpotifyApiError 
 const COVER = 52;
 
 const songCount = (total: number): string => `${total} ${total === 1 ? 'song' : 'songs'}`;
+/** A count Spotify wouldn't confirm is not "0 songs": the playlist may well have some. */
+const playlistSongs = (row: SpotifySourcePlaylist): string => (row.totalUnknown ? 'Song count unavailable' : songCount(row.total));
+const queueSongs = (rows: readonly SpotifySourcePlaylist[], total: number): string => (rows.some((row) => row.totalUnknown) ? `${total}+ songs` : songCount(total));
 const ago = (at: number): string => {
   const minutes = Math.round((Date.now() - at) / 60_000);
   if (minutes < 2) return 'just now';
@@ -87,7 +90,7 @@ const SourceRow: React.FC<{
     : run?.state === 'syncing' ? `Matching · ${run.step?.added ?? 0} added`
     : run?.state === 'done' ? `${run.step?.added ?? 0} added${run.step?.reviewNeeded ? ` · ${run.step.reviewNeeded} not exact, skipped` : ''}`
     : run?.state === 'failed' ? run.message
-    : `${songCount(playlist.total)}${lastSyncedAt ? ` · synced ${ago(lastSyncedAt)}` : liked ? ' · saved as likes' : ''}`;
+    : `${playlistSongs(playlist)}${lastSyncedAt ? ` · synced ${ago(lastSyncedAt)}` : liked ? ' · saved as likes' : ''}`;
   return (
     <RiseIn index={index}>
       <Tactile
@@ -97,7 +100,7 @@ const SourceRow: React.FC<{
         haptic="select"
         accessibilityRole={reconnect ? 'button' : 'checkbox'}
         accessibilityState={reconnect ? { disabled: locked } : { checked: selected, disabled: locked }}
-        accessibilityLabel={`${playlist.name}, ${reconnect ? 'reconnect Spotify to include' : songCount(playlist.total)}`}
+        accessibilityLabel={`${playlist.name}, ${reconnect ? 'reconnect Spotify to include' : playlistSongs(playlist)}`}
         style={[styles.row, selected && styles.rowOn]}
       >
         <View ref={coverRef} collapsable={false}><SourceCover playlist={playlist} size={COVER} /></View>
@@ -278,7 +281,7 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
   const processed = [...runs.values()].reduce((sum, run) => sum + ('step' in run && run.step ? run.step.added + run.step.skipped + run.step.reviewNeeded : 0), 0);
   // The work as it happens: the visual ticker at most ticker.perSecond, TalkBack every ticker.summaryMs.
   const ticker = useThrottled(runningId && running && 'step' in running ? spotifyTickerText(byId.get(runningId)?.name ?? '', running.step) : '', 1000 / Motion.ticker.perSecond);
-  const summary = useThrottled(syncing ? `Transferring ${Math.min(doneCount + 1, queue.length)} of ${queue.length}. Matched ${processed} of ${songTotal} songs.` : '', Motion.ticker.summaryMs);
+  const summary = useThrottled(syncing ? `Transferring ${Math.min(doneCount + 1, queue.length)} of ${queue.length}. Matched ${processed} of ${queueSongs(queue, songTotal)}.` : '', Motion.ticker.summaryMs);
 
   return (
     <View ref={panelRef} collapsable={false} style={styles.panel}>
@@ -303,7 +306,7 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
         : status?.connected ? (
           <>
             <View style={styles.listHead}>
-              <Text style={styles.listLabel}>{selected.size > 0 ? `${selected.size} selected · ${songCount(songTotal)}` : `${sources.length} on Spotify`}</Text>
+              <Text style={styles.listLabel}>{selected.size > 0 ? `${selected.size} selected · ${queueSongs(queue, songTotal)}` : `${sources.length} on Spotify`}</Text>
               <Tactile onPress={toggleAll} disabled={syncing || selectable.length === 0} pressScale={0.96} haptic="select" accessibilityRole="checkbox" accessibilityState={{ checked: allOn, disabled: syncing }} accessibilityLabel="Select all" style={[styles.allChip, allOn && styles.allChipOn]}>
                 <Ionicons name={allOn ? 'checkmark-done' : 'checkmark-done-outline'} size={16} color={allOn ? Signal.waveInk : Signal.ink} />
                 <Text style={[styles.allText, allOn && styles.allTextOn]}>All</Text>

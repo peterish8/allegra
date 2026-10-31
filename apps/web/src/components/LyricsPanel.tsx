@@ -18,7 +18,11 @@ import { createPortal } from 'react-dom';
 
 import type { LyricLine, LyricsPayload } from '@shared/types';
 import { displayWords, isRtlText, sweepAt, type DisplayWord } from '@shared/wordSync';
+import { continuePlainLyrics, plainLyricsScroll, PLAIN_SCROLL_SETTLE_MS } from '@shared/plainLyrics';
+import { isInstrumentalLine } from '@shared/lyricsText';
 
+import type { KaraokeStage } from '../hooks/useLiveKaraoke';
+import { KaraokeProgress } from './KaraokeProgress';
 import { IconButton, TactileButton } from './ui';
 import { useNarrowViewport } from '../hooks/useNarrowViewport';
 import { useSettings } from '../hooks/useSettings';
@@ -28,6 +32,8 @@ import { usePlayhead, type Playhead } from '../lib/playhead';
 
 interface LyricsPanelProps {
   readonly lines: LyricLine[];
+  readonly type?: LyricsPayload['type'];
+  readonly duration?: number;
   /** English under each line, by index (translation keeps line order). Null shows the original alone. */
   readonly translations?: readonly string[] | null;
   /** Seconds into the song; the panel subscribes, so its parent does not re-render on each report. */
@@ -53,9 +59,10 @@ interface LyricsPanelProps {
   readonly karaokeActive?: boolean;
   readonly karaokeBusy?: boolean;
   /** 0–1 while preparing karaoke. */
-  readonly karaokeProgressRatio?: number | null;
+  readonly karaokeAriaLabel?: string;
   readonly karaokeDisabled?: boolean;
   readonly karaokeError?: string | null;
+  readonly karaokeStage?: KaraokeStage | null;
   /** Receives the press so the caller can tell a double tap from a single one. */
   readonly onToggleKaraoke?: (event: MouseEvent<HTMLElement>) => void;
   /** Opens the vocal / instrument mix. Shown beside Karaoke while it is on. */
@@ -70,6 +77,7 @@ interface LyricsPanelProps {
   readonly alternativesError?: string | null;
   readonly onLoadAlternatives?: () => void;
   readonly onSelectAlternative?: (alternative: LyricsPayload) => void;
+  readonly onSyncLyrics?: () => void;
   /** Where the wide player wants the ⋯ lyric actions: its top bar's right-hand slot. */
   readonly actionsSlot?: HTMLElement | null;
 }
@@ -95,6 +103,8 @@ const LYRICS_SCALE: Record<LyricsSize, number> = { small: 0.85, medium: 1, large
  */
 export function LyricsPanel({
   lines,
+  type = 'synced',
+  duration = 0,
   translations = null,
   playhead,
   playing = false,
@@ -114,9 +124,10 @@ export function LyricsPanel({
   softFocus = true,
   karaokeActive = false,
   karaokeBusy = false,
-  karaokeProgressRatio = null,
+  karaokeAriaLabel,
   karaokeDisabled = false,
   karaokeError = null,
+  karaokeStage = null,
   onToggleKaraoke,
   onOpenKaraokeMix,
   songId = null,
@@ -127,8 +138,10 @@ export function LyricsPanel({
   alternativesError = null,
   onLoadAlternatives,
   onSelectAlternative,
+  onSyncLyrics,
   actionsSlot = null
 }: LyricsPanelProps) {
+  const plain = type === 'plain';
   const reduced = useReducedMotion();
   const lineRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -144,10 +157,33 @@ export function LyricsPanel({
   /** False until the list has been positioned once, so opening mid-song lands on the line instead of gliding from the top. */
   const positionedRef = useRef(false);
   const [followPaused, setFollowPaused] = useState(false);
+  const [plainPaused, setPlainPaused] = useState(false);
+  const touchingRef = useRef(false);
+  const plainAnchorRef = useRef<{ time: number; top: number } | null>(null);
+  const plainNeedsAnchorRef = useRef(false);
   const [alternativesOpen, setAlternativesOpen] = useState(false);
+  const alternativesCloseRef = useRef<HTMLButtonElement | null>(null);
   const [sourceInfoOpen, setSourceInfoOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!alternativesOpen) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    alternativesCloseRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setAlternativesOpen(false);
+    };
+    // Capture before the player's Escape handler, so this closes the picker only.
+    document.addEventListener('keydown', closeOnEscape, true);
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape, true);
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [alternativesOpen]);
 
   const currentTime = usePlayhead(playhead);
   const [settings, updateSettings] = useSettings();
@@ -156,7 +192,7 @@ export function LyricsPanel({
 
   /** Listener sync nudge in seconds: positive delays the lyrics, negative shows them earlier. */
   const [syncOffset, setSyncOffsetState] = useState(savedOffset);
-  const syncedTime = currentTime - syncOffset;
+  const syncedTime = plain ? currentTime : currentTime - syncOffset;
   const setSyncOffset = useCallback(
     (next: number) => {
       const resolved = clampLyricsOffset(next);
@@ -168,7 +204,7 @@ export function LyricsPanel({
     [rememberOffset, songId, updateSettings]
   );
 
-  const letters = settings.lyricsHighlight === 'letters';
+  const letters = !plain && settings.lyricsHighlight === 'letters';
   const timestamps = useMemo(() => lines.map((line) => line.timestamp), [lines]);
   /** Each line as words that know when they are sung, while lines light letter by letter. */
   const sweeps = useMemo(
@@ -190,7 +226,17 @@ export function LyricsPanel({
       const clock = clockRef.current;
       const time = playing ? lyricClockAt(clock.anchor, clock.at, now, clock.value) : clock.anchor;
       clock.value = time;
-      const live = lineAt(timestamps, time + LINE_LEAD_S);
+      const live = plain ? -1 : lineAt(timestamps, time + LINE_LEAD_S);
+      if (plain && settings.autoScrollPlainLyrics && !plainPaused && !followPausedRef.current) {
+        const container = scrollRef.current;
+        if (container) {
+          isAnimatingRef.current = true;
+          const anchor = plainAnchorRef.current;
+          container.scrollTop = anchor
+            ? continuePlainLyrics(time, duration, container.scrollHeight, container.clientHeight, anchor.time, anchor.top)
+            : plainLyricsScroll(time, duration, container.scrollHeight, container.clientHeight);
+        }
+      }
       if (live !== activeRef.current) {
         activeRef.current = live;
         setActiveIndex(live);
@@ -211,7 +257,7 @@ export function LyricsPanel({
         if (fill.style.visibility !== visibility) fill.style.visibility = visibility;
       });
     },
-    [playing, timestamps, sweeps, reduced]
+    [playing, timestamps, sweeps, reduced, plain, duration, settings.autoScrollPlainLyrics, plainPaused]
   );
 
   // Playing: every frame. Paused: once per change (a seek, a nudge, a new song).
@@ -233,12 +279,21 @@ export function LyricsPanel({
   const nudgeSync = useCallback((delta: number) => setSyncOffset(syncOffset + delta), [setSyncOffset, syncOffset]);
 
   const songKey = useMemo(
-    () => (lines.length > 0 ? `${lines[0]?.timestamp ?? 0}:${lines.length}:${lines[lines.length - 1]?.timestamp ?? 0}` : ''),
-    [lines]
+    () => (lines.length > 0 ? `${songId}:${type}:${lines[0]?.text}:${lines.length}:${lines[lines.length - 1]?.text}` : ''),
+    [lines, songId, type]
   );
   const hasTranslations = translations !== null;
 
+  const anchorPlainFollow = useCallback(() => {
+    const container = scrollRef.current;
+    if (plain && plainNeedsAnchorRef.current && container) {
+      plainAnchorRef.current = { time: playhead.get(), top: container.scrollTop };
+      plainNeedsAnchorRef.current = false;
+    }
+  }, [plain, playhead]);
+
   const pauseFollow = useCallback(() => {
+    if (plain) plainNeedsAnchorRef.current = true;
     if (scrollAnimationRef.current) {
       window.cancelAnimationFrame(scrollAnimationRef.current);
       scrollAnimationRef.current = 0;
@@ -248,16 +303,30 @@ export function LyricsPanel({
     setFollowPaused(true);
     if (resumeTimerRef.current) window.clearTimeout(resumeTimerRef.current);
     resumeTimerRef.current = window.setTimeout(() => {
+      if (touchingRef.current) return;
+      anchorPlainFollow();
       followPausedRef.current = false;
       setFollowPaused(false);
-    }, FOLLOW_RESUME_MS);
-  }, []);
+    }, plain ? PLAIN_SCROLL_SETTLE_MS : FOLLOW_RESUME_MS);
+  }, [plain, anchorPlainFollow]);
+
+  // Release outside the list still ends a held mouse/pen gesture.
+  useEffect(() => {
+    const release = (event: PointerEvent): void => {
+      if (!touchingRef.current || event.pointerType === 'touch') return;
+      touchingRef.current = false;
+      pauseFollow();
+    };
+    document.addEventListener('pointerup', release);
+    return () => document.removeEventListener('pointerup', release);
+  }, [pauseFollow]);
 
   const resumeFollowNow = useCallback(() => {
+    anchorPlainFollow();
     if (resumeTimerRef.current) window.clearTimeout(resumeTimerRef.current);
     followPausedRef.current = false;
     setFollowPaused(false);
-  }, []);
+  }, [anchorPlainFollow]);
 
   useEffect(() => () => {
     if (resumeTimerRef.current) window.clearTimeout(resumeTimerRef.current);
@@ -270,6 +339,10 @@ export function LyricsPanel({
     lastSongKeyRef.current = songKey;
     // A remembered nudge for this song comes back; otherwise timing starts true.
     setSyncOffsetState(savedOffset);
+    setPlainPaused(false);
+    plainAnchorRef.current = null;
+    plainNeedsAnchorRef.current = false;
+    positionedRef.current = false;
     resumeFollowNow();
     if (scrollAnimationRef.current) window.cancelAnimationFrame(scrollAnimationRef.current);
     isAnimatingRef.current = false;
@@ -286,6 +359,13 @@ export function LyricsPanel({
     if (!hasScroll || !container) return;
     const setLead = (): void => {
       container.style.setProperty('--lyrics-lead', `${Math.round(container.clientHeight * ACTIVE_LINE_ANCHOR)}px`);
+      const panel = container.closest<HTMLElement>('.ytm-lyrics');
+      if (!panel) return;
+      const box = container.getBoundingClientRect();
+      const parent = panel.getBoundingClientRect();
+      panel.style.setProperty('--lyrics-scroll-top', `${box.top - parent.top}px`);
+      panel.style.setProperty('--lyrics-scroll-bottom', `${parent.bottom - box.bottom}px`);
+      panel.style.setProperty('--lyrics-scroll-height', `${box.height}px`);
     };
     setLead();
     const observer = new ResizeObserver(setLead);
@@ -360,13 +440,33 @@ export function LyricsPanel({
 
   // Auto-follow active line unless the user is freely scrolling.
   useLayoutEffect(() => {
+    if (plain) return;
     if (followPausedRef.current) return;
     if (loading || lines.length === 0) return;
     const firstPlacement = !positionedRef.current;
     positionedRef.current = true;
     scrollActiveIntoView(Boolean(reduced) || firstPlacement);
     // Showing or hiding translations changes every line's height, so the active line is placed again.
-  }, [activeIndex, loading, lines.length, reduced, scrollActiveIntoView, followPaused, songKey, hasTranslations]);
+  }, [activeIndex, loading, lines.length, reduced, scrollActiveIntoView, followPaused, songKey, hasTranslations, plain]);
+
+  // Seeks and re-enabling follow place plain text proportionally, including while paused.
+  const lastPlainTime = useRef(currentTime);
+  useLayoutEffect(() => {
+    const seek = Math.abs(currentTime - lastPlainTime.current) > 1;
+    lastPlainTime.current = currentTime;
+    if (!plain || (!seek && (followPaused || plainPaused || !settings.autoScrollPlainLyrics))) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    if (seek) {
+      plainAnchorRef.current = null;
+      plainNeedsAnchorRef.current = false;
+    }
+    isAnimatingRef.current = true;
+    const anchor = plainAnchorRef.current;
+    container.scrollTop = anchor
+      ? continuePlainLyrics(currentTime, duration, container.scrollHeight, container.clientHeight, anchor.time, anchor.top)
+      : plainLyricsScroll(currentTime, duration, container.scrollHeight, container.clientHeight);
+  }, [plain, currentTime, duration, followPaused, plainPaused, settings.autoScrollPlainLyrics, lines, hasTranslations]);
 
   const handleScroll = useCallback(() => {
     // Our own animation drives scrollTop every frame too, so ignore scroll events while it runs.
@@ -398,13 +498,7 @@ export function LyricsPanel({
     setAlternativesOpen(!alternativesOpen);
   };
 
-  const karaokeLabel = karaokeBusy
-    ? karaokeProgressRatio != null
-      ? `Preparing ${Math.round(karaokeProgressRatio * 100)}%`
-      : 'Preparing…'
-    : karaokeActive
-      ? 'Karaoke on'
-      : 'Karaoke';
+  const karaokeLabel = karaokeActive ? 'Karaoke on' : 'Karaoke';
   const showMix = Boolean(onOpenKaraokeMix) && (karaokeActive || karaokeBusy);
   const showTranslate = Boolean(onToggleTranslate) && lines.length > 0;
 
@@ -427,8 +521,26 @@ export function LyricsPanel({
   const isNarrow = useNarrowViewport();
   const collapsibleActions = hideBackdrop && !compact && !isNarrow;
   const actionsRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!actionsOpen) return;
+    const top = actionsSlot?.closest<HTMLElement>('.listening-top');
+    const tabs = top?.querySelector<HTMLElement>('.player-tabs');
+    const back = top?.querySelector<HTMLElement>('.listening-collapse');
+    const pill = actionsRef.current?.querySelector<HTMLElement>('.ytm-lyrics__chrome-actions');
+    const makeRoom = (): void => {
+      if (!actionsSlot || !top || !tabs || !back || !pill) return;
+      // Measure the resting position even during an interrupted slide.
+      const offset = new DOMMatrixReadOnly(getComputedStyle(tabs).transform).m41;
+      const box = tabs.getBoundingClientRect();
+      const pillLeft = actionsSlot.getBoundingClientRect().right - pill.offsetWidth;
+      const room = Math.max(0, box.left - offset - back.getBoundingClientRect().right - 12);
+      const shift = Math.min(room, Math.max(0, box.right - offset - pillLeft + 12));
+      top.style.setProperty('--tabs-shift', `${-shift}px`);
+    };
+    makeRoom();
+    const observer = new ResizeObserver(makeRoom);
+    for (const element of [top, tabs, back, pill]) if (element) observer.observe(element);
+    window.addEventListener('resize', makeRoom);
     const closeOutside = (event: PointerEvent): void => {
       if (!actionsRef.current?.contains(event.target as Node)) setActionsOpen(false);
     };
@@ -438,10 +550,13 @@ export function LyricsPanel({
     document.addEventListener('pointerdown', closeOutside);
     document.addEventListener('keydown', closeOnEscape);
     return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', makeRoom);
       document.removeEventListener('pointerdown', closeOutside);
       document.removeEventListener('keydown', closeOnEscape);
+      top?.style.removeProperty('--tabs-shift');
     };
-  }, [actionsOpen]);
+  }, [actionsOpen, actionsSlot]);
 
   const toggleBlackBackground = (): void => {
     updateSettings({ playerBlackBackground: !settings.playerBlackBackground });
@@ -457,34 +572,31 @@ export function LyricsPanel({
   };
 
   // Rendered in the player's top bar (top-right corner) when it hands us a slot, else in place.
+  const karaokeButton = onToggleKaraoke ? (
+    <TactileButton
+      variant={karaokeActive ? 'primary' : 'ghost'}
+      icon={Mic}
+      onClick={onToggleKaraoke}
+      disabled={karaokeDisabled}
+      aria-pressed={karaokeActive}
+      aria-busy={karaokeBusy || undefined}
+      aria-label={karaokeAriaLabel ?? (karaokeActive ? 'Turn karaoke off' : 'Turn karaoke on')}
+      className={`ytm-lyrics__karaoke-btn${karaokeActive ? ' is-on' : ''}${karaokeBusy ? ' is-busy' : ''}`}
+    >
+      {karaokeLabel}
+    </TactileButton>
+  ) : null;
+
   const actionsNode = (
     <div
       ref={actionsRef}
       className={`ytm-lyrics__actions${collapsibleActions ? ' is-collapsible' : ''}${actionsOpen ? ' is-open' : ''}`}
     >
+      {collapsibleActions && !actionsOpen && karaokeButton ? (
+        <div className="ytm-lyrics__karaoke-pin">{karaokeButton}</div>
+      ) : null}
       <div id="lyrics-actions" className="ytm-lyrics__chrome-actions" inert={collapsibleActions && !actionsOpen}>
-        {onToggleKaraoke ? (
-          <TactileButton
-            variant={karaokeActive ? 'primary' : 'ghost'}
-            icon={Mic}
-            onClick={onToggleKaraoke}
-            // Not `disabled` while preparing: a double tap must still reach the mix.
-            disabled={karaokeDisabled}
-            aria-disabled={karaokeBusy || undefined}
-            aria-pressed={karaokeActive}
-            aria-busy={karaokeBusy || undefined}
-            aria-label={
-              karaokeBusy
-                ? 'Preparing karaoke'
-                : karaokeActive
-                  ? 'Turn karaoke off'
-                  : 'Turn karaoke on'
-            }
-            className={`ytm-lyrics__karaoke-btn${karaokeActive ? ' is-on' : ''}${karaokeBusy ? ' is-busy' : ''}`}
-          >
-            {karaokeLabel}
-          </TactileButton>
-        ) : null}
+        {(!collapsibleActions || actionsOpen) ? karaokeButton : null}
         {showMix ? (
           <IconButton
             icon={SlidersHorizontal}
@@ -592,12 +704,14 @@ export function LyricsPanel({
       )}
 
       <div className="ytm-lyrics__chrome">
+        {onSyncLyrics && (plain || lines.length === 0) ? <TactileButton variant="ghost" onClick={onSyncLyrics}>Sync lyrics</TactileButton> : null}
         <div className="ytm-lyrics__heading">
           <h2 id="lyrics-heading">Lyrics</h2>
           <span className="ytm-lyrics__hint">{lines.length > 0 ? 'Tap any line to jump audio' : 'Waiting for track'}</span>
         </div>
         {collapsibleActions && actionsSlot ? createPortal(actionsNode, actionsSlot) : actionsNode}
       </div>
+      {karaokeActive && karaokeBusy ? <KaraokeProgress stage={karaokeStage} variant="lyrics" /> : null}
       {alternativesOpen ? (
         <div id="lyrics-alternatives" className="lyrics-alternatives" aria-live="polite">
           <div className="lyrics-alternatives__head">
@@ -608,7 +722,7 @@ export function LyricsPanel({
               </strong>
               <span>Wrong words or timing? Pick another match for this song.</span>
             </div>
-            <button type="button" className="lyrics-alternatives__close" onClick={() => setAlternativesOpen(false)} aria-label="Close lyric versions">
+            <button ref={alternativesCloseRef} type="button" className="lyrics-alternatives__close" onClick={() => setAlternativesOpen(false)} aria-label="Close lyric versions">
               <X size={16} aria-hidden="true" />
             </button>
           </div>
@@ -632,10 +746,10 @@ export function LyricsPanel({
             </div>
           ) : alternatives?.length === 0 ? (
             <div className="lyrics-alternatives__empty">
-              <p>No other version found. These lyrics are the only match for this recording.</p>
+              <p>{lines.length > 0 ? 'No other version found. These lyrics are the only match for this recording.' : 'No lyric version found for this recording. Try searching again later.'}</p>
             </div>
           ) : alternatives ? (
-            <div className="lyrics-alternatives__list" role="list" aria-label="Other lyric versions">
+            <div className="lyrics-alternatives__list" role="group" aria-label="Other lyric versions">
               {alternatives.map((alternative, index) => {
                 const selected = alternative.source === source && alternative.lines.length === lines.length && alternative.lines[0]?.text === lines[0]?.text;
                 const preview = alternativePreview(alternative);
@@ -649,7 +763,6 @@ export function LyricsPanel({
                       onSelectAlternative?.(alternative);
                       setAlternativesOpen(false);
                     }}
-                    role="listitem"
                   >
                     <span className="lyrics-alternative__top">
                       <strong>{formatSource(alternative.source)}</strong>
@@ -667,12 +780,8 @@ export function LyricsPanel({
               })}
             </div>
           ) : null}
+          {onSyncLyrics ? <button type="button" className="lyrics-alternatives__retry" onClick={() => { setAlternativesOpen(false); onSyncLyrics(); }}>Sync lyrics</button> : null}
         </div>
-      ) : null}
-      {karaokeBusy ? (
-        <p className="ytm-lyrics__note ytm-lyrics__busy" role="status">
-          Preparing karaoke{karaokeProgressRatio != null ? ` ${Math.round(karaokeProgressRatio * 100)}%` : '…'}
-        </p>
       ) : null}
       {karaokeError ? (
         <p className="ytm-lyrics__alert" role="alert">
@@ -685,7 +794,7 @@ export function LyricsPanel({
         <p className="ytm-lyrics__note">Translated by {translateProvider} — meaning, not word-for-word.</p>
       ) : null}
 
-      {softFocus && !compact && !loading && !error && lines.length > 0 ? (
+      {softFocus && !plain && !compact && !loading && !error && lines.length > 0 ? (
         <>
           <div className="ytm-lyrics__edge ytm-lyrics__edge--top" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="ytm-lyrics__edge ytm-lyrics__edge--bottom" aria-hidden="true"><i /><i /><i /><i /><i /></div>
@@ -732,14 +841,28 @@ export function LyricsPanel({
       ) : (
         <div
           ref={scrollRef}
-          className={`ytm-lyrics__scroll${softFocus && !compact ? ' ytm-lyrics__scroll--soft' : ''}`}
-          role="list"
+          className={`ytm-lyrics__scroll${softFocus && !compact ? ' ytm-lyrics__scroll--soft' : ''}${plain ? ' is-plain' : ''}`}
+          role="group"
           aria-label="Song lyrics"
           onScroll={handleScroll}
+          onScrollEnd={() => {
+            if (plain && followPausedRef.current && !touchingRef.current) resumeFollowNow();
+          }}
           onWheel={pauseFollow}
-          onTouchStart={pauseFollow}
+          onPointerDown={() => { touchingRef.current = true; pauseFollow(); }}
+          onPointerUp={() => { touchingRef.current = false; if (plain) resumeFollowNow(); else pauseFollow(); }}
+          onPointerCancel={(event) => { if (event.pointerType !== 'touch') touchingRef.current = false; pauseFollow(); }}
+          onTouchStart={() => { touchingRef.current = true; pauseFollow(); }}
+          onTouchEnd={() => { touchingRef.current = false; pauseFollow(); }}
+          onTouchCancel={() => { touchingRef.current = false; pauseFollow(); }}
+          onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) pauseFollow(); }}
+          tabIndex={0}
         >
           {lines.map((line, index) => (
+            plain ? <p key={`${line.lineOrder}-${index}`} className="ytm-lyrics__line is-plain">
+              {line.text}
+              {translationFor(line, translations?.[index]) ? <span className="ytm-lyrics__translation" lang="en">{translationFor(line, translations?.[index])}</span> : null}
+            </p> :
             <LyricLineButton
               key={`${line.lineOrder}-${line.timestamp}`}
               line={line}
@@ -852,12 +975,25 @@ export function LyricsPanel({
                 aria-label="Lyrics source"
                 title="Lyrics source"
               >
-                <Info size={15} aria-hidden="true" />
+                <Info size={13} aria-hidden="true" />
               </button>
             ) : null}
-            <div className="lyrics-sync" role="group" aria-label="Adjust lyrics timing">
+            {plain ? <button type="button" className="lyrics-sync__value"
+              aria-label={plainPaused || followPaused || !settings.autoScrollPlainLyrics ? 'Resume lyrics auto-scroll' : 'Pause lyrics auto-scroll'}
+              onClick={() => {
+                if (plainPaused || followPaused || !settings.autoScrollPlainLyrics) {
+                  updateSettings({ autoScrollPlainLyrics: true });
+                  setPlainPaused(false);
+                  resumeFollowNow();
+                } else {
+                  plainNeedsAnchorRef.current = true;
+                  setPlainPaused(true);
+                }
+              }}>
+              {plainPaused || followPaused || !settings.autoScrollPlainLyrics ? '▶ Auto-scroll' : 'Ⅱ Auto-scroll'}
+            </button> : <div className="lyrics-sync" role="group" aria-label="Adjust lyrics timing">
               <button type="button" className="lyrics-sync__btn" onClick={() => nudgeSync(-0.1)} aria-label="Show lyrics 0.1 seconds earlier">
-                <Minus size={14} aria-hidden="true" />
+                <Minus size={12} aria-hidden="true" />
               </button>
               <button
                 type="button"
@@ -870,9 +1006,9 @@ export function LyricsPanel({
                 {syncOffset > 0 ? '+' : ''}{syncOffset.toFixed(1)}s
               </button>
               <button type="button" className="lyrics-sync__btn" onClick={() => nudgeSync(0.1)} aria-label="Show lyrics 0.1 seconds later">
-                <Plus size={14} aria-hidden="true" />
+                <Plus size={12} aria-hidden="true" />
               </button>
-            </div>
+            </div>}
           </div>
         </div>
       ) : null}
@@ -908,7 +1044,7 @@ function LyricsMessage({ tone, title, copy, children }: { readonly tone: 'empty'
 function alternativePreview(alternative: LyricsPayload): string {
   const line = alternative.lines.find((item) => {
     const text = item.text.trim();
-    return text && text !== '[INSTRUMENTAL]' && text !== '🎵';
+    return text && !isInstrumentalLine(text);
   });
   return line?.text.trim() ?? '';
 }
@@ -962,7 +1098,6 @@ const LyricLineButton = memo(function LyricLineButton({
         lineRefs.current[index] = element;
       }}
       onClick={() => onActivate(line.timestamp)}
-      role="listitem"
       aria-current={index === activeIndex ? 'true' : undefined}
       style={{ '--lyric-fade': lineOpacity(distance, index === activeIndex) } as CSSProperties}
     >
@@ -987,7 +1122,7 @@ const LyricLineButton = memo(function LyricLineButton({
 /** The translation worth showing under a line: none for breaks, blanks, or a line already in English. */
 function translationFor(line: LyricLine, translated: string | undefined): string | null {
   const text = translated?.trim();
-  if (!text || text === '[INSTRUMENTAL]' || text === '🎵') return null;
+  if (!text || isInstrumentalLine(text) || isInstrumentalLine(line.text)) return null;
   return text.toLowerCase() === line.text.trim().toLowerCase() ? null : text;
 }
 
@@ -1005,7 +1140,7 @@ function lineOpacity(distance: number, active: boolean): number {
 }
 
 function isInstrumental(text: string): boolean {
-  return text === '[INSTRUMENTAL]' || text === '🎵';
+  return isInstrumentalLine(text);
 }
 
 /**

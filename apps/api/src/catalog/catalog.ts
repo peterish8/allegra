@@ -2,7 +2,9 @@ import { ProviderUnavailableError, NotFoundError, TimeoutError } from '../lib/er
 import { cacheKey, type CacheStore } from '../lib/cache.js';
 import { CircuitBreaker } from '../lib/circuitBreaker.js';
 import { isDerivative, queryWantsDerivative } from '../lib/derivative.js';
-import { collapseRecordings, normalizeAlbumDetail, normalizeAlbumSummary, normalizeSong, songIdentity } from '../lib/normalize.js';
+import { collapseRecordings, isCompilationAlbum, isOwnReleaseOf, normalizeAlbumDetail, releaseYear, normalizeAlbumSummary, normalizeSong, songIdentity } from '../lib/normalize.js';
+import { scoreCandidate } from '../services/importMatch.js';
+import { creditedArtists } from '../shared/identity.js';
 import type { GaanaProvider } from '../providers/gaana.js';
 import type { CanonicalRelease, ReleaseAuthority } from '../providers/musicbrainz.js';
 import type { ProviderResult, SaavnAsset, SaavnProvider, SaavnSong } from '../providers/saavn.js';
@@ -45,6 +47,21 @@ const RELEASE_MISS_TTL_SECONDS = 86_400;
 const RELEASE_WAIT_MS = 1_200;
 /** A typeahead answer later than this is worse than none: the listener has typed on. */
 const SUGGEST_TIMEOUT_MS = 4_000;
+/** How far down a shelf's search a row is checked for its own release: enough to fill 10 after drops. */
+const SHELF_SCAN = 16;
+const OWN_RELEASE_CONCURRENCY = 4;
+/** Songs per `/songs?ids=` request: a few round trips for a long list, short enough for one URL. */
+const SONG_BATCH = 20;
+
+/** Where a song id (plain, or a `saavn:` / `gaana:` ref) is looked up, and its cache key. */
+function songLookup(id: string): { readonly source: 'Saavn' | 'Gaana'; readonly providerId: string; readonly key: string } {
+  const ref = parseSongRef(id);
+  const source = ref?.source === 'gaana' ? 'Gaana' : 'Saavn';
+  const providerId = ref?.id ?? id;
+  return { source, providerId, key: cacheKey('song', 'v2', source, providerId) };
+}
+/** Not the song as released: a stitched set ("Romantic Mashup", a non-stop medley) or a vocals-only cut. */
+const MEDLEY = /\b(mash-?up|medley|non-?stop|vocals?\s+only|a\s*cappella|acapella)\b/iu;
 
 /**
  * Originals first, edits after, each side keeping the provider's own order.
@@ -86,7 +103,9 @@ export class CatalogService {
     // v7: songs carry `albumId` (2026-10-11).
     // v8: the top result is always checked against the release authority: a provider album
     // name can look right while its cover is still a playlist or fan-uploaded thumbnail.
-    const key = cacheKey('search', 'v8', query, String(limit), String(page));
+    // v9: a row on the release the song names (its film, its single) is elected over any play
+    // count, and "… Classics" and decade sets count as compilations.
+    const key = cacheKey('search', 'v9', query, String(limit), String(page));
     const cached = await this.cache.get<CatalogSearch>(key);
     if (cached) {
       return cached;
@@ -202,10 +221,7 @@ export class CatalogService {
   }
 
   public async getSong(id: string): Promise<UnifiedSong> {
-    const ref = parseSongRef(id);
-    const source = ref?.source === 'gaana' ? 'Gaana' : 'Saavn';
-    const providerId = ref?.id ?? id;
-    const key = cacheKey('song', 'v2', source, providerId);
+    const { source, providerId, key } = songLookup(id);
     const cached = await this.cache.get<UnifiedSong>(key);
     if (cached) {
       return cached;
@@ -228,15 +244,52 @@ export class CatalogService {
     return song;
   }
 
+  /**
+   * Several songs at once, in the order asked (unknown ids left out). Cached songs come from the cache;
+   * the rest of the Saavn ids go to the provider in batches (`/songs?ids=`), one request per batch rather
+   * than one per song. Gaana songs, and any a batch did not return, are looked up one by one.
+   */
   public async getSongs(ids: string[]): Promise<UnifiedSong[]> {
-    const songs = await Promise.all(ids.map(async (id) => {
+    const found = new Map<string, UnifiedSong>();
+    const lookups = new Map(ids.map((id) => [id, songLookup(id)] as const));
+    await Promise.all([...lookups].map(async ([id, { key }]) => {
+      const cached = await this.cache.get<UnifiedSong>(key);
+      if (cached) found.set(id, cached);
+    }));
+
+    // Asked-for ids by Saavn provider id: two spellings of one song ("x", "saavn:x") share a fetch.
+    const wanted = new Map<string, string[]>();
+    for (const [id, lookup] of lookups) {
+      if (found.has(id) || lookup.source !== 'Saavn') continue;
+      wanted.set(lookup.providerId, [...(wanted.get(lookup.providerId) ?? []), id]);
+    }
+    const providerIds = [...wanted.keys()];
+    const batches = Array.from({ length: Math.ceil(providerIds.length / SONG_BATCH) }, (_, i) => providerIds.slice(i * SONG_BATCH, (i + 1) * SONG_BATCH));
+    await Promise.all(batches.map(async (batch) => {
       try {
-        return await this.getSong(id);
+        const result = await this.call(this.saavnBreaker, () => this.saavn.getSongsByIds(batch));
+        if (!result.ok) return;
+        await Promise.all(result.data.map(async (raw) => {
+          const song = normalizeSong(raw, 'Saavn');
+          const askedAs = song ? wanted.get(String(raw.id)) : undefined;
+          if (!song || !askedAs) return;
+          for (const id of askedAs) found.set(id, song);
+          await this.cache.set(songLookup(String(raw.id)).key, song, 21_600);
+        }));
       } catch {
-        return null;
+        // The ones this batch missed are looked up one by one below.
       }
     }));
-    return songs.filter((song): song is UnifiedSong => song !== null);
+
+    const missing = [...lookups.keys()].filter((id) => !found.has(id));
+    await Promise.all(missing.map(async (id) => {
+      try {
+        found.set(id, await this.getSong(id));
+      } catch {
+        // Unknown or unavailable: left out.
+      }
+    }));
+    return ids.map((id) => found.get(id)).filter((song): song is UnifiedSong => song !== undefined);
   }
 
   /**
@@ -439,13 +492,63 @@ export class CatalogService {
     };
   }
 
+  /**
+   * A shelf's rows as their own releases. A row that only sits on a compilation ("Romantic Classics
+   * Hits", "Best Of Arijit Singh") wears that compilation's cover, so a shelf of them is the same
+   * cover over and over: it is swapped for the same recording on its film or single, found by its
+   * title and lead artist, or dropped when there is none. Order is kept. Never throws.
+   */
+  private async ownReleases(songs: readonly UnifiedSong[]): Promise<UnifiedSong[]> {
+    const rows = songs.slice(0, SHELF_SCAN);
+    const own: (UnifiedSong | null)[] = new Array<UnifiedSong | null>(rows.length).fill(null);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < rows.length) {
+        const index = next;
+        next += 1;
+        const row = rows[index];
+        if (row) own[index] = await this.ownRelease(row);
+      }
+    };
+    await Promise.all(Array.from({ length: OWN_RELEASE_CONCURRENCY }, worker));
+    return own.filter((song): song is UnifiedSong => song !== null);
+  }
+
+  private async ownRelease(song: UnifiedSong): Promise<UnifiedSong | null> {
+    // Shelves are originals: no slowed, lofi, covers or mashups.
+    if (isDerivative(song) || MEDLEY.test(song.title)) return null;
+    if (isOwnReleaseOf(song.title, song)) return song;
+    // No evidence in its own name: look at every release of the recording the catalog lists.
+    const fallback = isCompilationAlbum(song.album) ? null : song;
+    try {
+      const lead = creditedArtists(song.artist)[0] ?? song.artist;
+      const { results } = await this.search(`${song.title} ${lead}`, 8, 0, { enrich: false });
+      const releases = results
+        .flatMap((row) => [row, ...(row.variants ?? [])])
+        .filter((row) => row.streamUrl && !isDerivative(row) && !isCompilationAlbum(row.album)
+          && scoreCandidate({ title: song.title, artist: song.artist }, row) !== 'none');
+      // The release the song names, else its earliest: playlists re-list a hit years later.
+      const named = releases.find((row) => isOwnReleaseOf(song.title, row));
+      const earliest = [...(fallback ? [fallback] : []), ...releases]
+        .sort((left, right) => (releaseYear(left) ?? Number.MAX_SAFE_INTEGER) - (releaseYear(right) ?? Number.MAX_SAFE_INTEGER))[0];
+      const found = named ?? earliest;
+      if (!found) return null;
+      const { variants: _variants, ...row } = found;
+      void _variants;
+      return row;
+    } catch {
+      return fallback;
+    }
+  }
+
   /** One language's top songs in the provider's own order, a song once each. Empty when the provider fails. */
   private async getRegionalChart(language: string): Promise<UnifiedSong[]> {
-    const key = `chart:v1:${language}`;
+    // v2: compilation rows are swapped for their own release (ownReleases).
+    const key = `chart:v2:${language}`;
     const cached = await this.cache.get<UnifiedSong[]>(key);
     if (cached) return cached;
     try {
-      const results = (await this.search(`top ${language} songs`, 25, 0, { enrich: false })).results.filter((song) => inLanguages(song, [language]));
+      const results = await this.ownReleases((await this.search(`top ${language} songs`, 25, 0, { enrich: false })).results.filter((song) => inLanguages(song, [language])));
       const seen = new Set<string>();
       const songs: UnifiedSong[] = [];
       for (const song of results) {
@@ -464,7 +567,8 @@ export class CatalogService {
 
   private async getDefaultHome(): Promise<HomePayload> {
     // v3: originals ranked ahead of edits (same as search v4).
-    const cached = await this.cache.get<HomePayload>('home:default:v3');
+    // v4: compilation rows are swapped for their own release (ownReleases).
+    const cached = await this.cache.get<HomePayload>('home:default:v4');
     if (cached) {
       return cached;
     }
@@ -472,11 +576,9 @@ export class CatalogService {
     // Seeds matter: the provider only does text search, so a shelf query that
     // reads like a label ("made for you") comes back as ten unrelated songs
     // literally *titled* "Made For You". These phrases match real music instead.
-    const [trending, loved, upbeat] = await Promise.all([
-      this.search('top songs', 20, 0, { enrich: false }),
-      this.search('romantic hits', 20, 0, { enrich: false }),
-      this.search('party songs', 20, 0, { enrich: false })
-    ]);
+    const own = async (query: string): Promise<{ readonly results: UnifiedSong[] }> =>
+      ({ results: await this.ownReleases((await this.search(query, 20, 0, { enrich: false })).results) });
+    const [trending, loved, upbeat] = await Promise.all([own('top songs'), own('romantic hits'), own('party songs')]);
 
     // The provider also lists the same recording several times over (one row per
     // release, sometimes with the artist list reordered), so an untouched shelf
@@ -503,7 +605,7 @@ export class CatalogService {
       madeForYou: shelf(loved.results, true),
       recommended: shelf(upbeat.results, true)
     } satisfies HomePayload;
-    await this.cache.set('home:default:v3', home, 3600);
+    await this.cache.set('home:default:v4', home, 3600);
     return home;
   }
 
@@ -512,14 +614,15 @@ export class CatalogService {
    * interleaved so two languages share each shelf instead of one crowding out the other.
    */
   private async getLanguageHome(languages: readonly string[]): Promise<HomePayload> {
-    const key = `home:languages:v1:${languagesKey(languages)}`;
+    // v2: compilation rows are swapped for their own release (ownReleases).
+    const key = `home:languages:v2:${languagesKey(languages)}`;
     const cached = await this.cache.get<HomePayload>(key);
     if (cached) return cached;
 
     const searchAll = async (template: (language: string) => string): Promise<UnifiedSong[][]> =>
       Promise.all(languages.map(async (language) => {
         try {
-          return (await this.search(template(language), 20, 0, { enrich: false })).results.filter((song) => inLanguages(song, languages));
+          return await this.ownReleases((await this.search(template(language), 20, 0, { enrich: false })).results.filter((song) => inLanguages(song, languages)));
         } catch {
           return [];
         }

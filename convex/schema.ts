@@ -190,6 +190,27 @@ export const blendGift = v.object({
   song: songSnapshot
 });
 
+/**
+ * One synced rendering of a song's lyrics, timed on a listener's own computer (convex/verifiedLyrics.ts).
+ * `latin` is the transliteration listeners see first; `native` is the song's own script.
+ */
+export const lyricsVersion = v.object({
+  script: v.union(v.literal('latin'), v.literal('native')),
+  /** ISO 639-1 code of the sung language ("ta", "te", "hi"…). */
+  language: v.string(),
+  /** Enhanced LRC: `[mm:ss.xx]` per line and `<mm:ss.xxx>` per word (packages/shared/wordSync.ts). */
+  lrc: v.string(),
+  /** Where the words came from. Kept for moderation; never shown to listeners. */
+  source: v.object({ name: v.string(), url: v.optional(v.string()) }),
+  /** The aligner's mean line confidence, 0..1. A later sync replaces this one only when it beats it. */
+  confidence: v.number(),
+  syncedBy: v.string(),
+  syncedAt: v.number(),
+  /** Distinct listeners who reported this sync; at REPORTS_TO_HIDE it hides itself until the owner looks. */
+  reportedBy: v.array(v.string()),
+  hidden: v.boolean()
+});
+
 export default defineSchema({
   // Convex Auth owns `users`, `authAccounts`, `authSessions` and friends. It is the
   // identity record (who signed in with Google); `profiles` below is what they listen to.
@@ -368,6 +389,38 @@ export default defineSchema({
     songs: v.array(relatedSong),
     updatedAt: v.string()
   }).index('by_songId', ['songId']),
+
+  /**
+   * Words a listener pasted after the admin passcode was accepted (verifiedLyrics:createPasted),
+   * kept for that account and recording until they are aligned and saved. The passcode is never stored.
+   */
+  pastedLyrics: defineTable({
+    candidateId: v.string(),
+    ref: v.string(),
+    userId: v.string(),
+    language: v.string(),
+    lines: v.array(v.string()),
+    createdAt: v.number()
+  }).index('by_candidateId_and_userId_and_ref', ['candidateId', 'userId', 'ref']).index('by_userId', ['userId']),
+
+  /**
+   * Lyrics a listener synced and confirmed ("Is this syncing good?"), shared with everyone who plays
+   * the song on the website and the phone. One row per recording; at most one version per script.
+   */
+  verifiedLyrics: defineTable({
+    /** SongRef, "saavn:<id>" (packages/shared/songRef.ts). */
+    ref: v.string(),
+    /** matchKey(title, artist), for a download on the phone that has no ref. */
+    matchKey: v.string(),
+    title: v.string(),
+    artist: v.string(),
+    /** Seconds. */
+    duration: v.number(),
+    versions: v.array(lyricsVersion),
+    updatedAt: v.number()
+  })
+    .index('by_ref', ['ref'])
+    .index('by_matchKey', ['matchKey']),
 
   /** A playlist someone chose to share. Live: it points at the owner's playlist, so edits show up for everyone with the link. */
   shares: defineTable({
@@ -561,16 +614,19 @@ export default defineSchema({
   /** One encrypted credential record per account; no token is returned by any query. */
   spotifyConnections: defineTable({
     userId: v.string(), spotifyUserId: v.string(), encryptedRefreshToken: v.string(), encryptedAccessToken: v.optional(v.string()),
-    accessExpiresAt: v.optional(v.number()), dailyEnabled: v.boolean(), connectedAt: v.number(), updatedAt: v.number()
-  }).index('by_userId', ['userId']).index('by_dailyEnabled_and_updatedAt', ['dailyEnabled', 'updatedAt']),
+    accessExpiresAt: v.optional(v.number()), dailyEnabled: v.boolean(), connectedAt: v.number(), updatedAt: v.number(), generation: v.optional(v.number())
+  }).index('by_userId', ['userId']).index('by_dailyEnabled_and_userId', ['dailyEnabled', 'userId']),
   /** Bounded source playlist list and resumable full-scan cursor. */
   spotifyPlaylists: defineTable({
     userId: v.string(), playlistId: v.string(), name: v.string(), snapshotId: v.string(), total: v.number(),
     libraryId: v.string(), offset: v.number(), scanSnapshotId: v.string(), scanTotal: v.number(), added: v.number(), skipped: v.number(),
     reviewNeeded: v.number(), lastSyncedAt: v.optional(v.number()), leaseUntil: v.optional(v.number()), leaseToken: v.optional(v.string()),
-    enabled: v.boolean(), updatedAt: v.number()
+    enabled: v.boolean(), updatedAt: v.number(),
+    /** Start time of the last daily run that finished or skipped this playlist; the run walks rows older than its start. */
+    dailyCheckedAt: v.optional(v.number())
   }).index('by_userId_and_playlistId', ['userId', 'playlistId']).index('by_userId_and_updatedAt', ['userId', 'updatedAt'])
-    .index('by_enabled_and_updatedAt', ['enabled', 'updatedAt']),
+    .index('by_enabled_and_updatedAt', ['enabled', 'updatedAt'])
+    .index('by_userId_and_enabled_and_dailyCheckedAt', ['userId', 'enabled', 'dailyCheckedAt']),
   /** One stable receipt per source song; incomplete/uncertain matches never get a receipt. */
   spotifyReceipts: defineTable({
     userId: v.string(), playlistId: v.string(), spotifyTrackId: v.string(), libraryId: v.string(), savedAt: v.number()
@@ -593,7 +649,11 @@ export default defineSchema({
     createdAtMs: v.number(),
     expiresAtMs: v.number(),
     closedAtMs: v.optional(v.number()),
-    handoffFromUserId: v.optional(v.string())
+    handoffFromUserId: v.optional(v.string()),
+    /** Leader epoch the pending handoff belongs to; rooms written before it accept only the current epoch. */
+    handoffEpoch: v.optional(v.number()),
+    /** When the server next re-checks whether the old output is still online (it releases the handoff once it isn't). */
+    handoffDeadlineAtMs: v.optional(v.number())
   }).index('by_expiresAtMs', ['expiresAtMs']).index('by_hostUserId_and_status', ['hostUserId', 'status']),
 
   luvLinkMembers: defineTable({

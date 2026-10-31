@@ -34,9 +34,7 @@ import {
   vec,
 } from '@shopify/react-native-skia';
 import { AuraPalette, hexToRgb } from './palette';
-import { isLowEndDevice } from '../../utils/performanceTier';
-
-const LIVE_BLUR = !isLowEndDevice();
+import { useLowEndDevice } from '../../utils/performanceTier';
 
 const rgba = (hex: string, alpha: number): string => {
   const [r, g, b] = hexToRgb(hex).map(c => Math.round(c * 255));
@@ -63,6 +61,7 @@ interface LiquidGlassProps {
 
 const LiquidGlass: React.FC<LiquidGlassProps> = ({ radius, palette, intensity = 46 }) => {
   const { width: w, height: h, onLayout } = useSize();
+  const liveBlur = !useLowEndDevice();
 
   const clip = useMemo(() => {
     const path = Skia.Path.Make();
@@ -74,7 +73,7 @@ const LiquidGlass: React.FC<LiquidGlassProps> = ({ radius, palette, intensity = 
 
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: 'hidden' }]} onLayout={onLayout}>
-      {LIVE_BLUR ? (
+      {liveBlur ? (
         <BlurView
           intensity={intensity}
           // Neutral: the "dark" tint adds its own heavy overlay (on Android it all but hides what is behind); the smoke below does the darkening.
@@ -84,7 +83,7 @@ const LiquidGlass: React.FC<LiquidGlassProps> = ({ radius, palette, intensity = 
         />
       ) : null}
       {/* A thin neutral smoke, so white text holds over anything. */}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: LIVE_BLUR ? 'rgba(28, 28, 30, 0.36)' : 'rgba(28, 28, 30, 0.86)' }]} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: liveBlur ? 'rgba(28, 28, 30, 0.36)' : 'rgba(28, 28, 30, 0.86)' }]} />
       {palette ? <View style={[StyleSheet.absoluteFill, { backgroundColor: rgba(palette.primary, 0.06) }]} /> : null}
 
       {w > 0 && h > 0 ? (

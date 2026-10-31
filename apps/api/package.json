@@ -24,6 +24,7 @@
     "helmet": "^8.1.0",
     "jose": "^6.2.12",
     "jsonwebtoken": "^9.0.2",
+    "node-html-parser": "^7.1.0",
     "pino": "^9.9.0",
     "pino-http": "^10.5.0",
     "zod": "^4.1.5"

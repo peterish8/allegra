@@ -2,6 +2,7 @@ package com.lyricflow.app
 
 import android.os.Build
 import android.os.Bundle
+import android.view.MotionEvent
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -12,6 +13,7 @@ import expo.modules.ReactActivityDelegateWrapper
 import com.lyricflow.app.recovery.LaunchGuard
 import com.lyricflow.app.recovery.RescueActivity
 import com.lyricflow.app.recovery.UiRecovery
+import com.lyricflow.app.startup.FrameWatch
 
 class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,6 +32,24 @@ class MainActivity : ReactActivity() {
     }
     LaunchGuard.noteStart(this)
     super.onCreate(null)
+  }
+
+  // The system island steps aside while the app is in front, when the listener chose that (Settings → Dynamic island).
+  override fun onResume() {
+    super.onResume()
+    com.lyricflow.app.island.IslandService.setAppInFront(true)
+    FrameWatch.start(this)
+  }
+
+  override fun onPause() {
+    com.lyricflow.app.island.IslandService.setAppInFront(false)
+    FrameWatch.stop()
+    super.onPause()
+  }
+
+  override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+    if (ev.actionMasked == MotionEvent.ACTION_UP) PerfMarks.tapUp(ev.eventTime)
+    return super.dispatchTouchEvent(ev)
   }
 
   /**

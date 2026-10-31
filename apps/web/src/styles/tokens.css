@@ -120,6 +120,12 @@
   --d-atmosphere: 1300ms;
   /* Ambient float of decorative shapes (Blend orbs): slow enough to read as breathing, not motion. */
   --d-drift: 9s;
+  /* Faster staggered loops keep the listening-room lyric blobs moving without syncing up. */
+  --d-lyric-drift-1: 13s;
+  --d-lyric-drift-2: 16s;
+  --d-lyric-drift-3: 19s;
+  --d-lyric-drift-4: 22s;
+  --d-lyric-drift-5: 26s;
   /* Member colours in a Blend: bright enough to carry dark initials, distinct from one another. */
   --tone-sky: #6fc1ff;
   --tone-lilac: #b8a6ff;

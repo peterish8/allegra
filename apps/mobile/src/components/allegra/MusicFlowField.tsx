@@ -35,6 +35,12 @@ uniform float3 uAccent;
 uniform float3 uBright;
 uniform float3 uSky;
 uniform float3 uDeep;
+// The nine columns of light, worked out once per frame on the UI thread (columnsAt) instead of per pixel: their
+// centres, widths and brightness depend only on time, energy and mood.
+uniform float uCenter[9];
+uniform float uWidth[9];
+uniform float uAmp[9];
+uniform float uDrift;
 
 float hash(float2 p) {
   return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123);
@@ -46,10 +52,6 @@ float bell(float x, float center, float width) {
 }
 
 float3 lightField(float2 uv) {
-  // Constant tempo. Scaling time by energy (the old uTime * tempo) turned any
-  // energy change into a burst of speed, because the phase jump grows with
-  // how long the clock has run. Energy now shapes brightness and height only.
-  float t = uTime * 0.78;
   float aspect = uResolution.x / uResolution.y;
 
   float y = uv.y;
@@ -66,18 +68,10 @@ float3 lightField(float2 uv) {
 
   float columns = 0.0;
   for (int i = 0; i < 9; i++) {
-    float fi = float(i);
-    float center = fract(0.08 + fi * 0.618034) + 0.025 * sin(t * 0.55 + fi * 1.3);
-    float width = 0.035 + 0.05 * hash(float2(fi, 3.0 + uMood));
-    float fund = sin(t * (0.7 + 0.18 * fi) + fi * 1.7);
-    float harm = sin(t * (1.5 + 0.25 * fi) + fi * 2.4 + uMood);
-    float pulse = 0.45 + 0.55 * (0.65 * fund + 0.35 * harm);
-    pulse = mix(pulse, abs(pulse), 0.25 + uEnergy * 0.35);
-    float heightBoost = 0.7 + 0.55 * uEnergy + 0.15 * sin(t * 2.0 + fi);
-    columns += bell(x, center, width) * pulse * heightBoost;
+    columns += bell(x, uCenter[i], uWidth[i]) * uAmp[i];
   }
 
-  float drift = bell(x, 0.5 + 0.2 * sin(t * 0.65), 0.44);
+  float drift = bell(x, uDrift, 0.44);
   float exposure = 0.45 + 0.95 * drift * (0.7 + uEnergy * 0.45);
   float heightFade = 1.0 - smoothstep(0.02, 1.0, y);
   float light = clamp((0.14 + columns * 0.52) * heightFade * exposure, 0.0, 1.0);
@@ -141,6 +135,37 @@ if (!effect && __DEV__) console.warn('[MusicFlowField] SkSL failed to compile');
 
 export type AuraMood = 'energy' | 'chill' | 'different' | 'surprise';
 const MOOD_VALUE: Record<AuraMood, number> = { energy: 0.2, chill: 1.0, different: 2.0, surprise: 3.0 };
+
+/** The shader's old per-pixel hash, fract(sin(dot(p, (127.1, 311.7))) * 43758.5453123), now run once per mood. */
+const hash = (x: number, y: number): number => {
+  const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+  return v - Math.floor(v);
+};
+
+/** Each column's width for a mood. */
+export const columnWidths = (mood: number): number[] =>
+  Array.from({ length: 9 }, (_, i) => 0.035 + 0.05 * hash(i, 3 + mood));
+
+/**
+ * Where the nine columns of light stand and how bright they are at `time`, worked out once per frame instead of
+ * once per pixel. Constant tempo: scaling time by energy turned any energy change into a burst of speed, because the
+ * phase jump grows with how long the clock has run, so energy shapes brightness and height only.
+ */
+export const columnsAt = (time: number, energy: number, mood: number): { centers: number[]; amps: number[]; drift: number } => {
+  'worklet';
+  const t = time * 0.78;
+  const centers: number[] = [];
+  const amps: number[] = [];
+  for (let i = 0; i < 9; i++) {
+    centers.push(((0.08 + i * 0.618034) % 1) + 0.025 * Math.sin(t * 0.55 + i * 1.3));
+    const fund = Math.sin(t * (0.7 + 0.18 * i) + i * 1.7);
+    const harm = Math.sin(t * (1.5 + 0.25 * i) + i * 2.4 + mood);
+    const pulse = 0.45 + 0.55 * (0.65 * fund + 0.35 * harm);
+    const shaped = pulse + (Math.abs(pulse) - pulse) * (0.25 + energy * 0.35);
+    amps.push(shaped * (0.7 + 0.55 * energy + 0.15 * Math.sin(t * 2 + i)));
+  }
+  return { centers, amps, drift: 0.5 + 0.2 * Math.sin(t * 0.65) };
+};
 
 interface MusicFlowFieldProps {
   palette: AuraPalette;
@@ -261,10 +286,16 @@ export const MusicFlowField: React.FC<MusicFlowFieldProps> = ({
   const renderH = Math.max(1, Math.round(height * renderScale));
   const ribs = width / Math.min(64, Math.max(30, width * 0.032));
   const moodValue = MOOD_VALUE[mood];
+  const widths = useMemo(() => columnWidths(moodValue), [moodValue]);
 
   const uniforms = useDerivedValue(() => {
     const c = colors.value;
+    const columns = columnsAt(clock.value, shownEnergy.value, moodValue);
     return {
+      uCenter: columns.centers,
+      uWidth: widths,
+      uAmp: columns.amps,
+      uDrift: columns.drift,
       uResolution: [renderW, renderH],
       uTime: clock.value,
       uRibs: ribs,

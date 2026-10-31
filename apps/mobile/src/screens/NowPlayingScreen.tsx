@@ -28,6 +28,7 @@ import NowPlayingControls from '../components/NowPlayingControls';
 import { navigationRef, safeGoBack } from '../utils/navigationService';
 import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../navigation/playerSheet';
 import { shouldCloseSheet } from '../navigation/sheetClose';
+import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
 import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { playerSheetProgress } from '../navigation/sheetProgress';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -53,11 +54,13 @@ import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { refetchCurrent, setAsRingtone, shareSong, shuffleUpcoming } from '../services/player/playerMenuActions';
 import { usePlaybackModesStore } from '../store/playbackModesStore';
 import { useLuvLinkStore } from '../store/luvLinkStore';
-import { parseSongRef } from '@shared/songRef';
+import { fromMobileId, parseSongRef } from '@shared/songRef';
 import ConnectRemotePlayer from '../components/connect/ConnectRemotePlayer';
 import { useConnect } from '../services/connect/ConnectProvider';
 import { prefetchCover } from '../components/player/coverImages';
+import { useNativeSkip } from '../components/NativeSkip';
 import { Song } from '../types/song';
+import { notifyIslandAppShownAfterDraw } from '../services/NativeDynamicIsland';
 
 const { Gesture, GestureDetector } = GestureHandler;
 
@@ -109,7 +112,10 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // sheet is scaled to the pill's width. It starts there, so the first frame
   // never flashes the player at rest.
   const { y: restY } = playerSheetRest(windowW, screenH, insets.bottom, pillNav);
-  const sheetY = useSharedValue(restY);
+  // Opened out of the system island: its native launch surface grows over the app, so the sheet is
+  // already open in the first frame instead of rising a second time inside it.
+  const openedOpen = route.params.instant === true;
+  const sheetY = useSharedValue(openedOpen ? 0 : restY);
   const progress = useDerivedValue(() => Math.min(1, Math.max(0, 1 - sheetY.value / restY)));
   useAnimatedReaction(() => progress.value, p => { playerSheetProgress.value = p; });
   useEffect(() => () => { playerSheetProgress.value = 0; }, []);
@@ -121,6 +127,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
   useEffect(() => {
     const velocity = takeOpenVelocity();
+    if (openedOpen) return;
     sheetY.value = reduceMotion
       ? withTiming(0, { duration: 200 })
       : withSpring(0, { ...(velocity > FLICK ? FLING_SPRING : SOFT_SPRING), velocity: -velocity });
@@ -207,13 +214,23 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     markUpNext(false);
   }, [upNext, upNextShown, upNextTravel, markUpNext]);
 
-  usePreventRemove(holdRoute, () => {
-    if (lyricsFullscreen) setLyricsFullscreen(false);
-    else if (sheetRef.current) setSheet(null);
-    else if (upNextRef.current) closeUpNext(0);
-    else if (ambientRef.current) setAmbient(false);
-    else animateClose(0);
-  });
+  const handleBack = useCallback(() => handlePlayerBack({
+    lyricsFullscreen,
+    hasSheet: Boolean(sheetRef.current),
+    upNextOpen: upNextRef.current,
+    ambient: ambientRef.current,
+  }, {
+    exitLyricsFullscreen: () => setLyricsFullscreen(false),
+    closeSheet: () => setSheet(null),
+    closeUpNext: () => closeUpNext(0),
+    leaveAmbient: () => setAmbient(false),
+    closePlayer: () => animateClose(0),
+  }), [lyricsFullscreen, closeUpNext, animateClose]);
+
+  // The root BackHandler invokes this before NavigationContainer's stack pop.
+  useFocusEffect(useCallback(() => registerPlayerBackHandler(handleBack), [handleBack]));
+
+  usePreventRemove(holdRoute, handleBack);
 
   // Drag down from anywhere to dismiss. Over the lyrics it only takes over once
   // the list is scrolled to its top — otherwise the drag scrolls the lyrics.
@@ -394,6 +411,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     isUserScrolling,
     scrollTimeoutRef,
   } = useNowPlayingLogic(songId, route.params.lyrics === true);
+  const nativeSkip = useNativeSkip();
 
   // With the lyrics hidden there is nothing to scroll, so a drag always dismisses.
   useEffect(() => {
@@ -652,8 +670,13 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // saved into the library first (isCurrentSongSaving), then lands in Liked songs.
   // What the lyrics picker searches for: one object per song, so the search runs once per opening.
   const pickerTarget = React.useMemo(
-    () => ({ title: currentSong?.title ?? '', artist: currentSong?.artist ?? '', duration: currentSong?.duration ?? 0 }),
-    [currentSong?.title, currentSong?.artist, currentSong?.duration],
+    () => ({
+      title: currentSong?.title ?? '',
+      artist: currentSong?.artist ?? '',
+      duration: currentSong?.duration ?? 0,
+      ref: fromMobileId(currentSong?.id ?? '') ?? undefined,
+    }),
+    [currentSong?.title, currentSong?.artist, currentSong?.duration, currentSong?.id],
   );
 
   const onToggleLike = useCallback(async () => {
@@ -777,7 +800,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
   return (
     <View style={styles.root}>
-      <StatusBar hidden={lyricsFullscreen} animated />
+      <StatusBar hidden={false} animated />
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
       <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, styles.sheetClip, sheetClipStyle]}>
       <GestureDetector gesture={playerGesture}>
@@ -838,6 +861,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
             dockX={dockX}
             dockY={dockY}
             fullscreen={lyricsFullscreen}
+            localClock
+            songId={currentSong?.id}
           />
         </Animated.View>
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, upNextShadeStyle]}>
@@ -866,6 +891,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           onTogglePlay={togglePlay}
           onSkipForward={skipForward}
           onSkipBackward={skipBackward}
+          nativeSkip={nativeSkip}
           onToggleLike={onToggleLike}
           onToggleLyrics={() => setShowLyrics(!showLyrics)}
           onLyricsLongPress={() => setSheet('lyrics')}
@@ -873,6 +899,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           positionSV={positionSV}
           durationSV={durationSV}
           onSeek={handleScrub}
+          localSongId={currentSong?.id}
           showLyrics={showLyrics}
           compact={showLyrics}
           lyricsFullscreen={lyricsFullscreen}
@@ -949,6 +976,9 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 const NowPlayingScreen: React.FC<Props> = (props) => {
   const connect = useConnect();
   const fromConnect = Boolean(parseSongRef(props.route.params.songId));
+  const openedOpen = props.route.params.instant === true;
+  // Both local and Connect players acknowledge only once their first frame has been drawn.
+  useEffect(() => openedOpen ? notifyIslandAppShownAfterDraw() : undefined, [openedOpen]);
   return connect.remotePlayback || fromConnect
     ? <ConnectRemotePlayer {...props} />
     : <LocalNowPlayingScreen {...props} />;

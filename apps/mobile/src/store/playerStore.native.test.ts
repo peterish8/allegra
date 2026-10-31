@@ -85,6 +85,18 @@ beforeEach(() => {
 afterEach(() => setNativeOwnsPlaybackState(false));
 
 describe('starting a queue', () => {
+  it('hands the engine the queue before the screen shows it, so the tap does not wait for React', async () => {
+    let shownWhenAsked: string | null = null;
+    native.setQueue.mockImplementationOnce(async () => {
+      shownWhenAsked = usePlayerStore.getState().currentSongId;
+      return true;
+    });
+    usePlayerStore.getState().setPlaylistQueue('library', queue, 2, true);
+    expect(shownWhenAsked).toBe('a');
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
+    await flush();
+  });
+
   it('hands the engine the whole queue and starts the tapped song', async () => {
     usePlayerStore.getState().setPlaylistQueue('library', queue, 2, true);
     await flush();
@@ -93,6 +105,21 @@ describe('starting a queue', () => {
     expect([start, position, play]).toEqual([2, 0, true]);
     expect(tag).toMatch(/^library#\d+$/);
     expect(usePlayerStore.getState().currentSongId).toBe('c');
+  });
+
+  it('never nudges the old song to play before the new queue lands (it would blip after a pause)', async () => {
+    usePlayerStore.setState({ isPlaying: false });
+    usePlayerStore.getState().setPlaylistQueue('library', queue, 2, true);
+    await flush();
+    expect(playerControls.play).not.toHaveBeenCalled();
+    expect(native.setQueue.mock.calls[0][3]).toBe(true);
+  });
+
+  it('pauses first when a queue is put in paused, so nothing plays on meanwhile', async () => {
+    usePlayerStore.getState().setPlaylistQueue('library', queue, 2, false);
+    await flush();
+    expect(playerControls.pause).toHaveBeenCalled();
+    expect(native.setQueue.mock.calls[0][3]).toBe(false);
   });
 
   it('holds the load guard until the engine has the queue, and only then calls the song loaded', async () => {
@@ -184,6 +211,34 @@ describe('next and previous', () => {
     usePlayerStore.getState().skipToQueueIndex(2);
     expect(usePlayerStore.getState().currentSongId).toBe('c');
     expect(native.skipToIndex).toHaveBeenCalledWith(2);
+  });
+
+  it('tells the engine before the screen moves, so the skip does not wait for React', async () => {
+    let shownWhenAsked: string | null = null;
+    native.skipToNext.mockImplementationOnce(async () => {
+      shownWhenAsked = usePlayerStore.getState().currentSongId;
+      return true;
+    });
+    await usePlayerStore.getState().nextInPlaylist();
+    expect(shownWhenAsked).toBe('a');
+    expect(usePlayerStore.getState().currentSongId).toBe('b');
+  });
+});
+
+describe('a native skip button', () => {
+  it('moves the screen after the engine skipped, without asking the engine again', () => {
+    usePlayerStore.getState().adoptNativeSkip(1, true);
+    expect(usePlayerStore.getState().currentSongId).toBe('b');
+    usePlayerStore.getState().adoptNativeSkip(-1, true);
+    usePlayerStore.getState().adoptNativeSkip(-1, true);
+    expect(usePlayerStore.getState().currentSongId).toBe('d');
+    expect(native.skipToNext).not.toHaveBeenCalled();
+    expect(native.skipToPrevious).not.toHaveBeenCalled();
+  });
+
+  it('keeps the song on screen when back started it over', () => {
+    usePlayerStore.getState().adoptNativeSkip(-1, false);
+    expect(usePlayerStore.getState().currentSongId).toBe('a');
   });
 });
 

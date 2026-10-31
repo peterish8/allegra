@@ -30,6 +30,24 @@ test('baseTitle folds remixes and versions onto the song', () => {
   assert.equal(baseTitle('Kesariya Rangu'), 'kesariya rangu');
 });
 
+test('another upload of a played song is not queued straight after it', () => {
+  const radio = new RadioSession(song('Gehra Hua', 'Arijit Singh'));
+  const played = song('Lutt Le Gaya (From "Dhurandhar")', 'Shashwat Sachdev, Simran Choudhary');
+  const reupload = song('Lutt Le Gaya Eclipsa Audio', 'Shashwat Sachdev, Simran Choudhary');
+  radio.add([played, reupload, ...arijit], 'similar');
+  radio.markPlayed(played);
+  assert.ok(!titles(radio.next(10)).includes(reupload.title));
+});
+
+test('one batch never holds two uploads of the same song, but a different song with a longer title stays', () => {
+  const radio = new RadioSession(song('Gehra Hua', 'Arijit Singh'));
+  const rangu = song('Kesariya Rangu', 'Pritam, Sanjith Hegde');
+  radio.add([song('Lutt Le Gaya', 'Shashwat Sachdev'), song('Lutt Le Gaya Eclipsa Audio', 'Shashwat Sachdev'), song('Kesariya', 'Arijit Singh'), rangu], 'similar');
+  const picked = titles(radio.next(10));
+  assert.equal(picked.filter((title) => title.startsWith('Lutt Le Gaya')).length, 1);
+  assert.ok(picked.includes('Kesariya') && picked.includes(rangu.title));
+});
+
 test('the radio never plays the seed again, nor a remix or cover of it', () => {
   const picks = session().next(20);
   assert.ok(!titles(picks).some((title) => baseTitle(title) === 'kesariya'));

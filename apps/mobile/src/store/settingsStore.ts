@@ -5,8 +5,10 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SortOption, ViewMode } from '../types/song';
+import { createDebouncedStorage } from './debouncedStorage';
+
+const settingsStorage = createDebouncedStorage(1000);
 
 type Theme = 'dark' | 'light' | 'auto';
 export type LyricsAlign = 'left' | 'center' | 'right';
@@ -19,8 +21,9 @@ type ScrollSpeed = 'slow' | 'medium' | 'fast';
 export type MiniPlayerBackground = 'glow' | 'tint' | 'glass' | 'black';
 /**
  * 'blend' is Apple + glow: the Apple Music room, gliding into the glow when lyrics open.
- * 'aura' is our own: YouTube Music's wash and artwork card, with the live shader
- * drifting through the top half in the cover's colours.
+ * 'aura' is our own, "Cover glow": black through the middle with two tones of the
+ * cover pouring in from the top and bottom edges, drifting slowly, and the artwork
+ * as a card. (It was the "Shader wash" until 2026-10; the stored value stayed.)
  */
 export type PlayerBackground = 'blend' | 'apple' | 'youtube' | 'aura';
 
@@ -31,6 +34,12 @@ export const isCardPlayerBackground = (value: PlayerBackground): boolean => valu
  * song, or the glow (the mini player's animated glow across the top, black below).
  */
 export type AppBackground = 'shader' | 'glass' | 'glow';
+
+/**
+ * Settings → Reduce effects. 'auto' lets the phone decide (utils/performanceTier: old CPU cores, low memory, or
+ * frames that kept missing); 'on' always takes the light path; 'off' keeps the full visuals even on a slow phone.
+ */
+export type ReduceEffects = 'auto' | 'on' | 'off';
 
 /**
  * Stored settings from before "Glow animated" was retired still say 'glow';
@@ -54,6 +63,10 @@ export const migrateLyricsDelay = (version: number, saved: unknown): number => {
 export const normalizePlayerBackground = (value: unknown): PlayerBackground =>
   (value === 'apple' || value === 'youtube' || value === 'aura' ? value : 'blend');
 
+/** Choosing Cover glow shows its own layout, the artwork card on black; a tap on the cover still flips it. */
+export const playerBackgroundChange = (playerBackground: PlayerBackground): Pick<SettingsState, 'playerBackground'> & Partial<Pick<SettingsState, 'playerCoverFull'>> =>
+  (playerBackground === 'aura' ? { playerBackground, playerCoverFull: false } : { playerBackground });
+
 export const normalizeMiniPlayerBackground = (value: unknown): MiniPlayerBackground =>
   (value === 'tint' || value === 'glass' || value === 'black' ? value : 'glow');
 
@@ -67,6 +80,7 @@ interface SettingsState {
   lyricsAlign: LyricsAlign;
   /** Letter by letter uses a source's word timings, or estimates them for a line-synced song. */
   lyricsHighlight: LyricsHighlight;
+  autoScrollPlainLyrics: boolean;
   lineSpacing: LineSpacing;
   
   // Playback
@@ -105,6 +119,7 @@ interface SettingsState {
   setLyricsSize: (size: number) => void;
   setLyricsAlign: (align: LyricsAlign) => void;
   setLyricsHighlight: (highlight: LyricsHighlight) => void;
+  setAutoScrollPlainLyrics: (enabled: boolean) => void;
   setLineSpacing: (spacing: LineSpacing) => void;
   setScrollSpeed: (speed: ScrollSpeed) => void;
   setSkipDuration: (duration: 10 | 15 | 30) => void;
@@ -154,7 +169,7 @@ interface SettingsState {
   appleMusicInspired: boolean;
   /** Echo's "Hide volume slider" (Apple Music player only). */
   hidePlayerVolume: boolean;
-  /** 'blend' = Apple Music for the cover, Glow animated once lyrics open; 'youtube' = YouTube Music's colour wash with an artwork card; 'aura' = that wash with the live shader across the top half. */
+  /** 'blend' = Apple Music for the cover, Glow animated once lyrics open; 'youtube' = YouTube Music's colour wash with an artwork card; 'aura' = Cover glow, black with the cover's two tones drifting in from the top and bottom edges. */
   playerBackground: PlayerBackground;
   setMiniPlayerBackground: (v: MiniPlayerBackground) => void;
   setAppleMusicInspired: (v: boolean) => void;
@@ -175,6 +190,9 @@ interface SettingsState {
   luvsStartAtHook: boolean;
   setLuvsStartAtHook: (enabled: boolean) => void;
 
+  reduceEffects: ReduceEffects;
+  setReduceEffects: (v: ReduceEffects) => void;
+
   resetToDefaults: () => void;
 }
 
@@ -184,6 +202,7 @@ const DEFAULT_SETTINGS = {
   lyricsSize: 28,
   lyricsAlign: 'left' as LyricsAlign,
   lyricsHighlight: 'letters' as LyricsHighlight,
+  autoScrollPlainLyrics: true,
   lineSpacing: 'normal' as LineSpacing,
   scrollSpeed: 'medium' as ScrollSpeed,
   skipDuration: 15 as const,
@@ -219,6 +238,7 @@ const DEFAULT_SETTINGS = {
   appleMusicToken: '',
   tidalToken: '',
   luvsStartAtHook: true,
+  reduceEffects: 'auto' as ReduceEffects,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -233,6 +253,7 @@ export const useSettingsStore = create<SettingsState>()(
       setLyricsSize: (size) => set({ lyricsSize: clampLyricsSize(size) }),
       setLyricsAlign: (lyricsAlign) => set({ lyricsAlign }),
       setLyricsHighlight: (lyricsHighlight) => set({ lyricsHighlight }),
+      setAutoScrollPlainLyrics: (autoScrollPlainLyrics) => set({ autoScrollPlainLyrics }),
       setLineSpacing: (lineSpacing) => set({ lineSpacing }),
       
       // Playback actions
@@ -297,7 +318,7 @@ export const useSettingsStore = create<SettingsState>()(
       hidePlayerVolume: false,
       setHidePlayerVolume: (hidePlayerVolume) => set({ hidePlayerVolume }),
       playerBackground: 'blend',
-      setPlayerBackground: (playerBackground) => set({ playerBackground }),
+      setPlayerBackground: (playerBackground) => set(playerBackgroundChange(playerBackground)),
       playerCoverFull: true,
       setPlayerCoverFull: (playerCoverFull) => set({ playerCoverFull }),
       appleMusicToken: '',
@@ -306,10 +327,14 @@ export const useSettingsStore = create<SettingsState>()(
       setTidalToken: (tidalToken) => set({ tidalToken: tidalToken.trim() }),
       luvsStartAtHook: true,
       setLuvsStartAtHook: (luvsStartAtHook) => set({ luvsStartAtHook }),
+      reduceEffects: 'auto',
+      setReduceEffects: (reduceEffects) => set({ reduceEffects }),
     }),
     {
       name: 'lyricflow-settings',
-      storage: createJSONStorage(() => AsyncStorage),
+      // Every change rewrote the whole saved settings, and the playlist history changes with every song: writes are
+      // coalesced to one a second and flushed when the app leaves the foreground.
+      storage: createJSONStorage(() => settingsStorage),
       version: 5,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<SettingsState> & { lyricsFontSize?: string };

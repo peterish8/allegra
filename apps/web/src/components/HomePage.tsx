@@ -6,8 +6,9 @@ import type { CSSProperties, ReactNode, RefObject } from 'react';
 
 import type { AccountProfile, HomePayload, TasteSummary, UnifiedSong } from '@shared/types';
 import { genrePersonalNote, genreSearchQuery, recommendGenres } from '@shared/genres';
+import { identityKey } from '@shared/identity';
 
-import { searchSongs } from '../lib/api';
+import { fetchTopChart, searchSongs } from '../lib/api';
 import { ArtistPreviewCard } from './ArtistPreviewCard';
 import { TasteOnboarding } from './TasteOnboarding';
 import { Artwork, IconButton } from './ui';
@@ -312,6 +313,27 @@ const titleCase = (word: string): string => word.charAt(0).toUpperCase() + word.
 
 /** Each genre row's lead songs, by its genres and queries, for the life of the page. */
 const genreLeadCache = new Map<string, Readonly<Record<string, UnifiedSong>>>();
+/** Today's top songs across India, once fetched: coming back to Browse shows them at once. Null until then. */
+let topChartCache: readonly UnifiedSong[] | null = null;
+
+/** Today's top 10, as songs that play here. Empty when it could not be built; null while it loads. */
+function useTopChart(): readonly UnifiedSong[] | null {
+  const [songs, setSongs] = useState<readonly UnifiedSong[] | null>(topChartCache);
+  useEffect(() => {
+    if (topChartCache) return undefined;
+    const controller = new AbortController();
+    void fetchTopChart('IN', controller.signal)
+      .then((chart) => (chart.available ? chart.songs : []))
+      .catch(() => [])
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        if (next.length > 0) topChartCache = next;
+        setSongs(next);
+      });
+    return () => controller.abort();
+  }, []);
+  return songs;
+}
 /** "Tamil", "Tamil and English", "Tamil, Telugu and English". */
 const languageList = (languages: readonly string[]): string => {
   const names = languages.map(titleCase);
@@ -324,9 +346,17 @@ const languageList = (languages: readonly string[]): string => {
  */
 export function DiscoverSections({ taste, trending, madeForYou, recommended, currentSongId, isPlaying, likedIds, onPlay, onToggle, onLike, onExplore, chart: chartFor = null, languages = [], picks = [] }: DiscoverSectionsProps) {
   const reduced = useReducedMotion();
-  const chart = useMemo(() => trending.slice(0, 10), [trending]);
+  const topChart = useTopChart();
+  // Today's most played across India when it could be built, else the catalog's own list. Nothing
+  // while it loads, so one list never swaps for the other under the listener.
+  const fromTop = topChart !== null && topChart.length > 0;
+  const chart = useMemo(() => (topChart === null ? [] : (fromTop ? topChart : trending).slice(0, 10)), [topChart, fromTop, trending]);
+  // A song on the chart is not repeated on the shelves under it.
+  const charted = useMemo(() => new Set(chart.map((song) => identityKey(song.title, song.artist))), [chart]);
+  const loved = useMemo(() => madeForYou.filter((song) => !charted.has(identityKey(song.title, song.artist))), [madeForYou, charted]);
   // Somewhere new: the listener's own picks once there are enough of them, else the general shelf.
-  const wander = picks.length >= 6 ? picks : recommended;
+  const ownPicks = picks.length >= 6;
+  const wander = useMemo(() => (ownPicks ? picks : recommended).filter((song) => !charted.has(identityKey(song.title, song.artist))), [ownPicks, picks, recommended, charted]);
   const genres = useMemo(() => recommendGenres(taste).map((genre) => ({ genre, query: genreSearchQuery(genre, taste) })), [taste]);
   const genreKey = genres.map(({ genre, query }) => `${genre.id}=${query}`).join('|');
   // Picked genres or any listening make the row the listener's own; before that it is a tour.
@@ -389,7 +419,12 @@ export function DiscoverSections({ taste, trending, madeForYou, recommended, cur
       </Section>
 
       {chart.length > 0 ? (
-        <Section id="browse-chart" title={chartFor?.regionName ? `Top 10 in ${chartFor.regionName}` : 'Top 10 today'} hint={chartFor?.language ? `${titleCase(chartFor.language)} songs, today` : undefined} reduced={reduced}>
+        <Section
+          id="browse-chart"
+          title={!fromTop && chartFor?.regionName ? `Top 10 in ${chartFor.regionName}` : 'Top 10 today'}
+          hint={fromTop ? 'Most played across India' : chartFor?.language ? `${titleCase(chartFor.language)} songs, today` : undefined}
+          reduced={reduced}
+        >
           <ol className="chart-grid">
             {chart.map((song, index) => {
               const current = song.id === currentSongId;
@@ -430,16 +465,17 @@ export function DiscoverSections({ taste, trending, madeForYou, recommended, cur
         </Section>
       ) : null}
 
-      {madeForYou.length > 0 ? (
-        <Shelf id="browse-loved" title="Loved right now" hint={languages.length > 0 ? `Popular in ${languageList(languages)}` : 'What everyone has on'} songs={madeForYou.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
+      {loved.length > 0 ? (
+        <Shelf id="browse-loved" title="Loved right now" hint={languages.length > 0 ? `Popular in ${languageList(languages)}` : 'What everyone has on'} songs={loved.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
       ) : null}
       {wander.length > 0 ? (
-        <Shelf id="browse-fresh" title="Somewhere new to wander" hint={wander === picks ? 'Picked from what you play' : undefined} songs={wander.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
+        <Shelf id="browse-fresh" title="Somewhere new to wander" hint={ownPicks ? 'Picked from what you play' : undefined} songs={wander.slice(0, 14)} {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }} />
       ) : null}
 
     </>
   );
 }
+
 /* ----------------------------------------------------------------- sections */
 
 interface SectionProps {
@@ -571,7 +607,8 @@ function Shelf({ id, title, hint, href, eyebrow, songs, reduced, currentSongId, 
   };
   return (
     <Section {...sectionProps} actions={<ShelfArrows scroll={scroll} label={title} />}>
-      <div className="shelf" ref={scroll.ref}>
+      {/* A side with more songs off screen fades out instead of cutting a tile in half. */}
+      <div className={`shelf${scroll.atStart ? '' : ' has-before'}${scroll.atEnd ? '' : ' has-after'}`} ref={scroll.ref}>
         {songs.map((song) => {
           const current = song.id === currentSongId;
           return (

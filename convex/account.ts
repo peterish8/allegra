@@ -109,6 +109,10 @@ async function eraseSome(ctx: MutationCtx, userId: string): Promise<boolean> {
     .take(BATCH);
   for (const row of state) await ctx.db.delete('libraryState', row._id);
 
+  const pasted = await ctx.db.query('pastedLyrics').withIndex('by_userId', q => q.eq('userId', userId)).take(BATCH);
+  for (const row of pasted) await ctx.db.delete('pastedLyrics', row._id);
+  more ||= pasted.length === BATCH;
+
   const tasteSongs = await ctx.db
     .query('tasteSongs')
     .withIndex('by_userId_and_score', (q) => q.eq('userId', userId))

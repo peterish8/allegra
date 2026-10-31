@@ -9,6 +9,21 @@ import type { ListenExit } from '@shared/listenSignal';
 import type { DjTurnRequest, DjTurnResponse } from '@shared/dj';
 import type { RadioTaste } from '@shared/radio';
 import { TYPEAHEAD_LIMIT } from '@shared/typeahead';
+import type { LyricsSourcesResponse, LyricsSyncRequest, LyricsSyncResult } from '@shared/lyricSync';
+import { readLocalTiming } from './lyricAlign/localTiming';
+
+export function getLyricsSources(ref: string, signal?: AbortSignal): Promise<LyricsSourcesResponse> {
+  return request(`/api/lyrics/sources?ref=${encodeURIComponent(ref)}`, { signal });
+}
+
+export function pasteLyrics(ref: string, text: string, passcode: string, signal?: AbortSignal): Promise<LyricsSourcesResponse['candidates'][number]> {
+  return request('/api/lyrics/paste', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ref, text, passcode }), signal });
+}
+
+export function saveLyricsSync(body: LyricsSyncRequest, signal?: AbortSignal): Promise<LyricsSyncResult> {
+  return request('/api/lyrics/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
+}
 
 export interface LibraryRecord {
   readonly id: string;
@@ -197,6 +212,19 @@ export async function searchSongs(query: string, signal?: AbortSignal, page = 0)
   return request(`/api/search?q=${encodeURIComponent(query)}&limit=20&page=${page}`, { signal });
 }
 
+export interface TopChartPayload {
+  readonly storefront: string;
+  readonly available: boolean;
+  readonly updatedAt: string | null;
+  /** Playable catalog songs in chart order. */
+  readonly songs: readonly UnifiedSong[];
+}
+
+/** `GET /api/charts/top`: today's most played songs in a country, as songs that play here. */
+export async function fetchTopChart(country = 'IN', signal?: AbortSignal): Promise<TopChartPayload> {
+  return request(`/api/charts/top?${new URLSearchParams({ country }).toString()}`, { signal });
+}
+
 /** As-you-type search: lean, relevance-ordered, edge-cached. */
 export async function suggestSongs(query: string, signal?: AbortSignal): Promise<UnifiedSong[]> {
   return (await request<{ results: UnifiedSong[] }>(`/api/search/suggest?q=${encodeURIComponent(query)}&limit=${TYPEAHEAD_LIMIT}`, { signal })).results;
@@ -242,31 +270,39 @@ export async function fetchHome(signal?: AbortSignal, options: { readonly langua
   return request(`/api/home${query ? `?${query}` : ''}`, { signal });
 }
 
+/**
+ * A song's lyrics query: its ref lets listener-synced and JioSaavn lyrics answer for it, and its
+ * album and language let the server find it online when no provider has it.
+ */
+function lyricsQuery(song: UnifiedSong): string {
+  const ref = fromAllegraSong(song);
+  return new URLSearchParams({
+    songId: song.id,
+    ...(ref ? { ref } : {}),
+    title: song.title,
+    artist: song.artist,
+    ...(song.album ? { album: song.album } : {}),
+    ...(song.language ? { language: song.language } : {}),
+    duration: String(song.duration),
+    syncedOnly: 'false'
+  }).toString();
+}
+
 export async function fetchLyrics(song: UnifiedSong, signal?: AbortSignal): Promise<LyricsPayload> {
-  return request(
-    `/api/lyrics?${new URLSearchParams({
-      songId: song.id,
-      title: song.title,
-      artist: song.artist,
-      duration: String(song.duration),
-      syncedOnly: 'false'
-    }).toString()}`,
-    { signal }
-  );
+  const ref = fromAllegraSong(song);
+  const local = ref ? readLocalTiming(ref) : null;
+  try {
+    const response = await request<LyricsPayload>(`/api/lyrics?${lyricsQuery(song)}`, { signal });
+    return response.type === 'plain' && local ? local : response;
+  } catch (error) {
+    if (local && error instanceof ApiError && error.status === 404) return local;
+    throw error;
+  }
 }
 
 /** Explicitly requested alternatives, not the normal fast lyric cascade. */
 export async function fetchLyricsAlternatives(song: UnifiedSong, signal?: AbortSignal): Promise<LyricsPayload[]> {
-  return request(
-    `/api/lyrics/alternatives?${new URLSearchParams({
-      songId: song.id,
-      title: song.title,
-      artist: song.artist,
-      duration: String(song.duration),
-      syncedOnly: 'false'
-    }).toString()}`,
-    { signal }
-  );
+  return request(`/api/lyrics/alternatives?${lyricsQuery(song)}`, { signal });
 }
 
 /** `GET /api/artwork`: cover links for a song by title and artist, best guess first. */
@@ -359,13 +395,14 @@ export function snapshotForAccount(song: UnifiedSong): { readonly ref: SongRef; 
   };
 }
 
-export async function recordRecentlyPlayed(song: UnifiedSong, playDuration: number): Promise<void> {
+/** `playedAt` is when the listen started: the same key the later listen signal sends, so the two meet on one row. */
+export async function recordRecentlyPlayed(song: UnifiedSong, playDuration: number, playedAt?: string): Promise<void> {
   const playback = snapshotForAccount(song);
   if (!playback) return;
   await request('/api/me/recently-played', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ songRef: playback.ref, song: playback.snapshot, playDuration })
+    body: JSON.stringify({ songRef: playback.ref, song: playback.snapshot, playDuration, ...(playedAt ? { playedAt } : {}) })
   });
 }
 

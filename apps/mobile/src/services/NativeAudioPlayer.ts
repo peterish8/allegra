@@ -74,15 +74,26 @@ export type PlayerMetadata = {
 /**
  * Commands that change the queue run one after another, never side by side. The native module answers each on
  * its own thread, so two calls made back to back could otherwise land in either order (a "play next" before the
- * queue it belongs to). A command's answer means the change was applied.
+ * queue it belongs to). A command's answer means the change was applied. With nothing in flight a command starts in
+ * the same tick, so a tap reaches the engine before React re-renders for it rather than a microtask after.
  */
 let chain: Promise<unknown> = Promise.resolve();
 let inFlight = 0;
 const idleWaiters: Array<() => void> = [];
 
+const startNow = <T>(run: () => Promise<T>): Promise<T> => {
+  try {
+    return run();
+  } catch (error) {
+    return Promise.reject(error);
+  }
+};
+
 function serial<T>(run: () => Promise<T>, failed: T): Promise<T> {
+  const idle = inFlight === 0;
   inFlight += 1;
-  const next = chain.then(run, run).catch(() => failed).then(result => {
+  const begun = idle ? startNow(run) : chain.then(run, run);
+  const next = begun.catch(() => failed).then(result => {
     inFlight -= 1;
     if (inFlight === 0) idleWaiters.splice(0).forEach(fn => fn());
     return result;

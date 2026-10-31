@@ -8,6 +8,8 @@ export interface SpotifySourcePlaylist {
   readonly name: string;
   readonly snapshotId: string;
   readonly total: number;
+  /** Spotify gave no trustworthy count and checking it failed or was out of budget: `total` is 0 but the playlist may not be empty. (Additive, 2026-10-31.) */
+  readonly totalUnknown?: true;
   /** Spotify's cover image (i.scdn.co), or null when the playlist has none. */
   readonly imageUrl?: string | null;
   /** `liked`: the Liked Songs collection (`id` is SPOTIFY_LIKED_ID). Absent for ordinary playlists. */

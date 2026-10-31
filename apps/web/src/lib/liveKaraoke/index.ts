@@ -1,28 +1,44 @@
 import { processToInstrumentalBlob } from './processInWorker';
-import type { LiveKaraokePrepareResult, LiveKaraokeStatus } from './types';
+import type { LiveKaraokePrepareResult } from './types';
 
-export type {
-  LiveKaraokeBackend,
-  LiveKaraokeCapabilities,
-  LiveKaraokePrepareResult,
-  LiveKaraokeStatus,
-  ScnetAvailability
-} from './types';
-export { detectLiveKaraokeCapabilities } from './capabilities';
+export type { LiveKaraokeBackend, LiveKaraokePrepareResult, LiveKaraokeStatus } from './types';
 export { midSideVocalRemove, audioBufferToWav, audioBufferToBlobUrl } from './midSideVocalRemove';
 export { fetchAndDecodeSong, resolveStreamFetchPath, MAX_LIVE_KARAOKE_SECONDS } from './streamFetch';
-export { LiveKaraokePlayer } from './LiveKaraokePlayer';
-export { probeScnetAvailability } from './scnetWorker.client';
 export { processToInstrumentalBlob } from './processInWorker';
 export {
   audioBufferToStereo44k,
   clearRoformerCache,
+  clearStemCache,
   ensureRoformerModel,
-  roformerCacheBytes,
+  existingSeparator,
   getSeparator,
   isRoformerLikelySupported,
-  ROFORMER_MODEL
+  roformerCacheBytes,
+  roformerModelOnDevice,
+  ROFORMER_MODEL,
+  ROFORMER_SAMPLE_RATE,
+  stemCacheBytes,
+  STEM_CACHE_LIMIT_BYTES,
+  type ModelLoadProgress
 } from './roformer';
+export { ensureBridge, type KaraokeBridge } from './bridge';
+export {
+  aiBlock,
+  blockCopy,
+  clearVerdict,
+  deviceFacts,
+  hasDownloadConsent,
+  markKaraokeUsed,
+  markMixHintSeen,
+  mixHintSeen,
+  recordSlowRun,
+  saveDownloadConsent,
+  saveVerdict,
+  storedVerdict,
+  usedKaraokeRecently,
+  webgpuAvailable,
+  type AiBlock
+} from './device';
 export { LiveKaraokeStream, type StreamSessionEvents } from './streamSession';
 
 export interface MidSideKaraokeInput {
@@ -39,8 +55,8 @@ export interface MidSideKaraokeInput {
 }
 
 /**
- * The fallback when the AI model cannot run here (or cannot keep up): a bass-preserving
- * mid-side vocal remover rendered to a blob the player swaps in for the original.
+ * Basic karaoke for a browser without Web Audio (everywhere else the live bridge does
+ * this): a bass-preserving mid-side vocal remover rendered to a blob the player swaps in.
  */
 export async function prepareMidSideKaraoke(
   decoded: AudioBuffer,
@@ -60,8 +76,4 @@ export async function prepareMidSideKaraoke(
     input.signal
   );
   return { backend: 'midside', blobUrl, monoSource, fallbackReason: input.fallbackReason };
-}
-
-export function statusAfterPrepare(active: boolean): LiveKaraokeStatus {
-  return active ? 'active' : 'ready';
 }

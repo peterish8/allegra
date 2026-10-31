@@ -34,6 +34,9 @@ function fixture(options: {
   beforeFacts?: () => Promise<void>;
   slow?: boolean;
   resolve?: (title: string) => SongSnapshot | null;
+  /** Replaces the resolver's answer with a promise the test settles itself. */
+  resolveLater?: Promise<MatchResult[]>;
+  budgets?: BlendBuildDeps['budgets'];
 } = {}): Fixture {
   let now = Date.UTC(2026, 9, 5, 12);
   const calls = { facts: 0, suggestions: 0, resolve: 0, tallyTop: [] as string[] };
@@ -80,6 +83,7 @@ function fixture(options: {
     resolver: {
       match: async (tracks): Promise<MatchResult[]> => {
         calls.resolve += tracks.length;
+        if (options.resolveLater) return options.resolveLater;
         if (options.failing) throw new Error('down');
         return tracks.map((track, index) => {
           const song = options.resolve?.(track.title) ?? null;
@@ -89,7 +93,7 @@ function fixture(options: {
     },
     now: () => now,
     log: (fields) => logs.push(fields),
-    budgets: { budgetMs: 400, factsBudgetMs: 150 }
+    budgets: options.budgets ?? { budgetMs: 400, factsBudgetMs: 150 }
   };
   return { service: new BlendBuildService(deps), blends, tally, calls, logs, setNow: (ms) => { now = ms; } };
 }
@@ -211,6 +215,35 @@ test('a slow provider cannot hold the build past its deadline', async () => {
   const detail = await f.service.detailFor(blendId, 'asha');
   assert.ok(Date.now() - started < 2000);
   assert.equal(detail?.tracks.length, 50);
+});
+
+// Promise.race only stops waiting; it cancels nothing. What bounds the work is that no optional stage
+// starts once the budget is spent, and each provider call's own timeout.
+test('once a slow stage spends the budget, no later provider stage is started', async () => {
+  const f = fixture({ library: shared, slow: true, budgets: { budgetMs: 300, factsBudgetMs: 1000 } });
+  const blendId = await pairBlend(f);
+  const detail = await f.service.detailFor(blendId, 'asha');
+  assert.equal(f.calls.facts, 1);
+  assert.equal(f.calls.suggestions, 0, 'discovery never started after artist facts used the whole budget');
+  assert.equal(detail?.tracks.length, 50, 'the build still lands from library data');
+});
+
+test('a provider answer that arrives after the deadline changes nothing that was saved', async () => {
+  let answer!: (results: MatchResult[]) => void;
+  const late = new Promise<MatchResult[]>((resolve) => { answer = resolve; });
+  const f = fixture({
+    library: { asha: { likes: [...likes('a', 'Arijit Singh', 20), ...likes('g', 'Gaana Only', 2, 'gaana')] }, ravi: { likes: likes('r', 'Pritam', 20) } },
+    resolveLater: late
+  });
+  const blendId = await pairBlend(f);
+  const detail = await f.service.detailFor(blendId, 'asha');
+  const saved = await f.blends.get(blendId, 'asha');
+  answer([{ index: 0, song: snap('saavn', 'too-late', 'g song 0', 'Gaana Only'), confidence: 'exact' }]);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const after = await f.blends.get(blendId, 'asha');
+  assert.equal(after?.buildVersion, saved?.buildVersion);
+  assert.ok(!after?.tracks.some((track) => track.song.ref === 'saavn:too-late'));
+  assert.ok(!detail?.tracks.some((track) => track.song.ref === 'saavn:too-late'));
 });
 
 test('a non-member gets null', async () => {

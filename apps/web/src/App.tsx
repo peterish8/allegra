@@ -9,6 +9,7 @@ import type { CSSProperties, MouseEvent } from 'react';
 
 import type { AlbumSummary, ArtistProfile, HomePayload, LyricLine, LyricsPayload, SharedPlaylist, UnifiedSong } from '@shared/types';
 import type { DjTurnResponse } from '@shared/dj';
+import type { LuvLinkPlaybackAnchor } from '@shared/luvLink';
 import type { PerformanceAttempt } from '@shared/performanceTrace';
 import { deriveMoodPrompts } from '@shared/moodPrompts';
 import { recommendArtistNames } from '@shared/genres';
@@ -31,6 +32,9 @@ import { LibraryPage } from './components/LibraryPage';
 import { ImportPage } from './components/import/ImportPage';
 import { BlendJoinPage } from './components/blend/BlendJoinPage';
 import { LuvLinkPage } from './components/luvLink/LuvLinkPage';
+import { LuvLinkSessionProvider } from './components/luvLink/LuvLinkSession';
+import { waitForAudioMetadata, waitForAudioSource } from './components/luvLink/audioReady';
+import { needsSeek } from './components/luvLink/sync';
 import { BlendPage } from './components/blend/BlendPage';
 import { BlendsPage } from './components/blend/BlendsPage';
 import { DynamicAura } from './components/DynamicAura';
@@ -40,7 +44,7 @@ import { AppQrButton } from './components/AppQrButton';
 import { CommandPalette } from './components/CommandPalette';
 import { DiscoverSections, HomePage } from './components/HomePage';
 import { ConnectPicker, type ConnectPickerState } from './components/ConnectPicker';
-import { PlayerPanel } from './components/PlayerPanel';
+import { MarqueeText, PlayerPanel } from './components/PlayerPanel';
 import { BarScrubber, FeatureProgress, FeatureRemaining } from './components/PlayheadViews';
 import { SettingsPage } from './components/SettingsPage';
 import { MusicFlowShader } from './components/shader/MusicFlowShader';
@@ -48,9 +52,10 @@ import type { ImmersivePlayerMode } from './components/PlayerPanel';
 import { SearchResults, artistsFromSongs } from './components/SearchResults';
 import { Artwork, EmptyState, IconButton, NoticeToast, OfflineToast, TactileButton } from './components/ui';
 import { useAccount, useListenTracker } from './hooks/useAccount';
+import { LyricsSyncDialog } from './components/LyricsSyncDialog';
 import { useSongRadio } from './hooks/useSongRadio';
 import { accountDisplayName, isResolvingAccount, recallAccountName, rememberAccountName } from './lib/accountState';
-import { useAudioPlayer } from './hooks/useAudioPlayer';
+import { upcomingSong, useAudioPlayer } from './hooks/useAudioPlayer';
 import { useLiveKaraoke } from './hooks/useLiveKaraoke';
 import { useMediaSession } from './hooks/useMediaSession';
 import { useNarrowViewport } from './hooks/useNarrowViewport';
@@ -67,7 +72,8 @@ import { ImportChip } from './components/import/ImportChip';
 import { lockScroll } from './lib/scrollLock';
 import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
-import { ApiError, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
+import { ApiError, resolveApiUrl, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
+import { isLyricsUpgrade, LYRICS_UPGRADE_DELAYS_MS, wantsLyricsUpgrade } from './lib/lyricsUpgrade';
 import { catalogSongId, shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
 import { resolveSnapshotForPlayback, snapshotForSong, snapshotToDisplaySong, useConnect } from './hooks/useConnect';
 import { useSnapshotArtworks } from './hooks/useSnapshotArtwork';
@@ -178,6 +184,7 @@ export default function App() {
   const [sharedLoading, setSharedLoading] = useState(false);
   const [sharedError, setSharedError] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
+  const [lyricsSyncSong, setLyricsSyncSong] = useState<UnifiedSong | null>(null);
   const [artistSongs, setArtistSongs] = useState<UnifiedSong[]>([]);
   const [artistProfile, setArtistProfile] = useState<ArtistProfile | null>(null);
   const [artistLoading, setArtistLoading] = useState(false);
@@ -235,6 +242,9 @@ export default function App() {
   const nowPlayingRef = useRef<HTMLElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const lyricsGeneration = useRef(0);
+  /** What the panel shows, for the later re-asks; and whether the listener picked a version by hand. */
+  const lyricsShown = useRef<LyricsPayload | null>(null);
+  const lyricsPicked = useRef(false);
   const audio = useAudioPlayer();
   const connect = useConnect(audio);
   const connectView = connect.view;
@@ -313,10 +323,16 @@ export default function App() {
   useEffect(() => {
     if (remotePlayback) void audio.requestPlayback(false);
   }, [audio.requestPlayback, remotePlayback]);
-  const liveKaraoke = useLiveKaraoke(remotePlayback ? null : audio.currentSong, {
-    audioRef: audio.audioRef,
-    swapAudioSource: audio.swapAudioSource
-  });
+  // Karaoke separates the opening of the next song ahead of time, so it stays on across the change.
+  const karaokeUpNext = useMemo(
+    () => (remotePlayback ? null : upcomingSong(audio.queue, audio.currentSong, audio.shuffle, audio.repeat)),
+    [remotePlayback, audio.queue, audio.currentSong, audio.shuffle, audio.repeat]
+  );
+  const liveKaraoke = useLiveKaraoke(
+    remotePlayback ? null : audio.currentSong,
+    { audioRef: audio.audioRef, swapAudioSource: audio.swapAudioSource },
+    karaokeUpNext
+  );
   const hasSongLoaded = playerSong !== null;
   const playlists = usePlaylists();
   const transportRef = useRef(audio);
@@ -333,7 +349,6 @@ export default function App() {
       setDjLive(autoplaySimilarRef.current);
     }
   }, [connect.connectLoads]);
-  const aiPicksRef = useRef<UnifiedSong[]>([]);
   const reloadPlaylists = playlists.reload;
   /** Songs the listener queued with Play next / Add to queue: they stay in front of any radio. */
   const userQueuedRef = useRef(new Set<string>());
@@ -350,12 +365,16 @@ export default function App() {
     /** The upcoming ids the set produced; Undo only runs while the queue still matches them. */
     readonly applied?: readonly string[];
   } | null>(null);
-  const radio = useSongRadio(transportRef, userQueuedRef);
+  const radio = useSongRadio(transportRef);
+  // Turning "keep playing similar songs" off stops the radio now, not at the next song picked.
+  useEffect(() => {
+    if (settings.autoplaySimilar) return;
+    radioActiveRef.current = false;
+    radio.stop();
+  }, [radio, settings.autoplaySimilar]);
   // Lock screen, media keys, headset buttons and car head units, all through the same funnel.
   const fillRadioQueue = useCallback(async (signal?: AbortSignal): Promise<number> => {
-    const added = await radio.fill(signal);
-    if (added > 0 || signal?.aborted) return added;
-    return transportRef.current.appendQueue(aiPicksRef.current);
+    return radio.fill(signal);
   }, [radio]);
 
   const skipNextSmart = useCallback((): void => {
@@ -368,8 +387,8 @@ export default function App() {
     if (!song) return;
     const next = player.skipNext();
     if (!next && radioActiveRef.current) {
-      void fillRadioQueue().then((added) => {
-        if (added > 0) player.skipNext();
+      void fillRadioQueue().then(() => {
+        if (radioActiveRef.current && transportRef.current.currentSong?.id === song.id) transportRef.current.skipNext();
       });
       return;
     }
@@ -546,7 +565,12 @@ export default function App() {
   const account = useAccount(signIn.signedIn, () => {
     void loadPersonalSpace();
   });
-  useListenTracker(audio.currentSong ?? null, audio.playhead, account.refresh, radio.outcome);
+  const onHeardForHistory = useCallback((song: UnifiedSong, startedAt: string): void => {
+    // Same cap as the server keeps (RECENTLY_PLAYED_LIMIT): 25 recent listens.
+    setRecentlyPlayed((current) => [song, ...current.filter((item) => item.id !== song.id)].slice(0, 25));
+    void recordRecentlyPlayed(song, 0, startedAt).catch(() => undefined);
+  }, []);
+  useListenTracker(audio.currentSong ?? null, audio.playhead, account.refresh, radio.outcome, onHeardForHistory);
   useEffect(() => {
     const song = transportRef.current.currentSong;
     if (song) {
@@ -767,6 +791,30 @@ export default function App() {
     }
     const generation = ++lyricsGeneration.current;
     const controller = new AbortController();
+    lyricsPicked.current = false;
+    let upgradeTimer = 0;
+    // Plain or missing lyrics are asked for again a few times: a synced provider that was late,
+    // or a listener's shared timing, then replaces them while the song plays.
+    const askAgain = (attempt: number): void => {
+      const wait = LYRICS_UPGRADE_DELAYS_MS[attempt];
+      if (wait === undefined || lyricsPicked.current || !wantsLyricsUpgrade(lyricsShown.current)) return;
+      upgradeTimer = window.setTimeout(() => {
+        void fetchLyrics(song, controller.signal)
+          .then((next) => {
+            if (generation !== lyricsGeneration.current || lyricsPicked.current || !isLyricsUpgrade(lyricsShown.current, next)) return;
+            lyricsShown.current = next;
+            setLyrics(next.lines);
+            setLyricsPayload(next);
+            setLyricsError(null);
+            setTranslatedLyrics(null);
+            setShowTranslated(false);
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            if (generation === lyricsGeneration.current && !controller.signal.aborted) askAgain(attempt + 1);
+          });
+      }, wait);
+    };
     setLyricsLoading(true);
     setLyricsError(null);
     setLyricsAlternatives(null);
@@ -774,12 +822,14 @@ export default function App() {
     void fetchLyrics(song, controller.signal)
       .then((response) => {
         if (generation === lyricsGeneration.current) {
+          lyricsShown.current = response;
           setLyrics(response.lines);
           setLyricsPayload(response);
         }
       })
       .catch((error: unknown) => {
         if (generation !== lyricsGeneration.current || (error instanceof DOMException && error.name === 'AbortError')) return;
+        lyricsShown.current = null;
         if (error instanceof ApiError && error.status === 404) {
           // No lyrics is an answer, not an error: the panel shows its empty state.
           setLyrics([]);
@@ -792,9 +842,14 @@ export default function App() {
         }
       })
       .finally(() => {
-        if (generation === lyricsGeneration.current) setLyricsLoading(false);
+        if (generation !== lyricsGeneration.current) return;
+        setLyricsLoading(false);
+        if (!controller.signal.aborted) askAgain(0);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      window.clearTimeout(upgradeTimer);
+    };
   }, [playerSong?.id, playerSong?.source, playerSong?.title, playerSong?.artist, playerSong?.artwork]);
 
   // Related tracks for the player sheet. A failure just leaves the AI picks in place,
@@ -840,14 +895,12 @@ export default function App() {
     // Snapshot now-playing for prompt colouring on a cache miss; deps stay taste-stable.
     fetchAiRecommendations(currentSongIdRef.current, controller.signal)
       .then((response) => {
-        aiPicksRef.current = response.songs;
         setAiPicks(response.songs);
         setAiPicksReasoning(response.reasoning);
         setAiPicksProvider(response.provider);
       })
       .catch(() => {
         // Optional enhancement — quietly stay empty if unavailable (no key configured, no history yet, etc).
-        aiPicksRef.current = [];
         setAiPicks([]);
       });
     return () => controller.abort();
@@ -1180,15 +1233,16 @@ export default function App() {
       playable = matched;
     }
     const startRadio = forceRadio || (settings.autoplaySimilar && (fromSearch || shouldStartRadio(playable, queue)));
-    radioActiveRef.current = startRadio;
-    setDjLive(startRadio);
-    if (startRadio) radio.start(playable);
-    else radio.stop();
+    const continueRadio = forceRadio || settings.autoplaySimilar;
+    radioActiveRef.current = continueRadio;
+    setDjLive(continueRadio);
     const playableQueue = queue.map((item) => item.id === song.id ? playable : item).filter((item) => Boolean(item.streamUrl));
     // A new context replaces the old one; the listener's own queued songs stay next.
     const player = transportRef.current;
     const at = player.queue.findIndex((item) => item.id === player.currentSong?.id);
     const context = startRadio || fromSearch ? [playable] : uniqueByIdentity(playableQueue);
+    if (continueRadio) radio.start(playable, startRadio ? [] : context);
+    else radio.stop();
     const inContext = new Set(context.map((item) => item.id));
     const mine = (at >= 0 ? player.queue.slice(at + 1) : []).filter((item) => userQueuedRef.current.has(item.id) && !inContext.has(item.id));
     const cut = context.findIndex((item) => item.id === playable.id) + 1;
@@ -1200,11 +1254,9 @@ export default function App() {
     audio.selectSong(playable, cut > 0 ? [...context.slice(0, cut), ...mine, ...context.slice(cut)] : [playable, ...mine, ...context]);
     // Stay on the current surface — the persistent mini player appears in-place.
     setPlayerMode('mini');
-    // Same cap as the server keeps (RECENTLY_PLAYED_LIMIT): 25 recent listens.
-    setRecentlyPlayed((current) => [playable, ...current.filter((item) => item.id !== playable.id)].slice(0, 25));
-    void recordRecentlyPlayed(playable, 0).catch(() => undefined);
+    // Recently played is written by the listen tracker once the song has really been heard.
     tapHaptic();
-    if (startRadio) void fillRadioQueue();
+    if (continueRadio) void fillRadioQueue();
   };
 
   const playFromSearch = (song: UnifiedSong): Promise<void> => playSong(song, [song], true);
@@ -1275,8 +1327,6 @@ export default function App() {
     setDjLive(true);
     audio.selectSong(first, playOrderFrom(songs, first.id));
     setPlayerMode('mini');
-    setRecentlyPlayed((current) => [first, ...current.filter((item) => item.id !== first.id)].slice(0, 25));
-    void recordRecentlyPlayed(first, 0).catch(() => undefined);
     tapHaptic();
   };
 
@@ -1527,17 +1577,11 @@ export default function App() {
   const djVoiceRef = useRef(djVoice);
   djVoiceRef.current = djVoice;
 
-  // Keep radio topped up so end-of-track advance always has a distinct next.
+  // Refresh on every track, even with a full queue: new candidates follow the listening session.
   useEffect(() => {
-    const song = audio.currentSong;
-    if (!song || !radioActiveRef.current) return undefined;
-    const index = audio.queue.findIndex((item) => item.id === song.id);
-    const remaining = index >= 0 ? audio.queue.length - index - 1 : 0;
-    if (remaining >= 3) return undefined;
-    const controller = new AbortController();
-    void fillRadioQueue(controller.signal);
-    return () => controller.abort();
-  }, [audio.currentSong?.id, audio.queue.length, fillRadioQueue]);
+    if (!audio.currentSong || !radioActiveRef.current || remotePlayback) return;
+    void fillRadioQueue();
+  }, [audio.currentSong?.id, fillRadioQueue, remotePlayback]);
 
   /** Plays a catalog album from its card: loads the whole album, then plays it in track order. */
   const playCatalogAlbum = (album: AlbumSummary): void => {
@@ -1564,7 +1608,7 @@ export default function App() {
     const key = likedKey(song);
     const wasLiked = likedIds.has(key);
     const nextLiked = !wasLiked;
-    if (nextLiked && song.id === audio.currentSong?.id) radio.love(song);
+    if (nextLiked && !remotePlayback && song.id === audio.currentSong?.id) radio.love(song);
     setPersonalActionError(null);
     setLikedIds((current) => {
       const next = new Set(current);
@@ -1598,12 +1642,14 @@ export default function App() {
     setLyricsError(null);
     void fetchLyrics(song)
       .then((response) => {
+        lyricsShown.current = response;
         setLyrics(response.lines);
         setLyricsPayload(response);
       })
       .catch((error: unknown) => {
         if (error instanceof ApiError && error.status === 404) {
           // No lyrics is an answer, not an error: the panel shows its empty state.
+          lyricsShown.current = null;
           setLyrics([]);
           setLyricsPayload(null);
         }
@@ -1633,6 +1679,9 @@ export default function App() {
   };
 
   const selectLyricsAlternative = (alternative: LyricsPayload): void => {
+    // A version chosen by hand stays, even if a synced one turns up later.
+    lyricsPicked.current = true;
+    lyricsShown.current = alternative;
     setLyrics(alternative.lines);
     setLyricsPayload(alternative);
     setTranslatedLyrics(null);
@@ -1777,11 +1826,39 @@ export default function App() {
     />
   );
 
+  /** Puts a committed LuvLink anchor into the layout's player. False means the browser wants a tap first. */
+  const applyLuvLinkPlayback = async (anchor: LuvLinkPlaybackAnchor, resolvePositionSec: () => number): Promise<boolean> => {
+    if (remotePlayback) return false;
+    if (!anchor.song) { await audio.requestPlayback(false); return true; }
+    const currentRef = audio.currentSong ? snapshotForSong(audio.currentSong)?.ref : null;
+    if (currentRef !== anchor.song.ref) {
+      const match = await resolveSnapshotForPlayback(anchor.song).catch(() => null);
+      if (!match) return false;
+      // The room owns what plays next: no local radio or queue behind the room's song.
+      radioActiveRef.current = false;
+      setDjLive(false);
+      radio.stop();
+      // Loaded without autoplay: the room decides when it starts. The element only points at the new
+      // stream after React renders, so a seek made now would land on the previous track.
+      audio.loadForConnect(match, [match], false);
+      const element = audio.audioRef.current;
+      if (!element || !(await waitForAudioSource(element, resolveApiUrl(match.streamUrl)))) return false;
+    }
+    const element = audio.audioRef.current;
+    if (!element || !(await waitForAudioMetadata(element))) return false;
+    // Read after loading: a slow stream must not start behind the room by however long it took to open.
+    const positionSec = resolvePositionSec();
+    if (needsSeek(element.currentTime, positionSec, anchor.playing)) await audio.seek(positionSec);
+    await audio.requestPlayback(anchor.playing);
+    return !anchor.playing || audio.audioRef.current?.paused === false;
+  };
+
   return (
     <PlaylistsContext.Provider value={playlists}>
     <QueueActionsContext.Provider value={queueActions}>
     <DjSessionContext.Provider value={dj}>
     <DjVoiceContext.Provider value={djVoice}>
+    <LuvLinkSessionProvider signedIn={knownAccount !== null} userId={knownAccount?.userId ?? null} currentSong={remotePlayback || !audio.currentSong ? null : snapshotForSong(audio.currentSong)} currentSongKey={remotePlayback ? null : audio.currentSong?.id ?? null} isPlaying={audio.isPlaying} isBuffering={audio.isBuffering} audioRef={audio.audioRef} onStopOutput={stopLuvLinkOutput} onApplyPlayback={applyLuvLinkPlayback}>
     <div ref={shellRef} className={`app-shell ${motionPaused ? 'is-motion-paused' : ''} ${navCollapsed ? 'is-nav-collapsed' : ''}`} data-theme="dark" data-motion-paused={motionPaused ? 'true' : undefined} style={shellStyle}>
       {immersiveOpen ? null : (
         <DynamicAura paused={motionPaused} energy={0.55} mood="energy" palette={settings.appBackground === 'glow' ? playingPalette : shaderPalette} variant={settings.appBackground} />
@@ -1859,7 +1936,7 @@ export default function App() {
             isPlaying={playerIsPlaying}
             likedIds={likedIds}
             loading={personalLoading || playlists.loading}
-            onPlay={(song, queue) => playSong(song, queue)}
+            onPlay={(song, queue) => playSong(song, queue, false, settings.autoplaySimilar)}
             onToggle={togglePlayer}
             onLike={toggleLike}
             onOpenArtist={openArtist}
@@ -1906,24 +1983,7 @@ export default function App() {
         ) : view === 'blendJoin' && inviteCode ? (
           <BlendJoinPage key={`${knownAccount?.userId ?? 'guest'}:${inviteCode}`} code={inviteCode} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} />
         ) : view === 'luvLink' ? (
-          <LuvLinkPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} displayName={knownAccount ? accountDisplayName(knownAccount) : 'Listener'} userId={knownAccount?.userId ?? null} inviteCode={inviteCode} roomId={luvLinkRoomId} currentSong={playerSong ? snapshotForSong(playerSong) : null} currentSongKey={playerSong?.id ?? null} isPlaying={playerIsPlaying} positionSec={audio.audioRef.current?.currentTime ?? 0} audioElement={audio.audioRef.current} onSignIn={() => setAuthOpen(true)} onStopOutput={stopLuvLinkOutput} onApplyPlayback={async (anchor, positionSec) => {
-            if (remotePlayback) return false;
-            if (!anchor.song) { await audio.requestPlayback(false); return true; }
-            const currentRef = audio.currentSong ? snapshotForSong(audio.currentSong)?.ref : null;
-            if (currentRef !== anchor.song.ref) {
-              const match = await resolveSnapshotForPlayback(anchor.song).catch(() => null);
-              if (!match) return false;
-              // The room owns what plays next: no local radio or queue behind the room's song.
-              radioActiveRef.current = false;
-              setDjLive(false);
-              radio.stop();
-              audio.selectSong(match, [match]);
-            }
-            await audio.seek(positionSec);
-            if (anchor.playing) await audio.requestPlayback(true);
-            else await audio.requestPlayback(false);
-            return !anchor.playing || audio.audioRef.current?.paused === false;
-          }} />
+          <LuvLinkPage key={knownAccount?.userId ?? 'guest'} displayName={knownAccount ? accountDisplayName(knownAccount) : 'Listener'} inviteCode={inviteCode} roomId={luvLinkRoomId} currentSong={playerSong ? snapshotForSong(playerSong) : null} onSignIn={() => setAuthOpen(true)} />
         ) : view === 'settings' ? (
           <SettingsPage
             account={account.profile && !accountResolving ? { isGuest: account.profile.isGuest, name: account.profile.displayName ?? null, email: account.profile.email ?? null } : null}
@@ -1931,6 +1991,7 @@ export default function App() {
             onOpenAccount={() => setAuthOpen(true)}
             karaokeBackend={liveKaraoke.backend}
             karaokeActive={liveKaraoke.active}
+            onChooseAiModel={liveKaraoke.chooseAiModel}
           />
         ) : view === 'library' ? <LibraryPage key={knownAccount?.userId ?? 'guest'} signedIn={knownAccount !== null} onSignIn={() => setAuthOpen(true)} likedSongs={likedSongs} recentlyPlayed={recentlyPlayed} likedIds={likedIds} loading={personalLoading} error={personalError} actionError={personalActionError} currentSongId={playerSong?.id} isPlaying={playerIsPlaying} onPlay={playSong} onLike={toggleLike} onRetry={() => void loadPersonalSpace()} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'liked' ? <CollectionPage kind="liked" title="Liked Songs" songs={likedSongs} loading={personalLoading} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(likedSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} /> : view === 'playlist' ? <CollectionPage kind="playlist" title={activePlaylist?.name ?? (playlists.loading ? 'Playlist' : 'Playlist not found')} songs={activePlaylistSongs} loading={playlists.loading || (activePlaylist !== null && activePlaylistSongs.length < activePlaylist.songIds.length)} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(activePlaylistSongs, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbum} onDiscover={() => { router.push(paths.discover); window.setTimeout(() => setPaletteOpen(true), 0); }} {...(activePlaylist ? { onDelete: () => { void playlists.remove(activePlaylist.id); router.push(paths.library); }, share: { libraryId: activePlaylist.id, isPublic: activePlaylist.isPublic, onChanged: () => { void playlists.reload(); } }, cover: { libraryId: activePlaylist.id, ...(activePlaylist.coverUrl ? { coverUrl: activePlaylist.coverUrl } : {}), onUpload: playlists.setCover } } : {})} /> : view === 'artist' && artistName ? <ArtistPage name={artistName} profile={artistProfile} photoFallback={faces[artistName.toLocaleLowerCase()] || null} songs={artistTracks} related={relatedArtists} loading={artistLoading && artistTracks.length === 0} error={artistTracks.length === 0 ? artistError : null} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onBack={() => goBack(paths.discover)} onRetry={() => setArtistReload((count) => count + 1)} onToggle={togglePlayer} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={(shuffle) => playAlbumTracks(artistTracks, shuffle)} onLike={toggleLike} onOpenAlbum={openAlbumByName} onPlayCatalogAlbum={playCatalogAlbum} onOpenArtist={openArtist} /> : view === 'album' && albumSeed ? <AlbumPage seed={albumSeed} detail={albumState.detail} loading={albumState.loading} tracks={albumTracks} palette={palette} currentSongId={playerSong?.id ?? null} isPlaying={playerIsPlaying} likedIds={likedIds} onPlayTrack={(song, queue) => playSong(song, queue)} onPlayAll={() => playAlbumTracks(albumTracks, false)} onShuffle={() => playAlbumTracks(albumTracks, true)} onLike={toggleLike} onLikeAlbum={() => { if (albumLikeTarget) toggleLike(albumLikeTarget); }} albumLiked={albumLikeTarget ? likedIds.has(likedKey(albumLikeTarget)) : false} /> : <>
         <div className="browse-grid">
@@ -2082,10 +2143,10 @@ export default function App() {
             <button type="button" className="am-art" onClick={() => setPlayerMode('immersive')} aria-label="Expand player"><Artwork song={playerSong} size="small" /></button>
             <div className="am-now-body">
               <button type="button" className="am-meta" onClick={() => setPlayerMode('immersive')}>
-                <strong>{playerSong.title}</strong>
-                <span>{[playerSong.artist, playerSong.album].filter(Boolean).join(' \u2014 ')}</span>
+                <strong><MarqueeText text={playerSong.title} /></strong>
+                <MarqueeText text={[playerSong.artist, playerSong.album].filter(Boolean).join(' \u2014 ')} />
               </button>
-              <BarScrubber playhead={playhead} duration={playerDuration} onSeek={seekPlayer} />
+              <BarScrubber playhead={playhead} duration={playerDuration} onSeek={seekPlayer} karaokeCoverage={remotePlayback ? null : liveKaraoke.coverage} />
             </div>
             <IconButton icon={HeartIcon} label={likedIds.has(likedKey(playerSong)) ? 'Remove from likes' : 'Add to likes'} active={likedIds.has(likedKey(playerSong))} onClick={() => toggleLike(playerSong)} />
           </div>
@@ -2243,6 +2304,8 @@ export default function App() {
         liked={playerSong ? likedIds.has(likedKey(playerSong)) : false}
         lyrics={{
           lines: lyrics,
+          type: lyricsPayload?.type,
+          duration: playerSong?.duration ?? 0,
           translations: lyricTranslations,
           playhead,
           playing: playerIsPlaying,
@@ -2264,6 +2327,7 @@ export default function App() {
           alternativesError: lyricsAlternativesError,
           onLoadAlternatives: loadLyricsAlternatives,
           onSelectAlternative: selectLyricsAlternative,
+          onSyncLyrics: () => { if (playerIsPlaying) togglePlayer(); setLyricsSyncSong(playerSong); },
           songId: playerSong?.id ?? null
         }}
         palette={palette}
@@ -2289,6 +2353,7 @@ export default function App() {
         onOpenAlbum={openAlbumFromPlayer}
         onOpenArtist={openArtistFromPlayer}
       />
+      {lyricsSyncSong ? <LyricsSyncDialog key={lyricsSyncSong.id} song={lyricsSyncSong} signedIn={signIn.signedIn} onSignIn={() => { setLyricsSyncSong(null); setAuthOpen(true); }} onClose={() => setLyricsSyncSong(null)} onSaved={retryLyrics} onUse={(payload) => { if (playerSong?.id === lyricsSyncSong.id) selectLyricsAlternative(payload); setLyricsSyncSong(null); }} playhead={playhead} playing={playerIsPlaying} onActivateLine={(seconds) => { if (playerSong?.id === lyricsSyncSong.id) activateLyricLine(seconds); else void playSong(lyricsSyncSong, [lyricsSyncSong]).then(() => activateLyricLine(seconds)); }} /> : null}
       <DjQuickPrompt
         open={djQuickOpen && view !== 'dj'}
         onClose={closeDjQuick}
@@ -2300,6 +2365,7 @@ export default function App() {
       <OfflineToast visible={offline} />
       <NoticeToast notice={connect.notice} onDone={connect.dismissNotice} />
     </div>
+    </LuvLinkSessionProvider>
     </DjVoiceContext.Provider>
     </DjSessionContext.Provider>
     </QueueActionsContext.Provider>

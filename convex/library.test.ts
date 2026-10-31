@@ -75,4 +75,39 @@ describe('library origin', () => {
     expect((await t.query(api.library.recentLikes, { secret, userId: 'ravi', limit: 5000 })).length).toBe(59);
     expect((await t.query(api.library.recentItems, { secret, userId: 'ravi', limit: 300 })).map((row) => row.ref)).toEqual(['saavn:i1']);
   });
+
+  // 2026-10-18: the profile copy is now kept with ordered maps instead of an indexOf and a copy per row.
+  it('keeps the profile copy in order: an unlike removes, a re-like or re-add goes last', async () => {
+    const t = backend();
+    await t.mutation(api.profiles.save, { secret, user: profile('mira') });
+    await t.mutation(api.library.apply, {
+      secret,
+      userId: 'mira',
+      ops: [
+        { op: 'like', ref: 'saavn:a', at: 100 },
+        { op: 'like', ref: 'saavn:b', at: 101 },
+        { op: 'like', ref: 'saavn:c', at: 102 },
+        { op: 'playlist_upsert', playlistId: 'mix', name: 'Mix', at: 100 },
+        { op: 'playlist_add', playlistId: 'mix', ref: 'saavn:x', at: 101 },
+        { op: 'playlist_add', playlistId: 'mix', ref: 'saavn:y', at: 102 },
+        { op: 'playlist_add', playlistId: 'mix', ref: 'saavn:z', at: 103 }
+      ]
+    });
+    const copy = async () => t.run(async (ctx) => ctx.db.query('profiles').withIndex('by_userId', (q) => q.eq('userId', 'mira')).unique());
+    const seeded = await copy();
+    const seededLikes = seeded?.likedSongIds ?? [];
+    const seededMix = seeded?.libraries.find((library) => library.id === 'mix')?.songIds ?? [];
+    expect([...seededLikes].sort()).toEqual(['a', 'b', 'c']);
+    expect([...seededMix].sort()).toEqual(['x', 'y', 'z']);
+
+    await t.mutation(api.library.apply, { secret, userId: 'mira', ops: [{ op: 'unlike', ref: 'saavn:a', at: 200 }, { op: 'playlist_remove', playlistId: 'mix', ref: 'saavn:x', at: 200 }] });
+    const removed = await copy();
+    expect(removed?.likedSongIds).toEqual(seededLikes.filter((id) => id !== 'a'));
+    expect(removed?.libraries.find((library) => library.id === 'mix')?.songIds).toEqual(seededMix.filter((id) => id !== 'x'));
+
+    await t.mutation(api.library.apply, { secret, userId: 'mira', ops: [{ op: 'like', ref: 'saavn:a', at: 300 }, { op: 'playlist_add', playlistId: 'mix', ref: 'saavn:x', at: 300 }] });
+    const back = await copy();
+    expect(back?.likedSongIds).toEqual([...seededLikes.filter((id) => id !== 'a'), 'a']);
+    expect(back?.libraries.find((library) => library.id === 'mix')?.songIds).toEqual([...seededMix.filter((id) => id !== 'x'), 'x']);
+  });
 });

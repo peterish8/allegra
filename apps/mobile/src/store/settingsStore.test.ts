@@ -1,4 +1,6 @@
-import { DEFAULT_LYRICS_DELAY, isCardPlayerBackground, lyricsTextStyle, migrateLyricsDelay, normalizeMiniPlayerBackground, normalizePlayerBackground } from './settingsStore';
+jest.mock('react-native', () => ({ AppState: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) } }));
+
+import { DEFAULT_LYRICS_DELAY, isCardPlayerBackground, lyricsTextStyle, migrateLyricsDelay, normalizeMiniPlayerBackground, normalizePlayerBackground, playerBackgroundChange } from './settingsStore';
 
 describe('lyrics timing', () => {
   it('starts in sync', () => {
@@ -62,6 +64,17 @@ describe('lyricsTextStyle', () => {
     expect(lyricsTextStyle(90, 'normal').fontSize).toBe(44);
     expect(lyricsTextStyle(4, 'normal').fontSize).toBe(20);
     expect(lyricsTextStyle(Number.NaN, 'normal').fontSize).toBe(28);
+  });
+});
+
+describe('playerBackgroundChange', () => {
+  it('opens Cover glow on its artwork card', () => {
+    expect(playerBackgroundChange('aura')).toEqual({ playerBackground: 'aura', playerCoverFull: false });
+  });
+
+  it('leaves the cover size alone for the other styles', () => {
+    expect(playerBackgroundChange('youtube')).toEqual({ playerBackground: 'youtube' });
+    expect(playerBackgroundChange('blend')).toEqual({ playerBackground: 'blend' });
   });
 });
 

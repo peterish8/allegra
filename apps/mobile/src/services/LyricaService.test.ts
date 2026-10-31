@@ -1,4 +1,26 @@
-import { getLyricsFriendlyError } from './LyricaService';
+import { getLyricsFriendlyError, lyricaService } from './LyricaService';
+import { continuePlainLyrics, plainLyricsScroll } from '@shared/plainLyrics';
+
+describe('plain lyrics', () => {
+  it('preserves words without inventing sung-line times', () => {
+    const lines = lyricaService.parseLrc('First line\n\nSecond line', 210);
+    expect(lines.map(line => line.timestamp)).toEqual([0, 0]);
+    expect(lines.map(line => line.text)).toEqual(['First line', 'Second line']);
+  });
+  it('keeps real line timings intact', () => {
+    expect(lyricaService.parseLrc('[00:12.00]First line\n[00:17.00]Second line').map(line => line.timestamp)).toEqual([12, 17]);
+  });
+  it('scrolls proportionally after the intro, independently of the number of words', () => {
+    expect(plainLyricsScroll(110, 210, 1600, 600)).toBe(500);
+    expect(plainLyricsScroll(2, 210, 1600, 600)).toBe(0);
+    expect(plainLyricsScroll(210, 210, 1600, 600)).toBe(1000);
+  });
+  it('continues from the place the reader scrolled to, without jumping back', () => {
+    expect(continuePlainLyrics(110, 210, 1600, 600, 110, 800)).toBe(800);
+    expect(continuePlainLyrics(120, 210, 1600, 600, 110, 800)).toBe(850);
+    expect(continuePlainLyrics(6, 210, 1600, 600, 4, 500)).toBe(510);
+  });
+});
 
 describe('getLyricsFriendlyError', () => {
   it('returns network message for fetch failures', () => {

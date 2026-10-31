@@ -105,6 +105,22 @@ function songKey(song: RadioSong): string {
   return identityKey(song.title, song.artist);
 }
 
+/**
+ * Another upload of the same recording: one base title extends the other by whole words
+ * ("Lutt Le Gaya" / "Lutt Le Gaya Eclipsa Audio") and the two share a credited artist.
+ * "Kesariya Rangu" by other artists is a different song and stays apart.
+ */
+export function isVersionOf(a: RadioSong, b: RadioSong): boolean {
+  const first = baseTitle(a.title);
+  const second = baseTitle(b.title);
+  if (!first || !second) return false;
+  const shorter = first.length <= second.length ? first : second;
+  const longer = shorter === first ? second : first;
+  if (longer !== shorter && !longer.startsWith(`${shorter} `)) return false;
+  const artists = new Set(creditedArtists(a.artist).map(artistKey));
+  return creditedArtists(b.artist).some((name) => artists.has(artistKey(name)));
+}
+
 function leadArtist(song: RadioSong): string {
   return artistKey(creditedArtists(song.artist)[0] ?? song.artist);
 }
@@ -114,6 +130,8 @@ export class RadioSession<S extends RadioSong> {
   private readonly played = new Set<string>();
   private readonly playedTitles = new Set<string>();
   private readonly playedIds = new Set<string>();
+  /** Played songs, for spotting other uploads of them (`isVersionOf`). */
+  private readonly playedSongs: RadioSong[] = [];
   private readonly feedback = new Map<string, number>();
   private readonly applied = new Map<string, { readonly weight: number; readonly skip: boolean }>();
   private readonly positives: S[] = [];
@@ -177,6 +195,7 @@ export class RadioSession<S extends RadioSong> {
 
   /** The song started playing: it is not upcoming any more. */
   public markPlayed(song: RadioSong): void {
+    if (!this.playedIds.has(song.id)) this.playedSongs.push(song);
     this.played.add(songKey(song));
     this.playedTitles.add(baseTitle(song.title));
     this.playedIds.add(song.id);
@@ -267,6 +286,12 @@ export class RadioSession<S extends RadioSong> {
       const chosen = pool[best];
       if (!chosen || bestScore < -50) break;
       pool.splice(best, 1);
+      // One upload of a song per batch: drop the others (and covers sharing its title) from this pick.
+      const chosenTitle = baseTitle(chosen.candidate.song.title);
+      for (let index = pool.length - 1; index >= 0; index -= 1) {
+        const other = pool[index]?.candidate.song;
+        if (other && (baseTitle(other.title) === chosenTitle || isVersionOf(other, chosen.candidate.song))) pool.splice(index, 1);
+      }
       const lead = leadArtist(chosen.candidate.song);
       perArtist.set(lead, (perArtist.get(lead) ?? 0) + 1);
       previousLead = lead;
@@ -326,6 +351,7 @@ export class RadioSession<S extends RadioSong> {
     const { song } = candidate;
     if (excluded.has(song.id) || this.playedIds.has(song.id)) return false;
     if (this.played.has(songKey(song)) || this.playedTitles.has(baseTitle(song.title))) return false;
+    if (this.playedSongs.some((played) => isVersionOf(played, song))) return false;
     return (this.feedback.get(leadArtist(song)) ?? 0) > RADIO_RULES.banBelow;
   }
 

@@ -13,6 +13,8 @@ export interface SpotifyPlaylist {
   readonly name: string;
   readonly snapshotId: string;
   readonly total: number;
+  /** `total` is a placeholder 0: Spotify omitted or zeroed the count and the items endpoint could not confirm it. */
+  readonly totalUnknown?: true;
   readonly imageUrl: string | null;
 }
 /** Liked Songs has no snapshot id; its size and newest save stand in for one. */
@@ -61,17 +63,21 @@ export class SpotifyProvider {
       url = typeof page.next === 'string' ? page.next : null;
     }
     // /me/playlists now often leaves the count out or at 0 (PixelPlayer hit the same); ask the
-    // items endpoint for the real total, six at a time. A failed count stays 0 rather than failing the list.
-    const missing = out.filter(row => row.total === 0).slice(0, COUNT_FIX_MAX);
-    for (let i = 0; i < missing.length; i += 6) {
-      await Promise.all(missing.slice(i, i + 6).map(async (row) => {
+    // items endpoint for the real total, six at a time. A count that can't be confirmed (failed, or past the
+    // budget) is marked unknown rather than shown as an empty playlist; it never fails the list.
+    const missing = out.filter(row => row.total === 0);
+    const checked = missing.slice(0, COUNT_FIX_MAX);
+    const confirmed = new Set<string>();
+    for (let i = 0; i < checked.length; i += 6) {
+      await Promise.all(checked.slice(i, i + 6).map(async (row) => {
         try {
           const data = object(await this.get(accessToken, `${API}/playlists/${encodeURIComponent(row.id)}/items?limit=1&fields=total`));
           const total = number(data.total);
-          if (total !== undefined) out[out.indexOf(row)] = { ...row, total };
-        } catch { /* keep 0 */ }
+          if (total !== undefined) { out[out.indexOf(row)] = { ...row, total }; confirmed.add(row.id); }
+        } catch { /* stays unknown */ }
       }));
     }
+    for (const row of missing) if (!confirmed.has(row.id)) out[out.indexOf(row)] = { ...row, totalUnknown: true };
     return out;
   }
 

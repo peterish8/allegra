@@ -4,7 +4,11 @@ import test from 'node:test';
 import { MemoryCacheStore } from '../lib/cache.js';
 import { BetterLyricsProvider } from '../providers/betterlyrics.js';
 import { LrclibProvider } from '../providers/lrclib.js';
+import { LyricSites, type LyricSite, type SiteLyrics, type SiteQuery } from '../providers/lyricsSites/lyricSites.js';
+import { SaavnLyricsProvider } from '../providers/saavnLyrics.js';
+import { matchKey } from '../shared/songRef.js';
 import { LyricsService, cleanLyricsQuery } from './lyrics.js';
+import { MemoryVerifiedLyricsStore } from './verifiedLyrics.js';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -259,4 +263,229 @@ test('a lookup past its budget answers null now and finishes in the background f
   const later = await service.find('Slow Song', 'Someone', 200, false);
   assert.equal(later?.type, 'synced');
   assert.equal(requests, 1);
+});
+
+const MOZHIYE = { ref: 'saavn:B4-hLCKJ', matchKey: matchKey('Mozhiye', 'Sai Abhyankkar'), title: 'Mozhiye', artist: 'Sai Abhyankkar', duration: 232 };
+const syncedVersion = (script: 'latin' | 'native', lrc: string) => ({
+  script,
+  language: 'ta',
+  lrc,
+  source: { name: 'site', url: 'https://example.test/mozhiye' },
+  confidence: 0.8,
+  syncedBy: 'listener-1'
+});
+const emptyLrclib = () => new LrclibProvider({ baseUrl: 'https://lrclib.test/api', fetchImpl: async (input) => json(String(input).includes('/get?') ? {} : [], String(input).includes('/get?') ? 404 : 200) });
+const saavnAnswer = (lyrics: string | null, seen: string[] = []) => new SaavnLyricsProvider({
+  baseUrl: 'https://saavn.test/api.php',
+  fetchImpl: async (input) => {
+    seen.push(String(input));
+    return json(lyrics === null ? { status: 'failure' } : { lyrics });
+  }
+});
+
+test('listener-synced lyrics answer first, English before the song\'s own script, with word timings', async () => {
+  const verified = new MemoryVerifiedLyricsStore();
+  await verified.submit(MOZHIYE, syncedVersion('native', '[00:12.00]மொழியே\n[00:16.00]மொழியே மொழியே'));
+  await verified.submit(MOZHIYE, syncedVersion('latin', '[00:12.00]<00:12.000>Mozhiye <00:12.800>mozhiye<00:13.600>\n[00:16.00]Un mozhiye'));
+  const lrclibCalls: string[] = [];
+  const service = new LyricsService(
+    new LrclibProvider({ baseUrl: 'https://lrclib.test/api', fetchImpl: async (input) => { lrclibCalls.push(String(input)); return json({}, 404); } }),
+    new MemoryCacheStore(),
+    { verified }
+  );
+
+  const payload = await service.find('Mozhiye (From "Baththa")', 'Sai Abhyankkar, Sid Sriram', 232, false, { ref: MOZHIYE.ref });
+  assert.equal(payload?.source, 'Allegra (English)');
+  assert.equal(payload?.type, 'synced');
+  assert.equal(payload?.lines[0]?.words?.length, 2);
+  assert.equal(lrclibCalls.length, 0, 'no provider is asked when listeners already synced it');
+
+  const versions = await service.alternatives('Mozhiye (From "Baththa")', 'Sai Abhyankkar, Sid Sriram', 232, false, { ref: MOZHIYE.ref });
+  assert.deepEqual(versions.slice(0, 2).map((version) => version.source), ['Allegra (English)', 'Allegra (Tamil)']);
+});
+
+test('a hidden sync is not served, and a song with no ref is matched by title, artist and length', async () => {
+  const verified = new MemoryVerifiedLyricsStore();
+  await verified.submit(MOZHIYE, syncedVersion('latin', '[00:12.00]Mozhiye'));
+  const service = new LyricsService(emptyLrclib(), new MemoryCacheStore(), { verified });
+
+  assert.equal((await service.verified(undefined, 'Mozhiye', 'Sai Abhyankkar', 233))?.ref, MOZHIYE.ref);
+  assert.equal(await service.verified(undefined, 'Mozhiye', 'Sai Abhyankkar', 300), null, 'a different length is a different recording');
+
+  await verified.setHidden(MOZHIYE.ref, 'latin', true);
+  await service.forgetVerified(MOZHIYE.ref);
+  assert.equal(await service.verified(MOZHIYE.ref, 'Mozhiye', 'Sai Abhyankkar', 232), null);
+  assert.equal(await service.verified(undefined, 'Mozhiye', 'Sai Abhyankkar', 233), null, 'moderation also invalidates title/artist lookups');
+});
+
+test('case-sensitive Saavn ids never share a lyrics cache entry', async () => {
+  const seen: string[] = [];
+  const service = new LyricsService(emptyLrclib(), new MemoryCacheStore(), {
+    saavnLyrics: new SaavnLyricsProvider({
+      baseUrl: 'https://saavn.test/api.php',
+      fetchImpl: async (input) => {
+        const id = new URL(String(input)).searchParams.get('lyrics_id');
+        seen.push(id ?? '');
+        return json({ lyrics: `Words for ${id}<br>Second line` });
+      }
+    })
+  });
+  const first = await service.find('Song', 'Artist', 200, false, { ref: 'saavn:AbC' });
+  const second = await service.find('Song', 'Artist', 200, false, { ref: 'saavn:abc' });
+  assert.notEqual(first?.lines[0]?.text, second?.lines[0]?.text);
+  assert.deepEqual(seen, ['AbC', 'abc']);
+});
+
+test('JioSaavn plain lyrics answer for a Saavn song when the providers have none, and lead Other lyrics', async () => {
+  const seen: string[] = [];
+  const service = new LyricsService(emptyLrclib(), new MemoryCacheStore(), {
+    saavnLyrics: saavnAnswer('Hey yen goli sodave<br>Yen curry kozhumbe<br>Un kutty puppy naan', seen),
+    verified: new MemoryVerifiedLyricsStore()
+  });
+
+  const payload = await service.find('Rowdy Baby', 'Dhanush', 281, false, { ref: 'saavn:_GIuQbB_' });
+  assert.equal(payload?.source, 'JioSaavn');
+  assert.equal(payload?.type, 'plain');
+  assert.deepEqual(payload?.lines.map((line) => line.text), ['Hey yen goli sodave', 'Yen curry kozhumbe', 'Un kutty puppy naan']);
+
+  const versions = await service.alternatives('Rowdy Baby', 'Dhanush', 281, false, { ref: 'saavn:_GIuQbB_' });
+  assert.equal(versions[0]?.source, 'JioSaavn', 'only version, so first');
+  // Asked once, then answered from the cache.
+  assert.equal(seen.length, 1);
+});
+
+test('JioSaavn is not asked for Gaana songs, without a ref, or when only synced lyrics will do', async () => {
+  const seen: string[] = [];
+  const service = new LyricsService(emptyLrclib(), new MemoryCacheStore(), { saavnLyrics: saavnAnswer('Line one<br>Line two', seen) });
+  assert.equal(await service.find('Song', 'Artist', 200, false, { ref: 'gaana:abc' }), null);
+  assert.equal(await service.find('Song', 'Artist', 200, false), null);
+  assert.equal(await service.find('Song', 'Artist', 200, true, { ref: 'saavn:abc' }), null);
+  assert.equal(seen.length, 0);
+});
+
+test('a provider answer still beats JioSaavn, and a JioSaavn miss is a plain miss', async () => {
+  const service = new LyricsService(
+    new LrclibProvider({ baseUrl: 'https://lrclib.test/api', fetchImpl: async () => json({ trackName: 'Rowdy Baby', syncedLyrics: '[00:01.00] one\n[00:02.00] two', duration: 281 }) }),
+    new MemoryCacheStore(),
+    { saavnLyrics: saavnAnswer('Plain one<br>Plain two') }
+  );
+  assert.equal((await service.find('Rowdy Baby', 'Dhanush', 281, false, { ref: 'saavn:_GIuQbB_' }))?.source, 'LRCLIB');
+
+  const none = new LyricsService(emptyLrclib(), new MemoryCacheStore(), { saavnLyrics: saavnAnswer(null) });
+  assert.equal(await none.find('Mozhiye', 'Sai Abhyankkar', 232, false, { ref: MOZHIYE.ref }), null);
+});
+
+/** A lyric site that answers like tamil2lyrics does for Mozhiye, counting what it is asked. */
+function fakeSite(asked: SiteQuery[], versions: SiteLyrics['versions'] = [
+  { script: 'latin', language: 'ta', text: 'Uyire uyire uyire uyire\nThaene mozhiye seiye kaniye\n\nMagale magale kanne maniye\nMana dhavan mugam paakkavum' },
+  { script: 'native', language: 'ta', text: 'உயிரே உயிரே\nதேனே மொழியே\nமகளே மகளே\nமன தவன் முகம்' }
+]): LyricSites {
+  const site: LyricSite = {
+    languages: ['tamil'],
+    find: async (query) => {
+      asked.push(query);
+      return { versions, source: { name: 'tamil2lyrics', url: 'https://www.tamil2lyrics.com/lyrics/mozhiye-song-lyrics/' } };
+    }
+  };
+  return new LyricSites([site], new MemoryCacheStore());
+}
+
+test('a lyric site answers Mozhiye when providers and JioSaavn have nothing, never naming the site', async () => {
+  const asked: SiteQuery[] = [];
+  const service = new LyricsService(emptyLrclib(), new MemoryCacheStore(), {
+    saavnLyrics: saavnAnswer(null),
+    lyricSites: fakeSite(asked),
+    siteGraceMs: 0
+  });
+  const hints = { ref: MOZHIYE.ref, album: 'Mozhiye (From "Baththa")', language: 'tamil' };
+
+  const payload = await service.find('Mozhiye (From "Baththa")', 'Sai Abhyankkar, Sid Sriram, Karthik Netha', 232, false, hints);
+  assert.equal(payload?.type, 'plain');
+  assert.equal(payload?.source, 'Found online (English)');
+  assert.deepEqual(payload?.lines.slice(0, 2).map((line) => line.text), ['Uyire uyire uyire uyire', 'Thaene mozhiye seiye kaniye']);
+  // The site is asked with the bare title and the film, which is what its pages are filed under.
+  assert.deepEqual(asked[0], { title: 'Mozhiye', artist: 'Sai Abhyankkar, Sid Sriram, Karthik Netha', film: 'Baththa', language: 'tamil' });
+
+  const versions = await service.alternatives('Mozhiye (From "Baththa")', 'Sai Abhyankkar, Sid Sriram, Karthik Netha', 232, false, hints);
+  assert.deepEqual(versions.map((version) => version.source), [], 'raw site text is not an Other lyrics version');
+  const candidates = await service.sources('Mozhiye (From "Baththa")', 'Sai Abhyankkar, Sid Sriram, Karthik Netha', 232, hints);
+  assert.deepEqual(candidates.map(candidate => candidate.script), ['latin', 'native']);
+  assert.ok(!JSON.stringify([payload, versions]).includes('tamil2lyrics'), 'the site name never reaches a listener');
+});
+
+test('the sync finder includes exact timed provider lyrics first and marks matching site words already synced', async () => {
+  const service = new LyricsService(new LrclibProvider({
+    baseUrl: 'https://lrclib.test/api',
+    fetchImpl: async input => String(input).includes('/get?')
+      ? json({ trackName: 'Mozhiye', artistName: 'Singer', duration: 232, syncedLyrics: '[00:00.00]\n[00:10.00]First line\n[00:15.00]Second line' })
+      : json([])
+  }), new MemoryCacheStore(), { lyricSites: fakeSite([], [{ script: 'latin', language: 'ta', text: 'First line\nSecond line' }]) });
+  const found = await service.sources('Mozhiye', 'Singer', 232, { ref: MOZHIYE.ref, language: 'tamil' });
+  assert.equal(found[0]?.origin, 'provider');
+  assert.equal(found[0]?.synced, true);
+  assert.deepEqual(found[0]?.lines, ['First line', 'Second line']);
+  assert.equal(found[1]?.origin, 'site');
+  assert.equal(found[1]?.synced, true);
+});
+
+test('a song with synced lyrics (Rowdy Baby) never asks a lyric site, nor do other languages or synced-only lookups', async () => {
+  const asked: SiteQuery[] = [];
+  const quick = new LyricsService(
+    new LrclibProvider({ baseUrl: 'https://lrclib.test/api', fetchImpl: async () => json({ trackName: 'Rowdy Baby', syncedLyrics: '[00:01.00] one\n[00:02.00] two', duration: 281 }) }),
+    new MemoryCacheStore(),
+    { lyricSites: fakeSite(asked), siteGraceMs: 200 }
+  );
+  assert.equal((await quick.find('Rowdy Baby', 'Dhanush', 281, false, { language: 'tamil' }))?.source, 'LRCLIB');
+
+  const empty = new LyricsService(emptyLrclib(), new MemoryCacheStore(), { lyricSites: fakeSite(asked), siteGraceMs: 0 });
+  assert.equal(await empty.find('Blinding Lights', 'The Weeknd', 200, false, { language: 'english' }), null);
+  assert.equal(await empty.find('Mozhiye', 'Sid Sriram', 232, true, { language: 'tamil' }), null);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal(asked.length, 0);
+});
+
+test('JioSaavn\'s own lyrics still beat a lyric site', async () => {
+  const asked: SiteQuery[] = [];
+  const service = new LyricsService(emptyLrclib(), new MemoryCacheStore(), {
+    saavnLyrics: saavnAnswer('First official line<br>Second official line'),
+    lyricSites: fakeSite(asked),
+    siteGraceMs: 0
+  });
+  const song = { ref: 'saavn:Abc123', language: 'tamil' };
+  assert.equal((await service.find('Some Song', 'Some Singer', 240, false, song))?.source, 'JioSaavn');
+  const versions = await service.alternatives('Some Song', 'Some Singer', 240, false, song);
+  assert.deepEqual(versions.map((version) => version.source), ['JioSaavn']);
+});
+
+const slowLrclib = (ms: number) => new LrclibProvider({
+  baseUrl: 'https://lrclib.test/api',
+  fetchImpl: async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    return json({}, 404);
+  }
+});
+
+test('plain lyrics in hand end the wait after the grace period instead of the whole budget', async () => {
+  const service = new LyricsService(slowLrclib(400), new MemoryCacheStore(), { lyricSites: fakeSite([]), budgetMs: 5_000, siteGraceMs: 50 });
+  const started = Date.now();
+  const payload = await service.find('Mozhiye', 'Sid Sriram', 232, false, { language: 'tamil' });
+  assert.equal(payload?.source, 'Found online (English)');
+  assert.ok(Date.now() - started < 1_000, `answered after the grace period, not the 5 s budget (${Date.now() - started} ms)`);
+});
+
+test('a site answer still arrives when the budget is shorter than the grace period', async () => {
+  const service = new LyricsService(slowLrclib(400), new MemoryCacheStore(), { lyricSites: fakeSite([]), budgetMs: 150, siteGraceMs: 200 });
+  const payload = await service.find('Mozhiye', 'Sid Sriram', 232, false, { language: 'tamil' });
+  assert.equal(payload?.source, 'Found online (English)');
+});
+
+test('the sync finder shows site words without waiting the whole budget for a slow provider', async () => {
+  // LRCLIB never answers within the budget: before the fix the finder held the site words for all of it.
+  const slow = new LrclibProvider({ baseUrl: 'https://lrclib.test/api', fetchImpl: () => new Promise<Response>(() => undefined) });
+  const service = new LyricsService(slow, new MemoryCacheStore(), { lyricSites: fakeSite([]), budgetMs: 4_000 });
+  const started = Date.now();
+  const candidates = await service.sources('Mozhiye (From "Baththa")', 'Sai Abhyankkar, Sid Sriram, Karthik Netha', 232,
+    { ref: MOZHIYE.ref, album: 'Mozhiye (From "Baththa")', language: 'tamil' });
+  assert.ok(Date.now() - started < 2_000, `answered in ${Date.now() - started} ms`);
+  assert.deepEqual(candidates.map(candidate => candidate.origin), ['site', 'site']);
 });

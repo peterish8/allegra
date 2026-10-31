@@ -70,9 +70,14 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }).current;
 
   useEffect(() => {
-    playerControls.play = () => setTimeout(() => player.play(), 0);
-    playerControls.pause = () => setTimeout(() => player.pause(), 0);
-    playerControls.seekTo = pos => new Promise(resolve => setTimeout(() => { player.seekTo(pos); resolve(); }, 0));
+    // Straight to the native player: a timer hop waited for the next frame callback, and stalled with the app in the
+    // background.
+    playerControls.play = () => player.play();
+    playerControls.pause = () => player.pause();
+    playerControls.seekTo = pos => {
+      player.seekTo(pos);
+      return Promise.resolve();
+    };
     playerControls.setVolume = volume => NativeAudioPlayer.setVolume(volume);
     playerControls.getVolume = () => NativeAudioPlayer.getVolume() ?? 1;
     playerControls.getPosition = () => positionSV.value;

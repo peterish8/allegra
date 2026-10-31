@@ -37,6 +37,37 @@ let handoffAcknowledgedEpoch = -1;
 let handoffPendingEpoch = -1;
 let checkpoint: ReturnType<typeof setInterval> | null = null;
 let active = false;
+// A song this phone could not find or load is tried again a few times (backoff) for the same room state.
+const RETRY_DELAYS_MS = [2_000, 5_000, 12_000] as const;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retrySequence = -1;
+let retryAttempts = 0;
+
+/**
+ * Player changes this module makes while applying the room are not the listener's own intent. A catalog lookup
+ * can outlast any fixed window, so every change it makes re-arms the guard at the moment it happens.
+ */
+function holdEchoGuard(ms = 2_500): void { applyingAnchorUntil = Math.max(applyingAnchorUntil, Date.now() + ms); }
+
+function clearRetry(): void {
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
+}
+
+function scheduleRetry(sequence: number, generation: number): void {
+  if (retrySequence !== sequence) { retrySequence = sequence; retryAttempts = 0; }
+  const delay = RETRY_DELAYS_MS[retryAttempts];
+  if (delay === undefined) return;
+  retryAttempts += 1;
+  clearRetry();
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    const userId = state().ownedUserId;
+    if (!userId || !isCurrent(userId, sequence, generation)) return;
+    lastSeenSequence = -1;
+    void applyAnchor();
+  }, delay);
+}
 let soloQueue: { playlistId: string | null; songs: ReturnType<typeof player>['playlistQueue']; index: number; repeatMode: ReturnType<typeof usePlaybackModesStore.getState>['repeatMode'] } | null = null;
 
 function enterOwnedQueue(): void {
@@ -142,6 +173,7 @@ async function resolveMobileSong(song: SongSnapshot, generation: number, sequenc
   );
   if (local) {
     if (!isCurrent(state().ownedUserId ?? '', sequence, generation)) return null;
+    holdEchoGuard();
     withoutOwnedRoomRouting(() => player().setPlaylistQueue('luv-link', [local], 0, false));
     return local.id;
   }
@@ -149,6 +181,7 @@ async function resolveMobileSong(song: SongSnapshot, generation: number, sequenc
   const meta = StreamService.catalogFor(mobileId);
   if (meta) {
     if (!isCurrent(state().ownedUserId ?? '', sequence, generation)) return null;
+    holdEchoGuard();
     withoutOwnedRoomRouting(() => player().setPlaylistQueue('luv-link', [toStreamSong(meta)], 0, false));
     return player().currentSongId;
   }
@@ -161,6 +194,8 @@ async function resolveMobileSong(song: SongSnapshot, generation: number, sequenc
     thumbnail: song.artwork,
   }, query => searchMusic(query)).catch(() => null);
   if (!match || !isCurrent(state().ownedUserId ?? '', sequence, generation)) return null;
+  // The lookup may have taken longer than the guard set when this apply began; the swap below is still the room's.
+  holdEchoGuard();
   withoutOwnedRoomRouting(() => player().setPlaylistQueue('luv-link', [toStreamSong(match)], 0, false));
   return player().currentSongId;
 }
@@ -170,6 +205,7 @@ async function waitUntilLoaded(songId: string, generation: number, sequence: num
   while (Date.now() < until) {
     if (!isCurrent(state().ownedUserId ?? '', sequence, generation)) return false;
     if (player().loadedAudioId === songId && durationSV.value > 0) return true;
+    holdEchoGuard();
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   return false;
@@ -209,15 +245,19 @@ async function applyAnchor(): Promise<void> {
     } else {
       localId = await resolveMobileSong(anchor.song, generation, anchor.sequence) ?? null;
     }
-    if (!localId || !isCurrent(current.ownedUserId, anchor.sequence, generation)) {
-      state().announce(`Couldn’t load “${anchor.song.title}” yet. This device stays paused.`);
+    if (!isCurrent(current.ownedUserId, anchor.sequence, generation)) return;
+    if (!localId) {
+      state().announce(`Couldn’t load “${anchor.song.title}” yet. This device stays paused and will try again.`);
+      scheduleRetry(anchor.sequence, generation);
       return;
     }
   }
   const ready = !!localId && await waitUntilLoaded(localId, generation, anchor.sequence);
-  if (!ready || !isCurrent(current.ownedUserId, anchor.sequence, generation)) {
+  if (!isCurrent(current.ownedUserId, anchor.sequence, generation)) return;
+  if (!ready) {
     lastSeenSequence = -1;
-    state().announce(`Couldn’t load “${anchor.song.title}” in time. This device stays paused.`);
+    state().announce(`Couldn’t load “${anchor.song.title}” in time. This device stays paused and will try again.`);
+    scheduleRetry(anchor.sequence, generation);
     return;
   }
   if (anchor.barrierPending && (room.mode === 'listen' || room.leaderUserId === current.ownedUserId)) {
@@ -354,6 +394,7 @@ export async function handleOwnedLuvLinkNext(intent: 'control' | 'natural_end' =
   if (intent === 'natural_end') {
     if (anchor?.leaderUserId !== current.ownedUserId || !anchor.playing || lastAdvanceEpoch === anchor.trackEpoch) return true;
     lastAdvanceEpoch = anchor.trackEpoch;
+    return advanceAtNaturalEnd(anchor.trackEpoch);
   }
   const next = current.ownedQueue.entries[0];
   if (next) {
@@ -362,6 +403,35 @@ export async function handleOwnedLuvLinkNext(intent: 'control' | 'natural_end' =
     await commitOwnedLuvLinkPlayback({ song: anchor.song, queueEntryId: anchor.queueEntryId, positionSec: anchor.song.duration, playing: false, playbackRate: anchor.playbackRate });
   }
   return true;
+}
+
+const NATURAL_END_RETRY_MS = [0, 1_500, 4_000] as const;
+
+/**
+ * The song ended here and only this output can move the room on: no later "finished" event will come. A commit
+ * lost to the network or a rate limit is tried again a few times while the room still sits on the same track;
+ * if every try fails the advance is left open, so a manual next (or the next end) can still move the room.
+ */
+async function advanceAtNaturalEnd(trackEpoch: number): Promise<boolean> {
+  let failure: unknown = null;
+  for (const delay of NATURAL_END_RETRY_MS) {
+    if (delay) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      if (!active) return true;
+    }
+    const current = state();
+    const anchor = current.ownedPlayback;
+    if (!anchor || anchor.trackEpoch !== trackEpoch || anchor.leaderUserId !== current.ownedUserId || !anchor.playing) return true;
+    const next = current.ownedQueue.entries[0];
+    try {
+      if (next) await commitOwnedLuvLinkPlayback({ song: next.song, queueEntryId: next.entryId, positionSec: 0, playing: true, playbackRate: anchor.playbackRate ?? 1, forceTrackChange: true, intent: 'natural_end' });
+      // Nothing queued: the room rests at the end of the song (a control; natural_end needs a next entry).
+      else if (anchor.song) await commitOwnedLuvLinkPlayback({ song: anchor.song, queueEntryId: anchor.queueEntryId, positionSec: anchor.song.duration, playing: false, playbackRate: anchor.playbackRate });
+      return true;
+    } catch (error) { failure = error; }
+  }
+  if (lastAdvanceEpoch === trackEpoch) lastAdvanceEpoch = -1;
+  throw failure;
 }
 
 export async function handleOwnedLuvLinkPrevious(): Promise<boolean> {
@@ -451,8 +521,7 @@ export function startOwnedLuvLinkSync(): () => void {
     if (!event?.finished || !state().ownedRoom || !shouldOutput()) return;
     const anchor = state().ownedPlayback;
     if (!anchor || anchor.leaderUserId !== state().ownedUserId || lastAdvanceEpoch === anchor.trackEpoch) return;
-    lastAdvanceEpoch = anchor.trackEpoch;
-    void handleOwnedLuvLinkNext('natural_end');
+    void handleOwnedLuvLinkNext('natural_end').catch(error => state().announce(error instanceof Error ? error.message : 'LuvLink skip could not sync.'));
   });
   checkpoint = setInterval(() => {
     const current = state();
@@ -465,6 +534,7 @@ export function startOwnedLuvLinkSync(): () => void {
     active = false;
     applyGeneration++;
     offRoom(); offPlayer(); status.remove(); stopRouter(); stopStreamRouter();
+    clearRetry(); retrySequence = -1; retryAttempts = 0;
     if (checkpoint) clearInterval(checkpoint);
     checkpoint = null;
     lastSeenSequence = -1;

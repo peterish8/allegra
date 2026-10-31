@@ -117,10 +117,25 @@ export const resolveMany = async (
   limit: number,
   concurrency = 4,
   primed: UnifiedSong[] = [],
+  /**
+   * Told the matches so far whenever more are settled, in order: only songs before which every song is settled,
+   * so a list shown from it only ever grows at its end (a slow lookup holds back the songs after it).
+   */
+  onProgress?: (found: UnifiedSong[]) => void,
 ): Promise<UnifiedSong[]> => {
   const out: (UnifiedSong | null)[] = new Array(songs.length).fill(null);
+  const settled: boolean[] = new Array(songs.length).fill(false);
   let cursor = 0;
   let found = 0;
+  let prefix = 0;
+  let shown = 0;
+  const report = (progress: (found: UnifiedSong[]) => void) => {
+    while (prefix < songs.length && settled[prefix]) prefix++;
+    const ready = out.slice(0, prefix).filter((s): s is UnifiedSong => s !== null).slice(0, limit);
+    if (ready.length <= shown) return;
+    shown = ready.length;
+    progress(ready);
+  };
   const worker = async () => {
     while (cursor < songs.length && found < limit) {
       const i = cursor++;
@@ -129,6 +144,8 @@ export const resolveMany = async (
         out[i] = match;
         found++;
       }
+      settled[i] = true;
+      if (onProgress) report(onProgress);
     }
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, songs.length) }, worker));

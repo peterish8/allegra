@@ -27,6 +27,7 @@ import { recommendFor } from './recommend';
 import { getRecommendations } from '../MultiSourceSearchService';
 import { lyricaService } from '../LyricaService';
 import { ALLEGRA_API_URL } from '../account/config';
+import { fromMobileId } from '@shared/songRef';
 import {
   dedupeStreamable,
   isStreamSongId,
@@ -350,7 +351,9 @@ async function loadLyrics(streamId: string, meta: UnifiedSong | undefined): Prom
   if (!current || current.id !== streamId || current.lyrics.length > 0 || lyricsInFlight.has(streamId)) return;
   lyricsInFlight.add(streamId);
   try {
-    const result = await lyricaService.fetchLyrics(current.title, current.artist ?? '', false, meta?.duration ?? current.duration);
+    const result = await lyricaService.fetchLyrics(current.title, current.artist ?? '', false, meta?.duration ?? current.duration, {
+      ref: fromMobileId(streamId) ?? undefined,
+    });
     if (!result) return;
     const lyrics = lyricaService.parseLrc(result.lyrics, meta?.duration ?? current.duration);
     if (lyrics.length === 0) return;
