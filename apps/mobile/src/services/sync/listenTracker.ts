@@ -54,7 +54,7 @@ export function createListenTracker(
       const ended = (song.duration ?? 0) > 0 && lastPositionSec >= (song.duration ?? 0) - LISTEN_RULES.endSlackSec;
       const ending: ListenEnding = { exit: ended ? 'ended' : exit, heardSeconds: seconds, exitPositionSec: lastPositionSec };
       onLeft(song, ending);
-      if (seconds >= 5) onHeard(song, seconds, current.startedAt, ending);
+      if (seconds >= LISTEN_RULES.historyAfterSec) onHeard(song, seconds, current.startedAt, ending);
     }
     current = null;
   };
@@ -103,7 +103,7 @@ export function createListenTracker(
       current.lastAt = observation.at;
       current.lastWasPlaying = true;
       current.song = song;
-      if (!current.recentReported && current.seconds >= 5) {
+      if (!current.recentReported && current.seconds >= LISTEN_RULES.historyAfterSec) {
         current.recentReported = true;
         onRecent(current.song, current.startedAt);
       }

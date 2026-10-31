@@ -388,6 +388,14 @@ POST   /api/me/recently-played         { songId, playDuration, playedAt? }
 GET/PATCH /api/me/settings
 ```
 
+**When a listen enters Recently played (2026-10-31, both clients).** The device that actually plays the
+song posts it once `LISTEN_RULES.historyAfterSec` (5) seconds have been heard, however playback started:
+a pick, auto-advance, radio, DJ, Connect or LuvLink. A Connect controller or a LuvLink controller-only
+member hears nothing and posts nothing; each LuvLink member whose device plays posts their own listen.
+`playedAt` is when the listen started and is the event's key: a retried post is idempotent, an older
+offline post never replaces a newer one, and the listen signal sent when the song is left
+(`POST /api/me/taste/signal`, same `playedAt`) lands on that row.
+
 `Library` is additive: optional `coverKey` (a Convex storage id) and derived `coverUrl`. `coverUrl` is
 never persisted; the API resolves it from Convex on read. `PATCH` accepts the `coverKey` returned by
 the authenticated cover-upload flow or `coverKey: null` to clear it.
