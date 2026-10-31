@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Dimensions, StatusBar, View, StyleSheet, useWindowDimensions } from 'react-native';
+import { BackHandler, Dimensions, StatusBar, View, StyleSheet, useWindowDimensions } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
@@ -28,6 +28,7 @@ import NowPlayingControls from '../components/NowPlayingControls';
 import { navigationRef, safeGoBack } from '../utils/navigationService';
 import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../navigation/playerSheet';
 import { shouldCloseSheet } from '../navigation/sheetClose';
+import { handlePlayerBack } from '../navigation/playerBack';
 import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { playerSheetProgress } from '../navigation/sheetProgress';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -213,13 +214,30 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     markUpNext(false);
   }, [upNext, upNextShown, upNextTravel, markUpNext]);
 
-  usePreventRemove(holdRoute, () => {
-    if (lyricsFullscreen) setLyricsFullscreen(false);
-    else if (sheetRef.current) setSheet(null);
-    else if (upNextRef.current) closeUpNext(0);
-    else if (ambientRef.current) setAmbient(false);
-    else animateClose(0);
-  });
+  const handleBack = useCallback(() => handlePlayerBack({
+    lyricsFullscreen,
+    hasSheet: Boolean(sheetRef.current),
+    upNextOpen: upNextRef.current,
+    ambient: ambientRef.current,
+  }, {
+    exitLyricsFullscreen: () => setLyricsFullscreen(false),
+    closeSheet: () => setSheet(null),
+    closeUpNext: () => closeUpNext(0),
+    leaveAmbient: () => setAmbient(false),
+    closePlayer: () => animateClose(0),
+  }), [lyricsFullscreen, closeUpNext, animateClose]);
+
+  // Native-stack can dismiss a route before its JS beforeRemove guard finishes.
+  // Consume Android Back here, then remove the route only after the sheet animates out.
+  useFocusEffect(useCallback(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [handleBack]));
+
+  usePreventRemove(holdRoute, handleBack);
 
   // Drag down from anywhere to dismiss. Over the lyrics it only takes over once
   // the list is scrolled to its top — otherwise the drag scrolls the lyrics.
