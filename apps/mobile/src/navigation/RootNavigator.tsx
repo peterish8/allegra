@@ -32,6 +32,7 @@ import { useDeepLinks } from '../hooks/useDeepLinks';
 import { useWidgetLinks, useWidgetSync } from '../widget/useWidgetSync';
 import { useIslandLyrics } from '../hooks/useIslandLyrics';
 import { useIslandLibrary } from '../hooks/useIslandLibrary';
+import { useIslandTakeOver } from '../hooks/useIslandTakeOver';
 import { useLyricsUpgrade } from '../hooks/useLyricsUpgrade';
 import ConnectDeviceSheet from '../components/connect/ConnectDeviceSheet';
 import ConnectNoticeHost from '../components/connect/ConnectNoticeHost';
@@ -51,6 +52,7 @@ export const RootNavigator: React.FC = () => {
   // Plain lyrics showing: look once more for synced ones and swap them in.
   useLyricsUpgrade();
   useIslandLibrary();
+  useIslandTakeOver();
   useWidgetLinks();
 
   // This effect runs after NavigationContainer subscribes its default back handler.

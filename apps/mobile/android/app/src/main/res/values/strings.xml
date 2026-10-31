@@ -7,5 +7,7 @@
   <string name="widget_playlist_description" translatable="false">A playlist you can scroll and play from</string>
   <string name="island_service_label" translatable="false">LuvLyrics island</string>
   <string name="island_service_summary" translatable="false">The music island round your camera</string>
+  <string name="outside_listener_label" translatable="false">LuvLyrics island · Play here</string>
+  <string name="outside_listener_description" translatable="false">Lets LuvLyrics see which song another app is playing, so the island can play it here. It reads no notifications.</string>
   <string name="island_service_description" translatable="false">Shows the song that is playing in a small island round your camera, over every app. Tap it to open the player with play, pause, skip and a scrubber. Android only lets an accessibility service draw above the status bar, which is why it is here. It reads nothing on your screen and does nothing on its own.</string>
 </resources>
