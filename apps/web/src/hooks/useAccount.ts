@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AccountProfile, TasteSummary, UnifiedSong } from '@shared/types';
 import { LISTEN_RULES, listenVerdict, type ListenVerdict } from '@shared/listenSignal';
 
-import { advanceListen, startListen, type ListenProgress } from '../lib/listenProgress';
+import { advanceListen, restartsListen, startListen, type ListenProgress } from '../lib/listenProgress';
 import type { Playhead } from '../lib/playhead';
 import { ensureSession, fetchProfile, fetchTaste, seedTaste, sendListenSignal, startGuestSession, updateDisplayName } from '../lib/api';
 
@@ -149,25 +149,33 @@ export function useListenTracker(song: UnifiedSong | null, playhead: Playhead, r
   const historyRef = useRef(onHistory);
   historyRef.current = onHistory;
 
-  useEffect(() => {
+  /** Reports the listen being left and starts the next one (a new song, or the same song over again). */
+  const turnOver = useRef((nextKey: string | null, nextSong: UnifiedSong | null): void => {
     const left = state.current;
-    if (left.key === key) return;
     if (left.song) {
       const { heard, position } = left.listen;
       const ended = left.song.duration > 0 && position >= left.song.duration - LISTEN_RULES.endSlackSec;
-      const ending = { exit: ended ? 'ended' as const : key ? 'skipped' as const : 'switched' as const, exitPositionSec: position };
+      const ending = { exit: ended ? 'ended' as const : nextKey ? 'skipped' as const : 'switched' as const, exitPositionSec: position };
       outcomeRef.current?.(left.song, listenVerdict({ heardSeconds: heard, ...ending, durationSec: left.song.duration }));
       void sendListenSignal(left.song, heard, left.startedAt, ending).then(() => refreshRef.current()).catch(() => undefined);
     }
     // When the listen started: the key of this listen's history row and of its taste signal (a retry lands on it).
-    state.current = { key, song, listen: startListen(), startedAt: new Date().toISOString() };
-  }, [key, song]);
+    state.current = { key: nextKey, song: nextSong, listen: startListen(), startedAt: new Date().toISOString() };
+  }).current;
+
+  useEffect(() => {
+    if (state.current.key === key) return;
+    turnOver(key, song);
+  }, [key, song, turnOver]);
 
   useEffect(() => playhead.subscribe(() => {
     const current = state.current;
     if (current.key !== key || !current.song) return;
+    const position = playhead.get();
+    if (restartsListen(current.listen, position, current.song.duration)) turnOver(current.key, current.song);
     // History follows what this player actually plays, however it got here: a pick, auto-advance, radio, DJ,
     // Connect or LuvLink. Five seconds heard, the same rule as the phone.
-    if (advanceListen(current.listen, playhead.get())) historyRef.current?.(current.song, current.startedAt);
-  }), [key, playhead]);
+    const listen = state.current;
+    if (listen.song && advanceListen(listen.listen, position)) historyRef.current?.(listen.song, listen.startedAt);
+  }), [key, playhead, turnOver]);
 }
