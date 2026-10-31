@@ -49,23 +49,27 @@ test('an authorization failure stops the whole run and asks to reconnect', async
   assert.equal(transfer.getState().runs.get('b')?.state, 'waiting');
 });
 
-test('pause stops the run and keeps finished rows', async () => {
+test('pause stops the run, keeps finished rows, and still reports what landed so the panels refresh', async () => {
   const transfer = createSpotifyTransfer();
+  const landed: number[] = [];
   let release: () => void = () => undefined;
   const running = transfer.start('me', [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], deps(async (id, signal) => {
     if (id === 'a') return step(4, true);
     await new Promise<void>((resolve) => { release = resolve; signal.addEventListener('abort', () => resolve()); });
     return step(1, false);
-  }));
+  }, landed));
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(transfer.getState().syncing, true);
   transfer.pause();
+  assert.equal(transfer.getState().finishedAt, 1, 'a pause ends the run for anything watching finishedAt');
   release();
   await running;
   const state = transfer.getState();
   assert.equal(state.syncing, false);
   assert.deepEqual([...state.runs.keys()], ['a']);
   assert.match(state.message, /Paused/);
+  assert.equal(state.finishedAt, 1, 'the aborted loop does not count the same end twice');
+  assert.deepEqual(landed, [5], 'the finished playlist and the partly saved one both reach the library');
 });
 
 test('another account stops and forgets the run; the same account keeps it', async () => {

@@ -185,6 +185,19 @@ test('playlist counts come from the renamed items field, or the items endpoint w
   };
   const rows = await new SpotifyProvider('client', fetchImpl).playlists('token');
   assert.deepEqual(rows.map(row => [row.name, row.total]), [['Renamed', 12], ['Missing', 40]]);
+  assert.ok(rows.every(row => row.totalUnknown === undefined), 'confirmed counts are not marked unknown');
+});
+
+test('a count Spotify leaves out and the check cannot confirm is unknown, while a confirmed zero stays empty', async () => {
+  const { SpotifyProvider } = await import('../providers/spotify.js');
+  const fetchImpl = async (input: RequestInfo | URL): Promise<Response> => {
+    const url = String(input);
+    if (url.includes('/me/playlists')) return new Response(JSON.stringify({ items: [{ id: 'empty', name: 'Empty', snapshot_id: 's' }, { id: 'flaky', name: 'Flaky', snapshot_id: 's' }], next: null }), { status: 200 });
+    if (url.includes('/playlists/empty/items')) return new Response(JSON.stringify({ total: 0 }), { status: 200 });
+    return new Response('{}', { status: 500 });
+  };
+  const rows = await new SpotifyProvider('client', fetchImpl).playlists('token');
+  assert.deepEqual(rows.map(row => [row.name, row.total, row.totalUnknown ?? false]), [['Empty', 0, false], ['Flaky', 0, true]]);
 });
 
 test('Liked Songs lead the sources and sync into likes, not a playlist', async () => {
