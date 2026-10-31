@@ -22,6 +22,8 @@ import { actWhereMusicIs } from '../services/connect/playbackIntents';
 import { requestDjTurn } from '../services/dj/djApi';
 import { hasDownloadedDjModel, prepareDjModel, requestLocalDjTurn } from '../services/dj/localDj';
 import { addOnlineSongsToPlaylist } from '../services/sync/onlinePlaylist';
+import { useIsFocused } from '@react-navigation/native';
+import { useAppActive } from '../hooks/useAppActive';
 
 type Pick = { readonly song: CatalogSong; readonly reason: string };
 type Emotion = 'idle' | 'listening' | 'thinking' | 'curious' | 'happy' | 'error';
@@ -38,8 +40,10 @@ function toneFor(vibe: string, energy: number): string[] {
   return ['#fff4dc', '#ffd072', '#ff9b35'];
 }
 
-function DjMascot({ vibing, emotion, tone, onPet }: { readonly vibing: boolean; readonly emotion: Emotion; readonly tone: string[]; readonly onPet: () => void }) {
-  const reduce = useReducedMotion();
+function DjMascot({ vibing, emotion, tone, onPet, visible }: { readonly vibing: boolean; readonly emotion: Emotion; readonly tone: string[]; readonly onPet: () => void; readonly visible: boolean }) {
+  // The DJ is a tab that stays mounted behind other screens; its endless loops run on the UI thread, which
+  // freezing the screen does not stop. Hidden or in the background, the mascot rests like reduced motion.
+  const reduce = useReducedMotion() || !visible;
   const roam = useSharedValue(0);
   const float = useSharedValue(0);
   const blink = useSharedValue(1);
@@ -114,6 +118,8 @@ export const DjScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const currentSong = usePlayerStore(state => state.currentSong);
   const isPlaying = usePlayerStore(state => state.isPlaying);
+  const focused = useIsFocused();
+  const appActive = useAppActive();
   const playlistQueue = usePlayerStore(state => state.playlistQueue);
   const currentQueueIndex = usePlayerStore(state => state.currentQueueIndex);
   const currentPlaylistId = usePlayerStore(state => state.currentPlaylistId);
@@ -338,7 +344,7 @@ export const DjScreen: React.FC = () => {
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, Space.md), paddingBottom: Math.max(insets.bottom, Space.xl) + 128 }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <DjMascot vibing={vibing} emotion={emotion} tone={tone} onPet={petMascot} />
+        <DjMascot vibing={vibing} emotion={emotion} tone={tone} onPet={petMascot} visible={focused && appActive} />
 
         <View style={styles.composeCard}>
           <View style={[styles.inputRow, emotion === 'listening' && styles.inputRowFocused]}>
