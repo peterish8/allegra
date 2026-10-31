@@ -68,7 +68,7 @@ import { ImportChip } from './components/import/ImportChip';
 import { lockScroll } from './lib/scrollLock';
 import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
-import { ApiError, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
+import { ApiError, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSongsByRefs, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
 import { isLyricsUpgrade, LYRICS_UPGRADE_DELAYS_MS, wantsLyricsUpgrade } from './lib/lyricsUpgrade';
 import { catalogSongId, shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
 import { resolveSnapshotForPlayback, snapshotForSong, snapshotToDisplaySong, useConnect } from './hooks/useConnect';
@@ -1251,6 +1251,30 @@ export default function App() {
     tapHaptic();
     if (continueRadio) void fillRadioQueue();
   };
+
+  const playSongRef = useRef(playSong);
+  playSongRef.current = playSong;
+  useEffect(() => {
+    const bridge = (window as Window & {
+      __allegra?: {
+        onCatalogPlay?: (handler: (request: { id: string; queue: string[] }) => void) => () => void;
+      };
+    }).__allegra;
+    return bridge?.onCatalogPlay?.((request) => {
+      const refs = [...new Set([request.id, ...request.queue])].slice(0, 50);
+      void fetchSongsByRefs(refs).then((songs) => {
+        const byRef = new Map<string, UnifiedSong>();
+        songs.forEach((song) => byRef.set(`${song.source.toLowerCase()}:${song.id}`, song));
+        const queue = refs.map((ref) => byRef.get(ref)).filter((song): song is UnifiedSong => Boolean(song?.streamUrl));
+        const selected = byRef.get(request.id);
+        if (!selected?.streamUrl) throw new Error('Could not find that Allegra song.');
+        if (!queue.includes(selected)) queue.unshift(selected);
+        return playSongRef.current(selected, queue, false, false);
+      }).catch((error: unknown) => {
+        setPersonalActionError(error instanceof Error ? error.message : 'Could not start that song in Allegra.');
+      });
+    });
+  }, []);
 
   const playFromSearch = (song: UnifiedSong): Promise<void> => playSong(song, [song], true);
 

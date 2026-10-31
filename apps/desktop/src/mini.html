@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Allegra mini player</title>
+<style>
+/* A small always-on-top card: cover, song, three controls, a hairline of progress. The cover,
+   blurred, is the background, so the card takes the song's colour like the main player does.
+   Windows rounds the window's corners and draws its border. Only transform and opacity animate. */
+:root {
+  --ink: #f6f6f4;
+  --ink-2: rgba(246,246,244,.62);
+  --line: rgba(255,255,255,.14);
+  --lime: #c8f92e;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; overflow: hidden; background: #0b0b0d; }
+body {
+  font: 500 13px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: var(--ink); user-select: none; -webkit-font-smoothing: antialiased;
+}
+.card {
+  position: absolute; inset: 0; overflow: hidden;
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px;
+  padding: 0 14px;
+}
+.wash {
+  position: absolute; inset: -40%; background-size: cover; background-position: center;
+  filter: blur(34px) saturate(1.5); opacity: 0; transform: scale(1.1);
+  transition: opacity .6s ease;
+}
+.wash.on { opacity: .5; }
+.cover, .text, .controls { position: relative; }
+.cover {
+  width: 72px; height: 72px; border-radius: 12px; background: rgba(255,255,255,.06) center/cover;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+}
+.text { min-width: 0; }
+.title, .artist { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.title { font-size: 14px; font-weight: 600; }
+.artist { color: var(--ink-2); font-size: 12.5px; margin-top: 3px; }
+.controls { display: flex; align-items: center; gap: 2px; }
+button {
+  font: inherit; color: var(--ink); background: none; border: 0; cursor: pointer;
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  transition: transform .18s cubic-bezier(.34,1.32,.5,1), opacity .2s;
+}
+button:hover { background: rgba(255,255,255,.1); }
+button:active { transform: scale(.9); }
+button:disabled { opacity: .35; pointer-events: none; }
+button:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+button svg { width: 18px; height: 18px; fill: currentColor; }
+#toggle { width: 40px; height: 40px; background: var(--ink); color: #0b0b0d; }
+#toggle:hover { background: #fff; }
+#toggle svg[hidden] { display: none; }
+.corner {
+  position: absolute; top: 6px; right: 6px; display: flex; opacity: 0;
+  transition: opacity .2s;
+}
+body:hover .corner, .corner:focus-within { opacity: 1; }
+.corner button { width: 24px; height: 24px; color: var(--ink-2); }
+.corner button:hover { color: var(--ink); }
+.corner svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; cursor: pointer; }
+.fill {
+  position: absolute; inset: 0; background: var(--lime); transform-origin: left; transform: scaleX(0);
+}
+.fill.run { transition: transform 1s linear; }
+.empty .title { color: var(--ink-2); }
+@media (prefers-reduced-motion: reduce) {
+  .fill.run, button, .wash { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="card empty" id="card">
+  <div class="wash" id="wash"></div>
+  <div class="cover" id="cover"></div>
+  <div class="text"><div class="title" id="title">Nothing playing</div><div class="artist" id="artist">Play a song in Allegra</div></div>
+  <div class="controls">
+    <button id="prev" title="Previous (Ctrl+Alt+Left)" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM19 5.5v13a.5.5 0 0 1-.77.42L9.5 12.4a.5.5 0 0 1 0-.8l8.73-6.52a.5.5 0 0 1 .77.42Z"/></svg></button>
+    <button id="toggle" title="Play (Ctrl+Alt+Space)" aria-label="Play">
+      <svg viewBox="0 0 24 24" id="playIcon"><path d="M8 5.6v12.8a.6.6 0 0 0 .92.5l10-6.4a.6.6 0 0 0 0-1L8.92 5.1A.6.6 0 0 0 8 5.6Z"/></svg>
+      <svg viewBox="0 0 24 24" id="pauseIcon" hidden><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+    </button>
+    <button id="next" title="Next (Ctrl+Alt+Right)" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5.5v13a.5.5 0 0 0 .77.42l8.73-6.52a.5.5 0 0 0 0-.8L5.77 5.08A.5.5 0 0 0 5 5.5Z"/></svg></button>
+  </div>
+  <div class="corner">
+    <button id="expand" title="Open Allegra" aria-label="Open Allegra"><svg viewBox="0 0 16 16"><path d="M9.5 2.5h4v4M13.5 2.5 8.5 7.5M6.5 13.5h-4v-4M2.5 13.5l5-5"/></svg></button>
+    <button id="close" title="Close mini player (Ctrl+Alt+M)" aria-label="Close mini player"><svg viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg></button>
+  </div>
+  <div class="bar" id="bar"><div class="fill" id="fill"></div></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const send = (m) => window.ipc.postMessage(m);
+let state = { title: "", artist: "", cover: null, playing: false, duration: 0, position: 0 };
+
+for (const id of ["prev", "next", "toggle", "expand"]) $(id).onclick = () => send(id);
+$("close").onclick = () => send("mini");
+$("bar").onclick = (e) => {
+  if (state.duration > 0) send("seek " + (e.offsetX / e.currentTarget.clientWidth) * state.duration);
+};
+// Drag the card from anywhere that isn't a control.
+addEventListener("mousedown", (e) => {
+  if (e.button === 0 && !e.target.closest("button, .bar")) send("drag");
+});
+addEventListener("keydown", (e) => {
+  if (e.key === " ") { e.preventDefault(); send("toggle"); }
+  if (e.key === "Escape") send("mini");
+});
+
+/** Called by the app with the current song (the same shape the page reports). */
+window.__now = (n) => {
+  state = n;
+  const has = !!n.title;
+  $("card").classList.toggle("empty", !has);
+  $("title").textContent = has ? n.title : "Nothing playing";
+  $("artist").textContent = has ? n.artist : "Play a song in Allegra";
+  const art = n.cover ? `url(${JSON.stringify(n.cover)})` : "";
+  $("cover").style.backgroundImage = art;
+  $("wash").style.backgroundImage = art;
+  $("wash").classList.toggle("on", !!art);
+  $("playIcon").hidden = n.playing;
+  $("pauseIcon").hidden = !n.playing;
+  $("toggle").setAttribute("aria-label", n.playing ? "Pause" : "Play");
+  $("toggle").title = (n.playing ? "Pause" : "Play") + " (Ctrl+Alt+Space)";
+  for (const id of ["prev", "toggle", "next"]) $(id).disabled = !has;
+  const f = n.duration > 0 ? Math.min(1, n.position / n.duration) : 0;
+  // While playing, glide to where the song will be when the next update arrives.
+  const ahead = n.playing && n.duration > 0 ? Math.min(1, (n.position + 1) / n.duration) : f;
+  const fill = $("fill");
+  fill.classList.remove("run");
+  fill.style.transform = `scaleX(${f})`;
+  if (ahead !== f && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    void fill.offsetWidth;
+    fill.classList.add("run");
+    fill.style.transform = `scaleX(${ahead})`;
+  }
+};
+__now(state);
+send("ready");
+</script>
+</body>
+</html>

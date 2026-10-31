@@ -18,6 +18,19 @@ test('the phone app may come back to its sign-in link only', () => {
   assert.throws(() => allowedAuthRedirect('lyricflow://authx', SITE));
 });
 
+test('the desktop callback permits only its exact loopback path and valid port', () => {
+  assert.equal(allowedAuthRedirect('http://127.0.0.1:49152/allegra-auth', SITE), 'http://127.0.0.1:49152/allegra-auth');
+  for (const bad of [
+    'http://localhost:49152/allegra-auth',
+    'http://127.0.0.1:0/allegra-auth',
+    'http://127.0.0.1:65536/allegra-auth',
+    'http://127.0.0.1:49152/allegra-auth/extra',
+    'http://127.0.0.1:49152/allegra-auth?next=https://evil.example',
+    'http://127.0.0.1.evil.example:49152/allegra-auth',
+    'http://127.0.0.1:49152@evil.example/allegra-auth',
+  ]) assert.throws(() => allowedAuthRedirect(bad, SITE), bad);
+});
+
 test('everything else is refused, including look-alikes', () => {
   for (const bad of [
     'https://evil.example',

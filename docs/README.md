@@ -16,6 +16,7 @@ not negotiable.
 | [motion-design-system.md](./motion-design-system.md) | The motion language: tokens, easing, choreography |
 | [motion-recipes.md](./motion-recipes.md) | Copy-paste motion patterns, then tune |
 | [provider-integration.md](./provider-integration.md) | Adding or repairing a music/lyrics provider |
+| [Allegra for Windows](../apps/desktop/README.md) | Build and run the Windows desktop app around the hosted site |
 | [mcp-contract.md](./mcp-contract.md) | The Allegra MCP connector |
 | [data-breach-plan.md](./data-breach-plan.md) | Incident containment and notification runbook |
 | [grievance-handling.md](./grievance-handling.md) | Report queue, takedown commands and response clocks |
