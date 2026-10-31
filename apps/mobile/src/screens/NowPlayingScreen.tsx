@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, Dimensions, StatusBar, View, StyleSheet, useWindowDimensions } from 'react-native';
+import { Dimensions, StatusBar, View, StyleSheet, useWindowDimensions } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
@@ -28,7 +28,7 @@ import NowPlayingControls from '../components/NowPlayingControls';
 import { navigationRef, safeGoBack } from '../utils/navigationService';
 import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../navigation/playerSheet';
 import { shouldCloseSheet } from '../navigation/sheetClose';
-import { handlePlayerBack } from '../navigation/playerBack';
+import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
 import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { playerSheetProgress } from '../navigation/sheetProgress';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -227,15 +227,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     closePlayer: () => animateClose(0),
   }), [lyricsFullscreen, closeUpNext, animateClose]);
 
-  // Native-stack can dismiss a route before its JS beforeRemove guard finishes.
-  // Consume Android Back here, then remove the route only after the sheet animates out.
-  useFocusEffect(useCallback(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      handleBack();
-      return true;
-    });
-    return () => subscription.remove();
-  }, [handleBack]));
+  // The root BackHandler invokes this before NavigationContainer's stack pop.
+  useFocusEffect(useCallback(() => registerPlayerBackHandler(handleBack), [handleBack]));
 
   usePreventRemove(holdRoute, handleBack);
 

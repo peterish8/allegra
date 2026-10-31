@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { BackHandler } from 'react-native';
 import { View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -35,6 +36,7 @@ import { useLyricsUpgrade } from '../hooks/useLyricsUpgrade';
 import ConnectDeviceSheet from '../components/connect/ConnectDeviceSheet';
 import ConnectNoticeHost from '../components/connect/ConnectNoticeHost';
 import ConnectMiniPlayer from '../components/connect/ConnectMiniPlayer';
+import { consumePlayerHardwareBack } from './playerBack';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -50,6 +52,13 @@ export const RootNavigator: React.FC = () => {
   useLyricsUpgrade();
   useIslandLibrary();
   useWidgetLinks();
+
+  // This effect runs after NavigationContainer subscribes its default back handler.
+  // A focused player gets the event first so it can animate closed before the stack pops.
+  React.useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', consumePlayerHardwareBack);
+    return () => subscription.remove();
+  }, []);
 
   // The mini player sits above the tab bar on every tab/screen — except Luvs,
   // a full-bleed reels feed running its own audio pool. The bar used to paint over
