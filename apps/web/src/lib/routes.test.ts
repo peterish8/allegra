@@ -14,7 +14,7 @@ test('every static view has a path that parses back to it', () => {
 
 test('artist, playlist and shared routes round-trip awkward names', () => {
   assert.deepEqual(parseRoute(paths.artist('A. R. Rahman & Co/1')), {
-    view: 'artist', artistName: 'A. R. Rahman & Co/1', playlistId: null, sharedCode: null, blendId: null, inviteCode: null
+    view: 'artist', artistName: 'A. R. Rahman & Co/1', playlistId: null, sharedCode: null, blendId: null, inviteCode: null, luvLinkRoomId: null
   });
   assert.equal(parseRoute(paths.playlist('lib 42')).playlistId, 'lib 42');
   assert.equal(parseRoute(paths.shared('AbC123')).sharedCode, 'abc123');
@@ -47,8 +47,16 @@ test('import and blend routes exist only behind their flags', () => {
   assert.equal(parseRoute(paths.blend('k57x'), on).blendId, 'k57x');
   assert.equal(parseRoute(paths.blend('k57x'), off).view, 'home');
   assert.deepEqual(parseRoute(paths.blendJoin('ABCDEFGHJKMN'), on), {
-    view: 'blendJoin', artistName: null, playlistId: null, sharedCode: null, blendId: null, inviteCode: 'abcdefghjkmn'
+    view: 'blendJoin', artistName: null, playlistId: null, sharedCode: null, blendId: null, inviteCode: 'abcdefghjkmn', luvLinkRoomId: null
   });
   assert.equal(parseRoute('/blend/join', on).view, 'blends');
   assert.equal(parseRoute('/blend', on).view, 'blends');
+});
+
+test('LuvLink invite and room routes retain their path state', () => {
+  assert.deepEqual(parseRoute(paths.luvLinkJoin('abcdefgh')), {
+    view: 'luvLink', artistName: null, playlistId: null, sharedCode: null, blendId: null, inviteCode: 'ABCDEFGH', luvLinkRoomId: null
+  });
+  assert.equal(parseRoute(paths.luvLinkRoom('room 42')).luvLinkRoomId, 'room 42');
+  assert.equal(parseRoute(paths.luvLink).view, 'luvLink');
 });

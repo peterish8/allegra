@@ -1,6 +1,6 @@
 import { isDerivative } from './derivative.js';
-import type { SaavnSong } from '../providers/saavn.js';
-import type { UnifiedSong } from '../types.js';
+import type { SaavnAlbum, SaavnSong } from '../providers/saavn.js';
+import type { AlbumDetail, AlbumSummary, UnifiedSong } from '../types.js';
 import { decodeHtml } from './decodeHtml.js';
 import { identityKey } from '../shared/identity.js';
 
@@ -24,6 +24,8 @@ export function normalizeSong(
   const duration = toNonNegativeNumber(raw.duration);
   const playCount = source === 'Gaana' ? 0 : parsePlayCount(raw.playCount ?? raw.play_count);
   const album = getAlbum(raw);
+  // Only Saavn's ids open with GET /api/albums/:id; a Gaana album id belongs to another catalog.
+  const albumId = source === 'Saavn' ? getAlbumId(raw) : null;
   const optional = {
     ...(raw.language ? { language: decodeHtml(raw.language) } : {})
   };
@@ -33,6 +35,7 @@ export function normalizeSong(
     title,
     artist,
     ...(album ? { album: decodeHtml(album) } : {}),
+    ...(album && albumId ? { albumId } : {}),
     artwork: image,
     streamUrl: `/api/stream/${encodeURIComponent(source === 'Gaana' ? `gaana:${id}` : id)}`,
     duration,
@@ -103,11 +106,19 @@ function electCanonical(
   group: readonly UnifiedSong[],
   albumDiversity: ReadonlyMap<string, number>
 ): UnifiedSong {
+  // Any row's title may name the release ("Tum Hi Ho (From "Aashiqui 2")"); the film's own row is
+  // often titled plainly ("Tum Hi Ho" on "Aashiqui 2").
+  const credited = group.map((song) => creditedRelease(song.title)).find((name): name is string => name !== null) ?? null;
   return [...group].sort((left, right) => {
     // An edit — sped up, slowed, live, karaoke — is never the canonical take of a
     // recording, however many plays it has collected.
     const edit = Number(isDerivative(left)) - Number(isDerivative(right));
     if (edit !== 0) return edit;
+
+    // The release the title names beats any play count: playlists re-list a hit with its plays
+    // under their own cover.
+    const named = Number(onRelease(right.album, credited)) - Number(onRelease(left.album, credited));
+    if (named !== 0) return named;
 
     // Day-lists / "best of" shells often outrank the studio cut on raw plays.
     // Prefer a real release unless the compilation has a clear blowout (~5×).
@@ -140,6 +151,37 @@ function electCanonical(
     // Stable leftover: higher playCount even inside the near-tie band.
     return right.playCount - left.playCount;
   })[0]!;
+}
+
+/** The film or album a title credits: `Tum Hi Ho (From "Aashiqui 2")` → "aashiqui 2". */
+function creditedRelease(title: string): string | null {
+  const named = title.match(/[([]\s*from\s+["“'‘]?([^"”'’)\]]+)["”'’]?\s*[)\]]/iu)?.[1];
+  return named ? flatten(named) || null : null;
+}
+
+/** True when `album` is the credited release ("aashiqui 2" on "Aashiqui 2 (Original Motion Picture Soundtrack)"). */
+function onRelease(album: string | undefined, credited: string | null): boolean {
+  if (!credited || !album) return false;
+  const name = flatten(album);
+  return name === credited || name.startsWith(`${credited} `);
+}
+
+/**
+ * True when `row` sits on the song's own release, by the song's own words: the album `title` (the
+ * song as asked for) or the row's title credits, or the song's single (a film's advance single too).
+ */
+export function isOwnReleaseOf(title: string, row: UnifiedSong): boolean {
+  if (!row.album || isCompilationAlbum(row.album)) return false;
+  return onRelease(row.album, creditedRelease(title)) || onRelease(row.album, creditedRelease(row.title)) || albumMatchesTitle(row);
+}
+
+/**
+ * The year a release came out, from the catalog's cover name (`Aashiqui-2-Hindi-2013-500x500.jpg`).
+ * A recording's earliest release is its original; playlists re-list it years later. Null if unknown.
+ */
+export function releaseYear(song: UnifiedSong): number | null {
+  const year = song.artwork.match(/-((?:19|20)\d{2})(?:-\d{8,14})?-\d+x\d+\.\w+$/u)?.[1];
+  return year ? Number(year) : null;
 }
 
 /** True when album is the song's own single (title ≈ album), not a playlist placement. */
@@ -192,44 +234,15 @@ function isVariousArtists(artist: string): boolean {
   return /\bvarious\s+artists\b/i.test(artist);
 }
 
-/** Playlist / themed day-list / "best of" shells — not the song's own release. */
-function isCompilationAlbum(album: string | undefined): boolean {
+/**
+ * Playlist / themed day-list / "best of" shells — not the song's own release. Includes
+ * "… Classics", "… Mix" / "… Chillout" sets and decade sets ("2010s Party", "90s Love").
+ */
+export function isCompilationAlbum(album: string | undefined): boolean {
   if (!album) return false;
-  return /\b(best of|greatest hits|hits|playlist|world music day|valentine|holi|diwali|christmas|new year|top\s*\d+|chartbusters?|jukebox|collection|anthology|various|tik\s*tok|viral|throwbacks?|trending|essentials|mega\s*mix|party\s*mix|sad\s*songs|love\s*songs|workout|road\s*trip|vibes|moods?)\b/i.test(
+  return /\b(best of|greatest hits|hits|classics|mix|chill\s*out|playlist|world music day|valentine|holi|diwali|christmas|new year|top\s*\d+|(?:19|20)?\d0s|chartbusters?|jukebox|collection|anthology|various|tik\s*tok|viral|throwbacks?|trending|essentials|mega\s*mix|party\s*mix|sad\s*songs|love\s*songs|workout|road\s*trip|vibes|moods?)\b/i.test(
     album
   );
-}
-
-/**
- * True when every row in the group is a licence placement rather than a release.
- *
- * The signature is unmistakable: one master — same play count, same length to the
- * second — listed on several *different* albums, none of which is named after it.
- * Saavn does this for anything that went viral, and the record it was actually
- * released on is usually not in the result set at all. So the album name and the
- * cover art on every one of these rows belong to somebody's playlist.
- *
- * Structural on purpose. A keyword list never ends: "Throwback TikTok Songs" is a
- * compilation and reads like nothing in one.
- */
-export function isPlacementOnly(group: readonly UnifiedSong[]): boolean {
-  if (group.length < 3) return false;
-  const first = group[0];
-  if (!first) return false;
-  const albums = new Set(group.map((song) => (song.album ? flatten(song.album) : '')));
-  if (albums.size < 3) return false;
-  if (group.some(albumMatchesTitle)) return false;
-  return group.every((song) => song.playCount === first.playCount && song.duration === first.duration);
-}
-
-/**
- * Whether this row is worth asking an outside authority about: it is on an album that
- * is not its own, and that album reads like a compilation. Callers pay a rate-limited
- * network round trip for a true answer, so it stays deliberately narrow.
- */
-export function needsCanonicalRelease(song: UnifiedSong): boolean {
-  if (albumMatchesTitle(song)) return false;
-  return isCompilationAlbum(song.album) || isPlacementOnly([song, ...(song.variants ?? [])]);
 }
 
 function stripVariants(song: UnifiedSong): UnifiedSong {
@@ -259,6 +272,45 @@ function getAlbum(raw: SaavnSong): string | null {
     return raw.album.trim() || null;
   }
   return raw.album?.name?.trim() || null;
+}
+
+/** A provider album id we can pass back to it safely: short, letters, digits, `_` or `-`. */
+function cleanAlbumId(value: unknown): string | null {
+  const id = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
+  return /^[A-Za-z0-9_-]{1,40}$/.test(id) ? id : null;
+}
+
+function getAlbumId(raw: SaavnSong): string | null {
+  return typeof raw.album === 'object' ? cleanAlbumId(raw.album.id) : null;
+}
+
+/** A Saavn album as the contract's `AlbumSummary`, or null without an id and a name. */
+export function normalizeAlbumSummary(raw: SaavnAlbum): AlbumSummary | null {
+  const id = cleanAlbumId(raw.id);
+  const name = decodeHtml((raw.name ?? '').trim());
+  if (!id || !name) return null;
+  const artists = raw.artists?.primary?.map((artist) => decodeHtml(artist.name?.trim() ?? '')).filter(Boolean) ?? [];
+  const year = raw.year === undefined || raw.year === null ? '' : String(raw.year).trim();
+  return {
+    id,
+    name,
+    artist: artists.join(', ') || 'Various Artists',
+    artwork: pickAsset(raw.image, '500x500'),
+    year: /^\d{4}$/.test(year) ? year : null,
+    language: raw.language ? decodeHtml(raw.language) : null
+  };
+}
+
+/** A Saavn album with its songs as `AlbumDetail`: track order kept, unplayable rows dropped. */
+export function normalizeAlbumDetail(raw: SaavnAlbum): AlbumDetail | null {
+  const summary = normalizeAlbumSummary(raw);
+  if (!summary) return null;
+  const songs = (raw.songs ?? []).flatMap((song) => {
+    const normalized = normalizeSong(song, 'Saavn');
+    return normalized ? [normalized] : [];
+  });
+  const counted = typeof raw.songCount === 'number' ? raw.songCount : Number(raw.songCount);
+  return { ...summary, songCount: Number.isFinite(counted) && counted >= songs.length ? Math.trunc(counted) : songs.length, songs };
 }
 
 function pickAsset(

@@ -11,6 +11,10 @@ import Animated, { FadeIn, FadeOut, runOnJS } from 'react-native-reanimated';
 import { Glass, Signal } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
 import { railPick } from './libraryShape';
+import NativeAlphabetRail, { nativeAlphabetRailAvailable, railPalette } from './NativeAlphabetRail';
+import { shouldUseNativeRail } from './railPayload';
+
+const NATIVE_PALETTE = railPalette(Signal);
 
 export const AlphabetRail: React.FC<{
   letters: { letter: string; index: number }[];
@@ -36,6 +40,11 @@ export const AlphabetRail: React.FC<{
     last.current = -1;
     setActive(null);
   }, []);
+  // The native rail reports a new letter once per change; the tick and the jump are the same as below.
+  const pickNative = useCallback((index: number) => {
+    Haptics.selectionAsync().catch(() => {});
+    onPick(index);
+  }, [onPick]);
 
   const pan = Gesture.Pan()
     .minDistance(0)
@@ -44,6 +53,14 @@ export const AlphabetRail: React.FC<{
     .onFinalize(() => { runOnJS(release)(); });
 
   if (letters.length < 4) return null;
+  // Where the Kotlin view exists the rail, its thumb and the bubble are drawn by it; each new letter comes back here.
+  if (shouldUseNativeRail(nativeAlphabetRailAvailable(), letters.length)) {
+    return (
+      <View style={[styles.wrap, style]} pointerEvents="box-none">
+        <NativeAlphabetRail letters={letters} palette={NATIVE_PALETTE} onPick={pickNative} />
+      </View>
+    );
+  }
   return (
     <View style={[styles.wrap, style]} pointerEvents="box-none">
       {active ? (

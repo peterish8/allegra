@@ -10,23 +10,28 @@
  * Nothing here animates per frame except those fades, so it costs nothing
  * while a song plays.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, LayoutChangeEvent, StyleSheet, useWindowDimensions, View } from 'react-native';
 import {
   Blur,
   Canvas,
   Fill,
+  FilterMode,
   Group,
   Image as SkiaImage,
   LinearGradient,
+  MipmapMode,
   Rect,
+  Skia,
   SkImage,
+  TileMode,
   vec,
 } from '@shopify/react-native-skia';
 import { DerivedValue, SharedValue, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Motion } from '../../constants/allegraTheme';
 import { AuraPalette } from '../allegra/palette';
 import { useCoverImage } from './coverImages';
+import { coverCrop, roomSize } from './roomBlurMath';
 
 interface AppleBackdropProps {
   uri?: string | null;
@@ -69,6 +74,28 @@ const VEIL_ALPHAS = HERO_MASK_ALPHAS.map(a => 1 - a);
  * <Mask> dropped children that paint with their own shader — gradients, the
  * blurred image — so the dissolve silently did nothing.)
  */
+/** The pre-blurred room's width in pixels: the blur leaves nothing finer, so it is stretched back up unchanged. */
+const ROOM_PX = 48;
+const ROOM_SAMPLING = { filter: FilterMode.Linear, mipmap: MipmapMode.None };
+
+/**
+ * The blurred room, made once per cover on the CPU: the cover fitted to the room and blurred at 48 pixels wide.
+ * The full-screen sigma-70 blur it replaces ran again on every redraw (a cover swipe, the hero fade, a song fade).
+ * Null when no surface could be made: the live blur stands in.
+ */
+const blurRoom = (image: SkImage, boxW: number, boxH: number): SkImage | null => {
+  const size = roomSize(boxW, boxH, BLUR, ROOM_PX);
+  const surface = Skia.Surface.Make(size.width, size.height);
+  if (!surface) return null;
+  const paint = Skia.Paint();
+  // clamp: a decal blur fades to transparent near the image's edges.
+  paint.setImageFilter(Skia.ImageFilter.MakeBlur(size.sigma, size.sigma, TileMode.Clamp, null));
+  const crop = coverCrop(image.width(), image.height(), boxW, boxH);
+  surface.getCanvas().drawImageRect(image, Skia.XYWHRect(crop.x, crop.y, crop.width, crop.height), Skia.XYWHRect(0, 0, size.width, size.height), paint);
+  surface.flush();
+  return surface.makeImageSnapshot();
+};
+
 const DissolveRect: React.FC<{ width: number; heroH: number; alphas: readonly number[] }> = ({ width, heroH, alphas }) => (
   <Rect x={0} y={0} width={width} height={heroH} blendMode="dstIn">
     <LinearGradient start={vec(0, 0)} end={vec(0, heroH)} positions={HERO_MASK_POSITIONS} colors={alphas.map(a => `rgba(0,0,0,${a})`)} />
@@ -84,22 +111,29 @@ const Layer: React.FC<{
   heroShift: DerivedValue<{ translateX: number }[]>;
   /** Just the blurred room, no sharp hero (the veil). */
   roomOnly?: boolean;
-}> = ({ image, width, height, heroH, hero, heroShift, roomOnly = false }) => (
-  <Group>
-    <SkiaImage image={image} x={-BLEED} y={-BLEED} width={width + BLEED * 2} height={height + BLEED * 2} fit="cover">
-      {/* clamp: a decal blur fades to transparent near the image's edges. */}
-      <Blur blur={BLUR} mode="clamp" />
-    </SkiaImage>
-    {roomOnly ? null : (
-      <Group opacity={hero} transform={heroShift}>
-        <Group layer>
-          <SkiaImage image={image} x={0} y={0} width={width} height={heroH} fit="cover" />
-          <DissolveRect width={width} heroH={heroH} alphas={HERO_MASK_ALPHAS} />
+}> = ({ image, width, height, heroH, hero, heroShift, roomOnly = false }) => {
+  const room = useMemo(() => blurRoom(image, width + BLEED * 2, height + BLEED * 2), [image, width, height]);
+  return (
+    <Group>
+      {room ? (
+        <SkiaImage image={room} x={-BLEED} y={-BLEED} width={width + BLEED * 2} height={height + BLEED * 2} fit="fill" sampling={ROOM_SAMPLING} />
+      ) : (
+        <SkiaImage image={image} x={-BLEED} y={-BLEED} width={width + BLEED * 2} height={height + BLEED * 2} fit="cover">
+          {/* clamp: a decal blur fades to transparent near the image's edges. */}
+          <Blur blur={BLUR} mode="clamp" />
+        </SkiaImage>
+      )}
+      {roomOnly ? null : (
+        <Group opacity={hero} transform={heroShift}>
+          <Group layer>
+            <SkiaImage image={image} x={0} y={0} width={width} height={heroH} fit="cover" />
+            <DissolveRect width={width} heroH={heroH} alphas={HERO_MASK_ALPHAS} />
+          </Group>
         </Group>
-      </Group>
-    )}
-  </Group>
-);
+      )}
+    </Group>
+  );
+};
 
 /** The player's full size: the screen, not the window (see `frame`). */
 export const usePlayerFrame = () => {

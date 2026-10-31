@@ -7,8 +7,8 @@ import { LEGAL_PATHS, type LegalDocument } from '@shared/legal';
 import { flags as defaultFlags, type Flags } from './flags';
 
 export type AppView =
-  | 'home' | 'discover' | 'library' | 'album' | 'artist' | 'playlist' | 'liked' | 'shared' | 'settings'
-  | 'import' | 'blends' | 'blend' | 'blendJoin'
+  | 'home' | 'discover' | 'dj' | 'library' | 'album' | 'artist' | 'playlist' | 'liked' | 'shared' | 'settings'
+  | 'import' | 'blends' | 'blend' | 'blendJoin' | 'luvLink'
   | LegalDocument;
 
 export function isLegalView(view: AppView): view is LegalDocument {
@@ -24,11 +24,14 @@ export interface Route {
   readonly blendId: string | null;
   /** `/blend/join/:code`. */
   readonly inviteCode: string | null;
+  /** `/luvlink/room/:id`, or null while creating/joining. */
+  readonly luvLinkRoomId: string | null;
 }
 
 export const paths = {
   home: '/',
   discover: '/discover',
+  dj: '/dj',
   library: '/library',
   liked: '/liked',
   album: '/album',
@@ -38,12 +41,15 @@ export const paths = {
   ...LEGAL_PATHS,
   blend: (id: string): string => `/blend/${encodeURIComponent(id)}`,
   blendJoin: (code: string): string => `/blend/join/${encodeURIComponent(code)}`,
+  luvLink: '/luvlink',
+  luvLinkRoom: (id: string): string => `/luvlink/room/${encodeURIComponent(id)}`,
+  luvLinkJoin: (code: string): string => `/luvlink/join/${encodeURIComponent(code)}`,
   artist: (name: string): string => `/artist/${encodeURIComponent(name)}`,
   playlist: (id: string): string => `/playlist/${encodeURIComponent(id)}`,
   shared: (code: string): string => `/shared/${encodeURIComponent(code)}`
 } as const;
 
-const NO_PARAMS: Omit<Route, 'view'> = { artistName: null, playlistId: null, sharedCode: null, blendId: null, inviteCode: null };
+const NO_PARAMS: Omit<Route, 'view'> = { artistName: null, playlistId: null, sharedCode: null, blendId: null, inviteCode: null, luvLinkRoomId: null };
 
 function decode(segment: string | undefined): string | null {
   if (!segment) return null;
@@ -71,8 +77,21 @@ export function parseRoute(pathname: string, enabled: Flags = defaultFlags): Rou
       const blendId = decode(second);
       return blendId ? { view: 'blend', ...NO_PARAMS, blendId } : { view: 'blends', ...NO_PARAMS };
     }
+    case 'luvlink': {
+      if (second === 'join') {
+        const inviteCode = decode(third)?.toUpperCase() ?? null;
+        return inviteCode ? { view: 'luvLink', ...NO_PARAMS, inviteCode } : { view: 'luvLink', ...NO_PARAMS };
+      }
+      if (second === 'room') {
+        const luvLinkRoomId = decode(third);
+        return luvLinkRoomId ? { view: 'luvLink', ...NO_PARAMS, luvLinkRoomId } : { view: 'luvLink', ...NO_PARAMS };
+      }
+      return { view: 'luvLink', ...NO_PARAMS };
+    }
     case 'discover':
       return { view: 'discover', ...NO_PARAMS };
+    case 'dj':
+      return { view: 'dj', ...NO_PARAMS };
     case 'library':
       return { view: 'library', ...NO_PARAMS };
     case 'liked':

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AccountProfile, TasteSummary, UnifiedSong } from '@shared/types';
+import { LISTEN_RULES, listenVerdict, type ListenVerdict } from '@shared/listenSignal';
 
+import { advanceListen, restartsListen, startListen, type ListenProgress } from '../lib/listenProgress';
 import type { Playhead } from '../lib/playhead';
 import { ensureSession, fetchProfile, fetchTaste, seedTaste, sendListenSignal, startGuestSession, updateDisplayName } from '../lib/api';
 
@@ -14,7 +16,7 @@ export interface AccountApi {
   /** Drops back to a fresh guest session. Called after Convex Auth signs the listener out. */
   readonly startGuest: () => Promise<void>;
   readonly rename: (displayName: string) => Promise<void>;
-  readonly seed: (artists: readonly string[], languages: readonly string[]) => Promise<void>;
+  readonly seed: (artists: readonly string[], languages: readonly string[], genres: readonly string[]) => Promise<void>;
 }
 
 /**
@@ -122,8 +124,8 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
     setProfile(await updateDisplayName(displayName));
   }, []);
 
-  const seed = useCallback(async (artists: readonly string[], languages: readonly string[]): Promise<void> => {
-    setTaste(await seedTaste(artists, languages));
+  const seed = useCallback(async (artists: readonly string[], languages: readonly string[], genres: readonly string[]): Promise<void> => {
+    setTaste(await seedTaste(artists, languages, genres));
     changed.current();
   }, []);
 
@@ -131,30 +133,49 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
 }
 
 /**
- * Tells the server how long each song was actually listened to, once it has been left. A few seconds counts
- * against a song's artist and most of it counts for them, so the taste profile follows behaviour, not just taps.
+ * Reports each song once it is left: seconds actually heard (seeks and jumps excluded) and how it
+ * ended. The server learns taste from it; `onOutcome` lets a playing radio react at once
+ * (`packages/shared/listenSignal.ts` holds the rule both use).
  */
-export function useListenTracker(song: UnifiedSong | null, playhead: Playhead, refreshTaste: () => Promise<unknown>): void {
-  const state = useRef<{ key: string | null; song: UnifiedSong | null; seconds: number; startedAt: string }>({
-    key: null, song: null, seconds: 0, startedAt: ''
+export function useListenTracker(song: UnifiedSong | null, playhead: Playhead, refreshTaste: () => Promise<unknown>, onOutcome?: (song: UnifiedSong, verdict: ListenVerdict) => void, onHistory?: (song: UnifiedSong, startedAt: string) => void): void {
+  const state = useRef<{ key: string | null; song: UnifiedSong | null; listen: ListenProgress; startedAt: string }>({
+    key: null, song: null, listen: startListen(), startedAt: ''
   });
   const key = song ? `${song.source.toLowerCase()}:${song.id}` : null;
   const refreshRef = useRef(refreshTaste);
   refreshRef.current = refreshTaste;
+  const outcomeRef = useRef(onOutcome);
+  outcomeRef.current = onOutcome;
+  const historyRef = useRef(onHistory);
+  historyRef.current = onHistory;
+
+  /** Reports the listen being left and starts the next one (a new song, or the same song over again). */
+  const turnOver = useRef((nextKey: string | null, nextSong: UnifiedSong | null): void => {
+    const left = state.current;
+    if (left.song) {
+      const { heard, position } = left.listen;
+      const ended = left.song.duration > 0 && position >= left.song.duration - LISTEN_RULES.endSlackSec;
+      const ending = { exit: ended ? 'ended' as const : nextKey ? 'skipped' as const : 'switched' as const, exitPositionSec: position };
+      outcomeRef.current?.(left.song, listenVerdict({ heardSeconds: heard, ...ending, durationSec: left.song.duration }));
+      void sendListenSignal(left.song, heard, left.startedAt, ending).then(() => refreshRef.current()).catch(() => undefined);
+    }
+    // When the listen started: the key of this listen's history row and of its taste signal (a retry lands on it).
+    state.current = { key: nextKey, song: nextSong, listen: startListen(), startedAt: new Date().toISOString() };
+  }).current;
 
   useEffect(() => {
-    const heard = state.current;
-    if (heard.key !== key) {
-      if (heard.song && heard.seconds >= 1) {
-        void sendListenSignal(heard.song, heard.seconds, heard.startedAt).then(() => refreshRef.current()).catch(() => undefined);
-      }
-      // When the listen started: the server's most-played tally uses it to ignore a repeated delivery.
-      state.current = { key, song, seconds: 0, startedAt: new Date().toISOString() };
-    }
-  }, [key, song]);
+    if (state.current.key === key) return;
+    turnOver(key, song);
+  }, [key, song, turnOver]);
 
   useEffect(() => playhead.subscribe(() => {
-    const heard = state.current;
-    if (heard.key === key) heard.seconds = Math.max(heard.seconds, playhead.get());
-  }), [key, playhead]);
+    const current = state.current;
+    if (current.key !== key || !current.song) return;
+    const position = playhead.get();
+    if (restartsListen(current.listen, position, current.song.duration)) turnOver(current.key, current.song);
+    // History follows what this player actually plays, however it got here: a pick, auto-advance, radio, DJ,
+    // Connect or LuvLink. Five seconds heard, the same rule as the phone.
+    const listen = state.current;
+    if (listen.song && advanceListen(listen.listen, position)) historyRef.current?.(listen.song, listen.startedAt);
+  }), [key, playhead, turnOver]);
 }

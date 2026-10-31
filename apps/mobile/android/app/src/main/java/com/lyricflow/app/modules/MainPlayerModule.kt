@@ -21,10 +21,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
-import androidx.media3.common.Player
 import com.lyricflow.app.playback.QueueEngine
 import com.lyricflow.app.playback.QueueItemSpec
 import com.lyricflow.app.playback.QueueMath.RepeatKind
+import com.lyricflow.app.playback.resumePlayback
 import com.lyricflow.app.services.PlaybackService
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -379,18 +379,8 @@ class MainPlayerModule : Module() {
         /** False when there is no player (the service is gone): JS reloads the song. */
         Function("play") {
             val player = PlayerBridge.getPlayer() ?: return@Function false
-            mainHandler.post {
-                // After a stream error the player sits idle; play() alone
-                // would do nothing, so re-prepare at the same position.
-                if (player.playbackState == Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
-                // Suppressed by another app's audio focus: playWhenReady is
-                // already true, so play() would be a no-op. Toggle it so
-                // ExoPlayer asks for focus again and actually resumes.
-                if (player.playWhenReady && player.playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE) {
-                    player.pause()
-                }
-                player.play()
-            }
+            // Re-prepares an idle player and wins focus back from a suppressing app (playback/PlayerResume.kt).
+            mainHandler.post { resumePlayback(player) }
             true
         }
 

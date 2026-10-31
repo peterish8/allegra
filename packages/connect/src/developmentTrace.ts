@@ -22,7 +22,7 @@ const operations: readonly ConnectTraceOperation[] = [
   'begin', 'prepare', 'release', 'complete',
   'watch', 'devices_query', 'state_query', 'inbox_query', 'outcomes_query', 'player', 'catalog', 'renderer_timer',
   'command_timeout', 'listen_retry', 'send_retry', 'inbox_retry', 'write_retry', 'claim_retry', 'release_retry',
-  'handoff_deadline'
+  'handoff_deadline', 'idle_owner'
 ];
 
 const outcomes = [

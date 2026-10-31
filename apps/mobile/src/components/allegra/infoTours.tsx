@@ -207,7 +207,7 @@ export const SETTINGS_TOUR: readonly TourStep[] = [
   { title: 'Jump around', body: 'The chips at the top take you straight to a section.' },
   { title: 'Your player', body: 'Pick the backdrop, the mini player and the moving light behind the app.' },
   { title: 'Playback and lyrics', body: 'Decide what plays next, and how lyrics look and keep time.' },
-  { title: 'Listen together', body: 'Share a room with friends and hear the same song at the same moment.' },
+  { title: 'LuvLink', body: 'Share a room with friends and hear the same song at the same moment.' },
   { title: 'Your library and data', body: 'Downloads, sync and what is kept on this phone.' },
 ];
 

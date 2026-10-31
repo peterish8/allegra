@@ -43,7 +43,9 @@ test('plays sent at the same moment from two devices are both kept', async () =>
 
 test('Gaana plays keep their provider ref, display snapshot, playback route and taste across account reads', async () => {
   const ctx = await signedIn();
-  const playedAt = '2026-09-30T08:15:00.000Z';
+  // Relative to now: the play route only trusts a client time from the last week, so a fixed date
+  // ages out and every retry would be stamped "now" and counted again.
+  const playedAt = new Date(Date.now() - 60 * 60_000).toISOString();
   const song = { ref: 'gaana:g1', title: 'Gaana Song', artist: 'Gaana Artist', artwork: 'https://img/song.jpg', duration: 180 };
   const play = await ctx.as(request(ctx.app).post('/api/me/recently-played').send({ songRef: song.ref, song, playDuration: 130, playedAt }));
   assert.equal(play.status, 201);

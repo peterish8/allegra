@@ -17,6 +17,7 @@ import type * as covers from "../covers.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as library from "../library.js";
+import type * as luvLink from "../luvLink.js";
 import type * as oauth from "../oauth.js";
 import type * as profiles from "../profiles.js";
 import type * as relations from "../relations.js";
@@ -26,6 +27,7 @@ import type * as shares from "../shares.js";
 import type * as spotify from "../spotify.js";
 import type * as spotifyCron from "../spotifyCron.js";
 import type * as taste from "../taste.js";
+import type * as verifiedLyrics from "../verifiedLyrics.js";
 
 import type {
   ApiFromModules,
@@ -43,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   http: typeof http;
   library: typeof library;
+  luvLink: typeof luvLink;
   oauth: typeof oauth;
   profiles: typeof profiles;
   relations: typeof relations;
@@ -52,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   spotify: typeof spotify;
   spotifyCron: typeof spotifyCron;
   taste: typeof taste;
+  verifiedLyrics: typeof verifiedLyrics;
 }>;
 
 /**

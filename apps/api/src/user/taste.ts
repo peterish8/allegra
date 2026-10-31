@@ -1,8 +1,21 @@
 import { deriveMoodPrompts } from './moodPrompts.js';
 import type { TasteEntry, TasteProfile } from './store.js';
 import { creditedArtists } from '../shared/identity.js';
+import { LONG_TERM_WEIGHT, listenVerdict, type ListenExit } from '../shared/listenSignal.js';
 
 export { creditedArtists } from '../shared/identity.js';
+
+const MUSIC_GENRE_IDS = new Set(['bollywood', 'pop', 'hiphop', 'punjabi', 'indie', 'electronic', 'rnb', 'retro', 'southindian', 'acoustic']);
+
+export function normalizeGenreIds(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return values.flatMap((value) => {
+    const id = value.trim().toLocaleLowerCase();
+    if (!MUSIC_GENRE_IDS.has(id) || seen.has(id)) return [];
+    seen.add(id);
+    return [id];
+  });
+}
 
 /**
  * The taste profile is a small, decaying tally: every signal nudges the artists and languages it touches, and
@@ -35,7 +48,7 @@ export interface SongTraits {
 }
 
 export function emptyTaste(now = new Date()): TasteProfile {
-  return { artists: [], languages: [], signals: 0, onboarded: false, updatedAt: now.toISOString() };
+  return { artists: [], languages: [], genres: [], signals: 0, onboarded: false, updatedAt: now.toISOString() };
 }
 
 function bump(entries: readonly TasteEntry[], name: string, amount: number, keep: number): TasteEntry[] {
@@ -68,6 +81,7 @@ export function applySignal(taste: TasteProfile | undefined, song: SongTraits, w
   return {
     artists,
     languages,
+    genres: base.genres ?? [],
     signals,
     onboarded: base.onboarded || signals >= ONBOARDED_AFTER,
     updatedAt: now.toISOString()
@@ -75,13 +89,20 @@ export function applySignal(taste: TasteProfile | undefined, song: SongTraits, w
 }
 
 /** Onboarding: the listener names favourites directly. Strong, and it ends the "pick your favourites" prompt. */
-export function applySeeds(taste: TasteProfile | undefined, artistNames: readonly string[], languageNames: readonly string[], now = new Date()): TasteProfile {
+export function applySeeds(taste: TasteProfile | undefined, artistNames: readonly string[], languageNames: readonly string[], now = new Date(), genreNames: readonly string[] = []): TasteProfile {
   const base = taste ?? emptyTaste(now);
   let artists = [...base.artists];
   for (const name of artistNames) artists = bump(artists, name, SIGNAL_WEIGHT.seed, MAX_ARTISTS);
   let languages = [...base.languages];
   for (const name of languageNames) languages = bump(languages, name, SIGNAL_WEIGHT.seed, MAX_LANGUAGES);
-  return { artists, languages, signals: base.signals + artistNames.length + languageNames.length, onboarded: true, updatedAt: now.toISOString() };
+  return {
+    artists,
+    languages,
+    genres: normalizeGenreIds([...(base.genres ?? []), ...genreNames]),
+    signals: base.signals + artistNames.length + languageNames.length,
+    onboarded: true,
+    updatedAt: now.toISOString()
+  };
 }
 
 /** Most artists one import may seed, however many it brought (PLAN.md §4.4, I6). */
@@ -125,11 +146,26 @@ export function applyImportSeed(taste: TasteProfile | undefined, counts: readonl
     .sort((left, right) => right.score - left.score)
     .slice(0, MAX_ARTISTS)
     .map((entry) => ({ name: entry.name, score: Math.round(entry.score * 1000) / 1000 }));
-  return { artists, languages: base.languages, signals: base.signals + weights.length, onboarded: true, updatedAt: now.toISOString() };
+  // Genres are the listener's own picks: an import adds artists, it never forgets those.
+  return { artists, languages: base.languages, genres: base.genres ?? [], signals: base.signals + weights.length, onboarded: true, updatedAt: now.toISOString() };
 }
 
-/** A play counts by how much of it was heard: finished-ish is a vote for, a few seconds is a vote against. */
-export function playWeight(playedSeconds: number, songSeconds: number): number {
+/** How a listen ended, as a client that reports it says (`POST /api/me/taste/signal`). */
+export interface ListenEnding {
+  readonly exit: ListenExit;
+  readonly exitPositionSec?: number;
+}
+
+/**
+ * A play counts by how much of it was heard and how it ended. With the ending known, the shared
+ * rule applies: heard out (or left in the last 15 s) is a vote for, left inside 30 s a vote
+ * against, anything between says nothing. Older clients send seconds only and keep the rule they
+ * were built against: a few seconds is a vote against, most of a song a vote for.
+ */
+export function playWeight(playedSeconds: number, songSeconds: number, ending?: ListenEnding): number {
+  if (ending) {
+    return LONG_TERM_WEIGHT[listenVerdict({ heardSeconds: playedSeconds, exit: ending.exit, exitPositionSec: ending.exitPositionSec, durationSec: songSeconds })];
+  }
   if (playedSeconds < 10) return SIGNAL_WEIGHT.skip;
   const heard = songSeconds > 0 ? playedSeconds / songSeconds : 1;
   return heard >= 0.5 || playedSeconds >= 60 ? SIGNAL_WEIGHT.play : 0.4;
@@ -138,6 +174,7 @@ export function playWeight(playedSeconds: number, songSeconds: number): number {
 export interface TasteSummary {
   readonly topArtists: { name: string; score: number }[];
   readonly languages: { name: string; score: number }[];
+  readonly genres: string[];
   readonly signals: number;
   readonly onboarded: boolean;
   readonly prompts: string[];
@@ -149,6 +186,7 @@ export function tasteSummary(taste: TasteProfile | undefined): TasteSummary {
   const summary = {
     topArtists: value.artists.slice(0, 12).map((entry) => ({ name: entry.name, score: entry.score })),
     languages: value.languages.slice(0, 5).map((entry) => ({ name: entry.name, score: entry.score })),
+    genres: normalizeGenreIds(value.genres ?? []),
     signals: value.signals,
     onboarded: value.onboarded
   };
@@ -169,6 +207,7 @@ export function mergeTaste(left: TasteProfile, right: TasteProfile): TasteProfil
   return {
     artists: combine(left.artists, right.artists, MAX_ARTISTS),
     languages: combine(left.languages, right.languages, MAX_LANGUAGES),
+    genres: normalizeGenreIds([...(left.genres ?? []), ...(right.genres ?? [])]),
     signals: left.signals + right.signals,
     onboarded: left.onboarded || right.onboarded,
     updatedAt: left.updatedAt > right.updatedAt ? left.updatedAt : right.updatedAt

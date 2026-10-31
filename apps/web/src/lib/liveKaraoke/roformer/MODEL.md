@@ -21,18 +21,27 @@
 - Window: **T=1100 frames ≈ 11.00 s** (model export; multiple of 4 for WebGPU)
 - Streaming layout (`chunks.ts`): chunks one ~10 s hop apart, overlapping only by a 1 s
   raised-cosine crossfade, so each second of audio passes through the model about once
-- Order: the worker starts where the playhead will be when the chunk finishes, works
-  forward, then fills in the start of the song; seeks re-aim it
+- Order (`nextChunk`): the worker starts where the playhead will be when the chunk finishes,
+  keeps three chunks of lead, back-fills three chunks behind the playhead (seeking back never
+  waits), then works forward and fills in the rest; seeks re-aim it
+- Model download (`modelCache.ts`): streamed into OPFS, resumable with HTTP Range, hashed as it
+  streams (`sha256.ts`); a `.verified` marker lets later loads trust the size
+- Stem cache (`stemCache.ts`, `stemCodec.ts`): each separated chunk is saved as Opus (int16
+  fallback), keyed by model SHA, layout version and hop, capped at 1 GB; cached chunks need
+  neither the model nor the song's audio
 - Instrumental: `I = mix − vocals` (mask applied to STFT → iSTFT vocals)
 - Residual pass (soft subtract when the residual ratio is high) only when the first chunk
   shows the device has time for two passes
 - Playback (`streamPlayer.ts`): the `<audio>` element stays the clock and keeps its source;
   ready segments play through Web Audio while its own output is muted, and anywhere not yet
   separated the original plays
-- Mid-side fallback when the model cannot load, or a chunk takes longer than it plays
+- The live mid-side bridge plays from the first click, and wherever the model has not reached;
+  it stays on for the song when the model cannot load or a chunk takes longer than it plays
 
 Measured (desktop, WebGPU): session build ~18 s cold, ~6.5 s per 10 s chunk (0.5 s of it
 STFT), instrumental at the playhead ~27 s after the first press, ~12 s after a seek.
+2026-10-16, same desktop: separation ~2× real time once warm; seeking back 30 s stays on AI;
+a cached song is on AI ~1 s after the press; a chunk is ~534 KB as Opus (~3.9 MB as int16).
 
 ## Local vendor (optional, faster)
 
@@ -44,5 +53,5 @@ Place both files under `apps/web/public/models/roformer/` (gitignored).
 2. Rolling ahead-of-playhead buffer — implemented (worker + stream player)
 3. Residual pass (CLEAN) — implemented gated soft subtract
 4. Spectral confidence mask
-5. Device benchmark auto mode — partly: pace check falls back to mid-side on slow devices
-6. OPFS → same-origin model serve + WebGPU graph polish
+5. Device benchmark auto mode — implemented: device gate before download, pace verdict after
+6. OPFS model + stem cache — implemented; same-origin model serve and WebGPU graph polish open

@@ -12,7 +12,7 @@
     "mock": "node mocks/server.mjs",
     "contract-test": "node tests/contract/contract-smoke.mjs",
     "infra:test": "node --test tests/infra/infra-files.test.mjs tests/infra/mobile-release-notes.test.mjs",
-    "convex:test": "node --import tsx --test tests/convex/authRedirect.test.ts && vitest run convex/connect.test.ts convex/account.test.ts convex/retention.test.ts convex/taste.test.ts convex/library.test.ts convex/blends.test.ts",
+    "convex:test": "node --import tsx --test tests/convex/authRedirect.test.ts && vitest run --maxWorkers=1 convex/connect.test.ts convex/account.test.ts convex/retention.test.ts convex/taste.test.ts convex/library.test.ts convex/blends.test.ts convex/luvLink.test.ts convex/verifiedLyrics.test.ts convex/spotify.test.ts",
     "sync:shared": "node scripts/sync-shared.mjs",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
@@ -21,6 +21,7 @@
     "test": "npm test --workspaces --if-present && npm run infra:test && npm run convex:test",
     "build": "npm run build --workspaces --if-present",
     "e2e": "playwright test -c tests/e2e/playwright.config.ts",
+    "e2e:connect-login": "node tests/e2e/connect-login.mjs",
     "mobile:check": "npm --prefix apps/mobile run ci"
   },
   "dependencies": {

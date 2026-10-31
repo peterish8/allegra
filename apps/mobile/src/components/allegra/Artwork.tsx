@@ -12,7 +12,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { Motion } from '../../constants/allegraTheme';
-import { duotoneFor, hashString, monogramOf } from './artworkSeed';
+import { artworkUnderlay, duotoneFor, hashString, monogramOf } from './artworkSeed';
 
 export { duotoneFor, hashString, monogramOf };
 
@@ -128,9 +128,15 @@ export const Artwork: React.FC<ArtworkProps> = ({ uri, title, artist, size = 160
   const [failed, setFailed] = useState<string | null>(null);
   // A failure belongs to one cover; the next song's cover gets its own try.
   const showImage = !!uri && failed !== uri;
+  const label = title || 'Untitled';
+  const base = useMemo(() => duotoneFor(`${label}|${artist ?? ''}`)[0], [label, artist]);
+  const underlay = artworkUnderlay(showImage, quiet);
+  let under: React.ReactNode = null;
+  if (underlay === 'generated') under = <GeneratedArtwork title={label} artist={artist} size={size} />;
+  else if (underlay === 'base') under = <View style={[StyleSheet.absoluteFill, { backgroundColor: base }]} />;
   return (
     <View style={[styles.frame, style]}>
-      {quiet && showImage ? null : <GeneratedArtwork title={title || 'Untitled'} artist={artist} size={size} />}
+      {under}
       {showImage ? (
         <Image
           source={{ uri }}

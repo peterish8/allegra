@@ -5,6 +5,8 @@ export interface UnifiedSong {
   readonly title: string;
   readonly artist: string;
   readonly album?: string;
+  /** The catalog's album id (Saavn only) for `GET /api/albums/:id`. Absent for Gaana and canonical-release names. */
+  readonly albumId?: string;
   readonly artwork: string;
   readonly streamUrl: string;
   readonly duration: number;
@@ -33,6 +35,26 @@ export interface LyricsPayload {
 }
 
 /** Mirrors packages/shared/types.ts. */
+export type LyricsScript = 'latin' | 'native';
+
+/** Mirrors packages/shared/types.ts. */
+export interface VerifiedLyricsVersion {
+  readonly script: LyricsScript;
+  readonly language: string;
+  readonly lrc: string;
+  readonly syncedAt: number;
+}
+
+/** Mirrors packages/shared/types.ts. */
+export interface VerifiedLyrics {
+  readonly ref: string;
+  readonly title: string;
+  readonly artist: string;
+  readonly duration: number;
+  readonly versions: readonly VerifiedLyricsVersion[];
+}
+
+/** Mirrors packages/shared/types.ts. */
 export interface ArtistSummary {
   readonly id: string;
   readonly name: string;
@@ -44,6 +66,22 @@ export interface ArtistAlbum {
   readonly name: string;
   readonly year: string | null;
   readonly image: string | null;
+}
+
+/** Mirrors packages/shared/types.ts (`GET /api/search/albums`). */
+export interface AlbumSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly artist: string;
+  readonly artwork: string | null;
+  readonly year: string | null;
+  readonly language: string | null;
+}
+
+/** Mirrors packages/shared/types.ts (`GET /api/albums/:id`). */
+export interface AlbumDetail extends AlbumSummary {
+  readonly songCount: number;
+  readonly songs: readonly UnifiedSong[];
 }
 
 export interface ArtistProfile extends ArtistSummary {

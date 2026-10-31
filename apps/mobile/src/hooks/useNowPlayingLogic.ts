@@ -3,6 +3,8 @@ import { Alert } from 'react-native';
 import { usePlayer } from '../contexts/PlayerContext';
 import { diag } from '../utils/diag';
 import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeResumePosition, usesNativeQueue } from '../store/playerStore';
+import { handleOwnedLuvLinkNext, handleOwnedLuvLinkPrevious, handleOwnedLuvLinkSeek, handleOwnedLuvLinkToggle, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
+import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
 import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
 import { useSongsStore } from '../store/songsStore';
 import { useArtHistoryStore } from '../store/artHistoryStore';
@@ -116,19 +118,7 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
       const lastTimestamp = rawLyrics[rawLyrics.length - 1].timestamp;
       const isCollapsed = lastTimestamp === 0 && rawLyrics.length > 1;
 
-      if (isCollapsed) {
-        const duration = (durationSV.value > 0)
-          ? durationSV.value
-          : (currentSong?.duration || 180);
-
-        if (__DEV__) console.log(`[NowPlaying] ⚠️ Detected collapsed lyrics. Auto-generating timestamps for ${duration}s`);
-
-        const newLyrics = rawLyrics.map((line, index) => ({
-          ...line,
-          timestamp: (index / rawLyrics.length) * duration,
-        }));
-        return newLyrics;
-      }
+      if (isCollapsed) return rawLyrics;
 
       const firstTimestamp = rawLyrics[0].timestamp;
       if (firstTimestamp > 2) {
@@ -144,12 +134,13 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
   // Selector only — this hook re-renders on position ticks during playback.
   const lyricsDelay = useSettingsStore(s => s.lyricsDelay);
 
-  // SynchronizedLyrics is the one owner of automatic lyric scrolling, for synced and generated timestamps alike.
+  // SynchronizedLyrics owns automatic scrolling for timed lines and plain text alike.
   // A second driver lived here (a JS-thread animated scrollToIndex fired from every position report for evenly
   // spaced lyrics, with no check that the lyrics were even on screen); it fought the list's own follow.
 
   const getActiveLyricIndex = useCallback(() => {
     if (!processedLyrics || processedLyrics.length === 0) return -1;
+    if (processedLyrics.every(line => line.timestamp === 0 && !('words' in line && line.words?.length))) return -1;
     const effectiveTime = positionSV.value + lyricsDelay;
     return processedLyrics.findIndex((line, i) => {
       const nextLine = processedLyrics[i + 1];
@@ -160,22 +151,29 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
   // Playback controls (the button's own press animation lives in NowPlayingControls)
   const togglePlay = () => {
     if (!player) return;
-    requestPlayback(!usePlayerStore.getState().isPlaying);
+    void handleOwnedLuvLinkToggle().then(handled => {
+      if (!handled) requestPlayback(!usePlayerStore.getState().isPlaying);
+    });
   };
 
   const skipForward = async () => {
+    if (await handleOwnedLuvLinkNext()) return;
     await usePlayerStore.getState().nextInPlaylist();
   };
 
   const skipBackward = async () => {
+    if (await handleOwnedLuvLinkPrevious()) return;
     if (!player) return;
     // On Android the engine applies the rule (past 3 s a song starts over); the store's previous handles both.
     if (!usesNativeQueue() && positionSV.value > 3) {
+      if (await handleOwnedLuvLinkSeek(0)) return;
       isSeeking.value = true;
       positionSV.value = 0;
       // seekTo pauses on iOS — restart-track must not silently stop playback.
       const wasPlaying = usePlayerStore.getState().isPlaying;
       await player.seekTo(0);
+      await notifyOwnedLuvLinkUserSeek(0);
+      notifyLuvLinkUserSeek(0);
       if (wasPlaying) requestPlayback(true);
       isSeeking.value = false;
     } else {
@@ -185,8 +183,11 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
 
   const handleScrub = useCallback(async (seconds: number) => {
     if (player) {
+      if (await handleOwnedLuvLinkSeek(seconds)) return;
       const wasPlaying = usePlayerStore.getState().isPlaying;
       await player.seekTo(seconds);
+      await notifyOwnedLuvLinkUserSeek(seconds);
+      notifyLuvLinkUserSeek(seconds);
       // requestPlayback (not player.play) so the store stays in sync and the
       // post-seek status blip is recognised as stale.
       if (wasPlaying) requestPlayback(true);
@@ -196,10 +197,13 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
   // Stable: it is a prop of every lyric line, and a new one each render re-rendered them all.
   const handleLyricTap = useCallback(async (timestamp: number) => {
     if (!player) return;
+    if (await handleOwnedLuvLinkSeek(timestamp)) return;
     isSeeking.value = true;
     positionSV.value = timestamp;
     try {
       await player.seekTo(timestamp);
+      await notifyOwnedLuvLinkUserSeek(timestamp);
+      notifyLuvLinkUserSeek(timestamp);
       // Tapping a lyric always starts playback (existing behaviour), but it must go
       // through the store or the button shows "play" while audio is running.
       requestPlayback(true);

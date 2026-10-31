@@ -1,3 +1,4 @@
+import { isListenExit, type ListenExit } from '@shared/listenSignal';
 import { parseSongRef, type SongRef, type SongSnapshot } from '@shared/songRef';
 
 export interface PendingPlay {
@@ -11,11 +12,14 @@ export interface PendingPlay {
   readonly recentOnly: boolean;
   /** Set after Recently played accepts this event, before taste is sent. */
   readonly recentPosted: boolean;
+  /** How the listen ended; absent in entries queued before it was recorded. */
+  readonly exit?: ListenExit;
+  readonly exitPositionSec?: number;
 }
 
 export function parsePendingPlay(body: string): PendingPlay | null {
   try {
-    const value = JSON.parse(body) as { songRef?: unknown; song?: unknown; songId?: unknown; seconds?: unknown; playedAt?: unknown; recentOnly?: unknown; recentPosted?: unknown };
+    const value = JSON.parse(body) as { songRef?: unknown; song?: unknown; songId?: unknown; seconds?: unknown; playedAt?: unknown; recentOnly?: unknown; recentPosted?: unknown; exit?: unknown; exitPositionSec?: unknown };
     if (typeof value.seconds !== 'number' || !Number.isFinite(value.seconds) || typeof value.playedAt !== 'string') return null;
     const parsed = typeof value.songRef === 'string' ? parseSongRef(value.songRef) : null;
     if (parsed) {
@@ -28,6 +32,8 @@ export function parsePendingPlay(body: string): PendingPlay | null {
         playedAt: value.playedAt,
         recentOnly: value.recentOnly === true,
         recentPosted: value.recentPosted === true,
+        ...(isListenExit(value.exit) ? { exit: value.exit } : {}),
+        ...(typeof value.exitPositionSec === 'number' && Number.isFinite(value.exitPositionSec) ? { exitPositionSec: value.exitPositionSec } : {}),
       };
     }
     // Read the previous mobile outbox format. It only recorded Saavn ids, so

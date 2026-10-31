@@ -37,6 +37,7 @@ const tasteEntry = v.object({ name: v.string(), score: v.number() });
 const taste = v.object({
   artists: v.array(tasteEntry),
   languages: v.array(tasteEntry),
+  genres: v.optional(v.array(v.string())),
   signals: v.number(),
   onboarded: v.boolean(),
   updatedAt: v.string()
@@ -187,6 +188,27 @@ export const blendGift = v.object({
   toUserId: v.string(),
   identity: v.string(),
   song: songSnapshot
+});
+
+/**
+ * One synced rendering of a song's lyrics, timed on a listener's own computer (convex/verifiedLyrics.ts).
+ * `latin` is the transliteration listeners see first; `native` is the song's own script.
+ */
+export const lyricsVersion = v.object({
+  script: v.union(v.literal('latin'), v.literal('native')),
+  /** ISO 639-1 code of the sung language ("ta", "te", "hi"…). */
+  language: v.string(),
+  /** Enhanced LRC: `[mm:ss.xx]` per line and `<mm:ss.xxx>` per word (packages/shared/wordSync.ts). */
+  lrc: v.string(),
+  /** Where the words came from. Kept for moderation; never shown to listeners. */
+  source: v.object({ name: v.string(), url: v.optional(v.string()) }),
+  /** The aligner's mean line confidence, 0..1. A later sync replaces this one only when it beats it. */
+  confidence: v.number(),
+  syncedBy: v.string(),
+  syncedAt: v.number(),
+  /** Distinct listeners who reported this sync; at REPORTS_TO_HIDE it hides itself until the owner looks. */
+  reportedBy: v.array(v.string()),
+  hidden: v.boolean()
 });
 
 export default defineSchema({
@@ -367,6 +389,38 @@ export default defineSchema({
     songs: v.array(relatedSong),
     updatedAt: v.string()
   }).index('by_songId', ['songId']),
+
+  /**
+   * Words a listener pasted after the admin passcode was accepted (verifiedLyrics:createPasted),
+   * kept for that account and recording until they are aligned and saved. The passcode is never stored.
+   */
+  pastedLyrics: defineTable({
+    candidateId: v.string(),
+    ref: v.string(),
+    userId: v.string(),
+    language: v.string(),
+    lines: v.array(v.string()),
+    createdAt: v.number()
+  }).index('by_candidateId_and_userId_and_ref', ['candidateId', 'userId', 'ref']).index('by_userId', ['userId']),
+
+  /**
+   * Lyrics a listener synced and confirmed ("Is this syncing good?"), shared with everyone who plays
+   * the song on the website and the phone. One row per recording; at most one version per script.
+   */
+  verifiedLyrics: defineTable({
+    /** SongRef, "saavn:<id>" (packages/shared/songRef.ts). */
+    ref: v.string(),
+    /** matchKey(title, artist), for a download on the phone that has no ref. */
+    matchKey: v.string(),
+    title: v.string(),
+    artist: v.string(),
+    /** Seconds. */
+    duration: v.number(),
+    versions: v.array(lyricsVersion),
+    updatedAt: v.number()
+  })
+    .index('by_ref', ['ref'])
+    .index('by_matchKey', ['matchKey']),
 
   /** A playlist someone chose to share. Live: it points at the owner's playlist, so edits show up for everyone with the link. */
   shares: defineTable({
@@ -560,19 +614,133 @@ export default defineSchema({
   /** One encrypted credential record per account; no token is returned by any query. */
   spotifyConnections: defineTable({
     userId: v.string(), spotifyUserId: v.string(), encryptedRefreshToken: v.string(), encryptedAccessToken: v.optional(v.string()),
-    accessExpiresAt: v.optional(v.number()), dailyEnabled: v.boolean(), connectedAt: v.number(), updatedAt: v.number()
-  }).index('by_userId', ['userId']).index('by_dailyEnabled_and_updatedAt', ['dailyEnabled', 'updatedAt']),
+    accessExpiresAt: v.optional(v.number()), dailyEnabled: v.boolean(), connectedAt: v.number(), updatedAt: v.number(), generation: v.optional(v.number())
+  }).index('by_userId', ['userId']).index('by_dailyEnabled_and_userId', ['dailyEnabled', 'userId']),
   /** Bounded source playlist list and resumable full-scan cursor. */
   spotifyPlaylists: defineTable({
     userId: v.string(), playlistId: v.string(), name: v.string(), snapshotId: v.string(), total: v.number(),
     libraryId: v.string(), offset: v.number(), scanSnapshotId: v.string(), scanTotal: v.number(), added: v.number(), skipped: v.number(),
     reviewNeeded: v.number(), lastSyncedAt: v.optional(v.number()), leaseUntil: v.optional(v.number()), leaseToken: v.optional(v.string()),
-    enabled: v.boolean(), updatedAt: v.number()
+    enabled: v.boolean(), updatedAt: v.number(),
+    /** Start time of the last daily run that finished or skipped this playlist; the run walks rows older than its start. */
+    dailyCheckedAt: v.optional(v.number())
   }).index('by_userId_and_playlistId', ['userId', 'playlistId']).index('by_userId_and_updatedAt', ['userId', 'updatedAt'])
-    .index('by_enabled_and_updatedAt', ['enabled', 'updatedAt']),
+    .index('by_enabled_and_updatedAt', ['enabled', 'updatedAt'])
+    .index('by_userId_and_enabled_and_dailyCheckedAt', ['userId', 'enabled', 'dailyCheckedAt']),
   /** One stable receipt per source song; incomplete/uncertain matches never get a receipt. */
   spotifyReceipts: defineTable({
     userId: v.string(), playlistId: v.string(), spotifyTrackId: v.string(), libraryId: v.string(), savedAt: v.number()
   }).index('by_userId_and_playlistId_and_spotifyTrackId', ['userId', 'playlistId', 'spotifyTrackId'])
-    .index('by_userId_and_playlistId', ['userId', 'playlistId'])
+    .index('by_userId_and_playlistId', ['userId', 'playlistId']),
+
+  // LuvLink v1 uses independent bounded documents: membership changes do not invalidate queue
+  // or playback subscribers, and ephemeral presence never lives in these tables.
+  luvLinkRooms: defineTable({
+    hostUserId: v.string(),
+    leaderUserId: v.string(),
+    leaderEpoch: v.number(),
+    mode: v.union(v.literal('listen'), v.literal('speaker')),
+    status: v.union(v.literal('active'), v.literal('closed')),
+    protocolVersion: v.number(),
+    revision: v.number(),
+    queueRevision: v.number(),
+    suggestionRevision: v.number(),
+    memberCount: v.number(),
+    createdAtMs: v.number(),
+    expiresAtMs: v.number(),
+    closedAtMs: v.optional(v.number()),
+    handoffFromUserId: v.optional(v.string()),
+    /** Leader epoch the pending handoff belongs to; rooms written before it accept only the current epoch. */
+    handoffEpoch: v.optional(v.number()),
+    /** When the server next re-checks whether the old output is still online (it releases the handoff once it isn't). */
+    handoffDeadlineAtMs: v.optional(v.number())
+  }).index('by_expiresAtMs', ['expiresAtMs']).index('by_hostUserId_and_status', ['hostUserId', 'status']),
+
+  luvLinkMembers: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    userId: v.string(),
+    displayName: v.string(),
+    role: v.union(v.literal('host'), v.literal('member')),
+    mode: v.union(v.literal('listen'), v.literal('speaker')),
+    canControl: v.boolean(),
+    canSuggest: v.boolean(),
+    joinedAtMs: v.number()
+  }).index('by_roomId_and_userId', ['roomId', 'userId']).index('by_roomId_and_joinedAtMs', ['roomId', 'joinedAtMs']).index('by_userId_and_joinedAtMs', ['userId', 'joinedAtMs']),
+
+  luvLinkInvites: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    codeHash: v.string(),
+    generation: v.number(),
+    createdAtMs: v.number(),
+    expiresAtMs: v.number(),
+    revokedAtMs: v.optional(v.number())
+  }).index('by_codeHash', ['codeHash']).index('by_roomId_and_generation', ['roomId', 'generation']).index('by_expiresAtMs', ['expiresAtMs']),
+
+  luvLinkPlayback: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    leaderUserId: v.string(),
+    leaderEpoch: v.number(),
+    sequence: v.number(),
+    trackEpoch: v.number(),
+    queueEntryId: v.union(v.string(), v.null()),
+    intent: v.union(v.literal('control'), v.literal('natural_end'), v.literal('checkpoint')),
+    intentByUserId: v.string(),
+    outputAppliedSequence: v.number(),
+    barrierPending: v.boolean(),
+    song: v.union(songSnapshot, v.null()),
+    positionSec: v.number(),
+    serverAtMs: v.number(),
+    playing: v.boolean(),
+    effectiveAtMs: v.number(),
+    playbackRate: v.number()
+  }).index('by_roomId', ['roomId']),
+
+  luvLinkQueue: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    entryId: v.string(),
+    order: v.number(),
+    song: songSnapshot,
+    addedByUserId: v.string(),
+    addedByName: v.string(),
+    createdAtMs: v.number()
+  }).index('by_roomId_and_order', ['roomId', 'order']).index('by_roomId_and_entryId', ['roomId', 'entryId']).index('by_addedByUserId', ['addedByUserId']),
+
+  luvLinkRecommendations: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    revision: v.number(),
+    picks: v.array(v.object({ song: songSnapshot, forUserIds: v.array(v.string()), kind: v.union(v.literal('shared'), v.literal('pick')) })),
+    builtAtMs: v.number()
+  }).index('by_roomId', ['roomId']),
+
+  luvLinkReceipts: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    commandId: v.string(),
+    userId: v.string(),
+    kind: v.string(),
+    result: v.object({ revision: v.number(), entryId: v.optional(v.string()) }),
+    createdAtMs: v.number()
+  }).index('by_roomId_and_commandId', ['roomId', 'commandId']).index('by_roomId_and_createdAtMs', ['roomId', 'createdAtMs']).index('by_userId', ['userId']),
+
+  luvLinkReady: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    trackEpoch: v.number(),
+    userId: v.string(),
+    ready: v.boolean(),
+    updatedAtMs: v.number()
+  }).index('by_roomId_and_trackEpoch_and_userId', ['roomId', 'trackEpoch', 'userId']).index('by_roomId_and_trackEpoch', ['roomId', 'trackEpoch']).index('by_userId', ['userId']),
+
+  luvLinkBarriers: defineTable({
+    roomId: v.id('luvLinkRooms'),
+    trackEpoch: v.number(),
+    leaderEpoch: v.number(),
+    sequence: v.number(),
+    song: songSnapshot,
+    queueEntryId: v.union(v.string(), v.null()),
+    intent: v.union(v.literal('control'), v.literal('natural_end')),
+    intentByUserId: v.string(),
+    positionSec: v.number(),
+    playbackRate: v.number(),
+    deadlineAtMs: v.number(),
+    status: v.union(v.literal('pending'), v.literal('completed'), v.literal('cancelled'))
+  }).index('by_roomId', ['roomId']).index('by_deadlineAtMs_and_status', ['deadlineAtMs', 'status'])
 });

@@ -38,6 +38,8 @@ const PILL_RADIUS = 22;
 import Artwork from './allegra/Artwork';
 import { Signal } from '../constants/allegraTheme';
 import { useConnect } from '../services/connect/ConnectProvider';
+import { handleOwnedLuvLinkNext, handleOwnedLuvLinkPrevious, handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
+import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
 
 // Tallest the classic bar's blurred artwork ever needs to be — the full-expand
 // stage is 0.915 of the screen, with headroom so the image is never the thing
@@ -419,6 +421,8 @@ export const MiniPlayer: React.FC = () => {
     if (!pillMode) {
       return {
         height: classicHeightForProgress(),
+        // Square on every corner, said outright so no rounding carried over from elsewhere shows.
+        borderRadius: 0,
         overflow: 'hidden' as const,
       };
     }
@@ -494,11 +498,13 @@ export const MiniPlayer: React.FC = () => {
 
   const skipForward = useCallback(async (e?: any) => {
     e?.stopPropagation();
+    if (await handleOwnedLuvLinkNext()) return;
     await usePlayerStore.getState().nextInPlaylist();
   }, []);
 
-  const skipBackward = useCallback((e?: any) => {
+  const skipBackward = useCallback(async (e?: any) => {
     e?.stopPropagation();
+    if (await handleOwnedLuvLinkPrevious()) return;
     if (positionSV.value > 3 && player) {
         isSeeking.value = true;
         positionSV.value = 0;
@@ -689,12 +695,15 @@ export const MiniPlayer: React.FC = () => {
   // as "tapping the line did nothing".
   const handleClassicLyricSeek = useCallback(async (time: number) => {
     if (!player) return;
+    if (await handleOwnedLuvLinkSeek(time)) return;
     isSeeking.value = true;
     positionSV.value = time;
 
     const wasPlaying = usePlayerStore.getState().isPlaying;
     try {
       await player.seekTo(time);
+      await notifyOwnedLuvLinkUserSeek(time);
+      notifyLuvLinkUserSeek(time);
       if (wasPlaying) player.play();
     } finally {
       if (seekLockTimeout.current) clearTimeout(seekLockTimeout.current);
@@ -871,6 +880,7 @@ export const MiniPlayer: React.FC = () => {
                             the top/bottom instead of a black scrim. */}
                         <SynchronizedLyrics
                             lyrics={lyricsToUse || []}
+                            duration={songForLyrics?.duration}
                             currentTime={positionSV}
                             onLyricPress={handleClassicLyricSeek}
                             isUserScrolling={false}
@@ -973,7 +983,7 @@ const styles = StyleSheet.create({
     height: CLASSIC_TRANSPORT_H,
     paddingHorizontal: 16,
     // Room for the top-edge scrubber track
-    paddingTop: 12,
+    paddingTop: 8,
     width: '100%',
   },
   // Top seam of the transport row (= top of shell when collapsed). `bottom + height`
@@ -1059,9 +1069,9 @@ const styles = StyleSheet.create({
   },
 
   coverThumbnail: {
-    width: 48,
-    height: 48,
-    borderRadius: 6,
+    width: 40,
+    height: 40,
+    borderRadius: 4,
     marginRight: 12,
   },
   info: {

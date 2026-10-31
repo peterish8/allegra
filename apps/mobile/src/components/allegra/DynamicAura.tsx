@@ -44,15 +44,14 @@ const withAlpha = (hex: string, alpha: number): string => {
 
 /**
  * Settings → App background picks the room: the live shader, the lite frosted
- * glass (no frame loop at all), or the glow (the mini player's animated glow
- * across the top of the screen, black below).
+ * glass (no frame loop at all), or the glow (two tones of the cover drifting
+ * slowly across the top of the screen, black below).
  */
 export const DynamicAura: React.FC<DynamicAuraProps> = props => {
   const background = useSettingsStore(s => s.appBackground);
   const hasSong = usePlayerStore(s => !!s.currentSongId);
-  const cover = usePlayerStore(s => s.currentSong?.coverImageUri);
   if (background === 'glass') return <GlassRoom palette={hasSong ? props.palette : null} dim={props.dim} />;
-  if (background === 'glow') return <GlowRoom coverUri={cover} active={props.active} dim={props.dim} />;
+  if (background === 'glow') return <GlowRoom palette={hasSong ? props.palette : null} active={props.active} dim={props.dim} />;
   return <ShaderRoom {...props} />;
 };
 
@@ -136,3 +135,12 @@ const styles = StyleSheet.create({
 });
 
 export default React.memo(DynamicAura);
+
+/**
+ * The aura with its energy read from playback, for pages that would otherwise subscribe to play and pause only to
+ * pass it down: a pause then re-renders this, not the page and its lists.
+ */
+export const PlayingAura: React.FC<Omit<DynamicAuraProps, 'playing'>> = React.memo(props => {
+  const playing = usePlayerStore(s => s.isPlaying);
+  return <DynamicAura {...props} playing={playing} />;
+});

@@ -1,0 +1,430 @@
+import type { DjCloudProvider, DjExploration, DjGoal, DjProvider, DjSessionState, DjSetShape, DjSlashCommand, DjTurnResponse } from '@shared/dj';
+import type { UnifiedSong } from '@shared/types';
+
+import { normalizeEndpoint } from './djCustom';
+
+/** The only DJ setting that is stored: provider, model and a custom endpoint's URL. The API key is never written anywhere. */
+export const DJ_PROVIDER_STORAGE_KEY = 'allegra.dj.provider.v1';
+
+/**
+ * What the web DJ can think with: the shared providers, plus `custom`, any OpenAI-compatible endpoint
+ * the listener runs or rents (OmniRoute, a self-hosted router). The browser calls a custom endpoint
+ * directly, so it never reaches `/api/ai/dj/turn` and stays out of the shared (and phone) types.
+ */
+export type DjBrain = DjProvider | 'custom';
+
+const PROVIDERS: readonly DjBrain[] = ['openai', 'openrouter', 'gemini', 'local', 'custom'];
+const MODEL_MAX_LENGTH = 160;
+
+export interface DjProviderChoice {
+  readonly provider: DjBrain;
+  readonly model: string;
+  /** A custom endpoint's base URL ("http://localhost:20128/v1"), kept across provider switches. */
+  readonly endpoint?: string;
+}
+
+/** One model in a settings dropdown: the exact ID sent to the provider, a name and a short note. */
+export interface DjModelOption {
+  readonly id: string;
+  readonly label: string;
+  readonly note: string;
+}
+
+/**
+ * Tool-calling models offered per provider, first one the default (checked against OpenRouter's live
+ * model list, 2026-10-11). "Other" in the dropdown still accepts any ID the provider takes.
+ */
+export const DJ_THINKING_MODELS: Readonly<Record<DjCloudProvider, readonly DjModelOption[]>> = {
+  openai: [
+    { id: 'gpt-4o-mini', label: 'GPT-4o mini', note: 'tested with the DJ · cheap' },
+    { id: 'gpt-6-luna', label: 'GPT-6 Luna', note: 'newer · cheap and fast' },
+    { id: 'gpt-6-sol', label: 'GPT-6 Sol', note: 'smarter · costs more' },
+    { id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', note: 'newest · costs more' }
+  ],
+  openrouter: [
+    { id: 'openai/gpt-4o-mini', label: 'GPT-4o mini', note: 'tested with the DJ · cheap' },
+    { id: 'openai/gpt-6-luna', label: 'GPT-6 Luna', note: 'newer · cheap and fast' },
+    { id: 'google/gemini-3.8-flash', label: 'Gemini 3.8 Flash', note: 'fast' },
+    { id: 'anthropic/claude-haiku-5.5', label: 'Claude Haiku 5.5', note: 'careful with tools' },
+    { id: 'deepseek/deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash', note: 'very cheap' },
+    { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', label: 'Nemotron 3 Ultra', note: 'free · can be slow or busy' }
+  ],
+  gemini: [
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', note: 'tested with the DJ · fast' },
+    { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash', note: 'previous Flash' },
+    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite', note: 'cheapest' }
+  ]
+};
+
+/** OpenAI's built-in speech voices; an empty choice leaves the server default (coral). */
+export const DJ_OPENAI_VOICES: readonly DjModelOption[] = ['alloy', 'ash', 'ballad', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']
+  .map((id) => ({ id, label: id[0]!.toUpperCase() + id.slice(1), note: '' }));
+
+/** Where each provider hands out keys; shown beside the key field. */
+export const DJ_KEY_PAGES: Readonly<Record<'openai' | 'openrouter' | 'gemini' | 'groq' | 'elevenlabs', { readonly name: string; readonly url: string }>> = {
+  openai: { name: 'OpenAI', url: 'https://platform.openai.com/api-keys' },
+  openrouter: { name: 'OpenRouter', url: 'https://openrouter.ai/keys' },
+  gemini: { name: 'Google AI Studio', url: 'https://aistudio.google.com/apikey' },
+  groq: { name: 'Groq', url: 'https://console.groq.com/keys' },
+  elevenlabs: { name: 'ElevenLabs', url: 'https://elevenlabs.io/app/settings/api-keys' }
+};
+
+export function defaultModelFor(provider: DjBrain): string {
+  if (provider === 'openai') return 'gpt-4o-mini';
+  if (provider === 'openrouter') return 'openai/gpt-4o-mini';
+  if (provider === 'gemini') return 'gemini-3.8-flash';
+  // A custom endpoint's models are its own: the listener picks one from its list.
+  if (provider === 'custom') return '';
+  return 'Qwen3 0.6B (on-device)';
+}
+
+function isProvider(value: unknown): value is DjBrain {
+  return typeof value === 'string' && (PROVIDERS as readonly string[]).includes(value);
+}
+
+/** Reads the stored provider and model; anything unusable reads as "nothing stored". */
+export function readDjProviderChoice(storage: Pick<Storage, 'getItem'>): DjProviderChoice | null {
+  try {
+    const raw = storage.getItem(DJ_PROVIDER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const record = parsed as Record<string, unknown>;
+    if (!isProvider(record.provider)) return null;
+    const model = typeof record.model === 'string' ? record.model.trim() : '';
+    const endpoint = typeof record.endpoint === 'string' ? normalizeEndpoint(record.endpoint) : null;
+    return {
+      provider: record.provider,
+      model: model && model.length <= MODEL_MAX_LENGTH ? model : defaultModelFor(record.provider),
+      ...(endpoint ? { endpoint } : {})
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Writes only provider, model and endpoint URL, never a key. Storage that is full or blocked is ignored. */
+export function writeDjProviderChoice(storage: Pick<Storage, 'setItem'>, choice: DjProviderChoice): void {
+  try {
+    storage.setItem(DJ_PROVIDER_STORAGE_KEY, JSON.stringify({ provider: choice.provider, model: choice.model, ...(choice.endpoint ? { endpoint: choice.endpoint } : {}) }));
+  } catch {
+    // The choice just is not remembered.
+  }
+}
+
+export interface SlashState {
+  readonly goal: DjGoal;
+  readonly songLimit: number;
+}
+
+export interface ParsedSlash {
+  readonly command: DjSlashCommand;
+  readonly size?: number;
+  readonly remainder: string;
+}
+
+export interface SlashOutcome {
+  readonly next: { readonly goal?: DjGoal; readonly songLimit?: number; readonly settingsOpen?: boolean };
+  readonly status?: string;
+  readonly send?: { readonly message: string; readonly goal?: DjGoal; readonly songLimit?: number };
+  readonly prompt: { readonly clear: boolean; readonly prefill?: string };
+}
+
+/** What a recognised slash command does. The prompt is always cleared; `/size` alone asks for a number. */
+export function applySlashCommand(state: SlashState, parsed: ParsedSlash): SlashOutcome {
+  const { command, remainder } = parsed;
+  if (command.action === 'settings') {
+    return { next: { settingsOpen: true }, status: 'Choose your AI provider or set up a key below.', prompt: { clear: true } };
+  }
+  if (command.action === 'help') {
+    return { next: {}, status: 'Try /late-night, /tamil, /energy, /focus, /similar, /keep, /mix, /playlist, /size, or /settings.', prompt: { clear: true } };
+  }
+  if (command.action === 'size') {
+    if (!parsed.size) {
+      return { next: {}, status: 'Choose a song count from the suggestions.', prompt: { clear: true, prefill: '/size ' } };
+    }
+    const minimum = state.goal === 'playlist' ? 5 : 1;
+    const maximum = state.goal === 'playlist' ? 30 : 8;
+    const songLimit = Math.max(minimum, Math.min(maximum, parsed.size));
+    if (remainder) return { next: { songLimit }, send: { message: remainder, songLimit }, prompt: { clear: true } };
+    return { next: { songLimit }, status: `I’ll line up ${songLimit} songs.`, prompt: { clear: true } };
+  }
+  if (command.action === 'goal' && command.goal) {
+    const songLimit = command.goal === 'mix' ? Math.min(state.songLimit, 8) : Math.max(state.songLimit, 10);
+    const next = { goal: command.goal, songLimit };
+    if (remainder) return { next, send: { message: remainder, goal: command.goal, songLimit }, prompt: { clear: true } };
+    return {
+      next,
+      status: command.goal === 'playlist' ? 'Playlist draft ready. Tell me the mood or first song.' : 'Live DJ is on. What should we play next?',
+      prompt: { clear: true }
+    };
+  }
+  if (command.action === 'prompt') {
+    return { next: {}, send: { message: [command.prompt, remainder].filter(Boolean).join(' ') }, prompt: { clear: true } };
+  }
+  return { next: {}, prompt: { clear: true } };
+}
+
+/** The DJ's memory, edited by hand. Each helper returns a new session; the next turn sends it as the memory. */
+export function sessionWithEnergy(session: DjSessionState, energy: number): DjSessionState {
+  return { ...session, energy: Math.min(5, Math.max(1, Math.round(energy))) };
+}
+
+export function sessionWithoutLanguage(session: DjSessionState): DjSessionState {
+  return { ...session, language: null };
+}
+
+export function sessionWithoutConstraint(session: DjSessionState, constraint: string): DjSessionState {
+  return { ...session, constraints: session.constraints.filter((item) => item !== constraint) };
+}
+
+/** Moves `id` by `delta` places inside `ids` (clamped to the ends). Unknown ids leave the order alone. */
+export function moveId(ids: readonly string[], id: string, delta: number): string[] {
+  const from = ids.indexOf(id);
+  if (from < 0) return [...ids];
+  const to = Math.min(ids.length - 1, Math.max(0, from + delta));
+  if (to === from) return [...ids];
+  const next = [...ids];
+  next.splice(from, 1);
+  next.splice(to, 0, id);
+  return next;
+}
+
+/** Items in the order of `ids`; items whose id is not named keep their relative order at the end. */
+export function orderByIds<T>(items: readonly T[], ids: readonly string[], idOf: (item: T) => string): T[] {
+  const byId = new Map(items.map((item) => [idOf(item), item] as const));
+  const named = ids.flatMap((id) => {
+    const item = byId.get(id);
+    if (!item) return [];
+    byId.delete(id);
+    return [item];
+  });
+  return [...named, ...items.filter((item) => byId.has(idOf(item)))];
+}
+
+export interface DjSuggestion {
+  readonly label: string;
+  readonly prompt: string;
+  /** What pressing it will do, in plain words (the chip's tooltip and accessible description). */
+  readonly hint: string;
+}
+
+const firstArtist = (artist: string): string => artist.split(/,|&| and /)[0]?.trim() || artist;
+const capitalise = (word: string): string => word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase();
+
+/** The five energy levels, as words the listener reads on the control. */
+export const DJ_ENERGY_WORDS = ['Calm', 'Easy', 'Balanced', 'Lively', 'Hype'] as const;
+
+export function djEnergyWord(energy: number): (typeof DJ_ENERGY_WORDS)[number] {
+  const index = Math.min(5, Math.max(1, Math.round(Number.isFinite(energy) ? energy : 3))) - 1;
+  return DJ_ENERGY_WORDS[index] ?? 'Balanced';
+}
+
+/**
+ * Starter requests built from what is true right now: the playing song (and whether it has lyrics),
+ * the set's energy, the language the listener plays most, the hour, then a wildcard. Each says what it
+ * will do, and each is a plain request the DJ already understands.
+ */
+export function djSuggestions(
+  current: Pick<UnifiedSong, 'title' | 'artist' | 'language' | 'hasLyrics'> | null,
+  recent: readonly Pick<UnifiedSong, 'artist' | 'language'>[],
+  hour: number,
+  session: Pick<DjSessionState, 'energy' | 'language'> = { energy: 3, language: null }
+): DjSuggestion[] {
+  const chips: DjSuggestion[] = [];
+  if (current) {
+    const artist = firstArtist(current.artist);
+    chips.push({ label: `More from ${artist}`, prompt: `More songs by ${artist} next`, hint: `Lines up songs by ${artist} after this one` });
+  }
+  if (session.energy >= 4) {
+    chips.push({ label: 'Calmer next', prompt: 'A little calmer next, keep the style', hint: 'Keeps the style and brings the energy down' });
+  } else {
+    chips.push({ label: 'More energy', prompt: 'More energy next, keep the style', hint: 'Keeps the style and lifts the energy' });
+  }
+  const counts = new Map<string, number>();
+  for (const song of current ? [current, ...recent] : recent) {
+    const language = song.language?.trim().toLocaleLowerCase();
+    if (language && language !== 'english' && language !== 'unknown') counts.set(language, (counts.get(language) ?? 0) + 1);
+  }
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (top && !session.language) {
+    chips.push({ label: `Keep it ${capitalise(top)}`, prompt: `${capitalise(top)} songs next`, hint: `Keeps the next songs in ${capitalise(top)}` });
+  }
+  if (current?.hasLyrics) chips.push({ label: 'Sing along', prompt: 'Start karaoke', hint: 'Fades the singer out and shows the lyrics' });
+  if (hour >= 21 || hour < 4) chips.push({ label: 'Late night', prompt: 'Late night, soft and unhurried', hint: 'Soft, unhurried songs for now' });
+  else if (hour < 11) chips.push({ label: 'Morning lift', prompt: 'Something bright to start the morning', hint: 'Bright songs to start the day' });
+  else if (hour < 17) chips.push({ label: 'Focus flow', prompt: 'Steady music to focus, no sharp changes', hint: 'Steady songs with no sharp changes' });
+  else chips.push({ label: 'Golden hour', prompt: 'Warm evening songs', hint: 'Warm songs for the evening' });
+  chips.push({ label: 'Surprise me', prompt: 'Surprise me, but keep my taste', hint: 'Something you may not expect, still your taste' });
+  return chips;
+}
+
+const count = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+export interface DjOutcomeCounts {
+  /** Mix: songs the queue really took (0 when it took none). */
+  readonly applied?: number;
+  /** Playlist: songs in the draft after the turn, songs it added, songs it took out. */
+  readonly draftSize?: number;
+  readonly added?: number;
+  readonly removed?: number;
+}
+
+/**
+ * What the DJ says after a turn: the outcome in real numbers ("Updated the next 5 tracks. Your current
+ * song stays."), not the model's flourish. The model's own sentence still goes into the conversation.
+ * An explanation, or a turn that changed nothing, says the model's reply.
+ */
+export function djOutcome(
+  turn: Pick<DjTurnResponse, 'goal' | 'operation' | 'insertAfter' | 'draftOperation' | 'reply'>,
+  counts: DjOutcomeCounts
+): string {
+  if (turn.goal === 'playlist') {
+    const size = counts.draftSize ?? 0;
+    if (turn.draftOperation === 'replace' && size > 0) return `Started a new draft with ${count(size, 'song')}. Nothing plays until you choose.`;
+    if (turn.draftOperation === 'extend' && (counts.added ?? 0) > 0) return `Added ${count(counts.added ?? 0, 'song')} to your draft, ${size} in all.`;
+    if (turn.draftOperation === 'remove' && (counts.removed ?? 0) > 0) return `Took ${count(counts.removed ?? 0, 'song')} out of your draft.`;
+    return turn.reply;
+  }
+  const applied = counts.applied ?? 0;
+  if (turn.operation === 'replace_upcoming' && applied > 0) return `Updated the next ${count(applied, 'track')}. Your current song stays.`;
+  if (turn.operation === 'insert' && applied > 0) {
+    const where = turn.insertAfter ? `after the next ${turn.insertAfter === 1 ? 'song' : `${turn.insertAfter} songs`}` : 'right after this song';
+    return `Added ${count(applied, 'track')} ${where}.`;
+  }
+  return turn.reply;
+}
+
+/**
+ * Next steps offered after a set lands: steer away from it, or push its energy further. Each is a
+ * plain request; Undo sits beside them on its own.
+ */
+export function djOffersAfterSet(energy: number): { readonly label: string; readonly prompt: string }[] {
+  const nudge = energy >= 4
+    ? { label: 'Even more hype', prompt: 'Even more energy next, same style' }
+    : energy <= 2
+      ? { label: 'Even calmer', prompt: 'Even calmer next, same style' }
+      : { label: 'A bit calmer', prompt: 'A bit calmer next, same style' };
+  return [{ label: 'Less like this', prompt: 'Less like this set: other artists, a different feel' }, nudge];
+}
+
+/**
+ * The queue for playing `id` from a DJ list: that song first, then every other song in the list in
+ * its order, the ones above it included. Playing from the middle of the list once handed the player
+ * the whole list, which counted the songs above as already played, and they vanished from Up next.
+ */
+export function playOrderFrom<T extends { readonly id: string }>(list: readonly T[], id: string): T[] {
+  const chosen = list.find((item) => item.id === id);
+  if (!chosen) return [...list];
+  return [chosen, ...list.filter((item) => item.id !== id)];
+}
+
+/** What the DJ remembers across a reload of this tab. Never the API key. */
+export const DJ_MEMORY_STORAGE_KEY = 'allegra.dj.memory.v1';
+
+export interface DjMemory {
+  readonly session: DjSessionState;
+  readonly history: readonly { readonly role: 'user' | 'assistant'; readonly content: string }[];
+  readonly goal: DjGoal;
+  readonly songLimit: number;
+  readonly draft: readonly { readonly song: UnifiedSong; readonly reason: string }[];
+  readonly draftName: string;
+  readonly reasons: Readonly<Record<string, string>>;
+  /** Artists ruled out for this session ("no songs by X", "Less like this artist"). */
+  readonly excludeArtists: readonly string[];
+  readonly exploration: DjExploration;
+  readonly shape: DjSetShape;
+}
+
+export const DJ_EXPLORATIONS: readonly { readonly value: DjExploration; readonly label: string; readonly hint: string }[] = [
+  { value: 'familiar', label: 'Familiar', hint: 'Leans on artists you play and like' },
+  // "Mixed", not "Balanced": the energy control beside it already says Balanced.
+  { value: 'balanced', label: 'Mixed', hint: 'Mixes artists you know with new ones' },
+  { value: 'discover', label: 'Discover', hint: 'Prefers artists you haven’t played or liked' }
+];
+
+/** A planned order for the set, from calmer and livelier searches. Never measured energy. */
+export const DJ_SHAPES: readonly { readonly value: DjSetShape; readonly label: string; readonly hint: string }[] = [
+  { value: 'steady', label: 'Steady', hint: 'Planned shape: keeps one level' },
+  { value: 'build', label: 'Build up', hint: 'Planned shape: calmer first, livelier last' },
+  { value: 'wind', label: 'Wind down', hint: 'Planned shape: livelier first, calmer last' },
+  { value: 'dynamic', label: 'Dynamic', hint: 'Planned shape: calmer and livelier take turns' }
+];
+
+/** The next option in a short list, wrapping around (for one-button cycling controls). */
+export function nextOption<T>(options: readonly { readonly value: T }[], current: T): T {
+  const index = options.findIndex((option) => option.value === current);
+  return (options[(index + 1) % options.length] ?? options[0]!).value;
+}
+
+/** Adds names to the session's ruled-out artists: lower case, no repeats, newest kept, at most 12. */
+export function withExcludedArtists(current: readonly string[], names: readonly string[]): string[] {
+  const added = names.map((name) => name.trim().toLowerCase()).filter((name) => name.length > 1);
+  return [...new Set([...current, ...added])].slice(-12);
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const isString = (value: unknown): value is string => typeof value === 'string';
+
+function readSong(value: unknown): UnifiedSong | null {
+  if (!isRecord(value)) return null;
+  const { id, title, artist, artwork, streamUrl, duration, hasLyrics, playCount, source } = value;
+  if (!isString(id) || !isString(title) || !isString(artist) || !isString(artwork) || !isString(streamUrl)) return null;
+  if (typeof duration !== 'number' || typeof hasLyrics !== 'boolean' || typeof playCount !== 'number') return null;
+  if (source !== 'Saavn' && source !== 'Gaana') return null;
+  return {
+    id, title, artist, artwork, streamUrl, duration, hasLyrics, playCount, source,
+    ...(isString(value.album) ? { album: value.album } : {}),
+    ...(isString(value.language) ? { language: value.language } : {})
+  };
+}
+
+function readSession(value: unknown): DjSessionState | null {
+  if (!isRecord(value) || !isString(value.vibe) || typeof value.energy !== 'number') return null;
+  const language = isString(value.language) ? value.language : null;
+  const constraints = Array.isArray(value.constraints) ? value.constraints.filter(isString).slice(0, 12) : [];
+  return { vibe: value.vibe, energy: Math.min(5, Math.max(1, Math.round(value.energy))), language, constraints };
+}
+
+/** Reads the remembered session; anything malformed reads as "nothing remembered". */
+export function readDjMemory(storage: Pick<Storage, 'getItem'>): DjMemory | null {
+  try {
+    const raw = storage.getItem(DJ_MEMORY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return null;
+    const session = readSession(parsed.session);
+    if (!session) return null;
+    const history = (Array.isArray(parsed.history) ? parsed.history : []).flatMap((item: unknown): DjMemory['history'][number][] => {
+      if (!isRecord(item) || !isString(item.content)) return [];
+      const { role } = item;
+      return role === 'user' || role === 'assistant' ? [{ role, content: item.content.slice(0, 2000) }] : [];
+    }).slice(-8);
+    const draft = (Array.isArray(parsed.draft) ? parsed.draft : []).flatMap((item: unknown) => {
+      if (!isRecord(item)) return [];
+      const song = readSong(item.song);
+      return song ? [{ song, reason: isString(item.reason) ? item.reason : '' }] : [];
+    }).slice(0, 30);
+    const reasons = isRecord(parsed.reasons)
+      ? Object.fromEntries(Object.entries(parsed.reasons).filter((entry): entry is [string, string] => isString(entry[1])).slice(0, 60))
+      : {};
+    const goal: DjGoal = parsed.goal === 'playlist' ? 'playlist' : 'mix';
+    const songLimit = typeof parsed.songLimit === 'number' ? Math.min(30, Math.max(1, Math.round(parsed.songLimit))) : 8;
+    const draftName = isString(parsed.draftName) && parsed.draftName.trim() ? parsed.draftName.slice(0, 100) : 'A little mix';
+    const excludeArtists = withExcludedArtists([], Array.isArray(parsed.excludeArtists) ? parsed.excludeArtists.filter(isString).map((name) => name.slice(0, 80)) : []);
+    const exploration = DJ_EXPLORATIONS.find(({ value }) => value === parsed.exploration)?.value ?? 'balanced';
+    const shape = DJ_SHAPES.find(({ value }) => value === parsed.shape)?.value ?? 'steady';
+    return { session, history, goal, songLimit, draft, draftName, reasons, excludeArtists, exploration, shape };
+  } catch {
+    return null;
+  }
+}
+
+/** Writes the session memory. Storage that is full or blocked is ignored. */
+export function writeDjMemory(storage: Pick<Storage, 'setItem'>, memory: DjMemory): void {
+  try {
+    storage.setItem(DJ_MEMORY_STORAGE_KEY, JSON.stringify(memory));
+  } catch {
+    // The session just is not remembered.
+  }
+}

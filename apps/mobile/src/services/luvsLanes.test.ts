@@ -1,4 +1,4 @@
-import { deepenLane, freshSongs, laneSpecs, loadLane, MAX_ARTIST_LANES, needsDeepening, warmAround } from './luvsLanes';
+import { creditsArtist, deepenLane, freshSongs, laneSpecs, loadLane, MAX_ARTIST_LANES, needsDeepening, warmAround } from './luvsLanes';
 import type { UnifiedSong } from '../types/song';
 
 const s = (id: string, title: string, artist: string, url = `https://cdn/${id}`): UnifiedSong => ({
@@ -53,16 +53,38 @@ describe('deepening', () => {
   it('follows the radio of the song the listener is on', async () => {
     const recommend = jest.fn(async () => [s('x', 'Next', 'A'), s('a', 'Dup', 'A')]);
     const songs = [s('a', 'One', 'A'), s('b', 'Two', 'A')];
-    const more = await deepenLane(songs, 1, { recommend, moodMix: jest.fn() });
+    const more = await deepenLane({ id: 'mood:chill', kind: 'mood', title: 'Chill', subtitle: '' }, songs, 1, { recommend, artistSongs: jest.fn(), moodMix: jest.fn() });
     expect(recommend).toHaveBeenCalledWith(songs[1], 12);
     expect(more.map(x => x.id)).toEqual(['x']);
   });
 
-  it('loads an artist lane from its seed radio without the seed', async () => {
+  it('loads an artist lane with only that artist, without the seed', async () => {
     const seed = s('seed', 'Hukum', 'Anirudh');
-    const recommend = jest.fn(async () => [s('seed', 'Hukum', 'Anirudh'), s('n', 'Kaavaalaa', 'Anirudh')]);
-    const songs = await loadLane({ id: 'artist:anirudh', kind: 'artist', title: 'Anirudh', subtitle: '', seed }, { recommend, moodMix: jest.fn() });
-    expect(songs.map(x => x.id)).toEqual(['n']);
+    const recommend = jest.fn(async () => [s('seed', 'Hukum', 'Anirudh'), s('n', 'Kaavaalaa', 'Anirudh Ravichander, Shilpa Rao'), s('o', 'Other', 'Sid Sriram')]);
+    const artistSongs = jest.fn(async () => [s('t', 'Vaathi Coming', 'Anirudh Ravichander'), s('u', 'Cover', 'Someone Else')]);
+    const songs = await loadLane({ id: 'artist:anirudh', kind: 'artist', title: 'Anirudh', subtitle: '', seed }, { recommend, artistSongs, moodMix: jest.fn() });
+    expect(songs.map(x => x.id)).toEqual(['t', 'n']);
+  });
+
+  it('keeps an artist lane on that artist as it grows, asking a new search each round', async () => {
+    const spec = { id: 'artist:anirudh', kind: 'artist' as const, title: 'Anirudh', subtitle: '' };
+    const lane = Array.from({ length: 12 }, (_, i) => s(`l${i}`, `Song ${i}`, 'Anirudh'));
+    const recommend = jest.fn(async () => [s('r1', 'Radio', 'Ilaiyaraaja'), s('r2', 'Radio 2', 'Anirudh')]);
+    const artistSongs = jest.fn(async () => [s('a1', 'Own', 'Anirudh')]);
+    const more = await deepenLane(spec, lane, 10, { recommend, artistSongs, moodMix: jest.fn() });
+    expect(artistSongs).toHaveBeenCalledWith('Anirudh', 1, 14);
+    expect(more.map(x => x.id)).toEqual(['a1', 'r2']);
+  });
+});
+
+describe('creditsArtist', () => {
+  it('matches any credited artist and a longer form of the name, never a different artist', () => {
+    expect(creditsArtist('Anirudh Ravichander, Shilpa Rao', 'Anirudh')).toBe(true);
+    expect(creditsArtist('Dhanush feat. Anirudh', 'Anirudh')).toBe(true);
+    expect(creditsArtist('Arijit Singh', 'Arijit Singh')).toBe(true);
+    expect(creditsArtist('Sid Sriram', 'Anirudh')).toBe(false);
+    expect(creditsArtist('Anirudhan', 'Anirudh')).toBe(false);
+    expect(creditsArtist('', 'Anirudh')).toBe(false);
   });
 });
 

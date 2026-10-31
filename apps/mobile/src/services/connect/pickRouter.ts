@@ -45,7 +45,7 @@ interface Timers {
 export interface PickRouterDeps {
   /** The live Connect session and this phone's device id, or null when Connect is off. */
   readonly connect: () => { readonly session: ConnectSession; readonly deviceId: string } | null;
-  /** A Listen Together room owns playback here: every pick stays on this phone. */
+  /** A LuvLink room owns playback here: every pick stays on this phone. */
   readonly heldLocally: () => boolean;
   /** The ref the phone already knows for a song, without a lookup. */
   readonly knownRef: (song: Song) => SongRef | null;

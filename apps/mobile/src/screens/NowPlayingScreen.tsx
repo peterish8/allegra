@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Dimensions, View, StyleSheet, useWindowDimensions } from 'react-native';
+import { Dimensions, StatusBar, View, StyleSheet, useWindowDimensions } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
@@ -17,7 +17,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { RootStackScreenProps } from '../types/navigation';
-import { usePlayerStore } from '../store/playerStore';
+import { playerControls, usePlayerStore } from '../store/playerStore';
 import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
 import { CoverArtSearchScreen } from './CoverArtSearchScreen';
 import { useNowPlayingLogic } from '../hooks/useNowPlayingLogic';
@@ -28,6 +28,7 @@ import NowPlayingControls from '../components/NowPlayingControls';
 import { navigationRef, safeGoBack } from '../utils/navigationService';
 import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../navigation/playerSheet';
 import { shouldCloseSheet } from '../navigation/sheetClose';
+import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
 import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { playerSheetProgress } from '../navigation/sheetProgress';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -44,7 +45,7 @@ import { sleepLabel, useSleepTimerStore } from '../store/sleepTimerStore';
 import PlayerMenu, { PlayerMenuAction } from '../components/player/PlayerMenu';
 import { SongDetails, TempoPitch } from '../components/player/PlayerExtras';
 import AmbientMode from '../components/player/AmbientMode';
-import ListenTogetherPanel from '../components/listenTogether/ListenTogetherPanel';
+import LuvLinkPanel from '../components/luvLink/LuvLinkPanel';
 import LyricsPicker from '../components/player/LyricsPicker';
 import { Toast } from '../components/Toast';
 import { StreamService } from '../services/stream/StreamService';
@@ -52,10 +53,14 @@ import { isStreamSongId } from '../services/stream/streamSong';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { refetchCurrent, setAsRingtone, shareSong, shuffleUpcoming } from '../services/player/playerMenuActions';
 import { usePlaybackModesStore } from '../store/playbackModesStore';
-import { useListenTogetherStore } from '../store/listenTogetherStore';
-import { parseSongRef } from '@shared/songRef';
+import { useLuvLinkStore } from '../store/luvLinkStore';
+import { fromMobileId, parseSongRef } from '@shared/songRef';
 import ConnectRemotePlayer from '../components/connect/ConnectRemotePlayer';
 import { useConnect } from '../services/connect/ConnectProvider';
+import { prefetchCover } from '../components/player/coverImages';
+import { useNativeSkip } from '../components/NativeSkip';
+import { Song } from '../types/song';
+import { notifyIslandAppShownAfterDraw } from '../services/NativeDynamicIsland';
 
 const { Gesture, GestureDetector } = GestureHandler;
 
@@ -107,7 +112,10 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // sheet is scaled to the pill's width. It starts there, so the first frame
   // never flashes the player at rest.
   const { y: restY } = playerSheetRest(windowW, screenH, insets.bottom, pillNav);
-  const sheetY = useSharedValue(restY);
+  // Opened out of the system island: its native launch surface grows over the app, so the sheet is
+  // already open in the first frame instead of rising a second time inside it.
+  const openedOpen = route.params.instant === true;
+  const sheetY = useSharedValue(openedOpen ? 0 : restY);
   const progress = useDerivedValue(() => Math.min(1, Math.max(0, 1 - sheetY.value / restY)));
   useAnimatedReaction(() => progress.value, p => { playerSheetProgress.value = p; });
   useEffect(() => () => { playerSheetProgress.value = 0; }, []);
@@ -119,6 +127,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
   useEffect(() => {
     const velocity = takeOpenVelocity();
+    if (openedOpen) return;
     sheetY.value = reduceMotion
       ? withTiming(0, { duration: 200 })
       : withSpring(0, { ...(velocity > FLICK ? FLING_SPRING : SOFT_SPRING), velocity: -velocity });
@@ -169,6 +178,9 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const [sheet, setSheet] = useState<Sheet | null>(initialSheet && initialSheet !== 'queue' ? initialSheet : null);
   const sheetRef = useRef(sheet);
   sheetRef.current = sheet;
+  // This is deliberately separate from showLyrics: leaving focus returns to
+  // the regular lyrics view instead of making the listener reopen it.
+  const [lyricsFullscreen, setLyricsFullscreen] = useState(false);
 
   // ── Up next: swipe up and the queue rises under the player (YouTube Music) ──
   // 0 closed .. 1 open. The finger drives it both ways; the title, scrubber and
@@ -202,12 +214,23 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     markUpNext(false);
   }, [upNext, upNextShown, upNextTravel, markUpNext]);
 
-  usePreventRemove(holdRoute, () => {
-    if (sheetRef.current) setSheet(null);
-    else if (upNextRef.current) closeUpNext(0);
-    else if (ambientRef.current) setAmbient(false);
-    else animateClose(0);
-  });
+  const handleBack = useCallback(() => handlePlayerBack({
+    lyricsFullscreen,
+    hasSheet: Boolean(sheetRef.current),
+    upNextOpen: upNextRef.current,
+    ambient: ambientRef.current,
+  }, {
+    exitLyricsFullscreen: () => setLyricsFullscreen(false),
+    closeSheet: () => setSheet(null),
+    closeUpNext: () => closeUpNext(0),
+    leaveAmbient: () => setAmbient(false),
+    closePlayer: () => animateClose(0),
+  }), [lyricsFullscreen, closeUpNext, animateClose]);
+
+  // The root BackHandler invokes this before NavigationContainer's stack pop.
+  useFocusEffect(useCallback(() => registerPlayerBackHandler(handleBack), [handleBack]));
+
+  usePreventRemove(holdRoute, handleBack);
 
   // Drag down from anywhere to dismiss. Over the lyrics it only takes over once
   // the list is scrolled to its top — otherwise the drag scrolls the lyrics.
@@ -224,7 +247,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // panel instead (the panel's own pan handles drags that start on it).
   const dragUpNext = useSharedValue(false);
   const dismissGesture = Gesture.Pan()
-    .enabled(!ambient && sheet === null)
+    .enabled(!ambient && sheet === null && !lyricsFullscreen)
     .activeOffsetY(12)
     .failOffsetY(-10)
     .failOffsetX([-24, 24])
@@ -281,7 +304,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
   // Swipe up anywhere but the lyrics list (which scrolls) to bring up Up next.
   const upNextGesture = Gesture.Pan()
-    .enabled(!ambient && sheet === null && !upNextOpen)
+    .enabled(!ambient && sheet === null && !upNextOpen && !lyricsFullscreen)
     .activeOffsetY(-12)
     .failOffsetY(10)
     .failOffsetX([-24, 24])
@@ -388,6 +411,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     isUserScrolling,
     scrollTimeoutRef,
   } = useNowPlayingLogic(songId, route.params.lyrics === true);
+  const nativeSkip = useNativeSkip();
 
   // With the lyrics hidden there is nothing to scroll, so a drag always dismisses.
   useEffect(() => {
@@ -402,8 +426,11 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const dockX = useSharedValue(0);
   const dockY = useSharedValue(0);
   useEffect(() => {
-    lyricsP.value = reduceMotion ? (showLyrics ? 1 : 0) : withTiming(showLyrics ? 1 : 0, { duration: LYRICS_MORPH_MS, easing: Easing.bezier(0.32, 0.72, 0, 1) });
-  }, [showLyrics, reduceMotion, lyricsP]);
+    const target = showLyrics || lyricsFullscreen ? 1 : 0;
+    lyricsP.value = reduceMotion || lyricsFullscreen
+      ? target
+      : withTiming(target, { duration: LYRICS_MORPH_MS, easing: Easing.bezier(0.32, 0.72, 0, 1) });
+  }, [showLyrics, lyricsFullscreen, reduceMotion, lyricsP]);
 
   const canvas = useCanvasArtwork(currentSong);
 
@@ -414,7 +441,75 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // new cover arrives from the other side). Off under lyrics, ambient mode,
   // sheets and Up next (where a tap on the cover just lowers the panel).
   const stageX = useSharedValue(0);
-  const stageEnabled = !showLyrics && !ambient && sheet === null && !upNextOpen;
+  const [swipePreview, setSwipePreview] = useState<Song | null>(null);
+  const [swipeSource, setSwipeSource] = useState<Song | null>(null);
+  const swipePreviewRef = useRef<Song | null>(null);
+  const swipePreviewShown = useSharedValue(false);
+  const swipePreviewAvailable = useSharedValue(false);
+  const swipeDirectionRef = useRef<1 | -1>(-1);
+  const [swipeSettled, setSwipeSettled] = useState(false);
+  const swipePreviewTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stageEnabled = !showLyrics && !ambient && sheet === null && !upNextOpen && !lyricsFullscreen;
+
+  const clearSwipePreview = useCallback(() => {
+    if (swipePreviewTimeout.current) clearTimeout(swipePreviewTimeout.current);
+    swipePreviewTimeout.current = null;
+    swipePreviewRef.current = null;
+    swipePreviewShown.value = false;
+    swipePreviewAvailable.value = false;
+    setSwipePreview(null);
+    setSwipeSource(null);
+    setSwipeSettled(false);
+  }, [swipePreviewShown, swipePreviewAvailable]);
+  useEffect(() => () => {
+    if (swipePreviewTimeout.current) clearTimeout(swipePreviewTimeout.current);
+  }, []);
+
+  const adjacentSong = useCallback((dir: 1 | -1): Song | null => {
+    const { playlistQueue, currentQueueIndex } = usePlayerStore.getState();
+    if (!playlistQueue || playlistQueue.length < 2 || currentQueueIndex < 0) return null;
+    const repeat = usePlaybackModesStore.getState().repeatMode;
+    if (dir < 0 && repeat === 'off' && currentQueueIndex >= playlistQueue.length - 1) return null;
+    // Echo/Media3 restarts a track once it is past three seconds, so there is no incoming cover for that swipe.
+    if (dir > 0 && (currentQueueIndex === 0 && repeat === 'off' || playerControls.getPosition() > 3)) return null;
+    const index = (currentQueueIndex + dir + playlistQueue.length) % playlistQueue.length;
+    return playlistQueue[index] ?? null;
+  }, []);
+
+  const previewAdjacentSong = useCallback((dir: 1 | -1) => {
+    const song = adjacentSong(dir);
+    if (!song) return;
+    swipeDirectionRef.current = dir;
+    swipePreviewRef.current = song;
+    swipePreviewShown.value = true;
+    swipePreviewAvailable.value = true;
+    setSwipeSettled(false);
+    setSwipePreview(song);
+    setSwipeSource(usePlayerStore.getState().currentSong);
+    prefetchCover(song.coverImageUri);
+  }, [adjacentSong, swipePreviewShown, swipePreviewAvailable]);
+
+  const settleSwipePreview = useCallback(() => {
+    if (!swipePreviewRef.current) return;
+    setSwipeSettled(true);
+    if (swipePreviewTimeout.current) clearTimeout(swipePreviewTimeout.current);
+    swipePreviewTimeout.current = setTimeout(() => {
+      clearSwipePreview();
+      stageX.value = withSpring(0, SETTLE_SPRING);
+    }, 2600);
+  }, [clearSwipePreview, stageX]);
+
+  // Android may report the new current item before the outgoing cover has reached its edge. Hold the preview
+  // through that travel, then let the real artwork settle from a short opposite offset instead of popping.
+  useEffect(() => {
+    if (!swipePreview || !swipeSettled || currentSong?.id !== swipePreview.id) return;
+    if (swipePreviewTimeout.current) clearTimeout(swipePreviewTimeout.current);
+    swipePreviewTimeout.current = null;
+    const dir = swipeDirectionRef.current;
+    clearSwipePreview();
+    stageX.value = -dir * windowW * 0.12;
+    stageX.value = withSpring(0, SOFT_SPRING);
+  }, [swipePreview, swipeSettled, currentSong?.id, clearSwipePreview, stageX, windowW]);
 
   const toggleCover = useCallback(() => {
     if (upNextRef.current) {
@@ -454,43 +549,60 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const swipeSong = useCallback((dir: 1 | -1) => {
     const player = usePlayerStore.getState();
     const queued = player.playlistQueue?.length ?? 0;
-    const canSkip = dir < 0 ? queued > 1 || player.currentPlaylistId === 'library' : queued > 1;
+    const preview = adjacentSong(dir);
+    const canSkip = Boolean(preview) || (dir < 0 && (queued > 1 || player.currentPlaylistId === 'library'));
     diag('player', `cover swipe ${dir < 0 ? 'left (next)' : 'right (previous)'}: ${canSkip ? 'skipping' : 'nothing to skip to'}`);
     if (!canSkip) {
       // Nothing to go to: the cover springs back instead of leaving.
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      clearSwipePreview();
       stageX.value = withSpring(0, SETTLE_SPRING);
       return;
     }
+    if (preview && swipePreviewRef.current?.id !== preview.id) previewAdjacentSong(dir);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     if (dir < 0) skipForward().catch(() => {});
     else player.previousInPlaylist();
     stageX.value = withTiming(dir * windowW, { duration: 160, easing: Easing.in(Easing.quad) }, done => {
       'worklet';
       if (!done) return;
-      // The next cover comes in from the side the finger did not go to.
-      stageX.value = -dir * windowW * 0.5;
-      stageX.value = withSpring(0, SOFT_SPRING);
+      if (swipePreviewAvailable.value) runOnJS(settleSwipePreview)();
+      else stageX.value = withSpring(0, SOFT_SPRING);
     });
-  }, [skipForward, stageX, windowW]);
+  }, [skipForward, stageX, windowW, adjacentSong, clearSwipePreview, previewAdjacentSong, settleSwipePreview, swipePreviewAvailable]);
 
   const stagePan = Gesture.Pan()
     .enabled(stageEnabled)
     .activeOffsetX([-14, 14])
     .failOffsetY([-16, 16])
+    .onStart(() => {
+      'worklet';
+      swipePreviewShown.value = false;
+      swipePreviewAvailable.value = false;
+    })
     .onUpdate(e => {
       'worklet';
       stageX.value = e.translationX;
+      if (Math.abs(e.translationX) > 12 && !swipePreviewShown.value) {
+        swipePreviewShown.value = true;
+        runOnJS(previewAdjacentSong)(e.translationX < 0 ? -1 : 1);
+      }
     })
     .onEnd(e => {
       'worklet';
       const projected = e.translationX + e.velocityX * 0.12;
       if (Math.abs(projected) > windowW * 0.26) runOnJS(swipeSong)(projected < 0 ? -1 : 1);
-      else stageX.value = withSpring(0, SETTLE_SPRING);
+      else {
+        stageX.value = withSpring(0, SETTLE_SPRING);
+        runOnJS(clearSwipePreview)();
+      }
     })
     .onFinalize((_e, success) => {
       'worklet';
-      if (!success) stageX.value = withSpring(0, SETTLE_SPRING);
+      if (!success) {
+        stageX.value = withSpring(0, SETTLE_SPRING);
+        runOnJS(clearSwipePreview)();
+      }
     });
   const stageDoubleTap = Gesture.Tap()
     .enabled(stageEnabled)
@@ -534,6 +646,10 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     else if (linkSheet) setSheet(linkSheet);
   }, [linkSheet, openUpNext]);
   const closeSheet = useCallback(() => setSheet(null), []);
+  const enterLyricsFullscreen = useCallback(() => {
+    setShowLyrics(true);
+    setLyricsFullscreen(true);
+  }, [setShowLyrics]);
 
   // The sleep timer's remaining time, refreshed while it runs.
   const sleepEndsAt = useSleepTimerStore(s => s.endsAt);
@@ -554,8 +670,13 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // saved into the library first (isCurrentSongSaving), then lands in Liked songs.
   // What the lyrics picker searches for: one object per song, so the search runs once per opening.
   const pickerTarget = React.useMemo(
-    () => ({ title: currentSong?.title ?? '', artist: currentSong?.artist ?? '', duration: currentSong?.duration ?? 0 }),
-    [currentSong?.title, currentSong?.artist, currentSong?.duration],
+    () => ({
+      title: currentSong?.title ?? '',
+      artist: currentSong?.artist ?? '',
+      duration: currentSong?.duration ?? 0,
+      ref: fromMobileId(currentSong?.id ?? '') ?? undefined,
+    }),
+    [currentSong?.title, currentSong?.artist, currentSong?.duration, currentSong?.id],
   );
 
   const onToggleLike = useCallback(async () => {
@@ -570,8 +691,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   }, [currentSong, toggleLike, say]);
   const repeatOne = usePlaybackModesStore(s => s.repeatOne);
   const setRepeatOne = usePlaybackModesStore(s => s.setRepeatOne);
-  const roomOpen = useListenTogetherStore(s => s.room !== null);
-  const listeners = useListenTogetherStore(s => s.room?.users.length ?? 0);
+  const roomOpen = useLuvLinkStore(s => s.room !== null);
+  const listeners = useLuvLinkStore(s => s.room?.users.length ?? 0);
   const connect = useConnect();
   const openConnectDevices = connect.openDevices;
 
@@ -679,6 +800,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
   return (
     <View style={styles.root}>
+      <StatusBar hidden={false} animated />
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
       <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, styles.sheetClip, sheetClipStyle]}>
       <GestureDetector gesture={playerGesture}>
@@ -692,21 +814,24 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       >
         <Animated.View style={[styles.playerLayer, playerFadeStyle]}>
         <NowPlayingBackground
-          coverImageUri={currentSong?.coverImageUri}
+          coverImageUri={swipeSource?.coverImageUri ?? currentSong?.coverImageUri}
+          incomingCoverImageUri={swipePreview?.coverImageUri}
           gradientColors={gradientColors}
           showLyrics={showLyrics}
-          canvas={ambient ? null : canvas}
+          canvas={ambient || swipePreview ? null : canvas}
           playing={storePlaying}
           shift={stageX}
         />
 
-        <NowPlayingHeader
-          animatedStyle={animatedStyle}
-          controlsVisible={controlsVisible}
-          onGoBack={() => animateClose(0)}
-          together={roomOpen ? listeners : null}
-          onTogetherPress={() => setSheet('together')}
-        />
+        {!lyricsFullscreen ? (
+          <NowPlayingHeader
+            animatedStyle={animatedStyle}
+            controlsVisible={controlsVisible}
+            onGoBack={() => animateClose(0)}
+            together={roomOpen ? listeners : null}
+            onTogetherPress={() => setSheet('together')}
+          />
+        ) : null}
 
         {/* Built when asked for (Details → Change cover), not on every open of the player. */}
         {showCoverSearch ? (
@@ -724,17 +849,20 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
             processedLyrics={processedLyrics}
             currentTime={positionSV}
             onLyricPress={handleLyricTap}
-            songTitle={currentSong?.title}
+            songTitle={swipePreview?.title ?? currentSong?.title}
             isUserScrollingRef={isUserScrolling}
             scrollTimeoutRef={scrollTimeoutRef}
             flatListRef={flatListRef}
-            coverImageUri={currentSong?.coverImageUri}
+            coverImageUri={swipeSource?.coverImageUri ?? currentSong?.coverImageUri}
             songArtist={currentSong?.artist}
             scrollOffset={lyricsOffset}
             stageX={stageX}
             lyricsP={lyricsP}
             dockX={dockX}
             dockY={dockY}
+            fullscreen={lyricsFullscreen}
+            localClock
+            songId={currentSong?.id}
           />
         </Animated.View>
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, upNextShadeStyle]}>
@@ -756,13 +884,14 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           animatedStyle={animatedStyle}
           controlsVisible={controlsVisible}
           storePlaying={storePlaying}
-          currentSongTitle={currentSong?.title}
-          currentSongArtist={currentSong?.artist}
+          currentSongTitle={swipePreview?.title ?? currentSong?.title}
+          currentSongArtist={swipePreview?.artist ?? currentSong?.artist}
           isCurrentSongLiked={isCurrentSongLiked}
           isLikeSaving={isCurrentSongSaving}
           onTogglePlay={togglePlay}
           onSkipForward={skipForward}
           onSkipBackward={skipBackward}
+          nativeSkip={nativeSkip}
           onToggleLike={onToggleLike}
           onToggleLyrics={() => setShowLyrics(!showLyrics)}
           onLyricsLongPress={() => setSheet('lyrics')}
@@ -770,8 +899,12 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           positionSV={positionSV}
           durationSV={durationSV}
           onSeek={handleScrub}
+          localSongId={currentSong?.id}
           showLyrics={showLyrics}
           compact={showLyrics}
+          lyricsFullscreen={lyricsFullscreen}
+          onExitLyricsFullscreen={() => setLyricsFullscreen(false)}
+          onEnterLyricsFullscreen={enterLyricsFullscreen}
           coverImageUri={currentSong?.coverImageUri}
           lyricsP={lyricsP}
           dockX={dockX}
@@ -823,8 +956,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
             />
           ) : null}
         </PlayerSheet>
-        <PlayerSheet visible={sheet === 'together'} title="Listen together" tall onClose={closeSheet}>
-          <ListenTogetherPanel />
+        <PlayerSheet visible={sheet === 'together'} title="LuvLink" tall onClose={closeSheet}>
+          <LuvLinkPanel />
         </PlayerSheet>
 
         {ambient && currentSong ? (
@@ -843,6 +976,9 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 const NowPlayingScreen: React.FC<Props> = (props) => {
   const connect = useConnect();
   const fromConnect = Boolean(parseSongRef(props.route.params.songId));
+  const openedOpen = props.route.params.instant === true;
+  // Both local and Connect players acknowledge only once their first frame has been drawn.
+  useEffect(() => openedOpen ? notifyIslandAppShownAfterDraw() : undefined, [openedOpen]);
   return connect.remotePlayback || fromConnect
     ? <ConnectRemotePlayer {...props} />
     : <LocalNowPlayingScreen {...props} />;

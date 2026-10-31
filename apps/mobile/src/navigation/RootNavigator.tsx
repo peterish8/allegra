@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { View } from 'react-native';
+import { BackHandler, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
@@ -15,10 +15,11 @@ import { navTheme, SCREEN_BG, stackContentStyle } from './theme';
 // Import navigators and screens
 import TabNavigator from './TabNavigator';
 import NowPlayingScreen from '../screens/NowPlayingScreen';
+import LuvLinkScreen from '../screens/LuvLinkScreen';
 import LyricsEditorScreen from '../screens/LyricsEditorScreen';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { MoreMenuHost } from '../components/MoreMenu';
-import { ListenTogetherHost } from '../components/listenTogether/ListenTogetherHost';
+import { LuvLinkHost } from '../components/luvLink/LuvLinkHost';
 import { BackgroundDownloader } from '../components/BackgroundDownloader';
 import { VoiceSearchCard } from '../components/VoiceSearchCard';
 import { PerformanceHUD } from '../components/PerformanceHUD';
@@ -28,9 +29,14 @@ import { useStreamSession } from '../hooks/useStreamSession';
 import { useCoverArtBackfill } from '../hooks/useCoverArtBackfill';
 import { useDeepLinks } from '../hooks/useDeepLinks';
 import { useWidgetLinks, useWidgetSync } from '../widget/useWidgetSync';
+import { useIslandLyrics } from '../hooks/useIslandLyrics';
+import { useIslandLibrary } from '../hooks/useIslandLibrary';
+import { useIslandTakeOver } from '../hooks/useIslandTakeOver';
+import { useLyricsUpgrade } from '../hooks/useLyricsUpgrade';
 import ConnectDeviceSheet from '../components/connect/ConnectDeviceSheet';
 import ConnectNoticeHost from '../components/connect/ConnectNoticeHost';
 import ConnectMiniPlayer from '../components/connect/ConnectMiniPlayer';
+import { consumePlayerHardwareBack } from './playerBack';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -41,7 +47,19 @@ export const RootNavigator: React.FC = () => {
   useDeepLinks();
   // Home-screen widgets: keep them current, and answer their taps.
   useWidgetSync();
+  useIslandLyrics();
+  // Plain lyrics showing: look once more for synced ones and swap them in.
+  useLyricsUpgrade();
+  useIslandLibrary();
+  useIslandTakeOver();
   useWidgetLinks();
+
+  // This effect runs after NavigationContainer subscribes its default back handler.
+  // A focused player gets the event first so it can animate closed before the stack pops.
+  React.useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', consumePlayerHardwareBack);
+    return () => subscription.remove();
+  }, []);
 
   // The mini player sits above the tab bar on every tab/screen — except Luvs,
   // a full-bleed reels feed running its own audio pool. The bar used to paint over
@@ -84,6 +102,7 @@ export const RootNavigator: React.FC = () => {
               contentStyle: { backgroundColor: 'transparent' },
             }}
           />
+          <Stack.Screen name="LuvLink" component={LuvLinkScreen} />
           <Stack.Screen
             name="EditLyrics"
             component={LyricsEditorScreen}
@@ -111,8 +130,8 @@ export const RootNavigator: React.FC = () => {
         {showMiniPlayer && <ConnectMiniPlayer />}
         {/* After the pill, so the ••• menu opens over it. */}
         <MoreMenuHost />
-        {/* Listen together: runs the room sync, shows join requests anywhere. */}
-        <ListenTogetherHost />
+        {/* LuvLink: runs the room sync, shows join requests anywhere. */}
+        <LuvLinkHost />
         <ConnectDeviceSheet />
         {/* Where a pick went: "<device> is offline, so this plays here", and "Play on this phone?". */}
         <ConnectNoticeHost />

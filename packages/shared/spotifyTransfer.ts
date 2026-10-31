@@ -81,22 +81,25 @@ export function createSpotifyTransfer(): SpotifyTransfer {
       accountKey, syncing: true, order: ids, names: new Map(order.map((row) => [row.id, row.name])),
       runs: new Map(ids.map((id) => [id, { state: 'waiting' } as const])), message: '', arrival: null, needsReconnect: false
     });
-    let added = 0; let notExact = 0; let finished = 0;
+    // `inFlight`: songs the unfinished playlist has already saved (counts are cumulative per scan).
+    let added = 0; let notExact = 0; let finished = 0; let inFlight = 0;
     try {
       for (const id of ids) {
         let latest: SpotifySyncStep | null = null;
+        inFlight = 0;
         setRun(id, { state: 'syncing', step: null });
         try {
           for (let step = 0; step < MAX_STEPS; step += 1) {
             const response = await deps.sync(id, run.signal);
             if (!isSyncStep(response)) throw new Error('Spotify returned an invalid sync progress response.');
             latest = response;
+            inFlight = response.added;
             if (run.signal.aborted) return;
             setRun(id, { state: latest.complete ? 'done' : 'syncing', step: latest });
             if (latest.complete) break;
           }
           if (!latest?.complete) { setRun(id, { state: 'failed', message: 'Still going. Transfer again to finish it.' }); continue; }
-          added += latest.added; notExact += latest.reviewNeeded; finished += 1;
+          added += latest.added; notExact += latest.reviewNeeded; finished += 1; inFlight = 0;
         } catch (error) {
           if (run.signal.aborted) return;
           const stop = deps.stopsRun(error);
@@ -110,8 +113,9 @@ export function createSpotifyTransfer(): SpotifyTransfer {
       if (controller === run) {
         controller = null;
         set({ syncing: false, finishedAt: state.finishedAt + 1 });
-        if (added > 0) deps.onLanded?.(added);
       }
+      // Paused or stopped part way, saved songs are still saved: the library must hear about them either way.
+      if (added + inFlight > 0) deps.onLanded?.(added + inFlight);
     }
   };
 
@@ -125,7 +129,9 @@ export function createSpotifyTransfer(): SpotifyTransfer {
       set({
         syncing: false,
         runs: new Map([...state.runs].filter(([, row]) => row.state === 'done' || row.state === 'failed')),
-        message: 'Paused. Songs already added stay saved; transfer again to carry on.'
+        message: 'Paused. Songs already added stay saved; transfer again to carry on.',
+        // A paused run has ended for the panels too: they re-read what was transferred when.
+        finishedAt: state.finishedAt + 1
       });
     },
     forget: (id) => {

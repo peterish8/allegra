@@ -1,20 +1,25 @@
 import { paths } from '../lib/routes';
-import { ArrowRight, Clock, Compass, Disc3, Heart, House, Library, ListMusic, Search, Settings, User } from 'lucide-react';
+import { ArrowRight, Clock, Compass, Disc3, Heart, House, Library, ListMusic, Search, Settings, Sparkles, User } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { UnifiedSong } from '@shared/types';
+import type { PerformanceAttempt } from '@shared/performanceTrace';
+import { PrefixCache, TYPEAHEAD_DEBOUNCE_MS, matchesQuery } from '@shared/typeahead';
 
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { searchSongs } from '../lib/api';
+import { suggestSongs } from '../lib/api';
+import { webPerformanceTrace } from '../lib/performanceTrace';
 import { motionTokens, spring } from '../motion';
 
 /**
  * Global command palette, after Watermelon's "Command Search": the search pill morphs into a sheet
  * (shared layoutId), results are grouped into sections, and a highlight slides between rows.
- * Songs are searched live, so Enter plays what you typed without leaving the page.
+ * Songs are searched on every keystroke: the longest prefix already answered shows at once,
+ * narrowed to what still matches, and the live answer replaces it. Enter plays what you typed
+ * without leaving the page, as a song radio.
  */
 
 interface CommandPaletteProps {
@@ -25,10 +30,16 @@ interface CommandPaletteProps {
   readonly activeQuery: string;
   readonly recent: readonly UnifiedSong[];
   readonly onPlaySong: (song: UnifiedSong, queue: UnifiedSong[]) => void;
+  /** A search hit: plays the song and starts its radio. */
+  readonly onPlayFromSearch: (song: UnifiedSong) => void;
   readonly onOpenArtist: (name: string) => void;
   readonly onNavigate: (path: string) => void;
   readonly onSearchAll: (query: string) => void;
   readonly onClearSearch: () => void;
+  /** Sends what was typed to the DJ as a request, without leaving the page. */
+  readonly onAskDj?: (query: string) => void;
+  /** `icon` shows only the magnifier (the DJ page keeps its top clear); the default is the full pill. */
+  readonly variant?: 'pill' | 'icon';
 }
 
 interface CommandItem {
@@ -42,9 +53,11 @@ interface CommandItem {
 }
 
 const SHEET_ID = 'command-palette';
-const SEARCH_DEBOUNCE_MS = 220;
+/** Typeahead answers for the whole visit, so backspacing and retyping never waits. */
+const answers = new PrefixCache<UnifiedSong>();
+const songText = (song: UnifiedSong): string => `${song.title} ${song.artist}`;
 
-export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onPlaySong, onOpenArtist, onNavigate, onSearchAll, onClearSearch }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onPlaySong, onPlayFromSearch, onOpenArtist, onNavigate, onSearchAll, onClearSearch, onAskDj, variant = 'pill' }: CommandPaletteProps) {
   const reduced = useReducedMotion();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UnifiedSong[]>([]);
@@ -56,8 +69,19 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
   const listRef = useRef<HTMLDivElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const wasOpen = useRef(false);
+  const traceGenerationRef = useRef(0);
+  const traceAttemptRef = useRef<PerformanceAttempt | null>(null);
+  const completedAttemptRef = useRef<PerformanceAttempt | null>(null);
+  const committedAttemptRef = useRef<PerformanceAttempt | null>(null);
+  const preserveTraceOnCloseRef = useRef(false);
 
   const trimmed = query.trim();
+
+  const close = useCallback((): void => {
+    const attempt = traceAttemptRef.current;
+    if (attempt && !preserveTraceOnCloseRef.current) webPerformanceTrace?.finish(attempt, 'aborted');
+    onClose();
+  }, [onClose]);
 
   useFocusTrap(open, sheetRef);
 
@@ -97,16 +121,35 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     }
     if (wasOpen.current) {
       wasOpen.current = false;
+      const attempt = traceAttemptRef.current;
+      if (attempt && !preserveTraceOnCloseRef.current) webPerformanceTrace?.finish(attempt, 'aborted');
+      preserveTraceOnCloseRef.current = false;
       const timer = window.setTimeout(() => triggerRef.current?.focus(), 0);
       return () => window.clearTimeout(timer);
     }
     return undefined;
   }, [open]);
 
-  // Live song search, debounced, with the previous request cancelled.
+  useEffect(() => () => {
+    const attempt = traceAttemptRef.current;
+    if (attempt) webPerformanceTrace?.finish(attempt, 'aborted');
+  }, []);
+
+  // Every keystroke: answer from what is known now, then ask the network (previous request cancelled).
   useEffect(() => {
-    if (!open || trimmed.length < 2) {
+    if (!open || !trimmed) {
       setResults([]);
+      setSearching(false);
+      setFailed(false);
+      return undefined;
+    }
+    const attempt = traceAttemptRef.current;
+    const known = answers.instant(trimmed, songText);
+    if (known) setResults([...known.items]);
+    if (known?.exact) {
+      if (attempt && webPerformanceTrace?.record(attempt, 'catalog.completed', { durationMs: 0, resultCount: known.items.length, cache: 'warm' })) {
+        completedAttemptRef.current = attempt;
+      }
       setSearching(false);
       setFailed(false);
       return undefined;
@@ -114,27 +157,43 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     const controller = new AbortController();
     setSearching(true);
     const timer = window.setTimeout(() => {
-      searchSongs(trimmed, controller.signal)
-        .then((response) => {
+      if (attempt) webPerformanceTrace?.record(attempt, 'search.dispatched');
+      const requestStartedAt = attempt ? performance.now() : 0;
+      suggestSongs(trimmed, controller.signal)
+        .then((songs) => {
           if (controller.signal.aborted) return;
-          setResults(response.results.slice(0, 20));
+          if (attempt && webPerformanceTrace?.record(attempt, 'catalog.completed', {
+            durationMs: performance.now() - requestStartedAt,
+            resultCount: songs.length,
+          })) completedAttemptRef.current = attempt;
+          answers.set(trimmed, songs);
+          setResults(songs);
           setFailed(false);
         })
         .catch(() => {
           if (!controller.signal.aborted) {
             setResults([]);
             setFailed(true);
+            if (attempt) webPerformanceTrace?.finish(attempt, 'search-failure');
           }
         })
         .finally(() => {
           if (!controller.signal.aborted) setSearching(false);
         });
-    }, SEARCH_DEBOUNCE_MS);
+    }, TYPEAHEAD_DEBOUNCE_MS);
     return () => {
       controller.abort();
       window.clearTimeout(timer);
     };
   }, [open, trimmed]);
+
+  useLayoutEffect(() => {
+    const attempt = traceAttemptRef.current;
+    if (!open || !attempt || completedAttemptRef.current !== attempt || committedAttemptRef.current === attempt) return;
+    if (!webPerformanceTrace?.record(attempt, 'results.committed', { resultCount: results.length })) return;
+    committedAttemptRef.current = attempt;
+    if (results.length === 0) webPerformanceTrace.finish(attempt, 'empty', { resultCount: 0 });
+  }, [open, results, searching, failed]);
 
   const go = useCallback((path: string) => () => onNavigate(path), [onNavigate]);
 
@@ -143,12 +202,18 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     const list: CommandItem[] = [];
 
     if (trimmed) {
-      list.push({ id: 'all', section: 'Search', title: `Search “${trimmed}”`, hint: 'All results', icon: <ArrowRight size={16} />, run: () => onSearchAll(trimmed) });
+      const all: CommandItem = { id: 'all', section: 'Search', title: `Search “${trimmed}”`, hint: 'All results', icon: <ArrowRight size={16} />, run: () => onSearchAll(trimmed) };
+      const ask: CommandItem | null = onAskDj ? { id: 'ask-dj', section: 'Search', title: `Ask your DJ: “${trimmed}”`, hint: 'Plays it, queues it, or lines up more like it', icon: <Sparkles size={16} />, run: () => onAskDj(trimmed) } : null;
+      // On the DJ page Enter asks the DJ instead of leaving for the search page.
+      if (ask && variant === 'icon') list.push(ask, all);
+      else list.push(all, ...(ask ? [ask] : []));
     }
 
-    const songs = results.slice(0, 5);
-    songs.forEach((song) => {
-      list.push({ id: `song-${song.id}`, section: 'Songs', title: song.title, hint: song.artist, icon: <Disc3 size={16} />, ...(song.artwork ? { art: song.artwork } : {}), run: () => onPlaySong(song, results) });
+    // Songs you played that match lead (no network wait), then the catalog's answer.
+    const played = trimmed ? recent.filter((song) => matchesQuery(songText(song), trimmed)).slice(0, 2) : [];
+    const playedIds = new Set(played.map((song) => song.id));
+    [...played, ...results.filter((song) => !playedIds.has(song.id))].slice(0, 5).forEach((song) => {
+      list.push({ id: `song-${song.id}`, section: 'Songs', title: song.title, hint: song.artist, icon: <Disc3 size={16} />, ...(song.artwork ? { art: song.artwork } : {}), run: () => onPlayFromSearch(song) });
     });
 
     // Credited names across the results; the one you typed comes first, so "arijit" offers Arijit Singh.
@@ -178,6 +243,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     const destinations: CommandItem[] = [
       { id: 'go-home', section: 'Go to', title: 'Home', icon: <House size={16} />, run: go(paths.home) },
       { id: 'go-browse', section: 'Go to', title: 'Browse', icon: <Compass size={16} />, run: go(paths.discover) },
+      { id: 'go-dj', section: 'Go to', title: 'Your DJ', hint: 'Ctrl+J asks it from anywhere', icon: <Sparkles size={16} />, run: go(paths.dj) },
       { id: 'go-library', section: 'Go to', title: 'Your library', icon: <Library size={16} />, run: go(paths.library) },
       { id: 'go-liked', section: 'Go to', title: 'Favorite songs', icon: <Heart size={16} />, run: go(paths.liked) },
       { id: 'go-playlists', section: 'Go to', title: 'Playlists', icon: <ListMusic size={16} />, run: go(paths.library) }
@@ -191,7 +257,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
       if (!needle || item.title.toLowerCase().includes(needle)) list.push(item);
     });
     return list;
-  }, [trimmed, results, recent, activeQuery, go, onSearchAll, onPlaySong, onOpenArtist, onClearSearch]);
+  }, [trimmed, results, recent, activeQuery, go, onSearchAll, onPlaySong, onPlayFromSearch, onOpenArtist, onClearSearch, onAskDj, variant]);
 
   const sections = useMemo(() => {
     const map = new Map<string, CommandItem[]>();
@@ -210,9 +276,13 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
 
   const choose = useCallback((item: CommandItem | undefined) => {
     if (!item) return;
-    onClose();
+    const attempt = traceAttemptRef.current;
+    const selectedSearchSong = item.id.startsWith('song-') && trimmed.length > 0 && results.some((song) => `song-${song.id}` === item.id);
+    if (attempt && (selectedSearchSong || item.id === 'all')) preserveTraceOnCloseRef.current = true;
+    else if (attempt) webPerformanceTrace?.finish(attempt, 'aborted');
+    close();
     item.run();
-  }, [onClose]);
+  }, [close, results, trimmed]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.key === 'ArrowDown') {
@@ -227,16 +297,30 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
     } else if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      onClose();
+      close();
     }
   };
 
-  const morph = reduced ? { duration: motionTokens.duration.instant } : spring.sheet;
+  const onQueryChange = (value: string): void => {
+    const attempt = webPerformanceTrace?.beginAttempt('web.search-to-play', ++traceGenerationRef.current, { scenario: 'online' }) ?? null;
+    traceAttemptRef.current = attempt;
+    completedAttemptRef.current = null;
+    committedAttemptRef.current = null;
+    preserveTraceOnCloseRef.current = false;
+    if (attempt) webPerformanceTrace?.record(attempt, 'query.changed');
+    setQuery(value);
+  };
+
+  // Keep the shared pill-to-sheet geometry in one clean pass; the corners settle with the panel
+  // instead of lingering in a soft capsule shape while the layout spring finishes.
+  const morph = reduced
+    ? { type: 'tween' as const, duration: motionTokens.duration.instant, ease: motionTokens.ease.standard }
+    : { type: 'tween' as const, duration: motionTokens.duration.slow, ease: motionTokens.ease.decelerate };
 
   return (
     <>
       {/* The pill keeps its slot while the sheet is open, so the top bar never reflows. */}
-      <div className="cmdk-slot">
+      <div className={`cmdk-slot${variant === 'icon' ? ' cmdk-slot--icon' : ''}`}>
         <AnimatePresence initial={false}>
           {!open ? (
             <motion.button
@@ -244,25 +328,28 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
               ref={triggerRef}
               type="button"
               layoutId={SHEET_ID}
-              className="search-box cmdk-trigger"
+              className={`search-box cmdk-trigger${variant === 'icon' ? ' cmdk-trigger--icon' : ''}`}
               style={{ borderRadius: 999 }}
               transition={morph}
               onClick={onOpen}
               aria-haspopup="dialog"
               aria-label="Search music"
+              title={variant === 'icon' ? 'Search music · Ctrl+K' : undefined}
             >
               <Search size={17} aria-hidden="true" />
-              <span className={`cmdk-trigger-text ${activeQuery ? 'has-value' : ''}`}>{activeQuery || 'Search music'}</span>
-              {activeQuery ? (
-                <span
-                  className="search-clear"
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Clear search"
-                  onClick={(event) => { event.stopPropagation(); onClearSearch(); }}
-                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); onClearSearch(); } }}
-                >×</span>
-              ) : <kbd>⌘ K</kbd>}
+              {variant === 'icon' ? null : <>
+                <span className={`cmdk-trigger-text ${activeQuery ? 'has-value' : ''}`}>{activeQuery || 'Search music'}</span>
+                {activeQuery ? (
+                  <span
+                    className="search-clear"
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Clear search"
+                    onClick={(event) => { event.stopPropagation(); onClearSearch(); }}
+                    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); onClearSearch(); } }}
+                  >×</span>
+                ) : <kbd>⌘ K</kbd>}
+              </>}
             </motion.button>
           ) : null}
         </AnimatePresence>
@@ -278,7 +365,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: motionTokens.duration.base, ease: motionTokens.ease.standard }}
-                onClick={onClose}
+                onClick={close}
               />
               <motion.div
                 ref={sheetRef}
@@ -296,7 +383,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
                   <input
                     ref={inputRef}
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => onQueryChange(event.target.value)}
                     placeholder="Search songs, artists…"
                     role="combobox"
                     aria-expanded="true"
@@ -307,7 +394,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
                   />
                   {searching ? <span className="cmdk-spinner" aria-label="Searching" /> : null}
                   <kbd>Esc</kbd>
-                  <button type="button" className="cmdk-cancel" onClick={onClose}>Cancel</button>
+                  <button type="button" className="cmdk-cancel" onClick={close}>Cancel</button>
                 </div>
 
                 <motion.div
@@ -344,7 +431,7 @@ export function CommandPalette({ open, onOpen, onClose, activeQuery, recent, onP
                         })}
                       </div>
                     ))}
-                    {trimmed.length >= 2 && !searching && results.length === 0 ? (
+                    {trimmed && !searching && results.length === 0 ? (
                       <p className="cmdk-empty">{failed ? 'Search is unavailable right now. Try again in a moment.' : `No songs found for “${trimmed}”.`}</p>
                     ) : null}
                   </div>

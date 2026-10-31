@@ -99,6 +99,11 @@ export class ConvexUserStore implements UserStore {
         typeof device.name === 'string' && typeof device.kind === 'string' && typeof device.appVersion === 'string' && typeof device.createdAt === 'number'
           ? [{ name: device.name, kind: device.kind, appVersion: device.appVersion, createdAt: device.createdAt }]
           : []
+      ),
+      luvLinks: rows(record.luvLinks).flatMap((link) =>
+        typeof link.roomId === 'string' && (link.role === 'host' || link.role === 'member') && typeof link.joinedAtMs === 'number'
+          ? [{ roomId: link.roomId, role: link.role, joinedAtMs: link.joinedAtMs }]
+          : []
       )
     };
   }
@@ -149,6 +154,8 @@ function parseTaste(value: unknown): TasteProfile | undefined {
   return {
     artists: parseEntries(record.artists),
     languages: parseEntries(record.languages),
+    // Older profile rows have no genres: they read as none picked.
+    genres: Array.isArray(record.genres) ? record.genres.filter((genre): genre is string => typeof genre === 'string') : [],
     signals: typeof record.signals === 'number' ? record.signals : 0,
     onboarded: record.onboarded === true,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : new Date(0).toISOString()

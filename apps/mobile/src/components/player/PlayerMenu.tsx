@@ -14,7 +14,7 @@ import { isStreamSongId } from '../../services/stream/streamSong';
 import { NativeAudioPlayer } from '../../services/NativeAudioPlayer';
 import { canSetRingtone } from '../../services/player/playerMenuActions';
 import { usePlaybackModesStore } from '../../store/playbackModesStore';
-import { useListenTogetherStore } from '../../store/listenTogetherStore';
+import { useLuvLinkStore } from '../../store/luvLinkStore';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -53,8 +53,8 @@ export const PlayerMenu: React.FC<PlayerMenuProps> = ({ song, liked, showLyrics,
   const repeatOne = usePlaybackModesStore(s => s.repeatOne);
   const tempo = usePlaybackModesStore(s => s.tempo);
   const pitch = usePlaybackModesStore(s => s.pitch);
-  const room = useListenTogetherStore(s => s.room);
-  const role = useListenTogetherStore(s => s.role);
+  const room = useLuvLinkStore(s => s.room);
+  const role = useLuvLinkStore(s => s.role);
   const stream = isStreamSongId(song.id);
   const android = Platform.OS === 'android' && NativeAudioPlayer.isAvailable();
   const artist = song.artist && !/^unknown artist$/i.test(song.artist) ? song.artist : null;
@@ -101,7 +101,7 @@ export const PlayerMenu: React.FC<PlayerMenuProps> = ({ song, liked, showLyrics,
       ) : null}
 
       <View style={styles.group}>
-        <Row icon="account-multiple-outline" title="Listen together" hint={together} on={!!room} onPress={act('together')} />
+        <Row icon="account-multiple-outline" title="LuvLink" hint={together} on={!!room} onPress={act('together')} />
         <Row icon="devices" title="Connect devices" hint="Move playback to your other devices" onPress={act('connect')} />
       </View>
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { applyImportSeed, IMPORT_SEED_MAX_ARTISTS, importSeedWeights, SIGNAL_WEIGHT } from './taste.js';
+import { applyImportSeed, applySeeds, applySignal, IMPORT_SEED_MAX_ARTISTS, importSeedWeights, mergeTaste, normalizeGenreIds, SIGNAL_WEIGHT, tasteSummary } from './taste.js';
 
 const many = Array.from({ length: 300 }, (_, n) => ({ name: `Artist ${n}`, count: 300 - n }));
 
@@ -47,4 +47,27 @@ test('languages are left alone and signals grow by the number applied', () => {
   const taste = applyImportSeed(base, [{ name: 'A', count: 2 }, { name: 'B', count: 1 }]);
   assert.deepEqual(taste.languages, base.languages);
   assert.equal(taste.signals, 9);
+});
+
+test('explicit genre picks are validated, exposed, and preserved as listening changes the taste profile', () => {
+  const genres = normalizeGenreIds([' pop ', 'unknown', 'pop', 'southindian']);
+  assert.deepEqual(genres, ['pop', 'southindian']);
+
+  const seeded = applySeeds(undefined, ['Taylor Swift'], ['english'], new Date('2026-10-04T00:00:00.000Z'), genres);
+  assert.deepEqual(tasteSummary(seeded).genres, ['pop', 'southindian']);
+
+  const afterPlay = applySignal(seeded, { artist: 'Taylor Swift', language: 'english' }, 1, new Date('2026-10-05T00:00:00.000Z'));
+  assert.deepEqual(tasteSummary(afterPlay).genres, ['pop', 'southindian']);
+});
+
+test('merging guest and account taste keeps both genre preference lists without duplicates', () => {
+  const guest = applySeeds(undefined, [], [], new Date('2026-10-04T00:00:00.000Z'), ['pop']);
+  const account = applySeeds(undefined, [], [], new Date('2026-10-04T00:00:00.000Z'), ['bollywood', 'pop']);
+
+  assert.deepEqual(tasteSummary(mergeTaste(guest, account)).genres, ['pop', 'bollywood']);
+});
+
+test('an import seed keeps the genres the listener picked', () => {
+  const picked = applySeeds(undefined, [], [], new Date('2026-10-04T00:00:00.000Z'), ['retro']);
+  assert.deepEqual(tasteSummary(applyImportSeed(picked, [{ name: 'Kishore Kumar', count: 4 }])).genres, ['retro']);
 });

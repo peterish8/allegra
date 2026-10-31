@@ -6,6 +6,7 @@ import { MemoryCacheStore } from '../lib/cache.js';
 import { ProviderUnavailableError } from '../lib/errors.js';
 import { GaanaProvider } from '../providers/gaana.js';
 import { SaavnProvider, type SaavnSong } from '../providers/saavn.js';
+import type { ReleaseAuthority } from '../providers/musicbrainz.js';
 
 const saavnSong: SaavnSong = {
   id: 's1',
@@ -26,11 +27,13 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function catalog(fetchImpl: typeof fetch): CatalogService {
+function catalog(fetchImpl: typeof fetch, releaseAuthority?: ReleaseAuthority, releaseWaitMs?: number): CatalogService {
   return new CatalogService({
     saavn: new SaavnProvider({ baseUrl: 'https://saavn.example/api', fetchImpl }),
     gaana: new GaanaProvider({ baseUrl: 'https://gaana.example/api', fetchImpl }),
-    cache: new MemoryCacheStore()
+    cache: new MemoryCacheStore(),
+    ...(releaseAuthority ? { releaseAuthority } : {}),
+    ...(releaseWaitMs !== undefined ? { releaseWaitMs } : {})
   });
 }
 
@@ -78,6 +81,71 @@ test('search caches results and does not leak provider fields', async () => {
   assert.equal(first.results[0]?.streamUrl, '/api/stream/s1');
   assert.equal('downloadUrl' in (first.results[0] ?? {}), false);
   assert.deepEqual(first, second);
+});
+
+test('search replaces the queried top row artwork with the authoritative release even when the provider album looks plausible', async () => {
+  const authority: ReleaseAuthority = {
+    canonical: async () => ({ album: 'Official Single', year: 2024, coverUrl: 'https://coverart.example/official.jpg' })
+  };
+  const service = catalog(async () => json({ success: true, data: { results: [{
+    ...saavnSong,
+    album: { name: 'Saavn Presents', url: '' },
+    image: [{ quality: '500x500', url: 'https://provider.example/playlist.jpg' }]
+  }] } }), authority);
+
+  const result = await service.search('Saavn Hit Artist', 20, 0);
+  assert.equal(result.results[0]?.album, 'Official Single');
+  assert.equal(result.results[0]?.artwork, 'https://coverart.example/official.jpg');
+});
+
+// 2026-10-11: every uncached search now asks the release authority, whose own timeout is 6 s.
+// A search must not wait that long: it answers with the provider's row and the next search
+// picks the correction up from the cache.
+test('a slow release authority does not hold a search up, and its answer shows on the next search', async () => {
+  let releaseAuthority!: () => void;
+  let authorityFinished = false;
+  const authorityGate = new Promise<void>((resolve) => { releaseAuthority = resolve; });
+  const authority: ReleaseAuthority = {
+    canonical: async () => {
+      await authorityGate;
+      authorityFinished = true;
+      return { album: 'Official Single', year: 2024, coverUrl: 'https://coverart.example/official.jpg' };
+    }
+  };
+  const service = catalog(async () => json({ success: true, data: { results: [{
+    ...saavnSong,
+    album: { name: 'Saavn Presents', url: '' },
+    image: [{ quality: '500x500', url: 'https://provider.example/playlist.jpg' }]
+  }] } }), authority, 20);
+
+  // Fire the service's 20 ms release deadline under test control; the authority itself stays gated.
+  const nativeSetTimeout = globalThis.setTimeout;
+  let releaseDeadlineFired = false;
+  globalThis.setTimeout = ((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+    if (delay === 20) {
+      releaseDeadlineFired = true;
+      queueMicrotask(() => callback(...args));
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    }
+    return nativeSetTimeout(callback, delay, ...args);
+  }) as typeof setTimeout;
+  let first: Awaited<ReturnType<typeof service.search>>;
+  try {
+    first = await service.search('Saavn Hit Artist', 20, 0);
+  } finally {
+    globalThis.setTimeout = nativeSetTimeout;
+  }
+  assert.equal(releaseDeadlineFired, true, 'the configured release deadline was reached');
+  assert.equal(authorityFinished, false, 'the search returned while the authority was still pending');
+  assert.equal(first.results[0]?.artwork, 'https://provider.example/playlist.jpg');
+
+  releaseAuthority();
+  await new Promise<void>((resolve) => nativeSetTimeout(resolve, 0));
+  assert.equal(authorityFinished, true);
+  // The first answer was not cached, so this one is rebuilt with the release that landed.
+  const second = await service.search('Saavn Hit Artist', 20, 0);
+  assert.equal(second.results[0]?.album, 'Official Single');
+  assert.equal(second.results[0]?.artwork, 'https://coverart.example/official.jpg');
 });
 
 test('Gaana catalog rows use a provider-qualified stream URL and ref lookup stays on Gaana', async () => {
@@ -163,4 +231,32 @@ test('artist faces omit names without a photo and unknown names', async () => {
   });
   const faces = await service.getArtistFaces(['Known', 'NoPhoto', 'Nobody']);
   assert.deepEqual(faces.map((face) => face.name), ['Known']);
+});
+
+// 2026-10-18: getSongs asked the provider once per song; a Blend or library resolve of 40 songs was 40 requests.
+test('getSongs fetches uncached Saavn songs in one batch request, keeps the order asked and falls back per song', async () => {
+  const urls: string[] = [];
+  const song = (id: string): SaavnSong => ({ ...saavnSong, id, name: `Song ${id}` });
+  const service = catalog(async (input) => {
+    const url = new URL(String(input));
+    urls.push(`${url.hostname}${url.pathname}${url.search}`);
+    if (url.hostname === 'saavn.example' && url.pathname === '/api/songs') {
+      // The batch never returns "late": it is looked up on its own afterwards.
+      const ids = (url.searchParams.get('ids') ?? '').split(',').filter((id) => id !== 'late');
+      return json({ success: true, data: ids.reverse().map(song) });
+    }
+    if (url.pathname === '/api/songs/late') return json({ success: true, data: [song('late')] });
+    if (url.hostname === 'gaana.example') return json({ success: true, data: [gaanaSong] });
+    return json({ success: false }, 404);
+  });
+
+  const first = await service.getSongs(['a', 'saavn:b', 'late', 'c', 'a']);
+  assert.deepEqual(first.map((item) => item.id), ['a', 'b', 'late', 'c', 'a']);
+  assert.equal(urls.filter((url) => url.startsWith('saavn.example/api/songs?')).length, 1, 'one batch request');
+  assert.ok(urls.includes('saavn.example/api/songs/late'), 'a song the batch missed is looked up on its own');
+
+  urls.length = 0;
+  const again = await service.getSongs(['c', 'a']);
+  assert.deepEqual(again.map((item) => item.id), ['c', 'a']);
+  assert.equal(urls.length, 0, 'cached songs make no request');
 });

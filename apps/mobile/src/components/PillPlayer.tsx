@@ -41,7 +41,8 @@ import { useArtworkPalette } from './allegra/useArtworkPalette';
 import { pillTint } from './allegra/palette';
 import { Motion } from '../constants/allegraTheme';
 import { positionSV, durationSV } from '../playback/positionBus';
-import { isLowEndDevice } from '../utils/performanceTier';
+import { useLowEndDevice } from '../utils/performanceTier';
+import { NativeSkip, useNativeSkip } from './NativeSkip';
 import GlowBackground from './player/GlowBackground';
 import LiquidGlass, { GlassShadow } from './allegra/LiquidGlass';
 import { useGlowColors } from './player/useGlowColors';
@@ -62,7 +63,6 @@ const COOKIE = 40;
 /** The artwork on the liquid-glass pill: a small rounded square, as in Apple Music. */
 const GLASS_ART = 40;
 const SPIN_MS = 14000;
-const SPIN = !isLowEndDevice();
 /** The pill is gone once the player sheet is this fraction open: it fades over the first quarter. */
 const HAND_OVER_AT = 0.25;
 
@@ -164,9 +164,9 @@ const PillPlayer: React.FC<PillPlayerProps> = ({
 
   // ── Disc: turns slowly while playing and seen, holds its angle otherwise ──
   const spin = useSharedValue(0);
-  const spinning = SPIN && playing && shown && appActive;
+  const canSpin = !useLowEndDevice();
+  const spinning = canSpin && playing && shown && appActive;
   useEffect(() => {
-    if (!SPIN) return;
     if (spinning) {
       const from = spin.value % 360;
       spin.value = from;
@@ -213,8 +213,10 @@ const PillPlayer: React.FC<PillPlayerProps> = ({
 
   const [backNudge, setBackNudge] = useState(0);
   const [nextNudge, setNextNudge] = useState(0);
-  const next = useCallback(() => { tick(); setNextNudge(n => n + 1); onNext(); }, [onNext]);
-  const previous = useCallback(() => { tick(); setBackNudge(n => n + 1); onPrevious(); }, [onPrevious]);
+  // With native skip the engine has already moved by the time this runs: only the feel is left to do here.
+  const nativeSkip = useNativeSkip();
+  const next = useCallback(() => { tick(); setNextNudge(n => n + 1); if (!nativeSkip) onNext(); }, [onNext, nativeSkip]);
+  const previous = useCallback(() => { tick(); setBackNudge(n => n + 1); if (!nativeSkip) onPrevious(); }, [onPrevious, nativeSkip]);
 
   // A swipe up opens the player as soon as it is clearly upward, not when the
   // finger lifts: the sheet is already growing out of the pill while the finger
@@ -286,9 +288,11 @@ const PillPlayer: React.FC<PillPlayerProps> = ({
             >
               <MorphIcon on={playing} onIcon="pause" offIcon="play" size={24} color="#fff" offStyle={styles.playNudge} />
             </Tactile>
-            <Tactile onPress={next} hitSlop={6} pressScale={0.86} accessibilityRole="button" accessibilityLabel="Next" style={styles.glassBtn}>
-              <NudgeIcon name="play-forward" size={24} color="#fff" direction={1} trigger={nextNudge} />
-            </Tactile>
+            <NativeSkip direction={1} enabled={nativeSkip} slop={6}>
+              <Tactile onPress={next} hitSlop={6} pressScale={0.86} accessibilityRole="button" accessibilityLabel="Next" style={styles.glassBtn}>
+                <NudgeIcon name="play-forward" size={24} color="#fff" direction={1} trigger={nextNudge} />
+              </Tactile>
+            </NativeSkip>
           </Pressable>
         ) : (
         <Pressable
@@ -324,9 +328,11 @@ const PillPlayer: React.FC<PillPlayerProps> = ({
             {artist ? <SwapMarquee style={styles.artist} direction={songDirection} active={!sheetUp}>{artist}</SwapMarquee> : null}
           </View>
 
-          <Tactile onPress={previous} hitSlop={8} pressScale={0.85} accessibilityRole="button" accessibilityLabel="Previous" style={styles.skip}>
-            <NudgeIcon name="play-skip-back" size={18} color="#fff" direction={-1} trigger={backNudge} />
-          </Tactile>
+          <NativeSkip direction={-1} enabled={nativeSkip} slop={8}>
+            <Tactile onPress={previous} hitSlop={8} pressScale={0.85} accessibilityRole="button" accessibilityLabel="Previous" style={styles.skip}>
+              <NudgeIcon name="play-skip-back" size={18} color="#fff" direction={-1} trigger={backNudge} />
+            </Tactile>
+          </NativeSkip>
 
           <Tactile
             onPress={() => { tick(); onTogglePlay(); }}
@@ -341,9 +347,11 @@ const PillPlayer: React.FC<PillPlayerProps> = ({
             <MorphIcon on={playing} onIcon="pause" offIcon="play" size={20} color="#15151a" offStyle={styles.playNudge} />
           </Tactile>
 
-          <Tactile onPress={next} hitSlop={8} pressScale={0.85} accessibilityRole="button" accessibilityLabel="Next" style={styles.skip}>
-            <NudgeIcon name="play-skip-forward" size={18} color="#fff" direction={1} trigger={nextNudge} />
-          </Tactile>
+          <NativeSkip direction={1} enabled={nativeSkip} slop={8}>
+            <Tactile onPress={next} hitSlop={8} pressScale={0.85} accessibilityRole="button" accessibilityLabel="Next" style={styles.skip}>
+              <NudgeIcon name="play-skip-forward" size={18} color="#fff" direction={1} trigger={nextNudge} />
+            </Tactile>
+          </NativeSkip>
         </Pressable>
         )}
       </Animated.View>

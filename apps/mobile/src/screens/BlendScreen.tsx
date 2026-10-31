@@ -11,7 +11,7 @@ import { Alert, FlatList, Pressable, Share, StyleSheet, Text, View } from 'react
 import Animated, { FadeIn, FadeInDown, useReducedMotion } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useIsFocused, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -29,6 +29,7 @@ import { Glass, Motion, Radius, Signal, Space } from '../constants/allegraTheme'
 import { shuffled } from '../utils/shuffle';
 import { useAccount } from '../services/account/AccountProvider';
 import { blendTrackSong, getBlend, getInvite, inviteUrl, leaveBlend } from '../services/blend/blendApi';
+import { watchStaleBlend } from '../services/blend/staleRefresh';
 import { StreamService } from '../services/stream/StreamService';
 import type { LibraryStackParamList } from '../types/navigation';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
@@ -50,32 +51,52 @@ export const BlendScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
   const closeStory = useCallback(() => setWatching(false), []);
-  const activeToken = useRef(token);
-  activeToken.current = token;
-  useEffect(() => { setDetail(null); setError(null); setRevealing(false); setFilter(null); setWatching(false); }, [account.profile?.userId, route.params.blendId]);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const focused = useIsFocused();
+  const focusedRef = useRef(focused);
+  focusedRef.current = focused;
+  // Only the newest read may land: a switch of account or Blend, or a slower earlier read, is dropped.
+  const request = useRef(0);
+  const shown = useRef<BlendDetail | null>(null);
+  shown.current = detail;
+  useEffect(() => { request.current += 1; setDetail(null); setError(null); setRefreshFailed(false); setRevealing(false); setFilter(null); setWatching(false); }, [account.profile?.userId, route.params.blendId]);
 
-  const load = useCallback(async () => {
-    if (!token) return;
+  /** Resolves true once a fresh (not stale) build is showing. */
+  const load = useCallback(async (): Promise<boolean> => {
+    if (!token) return false;
+    const mine = ++request.current;
     const result = await getBlend(token, route.params.blendId);
-    if (activeToken.current !== token) return;
+    if (request.current !== mine) return false;
     if (result.ok === false) {
+      // A failed refresh keeps the Blend already on screen; only a first load (or a Blend that is gone) shows the error.
+      if (result.status !== 404 && shown.current?.id === route.params.blendId) { setRefreshFailed(true); return false; }
       setError(result.status === 404 ? BLEND_TEXT.notfound : result.error);
-      return;
+      return false;
     }
     // Decide the reveal before the first paint of the hero, so the orbs never jump back apart.
     let reveal = false;
     if (result.data.state === 'ready' && result.data.members.length >= 2) {
       const seen = await AsyncStorage.getItem(revealKey(result.data)).catch(() => null);
-      if (activeToken.current !== token) return;
+      if (request.current !== mine) return false;
       reveal = seen !== '1';
     }
     setDetail(result.data);
     setError(null);
+    setRefreshFailed(false);
     setRevealing(reveal);
     setPulse((count) => count + 1);
+    return !result.data.stale;
   }, [route.params.blendId, token]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Another member's build is in flight (or the last one failed): check back a few times, as the website does.
+  const waitingForBuild = !!detail && detail.stale && detail.members.length >= 2;
+  // Restarts on coming back to the screen: the watch stops scheduling while the screen is hidden.
+  useEffect(() => {
+    if (!waitingForBuild || !focused) return undefined;
+    return watchStaleBlend(load, () => focusedRef.current);
+  }, [waitingForBuild, focused, load]);
 
   const tracks = useMemo(() => (detail ? (filter ? detail.tracks.filter((track) => track.for.includes(filter)) : detail.tracks) : []), [detail, filter]);
   const songs = useMemo(() => tracks.map(blendTrackSong), [tracks]);
@@ -112,7 +133,11 @@ export const BlendScreen: React.FC = () => {
   if (error || !detail) {
     return (
       <SafeAreaView style={s.screen} edges={['top']}>
-        <View style={s.panel}><Text style={s.panelBody}>{error ?? 'Loading your Blend…'}</Text></View>
+        <View style={s.panel}>
+          <Text style={s.panelBody}>{error ?? (!account.loading && !account.signedIn ? 'Sign in to see this Blend.' : 'Loading your Blend…')}</Text>
+          {error && token ? <Pressable accessibilityRole="button" accessibilityLabel="Retry loading Blend" onPress={() => { setError(null); void load(); }}><Text style={s.panelBody}>Try again</Text></Pressable> : null}
+          {!account.loading && !account.signedIn ? <Pressable accessibilityRole="button" accessibilityLabel="Sign in to see this Blend" onPress={() => { void account.signInWithGoogle(); }}><Text style={s.panelBody}>Sign in</Text></Pressable> : null}
+        </View>
       </SafeAreaView>
     );
   }
@@ -166,7 +191,8 @@ export const BlendScreen: React.FC = () => {
               </View>
             </RiseIn>
             {detail.change ? <Text style={styles.note}>{changeText(detail.change, artistName(detail.change.artist, detail.tracks))}</Text> : null}
-            {detail.stale && detail.members.length >= 2 ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.note}>Your Blend is waiting to refresh. Tap to refresh.</Text></Pressable> : null}
+            {refreshFailed ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.note}>Couldn’t refresh just now. Tap to try again.</Text></Pressable>
+              : detail.stale && detail.members.length >= 2 ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.note}>Your Blend is waiting to refresh. Tap to refresh.</Text></Pressable> : null}
             {detail.members.filter((member) => !member.learning).map((member) => (
               <Text key={member.userId} style={styles.note}>{member.isYou ? 'Your picks come from likes and playlists.' : learningOffText(member.displayName)}</Text>
             ))}

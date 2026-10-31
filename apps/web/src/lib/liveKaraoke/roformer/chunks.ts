@@ -39,6 +39,39 @@ export function catchUpChunk(arriveAt: number, chunkSeconds: number, totalSample
   return offset + chunkSeconds > hopSeconds ? Math.min(last, k + 1) : k;
 }
 
+/** Chunks kept separated ahead of the focus before any work goes behind the playhead (~30 s). */
+export const AHEAD_TARGET_CHUNKS = 3;
+/** Chunks behind the playhead filled in once the lead is safe (~30 s): where a seek back lands. */
+export const BACKFILL_CHUNKS = 3;
+
+export interface ChunkPick {
+  readonly index: number;
+  /** Inside the lead the listener is about to hear: worth more than anything cached elsewhere. */
+  readonly urgent: boolean;
+}
+
+/**
+ * Which chunk to work on next. `done[k]` is non-zero once chunk k exists.
+ *
+ * 1. The focus and the chunks just after it, so karaoke stays on (urgent).
+ * 2. Back from the focus to a few chunks behind the playhead: the stretch `catchUpChunk`
+ *    jumped over, and where a seek back usually lands.
+ * 3. On from the focus to the end of the song.
+ * 4. The rest, nearest the playhead first.
+ */
+export function nextChunk(done: ArrayLike<number>, focus: number, playhead: number): ChunkPick | null {
+  const count = done.length;
+  if (count === 0) return null;
+  const f = Math.max(0, Math.min(count - 1, focus));
+  const p = Math.max(0, Math.min(count - 1, playhead));
+  for (let k = f; k < Math.min(count, f + AHEAD_TARGET_CHUNKS); k++) if (!done[k]) return { index: k, urgent: true };
+  const floor = Math.max(0, Math.min(f, p) - BACKFILL_CHUNKS);
+  for (let k = f - 1; k >= floor; k--) if (!done[k]) return { index: k, urgent: false };
+  for (let k = f + AHEAD_TARGET_CHUNKS; k < count; k++) if (!done[k]) return { index: k, urgent: false };
+  for (let k = floor - 1; k >= 0; k--) if (!done[k]) return { index: k, urgent: false };
+  return null;
+}
+
 /** Input for chunk k, zero-padded past the end of the song. */
 export function sliceChunk(mix: StereoPcm, index: number): StereoPcm {
   const start = index * STREAM_HOP_SAMPLES;

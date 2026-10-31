@@ -12,7 +12,10 @@ export type PlayerSheetName = 'menu' | 'together' | 'queue' | 'timer';
 
 export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
-  NowPlaying: { songId: string; lyrics?: boolean; sheet?: PlayerSheetName };
+  /** `instant`: mounted already open, no rise (the app is opening out of the system island, which animates it). */
+  NowPlaying: { songId: string; lyrics?: boolean; sheet?: PlayerSheetName; instant?: boolean };
+  /** Create or join a LuvLink room without needing a track in the player. */
+  LuvLink: undefined;
   /** Lyrics editor for a song saved on the phone. */
   EditLyrics: { songId: string };
   LuvsVault: undefined; // Luvs liked songs vault
@@ -26,6 +29,7 @@ export type TabParamList = {
   Luvs: undefined;
   Library: NavigatorScreenParams<LibraryStackParamList> | undefined; // Was Playlists
   Search: undefined; // replaced Settings in the tab bar
+  Dj: undefined;
   // Pushed screens without a tab icon. They live in the tab navigator so the
   // bottom bar stays on screen, as in Spotify and Apple Music (see VISIBLE_TABS).
   Settings: undefined;

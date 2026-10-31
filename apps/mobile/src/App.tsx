@@ -26,6 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getPreloadedData } from './services/NativeStartup';
 import { ensureSearchIndex } from './services/NativeSearch';
 import { runWhenIdle } from './services/bootPhases';
+import { preloadFeedCache } from './services/stream/feedCache';
 import { isBatterySaverOn } from './utils/batterySaver';
 import { SF_FONT_MAP } from './constants/fonts';
 
@@ -95,6 +96,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initialize = async () => {
+      // Stream's last page, read alongside the first-frame work so it is on screen the moment Stream draws.
+      preloadFeedCache().catch(() => null);
       let retries = 3;
       let lastError: Error | null = null;
 

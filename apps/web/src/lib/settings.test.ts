@@ -38,6 +38,16 @@ test('valid fields survive, invalid ones fall back one by one', () => {
   assert.equal('extra' in parsed, false);
 });
 
+test('karaoke keeps "Always AI", migrates Basic-only to Auto, and preserves its two switches', () => {
+  const parsed = parseSettings(JSON.stringify({ karaokeMode: 'ai', karaokeStayOn: false, karaokeWarmUp: 'yes' }));
+  assert.equal(parsed.karaokeMode, 'ai');
+  assert.equal(parsed.karaokeStayOn, false);
+  assert.equal(parsed.karaokeWarmUp, true);
+  const oldBasicOnly = parseSettings(JSON.stringify({ karaokeMode: 'basic' }));
+  assert.equal(oldBasicOnly.karaokeMode, 'auto');
+  assert.equal(oldBasicOnly.karaokeStayOn, true);
+});
+
 test('a theme saved by an older build is dropped: the site is dark only', () => {
   assert.equal('theme' in parseSettings(JSON.stringify({ theme: 'light' })), false);
 });

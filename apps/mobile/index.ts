@@ -27,3 +27,8 @@ import { widgetTaskHandler } from './src/widget/widgetTaskHandler';
 
 // Home-screen widgets (Android): Now playing card and Playlist list.
 registerWidgetTaskHandler(widgetTaskHandler);
+
+import { registerIslandJsAwake } from './src/services/islandJsAwake';
+
+// The system island's searches and picks run JavaScript while the app is in the background (see the file).
+registerIslandJsAwake();

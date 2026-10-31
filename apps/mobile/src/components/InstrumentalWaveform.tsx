@@ -1,3 +1,4 @@
+import { isInstrumentalLyric } from '../playback/instrumentalLine';
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
 import Animated, {
@@ -143,13 +144,4 @@ export function useIsActiveLine(activeIndexSV: SharedValue<number>, index: numbe
 }
 
 /** Detect instrumental / music-break markers so UI can swap text for the EQ. */
-export function isInstrumentalLyric(text: string): boolean {
-  const t = text.trim();
-  if (!t) return true;
-  // [INSTRUMENTAL], [Instrumental Break], Instrumental, ♪ Instrumental ♪, etc.
-  const stripped = t
-    .replace(/^[\s[(【♪🎵🎤]+/, '')
-    .replace(/[\s\])】♪🎵🎤]+$/, '')
-    .trim();
-  return /^(instrumental)(\s+(break|interlude|solo|outro|intro|section))?$/i.test(stripped);
-}
+export { isInstrumentalLyric };

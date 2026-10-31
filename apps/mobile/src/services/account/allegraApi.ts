@@ -5,6 +5,7 @@
  */
 import { POLICY_VERSION, type Consent } from '@shared/legal';
 import type { LibraryChange } from '@shared/library';
+import type { ListenExit } from '@shared/listenSignal';
 import { fromAllegraSong, parseSongRef, type SongRef, type SongSnapshot } from '@shared/songRef';
 import type { UnifiedSong } from '../../types/song';
 
@@ -106,6 +107,8 @@ export interface ListenSignalPayload {
   readonly song?: SongSnapshot;
   readonly seconds: number;
   readonly playedAt: string;
+  readonly exit?: ListenExit;
+  readonly exitPositionSec?: number;
 }
 
 export const postPlay = (token: string, play: PlayEventPayload): Promise<SendOutcome<unknown>> =>

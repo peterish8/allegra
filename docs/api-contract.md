@@ -24,6 +24,9 @@ export interface UnifiedSong {
   title: string;          // HTML entities already decoded
   artist: string;         // decoded, comma-joined
   album?: string;
+  /** Additive, 2026-10-11. The catalog's own album id (Saavn only), for GET /api/albums/:id.
+   *  Absent for Gaana rows and when `album` was replaced by a canonical release name. */
+  albumId?: string;
   artwork: string;        // 1000x1000 when available
   streamUrl: string;      // ALWAYS our proxy: /api/stream/:id — never a CDN URL
   duration: number;       // SECONDS
@@ -65,6 +68,87 @@ export interface LyricsPayload {
 Empty results → `success: true` with `results: []`, **not** an error.
 Cache 1 h. Budget: <800 ms cold, <200 ms cached.
 
+### Proposed change — `POST /api/ai/dj/turn`
+The cloud BYOK providers are `openai`, `openrouter`, and `gemini`. The caller sends the selected
+provider's `apiKey`, `model`, task `goal` (`mix` or `playlist`), a bounded `songLimit` (1–30), the
+current `message`, up to 8 prior `{role, content}` messages, and small session context: the active
+track, up to 8 upcoming/recent/liked/skipped summaries, up to 30 editable draft-track summaries and
+the draft name, plus `{vibe, energy, language, constraints}`. Four optional fields shape the set
+(added 2026-10-11; an older client that omits them gets the old behaviour): `excludeArtists`
+(up to 12 names the listener ruled out), `exploration` (`familiar` | `balanced` | `discover`,
+default `balanced`) and `shape` (`steady` | `build` | `wind` | `dynamic`, default `steady`; a
+planned order, never measured energy), and `playlistSources` (up to two playlists the listener
+explicitly selected, each with a name and up to 40 `{id, title, artist, language?}` track summaries).
+Playlist sources are used as seeds only for that DJ turn and are never saved by the endpoint. Any committed song credited, as whole words, to an
+excluded artist, or with no stream, is dropped; if none are left the turn becomes a `keep`. The API relays the key and this limited context to the
+selected provider over HTTPS for this request only; it does not persist either. The provider is
+allowlisted by the server, the key is never accepted in a URL, and requests are rate limited by
+their own per-client bucket, 20 a minute, separate from the Discovery bucket. Gemini uses Google's OpenAI-compatible chat-completions endpoint and its
+Gemini API key. A local model runs inside each client and does not call this endpoint; it can call
+the existing bounded catalog search path, but its inference and prompt stay on that device.
+
+The cloud provider may call only `get_session_context`, `search_catalog`, and `commit_dj_plan`.
+The first returns the supplied bounded session context. Search returns metadata for real playable
+catalog rows. Commit submits a validated intent, response, reaction, and catalog IDs returned by
+searches made during this turn. The API rejects IDs not returned by its own catalog tool and returns
+the corresponding real `UnifiedSong` records with one reason per song. Queue mode is limited to 8
+tracks; playlist mode can return up to the user's selected limit of 30. Playlist mode never applies
+the draft to the playback queue. The response shape is:
+
+```ts
+type DjTurn = {
+  reply: string;
+  session: { vibe: string; energy: number; language: string | null; constraints: string[] };
+  goal: 'mix' | 'playlist';
+  playlistName: string | null;
+  draftOperation: 'replace' | 'extend' | 'keep' | 'remove';
+  removeTrackIds: string[];
+  operation: 'replace_upcoming' | 'insert' | 'keep';
+  insertAfter: number | null;
+  reaction: 'neutral' | 'curious' | 'excited' | 'dreamy' | 'confused';
+  queue: { song: UnifiedSong; reason: string }[];
+};
+```
+
+The client owns session memory and queue application. For `mix`, `replace_upcoming` preserves the
+current song and replaces only upcoming DJ picks; `insert` adds the first returned song after
+`insertAfter` queued tracks; `keep` leaves the player queue untouched (for example, an explanation
+request). Starting a new set only begins playback after an explicit user action. For `playlist`,
+the client keeps an editable draft, lets the user remove or refine tracks, and saves the named,
+confirmed result through the existing playlist service in one action. Refinement may replace the
+draft, append catalog-backed tracks, preserve it, or remove only IDs from the submitted draft.
+Provider failures return
+friendly API errors and never include the upstream response body or the submitted key.
+
+This endpoint does not use the signed-in account token and does not save listening history. The
+client sends only the small context above and, when the listener asks for a playlist-based mix, the
+two selected playlists; it never sends the rest of the library or the account profile.
+
+### `POST /api/ai/dj/transcribe` and `POST /api/ai/dj/speak` (added 2026-10-10)
+The DJ's ears and voice with the listener's own key. The free paths need no server: the browser's
+speech recognition, Whisper running on the device, and the browser's own speech synthesis. These two
+routes exist only so a key never sits in the browser bundle; like the turn endpoint, the key is used
+for this one request and is never stored, logged, or accepted in a URL. Each route has its own per-client bucket, 30 a minute for transcribe and 30 a minute for speak,
+separate from the turn bucket, so a spoken request (transcribe, turn, speak) never draws on one allowance.
+
+```ts
+// transcribe: a short spoken request, as a 16-bit mono WAV (base64, at most ~700 KB decoded).
+// The route alone accepts a body up to 1 MB; every other route keeps the 32 KB limit.
+type TranscribeRequest = { provider: 'openai' | 'groq'; apiKey: string; model?: string; audio: string };
+type TranscribeData = { text: string };            // ApiResponse<TranscribeData>
+
+// speak: one reply, at most 600 characters, returned as base64 MP3.
+type SpeakRequest = { provider: 'openai' | 'elevenlabs'; apiKey: string; model?: string; voice?: string; text: string };
+type SpeakData = { audio: string; mime: 'audio/mpeg' };  // ApiResponse<SpeakData>
+```
+
+Defaults when `model`/`voice` are omitted: OpenAI transcription `gpt-transcribe`, Groq
+`whisper-large-v3-turbo`; OpenAI speech `gpt-4o-mini-tts` with voice `coral`, ElevenLabs
+`eleven_flash_v2_5` with the premade voice `JBFqnCBsd6RMkjVDRZzb`. `model` and `voice` are plain
+identifiers (letters, digits, `._:-/`). A provider refusal becomes plain copy: 401 for a rejected
+key, 429 for a limit, 400 for an unknown model or voice, 502 otherwise, 504 after 20 s. The
+provider's own error text never reaches the client.
+
 **Recording collapse (2026-09-21):** the provider lists one row per release, so the
 same song can appear ~20 times with different compilation covers. Search groups by
 recording identity (title without bracketed trailers + sorted artists), elects one
@@ -79,6 +163,26 @@ canonical row per group, and attaches the rest as `variants`. Election order:
 Over-fetches from the provider so `limit` is filled after collapse when possible.
 The UI may expose `variants` behind a small "N other versions" control — they are
 never listed as separate top-level search hits.
+
+**Relevance order (2026-10-06):** results keep the provider's order (Saavn before Gaana). Play
+count only elects the canonical row inside a recording group; it no longer re-sorts the list, so
+`kes` leads with Kesariya rather than the most-played song containing "kes".
+
+### `GET /api/search/suggest`
+`q` (required) · `limit`=8 (max 12)
+`→ ApiResponse<{ results: UnifiedSong[]; source: 'Saavn' }>`
+As-you-type search. Same relevance order and recording collapse as `/api/search`, without the
+release correction or the Gaana fallback, with a 4 s provider deadline. Rows are playable.
+Not personal: `Cache-Control: public, max-age=60, s-maxage=600, stale-while-revalidate=86400`, so
+the edge answers popular prefixes. Own rate-limit bucket (Typeahead, below).
+
+### `GET /api/radio/:songId` · Bearer optional
+`?languages=` (guests only; a signed-in listener's setting wins)
+`→ ApiResponse<{ candidates: { song: UnifiedSong; source: 'similar' | 'artist' | 'taste'; rank: number }[]; taste: { artists: { name: string; score: number }[]; languages: string[] } | null }>`
+Candidates for a song radio: the seed's suggestions, its lead artist's top songs, and (signed in,
+personalisation on) the listener's favourite artists in the seed's language. Never the seed itself.
+The client ranks them with `packages/shared/radio.ts` while the listener skips and finishes.
+`taste` is null for guests and when personalisation is off. Personal: `no-store`.
 
 ### `GET /api/songs/:id` → `ApiResponse<UnifiedSong>` · cache 6 h
 ### `GET /api/songs?ids=a,b,c` → `ApiResponse<UnifiedSong[]>` · batch hydrate
@@ -99,10 +203,46 @@ state's language's top songs (`packages/shared/regions.ts`); `trending` is repla
 catalog has at least 5 of them, and then `chart` says which state and language. Songs on the chart
 are dropped from the other two shelves.
 
+### `GET /api/charts/top?country=IN` → `ApiResponse<TopChartPayload>` — additive, 2026-10-17
+Today's most played songs in a country, as songs that play here. `country` is optional (default
+`IN`) and must be a two-letter storefront, else `400`. The server reads Apple's public most-played
+RSS feed for titles and artists only, finds each of the first 20 entries in the catalog with the
+import matcher's scoring (`exact` or `close`), and returns up to 10 in chart order; entries the
+catalog does not carry are skipped. Nothing from the feed (links, artwork, the Apple name) reaches
+the response, and the web shows it as plain "Top 10 today" rows that play like any other song.
+
+```ts
+interface TopChartPayload {
+  storefront: string;
+  available: boolean;          // false when the feed failed or fewer than 5 songs matched
+  updatedAt: string | null;    // the feed's own update time
+  songs: UnifiedSong[];        // playable, chart order; [] when not available
+}
+```
+
+A built chart is cached for an hour (`top-chart-v1:<storefront>`) and sent with
+`Cache-Control: public, max-age=300, s-maxage=3600, stale-while-revalidate=21600`. A chart that could
+not be built is a successful envelope with `available: false`, `no-store`, and is not cached, so the
+next request tries again. Browse falls back to the home payload's `trending` list then.
+
 ### `GET /api/artists/:name` → `ApiResponse<ArtistProfile>` · cache 6 h — added 2026-09-21
 Additive endpoint (no existing shape changed). `name` is the lead artist as shown on a song. Resolves the name through the provider's artist search (exact match preferred), then returns `ArtistProfile` from `packages/shared/types.ts`: a real `image` (500×500 photo or `null`), `isVerified`, `followerCount`, optional `bio`, `songs` (most popular first, all playable), `albums` (with cover + year) and `similar` artists. `404` when no artist matches.
 ### `GET /api/artists/faces?names=a,b,c` → `ApiResponse<ArtistSummary[]>` · cache 24 h — added 2026-09-21
 Up to 12 comma-separated names; returns `{ id, name, image }` for each one that has a photo. Unmatched names are simply omitted. Used for avatars on lists.
+
+### `GET /api/albums/:id` → `ApiResponse<AlbumDetail>` · cache 6 h — added 2026-10-11
+Additive endpoint. `id` is a song's `albumId` or an `AlbumSummary.id` (Saavn album ids, digits). Returns
+the catalog's whole album, in its own track order, every song playable through `/api/stream`:
+```ts
+interface AlbumSummary { id: string; name: string; artist: string; artwork: string | null; year: string | null; language: string | null }
+interface AlbumDetail extends AlbumSummary { songCount: number; songs: UnifiedSong[] }
+```
+`songCount` is the catalog's count; `songs` drops any row without a stream, so it can be shorter.
+`404` when the catalog has no such album.
+
+### `GET /api/search/albums?q=…&limit=8` → `ApiResponse<{ results: AlbumSummary[] }>` · cache 1 h — added 2026-10-11
+Albums by name from the catalog (Saavn), so a film's soundtrack and its singles are separate results
+with their own ids. `limit` 1–20. Empty → `success: true` with `results: []`.
 
 ### `GET /api/artwork`
 `title`, `artist`, `limit`=5 → `ApiResponse<{ urls: string[] }>` · cache 30 d
@@ -122,21 +262,97 @@ successful envelope) when no release qualifies or every provider is down. Provid
 tokens stay server-side. `MotionArtwork` is `{ source: 'Apple Music', videoUrl: string }`.
 
 ### `GET /api/lyrics` ⭐
-`songId`?, `title` (req), `artist` (req), `duration`?, `syncedOnly`=false
+`songId`?, `ref`? (additive), `title` (req), `artist` (req), `album`? / `language`? (additive,
+2026-10-17), `duration`?, `syncedOnly`=false
 `→ ApiResponse<LyricsPayload>`
 No lyrics anywhere → `404 { success: false, error: "No lyrics found for this song." }`
 Cache 30 d on hit, **24 h on miss**.
+
+`ref` is the song's SongRef (`saavn:<id>` / `gaana:<id>`, `fromAllegraSong` in packages/shared/songRef.ts).
+With it, **lyrics listeners synced come first**: the English (`latin`) version, else the song's own
+script, as `{ source: "Allegra (English)" | "Allegra (Tamil)" …, type: "synced", matchReason:
+"Synced by Allegra listeners" }`, word timings included. Without a synced version the providers run as
+below; when they have nothing and the ref is a Saavn song, **JioSaavn's own plain lyrics** answer
+(`source: "JioSaavn"`, `type: "plain"`). A request without `ref` behaves exactly as before.
+
+Owner clarification (2026-10-17): keep raw site words readable here as the plain fallback while
+listener alignment is being built. After the ~3 s provider grace period, JioSaavn plain words
+lead, followed by site text labelled "Found online (English)" / "Found online (Tamil)".
+Site names and URLs never reach the listener. Unsynced site text is excluded from Other lyrics.
 
 Sources: LRCLIB first, then Better Lyrics, LyricsPlus, Unison, Lyrica and KuGou asked together (each
 optional, synced preferred, in that order on a tie). **Answers within ~11 s**: a lookup still running
 then answers `404` and keeps going in the background, caching its result, so the client's retry gets
 it. The client treats `404` as "no lyrics" (an empty state), never as a connection error.
 
+### Listener lyric synchronization — additive, 2026-10-17
+
+The sources route also supports guests for local model alignment and preview. Sync submission and
+reporting require a signed-in account (401 without a session, 403 for guests). All three use the
+standard envelope, return `Cache-Control: no-store`, and have independent rate-limit buckets.
+
+- `GET /api/lyrics/sources?ref=saavn:<id>` → `{ song: { ref, title, artist, duration }, candidates }`.
+  Song metadata comes from the catalog. Each candidate is `{ id, origin: 'provider' | 'site' | 'manual',
+  source, url: null, script: 'latin' | 'native', language, lines: string[], synced: boolean }`.
+  Providers precede sites; already timed versions are marked `synced`. Site labels are
+  "Found online"; actual names and URLs stay server-side. Raw site text is also readable as
+  the plain Now Playing fallback, but excluded from alternatives. Candidates are cached for 24 hours.
+  IDs are content hashes bound to the recording and source; a cold instance re-fetches the
+  canonical candidate and verifies its hash before accepting a submission.
+- `POST /api/lyrics/sync` accepts exactly `{ ref, versions: [{ candidateId, script,
+  wordTimes: [{ start, end, filler? }], confidence }] }`, one or two distinct scripts.
+  `filler` is an optional boolean marking a word without reliable acoustic alignment.
+  Times are seconds, finite, nonnegative, non-overlapping, with `end > start`, and bounded by
+  the catalog duration. Every server-held whitespace-delimited word needs one entry.
+  At least 70% of lines must have all words non-filler; confidence must be in [0.7, 1].
+  Extra keys, client words/LRC/source URLs, wrong counts/scripts, and stale or foreign candidate
+  IDs are rejected with 400; missing catalog recordings return 404. All versions are validated
+  before any write. The server builds enhanced LRC using its own words and records authenticated
+  ownership. Returns `{ versions: [{ script, saved }] }`; `saved: false` means an equal or better
+  live version already exists. Writes are idempotent per script; retry if storage fails mid-request.
+- `POST /api/lyrics/report` accepts exactly `{ ref, script }` → `{ found, hidden }`.
+  Each account counts once; three distinct reports hide that version. Successful save/report
+  invalidates this instance's verified-lyrics memo. Other instances reconcile within 60 seconds.
+- `POST /api/lyrics/paste` (additive, 2026-10-20) accepts exactly `{ ref, text, passcode }` from a
+  signed-in account → one candidate with `origin: 'manual'`, `synced: false`. Convex checks the
+  passcode against `LYRICS_ADMIN_PASSCODE_SHA256` (5 attempts per account and 60 in all per five
+  minutes) and keeps the cleaned Latin-script words for that account and recording; the passcode
+  is never stored. A refused passcode or exhausted limit is a 400 with one message for both.
+  Its `candidateId` is accepted by `/lyrics/sync` for the same account and recording, so the
+  usual preview and "Yes, save timing" share it. The sources route answers within a bounded wait:
+  when site words arrive, slow providers get 0.5 s more rather than the full budget.
+
 ### `GET /api/lyrics/alternatives` — additive
-`title` (req), `artist` (req), `duration`?, `syncedOnly`=false
+`ref`? (additive), `title` (req), `artist` (req), `album`? / `language`? (additive), `duration`?, `syncedOnly`=false
 `→ ApiResponse<LyricsPayload[]>`
 
 Runs only when the listener opens **Other lyrics**. Returns up to six usable, de-duplicated renderings (synced first) from every configured source: LRCLIB, Better Lyrics, LyricsPlus, Unison (up to five of its ranked entries), Lyrica and KuGou (up to three candidates); every item is a complete `LyricsPayload`, so selecting it requires no follow-up provider request. Two entries with the same opening words and type count as one. When a source says which recording it filed an item under, its `matchReason` starts with it (`Artist — Title • …`) so the picker can tell them apart. Sources get the same ~11 s budget; a list missing a slow source is returned but not cached. The normal `/api/lyrics` cascade stays the fast default. An empty array is a successful response: no alternative match was found. Cache 24 h on hit, 6 h on miss.
+
+With `ref`, the list **starts with every listener-synced version** (English, then the song's own
+script) and then JioSaavn's plain lyrics for a Saavn song, ahead of the providers' six. Those leading
+items are never cached with the list, so a new sync shows up within a minute. Raw site words
+are reserved for the sync finder and do not appear in this list.
+
+### `GET /api/lyrics/verified` — additive
+`ref`? or `title` + `artist`, `duration`? (one of `ref` / `title` required, else `400`)
+`→ ApiResponse<VerifiedLyrics | null>` · `Cache-Control: public, max-age=60`
+
+The lyrics listeners synced and confirmed for a song, for clients that run their own provider cascade
+(the phone). By `ref`; a song with no ref (a download) is matched by `matchKey(title, artist)` and must
+last within 3 s of the synced recording. `data: null` means nobody has synced it yet (still `200`).
+
+```ts
+interface VerifiedLyrics {
+  ref: string; title: string; artist: string; duration: number; // seconds
+  versions: Array<{
+    script: 'latin' | 'native'; // latin first
+    language: string;           // ISO 639-1, "ta"
+    lrc: string;                // enhanced LRC: [mm:ss.xx] per line, <mm:ss.xxx> per word
+    syncedAt: number;           // epoch ms
+  }>;
+}
+```
+Hidden (reported or moderated) versions are left out; where the words came from is never returned.
 
 ### `GET /api/stream/:songId` ⭐⭐ — not JSON
 Returns **audio bytes**.
@@ -171,6 +387,14 @@ POST   /api/me/recently-played         { songId, playDuration, playedAt? }
                                       or { songRef, song?, playDuration, playedAt? }
 GET/PATCH /api/me/settings
 ```
+
+**When a listen enters Recently played (2026-10-31, both clients).** The device that actually plays the
+song posts it once `LISTEN_RULES.historyAfterSec` (5) seconds have been heard, however playback started:
+a pick, auto-advance, radio, DJ, Connect or LuvLink. A Connect controller or a LuvLink controller-only
+member hears nothing and posts nothing; each LuvLink member whose device plays posts their own listen.
+`playedAt` is when the listen started and is the event's key: a retried post is idempotent, an older
+offline post never replaces a newer one, and the listen signal sent when the song is left
+(`POST /api/me/taste/signal`, same `playedAt`) lands on that row.
 
 `Library` is additive: optional `coverKey` (a Convex storage id) and derived `coverUrl`. `coverUrl` is
 never persisted; the API resolves it from Convex on read. `PATCH` accepts the `coverKey` returned by
@@ -281,9 +505,9 @@ fresh guest session.
 
 | Endpoint | Auth | Body → response |
 |---|---|---|
-| `GET /api/me/taste` | Bearer | → `{ topArtists: {name,score}[] (<=12), languages: {name,score}[] (<=5), signals: number, onboarded: boolean }` |
-| `POST /api/me/taste/seed` | Bearer | `{ artists: string[] (<=30), languages: string[] (<=8) }` → same as `GET`. Onboarding: strong weight, sets `onboarded: true`. |
-| `POST /api/me/taste/signal` | Bearer | `{ songId, seconds, playedAt? }` or `{ songRef, song?, seconds, playedAt? }` → `204`. `playedAt` is an ISO timestamp and is recommended; the most-played tally needs it to ignore repeated delivery. How long a song was really listened to: `<10 s` counts against the artist, most of a song counts for them. |
+| `GET /api/me/taste` | Bearer | → `{ topArtists: {name,score}[] (<=12), languages: {name,score}[] (<=5), genres: MusicGenreId[] (<=10), signals: number, onboarded: boolean }` |
+| `POST /api/me/taste/seed` | Bearer | `{ artists: string[] (<=30), languages: string[] (<=8), genres?: MusicGenreId[] (<=10) }` → same as `GET`. Onboarding: strong weight, sets `onboarded: true`. Older clients may omit `genres`; older taste records read as an empty list. |
+| `POST /api/me/taste/signal` | Bearer | `{ songId, seconds, playedAt? }` or `{ songRef, song?, seconds, playedAt? }` → `204`. `playedAt` is an ISO timestamp and is recommended; the most-played tally needs it to ignore repeated delivery. Additive 2026-10-06: optional `exit` (`'ended' \| 'skipped' \| 'paused' \| 'switched'`) and `exitPositionSec`. With `exit`, `packages/shared/listenSignal.ts` decides: heard out or left in the last 15 s counts for the artist, left inside 30 s counts against, anything between is neutral. Without it, the older rule: `<10 s` counts against the artist, most of a song counts for them. |
 
 Taste is also updated **automatically** by existing routes. Legacy songId writes resolve through the catalog; provider-aware writes include a validated `SongSnapshot`, so Gaana plays train the same account taste without a colliding bare ID. Recent rows retain the ref and snapshot for account history and recommendation seeds. The artist profile remains as described above; separately, the most-played tally stores at most 200 song identities, adds listened minutes (or −1 for a skip under 10 seconds), +10 once for a native like, and +5 for a native playlist add. Tally weights halve every 45 days. A future `playedAt` is clamped to server time; a signal older than 30 days is ignored by the tally.
 
@@ -292,6 +516,12 @@ and `cumulativeSeconds` (finite 0–7200). New clients reuse the ID and original
 and send cumulative heard seconds. The tally applies only the newly heard amount. Dedupe is
 bounded to the last 16 checkpoints per retained song; older clients retain timestamp dedupe.
 Learning preference is checked authoritatively when accepting writes and publishing a Blend.
+
+`genres` (additive, 2026-10-12) are the listener's own picks from onboarding, as `MusicGenreId`
+from `packages/shared/genres.ts`: one of `bollywood`, `pop`, `hiphop`, `punjabi`, `indie`,
+`electronic`, `rnb`, `retro`, `southindian` or `acoustic`. Unknown ids are dropped, duplicates
+collapse. They are never inferred from or written by listening signals, and survive merges, plays
+and import seeds.
 
 ### Sharing a playlist
 
@@ -463,9 +693,21 @@ Stable source IDs, timestamps and destination IDs make response-loss retries saf
 find new songs inserted at the top; transfer adds songs and preserves local edits. Daily work runs
 durably in Convex with bounded steps and a per-account/playlist lease. A daily run skips a playlist
 whose Spotify `snapshot_id` hasn't changed since its last finished scan; manual sync always rescans.
-The internal `POST /api/internal/spotify/daily` (server secret only) answers `{ more }`; Convex calls
-again while `more` is true. Account erase removes all
-connections/checkpoints. Missing configuration is an explicit unavailable state.
+The internal `POST /api/internal/spotify/daily` (server secret only) takes `{ userId, runStartedAt? }`
+and answers `{ more }`; Convex calls again while `more` is true. `runStartedAt` (ms) names the day's
+run: each playlist is marked with it once finished or skipped, so continuation calls reach every
+enabled playlist once, least recently checked first. Without it the API uses the start of the
+current UTC day (an older scheduler). Accounts are paged 100 at a time and started two seconds
+apart. A `5xx` on one playlist defers it behind the run's untried playlists and the call answers
+the error only once nothing else is left, so Convex retries it after the clamped `Retry-After`;
+`429` (app-wide) and `401` (disconnected or reconnected) stop the account at once; `400/403/404/409`
+skip that playlist for the day. Every connect and disconnect bumps a connection generation, and each step's playlist, lease,
+checkpoint and token writes carry the generation it started under, so a step in flight across a
+disconnect or reconnect writes nothing afterwards (a library write already sent before the
+disconnect stays; it is the listener's own idempotent import). Disconnect keeps only an empty
+tombstone (account ID and generation) and can't be re-enabled for daily runs without reconnecting.
+Account erase removes all connections, tombstones and checkpoints. Missing configuration is an
+explicit unavailable state.
 
 ## Errors
 
@@ -491,7 +733,8 @@ A `429` carries `Retry-After` / `RateLimit` headers and the envelope above.
 | Plays | `POST /api/me/recently-played` | 30 |
 | Writes | non-GET `/api/me/*`, `/api/libraries*`, `/api/shared*` | 60 |
 | Lookup | `/api/search`, `/api/lyrics*`, `/api/artists*` | 90 |
-| Discovery | `/api/ai/*`, `/api/lyrics/translate`, `/api/recommendations` | 20 |
+| Typeahead | `GET /api/search/suggest` | 240 |
+| Discovery | `/api/ai/*`, `/api/lyrics/translate`, `/api/recommendations`, `/api/radio/*` | 20 |
 | Uploads | `/api/uploads/*` | 10 |
 | Guests | `POST /api/auth/guest`, `POST /api/auth/anon` (each creates a profile) | 10 |
 | Auth / OAuth | `/api/auth/*`, `/api/oauth/*` | 30 |

@@ -77,6 +77,12 @@ export class MemoryTransport implements ConnectTransport {
   private reservationSequence = 0;
   /** Simulate an unavailable transport endpoint. A dropped reply is applied before it is lost. */
   online = true;
+  /**
+   * Test hook: a network between the devices and this backend, in real milliseconds. A call waits
+   * `upMs` before it applies and `downMs` before it answers; a state change reaches each watcher
+   * `pushMs` later, as a Convex query update does. Off (all zero) by default.
+   */
+  network = { upMs: 0, downMs: 0, pushMs: 0 };
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -331,9 +337,11 @@ export class MemoryTransport implements ConnectTransport {
       };
 
       const ownerId = state.activeDeviceId;
-      // An owner Presence has given up on cannot confirm a pause: the transfer goes ahead without it.
-      const ownerOnline = ownerId !== undefined && this.devices.get(ownerId)?.isOnline === true;
-      if (ownerId !== undefined && ownerId !== deviceId && state.isPlaying && ownerOnline) {
+      // An owner Presence has given up on cannot confirm a pause, and a V2 owner pauses itself on
+      // losing ownership: only an online legacy owner is waited for (convex/connect.ts prepareV2).
+      const owner = ownerId === undefined ? undefined : this.devices.get(ownerId);
+      const waitForOwner = owner?.isOnline === true && owner.protocolVersion < V2;
+      if (ownerId !== undefined && ownerId !== deviceId && state.isPlaying && waitForOwner) {
         const current = state.handoff;
         if (current && current.commandId !== row.id) {
           const replaced = this.commands.get(current.commandId);
@@ -438,10 +446,11 @@ export class MemoryTransport implements ConnectTransport {
   }
 
   private async invoke<T>(operation: MemoryOperation, apply: () => T): Promise<T> {
-    const delay = this.operationDelays.get(operation)?.shift() ?? 0;
+    const delay = (this.operationDelays.get(operation)?.shift() ?? 0) + this.network.upMs;
     if (delay > 0) await new Promise<void>((resolve) => setTimeout(resolve, delay));
     if (!this.online) throw connectError('offline');
     const value = apply();
+    if (this.network.downMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, this.network.downMs));
     const remainingDrops = this.droppedReplies.get(operation) ?? 0;
     if (remainingDrops > 0) {
       if (remainingDrops === 1) this.droppedReplies.delete(operation);
@@ -690,7 +699,13 @@ export class MemoryTransport implements ConnectTransport {
     for (const [deviceId, listeners] of this.listeners) {
       const value = this.snapshot(deviceId);
       for (const listener of [...listeners]) {
-        try { listener(value); } catch { /* A subscriber cannot roll back a committed test mutation. */ }
+        const deliver = (): void => {
+          // A watch stopped while its update was on the way never hears it.
+          if (!this.listeners.get(deviceId)?.has(listener)) return;
+          try { listener(value); } catch { /* A subscriber cannot roll back a committed test mutation. */ }
+        };
+        if (this.network.pushMs > 0) setTimeout(deliver, this.network.pushMs);
+        else deliver();
       }
     }
   }

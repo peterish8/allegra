@@ -7,7 +7,6 @@ import type { CSSProperties } from 'react';
 
 import type { UnifiedSong } from '@shared/types';
 
-import { CoverFlow } from './CoverFlow';
 import { PlaylistControls } from './PlaylistControls';
 import { SongCard } from './SongCard';
 import { EmptyState, SkeletonCard, TactileButton } from './ui';
@@ -51,8 +50,8 @@ interface CollectionPageProps {
 }
 
 /**
- * A playlist or the Liked Songs list. The hero leads with the collection on a cover shelf — the
- * centred song facing you, its neighbours turned away — and the full track list sits under it.
+ * A playlist or the Liked Songs list, laid out like an album: the cover leads (its own, else a
+ * mosaic of its songs), then the title, Play and Shuffle, and every song in order under it.
  */
 export function CollectionPage({ kind, title, songs, loading, currentSongId, isPlaying, likedIds, onToggle, onPlayTrack, onPlayAll, onLike, onOpenAlbum, onDiscover, onDelete, share, cover, ownerName, onSaveCopy, coverUrl, sharedCode }: CollectionPageProps) {
   const [palette, setPalette] = useState<Palette | null>(null);
@@ -94,29 +93,29 @@ export function CollectionPage({ kind, title, songs, loading, currentSongId, isP
   } as CSSProperties;
 
   const Icon = kind === 'liked' ? Heart : ListMusic;
-  const showCustomHero = Boolean(customCover);
+  // Without a cover of its own, four different songs make a 2×2 mosaic; fewer, the first one leads.
+  const mosaic = useMemo(() => {
+    const covers: string[] = [];
+    for (const song of songs) {
+      if (song.artwork && !covers.includes(song.artwork)) covers.push(song.artwork);
+      if (covers.length === 4) break;
+    }
+    return covers;
+  }, [songs]);
 
   return (
     <div className="artist-page collection-page">
-      <header className={`artist-hero collection-hero ${!showCustomHero && songs.length > 0 ? 'collection-hero--flow' : ''}`} style={heroStyle}>
-        {showCustomHero ? (
-          <div className="artist-cover collection-custom-cover" aria-hidden="true">
-            <img src={customCover ?? undefined} alt="" />
+      <header className="artist-hero collection-hero" style={heroStyle}>
+        {/* The cover is the page's face, as on an album: its own colours glow softly behind it. */}
+        <div className="collection-cover" aria-hidden="true">
+          <span className="collection-cover__glow" />
+          <div className={`collection-cover__art${!customCover && mosaic.length === 4 ? ' is-mosaic' : ''}`}>
+            {customCover ? <img src={customCover} alt="" />
+              : mosaic.length === 4 ? mosaic.map((url) => <img key={url} src={url} alt="" />)
+              : mosaic[0] ? <img src={mosaic[0]} alt="" />
+              : <span className="collection-empty-cover"><Icon size={72} strokeWidth={1.25} /></span>}
           </div>
-        ) : songs.length === 0 ? (
-          <div className="artist-cover artist-cover--mosaic is-sparse" aria-hidden="true">
-            <span className="collection-empty-cover"><Icon size={72} strokeWidth={1.25} /></span>
-          </div>
-        ) : (
-          <CoverFlow
-            songs={songs}
-            currentSongId={currentSongId}
-            isPlaying={isPlaying}
-            label={`${title} covers`}
-            onPlay={(song) => onPlayTrack(song, queue)}
-            onToggle={onToggle}
-          />
-        )}
+        </div>
         <div className="artist-hero-copy">
           <span className="artist-sheet-eyebrow">{kind === 'liked' ? 'Your collection' : kind === 'shared' ? `Shared by ${ownerName ?? 'a listener'}` : 'Playlist'}</span>
           <div className="page-title-row"><h1>{title}</h1>{kind === 'liked' ? <InfoTour label="About Liked Songs" steps={LIKED_TOUR} stage={likedScene} /> : kind === 'playlist' ? <InfoTour label="About playlists" steps={PLAYLIST_TOUR} stage={playlistScene} /> : null}</div>
@@ -125,7 +124,7 @@ export function CollectionPage({ kind, title, songs, loading, currentSongId, isP
             {songs.length > 0 ? (
               <>
                 <TactileButton variant="primary" icon={collectionPlaying ? Pause : Play} onClick={() => { if (collectionIsCurrent) onToggle(); else onPlayAll(false); }}>{collectionPlaying ? 'Pause' : 'Play'}</TactileButton>
-                <TactileButton variant="secondary" icon={Shuffle} onClick={() => onPlayAll(true)}>Shuffle</TactileButton>
+                <TactileButton variant="secondary" icon={Shuffle} className="collection-shuffle" title="Shuffle" onClick={() => onPlayAll(true)}>Shuffle</TactileButton>
               </>
             ) : null}
             {onSaveCopy ? (

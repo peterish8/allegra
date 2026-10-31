@@ -12,8 +12,8 @@
 /** CustomTabBar / ModernPillTabBar content height. */
 export const TAB_BAR_HEIGHT = 64;
 
-/** Collapsed height of the classic (bar-style) mini player. */
-export const CLASSIC_MINI_PLAYER_HEIGHT = 70;
+/** Collapsed height of the classic (bar-style) mini player: a thin, square-cornered strip. */
+export const CLASSIC_MINI_PLAYER_HEIGHT = 58;
 
 /**
  * Total bottom chrome to clear, given what is actually on screen.

@@ -232,3 +232,10 @@ test('collapseRecordings prefers the studio album over a World Music Day shell',
   assert.equal(collapsed[0]?.id, 'ashiqui');
   assert.equal(collapsed[0]?.album, 'Aashiqui 2');
 });
+
+// 2026-10-17: a label playlist the compilation list does not name ("Arijit's Aura") outranked the film on plays.
+test('the release a song names wins over any play count, even from an unlisted playlist album', () => {
+  const playlist = makeSong({ id: 'aura', title: 'Tum Hi Ho (From "Aashiqui 2")', artist: 'Arijit Singh', album: "Arijit's Aura", playCount: 90_000_000 });
+  const film = makeSong({ id: 'film', title: 'Tum Hi Ho (From "Aashiqui 2")', artist: 'Arijit Singh', album: 'Aashiqui 2 (Original Motion Picture Soundtrack)', playCount: 1_000_000 });
+  assert.equal(collapseRecordings([playlist, film])[0]?.id, 'film');
+});

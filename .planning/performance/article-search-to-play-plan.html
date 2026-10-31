@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Measured Performance Plan</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #09090b;
+    --line: #303038; --ink: #f4f4f5; --muted: #a1a1aa;
+    --soft: #71717a; --green: #b8f36b; --blue: #8ab4ff;
+    --amber: #f5c66e;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background:
+      radial-gradient(ellipse at 82% 0%, rgba(138,180,255,.10), transparent 33rem),
+      radial-gradient(ellipse at 8% 18%, rgba(184,243,107,.055), transparent 28rem),
+      var(--bg);
+    color: var(--ink); font: 14px/1.55 var(--sans);
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .14;
+    background-image: radial-gradient(#707078 0.65px, transparent 0.65px);
+    background-size: 18px 18px; mask-image: linear-gradient(to bottom, black, transparent 72%);
+  }
+  .shell { max-width: 1120px; margin: auto; padding: 26px 30px 72px; position: relative; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 11px; font: 600 12px var(--mono); letter-spacing: .09em; color: #d4d4d8; text-transform: uppercase; }
+  .brand-mark { width: 18px; height: 18px; border: 1.5px solid var(--green); transform: rotate(45deg); border-radius: 4px; box-shadow: 0 0 18px #b8f36b35; }
+  .meta { color: var(--muted); font: 11px var(--mono); display: flex; gap: 16px; }
+  .eyebrow { color: var(--green); font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+  .hero { padding: 54px 0 30px; max-width: 820px; }
+  h1 { margin: 13px 0 13px; font-size: clamp(34px, 5vw, 58px); line-height: 1.02; letter-spacing: -.055em; font-weight: 620; }
+  .subtitle { color: #b4b4bd; max-width: 700px; font-size: 16px; }
+  .status { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid #74612f; border-radius: 999px; background: #302713; color: var(--amber); font: 11px var(--mono); text-transform: uppercase; letter-spacing: .04em; }
+  .status i { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 12px var(--amber); }
+  .section-label { color: var(--soft); font: 10px var(--mono); text-transform: uppercase; letter-spacing: .13em; margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 13px; }
+  .card { background: linear-gradient(145deg, #151519, #101013); border: 1px solid var(--line); border-radius: 13px; padding: 19px; min-width: 0; box-shadow: 0 9px 30px #0002; }
+  .metric { grid-column: span 4; min-height: 148px; }
+  .metric .name { color: var(--muted); font: 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+  .metric strong { display: block; margin: 15px 0 4px; font: 500 clamp(27px,4vw,38px)/1 var(--mono); letter-spacing: -.06em; }
+  .metric small { color: var(--soft); font: 11px var(--mono); }
+  .metric.baseline strong { color: var(--blue); }
+  .metric.goal strong { color: var(--green); }
+  .metric.confidence strong { color: var(--amber); font-size: 23px; letter-spacing: -.03em; }
+  .journey { grid-column: span 12; padding: 21px 22px 16px; }
+  .journey-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; }
+  .journey-head h2, .card h2 { margin: 0; font-size: 16px; letter-spacing: -.02em; font-weight: 570; }
+  .journey-head p { margin: 6px 0 0; color: var(--muted); }
+  .flow { display: grid; grid-template-columns: 1fr 70px 1fr 70px 1fr; align-items: center; gap: 4px; margin: 24px 3px 7px; }
+  .node { border: 1px solid #3b3b45; background: #19191e; min-height: 74px; border-radius: 12px; padding: 12px 14px; position: relative; transform: rotate(-.25deg); }
+  .node:nth-of-type(2) { transform: rotate(.35deg); border-color: #53637b; }
+  .node:nth-of-type(3) { transform: rotate(-.4deg); border-color: #566c3b; }
+  .node small { display: block; color: var(--soft); font: 9px var(--mono); letter-spacing: .1em; margin-bottom: 5px; text-transform: uppercase; }
+  .node b { font-size: 13px; font-weight: 550; }
+  .connector { width: 100%; height: 34px; overflow: visible; }
+  .connector path { fill: none; stroke: #777783; stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 3 3; }
+  .details { grid-column: span 7; }
+  .scope { grid-column: span 5; }
+  .evidence { grid-column: span 6; }
+  .guardrails { grid-column: span 6; }
+  .verify { grid-column: span 12; }
+  .rows { margin-top: 15px; display: grid; gap: 0; }
+  .row { display: grid; grid-template-columns: 145px 1fr; gap: 15px; padding: 10px 0; border-top: 1px solid #25252b; }
+  .row:first-child { border-top: 0; }
+  .row label { color: var(--soft); font: 10px var(--mono); text-transform: uppercase; letter-spacing: .05em; }
+  .row p { margin: 0; color: #d4d4d8; }
+  .tag { display: inline-flex; border: 1px solid #373740; border-radius: 6px; padding: 3px 7px; color: #c9c9d0; font: 10px var(--mono); margin: 2px 4px 2px 0; }
+  .checklist { list-style: none; margin: 14px 0 0; padding: 0; }
+  .checklist li { display: flex; gap: 10px; padding: 7px 0; border-top: 1px solid #25252b; color: #d4d4d8; }
+  .checklist li::before { content: "↳"; color: var(--green); font: 14px var(--mono); }
+  .decision { grid-column: span 12; display: flex; justify-content: space-between; align-items: center; gap: 22px; border-color: #575033; background: linear-gradient(110deg,#211d13,#131317 72%); }
+  .decision p { color: #c4c0b4; margin: 5px 0 0; }
+  .decision-code { color: var(--amber); font: 11px var(--mono); text-align: right; white-space: nowrap; }
+  footer { display: flex; justify-content: space-between; gap: 20px; padding-top: 20px; color: var(--soft); font: 10px var(--mono); }
+  @media (max-width: 760px) {
+    .shell { padding: 18px 16px 44px; }
+    header { align-items: flex-start; flex-direction: column; gap: 9px; }
+    .hero { padding-top: 38px; }
+    .metric { grid-column: span 12; min-height: 110px; }
+    .details,.scope,.evidence,.guardrails { grid-column: span 12; }
+    .flow { grid-template-columns: 1fr; gap: 4px; margin-top: 18px; }
+    .connector { height: 28px; width: 55px; margin: auto; transform: rotate(90deg); }
+    .row { grid-template-columns: 1fr; gap: 3px; }
+    .decision { align-items: flex-start; flex-direction: column; }
+    .decision-code { text-align: left; }
+    footer { flex-direction: column; }
+  }
+  @media print {
+    body { background: #09090b !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    .shell { max-width: none; padding: 12mm; }
+    .card { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header>
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span> Performance / Review Plan</div>
+    <div class="meta"><span>Allegra web + LuvLyrics Android</span><span>06 Oct 2026</span><span>PERF-01</span></div>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">One journey · one measurable improvement</div>
+    <h1>Less waiting.<br>Measure search to play.</h1>
+    <p class="subtitle">Apply the article’s loop to one listening journey on both platforms: measure the wait, profile its largest cost, propose one focused fix, then repeat the same measurement. Its 3× result is not an Allegra prediction.</p>
+    <div class="status"><i aria-hidden="true"></i> Measurement approved · baseline in progress</div>
+    <p class="subtitle" style="font-size:12px;margin-top:12px"><a href="./HANDOFF.md">Current handoff</a> · <a href="./CHECKLIST.md">Progress checklist</a></p>
+  </section>
+
+  <div class="section-label">The measurement</div>
+  <section class="grid" aria-label="Performance measurements">
+    <article class="card metric baseline">
+      <div class="name">Current baseline</div>
+      <strong>Not captured</strong>
+      <small>0 comparable runs · end-to-end baseline missing</small>
+    </article>
+    <article class="card metric goal">
+      <div class="name">Success target</div>
+      <strong>Reliable baseline</strong>
+      <small>Attribute UI, network and playback costs before setting a speed target</small>
+    </article>
+    <article class="card metric confidence">
+      <div class="name">Evidence confidence</div>
+      <strong>Low for causation</strong>
+      <small>Structural candidates identified; runtime evidence missing</small>
+    </article>
+
+    <article class="card journey">
+      <div class="journey-head">
+        <div>
+          <div class="section-label">User journey / benchmark boundary</div>
+          <h2>Search for a song → tap a result → playback starts</h2>
+          <p>Use the same fixed query, provider-qualified recording and result count on web and Android. Measure local listening first; Connect-controlled playback is a separate journey. Separate cold and warm runs.</p>
+        </div>
+        <span class="tag">Website + Android</span>
+      </div>
+      <div class="flow" aria-label="Journey start, observed bottleneck, and intended outcome">
+        <div class="node"><small>Start · final keystroke</small><b>Enter a fixed song query</b></div>
+        <svg class="connector" viewBox="0 0 70 34" aria-hidden="true"><path d="M3 17 C19 12, 42 22, 62 16 M55 10 L63 16 L55 22"/></svg>
+        <div class="node"><small>Evidence · UI / network / player</small><b>Dominant cost still unknown</b></div>
+        <svg class="connector" viewBox="0 0 70 34" aria-hidden="true"><path d="M3 17 C18 23, 41 11, 62 17 M55 11 L63 17 L55 23"/></svg>
+        <div class="node"><small>Finish · first playback</small><b>Selected song begins playing</b></div>
+      </div>
+    </article>
+
+    <article class="card details">
+      <div class="section-label">Run conditions</div>
+      <h2>Can we compare the runs fairly?</h2>
+      <div class="rows">
+        <div class="row"><label>Build / commit</label><p>HEAD 0e0c271ac49eeec0eca9a102a7f04ff44d4989e7. Existing mobile navigation/version edits and audit artifacts are present. Preserve them; record the measured diff and exact APK build identity.</p></div>
+        <div class="row"><label>Device / runtime</label><p>Record web browser/version, Windows machine and viewport. Android: physical device model, OS, refresh rate and APK commit/release status. adb currently lists no device. Device/browser versions remain unknown.</p></div>
+        <div class="row"><label>Network / data</label><p>Local :8080 health check failed. After approval use development backend with production-mode web/release mobile where available. Record query, provider, result count, library size, network and cache state. Keep fake-provider and live-provider runs distinct.</p></div>
+        <div class="row"><label>Method</label><p>Measure final keystroke → results painted and tappable, tap → first playback, and the complete journey under a fixed tap procedure. Separately attribute debounce, request, UI render and player readiness using each client’s monotonic clock. Readiness is a proxy; confirm audible start on the phone.</p></div>
+      </div>
+    </article>
+
+    <article class="card scope">
+      <div class="section-label">Proposed slice</div>
+      <h2>Change one measured cost</h2>
+      <div class="rows">
+        <div class="row"><label>Evidence</label><p>No comparable search-to-play profile established. docs/workflows.md has opt-in Connect timing, explicitly excluding audible/native acceptance. Source already has phone performance tiers and visual budgets.</p></div>
+        <div class="row"><label>Change</label><p>Measurement only: browser/native profiles plus minimal opt-in development timing marks where existing tools leave gaps. Keep records local, bounded and removable; no session replay. Present baseline and hot-span attribution before proposing an optimization.</p></div>
+        <div class="row"><label>Out of scope</label><p>Startup rewrites, whole-app state refactors, caching infrastructure, provider replacements, native migration, CI ratchets and deployment. Startup, lyrics/scrolling and Connect follow as separate measured slices.</p></div>
+        <div class="row"><label>Trade-off</label><p>Profiling adds overhead, so collect unprofiled timing runs too. Provider latency varies and ordinary requests consume rate limits. No paid monitors, production load or new service is proposed.</p></div>
+      </div>
+    </article>
+
+    <article class="card evidence">
+      <div class="section-label">What supports this plan?</div>
+      <h2>Evidence, not guesswork</h2>
+      <ul class="checklist">
+        <li>User-pasted article: How we made claude.ai 3x faster in two weeks. Apply its journey boundaries, profiling, narrow changes, repeat measurements and evidence-backed regression controls.</li>
+        <li>Search ends when usable results paint, not at HTTP completion. Playback readiness and actual audible start are different. Track tap-to-play separately so search, human input and provider delays do not hide UI cost.</li>
+        <li>ClientShell.tsx:9 disables SSR; App.tsx:113–1770 owns substantial UI state. These are hypotheses about startup/render cost, not measured causes. Providers, debounce, library work or native buffering may dominate. No startSpan hits in indexed code does not prove all telemetry is absent.</li>
+      </ul>
+    </article>
+
+    <article class="card guardrails">
+      <div class="section-label">Must remain true</div>
+      <h2>Success with guardrails</h2>
+      <ul class="checklist">
+        <li>Keep recording identity, results, downloads, likes and Connect routing correct. Play/pause/seek/next remain correct. Web navigation preserves its single audio element and Range responses remain 206.</li>
+        <li>Retain reduced motion, visual budgets and background playback. Watch battery, memory, repeated requests and buffering. Timing records must exclude tokens, lyric text and personal library payloads.</li>
+        <li>Repeat the actual journey and correctness checks after a proven fix. Only gate rendering/request counts if stable and correlated with elapsed time. Synthetic frame rates require real-device confirmation.</li>
+      </ul>
+    </article>
+
+    <article class="card verify">
+      <div class="section-label">After approval</div>
+      <h2>Same journey before and after</h2>
+      <div class="rows">
+        <div class="row"><label>Repeat</label><p>Start with 20 unprofiled warm repeats and 10 controlled cold repeats per platform. Report median, IQR and range, increasing samples if variation obscures the decision. Small lab samples do not establish production tail percentiles.</p></div>
+        <div class="row"><label>Compare</label><p>First deliver reproducible timing and attribution, explicitly marking missing evidence. Later report absolute milliseconds and relative improvement under identical conditions; accept gains only beyond baseline variation. No promised 3× or 120 fps.</p></div>
+        <div class="row"><label>Checks</label><p>After instrumentation/fixes run root typecheck, lint and tests; mobile:check when mobile changes. Inspect web at 360 / 768 / 1280 / 1920 and the chosen physical phone. Follow APK version-bump rules for changes reaching main.</p></div>
+      </div>
+    </article>
+
+<article class="card verify">
+<div class="section-label">Article → Allegra</div><h2>Techniques to evaluate after the baseline</h2>
+<div class="rows">
+<div class="row"><label>Render less</label><p>Profile web root updates and phone store subscriptions. Isolate frequently changing position/lyrics state only if traces show unrelated views re-rendering.</p></div>
+<div class="row"><label>Load less early</label><p>Measure startup as the next journey. Compare the client-only shell, phone startup preloading and first usable controls before considering server-rendered content or deferred optional panels.</p></div>
+<div class="row"><label>Shorten waits</label><p>Trace catalog, search and stream overlap. Preserve timeout/fallback behavior; prefetch only when gains justify bandwidth and battery use.</p></div>
+<div class="row"><label>Protect wins</label><p>Keep a repeatable benchmark after a measured improvement. DOM/render/request counts need correlation with real wait time. Desktop code-cache and chat-specific regex tricks require an actual Allegra hot path.</p></div>
+</div></article>    <article class="card decision">
+      <div>
+        <div class="section-label">Decision status</div>
+        <h2>Measurement slice approved</h2>
+        <p>The user approved baseline collection and minimal local instrumentation for this journey on both platforms. A separate reviewed optimization plan is still required before any behavior change. Physical Android connection is needed for native acceptance.</p>
+      </div>
+      <div class="decision-code">MEASUREMENT APPROVED<br>OPTIMIZATION NEEDS REVIEW</div>
+    </article>
+  </section>
+
+<!-- implementation-detail-start --><div class="section-label" style="margin-top:40px">Detailed implementation / proposal</div><section class="grid" aria-label="Detailed implementation plan"><article class="card verify"><h2>1. What we will deliver</h2><p style="color:#c9c9d0;line-height:1.7">Apply the article&#39;s measurement loop to Allegra: reproduce a real wait, attribute its cost, make one focused change, compare the same workload, and protect a demonstrated improvement. We will preserve Allegra&#39;s visual design and playback behavior.</p>
+<p style="color:#c9c9d0;line-height:1.7">The first deliverable is a reliable baseline for website and Android search-to-play. The second is an optimization proposal naming the measured bottleneck, exact files, expected benefit and verification. After that proposal is approved, implement and verify the selected fix. No numerical speedup is established yet.</p>
+<p style="color:#c9c9d0;line-height:1.7">The user approved the measurement slice on 2026-10-06. That approval covers local instrumentation and baseline collection; a separate review is required before implementing a behavior optimization. Production deployment remains outside scope. Later journeys—startup, lyrics scrolling and Connect—have their own measurement and review steps.</p></article>
+<article class="card verify"><h2>2. Current evidence and boundaries</h2><ul class="checklist">
+<li>`apps/web/app/ClientShell.tsx:9` loads the main application with `ssr: false`. This is a startup candidate, not proof of the search-to-play bottleneck.</li>
+<li>`apps/web/src/App.tsx:113–1770` owns substantial UI state. `loadSearch` near line 426 fetches results and updates that state. Profiling must establish which parts re-render and whether they delay input or results.</li>
+<li>`apps/mobile/src/screens/SearchScreen.tsx:81–433` has separate local and online searches, request sequence guards and selected store subscriptions. Its online effect awaits song search and artist search together before publishing either result. This is a concrete dependency worth timing.</li>
+<li>`apps/web/src/hooks/useAudioPlayer.ts:382–402` uses one buffering handler for both `canplay` and `playing`. Measurement must distinguish those events without changing existing behavior.</li>
+<li>`apps/mobile/src/contexts/PlayerContext.tsx:100` consumes native playback status. The UI adopts `playWhenReady`, which expresses intent and can be true during buffering. Actual native `isPlaying` is a different observation.</li>
+<li>`apps/mobile/android/app/src/main/java/com/lyricflow/app/modules/MainPlayerModule.kt` bridges native status to JavaScript. Receipt time includes bridge/event delivery delay; it is not a native audio-output timestamp.</li>
+<li>`docs/workflows.md` documents local Connect traces, but explicitly says adapter readiness is not first audible samples. These traces do not replace this baseline.</li>
+<li>The last inspection found no connected Android device and an unavailable local API at port 8080. Recheck these before executing; they are snapshots, not permanent blockers.</li>
+</ul>
+<p style="color:#c9c9d0;line-height:1.7">Source inspection identifies hypotheses. The measurements below decide which hypothesis deserves a change.</p></article>
+<article class="card verify"><h2>3. Prepare a repeatable environment</h2><p style="color:#c9c9d0;line-height:1.7">1. Record current HEAD, branch, dirty-file list and relevant source diff. The planning snapshot was `0e0c271ac49eeec0eca9a102a7f04ff44d4989e7`; use the actual current revision when running.</p>
+<p style="color:#c9c9d0;line-height:1.7">2. Preserve existing mobile navigation, version, CLAUDE.md and audit edits. Do not reset, stash or incorporate them into a performance commit without understanding ownership. If an isolated checkout is needed, document whether it includes those edits; its timings represent that checkout only.</p>
+<p style="color:#c9c9d0;line-height:1.7">3. Check `http://localhost:8080/api/health` before starting another API. Use the existing root development command for inspection. For final web timing, build `apps/web` and run its production server at port 5173 with the API on 8080. Confirm the rewrite works. Do not benchmark Next development overhead as production performance.</p>
+<p style="color:#c9c9d0;line-height:1.7">4. Record machine, browser version, viewport, power mode, network and backend/provider configuration. Keep the machine otherwise quiet. Save environment metadata without secrets.</p>
+<p style="color:#c9c9d0;line-height:1.7">5. Connect a physical Android phone and record model, OS, display refresh rate, power mode, installed APK version, commit and build type. Prefer a local release-equivalent benchmark build. Development builds can help locate a problem but do not establish release speed.</p>
+<p style="color:#c9c9d0;line-height:1.7">6. Keep guest and signed-in results separate. Initial primary workload uses local playback with no other active Connect owner. A remote playback route becomes a separate scenario rather than silently changing the endpoint.</p>
+<p style="color:#c9c9d0;line-height:1.7">Outputs: `environment.json`, a source-diff identity and a short runbook under `output/performance/search-to-play/`. Check existing ignore rules before saving local artifacts. Do not commit device identifiers or private traces.</p></article>
+<article class="card verify"><h2>4. Fix the workload and metric definitions</h2><p style="color:#c9c9d0;line-height:1.7">Choose one online query and one recording available on both platforms; record its provider-qualified identity and expected result count. Make sure it is not already playing. Android uses its Online scope for the primary cross-platform workload so a downloaded duplicate cannot silently change the measurement into local-file playback.</p>
+<p style="color:#c9c9d0;line-height:1.7">Measure Android On this phone search separately using a fixed existing library and downloaded recording. Record its library size. Do not merge these figures with online results. Use the product&#39;s actual request path on each platform and disclose differences; the main before/after comparison is within each platform.</p>
+<p style="color:#c9c9d0;line-height:1.7">Define events:</p>
+<ul class="checklist">
+<li>`query.changed`: input change handler receives the fixed final query.</li>
+<li>`search.dispatched`: debounce ends and the search operation starts.</li>
+<li>`catalog.completed`: playable song response has been consumed.</li>
+<li>`artists.completed`: Android artist response has been consumed, recorded independently.</li>
+<li>`results.committed`: the matching query generation commits its displayed song rows.</li>
+<li>`results.presented`: external render/frame observation confirms a usable result. Commit alone is not proof of paint.</li>
+<li>`result.selected`: the existing row handler receives the tap/click, before queue/loading work.</li>
+<li>`playback.commanded`: the existing player path is given playback intent for that attempt.</li>
+<li>`media.ready`: browser readiness or native prepared-state observation, when available.</li>
+<li>`playback.observed`: selected media is actually progressing with playback active and not suppressed/buffering.</li>
+<li>`attempt.finished`: success, empty result, aborted, superseded, timeout, playback failure or remote-routed outcome.</li>
+</ul>
+<p style="color:#c9c9d0;line-height:1.7">Report input-to-result presentation and selection-to-playback separately. For total search-to-play, automate a fixed selection rule once the target result is available and report the selection gap. Never count a person&#39;s variable hesitation as system latency.</p>
+<p style="color:#c9c9d0;line-height:1.7">Report audio-event/native-state timing as a playback proxy. Validate actual audible start on the physical device separately; if precise output timing is needed, use an authorized controlled local capture or native audio trace and describe its limitations. No automatic recording or session replay is part of this plan.</p></article>
+<article class="card verify"><h2>5. Implement minimal measurement support after approval</h2><p style="color:#c9c9d0;line-height:1.7">Proposed new shared file: `packages/shared/performanceTrace.ts`, with behavior tests in the shared package&#39;s existing test convention. Before adding it, inspect the relevant package scripts and exports. It will have no npm dependencies so mobile does not accidentally bundle another React.</p>
+<p style="color:#c9c9d0;line-height:1.7">The helper owns attempt IDs, generation tokens, injected monotonic clocks, bounded event storage, one-time completion and export of durations. Proposed buffer limit: 250 records; this is a storage bound, not a performance target. No periodic persistence, network exporter or global store subscription. Completion removes active attempts. New input supersedes the old attempt; late callbacks cannot finish its successor. Dispose on opt-out/unmount.</p>
+<p style="color:#c9c9d0;line-height:1.7">Event data is restricted to attempt/generation, event kind, local elapsed time, platform, outcome, result count and coarse cache/scenario labels. Keep query text, song metadata, account IDs, tokens and URLs out of trace records. Store workload identity in the separate private run manifest if necessary.</p>
+<p style="color:#c9c9d0;line-height:1.7">Proposed platform adapters: `apps/web/src/lib/performanceTrace.ts` and `apps/mobile/src/services/performanceTrace.ts`. Reuse existing local trace patterns where appropriate, but do not expand Connect&#39;s trace API to unrelated journeys.</p>
+<p style="color:#c9c9d0;line-height:1.7">Opt-in diagnostic builds may use proposed `NEXT_PUBLIC_PERF_TRACE=1` and `EXPO_PUBLIC_PERF_TRACE=1` flags. These are public boolean switches, never credentials. Default them off and keep them absent from deployment/normal release configuration. Verify normal builds expose no trace buffer/export API and execute no measurement listeners. If a build-time flag cannot strip instrumentation cleanly, use a dedicated local benchmark entry instead of weakening the production boundary.</p>
+<p style="color:#c9c9d0;line-height:1.7">Use the same diagnostic build mode and instrumentation in both baseline and final runs. Obtain uninstrumented corroboration and compare overhead. Detailed React/native profiling runs are separate from the low-overhead timing runs.</p>
+<p style="color:#c9c9d0;line-height:1.7">Before any multi-file source edit, run `graft callers &lt;changed-symbol&gt; --depth all`, inspect current spans and nested instructions, and finalize the smallest actual file set. Shared changes require `npm.cmd run sync:shared` according to repo rules.</p></article>
+<article class="card verify"><h2>6. Wire the website observations</h2><p style="color:#c9c9d0;line-height:1.7">In `apps/web/src/App.tsx`, mark the actual search input handler, the existing debounce, `loadSearch` dispatch/response and existing result-selection handler. Carry an attempt generation through the existing request cancellation path; instrumentation must not add requests or change debounce values.</p>
+<p style="color:#c9c9d0;line-height:1.7">In `apps/web/src/lib/api.ts`, observe the search boundary only if the App boundary is insufficient to attribute response consumption. Do not wrap every API call or change the response envelope. Browser network traces provide request timing without new backend instrumentation initially.</p>
+<p style="color:#c9c9d0;line-height:1.7">At the actual result-list component, observe the matching render commit using minimal local instrumentation. A post-commit animation-frame callback is a scheduling observation, not guaranteed physical paint. Use browser rendering traces to corroborate presentation, and keep the metric label explicit when only a proxy is available.</p>
+<p style="color:#c9c9d0;line-height:1.7">In `apps/web/src/hooks/useAudioPlayer.ts`, attach diagnostic observations to the existing layout-owned audio element. Distinguish `canplay`, `play`, `playing`, `waiting`, `error` and advancing `currentTime`. Do not remount the element, issue playback from the recorder, change buffering logic or make load effects depend on play state. Associate completion with the selected source/attempt; ignore old-source events and duplicate `playing` signals.</p>
+<p style="color:#c9c9d0;line-height:1.7">Collect main-thread tasks and selected layout/style observations using browser tools where supported. Capture React commit attribution in a separate profile run. Do not add broad profiling wrappers around the entire app unless narrower evidence leaves an attribution gap.</p>
+<p style="color:#c9c9d0;line-height:1.7">Proposed local harness: `tests/performance/search-to-play.web.spec.ts` and a dedicated performance Playwright configuration. Reuse installed Playwright, run serially and explicitly select this harness. The current E2E config is built around development servers and specific filename matches, so do not assume it provides production-mode performance runs automatically.</p>
+<p style="color:#c9c9d0;line-height:1.7">The timing harness uses realistic gesture/autoplay behavior. Existing E2E autoplay bypass flags may remain useful for correctness, but cannot establish user click-to-play latency.</p></article>
+<article class="card verify"><h2>7. Wire the Android observations</h2><p style="color:#c9c9d0;line-height:1.7">In `SearchScreen.tsx`, record local and online generations separately. Mark local lookup, online song lookup, artist lookup, resulting list commit and the `playOnline`/`playLocal` handlers. Preserve both existing sequence guards and the current online/local scope rules.</p>
+<p style="color:#c9c9d0;line-height:1.7">Trace song and artist completion separately without changing the existing combined publication behavior during baseline collection. This will reveal whether songs are waiting for artists and by how much.</p>
+<p style="color:#c9c9d0;line-height:1.7">Observe the existing streamed-song handoff used by `StreamService.play`, then the playback command and native status in `PlayerContext.tsx`. Do not assume every search uses `searchOfficial`; SearchScreen currently invokes `searchMusic` directly. Preserve queue construction, routing and sheet-opening behavior.</p>
+<p style="color:#c9c9d0;line-height:1.7">Use actual native playing/buffering/suppression observations rather than Zustand&#39;s displayed play state. Associate the active attempt with the selected track; if existing status lacks enough identity, inspect `NativeAudioPlayer.ts`, `MainPlayerModule.kt` and the native player bridge before proposing a diagnostic-only identity marker.</p>
+<p style="color:#c9c9d0;line-height:1.7">Native and JS clocks have different origins. Report JS tap-to-received-status on the JS monotonic clock, and native load-to-playing on Android&#39;s monotonic clock independently. Do not subtract their raw timestamps. Cross-clock timing requires explicit calibration and uncertainty, which is outside the initial default.</p>
+<p style="color:#c9c9d0;line-height:1.7">Use Android system/native profiling to examine frames, main-thread work and event delivery. A React Native commit or layout callback does not prove a native frame was presented. Corroborate with physical-device frame evidence and keep proxy metrics labeled.</p>
+<p style="color:#c9c9d0;line-height:1.7">Keep downloads, online playback and remote routing separate. Do not modify the existing roughly 1 Hz position-store update just to obtain a timer. Avoid polling loops and continuous progress logging.</p></article>
+<article class="card verify"><h2>8. Collect the baseline and select the fix</h2><p style="color:#c9c9d0;line-height:1.7">Start with 20 unprofiled warm repeats and 10 controlled cold repeats per platform/scenario. Report all attempts, including failures and superseded requests. Do not retry a failed run invisibly. Repeat slowly enough to respect existing request limits; provider-heavy work is serial.</p>
+<p style="color:#c9c9d0;line-height:1.7">Define cold conditions precisely: fresh app/browser process, client cache condition and observed backend cache condition. A fresh page does not prove a cold provider/backend cache. Never erase account storage or downloads to manufacture a cold run.</p>
+<p style="color:#c9c9d0;line-height:1.7">Save raw bounded timing records and summaries with median, IQR, range, sample count and failure rate. Increase samples if noise obscures the decision. Profiling samples explain cost but are not mixed into timing statistics. These lab sample counts cannot establish production p95/p99.</p>
+<p style="color:#c9c9d0;line-height:1.7">Break down debounce, request/response, additional artist wait, response-to-presentation, selection-to-command and command-to-playing. Some spans overlap; do not add all durations as if they were serial.</p>
+<p style="color:#c9c9d0;line-height:1.7">Rank candidates by measured milliseconds on the actual journey, consistency, affected users, correctness risk and maintenance cost. If the UI is fast and the provider dominates, report that rather than forcing a frontend rewrite. If clock/presentation evidence is ambiguous, repair the measurement first.</p>
+<p style="color:#c9c9d0;line-height:1.7">Output: `.planning/performance/BASELINE.md`, local raw files, and a narrowly scoped `.planning/performance/OPTIMIZATION-PLAN.md` naming one measured fix. Request approval of that specific optimization before changing behavior.</p></article>
+<article class="card verify"><h2>9. Conditional implementation choices</h2><p style="color:#c9c9d0;line-height:1.7">These are decision branches, not a commitment to implement every item.</p>
+<p style="color:#c9c9d0;line-height:1.7"><strong>If Android artist lookup delays playable songs:</strong> publish song results as soon as song search resolves and publish artists independently when ready. Give each result lane appropriate loading state; retain sequence checks and stale-result protection. Preserve final song identity/order, artist results, deduplication and errors. Verify songs become selectable while artists are delayed, and no old query overwrites a newer query. Likely initial file: `SearchScreen.tsx`; expand only if its tested boundaries require it.</p>
+<p style="color:#c9c9d0;line-height:1.7"><strong>If unrelated playback updates delay web search:</strong> use profile evidence to isolate the result list or fast-changing player state from unrelated views. Stabilize only proven expensive props/subscriptions. Preserve the single audio node and existing navigation. A large App file alone is not a reason to refactor it wholesale.</p>
+<p style="color:#c9c9d0;line-height:1.7"><strong>If Android native/JS work delays selection:</strong> change the measured handoff or subscription only. Preserve Media3 ownership of transport, focus handling, queue and buffering state. Avoid moving native-owned playback state back into JS to simplify measurement.</p>
+<p style="color:#c9c9d0;line-height:1.7"><strong>If requests dominate:</strong> first examine duplicate requests, dependency order and repeated resolution of an already-known song. Optimize the measured redundant work without changing provider contracts or ranking. Persistent caching, speculative prefetch and new infrastructure need a separate proposal covering identity, expiry, privacy, bandwidth and battery.</p>
+<p style="color:#c9c9d0;line-height:1.7"><strong>If no defensible improvement is measurable:</strong> deliver the baseline and explanation; do not add complexity to chase a proxy count.</p></article>
+<article class="card verify"><h2>10. Verify the approved change</h2><p style="color:#c9c9d0;line-height:1.7">1. Establish a reproducible behavioral/performance failure before the fix. For the artist-wait branch, a controlled slow artist response must delay songs on baseline and stop delaying them after the fix. Then demonstrate real elapsed-time benefit with the representative workload.</p>
+<p style="color:#c9c9d0;line-height:1.7">2. Test recorder behavior: superseded attempts, late responses, duplicate media events, empty/error outcomes, disposal and clock isolation. Test the fix&#39;s externally observable behavior rather than internal method names.</p>
+<p style="color:#c9c9d0;line-height:1.7">3. Re-run the same workload with identical build modes, devices, network/cache conditions, counts and metric boundaries. Alternate baseline/final blocks where practical to reduce network drift. Compare absolute milliseconds, relative change, variation and failure rate.</p>
+<p style="color:#c9c9d0;line-height:1.7">4. Run `npm.cmd run typecheck`, `npm.cmd run lint` and `npm.cmd test`; run `npm.cmd run mobile:check` when mobile is touched. Run root and mobile gates without overlapping Convex-heavy test runs. Report failures with actual output.</p>
+<p style="color:#c9c9d0;line-height:1.7">5. On web check 360, 768, 1280 and 1920 widths, reduced motion, scrolling, result selection and navigation while playing. Confirm the same audio element survives and streaming still preserves `206`, `Content-Range` and `Accept-Ranges`.</p>
+<p style="color:#c9c9d0;line-height:1.7">6. On the physical Android phone check play, pause, seek, next, buffering, focus interruption, background/resume, downloaded playback and online playback. Check queue/routing behavior if touched; use a signed-in development setup for any Connect acceptance.</p>
+<p style="color:#c9c9d0;line-height:1.7">7. Compare request count, duplicate loads, memory and frame behavior. Battery conclusions need device measurements over a suitable interval; shorter lab runs cannot establish improved battery life.</p>
+<p style="color:#c9c9d0;line-height:1.7">Accept a gain only if it exceeds measurement variation, meets correctness checks and does not hide work behind a changed endpoint or missing content. Report browser/local proof, physical-device proof and production proof separately.</p></article>
+<article class="card verify"><h2>11. Retain the win and ship a reviewable slice</h2><p style="color:#c9c9d0;line-height:1.7">Keep a stable benchmark only after it correlates with the actual user wait. A render/request-count budget can protect a demonstrated source of latency; a noisy millisecond threshold should not block CI by default. Do not introduce automatic ratcheting until repeatability has been demonstrated.</p>
+<p style="color:#c9c9d0;line-height:1.7">Use a feature switch only if the approved behavior change has a meaningful rollout risk, and document removal criteria. Do not create a flag for every small change. Keep performance commits separate from unrelated edits.</p>
+<p style="color:#c9c9d0;line-height:1.7">Any mobile/shared change that rebuilds an APK on main must include the repo-required version bump, coordinated with the version edits already present. Verify the final diff and build identity before release. Production deployment is a separate explicitly authorized step; this planning request does not authorize shipping.</p>
+<p style="color:#c9c9d0;line-height:1.7">Final outputs: approved implementation diff, before/after results, correctness evidence, measured limits and any retained regression control. No claim of 3&#215; speed, 120 fps or production improvement without matching evidence.</p></article>
+<article class="card verify"><h2>12. Subsequent journeys</h2><p style="color:#c9c9d0;line-height:1.7">After search-to-play is complete, choose the next slice using impact and evidence:</p>
+<p style="color:#c9c9d0;line-height:1.7">1. <strong>Startup:</strong> app launch/navigation → search control actually usable; separate web HTML/JS initialization, home requests and Android startup. Evaluate partial server-rendered content or deferred optional UI only after attribution.</p>
+<p style="color:#c9c9d0;line-height:1.7">2. <strong>Lyrics and scrolling:</strong> fixed long track/lyrics set → frame presentation and interaction response while playing; inspect which content changes each tick, virtualization and visual budgets. Match device refresh rate and validate on the phone.</p>
+<p style="color:#c9c9d0;line-height:1.7">3. <strong>Connect:</strong> local gesture → acknowledged receiver action, with separate receiver readiness/audible acceptance; reuse the existing local trace contract and avoid raw cross-device clock subtraction.</p>
+<p style="color:#c9c9d0;line-height:1.7">Each gets its own baseline, focused proposal, approval, implementation and like-for-like comparison. The first execution milestone remains the search-to-play measurement slice on both platforms.</p></article></section><!-- implementation-detail-end -->
+  <footer><span>MEASURE → PROFILE → CHANGE → RE-MEASURE</span><span>.planning/performance/article-search-to-play-plan.html · revision 1 · Standalone review artifact</span></footer>
+</main>
+</body>
+</html>
+
+
+

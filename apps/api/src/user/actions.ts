@@ -10,7 +10,7 @@ import { parseSongRef, type SongRef, type SongSnapshot } from '../shared/songRef
 import type { UnifiedSong } from '../types.js';
 import { opsForPlaylistCopy, refForId, snapshotOf, unifiedSongFromSnapshot } from './libraryOps.js';
 import { RECENTLY_PLAYED_LIMIT, isPersonalised, type LibraryRecord, type RecentRecord, type UserData, type UserStore } from './store.js';
-import { SIGNAL_WEIGHT, applySignal, playWeight } from './taste.js';
+import { SIGNAL_WEIGHT, applySignal, playWeight, type ListenEnding } from './taste.js';
 import type { TasteTally } from './tasteTally.js';
 
 /** Eight url-safe characters (~10^11 codes): long enough not to guess, short enough to read out loud. */
@@ -241,10 +241,24 @@ export class ListenerActions {
     const applied = new Set(result.appliedIndexes);
     const lessons: { song: SongSnapshot; weight: number }[] = [];
     const tallyWrites: (() => Promise<unknown>)[] = [];
+    // Built once per batch: a batch of a few hundred ops checked against a thousand likes and every
+    // playlist's songs was a scan per op (ops × likes); these are one lookup each.
+    const oldLikeByRef = new Map<SongRef, (typeof oldLikes)[number]>();
+    for (const entry of oldLikes) if (!oldLikeByRef.has(entry.ref)) oldLikeByRef.set(entry.ref, entry);
+    const likedRefs = new Set(user.likedSongIds.map(refForId));
+    const playlistRefs = new Map<string, ReadonlySet<SongRef | null>>();
+    const refsIn = (playlistId: string): ReadonlySet<SongRef | null> => {
+      let refs = playlistRefs.get(playlistId);
+      if (!refs) {
+        refs = new Set(user.libraries.find((item) => item.id === playlistId)?.songIds.map(refForId) ?? []);
+        playlistRefs.set(playlistId, refs);
+      }
+      return refs;
+    };
     ops.forEach((op, index) => {
       if (!applied.has(index)) return;
       if (op.op === 'unlike') {
-        const previous = oldLikes.find((entry) => entry.ref === op.ref);
+        const previous = oldLikeByRef.get(op.ref);
         if (!previous?.song || previous.origin === 'import') return;
         lessons.push({ song: previous.song, weight: SIGNAL_WEIGHT.unlike });
         if (isPersonalised(user)) tallyWrites.push(() => this.tally!.bonus(user.userId, previous.song!, 'unlike', op.at));
@@ -252,14 +266,13 @@ export class ListenerActions {
       }
       if (!('song' in op) || !op.song ||
         ((op.op === 'like' || op.op === 'playlist_add') && op.origin === 'import')) return;
-      const alreadyLiked = user.likedSongIds.some((id) => refForId(id) === op.ref);
+      const alreadyLiked = likedRefs.has(op.ref);
       if (op.op === 'like' && !alreadyLiked) {
         lessons.push({ song: op.song, weight: SIGNAL_WEIGHT.like });
         if (isPersonalised(user)) tallyWrites.push(() => this.tally!.bonus(user.userId, op.song!, 'like', op.at));
       }
       if (op.op === 'playlist_add') {
-        const library = user.libraries.find((item) => item.id === op.playlistId);
-        const alreadyAdded = library?.songIds.some((id) => refForId(id) === op.ref) ?? false;
+        const alreadyAdded = refsIn(op.playlistId).has(op.ref);
         if (!alreadyAdded) {
           lessons.push({ song: op.song, weight: SIGNAL_WEIGHT.playlistAdd });
           if (isPersonalised(user)) tallyWrites.push(() => this.tally!.bonus(user.userId, op.song!, 'playlistAdd', op.at));
@@ -293,6 +306,10 @@ export class ListenerActions {
     const identity = recentIdentity(entry);
     await this.auth.updateProfile(user.userId, (current) => {
       if (!isPersonalised(current)) return null;
+      // History stores only the most recent event per song. An older offline delivery
+      // cannot replace it, and may itself be a retry of an event no longer retained.
+      const latest = current.recentlyPlayed.find((item) => recentIdentity(item) === identity);
+      if (latest && latest.playedAt > playedAt) return null;
       // Offline clients retry the same play after a lost response. Keep the history write
       // idempotent for that event so its taste signal is not applied twice.
       const priorEvent = current.recentlyPlayed.find((item) => recentIdentity(item) === identity && item.playedAt === playedAt);
@@ -330,12 +347,12 @@ export class ListenerActions {
   }
 
   /** How long a song was actually heard: a few seconds counts against it, most of it for it. */
-  public async listened(user: UserData, songId: string, seconds: number, snapshot?: SongSnapshot, songRef?: SongRef, playedAt?: string, playId?: string): Promise<UserData> {
+  public async listened(user: UserData, songId: string, seconds: number, snapshot?: SongSnapshot, songRef?: SongRef, playedAt?: string, playId?: string, ending?: ListenEnding): Promise<UserData> {
     if (!isPersonalised(user)) return user;
     const song = (snapshot ? unifiedSongFromSnapshot(snapshot) : null) ?? await this.lookUp(songId);
     if (!song) return user;
     const ref = snapshot?.ref ?? songRef;
-    const weight = playWeight(seconds, song.duration);
+    const weight = playWeight(seconds, song.duration, ending);
     let updated: UserData | null;
     if (!ref || !playedAt) {
       updated = await this.learn(user, song, weight);

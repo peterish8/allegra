@@ -1,5 +1,7 @@
-import { useState, type CSSProperties } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 
+import type { KaraokeCoverage } from '../hooks/useLiveKaraoke';
+import { coverageGradient, coverageRuns } from '../lib/karaokeView';
 import { usePlayhead, type Playhead } from '../lib/playhead';
 import { formatTime } from '../lib/utils';
 
@@ -11,14 +13,28 @@ import { formatTime } from '../lib/utils';
 export function BarScrubber({
   playhead,
   duration,
-  onSeek
+  onSeek,
+  karaokeCoverage = null
 }: {
   readonly playhead: Playhead;
   readonly duration: number;
   readonly onSeek: (seconds: number) => void;
+  /** Where the AI model has separated the song, while karaoke runs on it. */
+  readonly karaokeCoverage?: KaraokeCoverage | null;
 }) {
   const playing = usePlayhead(playhead);
   const [scrub, setScrub] = useState<number | null>(null);
+  const karaokeGradient = useMemo(
+    () =>
+      karaokeCoverage
+        ? coverageGradient(
+            coverageRuns(karaokeCoverage.ready, karaokeCoverage.segmentSeconds, karaokeCoverage.totalSeconds),
+            'var(--karaoke-ready)',
+            'transparent'
+          )
+        : 'none',
+    [karaokeCoverage]
+  );
   const time = scrub ?? playing;
   const span = Math.max(duration, 1);
   const commit = (): void => {
@@ -37,7 +53,10 @@ export function BarScrubber({
         max={span}
         step={0.1}
         value={Math.min(time, span)}
-        style={{ '--fill': `${duration > 0 ? (time / duration) * 100 : 0}%` } as CSSProperties}
+        style={{
+          '--fill': `${duration > 0 ? (time / duration) * 100 : 0}%`,
+          '--karaoke-coverage': karaokeGradient
+        } as CSSProperties}
         onChange={(event) => setScrub(Number(event.target.value))}
         onPointerUp={commit}
         onPointerCancel={() => setScrub(null)}

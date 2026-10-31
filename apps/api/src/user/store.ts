@@ -37,6 +37,8 @@ export interface TasteEntry {
 export interface TasteProfile {
   readonly artists: TasteEntry[];
   readonly languages: TasteEntry[];
+  /** Explicit onboarding preferences; older profile rows may not have this field. */
+  readonly genres?: string[];
   /** How many signals have fed this profile; a cheap gauge of how much we know. */
   readonly signals: number;
   /** True once the listener picked favourites (or we have seen enough listening to skip asking). */
@@ -83,6 +85,7 @@ export interface AccountExtras {
   readonly complete: boolean;
   readonly shares: readonly { readonly code: string; readonly libraryId: string; readonly createdAt: string }[];
   readonly devices: readonly { readonly name: string; readonly kind: string; readonly appVersion: string; readonly createdAt: number }[];
+  readonly luvLinks: readonly { readonly roomId: string; readonly role: 'host' | 'member'; readonly joinedAtMs: number }[];
 }
 
 /** A playlist someone shared. It points at the owner's playlist, so it stays live. */
@@ -214,7 +217,7 @@ export class MemoryUserStore implements UserStore {
     const shares = [...this.shares.values()]
       .filter((share) => share.ownerId === userId)
       .map((share) => ({ code: share.code, libraryId: share.libraryId, createdAt: share.createdAt }));
-    return { shares, devices: [], complete: true };
+    return { shares, devices: [], luvLinks: [], complete: true };
   }
 
   public async erase(userId: string): Promise<void> {

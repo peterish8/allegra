@@ -7,11 +7,17 @@ import { pinoHttp } from 'pino-http';
 import { createServices, type AppServices, type ServiceOptions } from './services.js';
 import { createLogger, REDACTED_PATHS } from './lib/logger.js';
 import { artworkRouter } from './routes/artwork.js';
+import { chartsRouter } from './routes/charts.js';
 import { authRouter } from './routes/auth.js';
 import { catalogRouter } from './routes/catalog.js';
 import { discoveryRouter } from './routes/discovery.js';
+import { djRouter } from './routes/dj.js';
+import { djVoiceRouter } from './routes/djVoice.js';
 import { sendFailure } from './routes/common.js';
 import { lyricsRouter } from './routes/lyrics.js';
+import { lyricSyncRouter } from './routes/lyricSync.js';
+import { LyricSyncService } from './services/lyricSync.js';
+import { radioRouter } from './routes/radio.js';
 import { mcpRouter } from './mcp/server.js';
 import { OAuthClients } from './oauth/clients.js';
 import { oauthRouter } from './oauth/router.js';
@@ -51,9 +57,16 @@ export interface AppOptions extends Omit<ServiceOptions, 'jwtSecret'> {
     readonly stream?: RateLimitConfig;
     readonly auth?: RateLimitConfig;
     readonly discovery?: RateLimitConfig;
+    readonly lyricsSources?: RateLimitConfig;
+    readonly lyricsSync?: RateLimitConfig;
+    readonly lyricsReport?: RateLimitConfig;
+    readonly djTurn?: RateLimitConfig;
+    readonly djTranscribe?: RateLimitConfig;
+    readonly djSpeak?: RateLimitConfig;
     readonly mcp?: RateLimitConfig;
     readonly oauth?: RateLimitConfig;
     readonly lookup?: RateLimitConfig;
+    readonly typeahead?: RateLimitConfig;
     readonly writes?: RateLimitConfig;
     readonly plays?: RateLimitConfig;
     readonly guests?: RateLimitConfig;
@@ -101,6 +114,11 @@ export function createApp(options: AppOptions): Express {
   const jwtSecret = options.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only';
   const services = options.services ?? createServices({ ...options, jwtSecret });
 
+  // A spoken request (a few seconds of WAV) is bigger than any other body; only this route takes it.
+  app.use('/api/ai/dj/transcribe', express.json({ limit: '1mb' }));
+  app.use('/api/lyrics/sync', express.json({ limit: '512kb' }));
+  // 24,000 characters of pasted words, some of them several bytes long.
+  app.use('/api/lyrics/paste', express.json({ limit: '128kb' }));
   app.use(express.json({ limit: '32kb' }));
 
   app.get('/api/health', (_request, response) => {
@@ -114,8 +132,10 @@ export function createApp(options: AppOptions): Express {
   // Private by default: account data must never land in a shared cache. Routes that may be cached (stream) overwrite it.
   app.use('/api', (_request, response, next) => { response.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api', catalogRouter(services.catalog));
+  app.use('/api', chartsRouter(services.topChart));
   app.use('/api', artworkRouter(services.artwork));
   app.use('/api', lyricsRouter(services.lyrics));
+  app.use('/api', lyricSyncRouter(services.auth, new LyricSyncService(services.catalog, services.lyrics, services.verifiedLyrics, new MemoryCacheStore())));
   app.use('/api', streamRouter(services.stream));
   app.use('/api', authRouter(services.auth, services.blends));
   app.use('/api', userRouter(services.auth, services.catalog, services.actions, services.covers, services.tally, services.blends));
@@ -133,6 +153,9 @@ export function createApp(options: AppOptions): Express {
   app.use('/api', sharedRouter(services.auth, services.catalog, services.actions, services.users));
   app.use('/api', uploadsRouter(services.auth, services.covers));
   app.use('/api', discoveryRouter(services.translation, services.recommendations, services.auth, services.catalog));
+  app.use('/api', djRouter(services.catalog, options.fetchImpl));
+  app.use('/api', djVoiceRouter(options.fetchImpl));
+  app.use('/api', radioRouter(services.radio, services.auth));
   const signer = new OAuthSigner(jwtSecret);
   app.use(oauthRouter({
     auth: services.auth,
@@ -169,8 +192,18 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
   const guests = limiter(limits.guests ?? { windowMs: 60_000, limit: 10 });
   // Translation spends a shared daily provider quota and recommendations fan out to the catalog.
   const discovery = limiter(limits.discovery ?? { windowMs: 60_000, limit: 20 });
+  // A spoken cloud request is transcribe + turn + speak, so each DJ route gets its own bucket
+  // rather than three calls drawing on the shared discovery one.
+  const djTurn = limiter(limits.djTurn ?? { windowMs: 60_000, limit: 20 });
+  const djTranscribe = limiter(limits.djTranscribe ?? { windowMs: 60_000, limit: 30 });
+  const djSpeak = limiter(limits.djSpeak ?? { windowMs: 60_000, limit: 30 });
   // Search, lyrics and artist lookups each fan out to several providers.
   const lookup = limiter(limits.lookup ?? { windowMs: 60_000, limit: 90 });
+  const lyricsSources = limiter(limits.lyricsSources ?? { windowMs: 60_000, limit: 10 });
+  const lyricsSync = limiter(limits.lyricsSync ?? { windowMs: 60_000, limit: 6 });
+  const lyricsReport = limiter(limits.lyricsReport ?? { windowMs: 60_000, limit: 20 });
+  // As-you-type search: a request per pause in typing, most answered by the edge cache before here.
+  const typeahead = limiter(limits.typeahead ?? { windowMs: 60_000, limit: 240 });
   // Each recorded play is a profile read and write. Matches the song-change cap.
   const plays = limiter(limits.plays ?? { windowMs: 60_000, limit: 30 });
   // Likes, playlists, settings, taste signals: each is a database write.
@@ -212,7 +245,24 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
       mcp(request, response, next);
       return;
     }
-    if (path.startsWith('/api/ai') || path === '/api/lyrics/translate' || path === '/api/recommendations') {
+    if (path === '/api/search/suggest') {
+      typeahead(request, response, next);
+      return;
+    }
+    if (path === '/api/ai/dj/turn') {
+      djTurn(request, response, next);
+      return;
+    }
+    if (path === '/api/ai/dj/transcribe') {
+      djTranscribe(request, response, next);
+      return;
+    }
+    if (path === '/api/ai/dj/speak') {
+      djSpeak(request, response, next);
+      return;
+    }
+    // A radio fans out to the catalog like recommendations do: one per search tap, then a refill now and then.
+    if (path.startsWith('/api/ai') || path === '/api/lyrics/translate' || path === '/api/recommendations' || path.startsWith('/api/radio/')) {
       discovery(request, response, next);
       return;
     }
@@ -237,7 +287,11 @@ function createRateLimiter(config: AppOptions['rateLimit']): (request: Request, 
       writes(request, response, next);
       return;
     }
-    if (path === '/api/search' || path.startsWith('/api/lyrics') || path.startsWith('/api/artists')) {
+    if (path === '/api/search' || path.startsWith('/api/lyrics') || path.startsWith('/api/artists') || path.startsWith('/api/albums')) {
+      if (path === '/api/lyrics/sources') { lyricsSources(request, response, next); return; }
+      // A paste is the first half of a sync and reaches Convex, so it shares the sync bucket.
+      if (path === '/api/lyrics/sync' || path === '/api/lyrics/paste') { lyricsSync(request, response, next); return; }
+      if (path === '/api/lyrics/report') { lyricsReport(request, response, next); return; }
       lookup(request, response, next);
       return;
     }

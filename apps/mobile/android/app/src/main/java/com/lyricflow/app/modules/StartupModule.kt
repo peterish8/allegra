@@ -10,6 +10,8 @@ import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import com.lyricflow.app.recovery.LaunchGuard
 import com.lyricflow.app.recovery.UiRecovery
+import com.lyricflow.app.startup.CpuClass
+import com.lyricflow.app.startup.FrameWatch
 import com.lyricflow.app.startup.StartupPreloader
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -42,6 +44,8 @@ class StartupModule : Module() {
                 "lowRam" to (am?.isLowRamDevice ?: false),
                 "cores" to Runtime.getRuntime().availableProcessors(),
                 "apiLevel" to Build.VERSION.SDK_INT,
+                "oldCores" to CpuClass.readAllCoresOld(),
+                "slowFrames" to (context?.let { FrameWatch.isSlow(it) } ?: false),
             )
         }
 

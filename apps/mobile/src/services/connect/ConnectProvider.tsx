@@ -16,17 +16,19 @@ import {
   type TransferResult,
 } from '../../../../../packages/connect/src/index';
 import { shareableArtwork } from '@shared/artwork';
+import { listenVerdict } from '@shared/listenSignal';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import { setPlaylistSelectionRouter, usePlayerStore } from '../../store/playerStore';
 import { usePositionStore } from '../../store/positionStore';
-import { useListenTogetherStore } from '../../store/listenTogetherStore';
+import { useLuvLinkStore } from '../../store/luvLinkStore';
 import { positionSV } from '../../playback/positionBus';
 import { useAccount, allegraConvex } from '../account/AccountProvider';
 import { runWhenIdle } from '../bootPhases';
 import { recordPlay, recordPlayStarted, refFor } from '../sync/LibrarySync';
 import { backfillCatalogLinks, setCatalogBackfillToken } from '../sync/catalogBackfill';
 import { createListenTracker, type HeardSong } from '../sync/listenTracker';
-import { setStreamQueueRouter } from '../stream/StreamService';
+import { setStreamQueueRouter, StreamService } from '../stream/StreamService';
+import { routeOwnedLuvLinkCatalogPick } from '../luvLink/client';
 import { toStreamSong } from '../stream/streamSong';
 import { onBeforeSignOut } from '../account/signOutHooks';
 import { createMobilePlayerPort, knownRefOf, snapshotOfSong, snapshotWithRef } from './mobilePlayerPort';
@@ -128,7 +130,7 @@ function mobileDeviceName(): string {
 
 export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const account = useAccount();
-  const roomActive = useListenTogetherStore(state => state.room !== null);
+  const roomActive = useLuvLinkStore(state => state.room !== null || state.ownedRoomId !== null);
   const tokenRef = useRef<string | null>(account.token);
   tokenRef.current = account.token;
   // A cover another device could not send is looked up in the account catalog with this token.
@@ -226,10 +228,17 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
         },
       });
       disposeRouter = () => router.dispose();
-      stopSelectionRouter = setPlaylistSelectionRouter(pick => router.route(pick));
+      stopSelectionRouter = setPlaylistSelectionRouter(pick => {
+        return router.route(pick);
+      });
       stopIntents = bindPlaybackIntents({ session: live, deviceId: id, heldLocally, routePick: pick => router.route(pick) });
       // Play next, and the rest of an album arriving behind its first song, go where the music is.
       stopQueueRouter = setStreamQueueRouter((songs, next) => {
+        if (useLuvLinkStore.getState().ownedRoomId) {
+          const selected = songs[0];
+          if (selected) void routeOwnedLuvLinkCatalogPick(selected, next).catch(error => useLuvLinkStore.getState().announce(error instanceof Error ? error.message : 'Could not add this pick to LuvLink.'));
+          return true;
+        }
         const route = decidePlaybackRoute({ view: live.view(), deviceId: id, heldLocally: heldLocally(), staleOk: true });
         if (route.kind !== 'remote') return false;
         const [song, ...more] = songs.flatMap(item => snapshotOfSong(toStreamSong(item)) ?? []).slice(0, 50);
@@ -321,12 +330,12 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
       artwork: shareableArtwork(song.artwork, song.coverRemoteUri),
       duration: Math.max(0, song.duration ?? 0),
     });
-    const tracker = createListenTracker((song, seconds, startedAt) => {
+    const tracker = createListenTracker((song, seconds, startedAt, ending) => {
       if (!signedInRef.current) return;
       const started = startWrites.get(song.id);
       const resolve = started ?? refFor(song).then(ref => ref ? { ref, snapshot: snapshotFor(song, ref) } : null);
       resolve.then(value => {
-        if (value) recordPlay(value.ref, seconds, value.snapshot, startedAt);
+        if (value) recordPlay(value.ref, seconds, value.snapshot, startedAt, ending);
       }).catch(() => undefined).finally(() => {
         if (started && startWrites.get(song.id) === started) startWrites.delete(song.id);
       });
@@ -339,6 +348,9 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
         return { ref, snapshot };
       }).catch(() => null);
       startWrites.set(song.id, write);
+    }, (song, ending) => {
+      // A playing search radio reacts at once, signed in or not.
+      StreamService.radioOutcome(song.id, listenVerdict({ ...ending, durationSec: song.duration }));
     });
     const observe = (): void => {
       const player = usePlayerStore.getState();

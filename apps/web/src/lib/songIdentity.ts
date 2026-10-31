@@ -1,5 +1,7 @@
 import type { UnifiedSong } from '@shared/types';
 import { identityKey } from '@shared/identity';
+import { fromAllegraSong, parseSongRef } from '@shared/songRef';
+import type { LibrarySong } from './libraryRows';
 
 /**
  * Same recording under different release ids (cover/album variants).
@@ -49,4 +51,13 @@ export function shouldStartRadio(seed: UnifiedSong, queue: readonly UnifiedSong[
 
 function flatten(value: string): string {
   return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+/** The id the catalog knows a song by, also for library rows that carry a provider ref. */
+export function catalogSongId(song: UnifiedSong): string {
+  const ref = (song as Partial<LibrarySong>).libraryRef ?? fromAllegraSong(song);
+  const parsed = ref ? parseSongRef(ref) : null;
+  if (parsed?.source === 'gaana') return `gaana:${parsed.id}`;
+  if (parsed?.source === 'saavn') return parsed.id;
+  return song.id;
 }

@@ -25,10 +25,10 @@ const cover = (index: number): string => [
   'linear-gradient(145deg, #c58bd8, #4d2f66)', 'linear-gradient(145deg, #f2b66d, #7a4a1e)'
 ][index % 5]!;
 
-type Scene = (step: number, reduced: boolean) => ReactNode;
+export type Scene = (step: number, reduced: boolean) => ReactNode;
 
 /** One part of a scene: placed at (x, y) from the centre; springs in, leaves fast. */
-function Part({ x = 0, y = 0, delay = 0, reduced, className, style, children, from }: {
+export function Part({ x = 0, y = 0, delay = 0, reduced, className, style, children, from }: {
   readonly x?: number; readonly y?: number; readonly delay?: number; readonly reduced: boolean;
   readonly className?: string; readonly style?: CSSProperties; readonly children?: ReactNode;
   /** Where it comes from, relative to its place. */
@@ -49,7 +49,7 @@ function Part({ x = 0, y = 0, delay = 0, reduced, className, style, children, fr
 }
 
 /** A repeating move inside a part; nothing under reduced motion. */
-function Loop({ reduced, animate, duration, delay = 0, className, style, children, times, ease = 'easeInOut' }: {
+export function Loop({ reduced, animate, duration, delay = 0, className, style, children, times, ease = 'easeInOut' }: {
   readonly reduced: boolean; readonly animate: Record<string, number[]>; readonly duration: number; readonly delay?: number;
   readonly className?: string; readonly style?: CSSProperties; readonly children?: ReactNode; readonly times?: number[]; readonly ease?: Transition['ease'];
 }) {
@@ -66,7 +66,7 @@ function Loop({ reduced, animate, duration, delay = 0, className, style, childre
 }
 
 /** A counter that ticks every `ms` while active: drives shuffles and filters. */
-function useTick(active: boolean, ms: number): number {
+export function useTick(active: boolean, ms: number): number {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!active) return undefined;
@@ -76,7 +76,7 @@ function useTick(active: boolean, ms: number): number {
   return tick;
 }
 
-function Stage({ step, children }: { readonly step: number; readonly children: ReactNode }) {
+export function Stage({ step, children }: { readonly step: number; readonly children: ReactNode }) {
   return (
     <div className="info-tour__stage info-scene" aria-hidden="true">
       <AnimatePresence mode="popLayout">

@@ -63,6 +63,19 @@ test('retrying the same offline play timestamp does not teach taste twice', asyn
   assert.deepEqual((await ctx.user()).recentlyPlayed, [{ songId: 's1', playDuration: 0, playedAt }]);
 });
 
+test('an older offline play cannot replace or reteach a newer play of the same song', async () => {
+  const ctx = await listener();
+  const older = '2026-09-30T08:15:00.000Z';
+  const newer = '2026-09-30T09:15:00.000Z';
+  await ctx.actions.recordPlay(await ctx.user(), 's1', 0, older);
+  await ctx.actions.recordPlay(await ctx.user(), 's1', 0, newer);
+  const beforeRetry = await ctx.user();
+  await ctx.actions.recordPlay(beforeRetry, 's1', 0, older);
+  const afterRetry = await ctx.user();
+  assert.deepEqual(afterRetry.recentlyPlayed, beforeRetry.recentlyPlayed);
+  assert.deepEqual(afterRetry.taste, beforeRetry.taste);
+});
+
 test('with the catalog down, a like still lands, only without details or taste', async () => {
   const ctx = await listener(catalogDown);
   await ctx.actions.like(await ctx.user(), 's1');

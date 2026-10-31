@@ -15,7 +15,8 @@ import {
   Sparkles,
   Volume2,
   VolumeX,
-  Waves
+  Waves,
+  X
 } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls, useReducedMotion } from 'motion/react';
 import type { Variants } from 'motion/react';
@@ -27,7 +28,9 @@ import type { MotionArtwork, UnifiedSong } from '@shared/types';
 import { DynamicLyricsBackground } from './DynamicLyricsBackground';
 import { FluidArtBackground } from './FluidArtBackground';
 import { ConnectPicker, type ConnectPickerState } from './ConnectPicker';
+import { KaraokeConsentSheet } from './KaraokeConsentSheet';
 import { KaraokeMixSheet } from './KaraokeMixSheet';
+import { KaraokeProgress } from './KaraokeProgress';
 import { LyricsPanel } from './LyricsPanel';
 import { PlaylistMenu } from './PlaylistMenu';
 import { Artwork, IconButton, TactileButton } from './ui';
@@ -35,12 +38,15 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useNarrowViewport } from '../hooks/useNarrowViewport';
 import { useSettings } from '../hooks/useSettings';
 import { usePress } from '../hooks/usePress';
-import type { LiveKaraokeController } from '../hooks/useLiveKaraoke';
+import type { KaraokeCoverage, LiveKaraokeController } from '../hooks/useLiveKaraoke';
 import type { RepeatMode } from '../hooks/useAudioPlayer';
 import type { Palette } from '../lib/palette';
 import { usePlayhead, type Playhead } from '../lib/playhead';
 import { tapHaptic } from '../lib/haptics';
 import { createDoubleTap } from '../lib/karaokeMix';
+import { coverageGradient, coverageRuns, karaokeButtonAriaLabel, karaokeButtonLabel } from '../lib/karaokeView';
+import { blockCopy } from '../lib/liveKaraoke';
+import { countLyricsTap, highlightLabel, NO_TAPS, otherHighlight, type TapRun } from '../lib/lyricsTaps';
 import { fetchCanvasArtwork } from '../lib/api';
 import { creditedArtists, formatTime, clamp } from '../lib/utils';
 import { motionTokens, spring } from '../motion';
@@ -167,8 +173,10 @@ export function PlayerPanel({
   const playPress = usePress();
   const dragControls = useDragControls();
   const isNarrowViewport = useNarrowViewport();
-  // Same cut-off as the phone player rules in app.css.
-  const isPhone = useNarrowViewport(768);
+  // Keep the rendered surface state in lock-step with the phone player rules in app.css.
+  // A 768–900px viewport is still styled as phone; treating it as desktop left the cover controls
+  // visible while LyricsPanel also rendered below them.
+  const isPhone = isNarrowViewport;
   // Swipe-down-to-dismiss mirrors Apple Music / YT Music on a phone; desktop has no
   // equivalent affordance, and reduced-motion listeners keep the Back button + Escape
   // as their dismiss path rather than a springy drag-to-close.
@@ -183,10 +191,30 @@ export function PlayerPanel({
   // show/hide: hiding the lyrics leaves the cover and controls centred on their own. The phone's
   // "workspace" mode (lyrics take over, cover fades out) only applies to the stacked layout.
   const [lyricsHidden, setLyricsHidden] = useState(false);
-  const [{ playerBlackBackground }] = useSettings();
+  const [{ playerBlackBackground, lyricsHighlight }, updateSettings] = useSettings();
+  // Three quick taps on the Lyrics tab switch letter by letter ↔ line by line, as on the phone app.
+  const lyricsTapsRef = useRef<TapRun>(NO_TAPS);
+  const [highlightNote, setHighlightNote] = useState('');
+  const [noteShown, setNoteShown] = useState(false);
+  useEffect(() => {
+    if (!noteShown) return undefined;
+    const timer = window.setTimeout(() => setNoteShown(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [noteShown, highlightNote]);
+  const tapLyricsTab = (): void => {
+    const { run, triple } = countLyricsTap(lyricsTapsRef.current, performance.now());
+    lyricsTapsRef.current = run;
+    if (!triple) return;
+    const next = otherHighlight(lyricsHighlight);
+    updateSettings({ lyricsHighlight: next });
+    tapHaptic(14);
+    setHighlightNote(highlightLabel(next));
+    setNoteShown(true);
+  };
   // The top bar's right-hand slot: the lyrics panel renders its ⋯ actions there on wide screens.
   const [topActionsSlot, setTopActionsSlot] = useState<HTMLDivElement | null>(null);
-  const desktopSolo = !isNarrowViewport && lyricsHidden && tab === 'lyrics';
+  // Keep missing-lyrics recovery and Other lyrics reachable after an empty lookup.
+  const desktopSolo = !isNarrowViewport && tab === 'lyrics' && lyricsHidden;
   const desktopLyricsVisible = tab === 'lyrics' && !lyricsHidden;
   // Desktop: double-clicking the cover puts it away and lets the lyrics take the whole stage,
   // centred. The lyrics button (then "Show cover") or switching tabs brings the cover back.
@@ -365,7 +393,8 @@ export function PlayerPanel({
                   role="tab"
                   aria-selected={visibleTab === 'lyrics'}
                   aria-label="Lyrics"
-                  onClick={() => selectTab('lyrics')}
+                  title="Lyrics · triple-tap to switch letter by letter and line by line"
+                  onClick={() => { selectTab('lyrics'); tapLyricsTab(); }}
                 >
                   <Waves size={14} aria-hidden="true" /> Lyrics
                 </button>
@@ -374,10 +403,10 @@ export function PlayerPanel({
                   className="ptab"
                   role="tab"
                   aria-selected={visibleTab === 'queue'}
-                  aria-label="Up next"
+                  aria-label="Queue"
                   onClick={() => selectTab('queue')}
                 >
-                  <ListMusic size={14} aria-hidden="true" /> Up Next
+                  <ListMusic size={13} aria-hidden="true" /> Queue
                 </button>
                 <button
                   type="button"
@@ -389,6 +418,8 @@ export function PlayerPanel({
                 >
                   <Sparkles size={14} aria-hidden="true" /> Related
                 </button>
+                {/* Says which style a triple tap switched to, then fades. */}
+                <span className={`lyrics-style-note${noteShown ? ' is-shown' : ''}`} role="status" aria-live="polite">{highlightNote}</span>
               </div>
               <div className="listening-top__spacer" ref={setTopActionsSlot} />
             </div>
@@ -499,6 +530,7 @@ export function PlayerPanel({
                     </MarqueeText>
                   </h2>
               <p className="np-artist">
+                    <MarqueeText text={song.artist}>
                     {onOpenArtist && artists.length > 0
                       ? artists.map((name, index) => (
                           <span key={`${name}-${index}`}>
@@ -514,6 +546,7 @@ export function PlayerPanel({
                           </span>
                         ))
                       : song.artist}
+                    </MarqueeText>
               </p>
                   {/* Beside the title, as in Apple Music and Spotify: the action row keeps the tools. */}
                   <IconButton
@@ -525,13 +558,13 @@ export function PlayerPanel({
                   />
                 </motion.div>
                 <div className="np-controls">
-                  <Scrubber playhead={playhead} duration={duration} onSeek={onSeek} />
+                  <Scrubber playhead={playhead} duration={duration} onSeek={onSeek} karaokeCoverage={liveKaraoke?.coverage ?? null} />
                   {playbackError ? <p className="playback-error" role="alert">{playbackError}</p> : null}
                   <div className="np-btns">
                     {onToggleShuffle ? (
                       <IconButton icon={Shuffle} label={shuffle ? 'Shuffle on' : 'Shuffle off'} active={shuffle} aria-pressed={shuffle} className="np-mode" onClick={onToggleShuffle} />
                     ) : null}
-                    <IconButton icon={SkipBack} label="Previous track" onClick={goPrevious} solidOnHover />
+                    <IconButton icon={SkipBack} label="Previous track" onClick={goPrevious} solid />
                     <button
                       className={`ctrl-play tactile-control${isBuffering ? ' is-buffering' : ''}`}
                       onClick={onToggle}
@@ -544,7 +577,7 @@ export function PlayerPanel({
                           its shape and stays pressable while the track loads. */}
                       {isBuffering ? <span className="ctrl-play-wait" aria-hidden="true" /> : null}
                     </button>
-                    <IconButton icon={SkipForward} label="Next track" onClick={goNext} solidOnHover />
+                    <IconButton icon={SkipForward} label="Next track" onClick={goNext} solid />
                     {onCycleRepeat ? (
                       <IconButton
                         icon={repeat === 'one' ? Repeat1 : Repeat}
@@ -586,11 +619,8 @@ export function PlayerPanel({
                     {liveKaraoke ? (
                       <IconButton
                         icon={Mic}
-                        label={
-                          liveKaraoke.busy ? 'Preparing karaoke' : liveKaraoke.active ? 'Turn karaoke off' : 'Turn karaoke on'
-                        }
+                        label={karaokeButtonAriaLabel(liveKaraoke)}
                         active={liveKaraoke.active}
-                        aria-disabled={liveKaraoke.busy || undefined}
                         aria-pressed={liveKaraoke.active}
                         aria-busy={liveKaraoke.busy || undefined}
                         className={`np-action--tool${liveKaraoke.busy ? ' is-busy' : ''}`}
@@ -627,20 +657,13 @@ export function PlayerPanel({
                       <TactileButton
                         variant={liveKaraoke?.active ? 'primary' : 'secondary'}
                         icon={Mic}
-                        className={`np-live-karaoke-btn${liveKaraoke?.busy ? ' is-busy' : ''}${liveKaraoke?.active ? ' is-on' : ''}`}
-                        // Not `disabled` while preparing: a double tap must still reach the mix.
-                        aria-disabled={liveKaraoke?.busy || undefined}
+                        className={`np-live-karaoke-btn${liveKaraoke?.busy ? ' is-busy' : ''}${liveKaraoke?.active ? ' is-on' : ''}${liveKaraoke?.status === 'catching-up' ? ' is-catching-up' : ''}`}
+                        aria-label={liveKaraoke ? karaokeButtonAriaLabel(liveKaraoke) : undefined}
                         aria-pressed={liveKaraoke?.active ?? false}
                         aria-busy={liveKaraoke?.busy || undefined}
                         onClick={pressKaraoke}
                       >
-                        {liveKaraoke?.busy
-                          ? liveKaraoke.progress != null
-                            ? `Preparing ${Math.round(liveKaraoke.progress * 100)}%`
-                            : 'Preparing…'
-                          : liveKaraoke?.active
-                            ? 'Karaoke on'
-                            : 'Karaoke'}
+                        {liveKaraoke ? karaokeButtonLabel(liveKaraoke) : 'Karaoke'}
                       </TactileButton>
                       {liveKaraoke && karaokeOn ? (
                         <IconButton
@@ -660,7 +683,7 @@ export function PlayerPanel({
                 </div>
               </div>
 
-              <div className={`player-sidepanel ${tab === 'lyrics' ? 'is-lyrics' : ''}`} role="tabpanel" hidden={phoneCover || desktopSolo}>
+              <div className={`player-sidepanel ${tab === 'lyrics' ? 'is-lyrics' : ''}`} role="tabpanel" hidden={phoneCover} inert={desktopSolo} aria-hidden={desktopSolo || undefined}>
                 {tab === 'lyrics' && !phoneCover ? (
                   <>
                     <p className="panel-title">Lyrics</p>
@@ -672,9 +695,10 @@ export function PlayerPanel({
                       artworkUrl={lyrics.artworkUrl ?? song.artwork}
                       karaokeActive={liveKaraoke?.active ?? false}
                       karaokeBusy={liveKaraoke?.busy ?? false}
-                      karaokeProgressRatio={liveKaraoke?.progress ?? null}
+                      karaokeAriaLabel={liveKaraoke ? karaokeButtonAriaLabel(liveKaraoke) : undefined}
                       karaokeDisabled={false}
                       karaokeError={liveKaraoke?.error ?? null}
+                      karaokeStage={liveKaraoke?.stage ?? null}
                       onToggleKaraoke={song && liveKaraoke ? pressKaraoke : undefined}
                       onOpenKaraokeMix={liveKaraoke ? openKaraokeMix : undefined}
                       songId={song.id}
@@ -736,12 +760,16 @@ export function PlayerPanel({
             </div>
           </div>
           {liveKaraoke ? (
-            <KaraokeMixSheet
-              open={mixOpen}
-              karaoke={liveKaraoke}
-              onClose={() => setMixOpen(false)}
-              returnFocusRef={mixOpenerRef}
-            />
+            <>
+              <KaraokeMixSheet
+                open={mixOpen}
+                karaoke={liveKaraoke}
+                onClose={() => setMixOpen(false)}
+                returnFocusRef={mixOpenerRef}
+              />
+              <KaraokeConsentSheet bytes={liveKaraoke.consent?.bytes ?? null} onAnswer={liveKaraoke.answerConsent} />
+              <p className="sr-only" aria-live="polite">{liveKaraoke.announcement}</p>
+            </>
           ) : null}
         </motion.div>
       ) : null}
@@ -847,14 +875,28 @@ function spokenTime(seconds: number): string {
 function Scrubber({
   playhead,
   duration,
-  onSeek
+  onSeek,
+  karaokeCoverage
 }: {
   readonly playhead: Playhead;
   readonly duration: number;
   readonly onSeek: (seconds: number) => void;
+  /** Where the AI model has separated the song, tinted in the track. */
+  readonly karaokeCoverage: KaraokeCoverage | null;
 }) {
   const currentTime = usePlayhead(playhead);
   const [dragValue, setDragValue] = useState<number | null>(null);
+  const karaokeGradient = useMemo(
+    () =>
+      karaokeCoverage
+        ? coverageGradient(
+            coverageRuns(karaokeCoverage.ready, karaokeCoverage.segmentSeconds, karaokeCoverage.totalSeconds),
+            'var(--karaoke-ready)',
+            'transparent'
+          )
+        : 'none',
+    [karaokeCoverage]
+  );
   const span = Math.max(duration, 1);
   // While dragging, the labels and fill follow the finger; the audio only moves on release
   // so a drag across a long track is one range request instead of a hundred.
@@ -888,7 +930,10 @@ function Scrubber({
         disabled={duration <= 0}
         aria-label="Playback progress"
         aria-valuetext={`${spokenTime(value)} of ${spokenTime(duration)}`}
-        style={{ '--progress': `${(value / span) * 100}%` } as CSSProperties}
+        style={{
+          '--progress': `${(value / span) * 100}%`,
+          '--karaoke-coverage': karaokeGradient
+        } as CSSProperties}
         onChange={(event) => setDragValue(Number(event.target.value))}
         onPointerDown={() => tapHaptic()}
         onPointerUp={commit}
@@ -910,16 +955,16 @@ function Scrubber({
 
 
 
-/** Pixels per second the title drifts at: slow enough to read, fast enough to finish a lap. */
-const MARQUEE_SPEED = 36;
+/** The title and credits share the same reading pace. */
+const MARQUEE_SPEED = motionTokens.marquee.pixelsPerSecond;
 /** Space between the end of one lap and the start of the next; keep in step with .np-marquee__track gap. */
-const MARQUEE_GAP = 48;
+const MARQUEE_GAP = motionTokens.marquee.gap;
 
 /**
- * One-line title. When it fits it sits still; when it does not, two copies drift right to
- * left in a seamless loop (translateX only). Reduced motion falls back to an ellipsis.
+ * One-line title or credits. Overflow drifts right to left in a seamless loop, translateX only.
+ * Reduced motion falls back to an ellipsis.
  */
-function MarqueeText({ text, children }: { readonly text: string; readonly children: ReactNode }) {
+export function MarqueeText({ text, children = text }: { readonly text: string; readonly children?: ReactNode }) {
   const frameRef = useRef<HTMLSpanElement | null>(null);
   const measureRef = useRef<HTMLSpanElement | null>(null);
   const [overflow, setOverflow] = useState<number | null>(null);
@@ -935,10 +980,11 @@ function MarqueeText({ text, children }: { readonly text: string; readonly child
     update();
     const observer = new ResizeObserver(update);
     observer.observe(frame);
+    observer.observe(measure);
     return () => observer.disconnect();
   }, [text]);
 
-  const style = overflow ? ({ '--marquee-duration': `${Math.max(8, (overflow + MARQUEE_GAP) / MARQUEE_SPEED)}s`, '--marquee-shift': `${overflow + MARQUEE_GAP}px` } as CSSProperties) : undefined;
+  const style = overflow ? ({ '--marquee-duration': `${Math.max(motionTokens.marquee.minimumDuration, (overflow + MARQUEE_GAP) / MARQUEE_SPEED)}s`, '--marquee-shift': `${overflow + MARQUEE_GAP}px` } as CSSProperties) : undefined;
 
   return (
     <span ref={frameRef} className={`np-marquee${overflow ? ' is-scrolling' : ''}`} style={style}>
@@ -951,7 +997,7 @@ function MarqueeText({ text, children }: { readonly text: string; readonly child
 }
 
 
-/** One quiet status line under the Karaoke button; the detail lives behind an info button. */
+/** One status line under the Karaoke button; details and progress stay visible while the model starts. */
 function KaraokeStatus({ karaoke }: { readonly karaoke: LiveKaraokeController }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -973,7 +1019,7 @@ function KaraokeStatus({ karaoke }: { readonly karaoke: LiveKaraokeController })
     };
   }, [open]);
 
-  let tone: 'error' | 'basic' | 'ai' | 'idle' = 'idle';
+  let tone: 'error' | 'basic' | 'catching' | 'ai' | 'idle' = 'idle';
   let summary = 'Removes vocals, keeps bass and instruments';
   let detail: string | null =
     'Double-tap Karaoke to open the mix and choose how much voice and music you hear. Separation runs on this device; nothing is uploaded.';
@@ -987,23 +1033,38 @@ function KaraokeStatus({ karaoke }: { readonly karaoke: LiveKaraokeController })
   } else if (karaoke.active && karaoke.monoWarning) {
     tone = 'basic';
     summary = 'Mono track — vocals may remain';
-    detail = 'This recording is mono, so the basic vocal remover has little to work with. A stereo version will sound much cleaner.';
-  } else if (karaoke.active && karaoke.basicByChoice) {
+    detail = 'This recording is mono, so the light vocal remover has little to work with. A stereo version will sound much cleaner.';
+  } else if (karaoke.active && karaoke.backend === 'midside' && karaoke.block) {
     tone = 'basic';
-    summary = 'Basic mode';
-    detail =
-      'You chose Basic mode in Settings: a lighter vocal remover that needs no AI model. Some vocals remain, and the vocal mix is unavailable. Set Karaoke to Auto in Settings for the on-device AI model.';
-  } else if (karaoke.active && karaoke.backend === 'midside') {
+    ({ summary, detail } = blockCopy(karaoke.block));
+  } else if (karaoke.active && karaoke.backend === 'midside' && karaoke.fallbackReason) {
     tone = 'basic';
-    summary = 'Basic mode';
+    summary = 'Light remover · AI stopped';
     detail =
-      'The AI vocal remover couldn’t run on this device, so Allegra is using a lighter method that leaves some vocals in. Your browser’s GPU or memory wasn’t able to run the model; a reload or a different browser may help.';
-    technical = karaoke.fallbackReason ?? null;
+      'The AI vocal remover stopped on this device, so Allegra carries on with the lighter remover, which leaves some vocals in. A reload or another browser may help.';
+    technical = karaoke.fallbackReason;
+  } else if (karaoke.active && karaoke.consent) {
+    tone = 'basic';
+    summary = 'Light remover on · AI model needs your OK';
+  } else if (karaoke.active && karaoke.status === 'catching-up') {
+    tone = 'catching';
+    summary = 'Light remover here · AI catching up';
+    detail =
+      'You moved past the part the AI model has separated. The light remover keeps the vocals down until the AI catches up; the bright stretches on the bar are already separated.';
+  } else if (karaoke.active && karaoke.busy) {
+    tone = 'catching';
+    summary = 'Light remover on · AI on its way';
+    detail =
+      'Vocals are down with the light remover while the on-device AI model gets ready. Each stretch switches to the AI as soon as it is separated, and the song is kept so it never separates twice.';
   } else if (karaoke.active && karaoke.backend === 'roformer') {
     tone = 'ai';
     summary = 'On-device AI vocal removal';
     detail =
       'A vocal-separation model runs privately on this device. Nothing is uploaded. Double-tap Karaoke (or use the sliders button) to mix vocals and instruments.';
+  } else if (karaoke.active) {
+    tone = 'basic';
+    summary = 'Light remover on';
+    detail = null;
   }
 
   const hasDetail = detail !== null;
@@ -1029,6 +1090,16 @@ function KaraokeStatus({ karaoke }: { readonly karaoke: LiveKaraokeController })
           <p>{detail}</p>
           {technical ? <small>{technical.slice(0, 220)}</small> : null}
         </div>
+      ) : null}
+      <KaraokeProgress stage={karaoke.busy || karaoke.status === 'catching-up' ? karaoke.stage : null} />
+      {karaoke.showMixHint ? (
+        <p className="np-karaoke-hint-pill">
+          <SlidersHorizontal size={13} aria-hidden="true" />
+          <span>Double-tap Karaoke to mix the vocals back in</span>
+          <button type="button" className="np-info-btn" aria-label="Got it" onClick={karaoke.dismissMixHint}>
+            <X size={13} aria-hidden="true" />
+          </button>
+        </p>
       ) : null}
     </div>
   );

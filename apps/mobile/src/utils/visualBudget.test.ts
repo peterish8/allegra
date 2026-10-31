@@ -1,4 +1,4 @@
-import { renderScaleFor, resolveVisualBudget } from './visualBudget';
+import { GLOW_PIXELS_PER_POINT, renderScaleFor, resolveVisualBudget } from './visualBudget';
 
 const fps = (minStepSeconds: number) => (minStepSeconds === 0 ? Infinity : 0.8 / minStepSeconds);
 
@@ -52,5 +52,14 @@ describe('renderScaleFor', () => {
     expect(renderScaleFor(1, 2)).toBe(0.5);
     expect(renderScaleFor(1, 1)).toBe(0.5);
     expect(renderScaleFor(0.6, 3)).toBeCloseTo(0.2);
+  });
+});
+
+describe('GLOW_PIXELS_PER_POINT', () => {
+  it('draws the mini player glow as a few thousand pixels on a Galaxy M31, as the island draws its light', () => {
+    // The pill is about 360x64 points; the M31 draws 2.625 device pixels per point.
+    const scale = renderScaleFor(GLOW_PIXELS_PER_POINT, 2.625);
+    const devicePixels = (360 * scale * 2.625) * (64 * scale * 2.625);
+    expect(devicePixels).toBeLessThan(2_000);
   });
 });

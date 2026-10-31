@@ -67,6 +67,8 @@ interface CanvasVideoLayerProps {
    * disagreed — a dark band that came and went.
    */
   overlay?: React.ReactNode;
+  /** Lets a native view find this layer's video surface (the Now Playing wash reads its colours). */
+  nativeID?: string;
 }
 
 /** How long a canvas takes to leave (song change, feature off). */
@@ -88,6 +90,7 @@ const CanvasVideo: React.FC<CanvasVideoLayerProps & { lib: ExpoVideo }> = ({
   scrimStrength = 0.6,
   onVisibleChange,
   overlay,
+  nativeID,
 }) => {
   const reduceMotion = useReducedMotion();
   const opacity = useSharedValue(0);
@@ -244,7 +247,7 @@ const CanvasVideo: React.FC<CanvasVideoLayerProps & { lib: ExpoVideo }> = ({
   const scrimBottom = `rgba(7, 8, 11, ${0.9 * scrimStrength})`;
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, styles.clip, fadeStyle]} pointerEvents="none" onLayout={onLayout}>
+    <Animated.View style={[StyleSheet.absoluteFill, styles.clip, fadeStyle]} pointerEvents="none" onLayout={onLayout} nativeID={nativeID}>
       <lib.VideoView
         player={player}
         style={videoStyle}

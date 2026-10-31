@@ -32,10 +32,13 @@ import * as Haptics from '../utils/haptics';
 import appConfig from '../../app.json';
 import { TabScreenProps } from '../types/navigation';
 import { usePlayerStore } from '../store/playerStore';
-import { AppBackground, LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, LyricsHighlight, MiniPlayerBackground, PlayerBackground, isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
+import { AppBackground, LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, LyricsHighlight, MiniPlayerBackground, PlayerBackground, ReduceEffects, isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
+import { deviceTier } from '../utils/performanceTier';
 import { CustomAlert } from '../components/CustomAlert';
 import { Toast } from '../components/Toast';
-import ListenTogetherSettings from '../components/settings/ListenTogetherSettings';
+import LuvLinkSettings from '../components/settings/LuvLinkSettings';
+import DynamicIslandSettings from '../components/settings/DynamicIslandSettings';
+import { readIslandStatus } from '../services/NativeDynamicIsland';
 import AllegraAccountSettings from '../components/settings/AllegraAccountSettings';
 import { Colors } from '../constants/colors';
 import { SettingsStrings } from '../constants/uiStrings';
@@ -198,7 +201,7 @@ const SettingsScreen: React.FC<Props> = () => {
   const accordion = React.useMemo(() => ({ openId, toggle: toggleSection }), [openId, toggleSection]);
 
   // What each closed section says it is set to.
-  const BG_NAME: Record<PlayerBackground, string> = { apple: 'Apple Music', blend: 'Apple + glow', youtube: 'YouTube Music', aura: 'Shader wash' };
+  const BG_NAME: Record<PlayerBackground, string> = { apple: 'Apple Music', blend: 'Apple + glow', youtube: 'YouTube Music', aura: 'Cover glow' };
   const ALIGN_NAME: Record<LyricsAlign, string> = { left: 'left', center: 'centre', right: 'right' };
   const timing = Math.round(settings.lyricsDelay * 10) / 10;
   const summaries = {
@@ -215,18 +218,25 @@ const SettingsScreen: React.FC<Props> = () => {
     blend: 'The Apple Music room, blending into a soft glow when lyrics are open.',
     apple: 'The cover melting into its own blur, like Apple Music.',
     youtube: 'The cover\u2019s colour washing down into black, with the artwork as a card, like YouTube Music.',
-    aura: 'That wash with the live shader drifting through the top half, in the cover\u2019s colours.',
+    aura: 'Black through the middle, with two of the cover\u2019s colours glowing in from the top and bottom and drifting slowly.',
   };
   const appBgHint: Record<AppBackground, string> = {
     shader: 'The live shader, moving with the music.',
     glass: 'Dark frosted glass tinted by the song. Lighter on the battery.',
-    glow: 'The mini player’s animated glow across the top, fading into plain black.',
+    glow: 'Two of the cover’s colours drifting slowly across the top, fading into plain black.',
   };
   const miniHint: Record<MiniPlayerBackground, string> = {
     glow: 'Two glows drifting in the cover\u2019s colours.',
     tint: 'A calm tone of the cover.',
     glass: 'Clear liquid glass that bends and lights whatever is behind it.',
     black: 'Plain black, nothing behind the text.',
+  };
+  const reduceHint: Record<ReduceEffects, string> = {
+    auto: deviceTier() === 'low'
+      ? 'This phone gets the lighter effects: glass without live blur and calmer motion, for smoother scrolling.'
+      : 'Full effects. The phone switches to lighter ones by itself if it starts dropping frames.',
+    on: 'Lighter effects everywhere: glass without live blur and calmer motion, for smoother scrolling.',
+    off: 'Full effects, even if this phone struggles with them.',
   };
 
   return (
@@ -251,11 +261,12 @@ const SettingsScreen: React.FC<Props> = () => {
               items={[
                 { key: 'account', label: 'Account' },
                 { key: 'player', label: 'Player' },
+                ...(readIslandStatus() ? [{ key: 'island', label: 'Island' }] : []),
                 { key: 'playback', label: 'Playback' },
                 { key: 'lyrics', label: 'Lyrics' },
                 { key: 'nav', label: 'Navigation' },
                 { key: 'discover', label: 'Discover' },
-                { key: 'together', label: 'Listen together' },
+                { key: 'together', label: 'LuvLink' },
                 { key: 'library', label: 'Library & data' },
                 { key: 'about', label: 'About' },
               ]}
@@ -287,7 +298,7 @@ const SettingsScreen: React.FC<Props> = () => {
             label="Player background"
             hint={bgHint[settings.playerBackground]}
             value={settings.playerBackground}
-            options={[{ value: 'apple', label: 'Apple Music' }, { value: 'blend', label: 'Apple + glow' }, { value: 'youtube', label: 'YouTube Music' }, { value: 'aura', label: 'Shader wash' }]}
+            options={[{ value: 'apple', label: 'Apple Music' }, { value: 'blend', label: 'Apple + glow' }, { value: 'youtube', label: 'YouTube Music' }, { value: 'aura', label: 'Cover glow' }]}
             onChange={settings.setPlayerBackground}
           />
           <Choice<AppBackground>
@@ -303,6 +314,13 @@ const SettingsScreen: React.FC<Props> = () => {
             value={settings.miniPlayerBackground}
             options={[{ value: 'glow', label: 'Glow animated' }, { value: 'tint', label: 'Cover tint' }, { value: 'glass', label: 'Liquid glass' }, { value: 'black', label: 'Pure black' }]}
             onChange={settings.setMiniPlayerBackground}
+          />
+          <Choice<ReduceEffects>
+            label="Reduce effects"
+            hint={reduceHint[settings.reduceEffects]}
+            value={settings.reduceEffects}
+            options={[{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
+            onChange={settings.setReduceEffects}
           />
           <Kit.Switch
             label="Canvas"
@@ -333,6 +351,8 @@ const SettingsScreen: React.FC<Props> = () => {
             </Row>
           ) : null}
         </Section>
+
+        <DynamicIslandSettings onLayout={at('island')} onNotice={setNotice} />
 
         <Section id="playback" summary={summaries.playback} icon="musical-notes-outline" title="Playback" lead="What happens when you press play." onLayout={at('playback')}>
           <Kit.Switch
@@ -371,6 +391,7 @@ const SettingsScreen: React.FC<Props> = () => {
             onChange={settings.setLineSpacing}
           />
           <TimingRow value={settings.lyricsDelay} onChange={settings.setLyricsDelay} />
+          <Kit.Switch label="Auto-scroll lyrics without timing" hint="Move plain lyrics steadily through the song. Scroll by hand to pause." value={settings.autoScrollPlainLyrics} onChange={settings.setAutoScrollPlainLyrics} />
         </Section>
 
         <Section id="nav" summary={summaries.nav} icon="navigate-outline" title="Navigation and voice" lead="The bar at the bottom and the mic in it." onLayout={at('nav')}>
@@ -413,7 +434,7 @@ const SettingsScreen: React.FC<Props> = () => {
           ) : null}
         </Section>
 
-        <ListenTogetherSettings onLayout={at('together')} onNotice={setNotice} />
+        <LuvLinkSettings onLayout={at('together')} onNotice={setNotice} />
 
         <Section id="library" summary={summaries.library} icon="folder-open-outline" title="Library and data" lead="Your songs, backups and clean-up." onLayout={at('library')}>
           <Action label="Add songs from this phone" hint="Find music files already on your device." onPress={handleImportLocalAudio} />

@@ -17,6 +17,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.lyricflow.app.island.IslandPlayback
 import com.lyricflow.app.modules.PlayerBridge
 import com.lyricflow.app.playback.QueueEngine
 import java.io.File
@@ -148,6 +149,7 @@ class PlaybackService : MediaSessionService() {
             if (isPlaying) {
                 stallReloads = 0
                 stalledTicks = 0
+                com.lyricflow.app.PerfMarks.playing()
             }
         }
 
@@ -246,6 +248,8 @@ class PlaybackService : MediaSessionService() {
         addSession(session)
 
         PlayerBridge.setPlayer(exoPlayer, this, queueEngine)
+        // The system-wide island (island/) drives the same player the notification does.
+        IslandPlayback.attach(sessionPlayer)
         Log.d(TAG, "PlaybackService.onCreate() done — media session ready")
     }
 
@@ -271,6 +275,7 @@ class PlaybackService : MediaSessionService() {
         // tap reloads the song where it stopped instead of doing nothing.
         PlayerBridge.emitReleased()
         PlayerBridge.clearPlayer()
+        mediaSession?.let { IslandPlayback.detach(it.player) }
         mediaSession?.run {
             player.release()
             release()

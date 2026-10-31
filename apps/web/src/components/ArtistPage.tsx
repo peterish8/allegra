@@ -2,12 +2,12 @@ import { ArrowLeft, BadgeCheck, Heart, Pause, Play, Shuffle } from 'lucide-react
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
-import type { ArtistProfile, UnifiedSong } from '@shared/types';
+import type { AlbumSummary, ArtistProfile, UnifiedSong } from '@shared/types';
 
 import { ArtistAbout } from './ArtistAbout';
 import { PlaylistMenu } from './PlaylistMenu';
 import { Artwork, EmptyState, IconButton, SkeletonCard, TactileButton } from './ui';
-import { formatAlbumDuration } from '../lib/album';
+import { collectAlbumTracks, formatAlbumDuration, type AlbumTarget } from '../lib/album';
 import { extractPalette } from '../lib/palette';
 import type { Palette } from '../lib/palette';
 import { formatTime } from '../lib/utils';
@@ -39,7 +39,9 @@ interface ArtistPageProps {
   readonly onPlayTrack: (song: UnifiedSong, queue: UnifiedSong[]) => void;
   readonly onPlayAll: (shuffle: boolean) => void;
   readonly onLike: (song: UnifiedSong) => void;
-  readonly onOpenAlbum: (albumName: string, seed: UnifiedSong | null) => void;
+  /** `catalog` is the provider's album (by id): opened and played whole, not guessed from top songs. */
+  readonly onOpenAlbum: (albumName: string, seed: UnifiedSong | null, catalog?: AlbumTarget) => void;
+  readonly onPlayCatalogAlbum?: (album: AlbumSummary) => void;
   readonly onOpenArtist: (name: string) => void;
 }
 
@@ -87,6 +89,7 @@ export function ArtistPage({
   onPlayAll,
   onLike,
   onOpenAlbum,
+  onPlayCatalogAlbum,
   onOpenArtist
 }: ArtistPageProps) {
   const [expanded, setExpanded] = useState(false);
@@ -138,16 +141,19 @@ export function ArtistPage({
   // Real albums (cover + year) from the provider when we have them; otherwise group the songs by album.
   const albums = useMemo(() => {
     if (profile && profile.albums.length > 0) {
+      // The provider's albums carry their own id: open and play the whole album, and show no count
+      // made from the artist's top songs (that once said "1 song" for a ten-track album).
       return profile.albums.map((album) => ({
         key: album.id,
         name: album.name,
         year: album.year,
         image: album.image,
-        seed: songs.find((song) => song.album?.trim().toLocaleLowerCase() === album.name.trim().toLocaleLowerCase()) ?? null,
-        trackCount: songs.filter((song) => song.album?.trim().toLocaleLowerCase() === album.name.trim().toLocaleLowerCase()).length
+        seed: songs.find((song) => song.albumId === album.id) ?? null,
+        trackCount: 0,
+        catalog: { id: album.id, name: album.name, artist: profile.name, artwork: album.image, year: album.year } as AlbumTarget | undefined
       }));
     }
-    const groups = new Map<string, { key: string; name: string; year: string | null; image: string | null; seed: UnifiedSong; trackCount: number }>();
+    const groups = new Map<string, { key: string; name: string; year: string | null; image: string | null; seed: UnifiedSong; trackCount: number; catalog?: AlbumTarget }>();
     for (const song of songs) {
       const album = song.album?.trim();
       if (!album) continue;
@@ -285,18 +291,21 @@ export function ArtistPage({
               <div className="media-grid">
                 {albums.map((album) => (
                   <div className="media-card" key={album.key}>
-                    <button type="button" className="media-card-open" onClick={() => onOpenAlbum(album.name, album.seed)} aria-label={`Open album ${album.name}`}>
+                    <button type="button" className="media-card-open" onClick={() => onOpenAlbum(album.name, album.seed, album.catalog)} aria-label={`Open album ${album.name}`}>
                       <span className="media-card-art">
                         {album.image ? <img src={album.image} alt="" width={320} height={320} loading="lazy" crossOrigin="anonymous" /> : album.seed ? <Artwork song={album.seed} size="large" /> : null}
                       </span>
                       <span className="media-card-title">{album.name}</span>
                       <span className="media-card-sub">{[album.year, album.trackCount > 0 ? `${album.trackCount} ${album.trackCount === 1 ? 'song' : 'songs'}` : ''].filter(Boolean).join(' · ') || 'Album'}</span>
                     </button>
-                    {album.seed ? (
+                    {album.catalog && onPlayCatalogAlbum || album.seed ? (
                       <button
                         type="button"
                         className="media-card-play"
-                        onClick={() => onPlayTrack(album.seed as UnifiedSong, songs.filter((song) => song.album?.trim().toLocaleLowerCase() === album.name.trim().toLocaleLowerCase()))}
+                        onClick={() => {
+                          if (album.catalog && onPlayCatalogAlbum) onPlayCatalogAlbum({ ...album.catalog, language: null });
+                          else if (album.seed) onPlayTrack(album.seed, collectAlbumTracks(album.seed, [songs]));
+                        }}
                         aria-label={`Play ${album.name}`}
                       >
                         <Play size={20} fill="currentColor" aria-hidden="true" />

@@ -260,6 +260,15 @@ async function isDeviceOnline(ctx: QueryCtx | MutationCtx, userId: string, devic
   return rooms.some(({ roomId }) => roomId === roomOf(userId));
 }
 
+/** A device on the V1 protocol, or one no longer registered (treated the cautious way). */
+async function isLegacyDevice(ctx: QueryCtx | MutationCtx, deviceId: string): Promise<boolean> {
+  const device = await ctx.db
+    .query('devices')
+    .withIndex('by_deviceId', (q) => q.eq('deviceId', deviceId))
+    .unique();
+  return (device?.protocolVersion ?? 1) < PROTOCOL_V2;
+}
+
 // ── Validation ───────────────────────────────────────────────────────────────
 
 const rejectInvalid = (): never => fail('invalid_command');
@@ -1135,8 +1144,10 @@ export const beginV2 = mutation({
  * state is paused, or Presence has given the owner up as offline. That last owner cannot confirm
  * anything (a closed laptop, a killed app), so the destination starts where the song would have
  * reached; if the owner is in fact still playing it stops as soon as it reconnects and sees the
- * new epoch. An owner that Presence still counts online, legacy ones included, must confirm its
- * pause through releaseV2, and its silence is a failed transfer.
+ * new epoch. A V2 owner still playing is not waited for either: it pauses itself when its state
+ * shows another owner (connectSession's pauseAfterOwnershipLoss). Only a legacy (protocol 1) owner
+ * that Presence still counts online must confirm its pause through releaseV2, and its silence is a
+ * failed transfer.
  */
 export const prepareV2 = mutation({
   args: { deviceId: v.string(), commandId: v.id('connectCommands'), reservationToken: v.string() },
@@ -1173,9 +1184,13 @@ export const prepareV2 = mutation({
       };
     }
 
+    // Spotify's handoff: the destination starts from the stored position at once, and a V2 owner
+    // pauses itself when its state shows it lost ownership (connectSession's pauseAfterOwnershipLoss).
+    // Only a legacy owner, which never learned that, is still asked to confirm its pause first.
     const ownerId = own.activeDeviceId;
     const waitForOwner =
-      ownerId !== undefined && ownerId !== deviceId && player.isPlaying && (await isDeviceOnline(ctx, userId, ownerId));
+      ownerId !== undefined && ownerId !== deviceId && player.isPlaying &&
+      (await isLegacyDevice(ctx, ownerId)) && (await isDeviceOnline(ctx, userId, ownerId));
 
     if (waitForOwner) {
       if (own.handoff?.commandId !== command._id) {
@@ -1289,7 +1304,7 @@ export const completeV2 = mutation({
     // A refusal needs no reservation: a device may fail a command it never began.
     const reserved = command.reservationToken !== undefined;
     if (reserved ? command.reservationToken !== reservationToken : outcome.ok) fail('reservation_mismatch');
-    if (!outcome.ok && !isFailureCode(outcome.code)) fail('invalid_command');
+    if (outcome.ok === false && !isFailureCode(outcome.code)) fail('invalid_command');
     const hasPatch = patch !== undefined && Object.values(patch).some((value) => value !== undefined);
     if (patch && hasPatch) assertStatePatch(patch);
 
@@ -1303,7 +1318,7 @@ export const completeV2 = mutation({
         return completed(player?.rev ?? 0);
       }
     }
-    if (!outcome.ok) {
+    if (outcome.ok === false) {
       await failCommand(ctx, command, outcome.code as FailureCode, outcome.error);
       return completed(player?.rev ?? 0);
     }

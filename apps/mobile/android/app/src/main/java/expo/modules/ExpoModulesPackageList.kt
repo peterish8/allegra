@@ -68,6 +68,18 @@ class ExpoModulesPackageList : ModulesProvider {
         // Local app modules
         com.lyricflow.app.modules.StartupModule::class.java,
         com.lyricflow.app.modules.MainPlayerModule::class.java,
+        com.lyricflow.app.modules.NativeSkipModule::class.java,
+        com.lyricflow.app.modules.NativeTransportBarModule::class.java,
+        com.lyricflow.app.modules.NativeTabBarModule::class.java,
+        com.lyricflow.app.modules.NativeLyricsModule::class.java,
+        com.lyricflow.app.modules.NativeFlowGlowModule::class.java,
+        com.lyricflow.app.modules.NativeCanvasWashModule::class.java,
+        com.lyricflow.app.modules.NativeQueueListModule::class.java,
+        com.lyricflow.app.modules.NativeScrubberModule::class.java,
+        com.lyricflow.app.modules.NativeSongActionsModule::class.java,
+        com.lyricflow.app.modules.NativeMoreItemsModule::class.java,
+        com.lyricflow.app.modules.NativeAlphabetRailModule::class.java,
+        com.lyricflow.app.modules.NativePlayerFooterModule::class.java,
         com.lyricflow.app.modules.LuvsPlayerModule::class.java,
         com.lyricflow.app.modules.LuvsPagerModule::class.java,
         com.lyricflow.app.modules.LuvsEngineModule::class.java,
@@ -76,5 +88,6 @@ class ExpoModulesPackageList : ModulesProvider {
         com.lyricflow.app.modules.SearchModule::class.java,
         com.lyricflow.app.modules.PaletteModule::class.java,
         com.lyricflow.app.modules.VoiceInputModule::class.java,
+        com.lyricflow.app.modules.DynamicIslandModule::class.java,
     )
 }

@@ -1,4 +1,5 @@
 import type { Consent } from './legal';
+import type { MusicGenreId } from './genres';
 import type { LyricWord } from './wordSync';
 
 export interface UnifiedSong {
@@ -6,6 +7,8 @@ export interface UnifiedSong {
   readonly title: string;
   readonly artist: string;
   readonly album?: string;
+  /** The catalog's album id (Saavn only) for `GET /api/albums/:id`. Absent for Gaana and canonical-release names. */
+  readonly albumId?: string;
   readonly artwork: string;
   readonly streamUrl: string;
   readonly duration: number;
@@ -33,6 +36,31 @@ export interface LyricsPayload {
   readonly lines: LyricLine[];
 }
 
+/** `latin` is the transliteration (shown first); `native` is the song's own script. */
+export type LyricsScript = 'latin' | 'native';
+
+/** One synced rendering listeners made and confirmed, as `GET /api/lyrics/verified` returns it. */
+export interface VerifiedLyricsVersion {
+  readonly script: LyricsScript;
+  /** ISO 639-1 code of the sung language ("ta", "te", "hi"…). */
+  readonly language: string;
+  /** Enhanced LRC: line `[mm:ss.xx]` stamps and word `<mm:ss.xxx>` tags (wordSync). */
+  readonly lrc: string;
+  /** Epoch milliseconds. */
+  readonly syncedAt: number;
+}
+
+export interface VerifiedLyrics {
+  /** SongRef, "saavn:<id>". */
+  readonly ref: string;
+  readonly title: string;
+  readonly artist: string;
+  /** Seconds. */
+  readonly duration: number;
+  /** Live versions only, latin first. */
+  readonly versions: readonly VerifiedLyricsVersion[];
+}
+
 /** A lead artist as the catalog knows them: a real photo when the provider has one. */
 export interface ArtistSummary {
   readonly id: string;
@@ -55,6 +83,23 @@ export interface ArtistProfile extends ArtistSummary {
   readonly songs: UnifiedSong[];
   readonly albums: ArtistAlbum[];
   readonly similar: ArtistSummary[];
+}
+
+/** An album as the catalog knows it (`GET /api/search/albums`). */
+export interface AlbumSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly artist: string;
+  readonly artwork: string | null;
+  readonly year: string | null;
+  readonly language: string | null;
+}
+
+/** A whole album in the catalog's own track order (`GET /api/albums/:id`). Every song is playable. */
+export interface AlbumDetail extends AlbumSummary {
+  /** The catalog's count; `songs` can be shorter when a row has no stream. */
+  readonly songCount: number;
+  readonly songs: readonly UnifiedSong[];
 }
 
 /** Album motion artwork (`GET /api/canvas`). `videoUrl` is always an https://*.apple.com URL. */
@@ -93,6 +138,8 @@ export interface AccountProfile {
 export interface TasteSummary {
   readonly topArtists: { readonly name: string; readonly score: number }[];
   readonly languages: { readonly name: string; readonly score: number }[];
+  /** Explicit genre picks from onboarding, kept stable as catalogue ids. */
+  readonly genres?: readonly MusicGenreId[];
   readonly signals: number;
   /** False until they pick favourites or listen enough for us to know. */
   readonly onboarded: boolean;

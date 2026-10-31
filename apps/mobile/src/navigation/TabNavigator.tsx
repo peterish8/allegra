@@ -8,6 +8,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { TabParamList, LibraryStackParamList, BrowseStackParamList } from '../types/navigation';
 import { ModernPillTabBar } from '../components/ModernPillTabBar';
 import { CustomTabBar } from '../components/CustomTabBar';
+import { NativeTabBar } from '../components/NativeTabBar';
 import { useSettingsStore } from '../store/settingsStore';
 import { useThemeColors, useIsDark } from '../contexts/ThemeContext';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
@@ -22,6 +23,7 @@ import BlendJoinScreen from '../screens/BlendJoinScreen';
 import ImportScreen from '../screens/ImportScreen';
 import SearchScreen from '../screens/SearchScreen';
 import StreamScreen from '../screens/StreamScreen';
+import DjScreen from '../screens/DjScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ArtistScreen from '../screens/ArtistScreen';
 import CollectionScreen from '../screens/CollectionScreen';
@@ -149,6 +151,7 @@ const SearchIcon = ({ color, focused }: { color: string; focused: boolean }) => 
 // audio pool and a transport for a different player would be misleading.
 const renderModernPillTabBar = (props: BottomTabBarProps) => <ModernPillTabBar {...props} />;
 const renderCustomTabBar = (props: BottomTabBarProps) => <CustomTabBar {...props} />;
+const renderNativeTabBar = (props: BottomTabBarProps) => <NativeTabBar {...props} />;
 
 export const TabNavigator: React.FC = () => {
   const colors = useThemeColors();
@@ -165,7 +168,9 @@ export const TabNavigator: React.FC = () => {
         initialRouteName="Stream"
         // Back from Settings returns to the tab you came from.
         backBehavior="history"
-        tabBar={navBarStyle === 'modern-pill' ? renderModernPillTabBar : renderCustomTabBar}
+        tabBar={Platform.OS === 'android'
+            ? renderNativeTabBar
+            : navBarStyle === 'modern-pill' ? renderModernPillTabBar : renderCustomTabBar}
         screenOptions={{
           headerShown: false,
           ...TAB_TRANSITION,
@@ -184,6 +189,7 @@ export const TabNavigator: React.FC = () => {
         <Tab.Screen name="Luvs" component={LuvsScreen} options={{ tabBarLabel: 'Luvs', tabBarIcon: LuvsIcon, freezeOnBlur: false }} />
         <Tab.Screen name="Library" component={LibraryStackScreen} options={{ tabBarLabel: 'Library', tabBarIcon: LibraryIcon }} />
         <Tab.Screen name="Search" component={SearchScreen} options={{ tabBarLabel: 'Search', tabBarIcon: SearchIcon }} />
+        <Tab.Screen name="Dj" component={DjScreen} options={{ tabBarLabel: 'Your DJ', tabBarButton: () => null }} />
         <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: 'Settings' }} />
         <Tab.Screen name="Browse" component={BrowseStackScreen} options={{ tabBarLabel: 'Browse' }} />
       </Tab.Navigator>

@@ -31,7 +31,8 @@ export interface PlaylistsApi {
   readonly reload: () => Promise<readonly LibrarySong[]>;
   readonly contains: (libraryId: string, song: UnifiedSong) => boolean;
   readonly create: (name: string) => Promise<LibraryRecord | null>;
-  readonly remove: (libraryId: string) => Promise<void>;
+  readonly addSongs: (libraryId: string, songs: readonly UnifiedSong[]) => Promise<boolean>;
+  readonly remove: (libraryId: string) => Promise<boolean>;
   /** Adds the song if it is absent from the playlist, removes it otherwise. */
   readonly toggleSong: (libraryId: string, song: UnifiedSong) => Promise<void>;
   readonly setCover: (libraryId: string, file: File, onProgress?: (ratio: number) => void) => Promise<LibraryRecord | null>;
@@ -119,19 +120,10 @@ export function usePlaylists(): PlaylistsApi {
     setLikedSongs([]);
   }, [accountId]);
 
-  useEffect(() => {
-    const onOwnWrite = (event: Event): void => {
-      const detail = (event as CustomEvent<{ rev?: unknown; applied?: unknown; opCount?: unknown; rejected?: unknown; superseded?: unknown }>).detail;
-      if (!detail || typeof detail.rev !== 'number' || typeof detail.applied !== 'number' || typeof detail.opCount !== 'number'
-          || !Array.isArray(detail.rejected) || detail.rejected.length > 0
-          || !Array.isArray(detail.superseded) || detail.superseded.length > 0
-          || detail.applied !== detail.opCount
-          || detail.rev - detail.applied !== libraryCursorRef.current) return;
-      libraryCursorRef.current = detail.rev;
-    };
-    window.addEventListener('allegra:library-own-write', onOwnWrite);
-    return () => window.removeEventListener('allegra:library-own-write', onOwnWrite);
-  }, []);
+  // The cursor moves only in `reload`, after the changes up to it are in `libraryChangesRef`. It once
+  // also jumped past this tab's own writes (likes, playlist edits) without recording them, so the next
+  // reload rebuilt the library without them: a like flipped back to unliked a moment later
+  // (2026-10-11, tests/e2e/player.spec.ts). Re-reading our own few changes is the price of being right.
 
   const commit = useCallback((next: LibraryRecord[]): void => {
     playlistsRef.current = next;
@@ -298,7 +290,7 @@ export function usePlaylists(): PlaylistsApi {
     }
   }, [commit, commitRefs]);
 
-  const remove = useCallback(async (libraryId: string): Promise<void> => {
+  const remove = useCallback(async (libraryId: string): Promise<boolean> => {
     const before = playlistsRef.current;
     setActionError(null);
     commit(before.filter((library) => library.id !== libraryId));
@@ -307,9 +299,11 @@ export function usePlaylists(): PlaylistsApi {
       const nextRefs = new Map(playlistRefsRef.current);
       nextRefs.delete(libraryId);
       commitRefs(nextRefs);
+      return true;
     } catch (caught) {
       commit(before);
       setActionError(messageOf(caught, 'That playlist could not be deleted.'));
+      return false;
     }
   }, [commit, commitRefs]);
 
@@ -341,6 +335,57 @@ export function usePlaylists(): PlaylistsApi {
     }
   }, [commit, commitRefs, commitSongs]);
 
+  const addSongs = useCallback(async (libraryId: string, tracks: readonly UnifiedSong[]): Promise<boolean> => {
+    const before = playlistsRef.current;
+    const current = before.find((library) => library.id === libraryId);
+    if (!current) return false;
+    const currentRefs = playlistRefsRef.current.get(libraryId) ?? [];
+    const existing = new Set(currentRefs);
+    const unique = new Map<SongRef, { readonly song: UnifiedSong; readonly snapshot: SongSnapshot }>();
+    for (const song of tracks) {
+      const ref = refOf(song);
+      if (!ref || existing.has(ref) || unique.has(ref)) continue;
+      unique.set(ref, { song, snapshot: snapshotOf(song, ref) });
+    }
+    if (unique.size === 0) return true;
+
+    const at = Date.now();
+    const additions = [...unique.entries()];
+    const ops: LibraryOp[] = additions.map(([ref, { snapshot }]) => ({
+      op: 'playlist_add', playlistId: libraryId, ref, song: snapshot, at
+    }));
+    const nextRefs = [...currentRefs, ...additions.map(([ref]) => ref)];
+    const nextIds = nextRefs.map(visibleId);
+    commit(before.map((library) => library.id === libraryId ? { ...library, songIds: nextIds } : library));
+    commitRefs(new Map(playlistRefsRef.current).set(libraryId, nextRefs));
+    const originalSongs = songsRef.current;
+    const nextSongs = new Map(originalSongs);
+    for (const [ref, { song, snapshot }] of additions) {
+      nextSongs.set(visibleId(ref), { ...song, libraryRef: ref, librarySnapshot: snapshot } as LibrarySong);
+    }
+    commitSongs(nextSongs);
+
+    setActionError(null);
+    try {
+      const result = await applyLibraryOps(ops);
+      if (result.rejected.length > 0 || result.applied !== ops.length) throw new Error('Some songs could not be saved. Try again.');
+      return true;
+    } catch (caught) {
+      commit(before);
+      commitRefs(new Map(playlistRefsRef.current).set(libraryId, currentRefs));
+      const rollbackSongs = new Map(songsRef.current);
+      for (const [ref] of additions) {
+        const id = visibleId(ref);
+        const previous = originalSongs.get(id);
+        if (previous) rollbackSongs.set(id, previous);
+        else rollbackSongs.delete(id);
+      }
+      commitSongs(rollbackSongs);
+      setActionError(messageOf(caught, 'Those songs could not be saved.'));
+      return false;
+    }
+  }, [commit, commitRefs, commitSongs]);
+
   const setCover = useCallback(async (libraryId: string, file: File, onProgress?: (ratio: number) => void): Promise<LibraryRecord | null> => {
     setActionError(null);
     try {
@@ -353,5 +398,5 @@ export function usePlaylists(): PlaylistsApi {
     }
   }, [commit]);
 
-  return { playlists, songs, playlistRefs, likedSongs, loading, error, actionError, reload, contains, create, remove, toggleSong, setCover };
+  return { playlists, songs, playlistRefs, likedSongs, loading, error, actionError, reload, contains, create, addSongs, remove, toggleSong, setCover };
 }

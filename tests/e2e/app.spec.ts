@@ -13,6 +13,81 @@ plain('a first visit offers taste onboarding and "Not now" dismisses it', async 
   await expect(page.getByRole('button', { name: 'Search music' }).first()).toBeVisible();
 });
 
+// 2026-10-12: genre picks used to stay in the browser; they are now saved with the listener's taste.
+plain('onboarding saves the genres the listener picked', async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await page.goto('/');
+  const dialog = page.getByRole('dialog').filter({ has: page.locator('#taste-title') });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  const bollywood = dialog.getByRole('button', { name: 'Bollywood' });
+  await bollywood.click();
+  await expect(bollywood).toHaveAttribute('aria-pressed', 'true');
+  // Bollywood seeds its artists, so the artist step can go on at once.
+  await dialog.getByRole('button', { name: 'Continue' }).click();
+  await dialog.getByRole('button', { name: 'Continue' }).click();
+  const saved = page.waitForResponse((response) => response.url().endsWith('/api/me/taste/seed') && response.request().method() === 'POST');
+  await dialog.getByRole('button', { name: 'Build my Home' }).click();
+  const body = (await (await saved).json()) as { data?: { genres?: string[] } };
+  expect(body.data?.genres).toEqual(['bollywood']);
+  await expect(dialog).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('a genre sleeve on Browse searches for that sound, and a result opens the playlist sheet above the page', async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await page.goto('/discover');
+  const sleeve = page.getByRole('button', { name: /^Bollywood: / });
+  await expect(sleeve).toBeVisible({ timeout: 30_000 });
+  await sleeve.click();
+  await expect(sleeve).toBeHidden();
+
+  const add = page.getByRole('button', { name: /(to the queue or a playlist|to a playlist)$/ }).first();
+  await expect(add).toBeVisible({ timeout: 20_000 });
+  await add.click();
+  const sheet = page.getByRole('dialog', { name: /Save to playlist|Add to queue or playlist/ });
+  await expect(sheet).toBeVisible();
+  // Portalled to the page root, so no list row or scroll container can clip it.
+  await expect(page.locator('body > .sheet-backdrop')).toHaveCount(1);
+  await sheet.getByRole('button', { name: 'Close' }).click();
+  await expect(sheet).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+// 2026-10-17: Browse's top 10 plays here (no outside chart links), and a shelf with more tiles fades at its edge.
+test('Browse: a top 10 row plays in Now Playing, and an overflowing shelf fades instead of cutting a tile', async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await page.goto('/discover');
+  const chart = page.locator('#browse-chart').locator('xpath=ancestor::section[1]');
+  const first = chart.getByRole('button', { name: /^Play / }).first();
+  await expect(first).toBeVisible({ timeout: 30_000 });
+  await expect(chart.locator('a[href^="http"]')).toHaveCount(0);
+  const title = ((await first.getAttribute('aria-label')) ?? '').replace(/^Play /, '');
+  await first.click();
+  await expect(page.locator(bar)).toContainText(title, { timeout: 20_000 });
+  await expectPlaying(page);
+
+  const shelf = page.locator('.shelf.has-after').first();
+  await expect(shelf).toBeVisible({ timeout: 20_000 });
+  expect(await shelf.evaluate((element) => getComputedStyle(element).maskImage)).toContain('linear-gradient');
+  expect(errors).toEqual([]);
+});
+
+// 2026-10-17: a playlist is a folder of its covers in Library, and opens a page led by its cover.
+test('Library: a new playlist is a folder card that opens its own page, cover first', async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await page.goto('/library');
+  const name = `Folder ${Date.now()}`;
+  await page.getByLabel('New playlist name').fill(name);
+  await page.getByRole('button', { name: 'Create playlist' }).click();
+  const folder = page.getByRole('article', { name: `Playlist ${name}` });
+  await expect(folder).toBeVisible({ timeout: 20_000 });
+  await expect(folder).toContainText('0 songs');
+  await folder.getByRole('link', { name: `Open ${name}` }).click();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.collection-cover')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('every section renders without a page error', async ({ page }) => {
   const errors = collectPageErrors(page);
   for (const path of ['/', '/discover', '/library', '/liked', '/artist/Arijit%20Singh', '/not-a-real-page']) {
@@ -89,7 +164,7 @@ test('the full player opens with lyrics and closes again', async ({ page }) => {
   });
   await expect(player).toBeVisible();
   await expect(player.getByRole('tab', { name: 'Lyrics' })).toBeVisible();
-  await player.getByRole('tab', { name: 'Up next' }).click();
+  await player.getByRole('tab', { name: 'Queue' }).click();
   await page.keyboard.press('Escape');
   await expect(player).toBeHidden();
   await expectPlaying(page);

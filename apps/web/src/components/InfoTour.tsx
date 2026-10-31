@@ -35,6 +35,8 @@ export type TourPose = 'stack' | 'fan' | 'spread' | 'orbit' | 'lift';
 export interface TourStep {
   readonly title: string;
   readonly body: string;
+  /** Optional numbered how-to under the line (setup instructions), a few short items. */
+  readonly steps?: readonly string[];
   readonly icon: LucideIcon;
   readonly pose: TourPose;
 }
@@ -204,6 +206,11 @@ export function InfoTour({ label, steps, stage, className }: {
                   <motion.p className="info-tour__count" {...word(0)}>{count > 1 ? `Step ${index + 1} of ${count}` : label}</motion.p>
                   <motion.h2 id={titleId} className="info-tour__title" {...word(1)}>{step.title}</motion.h2>
                   <motion.p className="info-tour__body" {...word(2)}>{step.body}</motion.p>
+                  {step.steps?.length ? (
+                    <motion.ol className="info-tour__steps" {...word(3)}>
+                      {step.steps.map((item) => <li key={item}>{item}</li>)}
+                    </motion.ol>
+                  ) : null}
                 </motion.div>
               </AnimatePresence>
             </motion.div>

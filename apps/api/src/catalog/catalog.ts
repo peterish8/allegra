@@ -2,13 +2,15 @@ import { ProviderUnavailableError, NotFoundError, TimeoutError } from '../lib/er
 import { cacheKey, type CacheStore } from '../lib/cache.js';
 import { CircuitBreaker } from '../lib/circuitBreaker.js';
 import { isDerivative, queryWantsDerivative } from '../lib/derivative.js';
-import { collapseRecordings, needsCanonicalRelease, normalizeSong, songIdentity } from '../lib/normalize.js';
+import { collapseRecordings, isCompilationAlbum, isOwnReleaseOf, normalizeAlbumDetail, releaseYear, normalizeAlbumSummary, normalizeSong, songIdentity } from '../lib/normalize.js';
+import { scoreCandidate } from '../services/importMatch.js';
+import { creditedArtists } from '../shared/identity.js';
 import type { GaanaProvider } from '../providers/gaana.js';
 import type { CanonicalRelease, ReleaseAuthority } from '../providers/musicbrainz.js';
 import type { ProviderResult, SaavnAsset, SaavnProvider, SaavnSong } from '../providers/saavn.js';
 import { decodeHtml, repairMojibake } from '../lib/decodeHtml.js';
 import { inLanguages, languagesKey } from '../lib/languages.js';
-import type { ArtistProfile, ArtistSummary, HomePayload, UnifiedSong } from '../types.js';
+import type { AlbumDetail, AlbumSummary, ArtistProfile, ArtistSummary, HomePayload, UnifiedSong } from '../types.js';
 import { parseSongRef } from '../shared/songRef.js';
 
 export interface CatalogSearch {
@@ -22,6 +24,8 @@ export interface CatalogOptions {
   readonly cache: CacheStore;
   /** Names the record a song was released on. Unset leaves the provider's album and cover alone. */
   readonly releaseAuthority?: ReleaseAuthority;
+  /** How long a search waits for the release authority. Default `RELEASE_WAIT_MS`. */
+  readonly releaseWaitMs?: number;
 }
 
 export interface SearchOptions {
@@ -36,6 +40,28 @@ export interface SearchOptions {
 /** A corrected album name and cover are worth a month; a miss is re-asked tomorrow. */
 const RELEASE_TTL_SECONDS = 2_592_000;
 const RELEASE_MISS_TTL_SECONDS = 86_400;
+/**
+ * A search shows its results after this even if the authority has not answered: a cover fixed on
+ * the next search beats a search that hangs (MusicBrainz' own timeout is 6 s).
+ */
+const RELEASE_WAIT_MS = 1_200;
+/** A typeahead answer later than this is worse than none: the listener has typed on. */
+const SUGGEST_TIMEOUT_MS = 4_000;
+/** How far down a shelf's search a row is checked for its own release: enough to fill 10 after drops. */
+const SHELF_SCAN = 16;
+const OWN_RELEASE_CONCURRENCY = 4;
+/** Songs per `/songs?ids=` request: a few round trips for a long list, short enough for one URL. */
+const SONG_BATCH = 20;
+
+/** Where a song id (plain, or a `saavn:` / `gaana:` ref) is looked up, and its cache key. */
+function songLookup(id: string): { readonly source: 'Saavn' | 'Gaana'; readonly providerId: string; readonly key: string } {
+  const ref = parseSongRef(id);
+  const source = ref?.source === 'gaana' ? 'Gaana' : 'Saavn';
+  const providerId = ref?.id ?? id;
+  return { source, providerId, key: cacheKey('song', 'v2', source, providerId) };
+}
+/** Not the song as released: a stitched set ("Romantic Mashup", a non-stop medley) or a vocals-only cut. */
+const MEDLEY = /\b(mash-?up|medley|non-?stop|vocals?\s+only|a\s*cappella|acapella)\b/iu;
 
 /**
  * Originals first, edits after, each side keeping the provider's own order.
@@ -58,6 +84,7 @@ export class CatalogService {
   private readonly gaana: GaanaProvider;
   private readonly cache: CacheStore;
   private readonly releaseAuthority: ReleaseAuthority | undefined;
+  private readonly releaseWaitMs: number;
   private readonly saavnBreaker = new CircuitBreaker();
   private readonly gaanaBreaker = new CircuitBreaker();
 
@@ -66,12 +93,19 @@ export class CatalogService {
     this.gaana = options.gaana;
     this.cache = options.cache;
     this.releaseAuthority = options.releaseAuthority;
+    this.releaseWaitMs = options.releaseWaitMs ?? RELEASE_WAIT_MS;
   }
 
   public async search(query: string, limit: number, page: number, options: SearchOptions = {}): Promise<CatalogSearch> {
     // v4: edits rank below originals, and the top row's album and cover are corrected
     // against the release authority when the provider only has it on a playlist.
-    const key = cacheKey('search', 'v5', query, String(limit), String(page));
+    // v6: the provider's relevance order is kept instead of re-sorting by play count.
+    // v7: songs carry `albumId` (2026-10-11).
+    // v8: the top result is always checked against the release authority: a provider album
+    // name can look right while its cover is still a playlist or fan-uploaded thumbnail.
+    // v9: a row on the release the song names (its film, its single) is elected over any play
+    // count, and "… Classics" and decade sets count as compilations.
+    const key = cacheKey('search', 'v9', query, String(limit), String(page));
     const cached = await this.cache.get<CatalogSearch>(key);
     if (cached) {
       return cached;
@@ -94,55 +128,100 @@ export class CatalogService {
       }
     }
 
-    const ordered = originalsFirst(collapseRecordings(normalizeMany(raw, source)), query).slice(0, limit);
+    const ordered = originalsFirst(collapseRecordings(normalizeMany(raw, source, 'relevance')), query).slice(0, limit);
+    const enriched = options.enrich === false ? { results: ordered, settled: true } : await this.withCanonicalRelease(ordered);
+    const value = { results: enriched.results, source } satisfies CatalogSearch;
+    // A release still on its way is cached by itself when it lands; keeping this answer would
+    // serve the provider's cover for an hour, so the next search is built afresh instead.
+    if (enriched.settled) await this.cache.set(key, value, 3600);
+    return value;
+  }
+
+  /**
+   * Search as the listener types: the same relevance order as `search`, but lean. No release
+   * enrichment, a small page, a short provider deadline, and no Gaana fallback (an empty prefix is
+   * normal while typing). Playable rows, so a tap plays at once.
+   */
+  public async suggest(query: string, limit: number): Promise<CatalogSearch> {
+    const normalized = query.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+    const key = cacheKey('suggest', 'v1', normalized, String(limit));
+    const cached = await this.cache.get<CatalogSearch>(key);
+    if (cached) {
+      return cached;
+    }
+    const saavn = await this.call(this.saavnBreaker, () => this.saavn.search(normalized, Math.min(limit * 2, 20), 0, SUGGEST_TIMEOUT_MS));
+    if (!saavn.ok) {
+      throw unavailable(saavn.reason);
+    }
     const value = {
-      results: options.enrich === false ? ordered : await this.withCanonicalRelease(ordered),
-      source
+      results: originalsFirst(collapseRecordings(normalizeMany(saavn.data, 'Saavn', 'relevance')), normalized).slice(0, limit),
+      source: 'Saavn'
     } satisfies CatalogSearch;
-    await this.cache.set(key, value, 3600);
+    await this.cache.set(key, value, 600);
     return value;
   }
 
   /**
    * Put the real record's name and cover on the top row.
    *
-   * Only the top row, and only when it needs it: the authority is rate limited to
-   * about one request a second, so this is at most one round trip per uncached query.
+   * Only the top row: the authority is rate limited to about one request a second,
+   * so this is at most one round trip per uncached query. A plausible-looking
+   * provider album is not enough evidence that its image belongs to this release.
    * Any failure returns the provider's own data untouched.
+   *
+   * A search waits at most `RELEASE_WAIT_MS` for it: every uncached search now asks, and the
+   * authority can take seconds. A slower answer still lands in the cache for the next search,
+   * and `settled: false` tells the caller not to keep this one for long.
    */
-  private async withCanonicalRelease(results: readonly UnifiedSong[]): Promise<UnifiedSong[]> {
+  private async withCanonicalRelease(results: readonly UnifiedSong[]): Promise<{ readonly results: UnifiedSong[]; readonly settled: boolean }> {
     const top = results[0];
-    if (!this.releaseAuthority || !top || !needsCanonicalRelease(top)) {
-      return [...results];
+    const authority = this.releaseAuthority;
+    if (!authority || !top) {
+      return { results: [...results], settled: true };
     }
 
-    const key = cacheKey('release', 'v1', top.title, top.artist);
+    // v2: a plain Single counts as a release too (an original single is not a compilation).
+    const key = cacheKey('release', 'v2', top.title, top.artist);
     // `false` is a remembered miss; `null` means we have never asked.
     let canonical = await this.cache.get<CanonicalRelease | false>(key);
     if (canonical === null) {
-      canonical = (await this.releaseAuthority.canonical(top.title, top.artist, top.duration)) ?? false;
-      await this.cache.set(key, canonical, canonical ? RELEASE_TTL_SECONDS : RELEASE_MISS_TTL_SECONDS);
+      const lookup = (async (): Promise<CanonicalRelease | false> => {
+        const found = (await authority.canonical(top.title, top.artist, top.duration)) ?? false;
+        await this.cache.set(key, found, found ? RELEASE_TTL_SECONDS : RELEASE_MISS_TTL_SECONDS);
+        return found;
+      })().catch(() => false as const);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), this.releaseWaitMs); });
+      const answer = await Promise.race([lookup, late]);
+      clearTimeout(timer);
+      if (answer === null) {
+        return { results: [...results], settled: false };
+      }
+      canonical = answer;
     }
     if (!canonical) {
-      return [...results];
+      return { results: [...results], settled: true };
     }
 
-    return [
-      {
-        ...top,
-        album: canonical.album,
-        // Keep the provider's cover when the archive has no front image for the record.
-        ...(canonical.coverUrl ? { artwork: canonical.coverUrl } : {})
-      },
-      ...results.slice(1)
-    ];
+    // The provider's album id belongs to the provider's album name: drop it with the name.
+    const { albumId: _replacedAlbumId, ...rest } = top;
+    void _replacedAlbumId;
+    return {
+      results: [
+        {
+          ...rest,
+          album: canonical.album,
+          // Keep the provider's cover when the archive has no front image for the record.
+          ...(canonical.coverUrl ? { artwork: canonical.coverUrl } : {})
+        },
+        ...results.slice(1)
+      ],
+      settled: true
+    };
   }
 
   public async getSong(id: string): Promise<UnifiedSong> {
-    const ref = parseSongRef(id);
-    const source = ref?.source === 'gaana' ? 'Gaana' : 'Saavn';
-    const providerId = ref?.id ?? id;
-    const key = cacheKey('song', source, providerId);
+    const { source, providerId, key } = songLookup(id);
     const cached = await this.cache.get<UnifiedSong>(key);
     if (cached) {
       return cached;
@@ -165,15 +244,52 @@ export class CatalogService {
     return song;
   }
 
+  /**
+   * Several songs at once, in the order asked (unknown ids left out). Cached songs come from the cache;
+   * the rest of the Saavn ids go to the provider in batches (`/songs?ids=`), one request per batch rather
+   * than one per song. Gaana songs, and any a batch did not return, are looked up one by one.
+   */
   public async getSongs(ids: string[]): Promise<UnifiedSong[]> {
-    const songs = await Promise.all(ids.map(async (id) => {
+    const found = new Map<string, UnifiedSong>();
+    const lookups = new Map(ids.map((id) => [id, songLookup(id)] as const));
+    await Promise.all([...lookups].map(async ([id, { key }]) => {
+      const cached = await this.cache.get<UnifiedSong>(key);
+      if (cached) found.set(id, cached);
+    }));
+
+    // Asked-for ids by Saavn provider id: two spellings of one song ("x", "saavn:x") share a fetch.
+    const wanted = new Map<string, string[]>();
+    for (const [id, lookup] of lookups) {
+      if (found.has(id) || lookup.source !== 'Saavn') continue;
+      wanted.set(lookup.providerId, [...(wanted.get(lookup.providerId) ?? []), id]);
+    }
+    const providerIds = [...wanted.keys()];
+    const batches = Array.from({ length: Math.ceil(providerIds.length / SONG_BATCH) }, (_, i) => providerIds.slice(i * SONG_BATCH, (i + 1) * SONG_BATCH));
+    await Promise.all(batches.map(async (batch) => {
       try {
-        return await this.getSong(id);
+        const result = await this.call(this.saavnBreaker, () => this.saavn.getSongsByIds(batch));
+        if (!result.ok) return;
+        await Promise.all(result.data.map(async (raw) => {
+          const song = normalizeSong(raw, 'Saavn');
+          const askedAs = song ? wanted.get(String(raw.id)) : undefined;
+          if (!song || !askedAs) return;
+          for (const id of askedAs) found.set(id, song);
+          await this.cache.set(songLookup(String(raw.id)).key, song, 21_600);
+        }));
       } catch {
-        return null;
+        // The ones this batch missed are looked up one by one below.
       }
     }));
-    return songs.filter((song): song is UnifiedSong => song !== null);
+
+    const missing = [...lookups.keys()].filter((id) => !found.has(id));
+    await Promise.all(missing.map(async (id) => {
+      try {
+        found.set(id, await this.getSong(id));
+      } catch {
+        // Unknown or unavailable: left out.
+      }
+    }));
+    return ids.map((id) => found.get(id)).filter((song): song is UnifiedSong => song !== undefined);
   }
 
   /**
@@ -213,7 +329,7 @@ export class CatalogService {
   }
 
   private async getRawSuggestions(id: string, limit: number): Promise<UnifiedSong[]> {
-    const key = cacheKey('suggestions', 'v3', id, String(limit));
+    const key = cacheKey('suggestions', 'v4', id, String(limit));
     const cached = await this.cache.get<UnifiedSong[]>(key);
     if (cached) {
       return cached;
@@ -232,6 +348,44 @@ export class CatalogService {
     const songs = collapseRecordings(normalizeMany(result.data, source)).slice(0, limit);
     await this.cache.set(key, songs, 86_400);
     return songs;
+  }
+
+  /** A whole album by the catalog's id, in its own track order (`GET /api/albums/:id`). */
+  public async getAlbum(id: string): Promise<AlbumDetail> {
+    const key = cacheKey('album', 'v1', id);
+    const cached = await this.cache.get<AlbumDetail>(key);
+    if (cached) {
+      return cached;
+    }
+    const result = await this.call(this.saavnBreaker, () => this.saavn.getAlbum(id));
+    if (!result.ok) {
+      throw unavailable(result.reason);
+    }
+    const album = result.data ? normalizeAlbumDetail(result.data) : null;
+    if (!album) {
+      throw new NotFoundError();
+    }
+    await this.cache.set(key, album, 21_600);
+    return album;
+  }
+
+  /** Albums by name (`GET /api/search/albums`). An empty answer is a real answer, not a failure. */
+  public async searchAlbums(query: string, limit: number): Promise<AlbumSummary[]> {
+    const key = cacheKey('album-search', 'v1', query.trim().toLocaleLowerCase(), String(limit));
+    const cached = await this.cache.get<AlbumSummary[]>(key);
+    if (cached) {
+      return cached;
+    }
+    const result = await this.call(this.saavnBreaker, () => this.saavn.searchAlbums(query, limit));
+    if (!result.ok) {
+      throw unavailable(result.reason);
+    }
+    const albums = result.data.flatMap((raw) => {
+      const album = normalizeAlbumSummary(raw);
+      return album ? [album] : [];
+    }).slice(0, limit);
+    await this.cache.set(key, albums, 3600);
+    return albums;
   }
 
   /** Full artist page data by name: photo, followers, top songs, albums, similar artists. */
@@ -338,13 +492,63 @@ export class CatalogService {
     };
   }
 
+  /**
+   * A shelf's rows as their own releases. A row that only sits on a compilation ("Romantic Classics
+   * Hits", "Best Of Arijit Singh") wears that compilation's cover, so a shelf of them is the same
+   * cover over and over: it is swapped for the same recording on its film or single, found by its
+   * title and lead artist, or dropped when there is none. Order is kept. Never throws.
+   */
+  private async ownReleases(songs: readonly UnifiedSong[]): Promise<UnifiedSong[]> {
+    const rows = songs.slice(0, SHELF_SCAN);
+    const own: (UnifiedSong | null)[] = new Array<UnifiedSong | null>(rows.length).fill(null);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < rows.length) {
+        const index = next;
+        next += 1;
+        const row = rows[index];
+        if (row) own[index] = await this.ownRelease(row);
+      }
+    };
+    await Promise.all(Array.from({ length: OWN_RELEASE_CONCURRENCY }, worker));
+    return own.filter((song): song is UnifiedSong => song !== null);
+  }
+
+  private async ownRelease(song: UnifiedSong): Promise<UnifiedSong | null> {
+    // Shelves are originals: no slowed, lofi, covers or mashups.
+    if (isDerivative(song) || MEDLEY.test(song.title)) return null;
+    if (isOwnReleaseOf(song.title, song)) return song;
+    // No evidence in its own name: look at every release of the recording the catalog lists.
+    const fallback = isCompilationAlbum(song.album) ? null : song;
+    try {
+      const lead = creditedArtists(song.artist)[0] ?? song.artist;
+      const { results } = await this.search(`${song.title} ${lead}`, 8, 0, { enrich: false });
+      const releases = results
+        .flatMap((row) => [row, ...(row.variants ?? [])])
+        .filter((row) => row.streamUrl && !isDerivative(row) && !isCompilationAlbum(row.album)
+          && scoreCandidate({ title: song.title, artist: song.artist }, row) !== 'none');
+      // The release the song names, else its earliest: playlists re-list a hit years later.
+      const named = releases.find((row) => isOwnReleaseOf(song.title, row));
+      const earliest = [...(fallback ? [fallback] : []), ...releases]
+        .sort((left, right) => (releaseYear(left) ?? Number.MAX_SAFE_INTEGER) - (releaseYear(right) ?? Number.MAX_SAFE_INTEGER))[0];
+      const found = named ?? earliest;
+      if (!found) return null;
+      const { variants: _variants, ...row } = found;
+      void _variants;
+      return row;
+    } catch {
+      return fallback;
+    }
+  }
+
   /** One language's top songs in the provider's own order, a song once each. Empty when the provider fails. */
   private async getRegionalChart(language: string): Promise<UnifiedSong[]> {
-    const key = `chart:v1:${language}`;
+    // v2: compilation rows are swapped for their own release (ownReleases).
+    const key = `chart:v2:${language}`;
     const cached = await this.cache.get<UnifiedSong[]>(key);
     if (cached) return cached;
     try {
-      const results = (await this.search(`top ${language} songs`, 25, 0, { enrich: false })).results.filter((song) => inLanguages(song, [language]));
+      const results = await this.ownReleases((await this.search(`top ${language} songs`, 25, 0, { enrich: false })).results.filter((song) => inLanguages(song, [language])));
       const seen = new Set<string>();
       const songs: UnifiedSong[] = [];
       for (const song of results) {
@@ -363,7 +567,8 @@ export class CatalogService {
 
   private async getDefaultHome(): Promise<HomePayload> {
     // v3: originals ranked ahead of edits (same as search v4).
-    const cached = await this.cache.get<HomePayload>('home:default:v3');
+    // v4: compilation rows are swapped for their own release (ownReleases).
+    const cached = await this.cache.get<HomePayload>('home:default:v4');
     if (cached) {
       return cached;
     }
@@ -371,11 +576,9 @@ export class CatalogService {
     // Seeds matter: the provider only does text search, so a shelf query that
     // reads like a label ("made for you") comes back as ten unrelated songs
     // literally *titled* "Made For You". These phrases match real music instead.
-    const [trending, loved, upbeat] = await Promise.all([
-      this.search('top songs', 20, 0, { enrich: false }),
-      this.search('romantic hits', 20, 0, { enrich: false }),
-      this.search('party songs', 20, 0, { enrich: false })
-    ]);
+    const own = async (query: string): Promise<{ readonly results: UnifiedSong[] }> =>
+      ({ results: await this.ownReleases((await this.search(query, 20, 0, { enrich: false })).results) });
+    const [trending, loved, upbeat] = await Promise.all([own('top songs'), own('romantic hits'), own('party songs')]);
 
     // The provider also lists the same recording several times over (one row per
     // release, sometimes with the artist list reordered), so an untouched shelf
@@ -402,7 +605,7 @@ export class CatalogService {
       madeForYou: shelf(loved.results, true),
       recommended: shelf(upbeat.results, true)
     } satisfies HomePayload;
-    await this.cache.set('home:default:v3', home, 3600);
+    await this.cache.set('home:default:v4', home, 3600);
     return home;
   }
 
@@ -411,14 +614,15 @@ export class CatalogService {
    * interleaved so two languages share each shelf instead of one crowding out the other.
    */
   private async getLanguageHome(languages: readonly string[]): Promise<HomePayload> {
-    const key = `home:languages:v1:${languagesKey(languages)}`;
+    // v2: compilation rows are swapped for their own release (ownReleases).
+    const key = `home:languages:v2:${languagesKey(languages)}`;
     const cached = await this.cache.get<HomePayload>(key);
     if (cached) return cached;
 
     const searchAll = async (template: (language: string) => string): Promise<UnifiedSong[][]> =>
       Promise.all(languages.map(async (language) => {
         try {
-          return (await this.search(template(language), 20, 0, { enrich: false })).results.filter((song) => inLanguages(song, languages));
+          return await this.ownReleases((await this.search(template(language), 20, 0, { enrich: false })).results.filter((song) => inLanguages(song, languages)));
         } catch {
           return [];
         }
@@ -485,7 +689,12 @@ function unavailable(reason: 'timeout' | 'error' | undefined): Error {
   return reason === 'timeout' ? new TimeoutError() : new ProviderUnavailableError();
 }
 
-function normalizeMany(raw: SaavnSong[], source: 'Saavn' | 'Gaana'): UnifiedSong[] {
+/**
+ * `relevance` keeps the provider's own order (search: "kes" must lead with Kesariya, not with the
+ * most-played song that happens to contain "kes"). `popularity` ranks by play count (suggestion and
+ * artist lists, where the provider's order carries no query). Saavn rows stay ahead of Gaana's.
+ */
+function normalizeMany(raw: SaavnSong[], source: 'Saavn' | 'Gaana', order: 'relevance' | 'popularity' = 'popularity'): UnifiedSong[] {
   return raw
     .map((song) => normalizeSong(song, source))
     .filter((song): song is UnifiedSong => song !== null)
@@ -493,7 +702,7 @@ function normalizeMany(raw: SaavnSong[], source: 'Saavn' | 'Gaana'): UnifiedSong
       if (left.source !== right.source) {
         return left.source === 'Saavn' ? -1 : 1;
       }
-      return right.playCount - left.playCount;
+      return order === 'relevance' ? 0 : right.playCount - left.playCount;
     });
 }
 

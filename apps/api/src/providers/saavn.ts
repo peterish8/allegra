@@ -18,7 +18,7 @@ export interface SaavnSong {
   readonly id?: string | number;
   readonly name?: string;
   readonly title?: string;
-  readonly album?: string | { readonly name?: string };
+  readonly album?: string | { readonly id?: string | number; readonly name?: string };
   readonly duration?: number | string;
   readonly language?: string;
   readonly hasLyrics?: boolean;
@@ -44,6 +44,14 @@ export interface SaavnAlbumSummary {
   readonly name?: string;
   readonly year?: string | number;
   readonly image?: readonly SaavnAsset[];
+}
+
+/** An album from `/search/albums` or `/albums?id=` (the fields we read; `songs` only on the detail). */
+export interface SaavnAlbum extends SaavnAlbumSummary {
+  readonly language?: string;
+  readonly songCount?: number | string;
+  readonly artists?: { readonly primary?: readonly { readonly name?: string }[] };
+  readonly songs?: readonly SaavnSong[];
 }
 
 export interface SaavnArtist extends SaavnArtistSummary {
@@ -88,16 +96,18 @@ export class SaavnProvider {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
+  /** `timeoutMs` overrides the provider default for one call (typeahead must answer fast or not at all). */
   public async search(
     query: string,
     limit = 20,
-    page = 0
+    page = 0,
+    timeoutMs?: number
   ): Promise<ProviderResult<SaavnSong[]>> {
     return this.requestResults('search/songs', {
       query,
       limit: String(limit),
       page: String(page)
-    });
+    }, timeoutMs);
   }
 
   public async getSong(
@@ -121,6 +131,11 @@ export class SaavnProvider {
       }
     }
     return { ok: false, data: null, reason };
+  }
+
+  /** Several songs in one request (`/songs?ids=a,b,c`); the reply's order is not promised. */
+  public async getSongsByIds(ids: readonly string[]): Promise<ProviderResult<SaavnSong[]>> {
+    return this.requestResults('songs', { ids: ids.join(',') });
   }
 
   public async getSuggestions(
@@ -158,14 +173,41 @@ export class SaavnProvider {
     return { ok: false, data: null, reason };
   }
 
+  /** Album detail (`/albums?id=`): name, year, artists, cover and every song in track order. */
+  public async getAlbum(id: string): Promise<ProviderResult<SaavnAlbum | null>> {
+    let reason: ProviderFailureReason = 'error';
+    for (const baseUrl of this.baseUrls) {
+      try {
+        const response = await this.request(baseUrl, 'albums', { id });
+        if (!response.ok) {
+          continue;
+        }
+        const body: unknown = await response.json();
+        if (isRecord(body) && body.success === true && isRecord(body.data)) {
+          return { ok: true, data: body.data as SaavnAlbum };
+        }
+      } catch (error) {
+        reason = isAbortError(error) ? 'timeout' : 'error';
+      }
+    }
+    return { ok: false, data: null, reason };
+  }
+
+  /** Album search (`/search/albums`): id, name, year, artists and cover per match. */
+  public async searchAlbums(query: string, limit = 8): Promise<ProviderResult<SaavnAlbum[]>> {
+    const result = await this.requestResults('search/albums', { query, limit: String(limit) });
+    return { ...result, data: result.data as SaavnAlbum[] };
+  }
+
   private async requestResults(
     path: string,
-    params: Record<string, string>
+    params: Record<string, string>,
+    timeoutMs?: number
   ): Promise<ProviderResult<SaavnSong[]>> {
     let reason: ProviderFailureReason = 'error';
     for (const baseUrl of this.baseUrls) {
       try {
-        const response = await this.request(baseUrl, path, params);
+        const response = await this.request(baseUrl, path, params, timeoutMs);
         if (!response.ok) {
           continue;
         }
@@ -188,7 +230,8 @@ export class SaavnProvider {
   private async request(
     baseUrl: string,
     path: string,
-    params?: Record<string, string>
+    params?: Record<string, string>,
+    timeoutMs = this.timeoutMs
   ): Promise<Response> {
     const url = new URL(path.replace(/^\/+/, ''), `${baseUrl}/`);
     if (params) {
@@ -200,7 +243,7 @@ export class SaavnProvider {
     return fetchWithTimeout(
       url,
       { headers: BROWSER_HEADERS },
-      this.timeoutMs,
+      timeoutMs,
       this.fetchImpl
     );
   }
