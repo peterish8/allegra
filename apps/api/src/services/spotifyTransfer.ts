@@ -140,6 +140,10 @@ export class SpotifyTransferService {
         }
       }
       if (ops.length > 0) {
+        // The library is not in Spotify's store, so the generation can't fence it in one transaction. Re-checking
+        // here, after the slow Spotify and matching calls, leaves only this last round trip open to a disconnect.
+        const live = await this.store.connection(userId);
+        if (!live?.refreshToken || (live.generation ?? 0) !== generation) throw connectionChanged();
         const result = await this.auth.library.apply(userId, ops);
         if (result.rejected.length > 0) throw new SpotifyApiError(503, 'Allegra could not save this transfer step. Retry it safely.');
       }
@@ -165,19 +169,30 @@ export class SpotifyTransferService {
     if (!connection?.refreshToken) throw new SpotifyApiError(401, 'Reconnect your Spotify account to continue.');
     const generation = connection.generation ?? 0;
     const attempted = new Set<string>();
+    // A playlist failing with a server error is deferred, not left in front: the others still run first.
+    let deferred: unknown = null;
     for (;;) {
       const batch = (await this.store.dailyPlaylists(userId, runStartedAt, DAILY_PAGE)).filter(row => !attempted.has(row.playlistId));
-      if (batch.length === 0) return { more: false };
+      if (batch.length === 0) {
+        // Only deferred playlists are left; the scheduler's retry (honouring Retry-After) tries them again.
+        if (deferred) throw deferred;
+        return { more: false };
+      }
       for (const row of batch) {
         attempted.add(row.playlistId);
+        let mark = runStartedAt;
         try {
           while (!(await this.sync(userId, row.playlistId, true, row)).complete) {
             if (now() - started > DAILY_BUDGET_MS) return { more: true };
           }
         } catch (error) {
-          if (!skipsForToday(error)) throw error;
+          if (defersInRun(error)) {
+            deferred ??= error;
+            // Still before the run's start, so still due, but after every playlist this run has not tried yet.
+            mark = runStartedAt - 1;
+          } else if (!skipsForToday(error)) throw error;
         }
-        if (!(await this.store.markDailyChecked(userId, row.playlistId, runStartedAt, generation))) throw connectionChanged();
+        if (!(await this.store.markDailyChecked(userId, row.playlistId, mark, generation))) throw connectionChanged();
         if (now() - started > DAILY_BUDGET_MS) return { more: true };
       }
     }
@@ -215,6 +230,13 @@ interface AccessGrant { token: string; generation: number }
 const DAILY_PAGE = 5;
 
 function connectionChanged(): SpotifyApiError { return new SpotifyApiError(401, 'Spotify connection changed. Reconnect to continue.'); }
+/**
+ * A server error on one playlist (Spotify 5xx, Allegra failing to save the step, an unexpected throw) is retried
+ * later in the run. 429 is app-wide and 401 means the connection is gone: those stop the account at once.
+ */
+function defersInRun(error: unknown): boolean {
+  return error instanceof SpotifyApiError ? error.status >= 500 : true;
+}
 /** Failures specific to one playlist (gone, forbidden, already being synced by hand) skip it for today. */
 function skipsForToday(error: unknown): boolean {
   return error instanceof SpotifyApiError && (error.status === 400 || error.status === 403 || error.status === 404 || error.status === 409);

@@ -132,6 +132,39 @@ test('a playlist Spotify no longer serves is skipped for the day without blockin
   assert.equal((await store.playlists('u')).find(row => row.playlistId === ids[0])!.dailyCheckedAt, 10, 'not retried within the same run');
 });
 
+test('a playlist that keeps failing with a server error does not stop the rest of the run', async () => {
+  const { state, store, service } = build(); await connect(store);
+  const ids = listIds(4); await select(store, ids);
+  state.failures.set(ids[0]!, new SpotifyApiError(503, 'Spotify is having trouble.'));
+  // The broken playlist is tried, deferred, and the healthy ones still finish; then the retryable error escapes.
+  await assert.rejects(service.dailyStep('u', 10), (error: unknown) => error instanceof SpotifyApiError && error.status === 503);
+  assert.equal(await synced(store), 3);
+  const broken = (await store.playlists('u')).find(row => row.playlistId === ids[0])!;
+  assert.equal(broken.dailyCheckedAt, 9, 'deferred: still due in this run, behind every untried playlist');
+  // The scheduler's retry tries only the deferred one again; once Spotify recovers the run completes.
+  await assert.rejects(service.dailyStep('u', 10));
+  state.failures.clear();
+  assert.deepEqual(await service.dailyStep('u', 10), { more: false });
+  assert.equal(await synced(store), 4);
+});
+
+test('a rate limit stops the account at once rather than hammering its other playlists', async () => {
+  const { state, store, service } = build(); await connect(store);
+  const ids = listIds(4); await select(store, ids);
+  state.failures.set(ids[0]!, new SpotifyApiError(429, 'Slow down.', 20));
+  await assert.rejects(service.dailyStep('u', 10), (error: unknown) => error instanceof SpotifyApiError && error.status === 429);
+  assert.equal(await synced(store), 0);
+});
+
+test('a disconnect during matching stops the step before it writes to the library', async () => {
+  const { saved, store, service } = build(); await connect(store);
+  const matcher = (service as unknown as { matcher: { match: (rows: readonly { title: string }[]) => Promise<unknown[]> } }).matcher;
+  const original = matcher.match;
+  matcher.match = async (rows) => { await service.disconnect('u'); return original(rows); };
+  await assert.rejects(service.sync('u', PLAYLIST), (error: unknown) => error instanceof SpotifyApiError && error.status === 401);
+  assert.equal(saved.length, 0, 'no playlist or songs were added after the account disconnected');
+});
+
 test('a disconnected account stops the daily step so the scheduler does not retry it', async () => {
   const { store, service } = build(); await connect(store);
   await select(store, [PLAYLIST]);

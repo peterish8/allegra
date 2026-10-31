@@ -56,7 +56,9 @@ export const saveConnection = mutation({
     const row = await ctx.db.query('spotifyConnections').withIndex('by_userId', q => q.eq('userId', args.userId)).unique();
     const { secret: _secret, ...values } = args;
     if (row) await ctx.db.patch('spotifyConnections', row._id, { ...values, generation: (row.generation ?? 0) + 1 });
-    else await ctx.db.insert('spotifyConnections', { ...values, generation: 1 });
+    // Account erase deletes the row outright; starting from the clock rather than 1 keeps a step that began
+    // before the erase from matching the new connection.
+    else await ctx.db.insert('spotifyConnections', { ...values, generation: Date.now() });
     return true;
   }
 });

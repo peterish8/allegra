@@ -123,21 +123,36 @@ describe('Spotify scheduling and disconnect cleanup', () => {
 
   it('stops stale disconnect cleanup after a reconnect and rejects the old refresh', async () => {
     const t = convexTest(schema, modules);
-    await connect(t);
+    const first = await connect(t);
     await t.run(async ({ db }) => { for (let i = 0; i < 200; i++) await db.insert('spotifyPlaylists', playlist(`playlist-${i}`)); });
     await t.mutation(api.spotify.disconnect, { secret, userId });
+    const disconnected = (await t.query(api.spotify.connection, { secret, userId }))!.generation!;
+    expect(disconnected).toBe(first + 1);
     await t.mutation(api.spotify.saveConnection, { secret, userId, spotifyUserId: 'new-spotify-account', encryptedRefreshToken: 'new-encrypted-refresh', dailyEnabled: false, connectedAt: 2, updatedAt: 2 });
     await t.mutation(api.spotify.savePlaylist, { secret, userId, playlistId: 'new-playlist', name: 'New', snapshotId: 'new-snapshot', total: 0, libraryId: 'new-library', enabled: true, updatedAt: 2 });
 
-    await t.mutation(internal.spotify.disconnectRest, { userId, generation: 2 });
+    await t.mutation(internal.spotify.disconnectRest, { userId, generation: disconnected });
     const result = await t.run(async ({ db }) => ({
       connection: await db.query('spotifyConnections').withIndex('by_userId', q => q.eq('userId', userId)).unique(),
       playlist: await db.query('spotifyPlaylists').withIndex('by_userId_and_playlistId', q => q.eq('userId', userId).eq('playlistId', 'new-playlist')).unique()
     }));
     expect(result.connection?.spotifyUserId).toBe('new-spotify-account');
     expect(result.playlist?.playlistId).toBe('new-playlist');
-    expect(await t.mutation(api.spotify.refreshConnection, { secret, userId, expectedGeneration: 1, encryptedRefreshToken: 'old-refresh', encryptedAccessToken: 'old-access', accessExpiresAt: 100, updatedAt: 3 })).toBe(false);
+    expect(await t.mutation(api.spotify.refreshConnection, { secret, userId, expectedGeneration: first, encryptedRefreshToken: 'old-refresh', encryptedAccessToken: 'old-access', accessExpiresAt: 100, updatedAt: 3 })).toBe(false);
     expect((await t.query(api.spotify.connection, { secret, userId }))?.encryptedRefreshToken).toBe('new-encrypted-refresh');
+  });
+
+  it('starts a connection made after an account erase at a fresh generation, not back at the first one', async () => {
+    const t = convexTest(schema, modules);
+    const before = await connect(t);
+    await t.run(async ({ db }) => {
+      const row = await db.query('spotifyConnections').withIndex('by_userId', q => q.eq('userId', userId)).unique();
+      if (row) await db.delete('spotifyConnections', row._id);
+    });
+    await new Promise(resolve => setTimeout(resolve, 2));
+    const after = await connect(t);
+    expect(after).toBeGreaterThan(before);
+    expect(await t.mutation(api.spotify.savePlaylist, { secret, userId, playlistId: 'p', name: 'Old step', snapshotId: 's', total: 0, libraryId: 'lib', enabled: true, updatedAt: 1, generation: before })).toBe(false);
   });
 
   it('honours a Retry-After hint within bounds and waits an hour without one', () => {
