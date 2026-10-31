@@ -265,6 +265,45 @@ describe('first-party LuvLink playback', () => {
     expect(commitOwnedLuvLinkPlayback).toHaveBeenCalledWith(expect.objectContaining({ intent: 'natural_end', queueEntryId: 'entry-1', song: next.song }));
   });
 
+  it('tries a lost natural-end advance again instead of leaving the room on the finished song', async () => {
+    jest.useFakeTimers();
+    try {
+      const next: LuvLinkQueueEntry = { entryId: 'entry-retry', roomId: 'room-1', order: 0, song: { ...song, ref: 'saavn:track-2' as typeof song.ref }, addedByUserId: 'guest', addedByName: 'G', createdAtMs: Date.now() };
+      readyPlayer(true);
+      setRoom(room('listen'), anchor({ playing: true, trackEpoch: 50 }));
+      useLuvLinkStore.setState({ ownedQueue: { revision: 2, entries: [next] } });
+      stop = startOwnedLuvLinkSync();
+      const commit = commitOwnedLuvLinkPlayback as jest.Mock;
+      commit.mockClear();
+      commit.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined);
+      const advancing = handleOwnedLuvLinkNext('natural_end');
+      await jest.advanceTimersByTimeAsync(1_500);
+      await expect(advancing).resolves.toBe(true);
+      expect(commit).toHaveBeenCalledTimes(2);
+      expect(commit).toHaveBeenLastCalledWith(expect.objectContaining({ intent: 'natural_end', queueEntryId: 'entry-retry' }));
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('leaves the advance open after every retry fails, so the next end or a skip can still move the room', async () => {
+    jest.useFakeTimers();
+    try {
+      const next: LuvLinkQueueEntry = { entryId: 'entry-down', roomId: 'room-1', order: 0, song: { ...song, ref: 'saavn:track-2' as typeof song.ref }, addedByUserId: 'guest', addedByName: 'G', createdAtMs: Date.now() };
+      setRoom(room('listen'), anchor({ playing: true, trackEpoch: 60 }));
+      useLuvLinkStore.setState({ ownedQueue: { revision: 2, entries: [next] } });
+      stop = startOwnedLuvLinkSync();
+      const commit = commitOwnedLuvLinkPlayback as jest.Mock;
+      commit.mockClear();
+      commit.mockRejectedValue(new Error('offline'));
+      const advancing = handleOwnedLuvLinkNext('natural_end').catch((error: unknown) => error);
+      await jest.advanceTimersByTimeAsync(6_000);
+      expect(await advancing).toBeInstanceOf(Error);
+      expect(commit).toHaveBeenCalledTimes(3);
+      commit.mockReset(); commit.mockResolvedValue(undefined);
+      await handleOwnedLuvLinkNext('natural_end');
+      expect(commit).toHaveBeenCalledTimes(1);
+    } finally { jest.useRealTimers(); }
+  });
+
   it('advances the queue once when native playback reports the song finished', async () => {
     const next: LuvLinkQueueEntry = { entryId: 'entry-finished', roomId: 'room-1', order: 0, song: { ...song, ref: 'saavn:track-2' as typeof song.ref }, addedByUserId: 'guest', addedByName: 'G', createdAtMs: Date.now() };
     readyPlayer(true);

@@ -394,6 +394,7 @@ export async function handleOwnedLuvLinkNext(intent: 'control' | 'natural_end' =
   if (intent === 'natural_end') {
     if (anchor?.leaderUserId !== current.ownedUserId || !anchor.playing || lastAdvanceEpoch === anchor.trackEpoch) return true;
     lastAdvanceEpoch = anchor.trackEpoch;
+    return advanceAtNaturalEnd(anchor.trackEpoch);
   }
   const next = current.ownedQueue.entries[0];
   if (next) {
@@ -402,6 +403,35 @@ export async function handleOwnedLuvLinkNext(intent: 'control' | 'natural_end' =
     await commitOwnedLuvLinkPlayback({ song: anchor.song, queueEntryId: anchor.queueEntryId, positionSec: anchor.song.duration, playing: false, playbackRate: anchor.playbackRate });
   }
   return true;
+}
+
+const NATURAL_END_RETRY_MS = [0, 1_500, 4_000] as const;
+
+/**
+ * The song ended here and only this output can move the room on: no later "finished" event will come. A commit
+ * lost to the network or a rate limit is tried again a few times while the room still sits on the same track;
+ * if every try fails the advance is left open, so a manual next (or the next end) can still move the room.
+ */
+async function advanceAtNaturalEnd(trackEpoch: number): Promise<boolean> {
+  let failure: unknown = null;
+  for (const delay of NATURAL_END_RETRY_MS) {
+    if (delay) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      if (!active) return true;
+    }
+    const current = state();
+    const anchor = current.ownedPlayback;
+    if (!anchor || anchor.trackEpoch !== trackEpoch || anchor.leaderUserId !== current.ownedUserId || !anchor.playing) return true;
+    const next = current.ownedQueue.entries[0];
+    try {
+      if (next) await commitOwnedLuvLinkPlayback({ song: next.song, queueEntryId: next.entryId, positionSec: 0, playing: true, playbackRate: anchor.playbackRate ?? 1, forceTrackChange: true, intent: 'natural_end' });
+      // Nothing queued: the room rests at the end of the song (a control; natural_end needs a next entry).
+      else if (anchor.song) await commitOwnedLuvLinkPlayback({ song: anchor.song, queueEntryId: anchor.queueEntryId, positionSec: anchor.song.duration, playing: false, playbackRate: anchor.playbackRate });
+      return true;
+    } catch (error) { failure = error; }
+  }
+  if (lastAdvanceEpoch === trackEpoch) lastAdvanceEpoch = -1;
+  throw failure;
 }
 
 export async function handleOwnedLuvLinkPrevious(): Promise<boolean> {

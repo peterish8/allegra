@@ -308,6 +308,17 @@ describe('LuvLink rooms', () => {
     await guest.mutation(api.luvLink.publishPlayback, play(roomId, leaderEpoch, 'drop-play-000001'));
   });
 
+  it('frees a handoff left pending from before the re-check existed once the old output is offline', async () => {
+    const t = backend();
+    const { host, guest, roomId } = await speakerRoom(t, 'legacy');
+    const { leaderEpoch } = await host.mutation(api.luvLink.setSpeaker, { roomId, commandId: 'legacy-move-0001', targetUserId: 'users:legacy-guest' });
+    // A pending handoff written by the previous deployment: no epoch, no scheduled check, host never online.
+    await t.run(async (ctx) => { await ctx.db.patch(roomId, { handoffFromUserId: 'users:legacy-host' }); });
+    await guest.mutation(api.luvLink.publishPlayback, play(roomId, leaderEpoch, 'legacy-play-0001'));
+    expect((await host.query(api.luvLink.getRoom, { roomId }))?.handoffFromUserId).toBeNull();
+    await host.mutation(api.luvLink.setRoomMode, { roomId, mode: 'listen' });
+  });
+
   it('ignores a handoff check or confirmation from an older speaker move', async () => {
     const t = backend();
     const { host, roomId } = await speakerRoom(t, 'stale');
