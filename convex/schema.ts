@@ -614,16 +614,19 @@ export default defineSchema({
   /** One encrypted credential record per account; no token is returned by any query. */
   spotifyConnections: defineTable({
     userId: v.string(), spotifyUserId: v.string(), encryptedRefreshToken: v.string(), encryptedAccessToken: v.optional(v.string()),
-    accessExpiresAt: v.optional(v.number()), dailyEnabled: v.boolean(), connectedAt: v.number(), updatedAt: v.number()
-  }).index('by_userId', ['userId']).index('by_dailyEnabled_and_updatedAt', ['dailyEnabled', 'updatedAt']),
+    accessExpiresAt: v.optional(v.number()), dailyEnabled: v.boolean(), connectedAt: v.number(), updatedAt: v.number(), generation: v.optional(v.number())
+  }).index('by_userId', ['userId']).index('by_dailyEnabled_and_userId', ['dailyEnabled', 'userId']),
   /** Bounded source playlist list and resumable full-scan cursor. */
   spotifyPlaylists: defineTable({
     userId: v.string(), playlistId: v.string(), name: v.string(), snapshotId: v.string(), total: v.number(),
     libraryId: v.string(), offset: v.number(), scanSnapshotId: v.string(), scanTotal: v.number(), added: v.number(), skipped: v.number(),
     reviewNeeded: v.number(), lastSyncedAt: v.optional(v.number()), leaseUntil: v.optional(v.number()), leaseToken: v.optional(v.string()),
-    enabled: v.boolean(), updatedAt: v.number()
+    enabled: v.boolean(), updatedAt: v.number(),
+    /** Start time of the last daily run that finished or skipped this playlist; the run walks rows older than its start. */
+    dailyCheckedAt: v.optional(v.number())
   }).index('by_userId_and_playlistId', ['userId', 'playlistId']).index('by_userId_and_updatedAt', ['userId', 'updatedAt'])
-    .index('by_enabled_and_updatedAt', ['enabled', 'updatedAt']),
+    .index('by_enabled_and_updatedAt', ['enabled', 'updatedAt'])
+    .index('by_userId_and_enabled_and_dailyCheckedAt', ['userId', 'enabled', 'dailyCheckedAt']),
   /** One stable receipt per source song; incomplete/uncertain matches never get a receipt. */
   spotifyReceipts: defineTable({
     userId: v.string(), playlistId: v.string(), spotifyTrackId: v.string(), libraryId: v.string(), savedAt: v.number()

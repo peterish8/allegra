@@ -685,9 +685,20 @@ Stable source IDs, timestamps and destination IDs make response-loss retries saf
 find new songs inserted at the top; transfer adds songs and preserves local edits. Daily work runs
 durably in Convex with bounded steps and a per-account/playlist lease. A daily run skips a playlist
 whose Spotify `snapshot_id` hasn't changed since its last finished scan; manual sync always rescans.
-The internal `POST /api/internal/spotify/daily` (server secret only) answers `{ more }`; Convex calls
-again while `more` is true. Account erase removes all
-connections/checkpoints. Missing configuration is an explicit unavailable state.
+The internal `POST /api/internal/spotify/daily` (server secret only) takes `{ userId, runStartedAt? }`
+and answers `{ more }`; Convex calls again while `more` is true. `runStartedAt` (ms) names the day's
+run: each playlist is marked with it once finished or skipped, so continuation calls reach every
+enabled playlist once, least recently checked first. Without it the API uses the start of the
+current UTC day (an older scheduler). Accounts are paged 100 at a time and started two seconds
+apart. `429`/`5xx` leave the playlist unmarked and Convex retries after the clamped `Retry-After`;
+`401` (disconnected or reconnected) stops the account; `400/403/404/409` skip that playlist for the
+day. Every connect and disconnect bumps a connection generation, and each step's playlist, lease,
+checkpoint and token writes carry the generation it started under, so a step in flight across a
+disconnect or reconnect writes nothing afterwards (a library write already sent before the
+disconnect stays; it is the listener's own idempotent import). Disconnect keeps only an empty
+tombstone (account ID and generation) and can't be re-enabled for daily runs without reconnecting.
+Account erase removes all connections, tombstones and checkpoints. Missing configuration is an
+explicit unavailable state.
 
 ## Errors
 
