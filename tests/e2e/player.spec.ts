@@ -142,3 +142,69 @@ test('DJ set controls: shape and exploration cycle, and a ruled-out artist chip 
   await page.reload();
   await expect(page.getByRole('button', { name: /^Set shape:/ })).toHaveText(shapeNow ?? '');
 });
+
+// 2026-10-12: the playlist mixer was a wall of cards with checkboxes and Play buttons, and the queue
+// beside the stage stayed pinned while it slid up over it. Now: two searchable pickers, a vibe, Mix,
+// and an (i) that says what it does.
+test('DJ playlist mix: pick two playlists by search, add a vibe, and the (i) explains it', async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await page.goto('/');
+  // Two playlists with songs for this guest, through the app's own API and session (once it has one).
+  await page.waitForFunction(() => Boolean(localStorage.getItem('allegra-session-token')), undefined, { timeout: 30_000 });
+  const ids = await page.evaluate(async () => {
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('allegra-session-token') ?? ''}` };
+    const post = async (url: string, body: unknown): Promise<{ data?: { id?: string } }> =>
+      (await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })).json() as Promise<{ data?: { id?: string } }>;
+    const search = await (await fetch('/api/search?q=arijit%20singh')).json() as { data?: { results?: { id: string }[] } };
+    const songs = (search.data?.results ?? []).slice(0, 2);
+    const made: string[] = [];
+    for (const name of ['E2E evening', 'E2E morning']) {
+      const id = (await post('/api/libraries', { name })).data?.id;
+      if (!id) continue;
+      for (const song of songs) await post(`/api/libraries/${id}/songs`, { songId: song.id });
+      made.push(id);
+    }
+    return made;
+  });
+  expect(ids).toHaveLength(2);
+
+  await page.goto('/dj');
+  const mixer = page.getByRole('region', { name: 'Mix two playlists' });
+  await expect(mixer).toBeVisible({ timeout: 30_000 });
+  // Folded to one button until it is opened.
+  const toggle = mixer.getByRole('button', { name: 'Mix two playlists' });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(mixer.getByRole('button', { name: /^First playlist/ })).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  const go = mixer.getByRole('button', { name: 'Mix', exact: true });
+  await expect(go).toBeDisabled();
+
+  await mixer.getByRole('button', { name: /^First playlist/ }).click();
+  await page.keyboard.type('evening');
+  await page.keyboard.press('Enter');
+  await expect(mixer.getByRole('button', { name: /^First playlist/ })).toContainText('E2E evening');
+  const second = mixer.getByRole('button', { name: /^Second playlist/ });
+  await second.click();
+  // The first pick is not offered twice.
+  await expect(page.getByRole('option', { name: /E2E evening/ })).toHaveCount(0);
+  await page.getByRole('option', { name: /E2E morning/ }).click();
+  await expect(second).toContainText('E2E morning');
+  await mixer.getByPlaceholder('Late-night, warm…').fill('late-night drive');
+  await expect(go).toBeEnabled();
+
+  const info = mixer.getByRole('button', { name: 'What mixing two playlists does' });
+  await info.click();
+  await expect(mixer.getByRole('note')).toContainText('builds one set');
+  await page.keyboard.press('Escape');
+  await expect(mixer.getByRole('note')).toBeHidden();
+  // And folds away again.
+  await toggle.click();
+  await expect(mixer.getByRole('button', { name: /^First playlist/ })).toHaveCount(0);
+
+  await page.evaluate(async (made) => {
+    const headers = { Authorization: `Bearer ${localStorage.getItem('allegra-session-token') ?? ''}` };
+    for (const id of made) await fetch(`/api/libraries/${id}`, { method: 'DELETE', headers });
+  }, ids);
+  expect(errors).toEqual([]);
+});

@@ -26,6 +26,10 @@ const mockGetRecommendations = jest.fn();
 jest.mock('./recommend', () => ({
   recommendFor: (seed: { id: string }) => mockGetRecommendations(seed.id),
 }));
+const mockGetCatalogRecommendations = jest.fn();
+jest.mock('../MultiSourceSearchService', () => ({
+  getRecommendations: (songId: string) => mockGetCatalogRecommendations(songId),
+}));
 const mockFetchLyrics = jest.fn();
 jest.mock('../LyricaService', () => ({
   lyricaService: {
@@ -55,6 +59,7 @@ beforeEach(() => {
   playerControls.play = jest.fn();
   playerControls.pause = jest.fn();
   mockGetRecommendations.mockReset().mockResolvedValue([]);
+  mockGetCatalogRecommendations.mockReset().mockResolvedValue([]);
   mockFetchLyrics.mockReset().mockResolvedValue(null);
   mockRecordPlay.mockReset();
   mockAddToQueue.mockReset();

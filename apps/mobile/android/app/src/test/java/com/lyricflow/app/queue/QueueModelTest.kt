@@ -1,6 +1,7 @@
 package com.lyricflow.app.queue
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -39,6 +40,15 @@ class QueueModelTest {
         assertEquals(1, QueueMath.dropIndex(1, 20f, 64f, 10))
         assertEquals(0, QueueMath.dropIndex(1, -500f, 64f, 10))
         assertEquals(9, QueueMath.dropIndex(8, 500f, 64f, 10))
+    }
+
+    @Test fun `a handle drag starts after one dp in any direction`() {
+        assertFalse(QueueMath.beginsReorderDrag(0.99f, 0f, 1f))
+        assertTrue(QueueMath.beginsReorderDrag(1f, 0f, 1f))
+        assertTrue(QueueMath.beginsReorderDrag(0f, -1f, 1f))
+        assertFalse(QueueMath.beginsReorderDrag(2.9f, 0f, 3f))
+        assertTrue(QueueMath.beginsReorderDrag(3f, 0f, 3f))
+        assertTrue(QueueMath.beginsReorderDrag(0f, 3f, 3f))
     }
 
     @Test fun `rows step aside towards where the dragged row came from`() {

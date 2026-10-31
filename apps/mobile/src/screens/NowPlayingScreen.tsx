@@ -28,6 +28,7 @@ import NowPlayingControls from '../components/NowPlayingControls';
 import { navigationRef, safeGoBack } from '../utils/navigationService';
 import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../navigation/playerSheet';
 import { shouldCloseSheet } from '../navigation/sheetClose';
+import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
 import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { playerSheetProgress } from '../navigation/sheetProgress';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -213,13 +214,23 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     markUpNext(false);
   }, [upNext, upNextShown, upNextTravel, markUpNext]);
 
-  usePreventRemove(holdRoute, () => {
-    if (lyricsFullscreen) setLyricsFullscreen(false);
-    else if (sheetRef.current) setSheet(null);
-    else if (upNextRef.current) closeUpNext(0);
-    else if (ambientRef.current) setAmbient(false);
-    else animateClose(0);
-  });
+  const handleBack = useCallback(() => handlePlayerBack({
+    lyricsFullscreen,
+    hasSheet: Boolean(sheetRef.current),
+    upNextOpen: upNextRef.current,
+    ambient: ambientRef.current,
+  }, {
+    exitLyricsFullscreen: () => setLyricsFullscreen(false),
+    closeSheet: () => setSheet(null),
+    closeUpNext: () => closeUpNext(0),
+    leaveAmbient: () => setAmbient(false),
+    closePlayer: () => animateClose(0),
+  }), [lyricsFullscreen, closeUpNext, animateClose]);
+
+  // The root BackHandler invokes this before NavigationContainer's stack pop.
+  useFocusEffect(useCallback(() => registerPlayerBackHandler(handleBack), [handleBack]));
+
+  usePreventRemove(holdRoute, handleBack);
 
   // Drag down from anywhere to dismiss. Over the lyrics it only takes over once
   // the list is scrolled to its top — otherwise the drag scrolls the lyrics.

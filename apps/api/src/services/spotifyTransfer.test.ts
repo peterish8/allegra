@@ -148,6 +148,24 @@ test('a playlist that keeps failing with a server error does not stop the rest o
   assert.equal(await synced(store), 4);
 });
 
+test('an expired transfer step is retried after the rest of the daily run', async () => {
+  const { store, service } = build(); await connect(store);
+  const ids = listIds(3); await select(store, ids);
+  const checkpoint = store.checkpoint.bind(store);
+  let expired = false;
+  store.checkpoint = async (userId, playlistId, token, value, generation) => {
+    if (playlistId === ids[0] && !expired) { expired = true; return false; }
+    return checkpoint(userId, playlistId, token, value, generation);
+  };
+
+  await assert.rejects(service.dailyStep('u', 10), (error: unknown) => error instanceof SpotifyApiError && error.status === 409);
+  const rows = await store.playlists('u');
+  assert.equal(rows.find(row => row.playlistId === ids[0])!.dailyCheckedAt, 9, 'the expired step remains due behind the other playlists');
+  assert.equal(await synced(store), 2, 'the other playlists finish before the retryable conflict escapes');
+  assert.deepEqual(await service.dailyStep('u', 10), { more: false });
+  assert.equal(await synced(store), 3, 'the next scheduler call retries and completes the expired step');
+});
+
 test('a rate limit stops the account at once rather than hammering its other playlists', async () => {
   const { state, store, service } = build(); await connect(store);
   const ids = listIds(4); await select(store, ids);

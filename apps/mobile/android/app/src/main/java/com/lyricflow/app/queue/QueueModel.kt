@@ -64,6 +64,10 @@ object QueueMath {
     fun dropIndex(from: Int, dy: Float, rowH: Float, count: Int): Int =
         max(0, min(count - 1, from + (dy / rowH).roundToInt()))
 
+    /** Starts the row handle's pan after 1 dp of travel in any direction, as Gesture.Pan().minDistance(1). */
+    fun beginsReorderDrag(dxPx: Float, dyPx: Float, density: Float): Boolean =
+        dxPx * dxPx + dyPx * dyPx >= density * density
+
     /**
      * How far row [i] steps aside while row [from] is dragged over [to], in rows: the rows in between shift one place
      * towards where the dragged row came from.

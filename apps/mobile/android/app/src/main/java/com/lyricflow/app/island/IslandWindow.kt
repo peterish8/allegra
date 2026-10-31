@@ -134,6 +134,8 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
             if (intent?.action == Intent.ACTION_SCREEN_ON || intent?.action == PowerManager.ACTION_POWER_SAVE_MODE_CHANGED) {
                 budget = IslandBudget.of(service)
                 view?.budget = budget
+                // The listener may have switched notification access since: Android sends nothing for that.
+                OutsideMedia.recheck()
             }
             refreshLock()
             applyVisibility()
@@ -178,6 +180,8 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     fun show(prefs: IslandPrefs) {
         val showWhenIdle = prefs.showWhenIdle
         val showLyricStrip = prefs.showLyricStrip
+        // "Play here": follows other apps' songs only while the island is up and the listener asked for it.
+        OutsideMedia.configure(service, prefs.takeOver)
         hideInApp = prefs.hideInApp
         showOnLock = prefs.showOnLockScreen
         val scales = prefs.widthPercent / 100f to prefs.heightPercent / 100f
@@ -260,6 +264,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     fun destroy() {
         launch?.finishNow()
         launch = null
+        OutsideMedia.configure(service, false)
         val v = view ?: return
         main.removeCallbacks(recheckLock)
         showSearchInput(null)
@@ -511,6 +516,13 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         }
         view?.importantForAccessibility = if (!hidden && expandedTouch) View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO
         touchView?.importantForAccessibility = if (!hidden && !expandedTouch) View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
+    override fun typeInSearch(text: String) {
+        // The field's watcher hands the text to the island, which looks it up like anything typed there.
+        val edit = searchField ?: return
+        edit.setText(text)
+        edit.setSelection(edit.text.length)
     }
 
     override fun showSearchInput(field: RectF?) {

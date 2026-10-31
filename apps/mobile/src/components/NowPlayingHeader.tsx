@@ -4,13 +4,15 @@
  * is open, a small chip beside it shows how many are listening; while another
  * device plays over Connect, one says which device it is.
  */
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Signal } from '../constants/allegraTheme';
+import NativeHeader, { nativeHeaderAvailable } from './player/NativeHeader';
+import { shouldUseNativeHeader, type HeaderAction } from './player/nativeHeaderProps';
 
 interface NowPlayingHeaderProps {
   animatedStyle: React.ComponentProps<typeof Animated.View>['style'];
@@ -28,26 +30,39 @@ const NowPlayingHeader: React.FC<NowPlayingHeaderProps> = ({
   animatedStyle, controlsVisible, onGoBack, together = null, onTogetherPress, playingOn = null, onPlayingOnPress,
 }) => {
   const insets = useSafeAreaInsets();
+  // The Kotlin header only says which control was used; the same handlers as the React Native ones run here.
+  const nativeHeader = shouldUseNativeHeader(nativeHeaderAvailable());
+  const onNativeAction = useCallback((action: HeaderAction) => {
+    if (action === 'back') onGoBack();
+    else if (action === 'together') onTogetherPress?.();
+    else onPlayingOnPress?.();
+  }, [onGoBack, onTogetherPress, onPlayingOnPress]);
   return (
     <Animated.View
       style={[styles.container, { paddingTop: insets.top + 6 }, animatedStyle]}
       pointerEvents={controlsVisible ? 'box-none' : 'none'}
     >
-      <Pressable onPress={onGoBack} hitSlop={{ top: 12, bottom: 12, left: 40, right: 40 }} accessibilityRole="button" accessibilityLabel="Close player">
-        <View style={styles.grabber} />
-      </Pressable>
-      {together !== null ? (
-        <Pressable onPress={onTogetherPress} style={styles.chip} accessibilityRole="button" accessibilityLabel={`Listening together, ${together} in the room`}>
-          <MaterialCommunityIcons name="account-multiple" size={15} color="#fff" />
-          <Text style={styles.chipText}>{`Listening together · ${together}`}</Text>
-        </Pressable>
-      ) : null}
-      {playingOn ? (
-        <Pressable onPress={onPlayingOnPress} style={styles.chip} accessibilityRole="button" accessibilityLabel={`Playing on ${playingOn.name}. Choose a device`}>
-          <MaterialCommunityIcons name={playingOn.kind === 'web' ? 'laptop' : 'cellphone'} size={15} color={Signal.wave} />
-          <Text style={styles.chipText} numberOfLines={1}>{`Playing on ${playingOn.name}`}</Text>
-        </Pressable>
-      ) : null}
+      {nativeHeader ? (
+        <NativeHeader together={together} playingOn={playingOn} waveColor={Signal.wave} onAction={onNativeAction} />
+      ) : (
+        <>
+          <Pressable onPress={onGoBack} hitSlop={{ top: 12, bottom: 12, left: 40, right: 40 }} accessibilityRole="button" accessibilityLabel="Close player">
+            <View style={styles.grabber} />
+          </Pressable>
+          {together !== null ? (
+            <Pressable onPress={onTogetherPress} style={styles.chip} accessibilityRole="button" accessibilityLabel={`Listening together, ${together} in the room`}>
+              <MaterialCommunityIcons name="account-multiple" size={15} color="#fff" />
+              <Text style={styles.chipText}>{`Listening together · ${together}`}</Text>
+            </Pressable>
+          ) : null}
+          {playingOn ? (
+            <Pressable onPress={onPlayingOnPress} style={styles.chip} accessibilityRole="button" accessibilityLabel={`Playing on ${playingOn.name}. Choose a device`}>
+              <MaterialCommunityIcons name={playingOn.kind === 'web' ? 'laptop' : 'cellphone'} size={15} color={Signal.wave} />
+              <Text style={styles.chipText} numberOfLines={1}>{`Playing on ${playingOn.name}`}</Text>
+            </Pressable>
+          ) : null}
+        </>
+      )}
     </Animated.View>
   );
 };
