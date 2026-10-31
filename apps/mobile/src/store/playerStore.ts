@@ -370,9 +370,12 @@ function applyNativeQueue(state: NativeQueueState): void {
 async function pushQueue(playlistId: string, songs: Song[], startIndex: number, autoplay: boolean): Promise<void> {
   const start = songs[startIndex];
   const claimed = beginAudioLoad(start.id);
+  // A pending "start here" (resumeNextLoadAt) for this song: the engine loads the queue itself, so the mini
+  // player's load, which applies it everywhere else, never runs for a new queue.
+  const resumeAt = takeResumePosition(start.id) ?? 0;
   let applied = false;
   try {
-    applied = await nativeQueue.setQueue(songs, startIndex, playlistId, autoplay);
+    applied = await nativeQueue.setQueue(songs, startIndex, playlistId, autoplay, resumeAt);
     if (!applied) {
       // The engine did not take the queue: play the one song so a tap is never dead.
       const item = toNativeItem(start);

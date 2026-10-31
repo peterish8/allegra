@@ -23,6 +23,14 @@ export function handoverStartS(positionS: number, playing: boolean, elapsedS: nu
 }
 
 /**
+ * Where the song is now if it had kept playing since "Continue here" was tapped: the clock to line up with once
+ * the other app has stopped (Android's audio focus usually pauses it the moment ours starts).
+ */
+export function expectedPositionS(positionS: number, playing: boolean, elapsedS: number): number {
+  return Math.max(0, playing ? positionS + Math.max(0, elapsedS) : positionS);
+}
+
+/**
  * Where to seek our player so it matches the other app, or null when it is close enough (or the other app's
  * position is unknown). The other app is paused right after, so its position now is where ours should be.
  */
