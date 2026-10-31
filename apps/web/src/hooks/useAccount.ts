@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AccountProfile, TasteSummary, UnifiedSong } from '@shared/types';
 import { LISTEN_RULES, listenVerdict, type ListenVerdict } from '@shared/listenSignal';
 
+import { advanceListen, restartsListen, startListen, type ListenProgress } from '../lib/listenProgress';
 import type { Playhead } from '../lib/playhead';
 import { ensureSession, fetchProfile, fetchTaste, seedTaste, sendListenSignal, startGuestSession, updateDisplayName } from '../lib/api';
 
@@ -136,36 +137,45 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
  * ended. The server learns taste from it; `onOutcome` lets a playing radio react at once
  * (`packages/shared/listenSignal.ts` holds the rule both use).
  */
-export function useListenTracker(song: UnifiedSong | null, playhead: Playhead, refreshTaste: () => Promise<unknown>, onOutcome?: (song: UnifiedSong, verdict: ListenVerdict) => void): void {
-  const state = useRef<{ key: string | null; song: UnifiedSong | null; heard: number; position: number; startedAt: string }>({
-    key: null, song: null, heard: 0, position: 0, startedAt: ''
+export function useListenTracker(song: UnifiedSong | null, playhead: Playhead, refreshTaste: () => Promise<unknown>, onOutcome?: (song: UnifiedSong, verdict: ListenVerdict) => void, onHistory?: (song: UnifiedSong, startedAt: string) => void): void {
+  const state = useRef<{ key: string | null; song: UnifiedSong | null; listen: ListenProgress; startedAt: string }>({
+    key: null, song: null, listen: startListen(), startedAt: ''
   });
   const key = song ? `${song.source.toLowerCase()}:${song.id}` : null;
   const refreshRef = useRef(refreshTaste);
   refreshRef.current = refreshTaste;
   const outcomeRef = useRef(onOutcome);
   outcomeRef.current = onOutcome;
+  const historyRef = useRef(onHistory);
+  historyRef.current = onHistory;
+
+  /** Reports the listen being left and starts the next one (a new song, or the same song over again). */
+  const turnOver = useRef((nextKey: string | null, nextSong: UnifiedSong | null): void => {
+    const left = state.current;
+    if (left.song) {
+      const { heard, position } = left.listen;
+      const ended = left.song.duration > 0 && position >= left.song.duration - LISTEN_RULES.endSlackSec;
+      const ending = { exit: ended ? 'ended' as const : nextKey ? 'skipped' as const : 'switched' as const, exitPositionSec: position };
+      outcomeRef.current?.(left.song, listenVerdict({ heardSeconds: heard, ...ending, durationSec: left.song.duration }));
+      void sendListenSignal(left.song, heard, left.startedAt, ending).then(() => refreshRef.current()).catch(() => undefined);
+    }
+    // When the listen started: the key of this listen's history row and of its taste signal (a retry lands on it).
+    state.current = { key: nextKey, song: nextSong, listen: startListen(), startedAt: new Date().toISOString() };
+  }).current;
 
   useEffect(() => {
-    const left = state.current;
-    if (left.key === key) return;
-    if (left.song) {
-      const ended = left.song.duration > 0 && left.position >= left.song.duration - LISTEN_RULES.endSlackSec;
-      const ending = { exit: ended ? 'ended' as const : key ? 'skipped' as const : 'switched' as const, exitPositionSec: left.position };
-      outcomeRef.current?.(left.song, listenVerdict({ heardSeconds: left.heard, ...ending, durationSec: left.song.duration }));
-      void sendListenSignal(left.song, left.heard, left.startedAt, ending).then(() => refreshRef.current()).catch(() => undefined);
-    }
-    // When the listen started: the server's most-played tally uses it to ignore a repeated delivery.
-    state.current = { key, song, heard: 0, position: 0, startedAt: new Date().toISOString() };
-  }, [key, song]);
+    if (state.current.key === key) return;
+    turnOver(key, song);
+  }, [key, song, turnOver]);
 
   useEffect(() => playhead.subscribe(() => {
-    const listen = state.current;
-    if (listen.key !== key) return;
+    const current = state.current;
+    if (current.key !== key || !current.song) return;
     const position = playhead.get();
-    const step = position - listen.position;
-    // Normal playback moves a little each tick; a seek jumps, and a jump is not listening.
-    if (step > 0 && step <= 2) listen.heard += step;
-    listen.position = position;
-  }), [key, playhead]);
+    if (restartsListen(current.listen, position, current.song.duration)) turnOver(current.key, current.song);
+    // History follows what this player actually plays, however it got here: a pick, auto-advance, radio, DJ,
+    // Connect or LuvLink. Five seconds heard, the same rule as the phone.
+    const listen = state.current;
+    if (listen.song && advanceListen(listen.listen, position)) historyRef.current?.(listen.song, listen.startedAt);
+  }), [key, playhead, turnOver]);
 }

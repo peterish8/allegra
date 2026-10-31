@@ -1,5 +1,10 @@
 # Performance and Kotlin: the remaining work
 
+> **Re-check before use.** This list was written against a local checkout that was behind `origin/main`. Main
+> has since gained native Android views (`NativeLyricsView`, scrubber, transport bar, tab bar, queue list and more;
+> see [HANDOFF-ANDROID-NATIVE-UI.md](HANDOFF-ANDROID-NATIVE-UI.md)). Item 9 and parts of items 3–5 may already be
+> done or changed. Verify each item against current `main` and tick or drop it before coding.
+
 Date: 2026-11-01. Written for a coding agent picking this up cold. It lists what is left of
 [MASTER-PLAN.md](MASTER-PLAN.md) (2026-10-04) after checking the code as it is today, one item at a time, each
 with what "done" means and what it must not break.

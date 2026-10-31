@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import type { AuthService } from '../auth/auth.js';
 import { SpotifyStore } from '../db/spotifyStore.js';
-import type { SpotifyProvider, SpotifyTrack } from '../providers/spotify.js';
+import { SpotifyApiError, type SpotifyProvider, type SpotifyTrack } from '../providers/spotify.js';
 import { parseLibraryOps, type LibraryOp } from '../shared/library.js';
 import type { ImportMatcher } from './importMatch.js';
 import { SpotifyTransferService } from './spotifyTransfer.js';
@@ -13,11 +13,14 @@ const PLAYLIST = 'pl0000000001';
 
 /** 120 Spotify rows, three 50-row steps. `snapshot` is mutable so a test can edit the playlist. */
 function build() {
-  const state = { snapshot: 'snap-a', likedScope: true, liked: Array.from({ length: 60 }, (_, i): SpotifyTrack => ({ id: `l${i}`, title: `Loved ${i}`, artist: 'Artist', durationSec: 200, addedAt: '2026-03-01T00:00:00Z' })), tracks: Array.from({ length: 120 }, (_, i): SpotifyTrack => ({ id: `t${i}`, title: `Song ${i}`, artist: 'Artist', durationSec: 200, addedAt: '2026-01-01T00:00:00Z' })) };
+  const state = { snapshot: 'snap-a', likedScope: true, failures: new Map<string, Error>(), refreshes: 0, onRefresh: async () => {}, liked: Array.from({ length: 60 }, (_, i): SpotifyTrack => ({ id: `l${i}`, title: `Loved ${i}`, artist: 'Artist', durationSec: 200, addedAt: '2026-03-01T00:00:00Z' })), tracks: Array.from({ length: 120 }, (_, i): SpotifyTrack => ({ id: `t${i}`, title: `Song ${i}`, artist: 'Artist', durationSec: 200, addedAt: '2026-01-01T00:00:00Z' })) };
   const provider = {
-    refresh: async () => ({ accessToken: 'a', expiresIn: 3600 }),
+    refresh: async () => { state.refreshes++; await state.onRefresh(); return { accessToken: 'a', expiresIn: 3600 }; },
     playlists: async () => [{ id: PLAYLIST, name: 'Road', snapshotId: state.snapshot, total: state.tracks.length }],
-    playlist: async () => ({ id: PLAYLIST, name: 'Road', snapshotId: state.snapshot, total: state.tracks.length }),
+    playlist: async (_t: string, id: string) => {
+      const failure = state.failures.get(id); if (failure) throw failure;
+      return { id, name: 'Road', snapshotId: state.snapshot, total: state.tracks.length };
+    },
     items: async (_t: string, _p: string, offset: number, limit = 50) => ({ tracks: state.tracks.slice(offset, offset + limit), total: state.tracks.length, snapshotId: '' }),
     likedSummary: async () => (state.likedScope ? { total: state.liked.length, snapshotId: `liked-${state.liked.length}` } : null),
     likedItems: async (_t: string, offset: number, limit = 50) => ({ tracks: state.liked.slice(offset, offset + limit), total: state.liked.length, snapshotId: '' })
@@ -56,13 +59,13 @@ test('manual sync pages to completion and a rescan adds nothing twice', async ()
 test('daily run finishes the playlist, then skips it while the snapshot is unchanged', async () => {
   const { state, saved, store, service } = build(); await connect(store);
   await service.sync('u', PLAYLIST); // selects the playlist (one step in)
-  assert.deepEqual(await service.dailyStep('u'), { more: false });
+  assert.deepEqual(await service.dailyStep('u', 1), { more: false });
   assert.equal(adds(saved), 120);
   const before = saved.length;
-  await service.dailyStep('u');
+  await service.dailyStep('u', 2);
   assert.equal(saved.length, before, 'unchanged snapshot does no work');
   state.snapshot = 'snap-b'; state.tracks.push({ id: 'new', title: 'New one', artist: 'Artist', durationSec: 180, addedAt: '2026-02-01T00:00:00Z' });
-  await service.dailyStep('u');
+  await service.dailyStep('u', 3);
   assert.equal(adds(saved), 121, 'only the new Spotify row is added');
 });
 
@@ -78,7 +81,130 @@ test('daily run stops at its time budget and asks to be called again', async () 
   const { store, service } = build(); await connect(store);
   await service.sync('u', PLAYLIST);
   let clock = 0;
-  assert.deepEqual(await service.dailyStep('u', () => (clock += 50_000)), { more: true });
+  assert.deepEqual(await service.dailyStep('u', 1, () => (clock += 50_000)), { more: true });
+});
+
+const listIds = (count: number) => Array.from({ length: count }, (_, i) => `pl${String(i).padStart(10, '0')}`);
+async function select(store: SpotifyStore, ids: readonly string[]) {
+  for (const [index, playlistId] of ids.entries()) await store.savePlaylist({ userId: 'u', playlistId, name: `List ${index}`, snapshotId: 'snap-a', total: 0, libraryId: `spotify-${playlistId}`, enabled: true, updatedAt: index + 1 });
+}
+const synced = async (store: SpotifyStore) => (await store.playlists('u')).filter(row => row.lastSyncedAt !== undefined).length;
+
+test('one daily run reaches every enabled playlist, not just the first page of five', async () => {
+  const { store, service } = build(); await connect(store);
+  await select(store, listIds(12));
+  assert.deepEqual(await service.dailyStep('u', 10), { more: false });
+  assert.equal(await synced(store), 12);
+  assert.ok((await store.playlists('u')).every(row => row.dailyCheckedAt === 10), 'each playlist is marked with the run');
+});
+
+test('a run cut off by its budget resumes where it stopped and visits each playlist once', async () => {
+  const { store, service, saved } = build(); await connect(store);
+  await select(store, listIds(7));
+  let clock = 0; const tick = () => (clock += 20_000);
+  const calls: { more: boolean }[] = [];
+  do calls.push(await service.dailyStep('u', 10, tick)); while (calls.at(-1)!.more && calls.length < 50);
+  assert.ok(calls.length > 1, 'the budget forced continuation calls');
+  assert.equal(calls.at(-1)!.more, false);
+  assert.equal(await synced(store), 7);
+  assert.equal(adds(saved), 7 * 120, 'resumed steps add no duplicates');
+  assert.deepEqual(await service.dailyStep('u', 10), { more: false }, 'a repeated call for a finished run does nothing');
+});
+
+test('a rate-limited playlist stays unmarked and the retry resumes it', async () => {
+  const { state, store, service } = build(); await connect(store);
+  const ids = listIds(3); await select(store, ids);
+  state.failures.set(ids[1]!, new SpotifyApiError(429, 'Spotify is busy. Try again shortly.', 30));
+  await assert.rejects(service.dailyStep('u', 10), (error: unknown) => error instanceof SpotifyApiError && error.status === 429 && error.retryAfter === 30);
+  const marked = (await store.playlists('u')).filter(row => row.dailyCheckedAt === 10).map(row => row.playlistId);
+  assert.deepEqual(marked, [ids[0]], 'only the playlist finished before the 429 is marked');
+  state.failures.clear();
+  assert.deepEqual(await service.dailyStep('u', 10), { more: false });
+  assert.equal(await synced(store), 3);
+});
+
+test('a playlist Spotify no longer serves is skipped for the day without blocking the rest', async () => {
+  const { state, store, service } = build(); await connect(store);
+  const ids = listIds(3); await select(store, ids);
+  state.failures.set(ids[0]!, new SpotifyApiError(404, 'Spotify could not find that playlist.'));
+  assert.deepEqual(await service.dailyStep('u', 10), { more: false });
+  assert.equal(await synced(store), 2);
+  assert.equal((await store.playlists('u')).find(row => row.playlistId === ids[0])!.dailyCheckedAt, 10, 'not retried within the same run');
+});
+
+test('a playlist that keeps failing with a server error does not stop the rest of the run', async () => {
+  const { state, store, service } = build(); await connect(store);
+  const ids = listIds(4); await select(store, ids);
+  state.failures.set(ids[0]!, new SpotifyApiError(503, 'Spotify is having trouble.'));
+  // The broken playlist is tried, deferred, and the healthy ones still finish; then the retryable error escapes.
+  await assert.rejects(service.dailyStep('u', 10), (error: unknown) => error instanceof SpotifyApiError && error.status === 503);
+  assert.equal(await synced(store), 3);
+  const broken = (await store.playlists('u')).find(row => row.playlistId === ids[0])!;
+  assert.equal(broken.dailyCheckedAt, 9, 'deferred: still due in this run, behind every untried playlist');
+  // The scheduler's retry tries only the deferred one again; once Spotify recovers the run completes.
+  await assert.rejects(service.dailyStep('u', 10));
+  state.failures.clear();
+  assert.deepEqual(await service.dailyStep('u', 10), { more: false });
+  assert.equal(await synced(store), 4);
+});
+
+test('a rate limit stops the account at once rather than hammering its other playlists', async () => {
+  const { state, store, service } = build(); await connect(store);
+  const ids = listIds(4); await select(store, ids);
+  state.failures.set(ids[0]!, new SpotifyApiError(429, 'Slow down.', 20));
+  await assert.rejects(service.dailyStep('u', 10), (error: unknown) => error instanceof SpotifyApiError && error.status === 429);
+  assert.equal(await synced(store), 0);
+});
+
+test('a disconnect during matching stops the step before it writes to the library', async () => {
+  const { saved, store, service } = build(); await connect(store);
+  const matcher = (service as unknown as { matcher: { match: (rows: readonly { title: string }[]) => Promise<unknown[]> } }).matcher;
+  const original = matcher.match;
+  matcher.match = async (rows) => { await service.disconnect('u'); return original(rows); };
+  await assert.rejects(service.sync('u', PLAYLIST), (error: unknown) => error instanceof SpotifyApiError && error.status === 401);
+  assert.equal(saved.length, 0, 'no playlist or songs were added after the account disconnected');
+});
+
+test('a disconnected account stops the daily step so the scheduler does not retry it', async () => {
+  const { store, service } = build(); await connect(store);
+  await select(store, [PLAYLIST]);
+  await service.disconnect('u');
+  await assert.rejects(service.dailyStep('u', 10), (error: unknown) => error instanceof SpotifyApiError && error.status === 401);
+});
+
+test('a refresh that finishes after a reconnect does not overwrite the new credential', async () => {
+  const { state, store, service } = build();
+  await store.saveConnection({ userId: 'u', spotifyUserId: 's', refreshToken: 'old', dailyEnabled: false, connectedAt: 1, updatedAt: 1 });
+  state.onRefresh = async () => {
+    state.onRefresh = async () => {};
+    await store.saveConnection({ userId: 'u', spotifyUserId: 's2', refreshToken: 'new', dailyEnabled: false, connectedAt: 2, updatedAt: 2 });
+  };
+  await assert.rejects(service.sourcePlaylists('u'), (error: unknown) => error instanceof SpotifyApiError && error.status === 401);
+  const current = await store.connection('u');
+  assert.equal(current?.refreshToken, 'new');
+  assert.equal(current?.spotifyUserId, 's2');
+});
+
+test('a sync step in flight across disconnect writes no playlist row or receipts afterwards', async () => {
+  const { state, store, service } = build(); await connect(store);
+  // Disconnect lands while the step is fetching Spotify, after it read the credential.
+  void state;
+  const provider = (service as unknown as { provider: { playlist: (t: string, id: string) => Promise<unknown> } }).provider;
+  const original = provider.playlist;
+  provider.playlist = async (t, id) => { await service.disconnect('u'); return original(t, id); };
+  await assert.rejects(service.sync('u', PLAYLIST), (error: unknown) => error instanceof SpotifyApiError && error.status === 401);
+  assert.deepEqual(await store.playlists('u'), [], 'no playlist name or selection is recreated');
+  assert.equal((await store.receipts('u', PLAYLIST, ['t0'])).size, 0);
+});
+
+test('disconnect keeps no Spotify identity, and a tombstone cannot be opted back into daily runs', async () => {
+  const { store, service } = build(); await connect(store);
+  await service.disconnect('u');
+  const tombstone = await store.connection('u');
+  assert.equal(tombstone?.refreshToken, '');
+  assert.equal(tombstone?.spotifyUserId, '');
+  assert.equal(await service.setDaily('u', true), false);
+  assert.equal((await service.status('u')).connected, false);
 });
 
 test('playlist counts come from the renamed items field, or the items endpoint when the list leaves them out', async () => {
@@ -92,6 +218,19 @@ test('playlist counts come from the renamed items field, or the items endpoint w
   };
   const rows = await new SpotifyProvider('client', fetchImpl).playlists('token');
   assert.deepEqual(rows.map(row => [row.name, row.total]), [['Renamed', 12], ['Missing', 40]]);
+  assert.ok(rows.every(row => row.totalUnknown === undefined), 'confirmed counts are not marked unknown');
+});
+
+test('a count Spotify leaves out and the check cannot confirm is unknown, while a confirmed zero stays empty', async () => {
+  const { SpotifyProvider } = await import('../providers/spotify.js');
+  const fetchImpl = async (input: RequestInfo | URL): Promise<Response> => {
+    const url = String(input);
+    if (url.includes('/me/playlists')) return new Response(JSON.stringify({ items: [{ id: 'empty', name: 'Empty', snapshot_id: 's' }, { id: 'flaky', name: 'Flaky', snapshot_id: 's' }], next: null }), { status: 200 });
+    if (url.includes('/playlists/empty/items')) return new Response(JSON.stringify({ total: 0 }), { status: 200 });
+    return new Response('{}', { status: 500 });
+  };
+  const rows = await new SpotifyProvider('client', fetchImpl).playlists('token');
+  assert.deepEqual(rows.map(row => [row.name, row.total, row.totalUnknown ?? false]), [['Empty', 0, false], ['Flaky', 0, true]]);
 });
 
 test('Liked Songs lead the sources and sync into likes, not a playlist', async () => {

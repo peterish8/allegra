@@ -306,6 +306,10 @@ export class ListenerActions {
     const identity = recentIdentity(entry);
     await this.auth.updateProfile(user.userId, (current) => {
       if (!isPersonalised(current)) return null;
+      // History stores only the most recent event per song. An older offline delivery
+      // cannot replace it, and may itself be a retry of an event no longer retained.
+      const latest = current.recentlyPlayed.find((item) => recentIdentity(item) === identity);
+      if (latest && latest.playedAt > playedAt) return null;
       // Offline clients retry the same play after a lost response. Keep the history write
       // idempotent for that event so its taste signal is not applied twice.
       const priorEvent = current.recentlyPlayed.find((item) => recentIdentity(item) === identity && item.playedAt === playedAt);

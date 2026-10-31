@@ -64,9 +64,11 @@ export function spotifyRouter(spotify: SpotifyTransferService, auth: AuthService
   // Called only by the durable Convex daily scheduler; user IDs are never accepted from a browser.
   router.post('/internal/spotify/daily', async (req, res) => {
     if (!gatewaySecret || !constantTimeEqual(req.header('x-convex-server-secret') ?? '', gatewaySecret)) { res.status(401).json({ success: false, data: null, error: 'Not authorized.' }); return; }
-    const userId = asRecord(req.body).userId;
+    const body = asRecord(req.body); const userId = body.userId; const runStartedAt = body.runStartedAt;
     if (typeof userId !== 'string' || userId.length > 160) { res.status(400).json({ success: false, data: null, error: 'Invalid account.' }); return; }
-    try { sendSuccess(res, await spotify.dailyStep(userId)); } catch (error) { sendSpotifyError(res, error); }
+    // Absent from a scheduler deployed before runs had names; the step then treats the current UTC day as the run.
+    if (runStartedAt !== undefined && (typeof runStartedAt !== 'number' || !Number.isSafeInteger(runStartedAt) || runStartedAt <= 0)) { res.status(400).json({ success: false, data: null, error: 'Invalid run.' }); return; }
+    try { sendSuccess(res, await spotify.dailyStep(userId, runStartedAt)); } catch (error) { sendSpotifyError(res, error); }
   });
 
   return router;

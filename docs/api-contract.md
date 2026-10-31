@@ -388,6 +388,14 @@ POST   /api/me/recently-played         { songId, playDuration, playedAt? }
 GET/PATCH /api/me/settings
 ```
 
+**When a listen enters Recently played (2026-10-31, both clients).** The device that actually plays the
+song posts it once `LISTEN_RULES.historyAfterSec` (5) seconds have been heard, however playback started:
+a pick, auto-advance, radio, DJ, Connect or LuvLink. A Connect controller or a LuvLink controller-only
+member hears nothing and posts nothing; each LuvLink member whose device plays posts their own listen.
+`playedAt` is when the listen started and is the event's key: a retried post is idempotent, an older
+offline post never replaces a newer one, and the listen signal sent when the song is left
+(`POST /api/me/taste/signal`, same `playedAt`) lands on that row.
+
 `Library` is additive: optional `coverKey` (a Convex storage id) and derived `coverUrl`. `coverUrl` is
 never persisted; the API resolves it from Convex on read. `PATCH` accepts the `coverKey` returned by
 the authenticated cover-upload flow or `coverKey: null` to clear it.
@@ -685,9 +693,21 @@ Stable source IDs, timestamps and destination IDs make response-loss retries saf
 find new songs inserted at the top; transfer adds songs and preserves local edits. Daily work runs
 durably in Convex with bounded steps and a per-account/playlist lease. A daily run skips a playlist
 whose Spotify `snapshot_id` hasn't changed since its last finished scan; manual sync always rescans.
-The internal `POST /api/internal/spotify/daily` (server secret only) answers `{ more }`; Convex calls
-again while `more` is true. Account erase removes all
-connections/checkpoints. Missing configuration is an explicit unavailable state.
+The internal `POST /api/internal/spotify/daily` (server secret only) takes `{ userId, runStartedAt? }`
+and answers `{ more }`; Convex calls again while `more` is true. `runStartedAt` (ms) names the day's
+run: each playlist is marked with it once finished or skipped, so continuation calls reach every
+enabled playlist once, least recently checked first. Without it the API uses the start of the
+current UTC day (an older scheduler). Accounts are paged 100 at a time and started two seconds
+apart. A `5xx` on one playlist defers it behind the run's untried playlists and the call answers
+the error only once nothing else is left, so Convex retries it after the clamped `Retry-After`;
+`429` (app-wide) and `401` (disconnected or reconnected) stop the account at once; `400/403/404/409`
+skip that playlist for the day. Every connect and disconnect bumps a connection generation, and each step's playlist, lease,
+checkpoint and token writes carry the generation it started under, so a step in flight across a
+disconnect or reconnect writes nothing afterwards (a library write already sent before the
+disconnect stays; it is the listener's own idempotent import). Disconnect keeps only an empty
+tombstone (account ID and generation) and can't be re-enabled for daily runs without reconnecting.
+Account erase removes all connections, tombstones and checkpoints. Missing configuration is an
+explicit unavailable state.
 
 ## Errors
 

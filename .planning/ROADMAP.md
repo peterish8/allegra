@@ -1,6 +1,8 @@
 # Roadmap — state, blockers, next
 
-Updated 2026-09-24.
+Historical baseline: 2026-09-24. The checklist below predates substantial LuvLink, Spotify/Blend,
+and Android performance work; do not treat its statuses as the current project roadmap. See the
+[integration status and recheck list](./INTEGRATION-STATUS.md) for this checkout's evidence boundary.
 
 ## Where things stand
 

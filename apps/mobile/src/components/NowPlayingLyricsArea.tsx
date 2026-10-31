@@ -12,6 +12,7 @@ import { Motion } from '../constants/allegraTheme';
 import { DOCK_THUMB, LYRICS_MORPH_MS } from './player/lyricsMorph';
 import { useArtworkPalette } from './allegra/useArtworkPalette';
 import SynchronizedLyrics, { SynchronizedLyricsRef } from './SynchronizedLyrics';
+import { NativeSynchronizedLyrics, canUseNativeLyrics } from './NativeSynchronizedLyrics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ErrorBoundary from './ErrorBoundary';
 import { useIsFocused } from '@react-navigation/native';
@@ -131,6 +132,13 @@ interface NowPlayingLyricsAreaProps {
   dockY?: SharedValue<number>;
   /** Removes the cover morph and gives the synchronized list the full player. */
   fullscreen?: boolean;
+  /**
+   * The lines follow this device's own player (Media3), so Kotlin may draw them from its clock. Connect remote
+   * playback leaves it off: that clock is the other device's, and stays with the React Native list.
+   */
+  localClock?: boolean;
+  /** The recording the lines belong to; native follows the player only while it plays this one. */
+  songId?: string;
 }
 
 /**
@@ -224,7 +232,10 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   dockX,
   dockY,
   fullscreen = false,
+  localClock = false,
+  songId,
 }) => {
+  const useNativeLyrics = localClock && !!songId && canUseNativeLyrics(processedLyrics);
   const routeFocused = useIsFocused();
   const appActive = useAppActive();
   const lyricsLive = showLyrics && routeFocused && appActive;
@@ -328,6 +339,22 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
           pointerEvents={showLyrics ? 'auto' : 'none'}
         >
       <ErrorBoundary name="lyrics" resetKey={processedLyrics} fallback={lyricsFallback}>
+      {useNativeLyrics ? (
+        <NativeSynchronizedLyrics
+          songId={songId ?? ''}
+          lyrics={processedLyrics}
+          currentTime={currentTime}
+          onLyricPress={onLyricPress}
+          songTitle={songTitle}
+          textStyle={textStyle}
+          activeLinePosition={fullscreen ? 0.42 : 0.35}
+          topSpacerHeight={24}
+          edgeFade={fullscreen ? 80 : 56}
+          live={lyricsLive}
+          scrollOffset={scrollOffset}
+          onScrollStateChange={onScrollStateChange}
+        />
+      ) : (
       <SynchronizedLyrics
         ref={flatListRef}
         textStyle={textStyle}
@@ -344,6 +371,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
         isUserScrolling={isUserScrollingRef.current}
         onScrollStateChange={onScrollStateChange}
       />
+      )}
       </ErrorBoundary>
         </Animated.View>
       ) : null}

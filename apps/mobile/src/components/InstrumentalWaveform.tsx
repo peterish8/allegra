@@ -1,4 +1,4 @@
-import { isInstrumentalLine } from '@shared/lyricsText';
+import { isInstrumentalLyric } from '../playback/instrumentalLine';
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
 import Animated, {
@@ -144,7 +144,4 @@ export function useIsActiveLine(activeIndexSV: SharedValue<number>, index: numbe
 }
 
 /** Detect instrumental / music-break markers so UI can swap text for the EQ. */
-export function isInstrumentalLyric(text: string): boolean {
-  // A blank line is a break on the phone; the markers are the same everywhere (@shared/lyricsText).
-  return !text.trim() || isInstrumentalLine(text);
-}
+export { isInstrumentalLyric };

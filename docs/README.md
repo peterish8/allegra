@@ -9,7 +9,8 @@ not negotiable.
 | [architecture.md](./architecture.md) | End-to-end design: state owners, playback, karaoke, auth, seams |
 | [decisions.md](./decisions.md) | Choices that are easy to undo by accident (glass, matching, Spotify sync, Blend design), with why |
 | [LEARNING-LOG.md](../.planning/LEARNING-LOG.md) | Session incidents, confirmed causes and checkable prevention rules |
-| [Blend/Spotify handoff](../.planning/blend/HANDOFF-2026-10-05.md) | Current branches, release evidence, remaining fixes/configuration and Spotify to LuvLyrics workflow |
+| [Blend/Spotify handoff](../.planning/blend/HANDOFF-2026-10-05.md) | Historical 2026-10-05 branch/release snapshot; recheck Git and release state before relying on it |
+| [Integration status and agent context](../.planning/INTEGRATION-STATUS.md) | Current checkout baseline, LuvLink/Spotify/Kotlin integration recheck list, and repository memory/code-context setup |
 | [dj.md](./dj.md) | Your DJ, front to back: page UX, mascot, session, commands, local and BYOK brains, voice, API routes |
 | [workflows.md](./workflows.md) | Develop, verify, ship — including how to prove Range/206 and playback survival |
 | [auth-convex-google.md](./auth-convex-google.md) | Setting up Google sign-in through Convex Auth |
