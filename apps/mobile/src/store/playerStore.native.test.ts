@@ -39,7 +39,7 @@ jest.mock('../services/NativeAudioPlayer', () => ({
 }));
 
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
-import { usePlayerStore, playerControls, setNativeOwnsPlaybackState, beginAudioLoad, endAudioLoad } from './playerStore';
+import { usePlayerStore, playerControls, setNativeOwnsPlaybackState, beginAudioLoad, endAudioLoad, resumeNextLoadAt } from './playerStore';
 import { usePlaybackModesStore } from './playbackModesStore';
 import { forgetEngineQueue, noteEngineQueue, onQueueLow } from '../playback/nativeQueue';
 import type { Song } from '../types/song';
@@ -105,6 +105,25 @@ describe('starting a queue', () => {
     expect([start, position, play]).toEqual([2, 0, true]);
     expect(tag).toMatch(/^library#\d+$/);
     expect(usePlayerStore.getState().currentSongId).toBe('c');
+  });
+
+  it('starts the new queue where a pending resume asks, once, since the engine loads it itself', async () => {
+    resumeNextLoadAt('c', 61.5);
+    usePlayerStore.getState().setPlaylistQueue('search', queue, 2, true);
+    await flush();
+    expect(native.setQueue.mock.calls[0][2]).toBe(61.5);
+    // Taken once: the next queue starts at the top again.
+    usePlayerStore.getState().setPlaylistQueue('search', queue, 2, true);
+    await flush();
+    expect(native.setQueue.mock.calls[1][2]).toBe(0);
+  });
+
+  it('ignores a pending resume meant for another song', async () => {
+    resumeNextLoadAt('a', 30);
+    usePlayerStore.getState().setPlaylistQueue('search', queue, 2, true);
+    await flush();
+    expect(native.setQueue.mock.calls[0][2]).toBe(0);
+    resumeNextLoadAt('a', 0);
   });
 
   it('never nudges the old song to play before the new queue lands (it would blip after a pause)', async () => {

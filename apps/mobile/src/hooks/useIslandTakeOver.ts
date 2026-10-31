@@ -27,7 +27,13 @@ import {
   type IslandTakeOver,
 } from '../services/NativeDynamicIsland';
 import { cleanOutside, pickTakeOver, takeOverQuery, type OutsideSong } from '../services/takeOver/match';
-import { START_WAIT_MS, TAKE_OVER_BUDGET_MS, driftSeekS, handoverStartS } from '../services/takeOver/handover';
+import {
+  START_WAIT_MS,
+  TAKE_OVER_BUDGET_MS,
+  driftSeekS,
+  expectedPositionS,
+  handoverStartS,
+} from '../services/takeOver/handover';
 import { diag } from '../utils/diag';
 
 const SEARCH_LIMIT = 8;
@@ -95,10 +101,17 @@ async function findOutsideSong(cleaned: OutsideSong, durationS: number, signal: 
   }
 }
 
-/** After our player plays: match the other app's moment (seek pattern: capture, seek, resume), then pause it. */
-async function lineUpAndPause(packageName: string): Promise<void> {
-  const outside = readOutsideNow(packageName);
-  const target = driftSeekS(outside?.playing ? outside.positionS : null, playerControls.getPosition());
+/**
+ * After our player is audible: match the other app's moment (seek pattern: capture, seek, resume), then pause it.
+ * While the other app still plays, its own position is the clock; once it has stopped, the position at the tap
+ * plus the time since is.
+ */
+async function lineUpAndPause(take: IslandTakeOver, startedAt: number): Promise<void> {
+  const outside = readOutsideNow(take.packageName);
+  const expected = outside?.playing
+    ? outside.positionS
+    : expectedPositionS(take.positionS, take.playing, (Date.now() - startedAt) / 1000);
+  const target = driftSeekS(expected, playerControls.getPosition());
   if (target !== null) {
     const wasPlaying = usePlayerStore.getState().isPlaying;
     await playerControls.seekTo(target);
@@ -106,7 +119,7 @@ async function lineUpAndPause(packageName: string): Promise<void> {
       usePlayerStore.getState().requestPlayback(true);
     }
   }
-  pauseOutside(packageName);
+  pauseOutside(take.packageName);
 }
 
 /**
@@ -139,7 +152,7 @@ async function handOver(
     return true;
   }
   if (audible) {
-    await lineUpAndPause(take.packageName);
+    await lineUpAndPause(take, startedAt);
     return true;
   }
   if (isOurs(songId)) {

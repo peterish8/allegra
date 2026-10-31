@@ -1,4 +1,19 @@
-import { DRIFT_TOLERANCE_S, LOAD_LEAD_S, driftSeekS, handoverStartS } from './handover';
+import { DRIFT_TOLERANCE_S, LOAD_LEAD_S, driftSeekS, expectedPositionS, handoverStartS } from './handover';
+
+describe('expectedPositionS', () => {
+  it('moves a song that was playing at the tap on by the time since, without the loading lead', () => {
+    expect(expectedPositionS(61, true, 3.5)).toBe(64.5);
+  });
+
+  it('holds a song that was paused at the tap where it was', () => {
+    expect(expectedPositionS(61, false, 3.5)).toBe(61);
+  });
+
+  it('never goes back in time or below zero', () => {
+    expect(expectedPositionS(10, true, -2)).toBe(10);
+    expect(expectedPositionS(-1, false, 0)).toBe(0);
+  });
+});
 
 describe('handoverStartS', () => {
   it('advances a playing song by the time spent and the loading lead', () => {

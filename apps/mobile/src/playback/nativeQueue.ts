@@ -159,8 +159,11 @@ export const nativeQueue = {
   /** True when the Kotlin queue engine is there to take commands. */
   available: (): boolean => NativeAudioPlayer.hasQueue(),
 
-  /** A new queue. Resolves true once the engine holds it and the playing song is `songs[startIndex]`. */
-  async setQueue(songs: readonly Song[], startIndex: number, playlistId: string, play: boolean): Promise<boolean> {
+  /**
+   * A new queue. Resolves true once the engine holds it and the playing song is `songs[startIndex]`, starting
+   * `positionSec` into it (the engine seeks before it plays, so nothing is heard from the top).
+   */
+  async setQueue(songs: readonly Song[], startIndex: number, playlistId: string, play: boolean, positionSec = 0): Promise<boolean> {
     const { songs: windowed, start } = windowAround(songs, startIndex);
     if (windowed.length === 0) return false;
     const mine = ++session;
@@ -169,7 +172,7 @@ export const nativeQueue = {
     // From this moment edits are meant for the new queue, even before the engine has applied it: commands run in
     // order, so one made now lands after it and must carry its tag.
     noteEngineQueue({ ids: windowed.map(s => s.id), tag });
-    const ok = await NativeAudioPlayer.setQueue(toNativeItems(windowed), start, 0, play, tag);
+    const ok = await NativeAudioPlayer.setQueue(toNativeItems(windowed), start, Math.max(0, positionSec), play, tag);
     if (!ok && mine === session) forgetEngineQueue();
     return ok;
   },
