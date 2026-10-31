@@ -6,6 +6,9 @@ node_modules
 .next
 dist
 
+# Windows desktop app: built locally with cargo, never part of the Vercel deployment.
+apps/desktop
+
 # Secrets never leave this machine; Vercel reads its own environment variables.
 .env
 .env.*

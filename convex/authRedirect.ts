@@ -12,6 +12,9 @@
 /** The phone app's sign-in return link (app.json `scheme` + the `auth` path). */
 export const MOBILE_AUTH_REDIRECT = 'lyricflow://auth';
 
+/** The native Notch listens once on this exact loopback callback, with an ephemeral port. */
+const DESKTOP_AUTH_REDIRECT = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/allegra-auth$/;
+
 export function allowedAuthRedirect(redirectTo: string, siteUrl: string | undefined): string {
   if (redirectTo.startsWith('/') && !redirectTo.startsWith('//')) {
     if (!siteUrl) throw new Error('SITE_URL is not set');
@@ -23,6 +26,8 @@ export function allowedAuthRedirect(redirectTo: string, siteUrl: string | undefi
   }
   if (siteUrl && isUnder(redirectTo, siteUrl)) return redirectTo;
   if (redirectTo === MOBILE_AUTH_REDIRECT || redirectTo.startsWith(`${MOBILE_AUTH_REDIRECT}?`)) return redirectTo;
+  const desktop = DESKTOP_AUTH_REDIRECT.exec(redirectTo);
+  if (desktop && Number(desktop[1]) <= 65535) return redirectTo;
   throw new Error(`Invalid redirectTo: ${redirectTo}`);
 }
 

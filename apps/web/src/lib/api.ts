@@ -212,6 +212,13 @@ export async function searchSongs(query: string, signal?: AbortSignal, page = 0)
   return request(`/api/search?q=${encodeURIComponent(query)}&limit=20&page=${page}`, { signal });
 }
 
+/** Resolve catalog refs supplied by the desktop shell into songs for the normal web player. */
+export async function fetchSongsByRefs(refs: readonly string[], signal?: AbortSignal): Promise<UnifiedSong[]> {
+  const ids = [...new Set(refs)].slice(0, 50);
+  if (ids.length === 0) return [];
+  return request<UnifiedSong[]>(`/api/songs?ids=${encodeURIComponent(ids.join(','))}`, { signal });
+}
+
 export interface TopChartPayload {
   readonly storefront: string;
   readonly available: boolean;
