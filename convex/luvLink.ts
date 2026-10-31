@@ -457,7 +457,8 @@ export const publishPlayback = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await limit(ctx, 'playbackWrite', userId);
-    const { room, member } = await requireMember(ctx, args.roomId, userId);
+    const { room: loaded, member } = await requireMember(ctx, args.roomId, userId);
+    const room = await settleHandoff(ctx, loaded);
     const prior = await findReceipt(ctx, room._id, userId, args.commandId, 'playback');
     const now = Date.now();
     const old = await ctx.db.query('luvLinkPlayback').withIndex('by_roomId', q => q.eq('roomId', room._id)).unique();
@@ -660,7 +661,8 @@ export const setSpeaker = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await limit(ctx, 'playbackWrite', userId);
-    const { room, member } = await requireMember(ctx, args.roomId, userId);
+    const { room: loaded, member } = await requireMember(ctx, args.roomId, userId);
+    const room = await settleHandoff(ctx, loaded);
     if (member.role !== 'host') fail('not_allowed', 'Only the LuvLink host can move the speaker.');
     if (room.mode !== 'speaker') fail('wrong_mode', 'Switch LuvLink to speaker mode first.');
     const prior = await findReceipt(ctx, room._id, userId, args.commandId, 'speaker');
@@ -724,6 +726,16 @@ export const checkSpeakerHandoff = internalMutation({
   }
 });
 
+/**
+ * Before refusing anything for a pending handoff, release it if the old output has gone offline. This covers rooms
+ * whose handoff began before the durable re-check existed, and saves waiting for the next scheduled check.
+ */
+async function settleHandoff(ctx: MutationCtx, room: Doc<'luvLinkRooms'>): Promise<Doc<'luvLinkRooms'>> {
+  if (!room.handoffFromUserId || await isOnline(ctx, room._id, room.handoffFromUserId)) return room;
+  await clearHandoff(ctx, room);
+  return (await ctx.db.get(room._id)) ?? room;
+}
+
 async function clearHandoff(ctx: MutationCtx, room: Doc<'luvLinkRooms'>): Promise<void> {
   await ctx.db.patch(room._id, { handoffFromUserId: undefined, handoffEpoch: undefined, handoffDeadlineAtMs: undefined, revision: room.revision + 1 });
 }
@@ -743,7 +755,8 @@ export const setRoomMode = mutation({
   args: { roomId, mode: roomMode }, returns: noResult,
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    const { room, member } = await requireMember(ctx, args.roomId, userId);
+    const { room: loaded, member } = await requireMember(ctx, args.roomId, userId);
+    const room = await settleHandoff(ctx, loaded);
     if (member.role !== 'host') fail('not_allowed', 'Only the LuvLink host can change room mode.');
     if (room.handoffFromUserId && args.mode !== room.mode) fail('handoff_pending', 'Wait for the previous speaker to pause before changing LuvLink mode.');
     const rows = await ctx.db.query('luvLinkMembers').withIndex('by_roomId_and_joinedAtMs', q => q.eq('roomId', room._id)).take(MAX_MEMBERS);
