@@ -32,6 +32,8 @@ import { Motion } from '../../constants/allegraTheme';
 import { AuraPalette } from '../allegra/palette';
 import { useCoverImage } from './coverImages';
 import { coverCrop, roomSize } from './roomBlurMath';
+import NativeAppleBackdrop, { nativeAppleBackdropAvailable } from './NativeAppleBackdrop';
+import { BACKDROP_HERO_SHARE, backdropHeroHeight } from './nativeAppleBackdropProps';
 
 interface AppleBackdropProps {
   uri?: string | null;
@@ -56,10 +58,10 @@ interface AppleBackdropProps {
 // fills the screen; the sharp cover takes the top 65% of the height.
 const BLUR = 70;
 const BLEED = 120;
-export const HERO_SHARE = 0.65;
+export const HERO_SHARE = BACKDROP_HERO_SHARE;
 
 /** Hero height: 65% of the screen, as in Echo's fillMaxHeight(0.65f). */
-export const heroHeight = (_width: number, height: number): number => Math.round(height * HERO_SHARE);
+export const heroHeight = backdropHeroHeight;
 
 /** Echo's DstIn mask: solid to 75%, 40% at 92%, gone at the bottom edge. */
 export const HERO_MASK_POSITIONS = [0, 0.75, 0.92, 1];
@@ -149,7 +151,7 @@ export const usePlayerFrame = () => {
   return { frame, onLayout };
 };
 
-const AppleBackdrop: React.FC<AppleBackdropProps> = ({ uri, palette, showHero, frame, veil = false, shift }) => {
+const AppleBackdropSkia: React.FC<AppleBackdropProps> = ({ uri, palette, showHero, frame, veil = false, shift }) => {
   const win = useWindowDimensions();
   const width = frame?.width ?? win.width;
   const height = frame?.height ?? win.height;
@@ -255,6 +257,11 @@ const AppleBackdrop: React.FC<AppleBackdropProps> = ({ uri, palette, showHero, f
       </Canvas>
     </View>
   );
+};
+
+const AppleBackdrop: React.FC<AppleBackdropProps> = props => {
+  if (nativeAppleBackdropAvailable()) return <NativeAppleBackdrop {...props} />;
+  return <AppleBackdropSkia {...props} />;
 };
 
 const styles = StyleSheet.create({

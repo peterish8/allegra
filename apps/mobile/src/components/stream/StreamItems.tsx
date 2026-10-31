@@ -4,7 +4,7 @@
  * sits on the frosted material and the shared radius family.
  */
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { PixelRatio, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useAnimatedStyle,
@@ -15,13 +15,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Glass, Motion, Radius, Signal, Space } from '../../constants/allegraTheme';
 import Artwork from '../allegra/Artwork';
-
-const formatDuration = (seconds?: number): string => {
-  if (!seconds || seconds <= 0) return '';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${String(s).padStart(2, '0')}`;
-};
+import NativeTrackRow, { nativeTrackRowAvailable } from './NativeTrackRow';
+import { formatTrackDuration, shouldUseNativeTrackRow } from './trackRowPayload';
 
 interface TrackRowProps {
   title: string;
@@ -39,7 +34,13 @@ interface TrackRowProps {
   progress?: number;
 }
 
-export const TrackRow: React.FC<TrackRowProps> = React.memo(({
+/** The Kotlin row draws the same row; large system font sizes (where the text block outgrows the cover) and builds without the view keep the React Native one. */
+export const TrackRow: React.FC<TrackRowProps> = React.memo(props =>
+  shouldUseNativeTrackRow(nativeTrackRowAvailable(), PixelRatio.getFontScale(), props.progress !== undefined, props.trailingIcon)
+    ? <NativeTrackRow {...props} />
+    : <ReactNativeTrackRow {...props} />);
+
+const ReactNativeTrackRow: React.FC<TrackRowProps> = React.memo(({
   title,
   artist,
   artwork,
@@ -71,7 +72,7 @@ export const TrackRow: React.FC<TrackRowProps> = React.memo(({
     <View style={styles.rowText}>
       <Text style={[styles.rowTitle, isCurrent && { color: Signal.wave }]} numberOfLines={1}>{title}</Text>
       <Text style={styles.rowMeta} numberOfLines={1}>
-        {[artist, meta, formatDuration(duration)].filter(Boolean).join(' · ')}
+        {[artist, meta, formatTrackDuration(duration)].filter(Boolean).join(' · ')}
       </Text>
       {progress !== undefined ? (
         <View style={styles.progressTrack}>

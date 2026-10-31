@@ -79,6 +79,17 @@ No API route starts a separation job, no track audio is uploaded, and no cloud G
 exists. The model may be cached in browser storage, but the derived audio remains local to the
 listener's session.
 
+## Android native rendering
+
+Android's React Native app uses registered Expo native views for selected high-frequency surfaces.
+The JavaScript app continues to own navigation, queue edits and playback actions; native views draw
+their assigned surface and report user actions through the existing JavaScript handlers. Now
+Playing's Apple-style cover/background stage is rendered by `NativeAppleBackdropView` on Android.
+iOS and Android builds without the module keep the Skia `AppleBackdrop` renderer. A renderer port is
+not evidence of a performance gain; compare frame timing, CPU and image memory on the same device
+before making that claim. The active migration checklist lives in
+`.planning/performance-kotlin/HANDOFF-ANDROID-NATIVE-UI.md`.
+
 ## Authentication
 
 ```
