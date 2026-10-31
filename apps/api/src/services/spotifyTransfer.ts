@@ -231,15 +231,16 @@ const DAILY_PAGE = 5;
 
 function connectionChanged(): SpotifyApiError { return new SpotifyApiError(401, 'Spotify connection changed. Reconnect to continue.'); }
 /**
- * A server error on one playlist (Spotify 5xx, Allegra failing to save the step, an unexpected throw) is retried
- * later in the run. 429 is app-wide and 401 means the connection is gone: those stop the account at once.
+ * A transient conflict or server error on one playlist (Spotify 409/5xx, Allegra failing to save the step, an
+ * unexpected throw) is retried later in the run. 429 is app-wide and 401 means the connection is gone: those stop
+ * the account at once.
  */
 function defersInRun(error: unknown): boolean {
-  return error instanceof SpotifyApiError ? error.status >= 500 : true;
+  return error instanceof SpotifyApiError ? error.status === 409 || error.status >= 500 : true;
 }
-/** Failures specific to one playlist (gone, forbidden, already being synced by hand) skip it for today. */
+/** Failures specific to one playlist (invalid, forbidden, or gone) skip it for today. */
 function skipsForToday(error: unknown): boolean {
-  return error instanceof SpotifyApiError && (error.status === 400 || error.status === 403 || error.status === 404 || error.status === 409);
+  return error instanceof SpotifyApiError && (error.status === 400 || error.status === 403 || error.status === 404);
 }
 function startOfUtcDay(at: number): number { return at - (at % 86_400_000); }
 

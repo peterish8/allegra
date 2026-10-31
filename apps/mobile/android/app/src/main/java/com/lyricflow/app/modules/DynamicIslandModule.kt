@@ -11,6 +11,7 @@ import com.lyricflow.app.island.IslandLyrics
 import com.lyricflow.app.island.IslandPrefs
 import com.lyricflow.app.island.IslandService
 import com.lyricflow.app.island.NativeIsland
+import com.lyricflow.app.island.OutsideMedia
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -27,12 +28,14 @@ class DynamicIslandModule : Module() {
         Name("DynamicIsland")
 
         // A song picked in the island, and what is typed in its search drawer: JavaScript plays and searches.
-        Events("onIslandPick", "onIslandSearch")
+        // "Play here" tapped on a song another app plays: JavaScript finds it and starts it at the same moment.
+        Events("onIslandPick", "onIslandSearch", "onIslandTakeOver")
 
         OnStartObserving {
             IslandLibrary.onPick = pick
             IslandLibrary.onSearch = search
             IslandLibrary.onWake = wake
+            OutsideMedia.onTakeOver = takeOver
         }
 
         // Only this instance's own: after a reload, the old instance stopping must not cut off the new one.
@@ -153,6 +156,55 @@ class DynamicIslandModule : Module() {
             start(ctx, details) || start(ctx, page)
         }
 
+        /** "Play here": the listener's switch, and whether Android has our notification listener on. */
+        Function("takeOverStatus") {
+            val ctx = context ?: return@Function mapOf("enabled" to false, "listenerEnabled" to false)
+            mapOf(
+                "enabled" to IslandPrefs(ctx).takeOver,
+                "listenerEnabled" to OutsideMedia.isListenerEnabled(ctx),
+            )
+        }
+
+        Function("setTakeOverEnabled") { on: Boolean ->
+            val ctx = context ?: return@Function false
+            IslandPrefs(ctx).takeOver = on
+            IslandService.refresh()
+            true
+        }
+
+        /** Our row in Android's notification access where the phone can open it (API 30+), else the list page. */
+        Function("openTakeOverSettings") {
+            val ctx = appContext.currentActivity ?: context ?: return@Function false
+            val details = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+                    .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, OutsideMedia.component(ctx).flattenToString())
+            } else null
+            val page = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+            (details != null && start(ctx, details)) || start(ctx, page)
+        }
+
+        /** That app's live position in seconds right now, or null if its session is gone. */
+        Function("outsideNow") { packageName: String ->
+            OutsideMedia.now(packageName)?.let { (positionS, playing) ->
+                mapOf("positionS" to positionS, "playing" to playing)
+            }
+        }
+
+        Function("pauseOutside") { packageName: String ->
+            OutsideMedia.pause(packageName)
+        }
+
+        /** JavaScript is done with a take-over: the island leaves "Finding…" and shows [message] for a moment. */
+        Function("takeOverDone") { ok: Boolean, message: String ->
+            OutsideMedia.finish(ok, message)
+            true
+        }
+
+        /** The island opens its search drawer with [query] typed in. */
+        Function("showTakeOverSearch") { query: String ->
+            OutsideMedia.showSearch(query)
+        }
+
         /** App info, where Android 13+ hides "Allow restricted settings" behind the ⋮ menu. */
         Function("openAppInfo") {
             val ctx = appContext.currentActivity ?: context ?: return@Function false
@@ -172,7 +224,23 @@ class DynamicIslandModule : Module() {
         sendEvent("onIslandSearch", mapOf("query" to query))
     }
 
+    private val takeOver: (OutsideMedia.TakeOver) -> Unit = { tap ->
+        wake()
+        val song = tap.song
+        sendEvent("onIslandTakeOver", mapOf(
+            "packageName" to song.packageName,
+            "appLabel" to song.appLabel,
+            "title" to song.title,
+            "artist" to song.artist,
+            "album" to song.album,
+            "durationS" to song.durationMs.coerceAtLeast(0L) / 1000.0,
+            "positionS" to tap.positionS,
+            "playing" to tap.playing,
+        ))
+    }
+
     private fun letGo() {
+        if (OutsideMedia.onTakeOver === takeOver) OutsideMedia.onTakeOver = null
         if (IslandLibrary.onPick === pick) IslandLibrary.onPick = null
         if (IslandLibrary.onSearch === search) IslandLibrary.onSearch = null
         if (IslandLibrary.onWake === wake) IslandLibrary.onWake = null
