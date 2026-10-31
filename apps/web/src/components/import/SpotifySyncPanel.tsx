@@ -43,6 +43,9 @@ const readPlaylists = (value: unknown): readonly SpotifySourcePlaylist[] => {
   return rows as SpotifySourcePlaylist[];
 };
 const songCount = (total: number): string => `${total} ${total === 1 ? 'song' : 'songs'}`;
+/** A count Spotify wouldn't confirm is not "0 songs": the playlist may well have some. */
+const playlistSongs = (row: SpotifySourcePlaylist): string => (row.totalUnknown ? 'Song count unavailable' : songCount(row.total));
+const queueSongs = (rows: readonly SpotifySourcePlaylist[], total: number): string => (rows.some((row) => row.totalUnknown) ? `${total}+ songs` : songCount(total));
 const ago = (at: number): string => {
   const minutes = Math.round((Date.now() - at) / 60_000);
   if (minutes < 2) return 'just now';
@@ -164,7 +167,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
   const processed = [...runs.values()].reduce((sum, row) => sum + ('step' in row && row.step ? row.step.added + row.step.skipped + row.step.reviewNeeded : 0), 0);
   // What is happening, as it happens: the visual ticker at most TICKER_PER_SECOND, screen readers every LIVE_SUMMARY_MS.
   const ticker = useThrottled(runningId && running && 'step' in running ? spotifyTickerText(byId.get(runningId)?.name ?? '', running.step) : '', 1000 / TICKER_PER_SECOND);
-  const summary = useThrottled(syncing ? `Transferring ${Math.min(doneCount + 1, queue.length)} of ${queue.length}. Matched ${processed} of ${songTotal} songs.` : '', LIVE_SUMMARY_MS);
+  const summary = useThrottled(syncing ? `Transferring ${Math.min(doneCount + 1, queue.length)} of ${queue.length}. Matched ${processed} of ${queueSongs(queue, songTotal)}.` : '', LIVE_SUMMARY_MS);
   const slot = useRef<HTMLSpanElement>(null);
   const fly = useCoverFlight(!reduced);
 
@@ -252,7 +255,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
       : status?.configured === false ? <p role="status" className="import-note">Spotify connection is not available yet. You can still import a Spotify export or CSV on the Import page.</p>
       : status?.connected ? <>
         <div className="spotify-sync__bar">
-          <span className="spotify-sync__count">{selected.size > 0 ? `${selected.size} selected · ${songCount(songTotal)}` : `${sources.length} on Spotify`}</span>
+          <span className="spotify-sync__count">{selected.size > 0 ? `${selected.size} selected · ${queueSongs(queue, songTotal)}` : `${sources.length} on Spotify`}</span>
           <button type="button" className={`spotify-sync__all${allOn ? ' is-on' : ''}`} aria-pressed={allOn} onClick={toggleAll} disabled={syncing || selectable.length === 0}>
             <CheckCheck size={15} aria-hidden="true" /> {allOn ? 'Clear' : 'Select all'}
           </button>
@@ -271,7 +274,7 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
               : state?.state === 'syncing' ? `Matching · ${state.step?.added ?? 0} added`
               : state?.state === 'done' ? `${state.step?.added ?? 0} added${state.step?.reviewNeeded ? ` · ${state.step.reviewNeeded} not exact, skipped` : ''}`
               : state?.state === 'failed' ? state.message
-              : `${songCount(playlist.total)}${last ? ` · synced ${ago(last)}` : liked ? ' · saved as likes' : ''}`;
+              : `${playlistSongs(playlist)}${last ? ` · synced ${ago(last)}` : liked ? ' · saved as likes' : ''}`;
             return (
               <motion.li key={playlist.id} {...enter(index)}>
                 <button
