@@ -565,7 +565,12 @@ export default function App() {
   const account = useAccount(signIn.signedIn, () => {
     void loadPersonalSpace();
   });
-  useListenTracker(audio.currentSong ?? null, audio.playhead, account.refresh, radio.outcome);
+  const onHeardForHistory = useCallback((song: UnifiedSong, startedAt: string): void => {
+    // Same cap as the server keeps (RECENTLY_PLAYED_LIMIT): 25 recent listens.
+    setRecentlyPlayed((current) => [song, ...current.filter((item) => item.id !== song.id)].slice(0, 25));
+    void recordRecentlyPlayed(song, 0, startedAt).catch(() => undefined);
+  }, []);
+  useListenTracker(audio.currentSong ?? null, audio.playhead, account.refresh, radio.outcome, onHeardForHistory);
   useEffect(() => {
     const song = transportRef.current.currentSong;
     if (song) {
@@ -1249,9 +1254,7 @@ export default function App() {
     audio.selectSong(playable, cut > 0 ? [...context.slice(0, cut), ...mine, ...context.slice(cut)] : [playable, ...mine, ...context]);
     // Stay on the current surface — the persistent mini player appears in-place.
     setPlayerMode('mini');
-    // Same cap as the server keeps (RECENTLY_PLAYED_LIMIT): 25 recent listens.
-    setRecentlyPlayed((current) => [playable, ...current.filter((item) => item.id !== playable.id)].slice(0, 25));
-    void recordRecentlyPlayed(playable, 0).catch(() => undefined);
+    // Recently played is written by the listen tracker once the song has really been heard.
     tapHaptic();
     if (continueRadio) void fillRadioQueue();
   };
@@ -1324,8 +1327,6 @@ export default function App() {
     setDjLive(true);
     audio.selectSong(first, playOrderFrom(songs, first.id));
     setPlayerMode('mini');
-    setRecentlyPlayed((current) => [first, ...current.filter((item) => item.id !== first.id)].slice(0, 25));
-    void recordRecentlyPlayed(first, 0).catch(() => undefined);
     tapHaptic();
   };
 
