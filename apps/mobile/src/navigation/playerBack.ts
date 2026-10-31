@@ -1,3 +1,5 @@
+import { diag } from '../utils/diag';
+
 /** Back closes the topmost player surface before it closes the player itself. */
 export interface PlayerBackState {
   lyricsFullscreen: boolean;
@@ -14,20 +16,29 @@ export interface PlayerBackActions {
   closePlayer: () => void;
 }
 
-let focusedPlayerBackHandler: (() => void) | null = null;
+type PlayerBackRegistration = { id: number; handler: () => void };
+
+let focusedPlayerBackRegistration: PlayerBackRegistration | null = null;
+let nextPlayerBackRegistrationId = 0;
 
 /** Register the active player's Back action; only the focused screen owns it. */
 export function registerPlayerBackHandler(handler: () => void): () => void {
-  focusedPlayerBackHandler = handler;
+  const registration = { id: ++nextPlayerBackRegistrationId, handler };
+  diag('player-back', `register ${registration.id}`);
+  focusedPlayerBackRegistration = registration;
   return () => {
-    if (focusedPlayerBackHandler === handler) focusedPlayerBackHandler = null;
+    const active = focusedPlayerBackRegistration === registration;
+    diag('player-back', `unregister ${registration.id}${active ? ' active' : ' stale'}`);
+    if (active) focusedPlayerBackRegistration = null;
   };
 }
 
 /** Consume Android Back before NavigationContainer's default stack pop. */
 export function consumePlayerHardwareBack(): boolean {
-  if (!focusedPlayerBackHandler) return false;
-  focusedPlayerBackHandler();
+  const registration = focusedPlayerBackRegistration;
+  diag('player-back', registration ? `consume ${registration.id}` : 'no focused handler');
+  if (!registration) return false;
+  registration.handler();
   return true;
 }
 

@@ -108,4 +108,18 @@ describe('consumePlayerHardwareBack', () => {
 
     unregisterCurrent();
   });
+
+  it('does not let an older registration of the same callback clear the current handler', () => {
+    const handler = jest.fn();
+    const unregisterOlder = registerPlayerBackHandler(handler);
+    const unregisterCurrent = registerPlayerBackHandler(handler);
+
+    unregisterOlder();
+
+    expect(consumePlayerHardwareBack()).toBe(true);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    unregisterCurrent();
+    expect(consumePlayerHardwareBack()).toBe(false);
+  });
 });
