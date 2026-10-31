@@ -102,12 +102,13 @@ test('search replaces the queried top row artwork with the authoritative release
 // A search must not wait that long: it answers with the provider's row and the next search
 // picks the correction up from the cache.
 test('a slow release authority does not hold a search up, and its answer shows on the next search', async () => {
-  let answered!: () => void;
-  const late = new Promise<void>((resolve) => { answered = resolve; });
+  let releaseAuthority!: () => void;
+  let authorityFinished = false;
+  const authorityGate = new Promise<void>((resolve) => { releaseAuthority = resolve; });
   const authority: ReleaseAuthority = {
     canonical: async () => {
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      answered();
+      await authorityGate;
+      authorityFinished = true;
       return { album: 'Official Single', year: 2024, coverUrl: 'https://coverart.example/official.jpg' };
     }
   };
@@ -117,13 +118,30 @@ test('a slow release authority does not hold a search up, and its answer shows o
     image: [{ quality: '500x500', url: 'https://provider.example/playlist.jpg' }]
   }] } }), authority, 20);
 
-  const started = Date.now();
-  const first = await service.search('Saavn Hit Artist', 20, 0);
-  assert.ok(Date.now() - started < 70, 'the search waited for the authority');
+  // Fire the service's 20 ms release deadline under test control; the authority itself stays gated.
+  const nativeSetTimeout = globalThis.setTimeout;
+  let releaseDeadlineFired = false;
+  globalThis.setTimeout = ((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+    if (delay === 20) {
+      releaseDeadlineFired = true;
+      queueMicrotask(() => callback(...args));
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    }
+    return nativeSetTimeout(callback, delay, ...args);
+  }) as typeof setTimeout;
+  let first: Awaited<ReturnType<typeof service.search>>;
+  try {
+    first = await service.search('Saavn Hit Artist', 20, 0);
+  } finally {
+    globalThis.setTimeout = nativeSetTimeout;
+  }
+  assert.equal(releaseDeadlineFired, true, 'the configured release deadline was reached');
+  assert.equal(authorityFinished, false, 'the search returned while the authority was still pending');
   assert.equal(first.results[0]?.artwork, 'https://provider.example/playlist.jpg');
 
-  await late;
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  releaseAuthority();
+  await new Promise<void>((resolve) => nativeSetTimeout(resolve, 0));
+  assert.equal(authorityFinished, true);
   // The first answer was not cached, so this one is rebuilt with the release that landed.
   const second = await service.search('Saavn Hit Artist', 20, 0);
   assert.equal(second.results[0]?.album, 'Official Single');

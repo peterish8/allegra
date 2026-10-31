@@ -59,4 +59,23 @@ describe('stale Blend refresh', () => {
     await jest.advanceTimersByTimeAsync(STALE_REFRESH.everyMs * 3);
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  it('starts a fresh retry window when focus returns', async () => {
+    const refresh = jest.fn(async () => false);
+    let focused = true;
+    let stop = watchStaleBlend(refresh, () => focused);
+    await jest.advanceTimersByTimeAsync(STALE_REFRESH.everyMs * 2);
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    focused = false;
+    stop(); // the screen's focused effect cleans up its watcher on blur
+    await jest.advanceTimersByTimeAsync(STALE_REFRESH.everyMs * 2);
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    focused = true;
+    stop = watchStaleBlend(refresh, () => focused); // and creates a new watcher on focus
+    await jest.advanceTimersByTimeAsync(STALE_REFRESH.everyMs);
+    expect(refresh).toHaveBeenCalledTimes(3);
+    stop();
+  });
 });
