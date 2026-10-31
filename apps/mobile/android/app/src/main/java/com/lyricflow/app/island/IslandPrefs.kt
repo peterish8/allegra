@@ -53,11 +53,11 @@ class IslandPrefs(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_ALLOW_NATIVE, value).apply()
 
     /**
-     * While another app plays and LuvLyrics does not, the island shows that song with "Play here" (OutsideMedia).
-     * Off by default: it needs Android's notification access, which the listener grants on purpose.
+     * While another app plays and LuvLyrics does not, the island shows that song with "Continue here" (OutsideMedia).
+     * On by default: it still sees nothing until the listener grants notification access, which they do on purpose.
      */
     var takeOver: Boolean
-        get() = prefs.getBoolean(KEY_TAKE_OVER, false)
+        get() = prefs.getBoolean(KEY_TAKE_OVER, true)
         set(value) = prefs.edit().putBoolean(KEY_TAKE_OVER, value).apply()
 
     companion object {
