@@ -767,7 +767,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private fun describe(): String {
         val o = shownOutside
         return when {
-            o != null -> "Playing in ${o.appLabel}: ${o.title} by ${o.artist}. Play here."
+            o != null -> "Playing in ${o.appLabel}: ${o.title} by ${o.artist}. Continue here."
             hasSong -> "Now playing $title by $artist"
             else -> "LuvLyrics island"
         }
@@ -2953,8 +2953,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         /** Room a downloaded mark takes before the artist. */
         private const val BADGE_DP = 15f
         private const val PLAY_LABEL = "Play"
-        /** "Play here" (another app's song): the pill's label and width, how long JavaScript has to answer, and how long its message stays. */
-        private const val TAKE_LABEL = "Play here"
+        /** "Continue here" (another app's song): the pill's label and width, how long JavaScript has to answer, and how long its message stays. */
+        private const val TAKE_LABEL = "Continue here"
         private const val TAKE_WIDTH_DP = 168f
         private const val TAKE_TIMEOUT_MS = 25_000L
         private const val TAKE_MESSAGE_MS = 1_500L

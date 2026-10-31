@@ -1,5 +1,6 @@
 /**
- * Play here: finding in LuvLyrics the song another app is playing (Spotify, YouTube Music, YouTube).
+ * @fileoverview "Continue here": finding in LuvLyrics the song another app is playing (Spotify, YouTube Music,
+ * YouTube).
  * Pure, so it is tested with real titles instead of a phone.
  *
  * Other apps publish a song as they like: Spotify "Song" by "Artist"; YouTube Music "Song" by "Artist - Topic"
@@ -43,29 +44,50 @@ const CHANNEL_APPS = new Set([
 /** Splits a credit line into its artists. */
 const ARTIST_SPLIT = /\s*(?:,|&|\band\b|\bx\b|×|\bfeat\.?|\bft\.?|\bfeaturing\b|\bwith\b|;|\/)\s*/i;
 
-const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
+/** What another app's media session says it plays, as `cleanOutside` reads it. */
+export interface OutsideListing {
+  title: string;
+  artist: string;
+  /** The app that plays it; its videos may be credited to a channel rather than the artist. */
+  packageName?: string;
+}
+
+function squash(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
 
 /** Letters and digits only, lower case: "AC/DC", "Ac Dc" and "ACDC" meet. */
-const key = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+function key(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
 
-const stripNoise = (title: string): string =>
-  squash(title.replace(NOISE_TAG, '').replace(NOISE_TAIL, '').replace(FEAT_TAG, ''));
+function stripNoise(title: string): string {
+  return squash(title.replace(NOISE_TAG, '').replace(NOISE_TAIL, '').replace(FEAT_TAG, ''));
+}
 
 /** The first artist of a credit line: the one the song is searched and matched by. */
-export const leadArtist = (artist: string): string => squash(artist.split(ARTIST_SPLIT)[0] ?? '');
+export function leadArtist(artist: string): string {
+  return squash(artist.split(ARTIST_SPLIT)[0] ?? '');
+}
 
 /** Every artist named in a credit line, as match keys. */
-const artistKeys = (artist: string): string[] => artist.split(ARTIST_SPLIT).map(key).filter(Boolean);
+function artistKeys(artist: string): string[] {
+  return artist.split(ARTIST_SPLIT).map(key).filter(Boolean);
+}
 
 /** Two names for the same artist: equal, or one holds the other ("Taylor Swift" / "TaylorSwift"). */
-const sameArtist = (a: string, b: string): boolean =>
-  a.length > 0 && b.length > 0 && (a === b || (Math.min(a.length, b.length) >= 4 && (a.includes(b) || b.includes(a))));
+function sameArtist(a: string, b: string): boolean {
+  if (a.length === 0 || b.length === 0) {
+    return false;
+  }
+  return a === b || (Math.min(a.length, b.length) >= 4 && (a.includes(b) || b.includes(a)));
+}
 
 /**
  * What another app published, made searchable. Strips video tags, "- Topic" and VEVO, and splits
  * "Artist - Title" when the artist is only a channel. Remix, Live, Acoustic and Remastered stay.
  */
-export function cleanOutside(raw: { title: string; artist: string; packageName?: string }): OutsideSong {
+export function cleanOutside(raw: OutsideListing): OutsideSong {
   const channel = CHANNEL_SUFFIX.test(raw.artist);
   let artist = squash(raw.artist.replace(CHANNEL_SUFFIX, ''));
   let title = stripNoise(raw.title);
@@ -88,11 +110,39 @@ export function cleanOutside(raw: { title: string; artist: string; packageName?:
 }
 
 /** What to ask the search for: the title (a remaster tag only narrows the search) and its lead artist. */
-export const takeOverQuery = (cleaned: OutsideSong): string =>
-  squash(`${cleaned.title.replace(REMASTER_TAG, '')} ${leadArtist(cleaned.artist)}`);
+export function takeOverQuery(cleaned: OutsideSong): string {
+  return squash(`${cleaned.title.replace(REMASTER_TAG, '')} ${leadArtist(cleaned.artist)}`);
+}
 
 /** A title as compared: no video tags, no featured credit, no remaster tag; Remix and Live stay. */
-const titleKey = (title: string): string => key(stripNoise(title).replace(REMASTER_TAG, ''));
+function titleKey(title: string): string {
+  return key(stripNoise(title).replace(REMASTER_TAG, ''));
+}
+
+/** The recording `pickTakeOver` looks for, as match keys. */
+interface WantedRecording {
+  title: string;
+  artist: string;
+  /** Versions the original title names (Remix, Live, …); a result may name no others. */
+  variants: ReadonlySet<string>;
+  /** 0 when the other app gave no length. */
+  durationS: number;
+}
+
+/** Whether [song] is the same recording as the one asked for. */
+function isSameRecording(song: UnifiedSong, wanted: WantedRecording): boolean {
+  if (!streamUrlOf(song) || titleKey(song.title) !== wanted.title) {
+    return false;
+  }
+  if (variantsIn(song.title).some(variant => !wanted.variants.has(variant))) {
+    return false;
+  }
+  if (!artistKeys(song.artist).some(have => sameArtist(have, wanted.artist))) {
+    return false;
+  }
+  const lengthsKnown = wanted.durationS > 0 && song.duration !== undefined && song.duration > 0;
+  return !lengthsKnown || Math.abs((song.duration ?? 0) - wanted.durationS) <= TAKE_OVER_DURATION_TOLERANCE_S;
+}
 
 /**
  * The search result that is the same recording as [cleaned], or null. Same title and lead artist after
@@ -100,17 +150,14 @@ const titleKey = (title: string): string => key(stripNoise(title).replace(REMAST
  * original title did not ask for.
  */
 export function pickTakeOver(cleaned: OutsideSong, durationS: number, results: readonly UnifiedSong[]): UnifiedSong | null {
-  const wantTitle = titleKey(cleaned.title);
-  const wantArtist = key(leadArtist(cleaned.artist));
-  if (!wantTitle || !wantArtist) return null;
-  const asked = new Set(variantsIn(cleaned.title));
-  for (const song of results) {
-    if (!streamUrlOf(song)) continue;
-    if (variantsIn(song.title).some(variant => !asked.has(variant))) continue;
-    if (titleKey(song.title) !== wantTitle) continue;
-    if (!artistKeys(song.artist).some(have => sameArtist(have, wantArtist))) continue;
-    if (durationS > 0 && song.duration && Math.abs(song.duration - durationS) > TAKE_OVER_DURATION_TOLERANCE_S) continue;
-    return song;
+  const wanted: WantedRecording = {
+    title: titleKey(cleaned.title),
+    artist: key(leadArtist(cleaned.artist)),
+    variants: new Set(variantsIn(cleaned.title)),
+    durationS,
+  };
+  if (!wanted.title || !wanted.artist) {
+    return null;
   }
-  return null;
+  return results.find(song => isSameRecording(song, wanted)) ?? null;
 }

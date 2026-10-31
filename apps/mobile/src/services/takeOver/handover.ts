@@ -1,5 +1,5 @@
 /**
- * Play here: the timing of the handover, pure. The other app keeps playing while LuvLyrics searches and loads, so
+ * @fileoverview "Continue here": the timing of the handover, pure. The other app keeps playing while LuvLyrics searches and loads, so
  * the song is started where the other app will be by the time ours is playing, then lined up once more when it is.
  * All seconds.
  */
@@ -14,7 +14,7 @@ export const START_WAIT_MS = 15_000;
 export const TAKE_OVER_BUDGET_MS = 12_000;
 
 /**
- * Where our copy of the song should start: the other app's position when "Play here" was tapped, advanced by the
+ * Where our copy of the song should start: the other app's position when "Continue here" was tapped, advanced by the
  * time spent since and a lead for loading. A paused song stays where it was paused.
  */
 export function handoverStartS(positionS: number, playing: boolean, elapsedS: number): number {
@@ -27,6 +27,8 @@ export function handoverStartS(positionS: number, playing: boolean, elapsedS: nu
  * position is unknown). The other app is paused right after, so its position now is where ours should be.
  */
 export function driftSeekS(outsideS: number | null, ourS: number): number | null {
-  if (outsideS === null || !Number.isFinite(outsideS) || !Number.isFinite(ourS)) return null;
+  if (outsideS === null || !Number.isFinite(outsideS) || !Number.isFinite(ourS)) {
+    return null;
+  }
   return Math.abs(outsideS - ourS) > DRIFT_TOLERANCE_S ? Math.max(0, outsideS) : null;
 }
