@@ -52,6 +52,14 @@ class IslandPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_ALLOW_NATIVE, false)
         set(value) = prefs.edit().putBoolean(KEY_ALLOW_NATIVE, value).apply()
 
+    /**
+     * While another app plays and LuvLyrics does not, the island shows that song with "Play here" (OutsideMedia).
+     * Off by default: it needs Android's notification access, which the listener grants on purpose.
+     */
+    var takeOver: Boolean
+        get() = prefs.getBoolean(KEY_TAKE_OVER, false)
+        set(value) = prefs.edit().putBoolean(KEY_TAKE_OVER, value).apply()
+
     companion object {
         const val STYLE_PILL = "pill"
         const val STYLE_NOTCH = "notch"
@@ -64,5 +72,6 @@ class IslandPrefs(context: Context) {
         private const val KEY_WIDTH = "width_percent"
         private const val KEY_HEIGHT = "height_percent"
         private const val KEY_STYLE = "style"
+        private const val KEY_TAKE_OVER = "take_over"
     }
 }
