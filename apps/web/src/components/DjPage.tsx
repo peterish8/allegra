@@ -1,6 +1,6 @@
-import { ArrowUp, Check, Cpu, Ear, KeyRound, ListMusic, LoaderCircle, Mic, Play, Settings2, Sparkles, Square, Undo2 } from 'lucide-react';
+import { ArrowUp, Cpu, Ear, KeyRound, LoaderCircle, Mic, Play, Settings2, Sparkles, Square, Undo2 } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 
 import { getDjSlashSuggestions, type DjGoal } from '@shared/dj';
 import type { UnifiedSong } from '@shared/types';
@@ -21,13 +21,13 @@ import { SavePlaylistButton } from './SavePlaylistButton';
 import { DjHistory } from './dj/DjHistory';
 import { DjMascot, DjTint } from './dj/DjMascot';
 import { DjNowPlaying } from './dj/DjNowPlaying';
+import { DjPlaylistMix } from './dj/DjPlaylistMix';
 import { DjSessionChips } from './dj/DjSessionChips';
 import { DjSettingsSheet } from './dj/DjSettingsSheet';
 import { DJ_TOUR, djScene } from './dj/DjTour';
 import { InfoTour } from './InfoTour';
 import { useDjMascot } from './dj/useDjMascot';
 import { useDjStageShape } from './dj/useDjStageShape';
-import { TactileButton } from './ui';
 
 interface DjPageProps {
   readonly currentSong: UnifiedSong | null;
@@ -46,7 +46,6 @@ interface DjPageProps {
   readonly audioRef: RefObject<HTMLAudioElement | null>;
   readonly onToggle: () => void;
   readonly onLike: (song: UnifiedSong) => void;
-  readonly onPlayPlaylist: (songs: readonly UnifiedSong[]) => void;
   readonly onOpenLibrary: () => void;
 }
 
@@ -81,7 +80,7 @@ function mascotModeFor(working: boolean, emotion: DjEmotion, playing: boolean, a
 }
 
 export function DjPage({
-  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, palette = null, recent, upcoming, searchSlot, audioRef, onToggle, onLike, onPlayPlaylist, onOpenLibrary,
+  currentSong, isPlaying, isLive, isRemote, isCurrentLiked, palette = null, recent, upcoming, searchSlot, audioRef, onToggle, onLike, onOpenLibrary,
 }: DjPageProps) {
   const dj = useDjSession();
   const library = usePlaylistsContext();
@@ -106,21 +105,10 @@ export function DjPage({
   const reduced = useReducedMotion() ?? false;
   const analyser = useAudioAnalyser(audioRef, isPlaying);
   const [hour] = useState(() => new Date().getHours());
-  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<readonly string[]>([]);
-  const [mixVibe, setMixVibe] = useState('');
-
   const savedPlaylists = useMemo(() => library.playlists.map((playlist) => {
     const songs = playlist.songIds.map((id) => library.songs.get(id)).filter((song): song is NonNullable<typeof song> => Boolean(song));
     return { ...playlist, songs, tracksReady: songs.length === playlist.songIds.length };
   }), [library.playlists, library.songs]);
-  const selectedPlaylists = savedPlaylists.filter((playlist) => selectedPlaylistIds.includes(playlist.id));
-  useEffect(() => {
-    const ids = new Set(savedPlaylists.map((playlist) => playlist.id));
-    setSelectedPlaylistIds((current) => {
-      const next = current.filter((id) => ids.has(id));
-      return next.length === current.length ? current : next;
-    });
-  }, [savedPlaylists]);
 
   const tone = djToneFor(session.vibe, session.energy);
   const vibe = djDanceVibe(tone, session.energy);
@@ -292,22 +280,13 @@ export function DjPage({
     setGoal(next);
     setSongLimit(next === 'mix' ? Math.min(songLimit, 8) : Math.max(songLimit, 10));
   };
-  const togglePlaylistForMix = (id: string): void => {
-    setSelectedPlaylistIds((current) => current.includes(id)
-      ? current.filter((selected) => selected !== id)
-      : current.length < 2 ? [...current, id] : current);
-  };
-  const mixSelectedPlaylists = async (event: FormEvent): Promise<void> => {
-    event.preventDefault();
-    const sources = selectedPlaylists.filter((playlist) => playlist.tracksReady && playlist.songs.length > 0);
-    const vibeRequest = mixVibe.trim();
-    if (sources.length !== 2 || !vibeRequest || working) return;
+  const mixPlaylists = async (sources: readonly { readonly name: string; readonly songs: readonly UnifiedSong[] }[], vibeRequest: string): Promise<boolean> => {
+    if (sources.length !== 2 || !vibeRequest || working) return false;
     chooseGoal('mix');
-    const complete = await dj.send(
+    return dj.send(
       `Create a ${vibeRequest} mix using both selected playlists. Blend their sounds into one set and keep the transitions and energy cohesive.`,
-      { goal: 'mix', playlistSources: sources.map(({ name, songs }) => ({ name, songs })) }
+      { goal: 'mix', playlistSources: sources }
     );
-    if (complete) setMixVibe('');
   };
   // Under the console: the Mix / energy dial and just two ideas, so the row stays one line.
   const showStarters = !prompt && !working && !hearing;
@@ -605,76 +584,15 @@ export function DjPage({
           />
         ) : null}
 
-        <section className="dj-playlists" aria-labelledby="dj-playlists-title">
-          <div className="dj-playlists-head">
-            <div>
-              <span className="dj-playlists-eyebrow"><ListMusic size={14} aria-hidden="true" /> Your library</span>
-              <h2 id="dj-playlists-title">Your playlists, in the mix</h2>
-              <p>Play any playlist here, or choose two and give your DJ a vibe to blend them around.</p>
-            </div>
-            <button type="button" className="dj-library-link" onClick={onOpenLibrary}>Open your library <ArrowUp size={14} aria-hidden="true" /></button>
-          </div>
-
-          {library.loading ? <p className="dj-playlists-message" role="status">Loading your playlists…</p> : library.error ? (
-            <div className="dj-playlists-empty" role="alert"><p>{library.error}</p><button type="button" className="dj-library-link" onClick={() => { void library.reload(); }}>Try again</button></div>
-          ) : savedPlaylists.length === 0 ? (
-            <div className="dj-playlists-empty">
-              <p>Your saved playlists will show up here.</p>
-              <button type="button" className="dj-library-link" onClick={onOpenLibrary}>Create a playlist in Your library <ArrowUp size={14} aria-hidden="true" /></button>
-            </div>
-          ) : (
-            <>
-              <ul className="dj-playlist-list" aria-label="Saved playlists">
-                {savedPlaylists.map((playlist) => {
-                  const selected = selectedPlaylistIds.includes(playlist.id);
-                  const canUse = playlist.tracksReady && playlist.songs.length > 0;
-                  const selectionPosition = selectedPlaylistIds.indexOf(playlist.id) + 1;
-                  return (
-                    <li className={`dj-playlist-card${selected ? ' is-selected' : ''}`} key={playlist.id}>
-                      <div className="dj-playlist-card-head">
-                        <button
-                          type="button"
-                          role="checkbox"
-                          aria-checked={selected}
-                          aria-label={`${selected ? 'Remove' : 'Choose'} ${playlist.name} ${selected ? 'from' : 'for'} the playlist mix${selected ? `, selected ${selectionPosition}` : ''}`}
-                          disabled={!canUse || (!selected && selectedPlaylistIds.length >= 2)}
-                          className="dj-playlist-select"
-                          onClick={() => togglePlaylistForMix(playlist.id)}
-                        >
-                          <span className="dj-playlist-check" aria-hidden="true">{selected ? <Check size={13} /> : null}</span>
-                          <span className="dj-playlist-copy"><strong>{playlist.name}</strong><small>{playlist.songIds.length} {playlist.songIds.length === 1 ? 'song' : 'songs'}</small></span>
-                        </button>
-                        <button type="button" className="dj-playlist-play" disabled={!canUse || isRemote} onClick={() => onPlayPlaylist(playlist.songs)} aria-label={`Play ${playlist.name}`} title={isRemote ? 'Switch playback to this device to play a playlist here' : undefined}>
-                          <Play size={14} fill="currentColor" aria-hidden="true" /><span>Play</span>
-                        </button>
-                      </div>
-                      <p className="dj-playlist-preview">
-                        {playlist.songs.length > 0 ? playlist.songs.slice(0, 3).map((song) => song.title).join(' · ') : playlist.tracksReady ? 'No songs in this playlist yet.' : 'Loading playlist tracks…'}
-                        {playlist.songs.length > 3 ? ` · +${playlist.songs.length - 3} more` : ''}
-                      </p>
-                    </li>
-                  );
-                })}
-              </ul>
-              <form className="dj-playlist-mix-form" onSubmit={(event) => void mixSelectedPlaylists(event)}>
-                <label htmlFor="dj-playlist-vibe">What vibe should connect them?</label>
-                <div className="dj-playlist-mix-row">
-                  <input
-                    id="dj-playlist-vibe"
-                    value={mixVibe}
-                    maxLength={160}
-                    onChange={(event) => setMixVibe(event.target.value)}
-                    placeholder="Late-night, warm, a little nostalgic…"
-                  />
-                  <TactileButton type="submit" variant="primary" icon={Sparkles} className="dj-playlist-mix-button" disabled={working || selectedPlaylists.length !== 2 || selectedPlaylists.some((playlist) => !playlist.tracksReady || playlist.songs.length === 0) || !mixVibe.trim()}>
-                    {working ? 'Mixing…' : 'Mix both playlists'}
-                  </TactileButton>
-                </div>
-                <p className="dj-playlist-mix-hint">Choose two playlists. Your DJ will use both as the starting point, then build the set around your vibe.</p>
-              </form>
-            </>
-          )}
-        </section>
+        <DjPlaylistMix
+          playlists={savedPlaylists}
+          loading={library.loading}
+          error={library.error}
+          working={working}
+          onRetry={() => { void library.reload(); }}
+          onOpenLibrary={onOpenLibrary}
+          onMix={mixPlaylists}
+        />
       </div>
     </div>
   );
