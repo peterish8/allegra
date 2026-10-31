@@ -79,8 +79,9 @@ export class SpotifyStore {
     if (this.gateway) await this.gateway.mutation('spotify:disconnect', { userId });
     const connection = this.memoryConnections.get(userId);
     if (connection) {
-      const { accessToken: _accessToken, accessExpiresAt: _accessExpiresAt, ...rest } = connection;
-      this.memoryConnections.set(userId, { ...rest, spotifyUserId: '', refreshToken: '', dailyEnabled: false, generation: (connection.generation ?? 0) + 1 });
+      // The tombstone keeps only the account key and generation, as the Convex disconnect does.
+      const now = Date.now();
+      this.memoryConnections.set(userId, { userId, spotifyUserId: '', refreshToken: '', dailyEnabled: false, connectedAt: now, updatedAt: now, generation: (connection.generation ?? 0) + 1 });
     }
     for (const [key, row] of this.memoryPlaylists) if (row.userId === userId) this.memoryPlaylists.delete(key);
     for (const [key] of this.memoryReceipts) if (key.startsWith(`${userId}:`)) this.memoryReceipts.delete(key);
