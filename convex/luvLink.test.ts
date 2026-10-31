@@ -4,7 +4,7 @@ import presenceTest from '@convex-dev/presence/test';
 import rateLimiterTest from '@convex-dev/rate-limiter/test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import schema from './schema';
 
 const modules = { ...import.meta.glob('./**/*.ts'), ...import.meta.glob('./_generated/*.js') };
@@ -221,6 +221,7 @@ describe('LuvLink rooms', () => {
     await guest.mutation(api.luvLink.joinRoom, { code: created.code, displayName: 'Guest' });
     await host.mutation(api.luvLink.setRoomMode, { roomId: created.roomId, mode: 'speaker' });
     await host.mutation(api.luvLink.setController, { roomId: created.roomId, targetUserId: 'users:speaker-guest', canControl: true });
+    await host.mutation(api.luvLink.heartbeat, { roomId: created.roomId, sessionId: 'host-session-0001' });
     const handoff = await host.mutation(api.luvLink.setSpeaker, { roomId: created.roomId, commandId: 'speaker-move-0001', targetUserId: 'users:speaker-guest' });
     await expectCode(guest.mutation(api.luvLink.publishPlayback, {
       roomId: created.roomId, commandId: 'handoff-early-001', expectedLeaderEpoch: handoff.leaderEpoch, expectedSequence: 0,
@@ -256,11 +257,81 @@ describe('LuvLink rooms', () => {
     const { roomId, code } = await host.mutation(api.luvLink.createRoom, { displayName: 'Host' });
     await guest.mutation(api.luvLink.joinRoom, { code, displayName: 'Guest' });
     await host.mutation(api.luvLink.setRoomMode, { roomId, mode: 'speaker' });
+    await host.mutation(api.luvLink.heartbeat, { roomId, sessionId: 'host-session-0002' });
     const { leaderEpoch } = await host.mutation(api.luvLink.setSpeaker, { roomId, commandId: 'mode-handoff-test', targetUserId: 'users:handoff-guest' });
     await expectCode(host.mutation(api.luvLink.setRoomMode, { roomId, mode: 'listen' }), 'handoff_pending');
     await host.mutation(api.luvLink.acknowledgeSpeakerHandoff, { roomId, expectedLeaderEpoch: leaderEpoch });
     await host.mutation(api.luvLink.setRoomMode, { roomId, mode: 'listen' });
     expect((await host.query(api.luvLink.getRoom, { roomId }))?.mode).toBe('listen');
+  });
+
+  async function speakerRoom(t: ReturnType<typeof backend>, prefix: string) {
+    const host = asUser(t, `users:${prefix}-host`);
+    const guest = asUser(t, `users:${prefix}-guest`);
+    const { roomId, code } = await host.mutation(api.luvLink.createRoom, { displayName: 'Host' });
+    await guest.mutation(api.luvLink.joinRoom, { code, displayName: 'Guest' });
+    await host.mutation(api.luvLink.setRoomMode, { roomId, mode: 'speaker' });
+    await host.mutation(api.luvLink.setController, { roomId, targetUserId: `users:${prefix}-guest`, canControl: true });
+    return { host, guest, roomId, code };
+  }
+  const play = (roomId: string, leaderEpoch: number, commandId: string) => ({
+    roomId: roomId as never, commandId, expectedLeaderEpoch: leaderEpoch, expectedSequence: 0,
+    trackEpoch: 1, intent: 'control' as const, queueEntryId: null, song, positionSec: 0, playing: true, playbackRate: 1, effectiveAtMs: Date.now()
+  });
+
+  it('hands the output straight to the new speaker when the old one is offline', async () => {
+    const t = backend();
+    const { host, guest, roomId } = await speakerRoom(t, 'offline');
+    // The host (current output) never heartbeats: no live session, so nothing there can still be playing in step.
+    const { leaderEpoch } = await host.mutation(api.luvLink.setSpeaker, { roomId, commandId: 'offline-move-001', targetUserId: 'users:offline-guest' });
+    expect((await host.query(api.luvLink.getRoom, { roomId }))?.handoffFromUserId).toBeNull();
+    await guest.mutation(api.luvLink.publishPlayback, play(roomId, leaderEpoch, 'offline-play-0001'));
+    expect((await guest.query(api.luvLink.getPlayback, { roomId }))?.leaderUserId).toBe('users:offline-guest');
+  });
+
+  it('releases a pending handoff once the old speaker goes offline without confirming', async () => {
+    const t = backend();
+    const { host, guest, roomId } = await speakerRoom(t, 'drop');
+    const { sessionToken } = await host.mutation(api.luvLink.heartbeat, { roomId, sessionId: 'drop-host-session' });
+    expect(await guest.query(api.luvLink.getPresence, { roomId })).toEqual(['users:drop-host']);
+    const { leaderEpoch } = await host.mutation(api.luvLink.setSpeaker, { roomId, commandId: 'drop-move-0001', targetUserId: 'users:drop-guest' });
+    expect((await host.query(api.luvLink.getRoom, { roomId }))?.handoffFromUserId).toBe('users:drop-host');
+
+    // Still online: the check keeps waiting for the pause confirmation and books another check.
+    await t.mutation(internal.luvLink.checkSpeakerHandoff, { roomId, leaderEpoch, checks: 1 });
+    expect((await host.query(api.luvLink.getRoom, { roomId }))?.handoffFromUserId).toBe('users:drop-host');
+    await expectCode(guest.mutation(api.luvLink.publishPlayback, play(roomId, leaderEpoch, 'drop-early-00001')), 'handoff_pending');
+
+    await host.mutation(api.luvLink.disconnectPresence, { roomId, sessionToken });
+    await t.mutation(internal.luvLink.checkSpeakerHandoff, { roomId, leaderEpoch, checks: 2 });
+    expect((await host.query(api.luvLink.getRoom, { roomId }))?.handoffFromUserId).toBeNull();
+    await guest.mutation(api.luvLink.publishPlayback, play(roomId, leaderEpoch, 'drop-play-000001'));
+  });
+
+  it('ignores a handoff check or confirmation from an older speaker move', async () => {
+    const t = backend();
+    const { host, roomId } = await speakerRoom(t, 'stale');
+    await host.mutation(api.luvLink.heartbeat, { roomId, sessionId: 'stale-host-session' });
+    const { leaderEpoch } = await host.mutation(api.luvLink.setSpeaker, { roomId, commandId: 'stale-move-0001', targetUserId: 'users:stale-guest' });
+    await t.mutation(internal.luvLink.checkSpeakerHandoff, { roomId, leaderEpoch: leaderEpoch - 1, checks: 1 });
+    expect((await host.query(api.luvLink.getRoom, { roomId }))?.handoffFromUserId).toBe('users:stale-host');
+    await expectCode(host.mutation(api.luvLink.acknowledgeSpeakerHandoff, { roomId, expectedLeaderEpoch: leaderEpoch - 1 }), 'stale_handoff');
+  });
+
+  it('stops waiting for a member who owed a pause confirmation and then left', async () => {
+    const t = backend();
+    const { host, guest, roomId, code } = await speakerRoom(t, 'left');
+    const third = asUser(t, 'users:left-third');
+    await third.mutation(api.luvLink.joinRoom, { code, displayName: 'Third' });
+    await host.mutation(api.luvLink.setController, { roomId, targetUserId: 'users:left-third', canControl: true });
+    // The host offline: guest becomes the output at once. Then guest (online) hands over to the third member.
+    await host.mutation(api.luvLink.setSpeaker, { roomId, commandId: 'left-move-00001', targetUserId: 'users:left-guest' });
+    await guest.mutation(api.luvLink.heartbeat, { roomId, sessionId: 'left-guest-session' });
+    const { leaderEpoch } = await host.mutation(api.luvLink.setSpeaker, { roomId, commandId: 'left-move-00002', targetUserId: 'users:left-third' });
+    expect((await host.query(api.luvLink.getRoom, { roomId }))?.handoffFromUserId).toBe('users:left-guest');
+    await guest.mutation(api.luvLink.leaveRoom, { roomId });
+    expect((await host.query(api.luvLink.getRoom, { roomId }))?.handoffFromUserId).toBeNull();
+    await third.mutation(api.luvLink.publishPlayback, play(roomId, leaderEpoch, 'left-play-000001'));
   });
 
   it('revokes member reads immediately when a listener leaves', async () => {

@@ -649,7 +649,11 @@ export default defineSchema({
     createdAtMs: v.number(),
     expiresAtMs: v.number(),
     closedAtMs: v.optional(v.number()),
-    handoffFromUserId: v.optional(v.string())
+    handoffFromUserId: v.optional(v.string()),
+    /** Leader epoch the pending handoff belongs to; rooms written before it accept only the current epoch. */
+    handoffEpoch: v.optional(v.number()),
+    /** When the server next re-checks whether the old output is still online (it releases the handoff once it isn't). */
+    handoffDeadlineAtMs: v.optional(v.number())
   }).index('by_expiresAtMs', ['expiresAtMs']).index('by_hostUserId_and_status', ['hostUserId', 'status']),
 
   luvLinkMembers: defineTable({

@@ -25,6 +25,10 @@ const limiter = new RateLimiter(components.rateLimiter, {
 });
 const presence = new Presence(components.presence);
 const PRESENCE_HEARTBEAT_MS = 60_000;
+// A pending speaker handoff re-checks the old output's presence every 30 s for ten minutes, then every 5 minutes.
+const HANDOFF_CHECK_MS = 30_000;
+const HANDOFF_FAST_CHECKS = 20;
+const HANDOFF_SLOW_CHECK_MS = 5 * 60_000;
 
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -583,7 +587,8 @@ export const getPresence = query({
     const userId = await requireUser(ctx);
     await requireMember(ctx, args.roomId, userId);
     const sessions = await presence.listRoom(ctx, `luvlink:${args.roomId}`, true, MAX_MEMBERS * 4);
-    return [...new Set(sessions.map(({ userId: sessionUserId }) => sessionUserId.slice(0, sessionUserId.lastIndexOf(':'))))].slice(0, MAX_MEMBERS);
+    // `userId` here is the account ID itself (sessions are `<user>:<session>`); slicing it at ':' cut real IDs short.
+    return [...new Set(sessions.map(session => session.userId))].slice(0, MAX_MEMBERS);
   }
 });
 
@@ -666,8 +671,11 @@ export const setSpeaker = mutation({
     const now = Date.now();
     const leaderEpoch = room.leaderEpoch + 1;
     const oldLeaderMember = await memberFor(ctx, room._id, room.leaderUserId);
-    if (room.leaderUserId !== target.userId) {
-      await ctx.db.patch(room._id, { handoffFromUserId: room.leaderUserId });
+    // An old output with no live session can't be playing in step with the room or confirm a pause; waiting
+    // for it would block the room until it returns. When it does return it sees it is no longer the output.
+    if (room.leaderUserId !== target.userId && oldLeaderMember && await isOnline(ctx, room._id, room.leaderUserId)) {
+      await ctx.db.patch(room._id, { handoffFromUserId: room.leaderUserId, handoffEpoch: leaderEpoch, handoffDeadlineAtMs: now + HANDOFF_CHECK_MS });
+      await ctx.scheduler.runAfter(HANDOFF_CHECK_MS, internal.luvLink.checkSpeakerHandoff, { roomId: room._id, leaderEpoch, checks: 1 });
     }
     if (oldLeaderMember) await ctx.db.patch(oldLeaderMember._id, { mode: 'listen' });
     await ctx.db.patch(target._id, { mode: 'speaker' });
@@ -688,10 +696,43 @@ export const acknowledgeSpeakerHandoff = mutation({
     const userId = await requireUser(ctx);
     const { room } = await requireMember(ctx, args.roomId, userId);
     if (room.mode !== 'speaker' || room.leaderEpoch !== args.expectedLeaderEpoch || room.handoffFromUserId !== userId) fail('stale_handoff', 'This LuvLink speaker handoff is no longer current.');
-    await ctx.db.patch(room._id, { handoffFromUserId: undefined, revision: room.revision + 1 });
+    if (room.handoffEpoch !== undefined && room.handoffEpoch !== args.expectedLeaderEpoch) fail('stale_handoff', 'This LuvLink speaker handoff is no longer current.');
+    await clearHandoff(ctx, room);
     return null;
   }
 });
+
+/**
+ * Durable re-check of a pending handoff. While the old output stays online it still owes its pause
+ * confirmation; once presence says it has gone, nothing can be playing there in step with the room, so the
+ * new output is released. Checks back off after the first few minutes and stop when the handoff resolves.
+ */
+export const checkSpeakerHandoff = internalMutation({
+  args: { roomId, leaderEpoch: v.number(), checks: v.number() }, returns: noResult,
+  handler: async (ctx, args) => {
+    const room = await ctx.db.get(args.roomId);
+    if (!room || room.status !== 'active' || room.expiresAtMs <= Date.now()) return null;
+    if (!room.handoffFromUserId || room.leaderEpoch !== args.leaderEpoch || (room.handoffEpoch ?? room.leaderEpoch) !== args.leaderEpoch) return null;
+    if (!(await isOnline(ctx, room._id, room.handoffFromUserId))) {
+      await clearHandoff(ctx, room);
+      return null;
+    }
+    const delay = args.checks < HANDOFF_FAST_CHECKS ? HANDOFF_CHECK_MS : HANDOFF_SLOW_CHECK_MS;
+    await ctx.db.patch(room._id, { handoffDeadlineAtMs: Date.now() + delay });
+    await ctx.scheduler.runAfter(delay, internal.luvLink.checkSpeakerHandoff, { roomId: room._id, leaderEpoch: args.leaderEpoch, checks: args.checks + 1 });
+    return null;
+  }
+});
+
+async function clearHandoff(ctx: MutationCtx, room: Doc<'luvLinkRooms'>): Promise<void> {
+  await ctx.db.patch(room._id, { handoffFromUserId: undefined, handoffEpoch: undefined, handoffDeadlineAtMs: undefined, revision: room.revision + 1 });
+}
+
+async function isOnline(ctx: QueryCtx | MutationCtx, room: Id<'luvLinkRooms'>, userId: string): Promise<boolean> {
+  const sessions = await presence.listRoom(ctx, `luvlink:${room}`, true, MAX_MEMBERS * 4);
+  // Presence keys users by account ID; the `<user>:<session>` string is the session, not the user.
+  return sessions.some(session => session.userId === userId);
+}
 
 function projectCurrent(anchor: Doc<'luvLinkPlayback'>, now: number): number {
   const projected = anchor.positionSec + (anchor.playing ? Math.max(0, now - anchor.effectiveAtMs) / 1000 * anchor.playbackRate : 0);
@@ -769,9 +810,11 @@ export const leaveRoom = mutation({
       await ctx.db.delete(member._id);
       await ctx.db.patch(room._id, { memberCount: Math.max(1, room.memberCount - 1), revision: room.revision + 1 });
       await invalidatePicks(ctx, room);
+      // A member who still owed a pause confirmation leaves with their output; don't block the new one on them.
+      if (room.handoffFromUserId === userId && room.leaderUserId !== userId) await ctx.db.patch(room._id, { handoffFromUserId: undefined, handoffEpoch: undefined, handoffDeadlineAtMs: undefined });
       if (room.leaderUserId === userId) {
         const leaderEpoch = room.leaderEpoch + 1;
-        await ctx.db.patch(room._id, { leaderUserId: room.hostUserId, leaderEpoch, handoffFromUserId: undefined });
+        await ctx.db.patch(room._id, { leaderUserId: room.hostUserId, leaderEpoch, handoffFromUserId: undefined, handoffEpoch: undefined, handoffDeadlineAtMs: undefined });
         const anchor = await ctx.db.query('luvLinkPlayback').withIndex('by_roomId', q => q.eq('roomId', room._id)).unique();
         if (anchor) await ctx.db.patch(anchor._id, { leaderUserId: room.hostUserId, leaderEpoch, sequence: anchor.sequence + 1, intent: 'control', intentByUserId: userId, outputAppliedSequence: anchor.sequence + 1, barrierPending: false, playing: false, positionSec: projectCurrent(anchor, Date.now()), serverAtMs: Date.now(), effectiveAtMs: Date.now() });
       }
