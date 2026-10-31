@@ -28,7 +28,13 @@ export const LISTEN_RULES = {
   /** Leaving before this many heard seconds is a skip that means "not this". */
   earlySkipSec: 30,
   /** Leaving before this is the strongest "no". */
-  instantSkipSec: 10
+  instantSkipSec: 10,
+  /**
+   * A listen enters Recently played once this many seconds were heard on the device that plays it, however it
+   * started (a pick, auto-advance, radio, DJ, Connect or LuvLink). Its start time is the event's key, so a
+   * retried write and the later listen signal both land on the same history row.
+   */
+  historyAfterSec: 5
 } as const;
 
 export interface ListenOutcome {

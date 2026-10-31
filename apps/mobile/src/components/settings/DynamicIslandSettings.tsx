@@ -9,18 +9,25 @@ import {
 import {
   openIslandAccessibilitySettings, openIslandAppInfo, readIslandStatus,
   setIslandAllowOnNativeIsland, setIslandEnabled, setIslandHideInApp, setIslandShowLyricStrip, setIslandShowOnLockScreen,
-  setIslandShowWhenIdle, setIslandSize, setIslandStyle,
+  setIslandShowWhenIdle, setIslandSize, setIslandStyle, openTakeOverSettings, readTakeOverStatus, setTakeOverEnabled,
 } from '../../services/NativeDynamicIsland';
+
+/** Said before the listener is sent to Android's notification access page. */
+const TAKE_OVER_DISCLOSURE = 'Lets LuvLyrics see which song another app is playing. It reads no notifications.';
 
 export default function DynamicIslandSettings({ onLayout, onNotice }: {
   onLayout?: (event: LayoutChangeEvent) => void;
   onNotice: (message: string) => void;
 }) {
   const [status, setStatus] = useState(() => Platform.OS === 'android' ? readIslandStatus() : null);
+  const [takeOver, setTakeOver] = useState(() => Platform.OS === 'android' ? readTakeOverStatus() : null);
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') setStatus(readIslandStatus());
+      if (state !== 'active') return;
+      setStatus(readIslandStatus());
+      // Back from Android's notification access page: the listener may have been switched on.
+      setTakeOver(readTakeOverStatus());
     });
     return () => subscription.remove();
   }, []);
@@ -29,10 +36,12 @@ export default function DynamicIslandSettings({ onLayout, onNotice }: {
   const change = (save: () => boolean) => {
     if (!save()) onNotice('Could not change the island setting. Try again.');
     setStatus(readIslandStatus());
+    setTakeOver(readTakeOverStatus());
   };
-  const open = (launch: () => boolean) => {
-    if (!launch()) onNotice('Could not open Android settings. Open Settings → Accessibility → Installed apps → LuvLyrics island.');
+  const open = (launch: () => boolean, where = 'Accessibility → Installed apps → LuvLyrics island') => {
+    if (!launch()) onNotice(`Could not open Android settings. Open Settings → ${where}.`);
   };
+  const openNotificationAccess = () => open(openTakeOverSettings, 'Notifications → Device & app notifications → LuvLyrics');
   const step = islandSetupStep(status);
   return (
     <Section id="island" icon="phone-portrait-outline" title="Dynamic island"
@@ -75,6 +84,26 @@ export default function DynamicIslandSettings({ onLayout, onNotice }: {
         }} />
       <Switch label="Hide while LuvLyrics is open" value={status.hideInApp}
         onChange={on => change(() => setIslandHideInApp(on))} />
+      {takeOver ? <>
+        <Switch label="Continue here from other apps"
+          hint="When Spotify, YouTube Music or YouTube plays, open the island and tap Continue here: the same song carries on in LuvLyrics, from the same moment."
+          value={takeOver.enabled}
+          onChange={on => {
+            change(() => setTakeOverEnabled(on));
+            if (on && !takeOver.listenerEnabled) {
+              onNotice(TAKE_OVER_DISCLOSURE);
+              openNotificationAccess();
+            }
+          }} />
+        {takeOver.enabled && !takeOver.listenerEnabled ? <>
+          <Action label="Allow notification access"
+            hint={`${TAKE_OVER_DISCLOSURE} Open LuvLyrics under Notification access and switch it on.`}
+            onPress={openNotificationAccess} />
+          {status.restrictedSettings ? <Action label="Allow restricted settings"
+            hint="If Android blocks the switch, open App info, tap the three-dot menu, then Allow restricted settings."
+            onPress={() => open(openIslandAppInfo)} /> : null}
+        </> : null}
+      </> : null}
     </Section>
   );
 }

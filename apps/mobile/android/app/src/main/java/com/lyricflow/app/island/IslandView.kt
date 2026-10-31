@@ -86,6 +86,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
          * text field over it, so the keyboard comes up, and hands each change to [setSearchText].
          */
         fun showSearchInput(field: RectF?)
+        /** Types [text] into the search field (open): it reaches [setSearchText] like anything the listener typed. */
+        fun typeInSearch(text: String)
         /** Reads whether the phone is locked now (sets [locked]): asked before the island is opened or touched. */
         fun checkLock()
     }
@@ -134,6 +136,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
                 closeSearch()
                 showPage(Page.NOW)
             }
+            // Taking a song over from another app needs the app: the lock screen offers nothing of it.
+            syncOutside()
             invalidate()
         }
 
@@ -157,6 +161,36 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private var artistShown = ""
     private var titleWidth = 0f
     private var artistWidth = 0f
+
+    // ── Another app's song ("Play here") ────────────────────────────────────────────────────────────────────
+
+    /** Offer, then "Finding…" after the tap, then JavaScript's message for a moment; [NONE] is the island as usual. */
+    private enum class Take { NONE, FINDING, DONE }
+
+    /** What another app plays now (OutsideMedia); it counts only while LuvLyrics itself is not playing. */
+    private var offer: OutsideMedia.Song? = null
+    private var take = Take.NONE
+    /** The song asked for, kept through "Finding…" and the message even though its app is paused by then. */
+    private var takeSong: OutsideMedia.Song? = null
+    private var takeMessage = ""
+    /** The other app's song the island shows in place of its own, if any (see [syncOutside]). */
+    private var shownOutside: OutsideMedia.Song? = null
+    private var outsideArt: Bitmap? = null
+    private var outsideShader: BitmapShader? = null
+    private var stopOutside: (() -> Unit)? = null
+    private val takeButton = RectF()
+    /** The take-over pill: 0 the white "Play here", 1 a quiet glass pill that says what is happening. */
+    private val takeBusy = Spring(0f, stiffness = 200f, dampingRatio = 1f)
+    /** JavaScript never answered: the island stops saying it is finding the song. */
+    private val takeTimeout = Runnable { endTake() }
+    /** The message has been read: back to the island as usual. */
+    private val takeFinished = Runnable { endTake() }
+    /** LuvLyrics' own song is what the island shows: its controls, lyrics, badge and actions. */
+    private val ownSong get() = hasSong && shownOutside == null
+    /** A song is shown, LuvLyrics' or another app's. */
+    private val showsSong get() = hasSong || shownOutside != null
+    /** The shown song moves (bars, marquee, ticks): ours playing, or the other app's until the take-over is done. */
+    private val songMoving get() = playing || (shownOutside != null && take != Take.DONE)
 
     private val art = IslandArt(context)
     private var cover: Bitmap? = null
@@ -263,8 +297,20 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private val blobSpeed = Spring(0f, stiffness = 40f, dampingRatio = 1f)
     /** Paused mid-loop: the title and artist glide home to their start, from where they were (1 → 0). */
     private val marqueeHome = Spring(0f, stiffness = 120f, dampingRatio = 1f)
+    /**
+     * Full lyrics: the row of previous / play / next that a pull down past the first line reveals (0 hidden, 1 shown).
+     * The lyrics slide down by its height to make room; pushing back up tucks it away again.
+     */
+    private val peekP = Spring(0f, stiffness = 170f, dampingRatio = 0.9f)
     private val springs = arrayOf(open, wide, shown, bump, press, colorMix, lyricsRoom, lineMove, full, lyricsP, pageX,
-        ghost, scrubGrow, lyricScroll, blobSpeed, searchP, fly, marqueeHome)
+        ghost, scrubGrow, lyricScroll, blobSpeed, searchP, fly, marqueeHome, peekP, takeBusy)
+    /** The reader took the lyrics: they stay where the finger left them until [lyricResume] gives them back to the song. */
+    private var lyricManual = false
+    private val lyricResume = Runnable {
+        lyricManual = false
+        kickLoop()
+        invalidate()
+    }
     private var lyricLines: List<IslandLyrics.Line> = emptyList()
     private var lyricIndex = -1
     private var lyricFrom = -1
@@ -293,7 +339,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private var artistTo = 0f
 
     private val main = Handler(Looper.getMainLooper())
-    private val autoClose = Runnable { if (!scrubbing && !dragging) collapse() }
+    // While a take-over is working or answering, the card waits for it instead of closing on its own.
+    private val autoClose = Runnable { if (!scrubbing && !dragging) { if (take == Take.NONE) collapse() else holdOpen() } }
     private val longPress = Runnable {
         longPressed = true
         press.target = 0f
@@ -303,8 +350,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     // ── Touch ───────────────────────────────────────────────────────────────────────────────────────────────
 
-    private enum class Target { PILL, PREVIOUS, PLAY, NEXT, PROGRESS, OPEN, CARD, BACK, ROW, LYRICS, FIELD, BEST, NONE }
-    private enum class Axis { NONE, HORIZONTAL, VERTICAL, SEARCH }
+    private enum class Target { PILL, PREVIOUS, PLAY, NEXT, PROGRESS, OPEN, CARD, BACK, ROW, LYRICS, FIELD, BEST, TAKE, NONE }
+    private enum class Axis { NONE, HORIZONTAL, VERTICAL, SEARCH, LYRICS }
 
     private var downX = 0f
     private var downY = 0f
@@ -425,6 +472,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         stopWatching = IslandPlayback.watch { next -> bindPlayer(next) }
         IslandLyrics.onChange = { refreshLyrics() }
         IslandLibrary.onChange = { refreshLibrary() }
+        stopOutside = OutsideMedia.watch { song -> setOffer(song) }
+        OutsideMedia.onDone = { ok, message -> finishTake(ok, message) }
+        OutsideMedia.onShowSearch = { query -> showSearch(query) }
         refreshLibrary()
         IslandFonts.load(context) {
             main.post {
@@ -441,6 +491,10 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         stopWatching = null
         IslandLyrics.onChange = null
         IslandLibrary.onChange = null
+        stopOutside?.invoke()
+        stopOutside = null
+        OutsideMedia.onDone = null
+        OutsideMedia.onShowSearch = null
         bindPlayer(null)
         art.cancel()
         thumbs.clear()
@@ -512,7 +566,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             prefetchNext(p)
         }
         hasSong = nowHasSong
-        contentDescription = if (hasSong) "Now playing $title by $artist" else "LuvLyrics island"
+        // Whether LuvLyrics plays decides if another app's song is offered.
+        syncOutside()
+        contentDescription = describe()
         layoutText()
         refreshLyrics()
         retarget()
@@ -524,7 +580,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
      * Player events call this often, so it does nothing unless the lines actually changed.
      */
     private fun refreshLyrics() {
-        val next = if (hasSong) IslandLyrics.linesFor(player?.currentMediaItem?.mediaId) else emptyList()
+        val next = if (ownSong) IslandLyrics.linesFor(player?.currentMediaItem?.mediaId) else emptyList()
         if (next === lyricLines) return
         lyricLines = next
         lyricIndex = -1
@@ -680,8 +736,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     private fun retarget() {
         open.target = if (wantOpen) 1f else 0f
-        wide.target = if (hasSong) 1f else 0f
-        shown.target = if (hasSong || showWhenIdle || wantOpen) 1f else 0f
+        // Another app's song is something to show, even with "Show when nothing is playing" off.
+        wide.target = if (showsSong) 1f else 0f
+        shown.target = if (showsSong || showWhenIdle || wantOpen) 1f else 0f
         if (wantOpen) {
             full.target = if (!searchOpen && (lyricsFull || page != Page.NOW)) 1f else 0f
             lyricsP.target = if (lyricsFull) 1f else 0f
@@ -691,12 +748,126 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             lyricsP.target = 0f
             searchP.target = 0f
         }
+        if (!wantOpen || !lyricsFull) {
+            // The controls row and a reader's place belong to the full lyrics; leaving them gives both back.
+            peekP.target = 0f
+            lyricManual = false
+            main.removeCallbacks(lyricResume)
+        }
         host.setTouchable(shown.target > 0f)
         // A closing card lets go at once: a tap where it was belongs to the app underneath, not to the island.
         host.setExpandedTouch(wantOpen)
         // Start moving first: a moving island only grows its window, so a closing card is never cut off.
         kickLoop()
         refit()
+    }
+
+    // ── Another app's song ──────────────────────────────────────────────────────────────────────────────────
+
+    private fun describe(): String {
+        val o = shownOutside
+        return when {
+            o != null -> "Playing in ${o.appLabel}: ${o.title} by ${o.artist}. Continue here."
+            hasSong -> "Now playing $title by $artist"
+            else -> "LuvLyrics island"
+        }
+    }
+
+    /** What another app plays, from OutsideMedia (main thread). */
+    private fun setOffer(song: OutsideMedia.Song?) {
+        offer = song
+        syncOutside()
+    }
+
+    /**
+     * Decides which song, if any, of another app the island shows now: the offer while LuvLyrics is not playing
+     * (and the phone is unlocked), or, from the tap on until the message is gone, the song that was asked for.
+     * A change brings the island to that song (or back to its own) the way a new song does: the pill gives a bump,
+     * the card keeps its place and its parts move to the new text.
+     */
+    private fun syncOutside() {
+        val next = when {
+            take != Take.NONE -> takeSong
+            locked || playing -> null
+            else -> offer
+        }
+        val before = shownOutside
+        if (before === next) return
+        shownOutside = next
+        outsideArt = next?.art
+        outsideShader = outsideArt?.let { BitmapShader(it, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP) }
+        if (next == null) {
+            // Back to its own song: the cover, colours and title are read again from the player.
+            songKey = null
+            syncFromPlayer()
+            return
+        }
+        if (before == null) setColors(IslandColors.NEUTRAL)
+        resetMarquee()
+        layoutText()
+        refreshLyrics()
+        contentDescription = describe()
+        if (before == null && !wantOpen) bump.kick(4f)
+        if (wantOpen) holdOpen()
+        retarget()
+        invalidate()
+    }
+
+    /** "Play here" was tapped. The app starts finding the song while the other one keeps playing. */
+    private fun takeOver() {
+        val song = shownOutside ?: return
+        if (take != Take.NONE) return
+        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        // Nothing listens in JavaScript (the app is not running): the app opens, as it does for a pick.
+        if (!OutsideMedia.takeOver(song)) {
+            openApp()
+            return
+        }
+        take = Take.FINDING
+        takeSong = song
+        takeBusy.target = 1f
+        main.removeCallbacks(takeTimeout)
+        main.postDelayed(takeTimeout, TAKE_TIMEOUT_MS)
+        holdOpen()
+        kickLoop()
+        invalidate()
+    }
+
+    /** JavaScript is done: the island shows its message for a moment, then goes back to what it was. */
+    private fun finishTake(ok: Boolean, message: String) {
+        if (take != Take.FINDING) return
+        take = Take.DONE
+        takeMessage = message.ifBlank { if (ok) "Playing in LuvLyrics" else "Not found" }
+        main.removeCallbacks(takeTimeout)
+        main.postDelayed(takeFinished, TAKE_MESSAGE_MS)
+        kickLoop()
+        invalidate()
+    }
+
+    private fun endTake() {
+        main.removeCallbacks(takeTimeout)
+        main.removeCallbacks(takeFinished)
+        if (take == Take.NONE) return
+        take = Take.NONE
+        takeSong = null
+        takeBusy.target = 0f
+        syncOutside()
+        if (wantOpen) holdOpen()
+        kickLoop()
+        invalidate()
+    }
+
+    /**
+     * JavaScript found no song to play: the search drawer opens with [query] typed in, so the listener picks.
+     * It looks the query up as anything typed there (IslandLibrary.search).
+     */
+    private fun showSearch(query: String) {
+        if (locked || query.isBlank()) return
+        expand()
+        if (page != Page.NOW) showPage(Page.NOW)
+        openSearch()
+        host.typeInSearch(query)
+        kickLoop()
     }
 
     private fun setLyricsFull(on: Boolean) {
@@ -894,14 +1065,14 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     private fun refit(force: Boolean = false) {
         val g = geometry ?: return
         val pad = g.dp(6f)
-        shape(scratch, open.target, wide.target, shown.target, 1f, lyricsRoom.target, full.target, searchP.target)
+        shape(scratch, open.target, wide.target, shown.target, 1f, lyricsRoom.target, full.target, searchP.target, peekP.target)
         var half = scratch.width() / 2f + pad
         var bottom = scratch.bottom + pad
         val restHalf = half
         val restBottom = bottom
         if (dragging && wantOpen) {
             // A finger on the open card may pull it to full mode: grow once, now, rather than on every move.
-            bottom = max(bottom, g.cardTop + g.fullHeight * 1.04f + pad)
+            bottom = max(bottom, g.cardTop + g.fullHeight * 1.04f + g.dp(PEEK_DP) + pad)
         }
         if (looping || dragging) {
             val overshoot = if (open.target > 0.5f) 1.05f else 1.08f
@@ -932,7 +1103,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
      * and settles back, as a spring does. The pill look floats: the pill and the card both start below the top edge.
      * The notch look ([IslandGeometry.hanging]) keeps its top on the edge and grows and shrinks from there.
      */
-    private fun shape(out: RectF, o: Float, w: Float, s: Float, scale: Float, l: Float, f: Float, sd: Float) {
+    private fun shape(
+        out: RectF, o: Float, w: Float, s: Float, scale: Float, l: Float, f: Float, sd: Float, pk: Float = peekP.value,
+    ) {
         val g = geometry ?: return out.setEmpty()
         val presence = s.coerceIn(0f, 1f)
         val pillW = lerp(g.idleWidth, g.compactWidth, w) * lerp(0.55f, 1f, presence)
@@ -941,7 +1114,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val half = lerp(pillW / 2f, g.cardWidth / 2f, o)
         val top = lerp(pillTop, g.cardTop, o)
         val cardBottom = g.cardTop + g.cardHeight + g.dp(LYRICS_ROOM_DP) * l
-        val openBottom = lerp(lerp(cardBottom, g.cardTop + g.fullHeight, f), g.cardTop + g.searchHeight, sd)
+        // Pulling the full lyrics down grows the card a little, below the scrubber, for the controls row.
+        val peekExtra = g.dp(PEEK_DP) * pk.coerceIn(0f, 1f) * f
+        val openBottom = lerp(lerp(cardBottom, g.cardTop + g.fullHeight, f) + peekExtra, g.cardTop + g.searchHeight, sd)
         val bottom = lerp(pillTop + pillH, openBottom, o)
         out.set(-half * scale, top, half * scale, bottom)
         if (scale != 1f) {
@@ -997,6 +1172,8 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val label = OPEN_LABEL
         val labelWidth = titlePaint.measureText(label) * 0.9f
         openButton.set(-labelWidth / 2f - g.dp(22f), controlsY - g.dp(22f), labelWidth / 2f + g.dp(22f), controlsY + g.dp(22f))
+        val takeHalf = g.dp(TAKE_WIDTH_DP) / 2f
+        takeButton.set(-takeHalf, controlsY - g.dp(22f), takeHalf, controlsY + g.dp(22f))
         lyricsTop = coverBox.bottom + g.dp(10f)
         lyricsBottom = fullProgressY - g.dp(22f)
         backBox.set(cardLeft + pad, g.contentTop, cardLeft + pad + g.dp(30f), g.contentTop + g.dp(30f))
@@ -1026,8 +1203,18 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     }
 
     private fun layoutText() {
-        titleShown = if (hasSong) title.ifEmpty { "Unknown song" } else "LuvLyrics"
-        artistShown = if (hasSong) artist else "Nothing playing"
+        val outside = shownOutside
+        titleShown = when {
+            outside != null -> outside.title.ifEmpty { "Unknown song" }
+            hasSong -> title.ifEmpty { "Unknown song" }
+            else -> "LuvLyrics"
+        }
+        // Another app's song says whose it is, so "Play here" reads as taking it from there.
+        artistShown = when {
+            outside != null -> "${outside.artist} $DOT ${outside.appLabel}"
+            hasSong -> artist
+            else -> "Nothing playing"
+        }
         titleWidth = titlePaint.measureText(titleShown)
         artistWidth = artistPaint.measureText(artistShown)
     }
@@ -1070,7 +1257,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val compactAlpha = (1f - oc / 0.35f).coerceIn(0f, 1f) * wide.value.coerceIn(0f, 1f) * presence
         // Opening or closing on the card: the pill's cover and the card's cover are one picture that grows and
         // shrinks between the two places, rather than one fading out while the other fades in.
-        coverMorphing = hasSong && oc > 0.001f && oc < 0.999f && abs(pageX.value) < 0.01f && ghostPage == null &&
+        coverMorphing = showsSong && oc > 0.001f && oc < 0.999f && abs(pageX.value) < 0.01f && ghostPage == null &&
             searchP.value < 0.01f && wide.value > 0.99f
         if (compactAlpha > 0.01f) drawCompact(canvas, g, shapeRect, compactAlpha)
         val cardAlpha = ((oc - 0.45f) / 0.55f).coerceIn(0f, 1f) * presence
@@ -1166,7 +1353,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         }
 
         val right = pill.right - inset - g.dp(4f)
-        drawBars(canvas, right, cy, size * 0.78f, g.dp(3f), g.dp(2.6f), blendedColors().accent, alpha, playing && screenOn && !motionOff())
+        drawBars(canvas, right, cy, size * 0.78f, g.dp(3f), g.dp(2.6f), blendedColors().accent, alpha, songMoving && screenOn && !motionOff())
     }
 
     /** Four level bars ending at [right], dancing while [live]. */
@@ -1305,10 +1492,10 @@ class IslandView(context: Context, private val host: Host) : View(context) {
                 canvas.drawText(picked.artist, textX, artistY, artistPaint)
             }
         } else if (!coverMorphing) {
-            drawImage(canvas, coverBox, g.dp(12f), alpha, useAppIcon = !hasSong)
+            drawImage(canvas, coverBox, g.dp(12f), alpha, useAppIcon = !showsSong)
         }
         // LuvLyrics' mark where Spotify puts its own.
-        if (hasSong) {
+        if (ownSong) {
             imagePaint.shader = appIconShader
             fitShader(appIcon, badgeBox)
             imagePaint.alpha = (255 * alpha * 0.92f).toInt()
@@ -1316,13 +1503,19 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         }
 
         val now = SystemClock.uptimeMillis()
-        if (playing && screenOn && !motionOff() && marqueeLastMs != 0L) marqueeClock += ((now - marqueeLastMs) / 1000f).coerceAtMost(0.1f)
+        if (songMoving && screenOn && !motionOff() && marqueeLastMs != 0L) marqueeClock += ((now - marqueeLastMs) / 1000f).coerceAtMost(0.1f)
         marqueeLastMs = now
         if (picked == null) {
             drawMarquee(canvas, g, titleShown, titleWidth, titlePaint, titleY,
                 shownMarquee(marqueeClock, titleWidth, g, titleFrom, titleTo), alpha)
             drawMarquee(canvas, g, artistShown, artistWidth, artistPaint, artistY,
                 shownMarquee(marqueeClock, artistWidth, g, artistFrom, artistTo), alpha * 0.62f)
+        }
+
+        // Another app's song: its title above, "Play here" where the controls are, nothing of LuvLyrics' own song.
+        if (shownOutside != null) {
+            drawTakeOver(canvas, g, alpha)
+            return
         }
 
         if (!hasSong) {
@@ -1365,6 +1558,52 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             }
             else -> drawFullLyrics(canvas, g, alpha, lp)
         }
+    }
+
+    /**
+     * "Play here": a white pill where the controls are, as the search's Play is. Tapped, it settles into a quiet
+     * glass pill that says "Finding…", then JavaScript's message (takeBusy moves the fill and the text colour on
+     * one spring); only opacity and the press' scale move.
+     */
+    private fun drawTakeOver(canvas: Canvas, g: IslandGeometry, alpha: Float) {
+        val busy = takeBusy.value.coerceIn(0f, 1f)
+        val pressed = pressedButton == Target.TAKE
+        val h = takeButton.height()
+        canvas.save()
+        if (pressed) canvas.scale(0.96f, 0.96f, takeButton.centerX(), takeButton.centerY())
+        fill.shader = null
+        fill.color = Color.WHITE
+        fill.alpha = (255 * alpha * lerp(if (pressed) 0.8f else 1f, 0.16f, busy)).toInt()
+        canvas.drawRoundRect(takeButton, h / 2f, h / 2f, fill)
+        // Black on the white pill, white on the glass one.
+        val ink = ColorUtils.blendARGB(Color.BLACK, Color.WHITE, busy)
+        val room = takeButton.width() - g.dp(28f)
+        val label = when (take) {
+            Take.NONE -> TAKE_LABEL
+            Take.FINDING -> "Finding$ELLIPSIS"
+            Take.DONE -> takeMessage
+        }
+        // "Finding…" breathes, so a slow search still looks alive; Reduce Motion holds it still.
+        val breath = if (take == Take.FINDING && !motionOff()) 0.78f + 0.22f * sin(SystemClock.uptimeMillis() / 260f) else 1f
+        rowTitlePaint.color = ink
+        rowTitlePaint.alpha = (255 * alpha * breath).toInt()
+        if (take == Take.NONE) {
+            val iconSize = g.dp(18f)
+            val gap = g.dp(6f)
+            val text = rowTitlePaint.measureText(label)
+            val left = takeButton.centerX() - (iconSize + gap + text) / 2f
+            iconPaint.color = ink
+            iconPaint.alpha = (255 * alpha).toInt()
+            IslandIcons.draw(canvas, IslandIcons.play, left + iconSize / 2f, takeButton.centerY(), iconSize, iconPaint)
+            iconPaint.color = Color.WHITE
+            canvas.drawText(label, left + iconSize + gap, takeButton.centerY() + rowTitlePaint.textSize * 0.35f, rowTitlePaint)
+        } else {
+            val fitted = fitText(label, rowTitlePaint, room)
+            canvas.drawText(fitted, takeButton.centerX() - rowTitlePaint.measureText(fitted) / 2f,
+                takeButton.centerY() + rowTitlePaint.textSize * 0.35f, rowTitlePaint)
+        }
+        rowTitlePaint.color = Color.WHITE
+        canvas.restore()
     }
 
     /**
@@ -1576,15 +1815,18 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         if (lyricLines.isEmpty()) return
         ensureLyricLayouts(g)
         val area = lyricsBottom - lyricsTop
-        val target = if (lyricIndex >= 0) lyricTops[lyricIndex] - area * SUNG_LINE_AT else 0f
+        // Before the first line is sung the list already rests where that line will be, at the sung-line place, so the
+        // song does not open with the first line jammed under the top fade and then slide down.
+        val target = lyricTops[max(lyricIndex, 0)] - area * SUNG_LINE_AT
         if (!lyricScrollPlaced) {
             lyricScroll.snap(target)
             lyricScrollPlaced = true
-        } else if (lyricScroll.target != target) {
+        } else if (!lyricManual && lyricScroll.target != target) {
             lyricScroll.target = target
             kickLoop()
         }
         val scroll = lyricScroll.value
+        val peek = peekP.value.coerceIn(0f, 1f)
         val k = lineMove.value.coerceIn(0f, 1f)
         val e = lp.coerceIn(0f, 1f)
         val morphing = e < 0.999f
@@ -1638,11 +1880,21 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val fadeH = g.dp(28f)
         fadePaint.alpha = (255 * e).toInt()
         fadePaint.shader = lyricFadeTop
-        canvas.drawRect(-g.cardWidth / 2f, lyricsTop, g.cardWidth / 2f, lyricsTop + fadeH, fadePaint)
+        canvas.drawRect(-g.cardWidth / 2f, areaTop, g.cardWidth / 2f, areaTop + fadeH, fadePaint)
         fadePaint.shader = lyricFadeBottom
         canvas.drawRect(-g.cardWidth / 2f, lyricsBottom - fadeH, g.cardWidth / 2f, lyricsBottom, fadePaint)
         fadePaint.alpha = 255
         canvas.restore()
+        if (peek > 0.01f && hasSong) {
+            // The same three buttons as the card's, in the row the card grew below the scrubber.
+            val controlsAlpha = alpha * peek
+            canvas.save()
+            canvas.translate(0f, peekRowY(g) - controlsY)
+            drawButton(canvas, -sideButtonX, sideRadius, IslandIcons.previous, g.dp(21f), controlsAlpha, Target.PREVIOUS)
+            drawButton(canvas, 0f, playRadius, if (playing) IslandIcons.pause else IslandIcons.play, g.dp(25f), controlsAlpha, Target.PLAY)
+            drawButton(canvas, sideButtonX, sideRadius, IslandIcons.next, g.dp(21f), controlsAlpha, Target.NEXT)
+            canvas.restore()
+        }
     }
 
     // ── Playlists ───────────────────────────────────────────────────────────────────────────────────────────
@@ -1661,8 +1913,33 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         return max(0f, rowCount(p) * rowHeight(p, g) + g.dp(8f) - (listBottom - listTop))
     }
 
+    /** The full lyrics are on the now-playing page and can be read by hand. */
+    private fun lyricsScrolling() = lyricsFull && page == Page.NOW && !searchOpen && lyricLayouts.isNotEmpty()
+
+    /** Where the lyrics rest with their first line at the sung-line place: the top of what can be scrolled. */
+    private fun lyricMin() = -(lyricsBottom - lyricsTop) * SUNG_LINE_AT
+
+    /** The last line at the sung-line place: the end of what can be scrolled. */
+    private fun lyricMax() = max(lyricMin(), (lyricTops.lastOrNull() ?: 0f) - (lyricsBottom - lyricsTop) * SUNG_LINE_AT)
+
+    private fun peekHeight() = (geometry?.dp(PEEK_DP) ?: 0f)
+
+    /** The middle of the controls row that grows out under the scrubber. */
+    private fun peekRowY(g: IslandGeometry) = fullProgressY + g.dp(PEEK_ROW_DP)
+
+    /** Hands the lyrics back to the song a few seconds after the reader lets go. */
+    private fun scheduleLyricResume() {
+        main.removeCallbacks(lyricResume)
+        main.postDelayed(lyricResume, LYRIC_RESUME_MS)
+    }
+
     private fun setListScroll(value: Float) {
         when {
+            // The lyrics scroll between lyricMin (first line at its place) and lyricMax, counted from zero like a list.
+            lyricsScrolling() -> {
+                lyricManual = true
+                lyricScroll.snap(value + lyricMin())
+            }
             searchOpen -> searchScroll = value
             page == Page.SONGS -> songScroll = value
             page == Page.DOWNLOADS -> downloadScroll = value
@@ -1671,6 +1948,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
     }
 
     private fun listScroll() = when {
+        lyricsScrolling() -> lyricScroll.value - lyricMin()
         searchOpen -> searchScroll
         page == Page.SONGS -> songScroll
         page == Page.DOWNLOADS -> downloadScroll
@@ -1686,6 +1964,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     private fun maxListScroll(): Float {
         val g = geometry ?: return 0f
+        if (lyricsScrolling()) return lyricMax() - lyricMin()
         if (!searchOpen) return maxScroll(page)
         val rows = max(0, searchResults.size - 1) + (if (searchFooter() != null) 1 else 0)
         return max(0f, rows * g.dp(SONG_ROW_DP) + g.dp(8f) - (g.cardTop + g.searchHeight - g.dp(6f) - resultsTop))
@@ -2030,8 +2309,9 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     /** The song's cover (or, with none yet, a soft tile; with no song, the app's icon) in a rounded square. */
     private fun drawImage(canvas: Canvas, box: RectF, radius: Float, alpha: Float, useAppIcon: Boolean = false) {
-        val bitmap = if (useAppIcon) appIcon else cover
-        val shader = if (useAppIcon) appIconShader else coverShader
+        val outside = shownOutside != null
+        val bitmap = if (useAppIcon) appIcon else if (outside) outsideArt else cover
+        val shader = if (useAppIcon) appIconShader else if (outside) outsideShader else coverShader
         if (bitmap == null || shader == null) {
             fill.shader = null
             fill.color = Color.WHITE
@@ -2065,7 +2345,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         if (looping || !screenOn || capturing) return
         val still = motionOff()
         if (compactAlpha > 0.01f && cardAlpha <= 0.01f) {
-            if (playing && !still) tickIn(budget.tickMs)
+            if (songMoving && !still) tickIn(budget.tickMs)
             return
         }
         if (cardAlpha <= 0.5f) return
@@ -2076,8 +2356,12 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         }
         // Reduce Motion: the light, the bars and the titles hold still; nothing needs a tick.
         if (still) return
+        if (take == Take.FINDING) {
+            tickIn(budget.tickMs)
+            return
+        }
         var wait = -1f
-        if (page == Page.NOW && ghostPage == null && playing) {
+        if (page == Page.NOW && ghostPage == null && songMoving) {
             val a = IslandMotion.marqueeWait(marqueeClock, titleWidth, textWidth, g.density)
             val b = IslandMotion.marqueeWait(marqueeClock, artistWidth, textWidth, g.density)
             wait = if (a < 0f) b else if (b < 0f) a else min(a, b)
@@ -2121,7 +2405,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val actions = listOf(
             com.lyricflow.app.R.id.island_open_app to "Open LuvLyrics",
             com.lyricflow.app.R.id.island_playlists to "Show playlists",
-        ) + if (hasSong) listOf(
+        ) + if (ownSong) listOf(
             com.lyricflow.app.R.id.island_previous to "Previous song",
             com.lyricflow.app.R.id.island_play_pause to if (playing) "Pause" else "Play",
             com.lyricflow.app.R.id.island_next to "Next song",
@@ -2182,7 +2466,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
                     if (!listScroller.isFinished) listScroller.forceFinished(true)
                     when (touchTarget) {
                         Target.PROGRESS -> startScrub(x)
-                        Target.PREVIOUS, Target.PLAY, Target.NEXT, Target.OPEN, Target.BACK, Target.BEST -> pressedButton = touchTarget
+                        Target.PREVIOUS, Target.PLAY, Target.NEXT, Target.OPEN, Target.BACK, Target.BEST, Target.TAKE -> pressedButton = touchTarget
                         else -> Unit
                     }
                     invalidate()
@@ -2266,14 +2550,23 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             searchOpen -> if (downY < resultsTop) Axis.SEARCH else Axis.VERTICAL
             // Locked, the island's library stays shut: sideways is just a little give.
             sideways -> Axis.HORIZONTAL
+            // In the full lyrics a drag on the lines reads them (past the first line it pulls the controls out), it
+            // does not close the card: that is the header's drag.
+            lyricsScrolling() && touchTarget == Target.LYRICS -> Axis.LYRICS
             // A pull down from the top of the card opens search; from its middle or bottom, the lyrics.
             !locked && page == Page.NOW && !lyricsFull && pageX.value.let { abs(it) < 0.5f } && dy > 0f &&
                 downY < g.cardTop + (g.cardHeight + g.dp(LYRICS_ROOM_DP) * lyricsRoom.value) * SEARCH_ZONE -> Axis.SEARCH
             else -> Axis.VERTICAL
         }
+        if (axis == Axis.LYRICS) {
+            main.removeCallbacks(lyricResume)
+            lyricManual = true
+        }
         dragBase = when {
             axis == Axis.HORIZONTAL -> pageX.value
             axis == Axis.SEARCH -> searchP.value
+            // Counted from the first line's place, minus the controls row already pulled out.
+            axis == Axis.LYRICS -> listScroll() - peekP.value * peekHeight()
             !searchOpen && page == Page.NOW -> full.value
             else -> listScroll()
         }
@@ -2283,6 +2576,29 @@ class IslandView(context: Context, private val host: Host) : View(context) {
 
     /** The finger moves the island directly: pages follow it sideways, the card stretches into lyrics and back. */
     private fun drag(g: IslandGeometry, dx: Float, dy: Float, event: MotionEvent) {
+        if (axis == Axis.LYRICS) {
+            // The finger reads the lyrics. Pulled past the first line it takes the controls row out instead (and
+            // pushing back up tucks the row away before the lines move again); past the last line it gives, like a list.
+            val t = dragBase - dy
+            val maxS = maxListScroll()
+            val room = max(1f, peekHeight())
+            when {
+                t < 0f -> {
+                    peekP.snap((-t / room).coerceIn(0f, 1f))
+                    setListScroll(0f)
+                }
+                t > maxS -> {
+                    peekP.snap(0f)
+                    setListScroll(maxS + (t - maxS) * RUBBER)
+                }
+                else -> {
+                    peekP.snap(0f)
+                    setListScroll(t)
+                }
+            }
+            invalidate()
+            return
+        }
         if (axis == Axis.SEARCH) {
             val travel = max(1f, g.searchHeight - g.cardHeight)
             var f = dragBase + dy / travel
@@ -2343,6 +2659,20 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             val keep = if (searchOpen) f > 0.7f && speed > -2f else f > 0.3f || speed > 2f
             if (keep) openSearch() else closeSearch()
             searchP.kick(speed.coerceIn(-MAX_FLING, MAX_FLING))
+        } else if (axis == Axis.LYRICS) {
+            if (peekP.value > 0.001f) {
+                // Controls row half out: a pull or a flick down keeps it, a push back up tucks it away.
+                peekP.target = if (peekP.value > 0.45f || vy > g.dp(900f)) 1f else 0f
+            } else {
+                val maxS = maxListScroll()
+                val s = listScroll()
+                if (s < 0f || s > maxS) {
+                    listScroller.springBack(0, s.roundToInt(), 0, 0, 0, maxS.roundToInt())
+                } else {
+                    listScroller.fling(0, s.roundToInt(), 0, (-vy).roundToInt(), 0, 0, 0, maxS.roundToInt())
+                }
+            }
+            scheduleLyricResume()
         } else if (axis == Axis.HORIZONTAL) {
             val last = if (songsOf != null) Page.SONGS.at else Page.PLAYLISTS.at
             val speed = -vx / g.cardWidth
@@ -2383,6 +2713,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
             Target.ROW -> if (searchOpen) tapResult(y) else tapRow(y)
             Target.LYRICS -> tapLyric(y)
             Target.BEST -> pickResult(0)
+            Target.TAKE -> takeOver()
             Target.FIELD -> host.showSearchInput(RectF(fieldBox).apply { offset(width / 2f, 0f) })
             else -> act(target)
         }
@@ -2480,6 +2811,7 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         val listY = y - lyricsTop + lyricScroll.value
         for (i in lyricLayouts.indices) {
             if (listY >= lyricTops[i] && listY <= lyricTops[i] + lyricLayouts[i].height) {
+                lyricManual = false
                 p.seekTo(lyricLines[i].atMs)
                 performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                 invalidate()
@@ -2515,12 +2847,23 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         }
         if (lyricsFull) {
             if (x in (barLeft - slop)..(barRight + slop) && abs(y - fullProgressY) <= g.dp(16f)) return Target.PROGRESS
+            if (hasSong && peekP.value > 0.5f) {
+                val rowY = peekRowY(g)
+                fun inRow(cx: Float, r: Float) = (x - cx) * (x - cx) + (y - rowY) * (y - rowY) <= (r + slop) * (r + slop)
+                if (inRow(0f, playRadius)) return Target.PLAY
+                if (inRow(-sideButtonX, sideRadius)) return Target.PREVIOUS
+                if (inRow(sideButtonX, sideRadius)) return Target.NEXT
+            }
             if (y in lyricsTop..lyricsBottom) return Target.LYRICS
             if (openBox.contains(x, y)) return Target.OPEN
             return Target.CARD
         }
         fun inCircle(cx: Float, r: Float) = (x - cx) * (x - cx) + (y - controlsY) * (y - controlsY) <= (r + slop) * (r + slop)
-        if (hasSong) {
+        if (shownOutside != null) {
+            // "Play here" takes a tap only while it offers; once tapped it just says what is happening.
+            if (take == Take.NONE && x in (takeButton.left - slop)..(takeButton.right + slop) &&
+                abs(y - takeButton.centerY()) <= takeButton.height() / 2f + slop) return Target.TAKE
+        } else if (hasSong) {
             if (inCircle(0f, playRadius)) return Target.PLAY
             if (inCircle(-sideButtonX, sideRadius)) return Target.PREVIOUS
             if (inCircle(sideButtonX, sideRadius)) return Target.NEXT
@@ -2590,6 +2933,11 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         private const val MIN_GESTURE_S = 0.03f
         /** How much a drag past the end of its travel still moves the island. */
         private const val RUBBER = 0.3f
+        /** The controls row a pull down past the first line reveals in the full lyrics: its height. */
+        private const val PEEK_DP = 72f
+        private const val PEEK_ROW_DP = 58f
+        /** Hands the full lyrics back to the song this long after the reader lets go (the app's own 3.5 s). */
+        private const val LYRIC_RESUME_MS = 3_500L
         private const val OPEN_LABEL = "Open LuvLyrics"
         private const val ELLIPSIS = "\u2026"
         /** A new song with no cover yet keeps the last colours this long, then fades to neutral. */
@@ -2605,6 +2953,12 @@ class IslandView(context: Context, private val host: Host) : View(context) {
         /** Room a downloaded mark takes before the artist. */
         private const val BADGE_DP = 15f
         private const val PLAY_LABEL = "Play"
+        /** "Continue here" (another app's song): the pill's label and width, how long JavaScript has to answer, and how long its message stays. */
+        private const val TAKE_LABEL = "Continue here"
+        private const val TAKE_WIDTH_DP = 168f
+        private const val TAKE_TIMEOUT_MS = 25_000L
+        private const val TAKE_MESSAGE_MS = 1_500L
+        private const val DOT = "·"
         private const val LIBRARY_LINK = "lyricflow://open/library"
         /** A pull down that starts in this top share of the card opens search; lower down it opens the lyrics. */
         private const val SEARCH_ZONE = 0.4f

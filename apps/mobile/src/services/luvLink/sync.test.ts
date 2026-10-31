@@ -163,6 +163,56 @@ describe('first-party LuvLink playback', () => {
     usePlayerStore.setState({ loadSong: originalLoadSong });
   });
 
+  it('does not echo a slow catalog match back to the room as the listener changing track', async () => {
+    let finishLookup!: (song: never) => void;
+    const resolveToCatalog = jest.requireMock('../ytmusic/resolver').resolveToCatalog as jest.Mock;
+    resolveToCatalog.mockImplementation(() => new Promise(resolve => { finishLookup = resolve; }));
+    usePlayerStore.setState({
+      currentSong: { id: 'saavn:track-old', originId: 'saavn:track-old', title: 'Old', artist: 'Artist', duration: 180 } as never,
+      currentSongId: 'saavn:track-old', loadedAudioId: 'saavn:track-old', currentPlaylistId: 'solo',
+    });
+    setRoom(room('listen'), anchor({ sequence: 10, trackEpoch: 5, song: { ...song, ref: 'saavn:track-2' as typeof song.ref, title: 'Track 2' } }));
+    stop = startOwnedLuvLinkSync();
+    await Promise.resolve();
+
+    // The lookup outlasts the guard set when the apply began.
+    const realNow = Date.now;
+    const later = realNow() + 6_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => later);
+    try {
+      finishLookup({ id: 'saavn:track-2', originId: 'saavn:track-2', title: 'Track 2', artist: 'Artist', duration: 180 } as never);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(usePlayerStore.getState().currentSongId).toBe('saavn:track-2');
+      expect(commitOwnedLuvLinkPlayback).not.toHaveBeenCalled();
+    } finally { clock.mockRestore(); }
+  });
+
+  it('tries a song it could not find again instead of staying silent until the room changes', async () => {
+    jest.useFakeTimers();
+    try {
+      const resolveToCatalog = jest.requireMock('../ytmusic/resolver').resolveToCatalog as jest.Mock;
+      resolveToCatalog.mockReset();
+      resolveToCatalog.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockImplementation(() => new Promise(() => undefined));
+      usePlayerStore.setState({
+        currentSong: { id: 'saavn:track-old', originId: 'saavn:track-old', title: 'Old', artist: 'Artist', duration: 180 } as never,
+        currentSongId: 'saavn:track-old', loadedAudioId: 'saavn:track-old', currentPlaylistId: 'solo',
+      });
+      setRoom(room('listen'), anchor({ sequence: 11, trackEpoch: 6, song: { ...song, ref: 'saavn:track-3' as typeof song.ref, title: 'Track 3' } }));
+      stop = startOwnedLuvLinkSync();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(resolveToCatalog).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(2_000);
+      expect(resolveToCatalog).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(resolveToCatalog).toHaveBeenCalledTimes(3);
+
+      // A newer room state cancels the pending retry for the old one.
+      stop(); stop = undefined;
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(resolveToCatalog).toHaveBeenCalledTimes(3);
+    } finally { jest.useRealTimers(); }
+  });
+
   it('keeps the room song playing where it is when the room ends', () => {
     const setPlaylistQueue = jest.fn();
     const originalSetQueue = usePlayerStore.getState().setPlaylistQueue;
@@ -213,5 +263,58 @@ describe('first-party LuvLink playback', () => {
 
     expect(commitOwnedLuvLinkPlayback).toHaveBeenCalledTimes(1);
     expect(commitOwnedLuvLinkPlayback).toHaveBeenCalledWith(expect.objectContaining({ intent: 'natural_end', queueEntryId: 'entry-1', song: next.song }));
+  });
+
+  it('tries a lost natural-end advance again instead of leaving the room on the finished song', async () => {
+    jest.useFakeTimers();
+    try {
+      const next: LuvLinkQueueEntry = { entryId: 'entry-retry', roomId: 'room-1', order: 0, song: { ...song, ref: 'saavn:track-2' as typeof song.ref }, addedByUserId: 'guest', addedByName: 'G', createdAtMs: Date.now() };
+      readyPlayer(true);
+      setRoom(room('listen'), anchor({ playing: true, trackEpoch: 50 }));
+      useLuvLinkStore.setState({ ownedQueue: { revision: 2, entries: [next] } });
+      stop = startOwnedLuvLinkSync();
+      const commit = commitOwnedLuvLinkPlayback as jest.Mock;
+      commit.mockClear();
+      commit.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined);
+      const advancing = handleOwnedLuvLinkNext('natural_end');
+      await jest.advanceTimersByTimeAsync(1_500);
+      await expect(advancing).resolves.toBe(true);
+      expect(commit).toHaveBeenCalledTimes(2);
+      expect(commit).toHaveBeenLastCalledWith(expect.objectContaining({ intent: 'natural_end', queueEntryId: 'entry-retry' }));
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('leaves the advance open after every retry fails, so the next end or a skip can still move the room', async () => {
+    jest.useFakeTimers();
+    try {
+      const next: LuvLinkQueueEntry = { entryId: 'entry-down', roomId: 'room-1', order: 0, song: { ...song, ref: 'saavn:track-2' as typeof song.ref }, addedByUserId: 'guest', addedByName: 'G', createdAtMs: Date.now() };
+      setRoom(room('listen'), anchor({ playing: true, trackEpoch: 60 }));
+      useLuvLinkStore.setState({ ownedQueue: { revision: 2, entries: [next] } });
+      stop = startOwnedLuvLinkSync();
+      const commit = commitOwnedLuvLinkPlayback as jest.Mock;
+      commit.mockClear();
+      commit.mockRejectedValue(new Error('offline'));
+      const advancing = handleOwnedLuvLinkNext('natural_end').catch((error: unknown) => error);
+      await jest.advanceTimersByTimeAsync(6_000);
+      expect(await advancing).toBeInstanceOf(Error);
+      expect(commit).toHaveBeenCalledTimes(3);
+      commit.mockReset(); commit.mockResolvedValue(undefined);
+      await handleOwnedLuvLinkNext('natural_end');
+      expect(commit).toHaveBeenCalledTimes(1);
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('advances the queue once when native playback reports the song finished', async () => {
+    const next: LuvLinkQueueEntry = { entryId: 'entry-finished', roomId: 'room-1', order: 0, song: { ...song, ref: 'saavn:track-2' as typeof song.ref }, addedByUserId: 'guest', addedByName: 'G', createdAtMs: Date.now() };
+    readyPlayer(true);
+    setRoom(room('listen'), anchor({ playing: true, trackEpoch: 42 }));
+    useLuvLinkStore.setState({ ownedQueue: { revision: 2, entries: [next] } });
+    stop = startOwnedLuvLinkSync();
+    const native = jest.requireMock('../NativeAudioPlayer') as { emitStatus: (event: { finished: boolean }) => void };
+    native.emitStatus({ finished: true });
+    native.emitStatus({ finished: true });
+    await Promise.resolve();
+    expect(commitOwnedLuvLinkPlayback).toHaveBeenCalledTimes(1);
+    expect(commitOwnedLuvLinkPlayback).toHaveBeenCalledWith(expect.objectContaining({ intent: 'natural_end', queueEntryId: 'entry-finished' }));
   });
 });

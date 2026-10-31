@@ -25,6 +25,10 @@ const limiter = new RateLimiter(components.rateLimiter, {
 });
 const presence = new Presence(components.presence);
 const PRESENCE_HEARTBEAT_MS = 60_000;
+// A pending speaker handoff re-checks the old output's presence every 30 s for ten minutes, then every 5 minutes.
+const HANDOFF_CHECK_MS = 30_000;
+const HANDOFF_FAST_CHECKS = 20;
+const HANDOFF_SLOW_CHECK_MS = 5 * 60_000;
 
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -453,7 +457,8 @@ export const publishPlayback = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await limit(ctx, 'playbackWrite', userId);
-    const { room, member } = await requireMember(ctx, args.roomId, userId);
+    const { room: loaded, member } = await requireMember(ctx, args.roomId, userId);
+    const room = await settleHandoff(ctx, loaded);
     const prior = await findReceipt(ctx, room._id, userId, args.commandId, 'playback');
     const now = Date.now();
     const old = await ctx.db.query('luvLinkPlayback').withIndex('by_roomId', q => q.eq('roomId', room._id)).unique();
@@ -467,8 +472,13 @@ export const publishPlayback = mutation({
       if (args.positionSec > args.song.duration + 1) fail('invalid_playback', 'Playback position is outside the song.');
     } else if (args.positionSec !== 0 || args.playing) fail('invalid_playback', 'Playback needs a song.');
     if (args.queueEntryId !== null) {
-      const entry = await ctx.db.query('luvLinkQueue').withIndex('by_roomId_and_entryId', q => q.eq('roomId', room._id).eq('entryId', args.queueEntryId!)).unique();
-      if (!entry || !args.song || entry.song.ref !== args.song.ref) fail('queue_item_missing', 'The requested song is no longer queued.');
+      // The current anchor keeps its queue identity after the entry is consumed. Controls for
+      // that same track must not require the deleted queue row to still exist.
+      const currentEntry = old && args.trackEpoch === old.trackEpoch && args.queueEntryId === old.queueEntryId && args.song?.ref === old.song?.ref;
+      if (!currentEntry) {
+        const entry = await ctx.db.query('luvLinkQueue').withIndex('by_roomId_and_entryId', q => q.eq('roomId', room._id).eq('entryId', args.queueEntryId!)).unique();
+        if (!entry || !args.song || entry.song.ref !== args.song.ref) fail('queue_item_missing', 'The requested song is no longer queued.');
+      }
     }
     if (args.trackEpoch < (old?.trackEpoch ?? 0) || args.trackEpoch > (old?.trackEpoch ?? 0) + 1) fail('stale_track', 'The track changed. Refresh and try again.');
     if (args.intent === 'natural_end' && (userId !== room.leaderUserId || !old?.playing || !old.song || args.queueEntryId === null || args.trackEpoch !== old.trackEpoch + 1)) fail('not_leader', 'Only the elected output can commit one natural queue advance.');
@@ -578,7 +588,8 @@ export const getPresence = query({
     const userId = await requireUser(ctx);
     await requireMember(ctx, args.roomId, userId);
     const sessions = await presence.listRoom(ctx, `luvlink:${args.roomId}`, true, MAX_MEMBERS * 4);
-    return [...new Set(sessions.map(({ userId: sessionUserId }) => sessionUserId.slice(0, sessionUserId.lastIndexOf(':'))))].slice(0, MAX_MEMBERS);
+    // `userId` here is the account ID itself (sessions are `<user>:<session>`); slicing it at ':' cut real IDs short.
+    return [...new Set(sessions.map(session => session.userId))].slice(0, MAX_MEMBERS);
   }
 });
 
@@ -650,7 +661,8 @@ export const setSpeaker = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await limit(ctx, 'playbackWrite', userId);
-    const { room, member } = await requireMember(ctx, args.roomId, userId);
+    const { room: loaded, member } = await requireMember(ctx, args.roomId, userId);
+    const room = await settleHandoff(ctx, loaded);
     if (member.role !== 'host') fail('not_allowed', 'Only the LuvLink host can move the speaker.');
     if (room.mode !== 'speaker') fail('wrong_mode', 'Switch LuvLink to speaker mode first.');
     const prior = await findReceipt(ctx, room._id, userId, args.commandId, 'speaker');
@@ -661,8 +673,11 @@ export const setSpeaker = mutation({
     const now = Date.now();
     const leaderEpoch = room.leaderEpoch + 1;
     const oldLeaderMember = await memberFor(ctx, room._id, room.leaderUserId);
-    if (room.leaderUserId !== target.userId) {
-      await ctx.db.patch(room._id, { handoffFromUserId: room.leaderUserId });
+    // An old output with no live session can't be playing in step with the room or confirm a pause; waiting
+    // for it would block the room until it returns. When it does return it sees it is no longer the output.
+    if (room.leaderUserId !== target.userId && oldLeaderMember && await isOnline(ctx, room._id, room.leaderUserId)) {
+      await ctx.db.patch(room._id, { handoffFromUserId: room.leaderUserId, handoffEpoch: leaderEpoch, handoffDeadlineAtMs: now + HANDOFF_CHECK_MS });
+      await ctx.scheduler.runAfter(HANDOFF_CHECK_MS, internal.luvLink.checkSpeakerHandoff, { roomId: room._id, leaderEpoch, checks: 1 });
     }
     if (oldLeaderMember) await ctx.db.patch(oldLeaderMember._id, { mode: 'listen' });
     await ctx.db.patch(target._id, { mode: 'speaker' });
@@ -683,10 +698,53 @@ export const acknowledgeSpeakerHandoff = mutation({
     const userId = await requireUser(ctx);
     const { room } = await requireMember(ctx, args.roomId, userId);
     if (room.mode !== 'speaker' || room.leaderEpoch !== args.expectedLeaderEpoch || room.handoffFromUserId !== userId) fail('stale_handoff', 'This LuvLink speaker handoff is no longer current.');
-    await ctx.db.patch(room._id, { handoffFromUserId: undefined, revision: room.revision + 1 });
+    if (room.handoffEpoch !== undefined && room.handoffEpoch !== args.expectedLeaderEpoch) fail('stale_handoff', 'This LuvLink speaker handoff is no longer current.');
+    await clearHandoff(ctx, room);
     return null;
   }
 });
+
+/**
+ * Durable re-check of a pending handoff. While the old output stays online it still owes its pause
+ * confirmation; once presence says it has gone, nothing can be playing there in step with the room, so the
+ * new output is released. Checks back off after the first few minutes and stop when the handoff resolves.
+ */
+export const checkSpeakerHandoff = internalMutation({
+  args: { roomId, leaderEpoch: v.number(), checks: v.number() }, returns: noResult,
+  handler: async (ctx, args) => {
+    const room = await ctx.db.get(args.roomId);
+    if (!room || room.status !== 'active' || room.expiresAtMs <= Date.now()) return null;
+    if (!room.handoffFromUserId || room.leaderEpoch !== args.leaderEpoch || (room.handoffEpoch ?? room.leaderEpoch) !== args.leaderEpoch) return null;
+    if (!(await isOnline(ctx, room._id, room.handoffFromUserId))) {
+      await clearHandoff(ctx, room);
+      return null;
+    }
+    const delay = args.checks < HANDOFF_FAST_CHECKS ? HANDOFF_CHECK_MS : HANDOFF_SLOW_CHECK_MS;
+    await ctx.db.patch(room._id, { handoffDeadlineAtMs: Date.now() + delay });
+    await ctx.scheduler.runAfter(delay, internal.luvLink.checkSpeakerHandoff, { roomId: room._id, leaderEpoch: args.leaderEpoch, checks: args.checks + 1 });
+    return null;
+  }
+});
+
+/**
+ * Before refusing anything for a pending handoff, release it if the old output has gone offline. This covers rooms
+ * whose handoff began before the durable re-check existed, and saves waiting for the next scheduled check.
+ */
+async function settleHandoff(ctx: MutationCtx, room: Doc<'luvLinkRooms'>): Promise<Doc<'luvLinkRooms'>> {
+  if (!room.handoffFromUserId || await isOnline(ctx, room._id, room.handoffFromUserId)) return room;
+  await clearHandoff(ctx, room);
+  return (await ctx.db.get(room._id)) ?? room;
+}
+
+async function clearHandoff(ctx: MutationCtx, room: Doc<'luvLinkRooms'>): Promise<void> {
+  await ctx.db.patch(room._id, { handoffFromUserId: undefined, handoffEpoch: undefined, handoffDeadlineAtMs: undefined, revision: room.revision + 1 });
+}
+
+async function isOnline(ctx: QueryCtx | MutationCtx, room: Id<'luvLinkRooms'>, userId: string): Promise<boolean> {
+  const sessions = await presence.listRoom(ctx, `luvlink:${room}`, true, MAX_MEMBERS * 4);
+  // Presence keys users by account ID; the `<user>:<session>` string is the session, not the user.
+  return sessions.some(session => session.userId === userId);
+}
 
 function projectCurrent(anchor: Doc<'luvLinkPlayback'>, now: number): number {
   const projected = anchor.positionSec + (anchor.playing ? Math.max(0, now - anchor.effectiveAtMs) / 1000 * anchor.playbackRate : 0);
@@ -697,8 +755,10 @@ export const setRoomMode = mutation({
   args: { roomId, mode: roomMode }, returns: noResult,
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    const { room, member } = await requireMember(ctx, args.roomId, userId);
+    const { room: loaded, member } = await requireMember(ctx, args.roomId, userId);
+    const room = await settleHandoff(ctx, loaded);
     if (member.role !== 'host') fail('not_allowed', 'Only the LuvLink host can change room mode.');
+    if (room.handoffFromUserId && args.mode !== room.mode) fail('handoff_pending', 'Wait for the previous speaker to pause before changing LuvLink mode.');
     const rows = await ctx.db.query('luvLinkMembers').withIndex('by_roomId_and_joinedAtMs', q => q.eq('roomId', room._id)).take(MAX_MEMBERS);
     for (const row of rows) await ctx.db.patch(row._id, { mode: args.mode === 'speaker' && row.userId === room.leaderUserId ? 'speaker' : 'listen' });
     await ctx.db.patch(room._id, { mode: args.mode, revision: room.revision + 1 });
@@ -763,9 +823,11 @@ export const leaveRoom = mutation({
       await ctx.db.delete(member._id);
       await ctx.db.patch(room._id, { memberCount: Math.max(1, room.memberCount - 1), revision: room.revision + 1 });
       await invalidatePicks(ctx, room);
+      // A member who still owed a pause confirmation leaves with their output; don't block the new one on them.
+      if (room.handoffFromUserId === userId && room.leaderUserId !== userId) await ctx.db.patch(room._id, { handoffFromUserId: undefined, handoffEpoch: undefined, handoffDeadlineAtMs: undefined });
       if (room.leaderUserId === userId) {
         const leaderEpoch = room.leaderEpoch + 1;
-        await ctx.db.patch(room._id, { leaderUserId: room.hostUserId, leaderEpoch, handoffFromUserId: undefined });
+        await ctx.db.patch(room._id, { leaderUserId: room.hostUserId, leaderEpoch, handoffFromUserId: undefined, handoffEpoch: undefined, handoffDeadlineAtMs: undefined });
         const anchor = await ctx.db.query('luvLinkPlayback').withIndex('by_roomId', q => q.eq('roomId', room._id)).unique();
         if (anchor) await ctx.db.patch(anchor._id, { leaderUserId: room.hostUserId, leaderEpoch, sequence: anchor.sequence + 1, intent: 'control', intentByUserId: userId, outputAppliedSequence: anchor.sequence + 1, barrierPending: false, playing: false, positionSec: projectCurrent(anchor, Date.now()), serverAtMs: Date.now(), effectiveAtMs: Date.now() });
       }

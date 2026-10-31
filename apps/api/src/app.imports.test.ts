@@ -146,6 +146,17 @@ test('Spotify routes follow IMPORT_ENABLED and the daily hook needs the server s
   assert.equal(daily.status, 401);
 });
 
+test('the daily hook accepts a named run, rejects a malformed one, and tolerates an older scheduler that sends none', async () => {
+  const services = createServices({ jwtSecret: 'test-secret', fetchImpl: () => Promise.resolve(jsonResponse({})), saavnApiUrl: 'https://saavn.test/api', gaanaApiUrl: 'https://gaana.test/api', accountVerifier: fakeAccountVerifier, userStore: new MemoryUserStore() });
+  const server = createApp({ version: 'test', jwtSecret: 'test-secret', services, importEnabled: true, rateLimit: false, convexServerSecret: 'server-secret' });
+  const call = (body: object) => request(server).post('/api/internal/spotify/daily').set('x-convex-server-secret', 'server-secret').send(body);
+  assert.equal((await call({ userId: 'user_import', runStartedAt: 'today' })).status, 400);
+  assert.equal((await call({ userId: 'user_import', runStartedAt: -5 })).status, 400);
+  // Nothing is connected, so a valid request reaches the step and stops with "reconnect" rather than a validation error.
+  assert.equal((await call({ userId: 'user_import', runStartedAt: 1_767_225_600_000 })).status, 401);
+  assert.equal((await call({ userId: 'user_import' })).status, 401);
+});
+
 test('account responses are never cacheable', async () => {
   const { server } = build();
   const reply = await request(server).get('/api/spotify/status').set('Authorization', ACCOUNT);

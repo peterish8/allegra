@@ -22,6 +22,8 @@ import { useIsFocused } from '@react-navigation/native';
 import Animated, { SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import AppleBackdrop, { heroHeight, usePlayerFrame } from './player/AppleBackdrop';
 import GlowBackground from './player/GlowBackground';
+import NativeFlowGlow, { nativeFlowGlowAvailable } from './player/NativeFlowGlow';
+import NativeCanvasWash, { CANVAS_VIDEO_NATIVE_ID, nativeCanvasWashAvailable } from './player/NativeCanvasWash';
 import YouTubeBackdrop from './player/YouTubeBackdrop';
 import EdgeGlow from './allegra/EdgeGlow';
 import { COVER_GLOW_BASE, PLAYER_LIGHTS } from './allegra/edgeGlowMath';
@@ -89,7 +91,9 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
     }, GLOW_PREMOUNT_MS);
     return () => { clearTimeout(t); task?.cancel(); };
   }, [glowOn, glowWanted, style, surfaceActive]);
-  const glowColors = useGlowColors(style === 'blend' && glowWanted ? coverImageUri : null);
+  // On Android the glow is the island's own light, drawn natively; the Skia glow (and its palette read) is the fallback.
+  const nativeGlow = nativeFlowGlowAvailable();
+  const glowColors = useGlowColors(style === 'blend' && glowWanted && !nativeGlow ? coverImageUri : null);
 
   // Apple <-> glow cross-fade.
   const glowOpacity = useSharedValue(glowOn ? 1 : 0);
@@ -113,6 +117,13 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   }, [canvasAllowed, onCanvasVisibleChange]);
 
   const heroH = heroHeight(width, height);
+  const washNative = nativeCanvasWashAvailable();
+  // The wash eases in with the canvas and out with it.
+  const washOpacity = useSharedValue(0);
+  useEffect(() => {
+    washOpacity.value = withTiming(canvasShown ? 1 : 0, { duration: CROSSFADE_MS });
+  }, [canvasShown, washOpacity]);
+  const washStyle = useAnimatedStyle(() => ({ opacity: washOpacity.value }));
   const heroFollow = useAnimatedStyle(() => {
     const x = shift ? shift.value : 0;
     return { opacity: 1 - 0.6 * Math.min(1, Math.abs(x) / Math.max(1, width)), transform: [{ translateX: x }] as const };
@@ -165,8 +176,17 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
             playing={playing && canvasAllowed && surfaceActive}
             onVisibleChange={onVisibleChange}
             scrimStrength={0}
+            nativeID={washNative ? CANVAS_VIDEO_NATIVE_ID : undefined}
             overlay={<AppleBackdrop uri={coverImageUri} palette={palette} showHero={heroOn} frame={frame} veil />}
           />
+        </Animated.View>
+      ) : null}
+
+      {washNative && (canvas || canvasShown) ? (
+        // The room under the controls takes the video's own colours while the canvas is on show (read natively
+        // off its video surface); without it the room keeps the still cover's blur.
+        <Animated.View pointerEvents="none" style={[styles.wash, { top: heroH * 0.7 }, washStyle]}>
+          <NativeCanvasWash active={canvasAllowed && playing && surfaceActive} style={StyleSheet.absoluteFill} />
         </Animated.View>
       ) : null}
 
@@ -178,7 +198,11 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
 
       {style === 'blend' && glowWanted ? (
         <Animated.View style={[StyleSheet.absoluteFill, glowStyle]}>
-          <GlowBackground colors={glowColors} variant="player" active={glowOn && surfaceActive} />
+          {nativeGlow ? (
+            <NativeFlowGlow coverUri={coverImageUri} active={glowOn && surfaceActive} playing={playing} />
+          ) : (
+            <GlowBackground colors={glowColors} variant="player" active={glowOn && surfaceActive} />
+          )}
         </Animated.View>
       ) : null}
     </View>
@@ -187,6 +211,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
 
 const styles = StyleSheet.create({
   hero: { position: 'absolute', top: 0, left: 0, right: 0 },
+  wash: { position: 'absolute', left: 0, right: 0, bottom: 0 },
 });
 
 export default React.memo(NowPlayingBackground);

@@ -23,6 +23,8 @@ The user reports lag across the app, not one screen. This is a source-backed inv
 
 Paths in this document are relative to `apps/mobile/` unless otherwise stated. Source line numbers describe the research snapshot; check symbols again before edits.
 
+**Rendering migration update (2026-10-22):** Android's `AppleBackdrop` now selects `NativeAppleBackdropView`, which uses the existing Media3 `DataSourceBitmapLoader` with a 2048 px decode cap and a cached 48 px room bitmap. This is a renderer port with bounded image/blur targets; no device visual check or CPU, frame-time, or memory comparison has been recorded. UI-4's performance acceptance remains open, and no speedup is claimed.
+
 ## Slice UI-0: record a reproducible baseline
 
 Ownership: benchmark configuration and scripts only. Suggested new paths: `android/benchmark/`, `scripts/perf/`, and `.planning/performance-kotlin/evidence/`. Add a profileable benchmark variant without changing the release launch/recovery gates. Keep secrets and listener data out of logs.

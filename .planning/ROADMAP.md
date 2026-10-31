@@ -1,6 +1,9 @@
 # Roadmap — state, blockers, next
 
-Updated 2026-09-24.
+Historical baseline: 2026-09-24, with the Android native UI row updated 2026-10-22. The checklist
+below predates substantial LuvLink, Spotify/Blend, and Android performance work; do not treat its
+statuses as the current project roadmap. See the [integration status and recheck list](./INTEGRATION-STATUS.md)
+for this checkout's evidence boundary.
 
 ## Where things stand
 
@@ -13,6 +16,7 @@ Updated 2026-09-24.
 | Free translation + recommendations | **Done in code.** MyMemory with optional self-hosted LibreTranslate fallback; catalog + listener taste, no LLM. |
 | Google sign-in via Convex Auth (code) | **Done and tested locally.** Never run against a real Google client. |
 | Render / App Runner removal | **Done.** No container deploy path remains. |
+| Allegra Android native UI | **In progress.** Now Playing's backdrop and multiple controls/lyrics surfaces have Android Kotlin renderers; queue and backdrop device checks are pending. Stream, Library, Luvs and More remain to migrate. No performance gain is claimed without measurements. |
 
 ## Blocked on someone with credentials
 
@@ -34,6 +38,10 @@ still has it afterwards — that is the path most likely to be wrong in a way te
 3. **Server-rendered content.** The shell is client-only (`ssr: false`), so `/artist/x` has no HTML for
    a crawler and nothing paints until JS loads. Rendering the static half of a view on the server is
    the single biggest first-paint and SEO win available.
+
+## Active mobile migration
+
+Run `/goal` in Claude Code to continue from `.planning/performance-kotlin/HANDOFF-ANDROID-NATIVE-UI.md` on `perf/mobile-player-responsiveness`. Check Slice 7's Up next gestures first when an Android device is available, including short horizontal and vertical drags at the 1 dp handle threshold. Then continue one Now Playing and content-screen slice at a time, updating the handoff and keeping iOS / missing-module fallbacks.
 
 ## Deliberately not doing
 

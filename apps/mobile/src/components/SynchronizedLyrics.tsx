@@ -37,7 +37,6 @@
  */
 import React, { useEffect, useRef, useCallback, useMemo, useState, forwardRef, useImperativeHandle } from 'react';
 import { View, Dimensions, Text, Pressable, StyleSheet, LayoutChangeEvent, TextStyle, ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -62,8 +61,8 @@ import { featherAlphas, featherAt, glideSettled, glideStep, lineRestOpacity, LIN
 import { isLowEndDevice } from '../utils/performanceTier';
 import { anchorFooter, anchorScrollY, LineBox, lineOffsets } from '../playback/lyricLayout';
 import InstrumentalWaveform, { isInstrumentalLyric, useIsActiveLine } from './InstrumentalWaveform';
-import { Frosted } from './allegra/Frosted';
-import { Motion, Signal } from '../constants/allegraTheme';
+import { LyricsResumePill } from './LyricsResumePill';
+import { Motion } from '../constants/allegraTheme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -939,7 +938,9 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
       </Animated.ScrollView>
 
       {plain && lyrics.length > 0 ? (
-        <Pressable style={styles.resumePill} accessibilityRole="button"
+        <LyricsResumePill
+          icon={plainPaused || readingPlain || !autoScrollPlain ? 'play' : 'pause'}
+          label="Auto-scroll"
           accessibilityLabel={plainPaused || readingPlain || !autoScrollPlain ? 'Resume lyrics auto-scroll' : 'Pause lyrics auto-scroll'}
           onPress={() => {
             if (plainPaused || readingPlain || !autoScrollPlain) {
@@ -947,47 +948,22 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
               setPlainPaused(false);
               resumeFollowing();
             } else setPlainPaused(true);
-          }}>
-          <Frosted radius={18} intensity={50} tint={0.35} />
-          <Ionicons name={plainPaused || readingPlain || !autoScrollPlain ? 'play' : 'pause'} size={14} color={Signal.wave} />
-          <Text style={styles.resumePillText}>Auto-scroll</Text>
-        </Pressable>
+          }}
+        />
       ) : pillDirection !== 0 && (
-        <Pressable
-          style={styles.resumePill}
+        <LyricsResumePill
+          icon={pillDirection > 0 ? 'arrow-down' : 'arrow-up'}
+          label="Now playing"
+          accessibilityLabel="Back to the playing line"
           onPress={resumeFollowing}
           hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Back to the playing line"
-        >
-          <Frosted radius={18} intensity={50} tint={0.35} />
-          <Ionicons name={pillDirection > 0 ? 'arrow-down' : 'arrow-up'} size={14} color={Signal.wave} />
-          <Text style={styles.resumePillText}>Now playing</Text>
-        </Pressable>
+        />
       )}
     </View>
   );
 });
 
 const styles = StyleSheet.create({
-  // Floating over the lyrics, clear of the transport row below.
-  resumePill: {
-    position: 'absolute',
-    alignSelf: 'center',
-    bottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  resumePillText: {
-    color: Signal.ink,
-    fontSize: 13,
-    fontWeight: '600',
-  },
   container: {
     flex: 1,
     width: '100%',

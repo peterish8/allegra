@@ -73,7 +73,11 @@ interface Loaded {
 
 const isSaavn = (snapshot: SongSnapshot): boolean => parseSongRef(snapshot.ref)?.source === 'saavn';
 
-/** Resolves `fallback` when `work` has not settled within `ms`; a rejection also gives the fallback. */
+/**
+ * Resolves `fallback` when `work` has not settled within `ms`; a rejection also gives the fallback.
+ * This stops waiting, it does not cancel: an outstanding provider call runs on until its own timeout and its
+ * answer is dropped. With no time left the work is never started, which is what keeps a late build cheap.
+ */
 async function within<T>(ms: number, work: () => Promise<T>, fallback: T): Promise<T> {
   if (ms <= 0) return fallback;
   let timer: ReturnType<typeof setTimeout> | undefined;

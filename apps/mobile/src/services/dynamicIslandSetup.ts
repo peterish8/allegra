@@ -3,7 +3,8 @@
  * (android/.../modules/DynamicIslandModule.kt). Pure, so it is tested without a phone.
  */
 
-import { displayWords, type LyricWord } from '@shared/wordSync';
+import type { LyricWord } from '@shared/wordSync';
+import { lyricTimingRows } from '../playback/lyricTiming';
 import { isInstrumentalLine } from '@shared/lyricsText';
 
 /** A music break, however the source writes it, reaches the island as the one marker it draws as bars. */
@@ -124,32 +125,14 @@ export interface IslandLyricsPayload {
   texts: string[];
 }
 
-/** The same word/syllable shaping used by SynchronizedLyrics. Line-only sources use its estimates. */
+/** The same word/syllable shaping used by SynchronizedLyrics (`playback/lyricTiming`). Line-only sources use its estimates. */
 export function islandLyricsTiming(
   lines: readonly { readonly timestamp: number; readonly text: string; readonly words?: readonly LyricWord[] }[],
   delaySeconds: number,
   highlight: 'letters' | 'lines',
 ): string {
-  const delay = Number.isFinite(delaySeconds) ? delaySeconds : 0;
-  return JSON.stringify({ highlight, lines: lines.filter(line => Number.isFinite(line.timestamp) && line.text.trim()).map((line, index, timed) => {
-    const text = islandText(line.text);
-    const display = displayWords({ ...line, text }, timed[index + 1]?.timestamp, true);
-    const segments: { from: number; to: number; startMs: number; endMs: number }[] = [];
-    let cursor = 0;
-    if (display && display.length <= 24) for (const word of display) {
-      const from = text.indexOf(word.text, cursor);
-      if (from < 0) continue;
-      let weight = 0;
-      for (let i = 0; i < word.segments.length; i += 3) {
-        const start = from + word.text.length * weight / word.weight;
-        weight += word.segments[i + 2]!;
-        segments.push({ from: start, to: from + word.text.length * weight / word.weight,
-          startMs: Math.max(0, (word.segments[i]! - delay) * 1000), endMs: Math.max(0, (word.segments[i + 1]! - delay) * 1000) });
-      }
-      cursor = from + word.text.length;
-    }
-    return { atMs: Math.max(0, Math.round((line.timestamp - delay) * 1000)), text, segments };
-  }) });
+  const timed = lines.filter(line => Number.isFinite(line.timestamp) && line.text.trim());
+  return JSON.stringify({ highlight, lines: lyricTimingRows(timed, delaySeconds, islandText) });
 }
 
 /**

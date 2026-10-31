@@ -27,6 +27,15 @@ class NativeSkipView(context: Context, appContext: AppContext) : ExpoView(contex
     private var downY = 0f
     private var tracking = false
 
+    // React Native places the button (its children) itself, with the slop padding the wrapper asks for. ExpoView is a
+    // LinearLayout, which would lay the child out again from its own origin and ignore that padding, leaving the icon
+    // off-centre in its slot (a few dp left on the mini player). Like ReactViewGroup, leave the placement alone.
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.getSize(heightMeasureSpec))
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) = Unit
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         val handled = super.dispatchTouchEvent(ev)
         if (direction == 0) return handled

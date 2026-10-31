@@ -17,6 +17,23 @@ interface ExpoModuleConfig {
 }
 
 describe('ExpoModulesPackageList.kt', () => {
+  it('registers Allegra local native view modules', () => {
+    const list = fs.readFileSync(listPath, 'utf8');
+    expect(list).toContain('com.lyricflow.app.modules.NativeTabBarModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeLyricsModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeFlowGlowModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeCanvasWashModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeAppleBackdropModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeQueueListModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeScrubberModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeSongActionsModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeMoreItemsModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeAlphabetRailModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeHeaderModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativeTrackRowModule::class.java');
+    expect(list).toContain('com.lyricflow.app.modules.NativePlayerFooterModule::class.java');
+  });
+
   it('lists the Android native module of every Expo package the app depends on', () => {
     const list = fs.readFileSync(listPath, 'utf8');
     const deps = Object.keys((JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }).dependencies);

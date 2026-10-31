@@ -402,13 +402,14 @@ export function snapshotForAccount(song: UnifiedSong): { readonly ref: SongRef; 
   };
 }
 
-export async function recordRecentlyPlayed(song: UnifiedSong, playDuration: number): Promise<void> {
+/** `playedAt` is when the listen started: the same key the later listen signal sends, so the two meet on one row. */
+export async function recordRecentlyPlayed(song: UnifiedSong, playDuration: number, playedAt?: string): Promise<void> {
   const playback = snapshotForAccount(song);
   if (!playback) return;
   await request('/api/me/recently-played', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ songRef: playback.ref, song: playback.snapshot, playDuration })
+    body: JSON.stringify({ songRef: playback.ref, song: playback.snapshot, playDuration, ...(playedAt ? { playedAt } : {}) })
   });
 }
 

@@ -57,7 +57,18 @@ export function LibraryPage({ likedSongs, recentlyPlayed, likedIds, loading, err
       {actionError ? <p className="library-sync-notice" role="status">{actionError}</p> : null}
 
       {loading ? (
-        <section className="library-state" aria-live="polite"><div className="library-loading-mark"><span /><span /><span /></div><p>Loading your library</p></section>
+        <section className="library-state library-loading-state" role="status" aria-live="polite" aria-busy="true">
+          <div className="library-loading-emblem" aria-hidden="true">
+            <span className="library-loading-orbit" />
+            <span className="library-loading-disc"><Music2 size={20} strokeWidth={1.7} /></span>
+            <span className="library-loading-equalizer"><span /><span /><span /><span /><span /></span>
+          </div>
+          <div className="library-loading-copy">
+            <span className="library-loading-eyebrow">Library sync</span>
+            <h2>Loading your library</h2>
+            <p>Gathering your saved songs, playlists and recent listens.</p>
+          </div>
+        </section>
       ) : error ? (
         <section className="library-state library-state-error" role="alert"><span className="state-mark" aria-hidden="true">✦</span><h2>Your library did not load</h2><p>{error}</p><TactileButton icon={RefreshCw} variant="primary" onClick={onRetry}>Try again</TactileButton></section>
       ) : (

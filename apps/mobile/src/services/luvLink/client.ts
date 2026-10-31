@@ -6,6 +6,7 @@ import type { SongSnapshot } from '@shared/songRef';
 import { fromAllegraSong } from '@shared/songRef';
 import { allegraConvex } from '../account/AccountProvider';
 import { useLuvLinkStore } from '../../store/luvLinkStore';
+import { usePlayerStore } from '../../store/playerStore';
 
 // Referenced by name like the rest of the app (convexTransport.ts, LibrarySync.ts), not through
 // convex/_generated: that pulls the whole backend and its root-only packages into the app's
@@ -125,8 +126,14 @@ async function startPresence(id: RoomId): Promise<void> {
     } catch { /* Convex retries on reconnect; presence never gates playback. */ }
   };
   await heartbeat();
-  presenceInterval = setInterval(() => { if (AppState.currentState === 'active') void heartbeat(); }, 60_000);
+  presenceInterval = setInterval(() => { if (shouldHeartbeat()) void heartbeat(); }, 60_000);
 }
+
+/**
+ * Visible or playing, as Connect does. A phone playing the room in the background is still a live output: if it
+ * went quiet the server would treat it as gone and hand the speaker on without waiting for it to pause.
+ */
+export const shouldHeartbeat = (): boolean => AppState.currentState === 'active' || usePlayerStore.getState().isPlaying;
 
 async function disconnectPresence(): Promise<void> {
   if (presenceInterval) clearInterval(presenceInterval);
