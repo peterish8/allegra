@@ -698,9 +698,10 @@ and answers `{ more }`; Convex calls again while `more` is true. `runStartedAt` 
 run: each playlist is marked with it once finished or skipped, so continuation calls reach every
 enabled playlist once, least recently checked first. Without it the API uses the start of the
 current UTC day (an older scheduler). Accounts are paged 100 at a time and started two seconds
-apart. `429`/`5xx` leave the playlist unmarked and Convex retries after the clamped `Retry-After`;
-`401` (disconnected or reconnected) stops the account; `400/403/404/409` skip that playlist for the
-day. Every connect and disconnect bumps a connection generation, and each step's playlist, lease,
+apart. A `5xx` on one playlist defers it behind the run's untried playlists and the call answers
+the error only once nothing else is left, so Convex retries it after the clamped `Retry-After`;
+`429` (app-wide) and `401` (disconnected or reconnected) stop the account at once; `400/403/404/409`
+skip that playlist for the day. Every connect and disconnect bumps a connection generation, and each step's playlist, lease,
 checkpoint and token writes carry the generation it started under, so a step in flight across a
 disconnect or reconnect writes nothing afterwards (a library write already sent before the
 disconnect stays; it is the listener's own idempotent import). Disconnect keeps only an empty
