@@ -4,8 +4,7 @@
  */
 
 import React from 'react';
-import { BackHandler } from 'react-native';
-import { View } from 'react-native';
+import { BackHandler, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
