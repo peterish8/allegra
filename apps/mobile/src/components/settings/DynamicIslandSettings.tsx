@@ -85,8 +85,8 @@ export default function DynamicIslandSettings({ onLayout, onNotice }: {
       <Switch label="Hide while LuvLyrics is open" value={status.hideInApp}
         onChange={on => change(() => setIslandHideInApp(on))} />
       {takeOver ? <>
-        <Switch label="Play here from other apps"
-          hint="When Spotify, YouTube Music or YouTube plays, the island offers to play the same song here, from the same moment."
+        <Switch label="Continue here from other apps"
+          hint="When Spotify, YouTube Music or YouTube plays, open the island and tap Continue here: the same song carries on in LuvLyrics, from the same moment."
           value={takeOver.enabled}
           onChange={on => {
             change(() => setTakeOverEnabled(on));

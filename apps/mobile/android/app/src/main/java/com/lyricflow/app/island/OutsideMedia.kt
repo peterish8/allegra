@@ -10,10 +10,10 @@ import android.media.session.PlaybackState
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import androidx.core.app.NotificationManagerCompat
 
 /**
  * Android's way to see which song another app plays is `MediaSessionManager.getActiveSessions`, and it hands that
@@ -111,11 +111,15 @@ object OutsideMedia {
     /** The listener switch changed in Android's settings (the service connected or disconnected), or the screen came on. */
     fun recheck() = runOnMain { update() }
 
-    /** Whether the listener turned this app on in Android's Notification access. */
-    fun isListenerEnabled(context: Context): Boolean {
-        val enabled = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: return false
-        val ours = component(context)
-        return enabled.split(':').any { ComponentName.unflattenFromString(it) == ours }
+    /**
+     * Whether the listener turned this app on in Android's Notification access. Asked through the documented API:
+     * reading the hidden `enabled_notification_listeners` setting directly is not guaranteed on newer Android.
+     */
+    fun isListenerEnabled(context: Context): Boolean = try {
+        NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+    } catch (e: Exception) {
+        Log.w(TAG, "could not read notification access", e)
+        false
     }
 
     fun component(context: Context) = ComponentName(context.applicationContext, OutsideListener::class.java)
