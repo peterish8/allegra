@@ -335,7 +335,7 @@ const StreamScreen: React.FC = () => {
     if (seq !== searchSeq.current) return; // a newer search won
     setResults(found);
     setSearching(false);
-  }, [query]);
+  }, [query, resetHomePagination]);
 
   // Results follow the typing (Spotify's rule); the keyboard's Search answers at once.
   useEffect(() => {
@@ -495,7 +495,8 @@ const StreamScreen: React.FC = () => {
       if (homeMoreRequest.current === requestId) homeMoreRequest.current = null;
     }
   }, []);
-  const onEndReached = useCallback(() => { void loadMoreHome(); }, [loadMoreHome]);
+  // loadMoreHome catches its own failures; the catch only satisfies the floating promise.
+  const onEndReached = useCallback(() => { loadMoreHome().catch(() => undefined); }, [loadMoreHome]);
 
   backHome.current = () => {
     const showingSearch = query.length > 0 || results !== null || mood !== null || ytChip !== null;
@@ -545,7 +546,8 @@ const StreamScreen: React.FC = () => {
     ? { title: 'Your artists', items: followed.map(a => ({ kind: 'artist' as const, browseId: a.browseId, title: a.name, thumbnail: a.thumbnail })) }
     : null), [followed]);
 
-  const mixSection = mood ? (
+  // Memoised so the list's sections below are not rebuilt on every render of the page.
+  const mixSection = useMemo(() => (mood ? (
     moodMix === null ? (
       <View>
         <SectionHeading title={`Your ${mood.toLowerCase()} mix`} subtitle="Finding it in artists you play…" />
@@ -562,7 +564,7 @@ const StreamScreen: React.FC = () => {
         pendingId={pendingSong}
       />
     ) : null
-  ) : null;
+  ) : null), [mood, moodMix, playYT, openItem, pendingSong]);
 
   const homeSections = useMemo(() => {
     const sections: StreamSection[] = [];
