@@ -16,7 +16,7 @@ const LEASE_MS = 90_000;
 const DAILY_BUDGET_MS = 45_000;
 
 export class SpotifyTransferService {
-  private readonly refreshes = new Map<string, Promise<string>>();
+  private readonly refreshes = new Map<string, Promise<AccessGrant>>();
 
   public constructor(
     private readonly provider: SpotifyProvider | undefined,
@@ -71,7 +71,7 @@ export class SpotifyTransferService {
   /** Liked Songs first, then playlists. A connection made before the library scope lists Liked Songs as needing a reconnect. */
   public async sourcePlaylists(userId: string): Promise<SpotifySourcePlaylist[]> {
     const provider = this.requireProvider();
-    const token = await this.accessToken(userId);
+    const { token } = await this.accessToken(userId);
     const [liked, playlists] = await Promise.all([provider.likedSummary(token), provider.playlists(token)]);
     const likedRow: SpotifySourcePlaylist = { id: SPOTIFY_LIKED_ID, name: LIKED_NAME, snapshotId: liked?.snapshotId ?? '', total: liked?.total ?? 0, imageUrl: null, kind: 'liked', ...(liked ? {} : { needsReconnect: true }) };
     return [likedRow, ...playlists];
@@ -85,23 +85,26 @@ export class SpotifyTransferService {
     return { id: SPOTIFY_LIKED_ID, name: LIKED_NAME, snapshotId: liked.snapshotId, total: liked.total, imageUrl: null };
   }
 
-  /** `skipUnchanged`: a finished scan whose Spotify snapshot hasn't moved does no work (daily job). Manual sync always rescans, retrying review rows. */
-  public async sync(userId: string, playlistId: string, skipUnchanged = false): Promise<SpotifySyncStep> {
+  /**
+   * `skipUnchanged` (daily job, with the row it already read): a finished scan whose Spotify snapshot hasn't moved
+   * does no work. Manual sync always rescans, retrying review rows. Every store write carries the connection
+   * generation the step started under, so a step in flight across disconnect or reconnect writes nothing after it.
+   */
+  public async sync(userId: string, playlistId: string, skipUnchanged = false, saved?: StoredSpotifyPlaylist): Promise<SpotifySyncStep> {
     const provider = this.requireProvider();
     const liked = playlistId === SPOTIFY_LIKED_ID;
     if (!liked && !/^[A-Za-z0-9]{10,40}$/.test(playlistId)) throw new SpotifyApiError(400, 'Choose a valid Spotify playlist.');
-    const token = await this.accessToken(userId);
+    const { token, generation } = await this.accessToken(userId);
     const source = await this.source(provider, token, playlistId);
     if (!source) throw new SpotifyApiError(404, 'Spotify could not find that playlist.');
     // Liked Songs become Allegra likes; a playlist becomes its own library. Library ids allow only [A-Za-z0-9_-] (parseLibraryOps).
     const now = Date.now(); const libraryId = liked ? SPOTIFY_LIKED_ID : `spotify-${playlistId}`;
-    if (skipUnchanged) {
-      const saved = (await this.store.playlists(userId)).find(row => row.playlistId === playlistId);
-      if (saved?.lastSyncedAt && saved.offset === 0 && saved.scanSnapshotId === source.snapshotId) return { complete: true, added: 0, skipped: 0, reviewNeeded: 0, libraryId };
+    if (skipUnchanged && saved?.lastSyncedAt && saved.offset === 0 && saved.scanSnapshotId === source.snapshotId) {
+      return { complete: true, added: 0, skipped: 0, reviewNeeded: 0, libraryId };
     }
-    await this.store.savePlaylist({ userId, playlistId, name: source.name, snapshotId: source.snapshotId, total: source.total, libraryId, enabled: true, updatedAt: now });
+    if (!(await this.store.savePlaylist({ userId, playlistId, name: source.name, snapshotId: source.snapshotId, total: source.total, libraryId, enabled: true, updatedAt: now }, generation))) throw connectionChanged();
     const leaseToken = randomBytes(18).toString('base64url');
-    let claimed = await this.store.claim(userId, playlistId, leaseToken, now, LEASE_MS);
+    let claimed = await this.store.claim(userId, playlistId, leaseToken, now, LEASE_MS, generation);
     if (!claimed) throw new SpotifyApiError(409, 'This playlist is already syncing. Try again shortly.');
     try {
       let offset = claimed.offset;
@@ -144,28 +147,41 @@ export class SpotifyTransferService {
       const finalOffset = offset + sourceCount;
       const complete = finalOffset >= page.total;
       const cumulativeAdded = added; const cumulativeSkipped = skipped; const cumulativeReview = reviewNeeded;
-      const ack = await this.store.checkpoint(userId, playlistId, leaseToken, { receipts: receiptRows, offset: finalOffset, snapshotId: source.snapshotId, total: page.total, added: cumulativeAdded, skipped: cumulativeSkipped, reviewNeeded: cumulativeReview, complete });
+      const ack = await this.store.checkpoint(userId, playlistId, leaseToken, { receipts: receiptRows, offset: finalOffset, snapshotId: source.snapshotId, total: page.total, added: cumulativeAdded, skipped: cumulativeSkipped, reviewNeeded: cumulativeReview, complete }, generation);
       if (!ack) throw new SpotifyApiError(409, 'This transfer step expired. Retry it safely.');
       return { complete, added: cumulativeAdded, skipped: cumulativeSkipped, reviewNeeded: cumulativeReview, libraryId };
     } finally { await this.store.release(userId, playlistId, leaseToken); }
   }
 
-  /** Steps opted-in playlists until done or out of budget. `more` -> caller schedules another call. */
-  public async dailyStep(userId: string, now: () => number = Date.now): Promise<{ more: boolean }> {
+  /**
+   * One budgeted call of a daily run. The run is named by its start time; a playlist is marked with it once it
+   * finishes or is skipped, so repeated calls walk every enabled playlist exactly once, least recently checked first.
+   * `more` -> the scheduler calls again. Retryable failures (429, 5xx) and a lost connection (401) escape unmarked so
+   * the scheduler's retry resumes the same playlist from its checkpoint; a playlist that cannot sync today is skipped.
+   */
+  public async dailyStep(userId: string, runStartedAt: number = startOfUtcDay(Date.now()), now: () => number = Date.now): Promise<{ more: boolean }> {
     const started = now();
-    const selected = (await this.store.playlists(userId)).filter(row => row.enabled).slice(0, 5);
-    for (const row of selected) {
-      try {
-        while (!(await this.sync(userId, row.playlistId, true)).complete) {
-          if (now() - started > DAILY_BUDGET_MS) return { more: true };
+    const connection = await this.store.connection(userId);
+    if (!connection?.refreshToken) throw new SpotifyApiError(401, 'Reconnect your Spotify account to continue.');
+    const generation = connection.generation ?? 0;
+    const attempted = new Set<string>();
+    for (;;) {
+      const batch = (await this.store.dailyPlaylists(userId, runStartedAt, DAILY_PAGE)).filter(row => !attempted.has(row.playlistId));
+      if (batch.length === 0) return { more: false };
+      for (const row of batch) {
+        attempted.add(row.playlistId);
+        try {
+          while (!(await this.sync(userId, row.playlistId, true, row)).complete) {
+            if (now() - started > DAILY_BUDGET_MS) return { more: true };
+          }
+        } catch (error) {
+          if (!skipsForToday(error)) throw error;
         }
-      } catch { /* checkpointed steps stay saved; tomorrow's run resumes this playlist */ }
-      if (now() - started > DAILY_BUDGET_MS) return { more: true };
+        if (!(await this.store.markDailyChecked(userId, row.playlistId, runStartedAt, generation))) throw connectionChanged();
+        if (now() - started > DAILY_BUDGET_MS) return { more: true };
+      }
     }
-    return { more: false };
   }
-
-  public async dailyUsers(): Promise<string[]> { return this.store.dailyAccounts(); }
 
   public async setDaily(userId: string, enabled: boolean): Promise<boolean> { return this.store.setDaily(userId, enabled); }
   public async disconnect(userId: string): Promise<void> { await this.store.disconnect(userId); }
@@ -175,23 +191,35 @@ export class SpotifyTransferService {
     return this.provider;
   }
 
-  private async accessToken(userId: string): Promise<string> {
+  private async accessToken(userId: string): Promise<AccessGrant> {
     const pending = this.refreshes.get(userId); if (pending) return pending;
     const work = this.refreshAccessToken(userId); this.refreshes.set(userId, work);
     try { return await work; } finally { this.refreshes.delete(userId); }
   }
 
-  private async refreshAccessToken(userId: string): Promise<string> {
+  private async refreshAccessToken(userId: string): Promise<AccessGrant> {
     const row = await this.store.connection(userId);
     if (!row?.refreshToken) throw new SpotifyApiError(401, 'Reconnect your Spotify account to continue.');
+    const generation = row.generation ?? 0;
     const now = Date.now();
-    if (row.accessToken && (row.accessExpiresAt ?? 0) > now + 60_000) return row.accessToken;
+    if (row.accessToken && (row.accessExpiresAt ?? 0) > now + 60_000) return { token: row.accessToken, generation };
     const refreshed = await this.requireProvider().refresh(row.refreshToken);
     const saved = { ...row, refreshToken: refreshed.refreshToken ?? row.refreshToken, accessToken: refreshed.accessToken, accessExpiresAt: now + Math.max(30, refreshed.expiresIn) * 1000, updatedAt: now };
-    await this.store.saveConnection(saved);
-    return refreshed.accessToken;
+    // A refresh that started before a disconnect or reconnect must not overwrite the newer credential.
+    if (!(await this.store.saveRefreshedConnection(saved, generation))) throw connectionChanged();
+    return { token: refreshed.accessToken, generation };
   }
 }
+
+interface AccessGrant { token: string; generation: number }
+const DAILY_PAGE = 5;
+
+function connectionChanged(): SpotifyApiError { return new SpotifyApiError(401, 'Spotify connection changed. Reconnect to continue.'); }
+/** Failures specific to one playlist (gone, forbidden, already being synced by hand) skip it for today. */
+function skipsForToday(error: unknown): boolean {
+  return error instanceof SpotifyApiError && (error.status === 400 || error.status === 403 || error.status === 404 || error.status === 409);
+}
+function startOfUtcDay(at: number): number { return at - (at % 86_400_000); }
 
 function publicPlaylist(row: StoredSpotifyPlaylist) {
   return { id: row.playlistId, name: row.name, libraryId: row.libraryId, lastSyncedAt: row.lastSyncedAt ?? null, added: row.added, skipped: row.skipped, reviewNeeded: row.reviewNeeded, syncing: (row.leaseUntil ?? 0) > Date.now() };
