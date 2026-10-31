@@ -92,10 +92,11 @@ export const BlendScreen: React.FC = () => {
 
   // Another member's build is in flight (or the last one failed): check back a few times, as the website does.
   const waitingForBuild = !!detail && detail.stale && detail.members.length >= 2;
+  // Restarts on coming back to the screen: the watch stops scheduling while the screen is hidden.
   useEffect(() => {
-    if (!waitingForBuild) return undefined;
+    if (!waitingForBuild || !focused) return undefined;
     return watchStaleBlend(load, () => focusedRef.current);
-  }, [waitingForBuild, load]);
+  }, [waitingForBuild, focused, load]);
 
   const tracks = useMemo(() => (detail ? (filter ? detail.tracks.filter((track) => track.for.includes(filter)) : detail.tracks) : []), [detail, filter]);
   const songs = useMemo(() => tracks.map(blendTrackSong), [tracks]);
