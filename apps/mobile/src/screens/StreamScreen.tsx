@@ -12,13 +12,15 @@
  * runs Allegra's live shader (DynamicAura), tinted by the playing cover.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import {
   ActivityIndicator,
   Image,
   Keyboard,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -76,8 +78,10 @@ import { onPlayReported } from '../services/sync/LibrarySync';
 import { PrefixCache, TYPEAHEAD_DEBOUNCE_MS } from '@shared/typeahead';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { STREAM_TOUR, streamScene } from '../components/allegra/infoTours';
+import { shouldLoadMoreHome } from '../services/stream/homePagination';
 
 const HEADER_HEIGHT = 52;
+const HOME_END_THRESHOLD = 0.6;
 /** Search answers for the session, so typing on (or backspacing) shows something at once. */
 const searchAnswers = new PrefixCache<UnifiedSong>();
 const songText = (song: UnifiedSong): string => `${song.title} ${song.artist}`;
@@ -97,6 +101,10 @@ const SHADER_MOOD: Record<string, AuraMood> = {
   Chill: 'chill', Focus: 'chill', Romance: 'chill', Heartbreak: 'chill',
   Energy: 'energy', Party: 'energy',
 };
+
+type StreamSection =
+  | { id: string; kind: 'content' | 'home-content'; content: React.ReactNode }
+  | { id: string; kind: 'search-result'; song: UnifiedSong; index: number };
 
 const StreamScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -118,6 +126,8 @@ const StreamScreen: React.FC = () => {
   // A newer build was found in the background: mark About, where the update is.
   const updateWaiting = useUpdateStore(s => s.available !== null);
   const [query, setQuery] = useState('');
+  const queryRef = useRef(query);
+  queryRef.current = query;
   const [results, setResults] = useState<UnifiedSong[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -128,7 +138,18 @@ const StreamScreen: React.FC = () => {
 
   // Double-tap the Stream tab: straight to the search field with the keyboard
   // up. The first tap still switches tabs at once — nothing waits on a timer.
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<FlashListRef<StreamSection>>(null);
+  const didUserScroll = useRef(false);
+  const distanceFromEnd = useRef(Number.POSITIVE_INFINITY);
+  const viewportHeight = useRef(0);
+  const homeGeneration = useRef(0);
+  const continuationGeneration = useRef(0);
+  const homeMoreRequest = useRef<string | null>(null);
+  const resetHomePagination = useCallback(() => {
+    didUserScroll.current = false;
+    distanceFromEnd.current = Number.POSITIVE_INFINITY;
+    viewportHeight.current = 0;
+  }, []);
   const searchRef = useRef<TextInput>(null);
   const lastTabPress = useRef(0);
   // A tap on the Stream tab is "take me home": any search or mood view clears and the page goes to the top.
@@ -139,7 +160,8 @@ const StreamScreen: React.FC = () => {
     if (isDoubleTap(lastTabPress.current, now)) {
       lastTabPress.current = 0;
       Haptics.selectionAsync().catch(() => {});
-      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      didUserScroll.current = false;
+      scrollRef.current?.scrollToOffset({ offset: 0, animated: true });
       // After the tab switch has settled, or focus is lost to the transition.
       setTimeout(() => searchRef.current?.focus(), 60);
     } else {
@@ -156,6 +178,8 @@ const StreamScreen: React.FC = () => {
 
   // YouTube Music's own home (Echo's feed): mood chips and shelves.
   const [ytHome, setYtHome] = useState<HomePage | null>(() => preloadedFeedCache()?.home ?? null);
+  const ytHomeRef = useRef(ytHome);
+  ytHomeRef.current = ytHome;
   const [ytChip, setYtChip] = useState<HomeChip | null>(null);
   const [chipShelves, setChipShelves] = useState<Shelf[] | null>(null);
   const [artists, setArtists] = useState<YTPageItem<'artist'>[]>([]);
@@ -175,22 +199,23 @@ const StreamScreen: React.FC = () => {
         setFeed(cached.feed);
         setLoading(false);
       }
-      if (cached.home && !freshHome.current) setYtHome(cached.home);
+      if (cached.home && !freshHome.current) {
+        ytHomeRef.current = cached.home;
+        setYtHome(cached.home);
+      }
     });
     return () => { alive = false; };
   }, []);
 
   const loadYtHome = useCallback(async () => {
+    const generation = ++homeGeneration.current;
+    continuationGeneration.current++;
     const first = await YTMusicClient.home().catch(() => null);
-    if (!first) return;
+    if (!first || generation !== homeGeneration.current) return;
     freshHome.current = true;
+    ytHomeRef.current = first;
     setYtHome(first);
     writeFeedCache(null, first);
-    // Echo fills the feed with one more page straight away.
-    if (first.continuation) {
-      const more = await YTMusicClient.homeMore(first.continuation).catch(() => null);
-      if (more?.shelves.length) setYtHome({ ...first, shelves: [...first.shelves, ...more.shelves], continuation: more.continuation });
-    }
   }, []);
   useEffect(() => { loadYtHome(); }, [loadYtHome]);
 
@@ -288,8 +313,13 @@ const StreamScreen: React.FC = () => {
   const runSearch = useCallback(async (text?: string, moodLabel: string | null = null, live = false) => {
     const q = (text ?? query).trim();
     if (!q) return;
+    resetHomePagination();
+    continuationGeneration.current++;
     // A mood chip searches its own query without writing it into the field.
-    if (text !== undefined && !moodLabel && !live) setQuery(text);
+    if (text !== undefined && !moodLabel && !live) {
+      queryRef.current = text;
+      setQuery(text);
+    }
     setMood(moodLabel);
     if (!live) Keyboard.dismiss();
     const seq = ++searchSeq.current;
@@ -313,9 +343,12 @@ const StreamScreen: React.FC = () => {
     if (!q) return;
     const t = setTimeout(() => { runSearch(q, null, true).catch(() => undefined); }, TYPEAHEAD_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps -- runSearch changes with query
+  }, [query, resetHomePagination]); // eslint-disable-line react-hooks/exhaustive-deps -- runSearch changes with query
 
   const clearSearch = useCallback(() => {
+    resetHomePagination();
+    continuationGeneration.current++;
+    queryRef.current = '';
     searchSeq.current++;
     setArtists([]);
     setYtChip(null);
@@ -326,7 +359,7 @@ const StreamScreen: React.FC = () => {
     setMood(null);
     setResults(null);
     setSearching(false);
-  }, []);
+  }, [resetHomePagination]);
 
   const play = useCallback((list: UnifiedSong[], index: number) => {
     Haptics.selectionAsync().catch(() => {});
@@ -383,6 +416,7 @@ const StreamScreen: React.FC = () => {
     // YouTube Music's chips open their own shelves, as in Echo.
     const chip = ytChips.find(c => c.title === label);
     if (chip?.browse) {
+      continuationGeneration.current++;
       clearSearch();
       setMood(chip.title);
       setYtChip(chip);
@@ -406,11 +440,71 @@ const StreamScreen: React.FC = () => {
   const washArt = currentCover ?? feed?.keepListening[0]?.highResArt ?? feed?.quickPicks[0]?.highResArt;
   const palette = useArtworkPalette(washArt);
   const searchActive = results !== null || searching;
+  const searchActiveRef = useRef(searchActive);
+  searchActiveRef.current = searchActive;
+  const chipActive = ytChip !== null && !searchActive;
+  const chipActiveRef = useRef(chipActive);
+  chipActiveRef.current = chipActive;
+
+  const onScrollBeginDrag = useCallback(() => {
+    didUserScroll.current = !searchActiveRef.current
+      && !chipActiveRef.current
+      && queryRef.current.trim().length === 0;
+  }, []);
+  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    distanceFromEnd.current = Math.max(0, contentSize.height - contentOffset.y - layoutMeasurement.height);
+    viewportHeight.current = layoutMeasurement.height;
+  }, []);
+  const loadMoreHome = useCallback(async () => {
+    const current = ytHomeRef.current;
+    const continuation = current?.continuation;
+    const generation = homeGeneration.current;
+    const pageGeneration = continuationGeneration.current;
+    const requestId = `${generation}:${pageGeneration}:${continuation ?? ''}`;
+    if (!continuation || !shouldLoadMoreHome({
+      hasScrolled: didUserScroll.current,
+      hasContinuation: true,
+      isLoading: homeMoreRequest.current !== null,
+      distanceFromEnd: distanceFromEnd.current,
+      nearEndThreshold: viewportHeight.current * HOME_END_THRESHOLD,
+      searchActive: searchActiveRef.current || queryRef.current.trim().length > 0,
+      chipActive: chipActiveRef.current,
+    })) return;
+
+    homeMoreRequest.current = requestId;
+    try {
+      const more = await YTMusicClient.homeMore(continuation);
+      const latest = ytHomeRef.current;
+      if (
+        !latest
+        || generation !== homeGeneration.current
+        || pageGeneration !== continuationGeneration.current
+        || latest.continuation !== continuation
+        || searchActiveRef.current
+        || queryRef.current.trim().length > 0
+        || chipActiveRef.current
+      ) return;
+
+      const next = { ...latest, shelves: [...latest.shelves, ...more.shelves], continuation: more.continuation };
+      ytHomeRef.current = next;
+      setYtHome(next);
+    } catch {
+      // Keep the current shelves and continuation; another scroll can retry.
+    } finally {
+      if (homeMoreRequest.current === requestId) homeMoreRequest.current = null;
+    }
+  }, []);
+  const onEndReached = useCallback(() => { void loadMoreHome(); }, [loadMoreHome]);
+
   backHome.current = () => {
     const showingSearch = query.length > 0 || results !== null || mood !== null || ytChip !== null;
     if (showingSearch) { clearSearch(); Keyboard.dismiss(); }
     // From a search, or a tap while already on Stream: back to the top of the home page at once.
-    if (showingSearch || isFocused) scrollRef.current?.scrollTo({ y: 0, animated: false });
+    if (showingSearch || isFocused) {
+      didUserScroll.current = false;
+      scrollRef.current?.scrollToOffset({ offset: 0, animated: false });
+    }
   };
 
   // The shelves below are memoised on what they show: a keystroke in search, the scroll, or lyrics landing for the
@@ -450,71 +544,6 @@ const StreamScreen: React.FC = () => {
   const followedShelf: Shelf | null = useMemo(() => (followed.length > 0
     ? { title: 'Your artists', items: followed.map(a => ({ kind: 'artist' as const, browseId: a.browseId, title: a.name, thumbnail: a.thumbnail })) }
     : null), [followed]);
-  const ytShelves = useMemo(() => (ytHome?.shelves ?? []).map((shelf, i) => (
-    <BrowseShelf key={`yt-${shelf.title}-${i}`} shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />
-  )), [ytHome, openItem, playYT, pendingSong]);
-
-  const homeFeed = useMemo(() => {
-    if (!feed) return null;
-    // An even count so the two-column grid never ends on a hole.
-    const listenAgain = feed.keepListening.slice(0, Math.min(6, feed.keepListening.length - (feed.keepListening.length % 2)));
-    const discover = feed.dailyDiscover.map(d => d.recommendation);
-    return (
-      <RiseIn>
-        {accountPicksSection}
-        {listenAgain.length >= 2 ? (
-          <View style={styles.firstSection}>
-            <ShortcutGrid
-              items={listenAgain.map(track)}
-              onPress={i => play(listenAgain, i)}
-              onLongPress={i => queueNext(listenAgain[i])}
-            />
-          </View>
-        ) : null}
-
-        {feed.quickPicks.length > 0 ? (
-          <>
-            <SectionHeading
-              title="Quick picks"
-              subtitle={feed.coldStart ? 'Trending now' : 'Radio from your favourites'}
-              action="Play all"
-              onAction={() => play(feed.quickPicks, 0)}
-            />
-            <QuickPicks
-              items={feed.quickPicks.map(track)}
-              onPress={i => play(feed.quickPicks, i)}
-              onLongPress={i => queueNext(feed.quickPicks[i])}
-              onSave={i => save(feed.quickPicks[i])}
-            />
-          </>
-        ) : null}
-
-        {discover.length > 0 ? (
-          <>
-            <SectionHeading title="Daily discover" subtitle="New songs that follow ones you play" />
-            <CoverShelf items={discover.map(track)} onPress={i => play(discover, i)} onLongPress={i => queueNext(discover[i])} />
-          </>
-        ) : null}
-
-        {feed.similar.map(shelf => (
-          <View key={shelf.artist}>
-            <SectionHeading title={`More like ${shelf.artist}`} action="Play" onAction={() => play(shelf.songs, 0)} />
-            <CoverShelf items={shelf.songs.map(track)} onPress={i => play(shelf.songs, i)} onLongPress={i => queueNext(shelf.songs[i])} />
-          </View>
-        ))}
-
-        {feed.forgottenFavorites.length > 0 ? (
-          <>
-            <SectionHeading title="Forgotten favourites" subtitle="From your downloads" action="See all" onAction={openDownloads} />
-            <CoverShelf items={feed.forgottenFavorites.map(localTrack)} onPress={i => playLocal(feed.forgottenFavorites, i)} />
-          </>
-        ) : null}
-
-        {followedShelf ? <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} /> : null}
-        {ytShelves}
-      </RiseIn>
-    );
-  }, [feed, accountPicksSection, track, localTrack, play, queueNext, save, playLocal, openDownloads, followedShelf, openItem, playYT, ytShelves]);
 
   const mixSection = mood ? (
     moodMix === null ? (
@@ -535,164 +564,256 @@ const StreamScreen: React.FC = () => {
     ) : null
   ) : null;
 
-  let body: React.ReactNode;
-  if (ytChip && !searchActive) {
-    body = (
-      <View>
-        <SectionHeading title={ytChip.title} action="Clear" onAction={clearSearch} />
-        {mixSection}
-        {chipShelves === null ? <ActivityIndicator color={Signal.wave} style={styles.spinner} /> : null}
-        {chipShelves?.length === 0 ? <Text style={styles.empty}>Nothing here right now. Try another mood.</Text> : null}
-        {(chipShelves ?? []).map((shelf, i) => (
-          <BrowseShelf key={`chip-${shelf.title}-${i}`} shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />
-        ))}
-      </View>
-    );
-  } else if (searchActive) {
-    const count = results?.length ?? 0;
-    body = (
-      <View>
+  const homeSections = useMemo(() => {
+    const sections: StreamSection[] = [];
+    const addHome = (id: string, content: React.ReactNode) => {
+      sections.push({ id, kind: 'home-content', content });
+    };
+    const shelves = ytHome?.shelves ?? [];
+    const appendBrowseShelves = (items: Shelf[], prefix: string) => {
+      items.forEach((shelf, index) => addHome(
+        `${prefix}:${index}:${shelf.title}`,
+        <BrowseShelf shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />,
+      ));
+    };
+    const hasPersonalFeed = feed && (feed.quickPicks.length > 0 || feed.keepListening.length > 0);
+
+    if (hasPersonalFeed && feed) {
+      if (accountPicksSection) addHome('account-picks', accountPicksSection);
+      // An even count so the two-column grid never ends on a hole.
+      const listenAgain = feed.keepListening.slice(0, Math.min(6, feed.keepListening.length - (feed.keepListening.length % 2)));
+      const discover = feed.dailyDiscover.map(item => item.recommendation);
+
+      if (listenAgain.length >= 2) addHome('keep-listening', (
+        <View style={styles.firstSection}>
+          <ShortcutGrid
+            items={listenAgain.map(track)}
+            onPress={index => play(listenAgain, index)}
+            onLongPress={index => queueNext(listenAgain[index])}
+          />
+        </View>
+      ));
+
+      if (feed.quickPicks.length > 0) addHome('quick-picks', <>
         <SectionHeading
-          title={mood ?? `“${query.trim()}”`}
-          subtitle={searching ? 'Searching…' : `${count} ${count === 1 ? 'song' : 'songs'}`}
-          action="Clear"
-          onAction={clearSearch}
+          title="Quick picks"
+          subtitle={feed.coldStart ? 'Trending now' : 'Radio from your favourites'}
+          action="Play all"
+          onAction={() => play(feed.quickPicks, 0)}
         />
-        {mixSection}
-        {artists.length > 0 ? (
-          <BrowseShelf shelf={{ title: 'Artists', items: artists }} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />
-        ) : null}
-        {unsavedResults.length >= 2 && !searching ? (
-          <View style={styles.saveAllRow}>
-            <Tactile onPress={saveAll} pressScale={0.96} accessibilityRole="button" accessibilityLabel={`Save all ${unsavedResults.length} songs to your library`} style={styles.saveAll}>
-              <Ionicons name="arrow-down-circle-outline" size={18} color={Signal.ink} />
-              <Text style={styles.saveAllText}>Save all {unsavedResults.length}</Text>
-            </Tactile>
-          </View>
-        ) : null}
-        {searching ? <ActivityIndicator color={Signal.wave} style={styles.spinner} /> : null}
-        {!searching && count === 0 ? (
-          <Text style={styles.empty}>Nothing streamable for that. Try the artist name or a different spelling.</Text>
-        ) : null}
-        <View style={styles.list}>
-          {(results ?? []).map((song, i) => (
-            <SongRow
-              key={streamIdFor(song)}
-              item={track(song)}
-              // A search hit plays with its own song radio after it, not the rest of the results.
-              onPress={() => (mood ? play(results ?? [], i) : playHit(song))}
-              onLongPress={() => queueNext(song)}
-              onSave={() => save(song)}
-            />
-          ))}
+        <QuickPicks
+          items={feed.quickPicks.map(track)}
+          onPress={index => play(feed.quickPicks, index)}
+          onLongPress={index => queueNext(feed.quickPicks[index])}
+          onSave={index => save(feed.quickPicks[index])}
+        />
+      </>);
+
+      if (discover.length > 0) addHome('daily-discover', <>
+        <SectionHeading title="Daily discover" subtitle="New songs that follow ones you play" />
+        <CoverShelf items={discover.map(track)} onPress={index => play(discover, index)} onLongPress={index => queueNext(discover[index])} />
+      </>);
+
+      feed.similar.forEach(shelf => addHome(`similar:${shelf.artist}`, <View>
+        <SectionHeading title={`More like ${shelf.artist}`} action="Play" onAction={() => play(shelf.songs, 0)} />
+        <CoverShelf items={shelf.songs.map(track)} onPress={index => play(shelf.songs, index)} onLongPress={index => queueNext(shelf.songs[index])} />
+      </View>));
+
+      if (feed.forgottenFavorites.length > 0) addHome('forgotten-favourites', <>
+        <SectionHeading title="Forgotten favourites" subtitle="From your downloads" action="See all" onAction={openDownloads} />
+        <CoverShelf items={feed.forgottenFavorites.map(localTrack)} onPress={index => playLocal(feed.forgottenFavorites, index)} />
+      </>);
+
+      if (followedShelf) addHome('followed-artists', <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} />);
+      appendBrowseShelves(shelves, 'yt-home');
+    } else if (shelves.length > 0) {
+      if (accountPicksSection) addHome('account-picks', accountPicksSection);
+      if (followedShelf) addHome('followed-artists', <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} />);
+      appendBrowseShelves(shelves, 'yt-home');
+    } else if (loading && !feed) {
+      if (accountPicksSection) sections.push({ id: 'account-picks', kind: 'content', content: accountPicksSection });
+      sections.push({ id: 'feed-skeleton', kind: 'content', content: <View style={styles.skeleton}>
+        <View style={styles.skeletonGrid}>
+          {[0, 1, 2, 3].map(index => <ShimmerBlock key={index} width="48%" height={56} radius={6} />)}
         </View>
-      </View>
-    );
-  } else if (loading && !feed) {
-    body = (
-      <>
-        {accountPicksSection}
-        <View style={styles.skeleton}>
-          <View style={styles.skeletonGrid}>
-            {[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="48%" height={56} radius={6} />)}
-          </View>
-          <ShimmerBlock width={140} height={22} radius={6} />
-          {[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="100%" height={52} radius={6} />)}
-        </View>
-      </>
-    );
-  } else if ((!feed || (feed.quickPicks.length === 0 && feed.keepListening.length === 0)) && ytShelves.length > 0) {
-    body = (
-      <RiseIn>
-        {accountPicksSection}
-        {followedShelf ? <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} /> : null}
-        {ytShelves}
-      </RiseIn>
-    );
-  } else if (!feed || (feed.quickPicks.length === 0 && feed.keepListening.length === 0)) {
-    body = (
-      <>
-        {accountPicksSection}
-        <View style={styles.emptyCard}>
-          <Ionicons name="cloud-offline-outline" size={28} color={Signal.inkMuted} />
-          <Text style={styles.emptyTitle}>Can't reach the catalog</Text>
-          <Text style={styles.emptyBody}>Check your connection and pull down to try again. Your downloads still play offline.</Text>
-          <PrimaryButton label="Open downloads" icon="download-outline" onPress={openDownloads} />
-        </View>
-      </>
-    );
-  } else {
-    body = homeFeed;
-  }
+        <ShimmerBlock width={140} height={22} radius={6} />
+        {[0, 1, 2, 3].map(index => <ShimmerBlock key={index} width="100%" height={52} radius={6} />)}
+      </View> });
+    } else {
+      if (accountPicksSection) sections.push({ id: 'account-picks', kind: 'content', content: accountPicksSection });
+      sections.push({ id: 'catalog-unavailable', kind: 'content', content: <View style={styles.emptyCard}>
+        <Ionicons name="cloud-offline-outline" size={28} color={Signal.inkMuted} />
+        <Text style={styles.emptyTitle}>Can't reach the catalog</Text>
+        <Text style={styles.emptyBody}>Check your connection and pull down to try again. Your downloads still play offline.</Text>
+        <PrimaryButton label="Open downloads" icon="download-outline" onPress={openDownloads} />
+      </View> });
+    }
+    return sections;
+  }, [accountPicksSection, feed, followedShelf, loading, localTrack, openDownloads, openItem, pendingSong, play, playLocal, playYT, queueNext, save, track, ytHome]);
+
+  const chipSections = useMemo(() => {
+    if (!ytChip || searchActive) return [];
+    const sections: StreamSection[] = [
+      { id: 'chip-title', kind: 'content', content: <SectionHeading title={ytChip.title} action="Clear" onAction={clearSearch} /> },
+    ];
+    if (mixSection) sections.push({ id: 'chip-mix', kind: 'content', content: mixSection });
+    if (chipShelves === null) sections.push({ id: 'chip-loading', kind: 'content', content: <ActivityIndicator color={Signal.wave} style={styles.spinner} /> });
+    if (chipShelves?.length === 0) sections.push({ id: 'chip-empty', kind: 'content', content: <Text style={styles.empty}>Nothing here right now. Try another mood.</Text> });
+    (chipShelves ?? []).forEach((shelf, index) => sections.push({
+      id: `chip:${index}:${shelf.title}`,
+      kind: 'content',
+      content: <BrowseShelf shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />,
+    }));
+    return sections;
+  }, [chipShelves, clearSearch, mixSection, openItem, pendingSong, playYT, searchActive, ytChip]);
+
+  const searchSections = useMemo(() => {
+    if (!searchActive) return [];
+    const sections: StreamSection[] = [];
+    const count = results?.length ?? 0;
+    sections.push({
+      id: 'search-title',
+      kind: 'content',
+      content: <SectionHeading
+        title={mood ?? `“${query.trim()}”`}
+        subtitle={searching ? 'Searching…' : `${count} ${count === 1 ? 'song' : 'songs'}`}
+        action="Clear"
+        onAction={clearSearch}
+      />,
+    });
+    if (mixSection) sections.push({ id: 'search-mix', kind: 'content', content: mixSection });
+    if (artists.length > 0) sections.push({
+      id: 'search-artists', kind: 'content',
+      content: <BrowseShelf shelf={{ title: 'Artists', items: artists }} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />,
+    });
+    if (unsavedResults.length >= 2 && !searching) sections.push({
+      id: 'search-save-all', kind: 'content',
+      content: <View style={styles.saveAllRow}>
+        <Tactile onPress={saveAll} pressScale={0.96} accessibilityRole="button" accessibilityLabel={`Save all ${unsavedResults.length} songs to your library`} style={styles.saveAll}>
+          <Ionicons name="arrow-down-circle-outline" size={18} color={Signal.ink} />
+          <Text style={styles.saveAllText}>Save all {unsavedResults.length}</Text>
+        </Tactile>
+      </View>,
+    });
+    if (searching) sections.push({ id: 'search-loading', kind: 'content', content: <ActivityIndicator color={Signal.wave} style={styles.spinner} /> });
+    if (!searching && count === 0) sections.push({
+      id: 'search-empty', kind: 'content',
+      content: <Text style={styles.empty}>Nothing streamable for that. Try the artist name or a different spelling.</Text>,
+    });
+    (results ?? []).forEach((song, index) => sections.push({
+      id: `search-result:${streamIdFor(song)}:${index}`,
+      kind: 'search-result',
+      song,
+      index,
+    }));
+    return sections;
+  }, [artists, clearSearch, mixSection, mood, openItem, pendingSong, playYT, query, results, saveAll, searching, searchActive, unsavedResults]);
+
+  const sections = chipActive ? chipSections : searchActive ? searchSections : homeSections;
+  const renderSection = useCallback(({ item }: { item: StreamSection }) => {
+    if (item.kind === 'search-result') {
+      return <View style={styles.list}>
+        <SongRow
+          item={track(item.song)}
+          // A search hit plays with its own song radio after it, not the rest of the results.
+          onPress={() => (mood ? play(results ?? [], item.index) : playHit(item.song))}
+          onLongPress={() => queueNext(item.song)}
+          onSave={() => save(item.song)}
+        />
+      </View>;
+    }
+    const row = <View>{item.content}</View>;
+    return item.kind === 'home-content' ? <RiseIn>{row}</RiseIn> : row;
+  }, [mood, play, playHit, queueNext, results, save, track]);
 
   return (
     <View style={styles.screen}>
       {/* Allegra's live shader: the playing cover's colours, full energy while
           music plays, and the picked mood's motion. Frames stop off-screen. */}
       <PlayingAura palette={palette} active={isFocused} mood={shaderMood} dim={0.18} />
-      <ScrollView
+      <FlashList
         ref={scrollRef}
+        data={sections}
+        keyExtractor={item => item.id}
+        renderItem={renderSection}
         keyboardShouldPersistTaps="handled"
+        onScroll={onScroll}
+        onScrollBeginDrag={onScrollBeginDrag}
+        scrollEventThrottle={16}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={HOME_END_THRESHOLD}
         contentContainerStyle={[styles.content, { paddingTop: insets.top + Space.xs, paddingBottom: bottomClearance }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Signal.wave} progressViewOffset={insets.top + 40} />}
-      >
-        <View style={styles.header}>
-          <InfoTitleRow><Text style={styles.title} accessibilityRole="header">Stream</Text><InfoTour label="About Stream" steps={STREAM_TOUR} scene={streamScene} /></InfoTitleRow>
-          <View style={styles.headerActions}>
-          <ConnectDropdown />
-          <Tactile
-            onPress={() => { Haptics.selectionAsync().catch(() => {}); setAboutOpen(true); }}
-            hitSlop={8}
-            pressScale={0.9}
-            accessibilityRole="button"
-            accessibilityLabel={updateWaiting ? 'About LuvLyrics, update available' : 'About LuvLyrics'}
-            style={styles.aboutBtn}
-          >
-            <Image source={require('../../assets/luvlyrics-logo-white-mark.png')} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityIgnoresInvertColors />
-            {updateWaiting ? <View style={styles.aboutDot} /> : null}
-          </Tactile>
+        ListHeaderComponent={
+          <View>
+            <View style={styles.header}>
+              <InfoTitleRow>
+                <Text style={styles.title} accessibilityRole="header">Stream</Text>
+                <InfoTour label="About Stream" steps={STREAM_TOUR} scene={streamScene} />
+              </InfoTitleRow>
+              <View style={styles.headerActions}>
+                <ConnectDropdown />
+                <Tactile
+                  onPress={() => { Haptics.selectionAsync().catch(() => {}); setAboutOpen(true); }}
+                  hitSlop={8}
+                  pressScale={0.9}
+                  accessibilityRole="button"
+                  accessibilityLabel={updateWaiting ? 'About LuvLyrics, update available' : 'About LuvLyrics'}
+                  style={styles.aboutBtn}
+                >
+                  <Image source={require('../../assets/luvlyrics-logo-white-mark.png')} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityIgnoresInvertColors />
+                  {updateWaiting ? <View style={styles.aboutDot} /> : null}
+                </Tactile>
+              </View>
+            </View>
+
+            <View style={styles.search}>
+              <Ionicons name="search" size={18} color={Signal.inkMuted} />
+              <TextInput
+                ref={searchRef}
+                value={query}
+                onChangeText={text => {
+                  continuationGeneration.current++;
+                  queryRef.current = text;
+                  setQuery(text);
+                  // Emptied by backspacing: back to the feed, as the clear button does.
+                  if (!text.trim() && !mood) {
+                    resetHomePagination();
+                    searchSeq.current++;
+                    setResults(null);
+                    setArtists([]);
+                    setSearching(false);
+                  }
+                }}
+                onSubmitEditing={() => runSearch()}
+                placeholder="Songs, artists, albums"
+                placeholderTextColor={Signal.inkFaint}
+                returnKeyType="search"
+                autoCorrect={false}
+                style={styles.searchInput}
+                accessibilityLabel="Search the catalog"
+              />
+              {query.length > 0 ? (
+                <Pressable onPress={clearSearch} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear search">
+                  <Ionicons name="close-circle" size={18} color={Signal.inkMuted} />
+                </Pressable>
+              ) : (
+                // Songs from a list (a note, a chat): the part of Get songs that is not a search.
+                <Tactile onPress={() => { Haptics.selectionAsync().catch(() => {}); setListOpen(true); }} hitSlop={10} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Add a list of songs" style={styles.listButton}>
+                  <Ionicons name="list" size={19} color={Signal.inkSoft} />
+                </Tactile>
+              )}
+            </View>
+
+            <DownloadsTray onPress={openDownloads} />
+            <ImportTray onPress={openImport} />
+
+            <View style={styles.chips}>
+              <MoodChips moods={ytChips.length > 0 ? ytChips.map(c => c.title) : MOOD_LABELS} selected={mood} onSelect={selectMood} />
+            </View>
           </View>
-        </View>
-
-        <View style={styles.search}>
-          <Ionicons name="search" size={18} color={Signal.inkMuted} />
-          <TextInput
-            ref={searchRef}
-            value={query}
-            onChangeText={text => {
-              setQuery(text);
-              // Emptied by backspacing: back to the feed, as the clear button does.
-              if (!text.trim() && !mood) { searchSeq.current++; setResults(null); setArtists([]); setSearching(false); }
-            }}
-            onSubmitEditing={() => runSearch()}
-            placeholder="Songs, artists, albums"
-            placeholderTextColor={Signal.inkFaint}
-            returnKeyType="search"
-            autoCorrect={false}
-            style={styles.searchInput}
-            accessibilityLabel="Search the catalog"
-          />
-          {query.length > 0 ? (
-            <Pressable onPress={clearSearch} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear search">
-              <Ionicons name="close-circle" size={18} color={Signal.inkMuted} />
-            </Pressable>
-          ) : (
-            // Songs from a list (a note, a chat): the part of Get songs that is not a search.
-            <Tactile onPress={() => { Haptics.selectionAsync().catch(() => {}); setListOpen(true); }} hitSlop={10} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Add a list of songs" style={styles.listButton}>
-              <Ionicons name="list" size={19} color={Signal.inkSoft} />
-            </Tactile>
-          )}
-        </View>
-
-        <DownloadsTray onPress={openDownloads} />
-        <ImportTray onPress={openImport} />
-
-        <View style={styles.chips}>
-          <MoodChips moods={ytChips.length > 0 ? ytChips.map(c => c.title) : MOOD_LABELS} selected={mood} onSelect={selectMood} />
-        </View>
-
-        {body}
-      </ScrollView>
+        }
+      />
       {/* Keeps the status bar legible over scrolled content. */}
       <LinearGradient
         pointerEvents="none"
