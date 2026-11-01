@@ -295,7 +295,7 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
         ))}
       </nav>
 
-      <Section id="settings-browse" icon={<Compass size={18} />} title="Browse" lead="What Browse shows you.">
+      <Section id="settings-browse" icon={<Compass size={18} />} title="Browse" lead="What Browse shows you">
         <Row label="Top 10 region" hint="Top 10 today follows this state's language. Automatic uses where you are, in India." labelId="settings-chart-region">
           <select className="settings-select" aria-labelledby="settings-chart-region" value={settings.chartRegion} onChange={(event) => update({ chartRegion: event.target.value })}>
             <option value="auto">Automatic</option>
@@ -305,7 +305,7 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
         </Row>
       </Section>
 
-      <Section id="settings-playback" icon={<Music2 size={18} />} title="Playback" lead="What happens after the song you picked.">
+      <Section id="settings-playback" icon={<Music2 size={18} />} title="Playback" lead="What happens after the song you picked">
         <Switch
           label="Autoplay similar songs"
           hint="After a search or a short list, keep going with songs like it. Off plays only the list you started from."
@@ -314,7 +314,7 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
         />
       </Section>
 
-      <Section id="settings-lyrics" icon={<Type size={18} />} title="Lyrics" lead="How lyrics look and keep time.">
+      <Section id="settings-lyrics" icon={<Type size={18} />} title="Lyrics" lead="How lyrics look and keep time">
         <Choice<LyricsSize>
           label="Text size"
           value={settings.lyricsSize}
@@ -454,7 +454,7 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
         </Row>
       </Section>
 
-      <Section id="settings-appearance" icon={<PaletteIcon size={18} />} title="Appearance" lead="The moving light behind the app.">
+      <Section id="settings-appearance" icon={<PaletteIcon size={18} />} title="Appearance" lead="The moving light behind the app">
         <Choice<AppBackground>
           label="Background"
           hint={settings.appBackground === 'glow'
@@ -475,7 +475,7 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
         />
       </Section>
 
-      <Section id="settings-account" icon={<ShieldCheck size={18} />} title="Account & privacy" lead="Who you are here, and what is measured.">
+      <Section id="settings-account" icon={<ShieldCheck size={18} />} title="Account & privacy" lead="Who you are here, and what is measured">
         <Row
           label={account === null ? 'Loading account…' : account.isGuest ? 'Listening as a guest' : `Signed in${account.name ? ` as ${account.name}` : ''}`}
           hint={account === null
@@ -509,11 +509,11 @@ export function SettingsPage({ account, signInAvailable, onOpenAccount, karaokeB
         <Row label="Where settings live" hint="Appearance, playback and usage preferences stay in this browser. Learning from listening is an account-wide setting." />
       </Section>
 
-      <Section id="settings-android" icon={<Smartphone size={18} />} title="Android app" lead="Allegra on your phone, with the same account.">
+      <Section id="settings-android" icon={<Smartphone size={18} />} title="Android app" lead="Allegra on your phone, with the same account">
         <AndroidAppCard />
       </Section>
 
-      <Section id="settings-about" icon={<Info size={18} />} title="About" lead="Version, shortcuts and credits.">
+      <Section id="settings-about" icon={<Info size={18} />} title="About" lead="Version, shortcuts and credits">
         <Row
           label="Server"
           hint={health.state === 'loading' ? 'Checking…' : health.state === 'ok' ? `Online · version ${health.version}` : 'Can’t reach the server right now. Playback and search may not work.'}

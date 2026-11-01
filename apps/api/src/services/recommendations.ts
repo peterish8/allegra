@@ -193,12 +193,12 @@ function explain(seeds: readonly UnifiedSong[], artists: readonly string[], lang
   const seed = seeds[0];
   const artist = artists[0];
   if (seed && artist && !seed.artist.toLowerCase().includes(artist.toLowerCase())) {
-    return `Because you've been playing ${seed.title} and love ${artist}.`;
+    return `Because you've been playing ${seed.title} and love ${artist}`;
   }
-  if (seed) return `Because you've been playing ${seed.title}.`;
-  if (artist) return `Because you love ${artist}.`;
-  if (languages.length > 0) return `Popular in ${languages.map(capitalise).join(' and ')} right now.`;
-  return 'Picked from what you listen to.';
+  if (seed) return `Because you've been playing ${seed.title}`;
+  if (artist) return `Because you love ${artist}`;
+  if (languages.length > 0) return `Popular in ${languages.map(capitalise).join(' and ')} right now`;
+  return 'Picked from what you listen to';
 }
 
 function capitalise(value: string): string {
