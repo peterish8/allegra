@@ -69,6 +69,9 @@ internal object AppleBackdropGeometry {
     fun fade(nowMs: Long, startedAtMs: Long, durationMs: Long = ROOM_FADE_MS): Float {
         if (durationMs <= 0L) return 1f
         val time = ((nowMs - startedAtMs).toFloat() / durationMs).coerceIn(0f, 1f)
+        // The ends are exact: the search below lands a hair off them, and a fade that never reads 0 or 1 never ends.
+        if (time <= 0f) return 0f
+        if (time >= 1f) return 1f
         // Motion.ease.standard: Reanimated Easing.bezier(0.4, 0, 0.2, 1).
         var low = 0f
         var high = 1f

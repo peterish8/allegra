@@ -17,6 +17,9 @@ import com.facebook.react.jstasks.HeadlessJsTaskContext
  * waited on a timer (a request's timeout, a race with a delay) until the app was opened again — an online search
  * from the island never answered. Each search and pick starts a short task (`islandJsAwake.ts` only waits); one
  * already covering most of the time is reused.
+ *
+ * The player uses it too (`MainPlayerModule`): a queue running low and a playback error are answered by JavaScript
+ * over the network (radio top-up, a fresh stream link), which with the screen off waited the same way.
  */
 object IslandJsAwake {
     /** Same key as `ISLAND_JS_AWAKE_TASK` in JavaScript. */
@@ -29,6 +32,12 @@ object IslandJsAwake {
 
     private var until = 0L
 
+    /**
+     * Whether a hold of [ms] from [now] needs a new task, given the running one ends at [until]: only when that has
+     * less than half of [ms] left, so a burst of events (a radio top-up, then an error) starts one task, not many.
+     */
+    fun needsNewTask(now: Long, ms: Long, until: Long): Boolean = now + ms / 2 >= until
+
     /** Keeps timers running for [ms] from now. Call from any thread; a no-op while the app is in front. */
     fun hold(context: ReactContext?, ms: Long = HOLD_MS) {
         val ctx = context ?: return
@@ -36,7 +45,7 @@ object IslandJsAwake {
             // In front, timers run anyway (and a task there would need allowing).
             if (ctx.lifecycleState == LifecycleState.RESUMED || !ctx.hasActiveReactInstance()) return@runOnUiThread
             val now = SystemClock.uptimeMillis()
-            if (now + ms / 2 < until) return@runOnUiThread
+            if (!needsNewTask(now, ms, until)) return@runOnUiThread
             try {
                 val data = Arguments.createMap().apply { putDouble("ms", ms.toDouble()) }
                 HeadlessJsTaskContext.getInstance(ctx).startTask(HeadlessJsTaskConfig(TASK, data, ms + GRACE_MS, true))

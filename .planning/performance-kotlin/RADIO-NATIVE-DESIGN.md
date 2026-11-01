@@ -1,7 +1,8 @@
 # Radio top-up and fresh stream links with the screen off: design
 
-Item 7 of [REMAINING-WORK.md](REMAINING-WORK.md). **Status: proposed, waiting for the owner's choice.** No code until
-then.
+Item 7 of [REMAINING-WORK.md](REMAINING-WORK.md). **Status: option A chosen by the owner (2026-11-01) and built:**
+`MainPlayerModule` holds JavaScript awake (`IslandJsAwake.hold`) before it sends `onQueueLow` and `onPlaybackError`;
+`IslandJsAwake.needsNewTask` is JVM-tested. The 30-minute screen-off check on a phone is still open.
 
 ## The problem
 
