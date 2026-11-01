@@ -13,6 +13,21 @@ Skills to load before starting: `google-typescript-style`, `typescript-best-prac
 for phase 4). Read root `CLAUDE.md`, `apps/mobile/CLAUDE.md`, `docs/architecture.md` first. They win over this file
 where they disagree.
 
+## Status (end of 2026-11-01 session)
+
+No phase of this plan is finished yet. That session went to two side requests instead:
+
+- **Vercel Fluid CPU** (#54, merged): the catch-all page is static now (`force-static` +
+  `generateStaticParams` from `paths`), so page views come from the CDN instead of a function render, and
+  the MCP SDK loads on the first authorised `/api/mcp` call instead of every cold start (cold-start CPU
+  about 1.5 s → 1.05 s, measured on an esbuild bundle of `api/index.ts`). Follow-ups are in Part 3.
+- **unslop-ui polish** (#55 website + desktop, merged; #56 phone, open at the time of writing): the
+  owner chose polish mode, keeping glass, glow and layouts. Report with before/after screenshots:
+  https://claude.ai/artifact/W3g3argXnanxSYikXUkVCt. Leftovers are in Part 3.
+- **Phase 5** was diagnosed but not fixed; the findings are under Phase 5 below.
+
+Start the next session at Phase 5 with the starter prompt at the end of this file.
+
 ## Audit (2026-11-01, `main` at `73038c7`)
 
 Counts are rough greps (`.ts`/`.tsx`, generated code excluded); use them to size and to track progress.
@@ -154,6 +169,39 @@ app, with the reason in the message.
 - **D:** `KEYCODE_MEDIA_NEXT did not change the song` with the screen off. Could be real: check that media-button
   events reach `QueueForwardingPlayer` with the new native views and Media3 1.11.1.
 
+**Findings so far (2026-11-01, run 41284061659, artifacts via `gh run download`):**
+
+- The failure starts before the probe. In the main smoke walk, "closing the player" (`KEYCODE_BACK`) leaves the
+  pill on screen (`after-close.png`), and three seconds after "reopening from the pill" the screen is the launcher
+  (`player-reopened.png`).
+- In the probe's section C, round 1 is a **false pass**: `assert_controls` only greps for `Previous`, `Next` and
+  `Play`/`Pause`, and the mini pill exposes all three ("Now playing: X. Open player", then Previous, Pause, Next).
+  The logcat shows `[diag:player-back] consume 1` → `unregister 1 active` on BACK, then **no** `[diag:player]
+  background …` line and **no** `register 2` after the pill tap: Now Playing never mounted again. Round 2's BACK
+  then logs `no focused handler`, Android finishes `MainActivity`, and every later check sees 0 app nodes.
+- So the bug to find: after a hardware-back close (`handlePlayerBack` → `animateClose` → `finishClose` →
+  `setHoldRoute(false)` → `safeGoBack`), a pill tap (`MiniPlayer.openNowPlaying` → `openPlayerSheet`) does not
+  navigate to `NowPlaying`. Suspects: `openPlayerSheet`'s `getCurrentRoute()?.name === 'NowPlaying'` guard seeing a
+  route that is still in the state, `usePreventRemove(holdRoute, handleBack)` blocking the pop when `goBack` runs
+  in the same commit that clears `holdRoute`, or the tap not reaching the pill's press handler. On CI's emulator
+  (fast, Reduce Motion on) the close finished 60 ms after BACK; on a local Android 36 emulator running the arm64
+  APK through translation it took 14 s and the pill tap **did** reopen the player (`register 2`), so timing
+  matters. Also harden the probe: assert Now Playing mounted (a control only it has), not just the transport.
+- **D** (`KEYCODE_MEDIA_NEXT` did not change the song) ran after the activity was gone; re-check it once C passes
+  before treating it as a separate bug.
+
+**Local emulator notes (Windows):**
+
+- An AVD was made by hand (no `avdmanager`): `~/.android/avd/probe.avd/config.ini`,
+  `system-images/android-36/google_apis_playstore/x86_64`. WHPX acceleration works.
+- Run the probe from Git Bash with `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` and platform-tools on `PATH`.
+  Without them Git Bash rewrites `/sdcard/ui.xml` to `C:/Program Files/Git/sdcard/ui.xml` and every
+  `uiautomator dump` "fails".
+- The `apk-latest` APK is arm64 only and crawls under translation. Build x86_64 like CI does:
+  `cd apps/mobile/android && ./gradlew.bat assembleRelease --no-daemon -PreactNativeArchitectures=x86_64`
+  (`android/app/debug.keystore` already exists locally). Don't switch branches while it builds.
+- Never `taskkill //IM timeout.exe`: it took the emulator down with it.
+
 - [ ] Reproduce on an emulator (`.github/scripts/mobile-player-probe.sh <apk> <out-dir>`), fix the cause (the app's,
   not the probe's, unless the probe looks for the wrong thing), add a regression test where the logic is testable.
 
@@ -197,6 +245,44 @@ owner. Never write "verified" without a device.
 
 ---
 
+---
+
+## Part 3: follow-ups from the 2026-11-01 session
+
+### Vercel Fluid CPU (after #54)
+
+Context: Hobby plan, so `vercel usage` has no billing data and request logs only reach back 12 hours
+(`npx vercel logs requests -e production --since 11h -n 10000 --json`). Traffic was about 75 requests an hour;
+the cost is per request, mostly cold starts.
+
+- [ ] After a day of #54 in production, compare Active CPU in the dashboard (Observability → Functions) with the
+  week before, and confirm page routes no longer show function invocations.
+- [ ] Prove an authorised `POST /api/mcp` still works in production (the SDK is now a dynamic import; only the
+  unit tests cover it).
+- [ ] Drop `jsonwebtoken` for `jose`, which is already loaded (about 100 ms of cold-start CPU each). Touches guest
+  tokens (`auth/verifier.ts`) and OAuth tokens (`oauth/tokens.ts`); keep HS256 and every claim identical.
+- [ ] Public reads (lyrics, search, artwork) can't be CDN-cached while clients send `Authorization`: Vercel never
+  caches those requests. Send no token on public GETs from web and phone, then add `s-maxage` +
+  `stale-while-revalidate` to those routes (`lyrics/verified` has only `max-age=60` today).
+- [ ] Preview deployments have no `JWT_SECRET`, so every preview's API returns 500 (`loadConfig`). Add a preview
+  value in Vercel so PR previews can test the API.
+- Phase 7's shared cache cuts provider refetches after cold starts; do it as planned.
+
+### unslop-ui leftovers (after #55 / #56)
+
+The skill is installed at `~/.claude/skills/unslop-ui` (renamed so it doesn't replace the writing skill
+`unslop`). Direction recorded in memory: polish mode, keep glass and glow.
+
+- [ ] Merge #56 if it isn't merged yet (phone, 1.35.3).
+- [ ] Phone before/after screenshots for the report (About, Artist, LuvLink panel, DJ current track); needs the
+  x86_64 build above, `apk-latest` from before #56 as "before".
+- [ ] Check the website at 768 and 1920 wide (only 1440 and 390 were captured).
+- [ ] Suggestions the owner hasn't approved yet: search palette placeholder "Search songs, artists…" → "Search";
+  the Library empty state's ✦ glyph → a heart; the two pink vertical lines on the onboarding screen (in both
+  before and after).
+- Dead CSS found (`.hero-feature`, `.feature-readout`, their `stage-breathe` / `signal-line` loops): delete in
+  Phase 4.
+
 ## Order and parallel work
 
 1. **Phase 5 first:** a red smoke test hides every regression the later phases could cause.
@@ -217,3 +303,30 @@ owner. Never write "verified" without a device.
 - [ ] 6. Native UI slices (six)
 - [ ] 7. Shared cache · Server-rendered pages
 - [ ] 8. Media3 builder · zero lint warnings
+- [ ] Part 3. Vercel CPU follow-ups · unslop-ui leftovers
+
+## Starter prompt for the next session
+
+Paste this into a fresh Claude Code session in `C:\dev\allegra`:
+
+```text
+Repo: C:\dev\allegra (Windows). Read CLAUDE.md, apps/mobile/CLAUDE.md, docs/architecture.md, then
+.planning/CODE-QUALITY-AND-ROADMAP-PLAN.md completely, including "Status", the Phase 5 findings and Part 3.
+Load skills google-typescript-style, typescript-best-practices, ponytail (ponytail-audit for phase 4).
+
+Continue the plan in its stated order: phase 5 (smoke test) first, using the findings already written under
+Phase 5 (start from the "no register 2 after the pill tap" lead; build the x86_64 APK and use the local AVD
+notes there). Then phase 0 per app, then phases 1-4 per app, then 6, 7, 8, then Part 3. One PR per phase per
+app, branched from main, squash-merged once CI is green. Style/refactor phases change no behaviour: no test
+edits except renames. Before each PR: root npm run typecheck, npm run lint, npm test; apps/mobile npm run ci;
+Kotlin changes gradlew.bat :app:testDebugUnitTest. Bump apps/mobile/app.json expo.version for any
+APK-reaching change. Conventional commits, no AI attribution. Edit with the editor, never sed/python rewrites.
+Phase 7's server-rendered pages must keep the catch-all page static (#54 made it force-static for Vercel CPU).
+
+GITHUB_TOKEN in this machine's environment is invalid: run git push and gh with `env -u GITHUB_TOKEN` and
+`-c credential.helper= -c "credential.helper=!gh auth git-credential"`. Never `git worktree remove` a worktree
+whose node_modules is a junction; rmdir the junction first.
+
+Tick each checklist box in the plan only when its done-when is met; write device-only gaps next to it.
+Report per PR: link, files, checks run with results, what's unverified.
+```
