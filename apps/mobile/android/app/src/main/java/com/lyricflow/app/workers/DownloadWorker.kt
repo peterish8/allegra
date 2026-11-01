@@ -84,6 +84,15 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 } catch (_: Exception) {}
             }
 
+            // Before JavaScript hears of it: if the app is gone, the receipt is how the song reaches the library.
+            try {
+                DownloadReceipt.write(
+                    DownloadReceipt.dir(applicationContext.filesDir),
+                    DownloadReceipt(id, finalAudioUri, finalCoverUri, inputData.getString("meta") ?: "{}", System.currentTimeMillis()),
+                )
+            } catch (e: Exception) {
+                Log.w("DownloadWorker", "Receipt not written for $id: ${e.message}")
+            }
             ProgressBus.post(ProgressEvent(id, 1.0f, "succeeded", audioUri = finalAudioUri, coverUri = finalCoverUri))
             Result.success(workDataOf(
                 "id" to id,

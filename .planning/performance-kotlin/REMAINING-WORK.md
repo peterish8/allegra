@@ -219,7 +219,7 @@ evaluated after item 9 ships with evidence. Neither is to be coded from this lis
 - [x] 3. Stream feed virtualised (#38; device scroll comparison still open: needs the item 1 baseline)
 - [x] 4. Lyric lookups cancel, misses cached (song change aborts the cascade; a clean miss is kept 30 min, an error never)
 - [ ] 5. Graphics/memory budget from the baseline
-- [ ] 6. Download completion records
+- [x] 6. Download completion records (worker receipt + start-up reconcile, tested on the JVM and against real SQLite; the kill-mid-download check on a phone is still open)
 - [ ] 7. Native radio top-up and link refresh (design approved first)
 - [ ] 8. Media3 upgrade
 - [x] 9. Native lyrics renderer: already built as slice 3 of the native UI migration (`views/NativeLyricsView.kt`)

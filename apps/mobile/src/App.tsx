@@ -162,9 +162,12 @@ const App: React.FC = () => {
           // with the error to copy for a report. Soon after the first frame, before the background jobs.
           runWhenIdle('recovered crash', () => import('./services/uiCrash').then(m => m.reportRecoveredCrash()));
 
-          // Restore downloads and lyrics scans that were in flight when the app was killed.
-          runWhenIdle('download queue', () =>
-            import('./store/downloadQueueStore').then(m => m.useDownloadQueueStore.getState().hydrateFromDb()));
+          // Restore downloads and lyrics scans that were in flight when the app was killed. Downloads that finished
+          // meanwhile get their library rows first (services/downloadReceipts), so the queue does not fetch them again.
+          runWhenIdle('download queue', async () => {
+            await import('./services/downloadReceipts').then(m => m.reconcileFinishedDownloads()).catch(() => 0);
+            await import('./store/downloadQueueStore').then(m => m.useDownloadQueueStore.getState().hydrateFromDb());
+          });
           runWhenIdle('lyrics scan queue', () =>
             import('./store/lyricsScanQueueStore').then(m => m.useLyricsScanQueueStore.getState().hydrateFromDb()), 150);
 

@@ -1,6 +1,7 @@
 package com.lyricflow.app.modules
 
 import androidx.work.*
+import com.lyricflow.app.workers.DownloadReceipt
 import com.lyricflow.app.workers.DownloadWorker
 import com.lyricflow.app.workers.ProgressBus
 import expo.modules.kotlin.modules.Module
@@ -16,7 +17,8 @@ class DownloaderModule : Module() {
 
         Events("onDownloadProgress")
 
-        AsyncFunction("enqueue") { id: String, audioUrl: String, coverUrl: String?, songDir: String, lyrics: String?, safDir: String? ->
+        // [meta]: the song's details as JSON, carried into the download's receipt (DownloadReceipt).
+        AsyncFunction("enqueue") { id: String, audioUrl: String, coverUrl: String?, songDir: String, lyrics: String?, safDir: String?, meta: String? ->
             val context = appContext.reactContext ?: throw Exception("React context not available")
             val workManager = WorkManager.getInstance(context)
 
@@ -26,7 +28,8 @@ class DownloaderModule : Module() {
                 "coverUrl" to coverUrl,
                 "songDir" to songDir,
                 "lyrics" to lyrics,
-                "safDir" to safDir
+                "safDir" to safDir,
+                "meta" to meta
             )
 
             val workRequest = OneTimeWorkRequestBuilder<DownloadWorker>()
@@ -62,6 +65,18 @@ class DownloaderModule : Module() {
         Function("cancel") { id: String ->
             val context = appContext.reactContext ?: return@Function
             WorkManager.getInstance(context).cancelUniqueWork(id)
+        }
+
+        /** Every finished download's receipt (DownloadReceipt), as its JSON text. */
+        Function("pendingReceipts") {
+            val context = appContext.reactContext ?: return@Function emptyList<String>()
+            DownloadReceipt.readAll(DownloadReceipt.dir(context.filesDir)).map { it.encode() }
+        }
+
+        /** The song's row is in the library: its receipt is done with. */
+        Function("clearReceipt") { id: String ->
+            val context = appContext.reactContext ?: return@Function false
+            DownloadReceipt.clear(DownloadReceipt.dir(context.filesDir), id)
         }
     }
 }
