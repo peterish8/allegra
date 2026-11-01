@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   discs: { flexDirection: 'row', alignItems: 'center' },
   cards: { gap: Space.sm, paddingHorizontal: Space.md, paddingVertical: Space.xs },
   card: { width: 240, minHeight: 180, padding: Space.md, borderRadius: Radius.panel, backgroundColor: Glass.fill, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline, gap: Space.xs },
-  eyebrow: { color: Signal.inkMuted, fontSize: 11, fontWeight: '600', letterSpacing: 0.8, textTransform: 'uppercase' },
+  eyebrow: { color: Signal.inkMuted, fontSize: 11, fontWeight: '600' },
   headline: { color: Signal.ink, fontSize: 18, fontWeight: '700', lineHeight: 24 },
   headlineBig: { fontSize: 44, lineHeight: 50, fontWeight: '800' },
   detail: { color: Signal.inkSoft, fontSize: 13, lineHeight: 18 },

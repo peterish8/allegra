@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   empty: { color: Signal.inkSoft, fontSize: 15 },
   retry: { marginTop: 16, paddingHorizontal: 22 },
   heroText: { position: 'absolute', left: 20, right: 20, bottom: 14 },
-  kicker: { color: Signal.inkMuted, fontSize: 12, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 4 },
+  kicker: { color: Signal.inkMuted, fontSize: 12, fontWeight: '600', marginBottom: 4 },
   name: { color: Signal.ink, fontSize: 42, fontWeight: '800', letterSpacing: -0.8 },
   stats: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 16, rowGap: 4, marginTop: 8 },
   stat: { flexDirection: 'row', alignItems: 'center', gap: 7 },
