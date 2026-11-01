@@ -109,11 +109,11 @@ const LuvLinkPanel: React.FC<{ visible?: boolean }> = ({ visible = true }) => {
   return (
     <SheetScrollView contentContainerStyle={styles.content}>
       <View style={styles.roomHeader}>
-        <View><Text style={styles.eyebrow}>{connection === 'connected' ? 'CONNECTED' : 'RECONNECTING'}</Text><Text style={styles.title}>Your LuvLink</Text></View>
+        <View><Text style={styles.eyebrow}>{connection === 'connected' ? 'Connected' : 'Reconnecting'}</Text><Text style={styles.title}>Your LuvLink</Text></View>
         <Text style={styles.count}>{room.memberCount}/8</Text>
       </View>
       <View style={styles.card}>
-        <Text style={styles.eyebrow}>INVITE CODE</Text>
+        <Text style={styles.eyebrow}>Invite code</Text>
         <Text style={styles.code}>{code ?? '••••••'}</Text>
         {inviteUrl ? <View style={styles.qr}><QRCode value={inviteUrl} size={148} color="#17121b" backgroundColor="#ffffff" quietZone={8} /></View> : null}
         <View style={styles.row}><Button label="Share link" onPress={() => { void shareInvite(); }} disabled={!inviteUrl} /><Button label="Copy" secondary onPress={() => { void copyInvite(); }} disabled={!inviteUrl} /></View>
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', paddingVertical: 12, gap: 7 },
   title: { color: Signal.ink, fontSize: 22, fontWeight: '700' },
   copy: { color: Signal.inkMuted, fontSize: 14, textAlign: 'center' },
-  eyebrow: { color: Signal.inkFaint, fontSize: 10, letterSpacing: 1.2, fontWeight: '700' },
+  eyebrow: { color: Signal.inkFaint, fontSize: 11, fontWeight: '600' },
   sectionTitle: { color: Signal.ink, fontSize: 15, fontWeight: '600', marginTop: 8 },
   hint: { color: Signal.inkMuted, fontSize: 12 },
   input: { backgroundColor: Glass.fillLight, borderColor: Glass.hairline, borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.well, minHeight: 48, paddingHorizontal: 14, color: Signal.ink, fontSize: 16, letterSpacing: 1.3 },

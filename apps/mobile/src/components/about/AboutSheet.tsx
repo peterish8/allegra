@@ -165,7 +165,7 @@ const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visib
               />
               <View style={styles.sendRow}>
                 <Text style={[styles.status, send.kind === 'error' && styles.statusError]} numberOfLines={2}>
-                  {send.kind === 'sent' ? 'Sent. Thank you!' : send.kind === 'error' ? send.message : ''}
+                  {send.kind === 'sent' ? 'Sent. Thank you.' : send.kind === 'error' ? send.message : ''}
                 </Text>
                 <Tactile
                   onPress={submit}
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   panelEdge: { position: 'absolute', top: 0, left: 0, right: 0, height: 1 },
-  kicker: { color: Signal.wave, fontSize: 12, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase' },
+  kicker: { color: Signal.wave, fontSize: 12, fontWeight: '600' },
   story: { color: Signal.ink, fontSize: 24, fontWeight: '800', letterSpacing: -0.4, marginTop: 8 },
   body: { color: Signal.inkSoft, fontSize: 14, lineHeight: 21, marginTop: 6 },
   gap: { marginTop: 10 },
