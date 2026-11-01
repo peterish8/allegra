@@ -67,3 +67,46 @@ jobs:
           name: mobile-coverage
           path: apps/mobile/coverage/
           retention-days: 7
+
+  # The pure Kotlin rules (queue math, the island's geometry and timing, take-over, download receipts, the native
+  # views' geometry) are JVM-tested in android/app/src/test. Nothing ran them in CI before, so a red test could sit
+  # unnoticed for weeks (AppleBackdropGeometryTest did).
+  kotlin:
+    name: Kotlin unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      # Gradle resolves React Native, Expo and the native modules from node_modules.
+      - name: Install
+        run: npm ci
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        working-directory: apps/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest --no-daemon \
+            -PreactNativeArchitectures=arm64-v8a \
+            "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g"
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-unit-tests
+          path: apps/mobile/android/app/build/reports/tests/testDebugUnitTest/
+          retention-days: 7
