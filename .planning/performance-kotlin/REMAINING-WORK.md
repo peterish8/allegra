@@ -221,7 +221,7 @@ evaluated after item 9 ships with evidence. Neither is to be coded from this lis
 - [ ] 5. Graphics/memory budget from the baseline
 - [x] 6. Download completion records (worker receipt + start-up reconcile, tested on the JVM and against real SQLite; the kill-mid-download check on a phone is still open)
 - [ ] 7. Native radio top-up and link refresh: option A chosen and built (`RADIO-NATIVE-DESIGN.md`); the 30-minute screen-off check on a phone is still open
-- [ ] 8. Media3 upgrade
+- [ ] 8. Media3 upgrade: 1.3.1 → 1.11.1 done, compiles, all Kotlin unit tests pass; the phone checks (10 min screen-off playback, notification and lock-screen controls, Bluetooth skip, seek in a stream) are still open
 - [x] 9. Native lyrics renderer: already built as slice 3 of the native UI migration (`views/NativeLyricsView.kt`)
 - [ ] 10. YouTube video and Compose (owner decision; not built from this list)
 
