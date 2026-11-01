@@ -26,6 +26,7 @@ import com.lyricflow.app.playback.QueueItemSpec
 import com.lyricflow.app.playback.QueueMath.RepeatKind
 import com.lyricflow.app.playback.resumePlayback
 import com.lyricflow.app.services.PlaybackService
+import com.facebook.react.bridge.ReactContext
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
@@ -78,10 +79,16 @@ class MainPlayerModule : Module() {
             PlayerBridge.onQueueChanged = { state ->
                 sendEvent("onQueueChanged", state)
             }
+            // Both are answered by JavaScript over the network (radio top-up, a fresh stream link). With the screen
+            // off React Native holds its timers, so every request's timeout waited until the app was opened: the
+            // radio ran dry, an expired song stopped. The island's short headless task keeps them running
+            // (IslandJsAwake; .planning/performance-kotlin/RADIO-NATIVE-DESIGN.md, option A).
             PlayerBridge.onQueueLow = { size, mediaId, tag ->
+                IslandJsAwake.hold(appContext.reactContext as? ReactContext)
                 sendEvent("onQueueLow", mapOf("size" to size, "mediaId" to mediaId, "tag" to tag))
             }
             PlayerBridge.onPlaybackError = { reason, position ->
+                IslandJsAwake.hold(appContext.reactContext as? ReactContext)
                 sendEvent("onPlaybackError", mapOf("reason" to reason, "position" to position))
             }
         }
