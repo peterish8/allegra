@@ -1,13 +1,23 @@
 import { Router, type Request, type Response } from 'express';
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
 import { publicOrigin, resourceMetadataUrl, verifyMcpAccess } from '../oauth/router.js';
 import type { OAuthSigner } from '../oauth/tokens.js';
 import type { AppServices } from '../services.js';
-import { registerTools } from './tools.js';
+
+/**
+ * The SDK (with zod) costs about 400 ms of CPU to load, and every cold start of the function paid
+ * it although almost no request is an MCP call. Loaded on the first authorised call instead.
+ */
+async function loadMcp() {
+  const [{ McpServer }, { StreamableHTTPServerTransport }, { registerTools }] = await Promise.all([
+    import('@modelcontextprotocol/sdk/server/mcp.js'),
+    import('@modelcontextprotocol/sdk/server/streamableHttp.js'),
+    import('./tools.js')
+  ]);
+  return { McpServer, StreamableHTTPServerTransport, registerTools };
+}
 
 function unauthorized(request: Request, response: Response, hadToken: boolean): void {
   // Per the MCP authorization spec: 401 with a WWW-Authenticate that points at the protected
@@ -38,6 +48,7 @@ export function mcpRouter(services: AppServices, signer: OAuthSigner): Router {
       return;
     }
 
+    const { McpServer, StreamableHTTPServerTransport, registerTools } = await loadMcp();
     const server = new McpServer({ name: 'allegra', version: '1.0.0' });
     registerTools(server, services, verified.userId);
     try {
