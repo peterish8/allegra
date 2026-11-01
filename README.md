@@ -8,6 +8,17 @@
 
 Allegra began as a fully mocked front-end: hardcoded songs, playback faked with a timer, accounts faked in `localStorage`. It is now a working product: live catalog, streaming audio with working seek, artwork, time-synced lyrics with graceful degradation, guest sessions, and persistent likes, recent plays and playlists. Signed-in web and Android clients also sync their libraries and recommendations; Connect can control or transfer playback between online devices on the same account.
 
+## Three apps, one repository
+
+| App | Folder | How it ships | How it updates |
+|---|---|---|---|
+| **Website** | `apps/web` + `apps/api` | Vercel, one deployment (site and API) | Every deploy, for everyone |
+| **Allegra for Windows** | `apps/desktop` | `desktop.yml` builds `allegra.exe` into the `desktop-latest` release | The site inside updates with every deploy; the shell (taskbar, hotkeys, mini player) updates itself at its next launch when `apps/desktop/Cargo.toml`'s version goes up |
+| **LuvLyrics for Android** | `apps/mobile` (React Native, native Kotlin for playback, the island and Now Playing) | `mobile-apk.yml` builds the APK into the `apk-latest` release | About → Updates, when `apps/mobile/app.json`'s version goes up |
+
+The desktop app is deliberately thin: it shows the live site, so almost every feature reaches it with no desktop
+change at all. Only what the browser can't do (taskbar, global shortcuts, jump list, mini player) lives in Rust.
+
 ## Architecture
 
 ```

@@ -15,9 +15,12 @@
 //! - Login and karaoke models live in our own profile folder (`%APPDATA%\Allegra\webview`), and
 //!   the page asks for persistent storage so Chromium never evicts the models.
 //!
+//! - The shell updates itself from the `desktop-latest` release (`update.rs`); the site needs no update.
+//!
 //! `ALLEGRA_URL` in the environment overrides the site, e.g. `http://localhost:5173` in dev.
 
 mod link;
+mod update;
 mod win;
 
 use serde_json::{json, Value};
@@ -496,6 +499,8 @@ fn main() -> wry::Result<()> {
     }
     let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("allegra.exe"));
     win::register_protocol(&exe);
+    // Only the first window updates; a second launch has already handed its command over and left.
+    update::check_in_background(exe.clone());
     let site = std::env::var("ALLEGRA_URL").unwrap_or_else(|_| ALLEGRA_URL.into());
     let start = match &first {
         Some(Cmd::Open(p)) => format!("{}{p}", site.trim_end_matches('/')),

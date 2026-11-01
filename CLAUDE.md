@@ -143,6 +143,11 @@ hero transition is profiled on a **real phone**, not a laptop. See
 Runner, container deploy, or AWS runtime. Karaoke separation runs on the listener's device; Convex
 owns identity and listener data.
 
+Three apps ship from this repo (table in `README.md`): the website (Vercel), Allegra for Windows
+(`.github/workflows/desktop.yml` → the `desktop-latest` release, which installed copies update from)
+and LuvLyrics for Android (`mobile-apk.yml` → `apk-latest`). The desktop app wraps the live site:
+put features in the website, not in `apps/desktop`, unless only a native window can do them.
+
 ## Commits
 
 Conventional commits: `feat(api):`, `fix(web):`, `chore(infra):`. Short imperative subject; body only
@@ -153,6 +158,10 @@ under `apps/mobile/`, `packages/`, or `convex/_generated/`; see `.github/workflo
 `paths`) must bump `expo.version` in `apps/mobile/app.json` in the same change: patch for fixes,
 minor for features. About → Updates shows that number; without a bump a new build appears as the
 version already installed. Details in `apps/mobile/CLAUDE.md`.
+
+**New desktop build = new version number.** A change under `apps/desktop/` bumps `version` in
+`apps/desktop/Cargo.toml` (patch for fixes, minor for features). Installed apps update only to a
+higher version, so without a bump the new build never reaches them.
 
 ## Branching
 

@@ -1,0 +1,100 @@
+name: Desktop app
+
+# Builds Allegra for Windows (apps/desktop) on pushes and pull requests that touch it. Only main publishes the
+# "desktop-latest" release, which the app's own updater reads (apps/desktop/src/update.rs):
+#   https://github.com/<owner>/<repo>/releases/download/desktop-latest/allegra.exe
+#   https://github.com/<owner>/<repo>/releases/download/desktop-latest/version.txt
+# The site inside the app needs none of this: it updates with every Vercel deploy. A new shell build needs a higher
+# `version` in apps/desktop/Cargo.toml, or installed apps never take it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - "!apps/desktop/**/*.md"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "!apps/desktop/**/*.md"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/desktop
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build release exe
+        run: cargo build --release --locked
+
+      - name: Stage the release files
+        run: |
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          [ -n "$VERSION" ] || { echo "no version in Cargo.toml"; exit 1; }
+          mkdir -p out
+          cp target/release/allegra.exe out/allegra.exe
+          printf '%s\n' "$VERSION" > out/version.txt
+          echo "Built Allegra for Windows $VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: allegra-desktop
+          path: apps/desktop/out/
+          if-no-files-found: error
+
+  publish:
+    name: Publish main build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: allegra-desktop
+          path: out
+
+      - name: Publish to the desktop-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          VERSION="$(cat out/version.txt)"
+          {
+            echo "Allegra for Windows ${VERSION}, built from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7}."
+            echo
+            echo "Download allegra.exe and run it; installed copies update themselves at their next launch."
+            echo "Direct link: https://github.com/${GITHUB_REPOSITORY}/releases/download/desktop-latest/allegra.exe"
+          } > notes.md
+          gh release delete desktop-latest --yes --cleanup-tag || true
+          gh release create desktop-latest out/allegra.exe out/version.txt \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Allegra for Windows $VERSION — latest build" \
+            --notes-file notes.md

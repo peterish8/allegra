@@ -1,6 +1,6 @@
 [package]
 name = "allegra-desktop"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Allegra for Windows: the live site in a native WebView2 window."
 license = "GPL-3.0-only"
