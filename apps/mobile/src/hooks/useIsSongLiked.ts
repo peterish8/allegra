@@ -31,6 +31,26 @@ export function useSongLikeState(song: { id: string; title: string; artist?: str
   return { liked: rowLiked || libraryLiked || onlineLiked, saving: false };
 }
 
+/**
+ * The heart's state read once, outside React: the same rules as `useSongLikeState`, for code that must not
+ * toggle a like that is already there.
+ */
+export function isSongLikedNow(song: { id: string; title: string; artist?: string }): boolean {
+  const liked = usePlaylistStore.getState().likedSongIds;
+  if (liked.has(song.id)) {
+    return true;
+  }
+  if (!song.id.startsWith('stream:')) {
+    return false;
+  }
+  const libraryId = libraryLookup(useSongsStore.getState().songs).get(matchKey(song.title, song.artist))?.id;
+  if (libraryId !== undefined && liked.has(libraryId)) {
+    return true;
+  }
+  const ref = fromMobileId(song.id);
+  return ref !== null && useOnlineLibraryStore.getState().likedRefs.has(ref);
+}
+
 /** Whether a song is liked. Pass the song, not just its id, to get streamed songs right. */
 export function useIsSongLiked(songId: string | undefined, song?: { title: string; artist?: string } | null): boolean {
   return useSongLikeState(songId && song ? { id: songId, title: song.title, artist: song.artist } : songId ? { id: songId, title: '' } : null).liked;

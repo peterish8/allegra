@@ -14,6 +14,8 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import type { UnifiedSong } from '../types/song';
 import { playerControls, resumeNextLoadAt, usePlayerStore } from '../store/playerStore';
+import { useSongsStore } from '../store/songsStore';
+import { isSongLikedNow } from './useIsSongLiked';
 import { currentPlaybackRoute } from '../services/connect/playbackIntents';
 import { searchOfficial } from '../services/stream/officialSearch';
 import { StreamService } from '../services/stream/StreamService';
@@ -182,9 +184,22 @@ async function takeOver(take: IslandTakeOver, signal: AbortSignal, isCurrent: ()
     return;
   }
   const started = await handOver(hit, take, startedAt, signal, isCurrent);
+  const liked = started && take.liked && (await carryLike(hit));
   if (isCurrent()) {
-    takeOverDone(started, started ? 'Playing in LuvLyrics' : 'Could not start');
+    takeOverDone(started, started ? (liked ? 'Playing in LuvLyrics, liked' : 'Playing in LuvLyrics') : 'Could not start');
   }
+}
+
+/**
+ * Likes [hit] in LuvLyrics because the other app had it liked; a like already there is left alone (the heart is
+ * a toggle). True when the song ends up newly liked.
+ */
+async function carryLike(hit: UnifiedSong): Promise<boolean> {
+  const song = toStreamSong(hit);
+  if (isSongLikedNow(song)) {
+    return false;
+  }
+  return (await useSongsStore.getState().toggleLike(song.id)) === 'liked';
 }
 
 /** Answers the island's "Continue here" taps for as long as the app runs (Android only). */

@@ -94,4 +94,19 @@ class OutsideMathTest {
         assertEquals("YouTube Music", OutsideMath.appLabel("com.google.android.apps.youtube.music", " "))
         assertEquals("Newplayer", OutsideMath.appLabel("org.example.newplayer", null))
     }
+
+    @Test
+    fun `a song is liked by a set heart or an action that undoes a like`() {
+        assertTrue(OutsideMath.isLiked(true, emptyList()))
+        assertTrue(OutsideMath.isLiked(null, listOf("Shuffle", "Remove from Liked Songs")))
+        assertTrue(OutsideMath.isLiked(null, listOf(" unlike ")))
+        assertTrue(OutsideMath.isLiked(false, listOf("Remove like")))
+    }
+
+    @Test
+    fun `a song is not liked when the app offers to like it or says nothing`() {
+        assertFalse(OutsideMath.isLiked(null, emptyList()))
+        assertFalse(OutsideMath.isLiked(false, listOf("Add to Liked Songs", "Like", "Shuffle")))
+        assertFalse(OutsideMath.isLiked(null, listOf("Liked by 3 friends")))
+    }
 }

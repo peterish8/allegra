@@ -109,7 +109,7 @@ export interface TakeOverStatus {
   listenerEnabled: boolean;
 }
 
-/** What another app plays, as the island's "Play here" button hands it over (seconds, raw titles). */
+/** What another app plays, as the island's "Continue here" button hands it over (seconds, raw titles). */
 export interface IslandTakeOver {
   packageName: string;
   appLabel: string;
@@ -119,6 +119,8 @@ export interface IslandTakeOver {
   durationS: number;
   positionS: number;
   playing: boolean;
+  /** The other app shows the song as liked (its heart, or an "Unlike" action); false when it says nothing. */
+  liked: boolean;
 }
 
 /** Another app's live position, from its media session. */
@@ -185,6 +187,7 @@ export function onIslandTakeOver(listener: (song: IslandTakeOver) => void): { re
       durationS: seconds(d.durationS),
       positionS: seconds(d.positionS),
       playing: d.playing === true,
+      liked: d.liked === true,
     };
     if (song.packageName && song.title) listener(song);
   });
