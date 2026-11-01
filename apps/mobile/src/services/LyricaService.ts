@@ -66,7 +66,7 @@ class LyricaService {
     artist: string,
     syncedOnly: boolean = false,
     duration?: number,
-    options: { skipEcho?: boolean; ref?: string } = {},
+    options: { skipEcho?: boolean; ref?: string; signal?: AbortSignal } = {},
   ): Promise<LyricaResult | null> {
     try {
       const { cleanSong, cleanArtist } = cleanTitleArtist(song, artist);
@@ -79,8 +79,11 @@ class LyricaService {
         { title: cleanSong, artist: cleanArtist, duration, ref: options.ref },
         undefined,
         syncedOnly,
+        options.signal,
       );
       if (echo?.synced) return this.fromProvider(echo);
+      // The song changed while the providers were asked: nobody wants this song's lyrics any more.
+      if (options.signal?.aborted) return null;
       
       // Priority: Synced (slow) > Synced (fast) > Plain text
       // User request: "synced slow , then synced fats then plain"
