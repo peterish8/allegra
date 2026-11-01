@@ -31,6 +31,11 @@ import type { ImportMatcher } from './importMatch.js';
 export const BLEND_BUILD = {
   budgetMs: 8000,
   factsBudgetMs: 3000,
+  /**
+   * An optional stage with less time than this left is not started: no provider call finishes that fast, and a
+   * timer can fire a millisecond before `performance.now()` agrees the budget is spent.
+   */
+  minStageMs: 50,
   factsPerMember: 30,
   discoverySeeds: 3,
   discoveryPerSeed: 20,
@@ -76,10 +81,12 @@ const isSaavn = (snapshot: SongSnapshot): boolean => parseSongRef(snapshot.ref)?
 /**
  * Resolves `fallback` when `work` has not settled within `ms`; a rejection also gives the fallback.
  * This stops waiting, it does not cancel: an outstanding provider call runs on until its own timeout and its
- * answer is dropped. With no time left the work is never started, which is what keeps a late build cheap.
+ * answer is dropped. With (almost) no time left the work is never started, which is what keeps a late build cheap.
  */
 async function within<T>(ms: number, work: () => Promise<T>, fallback: T): Promise<T> {
-  if (ms <= 0) return fallback;
+  if (ms < BLEND_BUILD.minStageMs) {
+    return fallback;
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), ms); });
   try {
