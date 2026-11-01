@@ -14,6 +14,12 @@ export interface RequestOptions {
   timeoutMs?: number;
   /** Aborts together with the internal timeout, e.g. when the song changes. */
   signal?: AbortSignal;
+  /**
+   * Told when the request failed for a reason other than "not found": a timeout, no network, a server error. Lets a
+   * cascade tell "nobody has it" (worth remembering) from "nobody answered" (worth asking again). Not told for an
+   * abort through `signal`.
+   */
+  onFailure?: () => void;
 }
 
 export const buildUrl = (base: string, params: Record<string, string | number | undefined | null>): string => {
@@ -32,8 +38,14 @@ const request = async (url: string, options: RequestOptions, init: { method?: st
   options.signal?.addEventListener('abort', onOuterAbort);
   try {
     const res = await fetch(url, { ...init, headers: options.headers, signal: controller.signal });
+    if (!res.ok && res.status !== 404) {
+      options.onFailure?.();
+    }
     return res.ok ? res : null;
   } catch {
+    if (!options.signal?.aborted) {
+      options.onFailure?.();
+    }
     return null;
   } finally {
     clearTimeout(timer);

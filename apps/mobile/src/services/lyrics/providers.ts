@@ -6,7 +6,7 @@
  *   - never throws (see fetchWithTimeout).
  */
 import { Buffer } from 'buffer';
-import { buildUrl, fetchJson } from '../net/fetchWithTimeout';
+import { buildUrl, fetchJson, type RequestOptions } from '../net/fetchWithTimeout';
 import { ALLEGRA_API_URL } from '../account/config';
 import { leadArtist, parseSongRef } from '@shared/songRef';
 import { alignSyllables, enhancedLine, LyricWord } from '@shared/wordSync';
@@ -22,6 +22,11 @@ export interface LyricsQuery {
   videoId?: string;
   /** The catalog song ("saavn:<id>", `@shared/songRef`), when known: Allegra and JioSaavn look it up by it. */
   ref?: string;
+  /**
+   * Passed to every request a provider makes: `signal` cancels them all (the song changed), `onFailure` hears of a
+   * timeout or server error, so the cascade remembers only true misses. Set by the cascade, not by callers.
+   */
+  net?: Pick<RequestOptions, 'signal' | 'onFailure'>;
 }
 
 export type LyricsProviderName =
@@ -133,7 +138,7 @@ export const youLyPlus: LyricsProvider = async q => {
 
   // Race the mirrors: the first one with usable lyrics wins.
   return firstNonNull(servers.map(async server => {
-    const res = await fetchJson<YoulyResponse>(buildUrl(`${server}/v2/lyrics/get`, params), { timeoutMs: 10_000 });
+    const res = await fetchJson<YoulyResponse>(buildUrl(`${server}/v2/lyrics/get`, params), { ...q.net, timeoutMs: 10_000 });
     // The syllable list is the richest form; LRCLIB-style text when there is none.
     const timed = res?.lyrics?.some(l => l.syllabus?.length) ? youlyLinesToLrc(res.lyrics) : '';
     const raw = timed
@@ -180,7 +185,7 @@ export const paxContentToLrc = (content: NonNullable<PaxLyricsResponse['content'
 export const paxsenix: LyricsProvider = async q => {
   const results = await fetchJson<PaxSearchResult[]>(
     buildUrl(`${PAXSENIX}/apple-music/search`, { q: `${q.title} ${q.artist}` }),
-    { headers: { 'User-Agent': 'LuvLyrics/1.0' } },
+    { ...q.net, headers: { 'User-Agent': 'LuvLyrics/1.0' } },
   );
   if (!Array.isArray(results) || results.length === 0) return null;
 
@@ -202,6 +207,7 @@ export const paxsenix: LyricsProvider = async q => {
   if (!best) return null;
 
   const res = await fetchJson<PaxLyricsResponse>(buildUrl(`${PAXSENIX}/apple-music/lyrics`, { id: best.id }), {
+    ...q.net,
     headers: { 'User-Agent': 'LuvLyrics/1.0' },
   });
   if (!res) return null;
@@ -224,14 +230,14 @@ interface UnisonResponse { success?: boolean; data?: UnisonEntry | null }
 export const unison: LyricsProvider = async q => {
   const pick = (res: UnisonResponse | null) => (res?.success && res.data?.lyrics ? res.data : null);
   let entry: UnisonEntry | null = null;
-  if (q.videoId) entry = pick(await fetchJson<UnisonResponse>(buildUrl(`${UNISON}/lyrics`, { v: q.videoId })));
+  if (q.videoId) entry = pick(await fetchJson<UnisonResponse>(buildUrl(`${UNISON}/lyrics`, { v: q.videoId }), q.net));
   if (!entry) {
     entry = pick(await fetchJson<UnisonResponse>(buildUrl(`${UNISON}/lyrics`, {
       song: q.title,
       artist: q.artist,
       album: q.album,
       duration: durationSecs(q),
-    })));
+    }), q.net));
   }
   return entry ? result('Unison', entry.lyrics, { trackName: entry.song, artistName: entry.artist }) : null;
 };
@@ -246,7 +252,7 @@ export const betterLyrics: LyricsProvider = async q => {
     a: q.artist,
     d: durationSecs(q),
     al: q.album,
-  }));
+  }), q.net);
   return res?.ttml ? result('BetterLyrics', ttmlToLrc(res.ttml)) : null;
 };
 
@@ -269,6 +275,7 @@ export const simpMusic: LyricsProvider = async q => {
   const d = durationSecs(q);
   for (const base of SIMPMUSIC) {
     const res = await fetchJson<SimpResponse>(`${base}${encodeURIComponent(q.videoId)}`, {
+      ...q.net,
       headers: { 'User-Agent': 'SimpMusicLyrics/1.0' },
     });
     if (!res) continue; // HTTP failure: try the fallback mirror
@@ -310,10 +317,10 @@ const lrcLibLookup = async (q: LyricsQuery, artist: string, d: number | undefine
       artist_name: artist,
       album_name: q.album,
       duration: d,
-    }), { headers: LRCLIB_HEADERS });
+    }), { ...q.net, headers: LRCLIB_HEADERS });
   }
   if (!hit?.syncedLyrics && !hit?.plainLyrics) {
-    const list = await fetchJson<LrcLibHit[]>(buildUrl(`${LRCLIB}/search`, { track_name: q.title, artist_name: artist }), { headers: LRCLIB_HEADERS });
+    const list = await fetchJson<LrcLibHit[]>(buildUrl(`${LRCLIB}/search`, { track_name: q.title, artist_name: artist }), { ...q.net, headers: LRCLIB_HEADERS });
     const candidates = (list ?? []).filter(h => !d || !h.duration || Math.abs(h.duration - d) <= 5);
     hit = candidates.find(h => h.syncedLyrics) ?? candidates.find(h => h.plainLyrics) ?? null;
   }
@@ -369,7 +376,7 @@ export const kuGou: LyricsProvider = async q => {
   const download = async (id: number | string, accesskey: string): Promise<ProviderLyrics | null> => {
     const res = await fetchJson<KuGouDownload>(buildUrl('https://lyrics.kugou.com/download', {
       fmt: 'lrc', charset: 'utf8', client: 'pc', ver: 1, id, accesskey,
-    }));
+    }), q.net);
     if (!res?.content) return null;
     try {
       return result('KuGou', stripKuGouCredits(Buffer.from(res.content, 'base64').toString('utf8')));
@@ -380,12 +387,12 @@ export const kuGou: LyricsProvider = async q => {
 
   const songs = await fetchJson<KuGouSongs>(buildUrl('https://mobileservice.kugou.com/api/v3/search/song', {
     version: 9108, plat: 0, pagesize: 8, showtype: 0, keyword,
-  }));
+  }), q.net);
   for (const song of songs?.data?.info ?? []) {
     if (d && Math.abs(song.duration - d) > KUGOU_DURATION_TOLERANCE) continue;
     const byHash = await fetchJson<KuGouCandidates>(buildUrl('https://lyrics.kugou.com/search', {
       ver: 1, man: 'yes', client: 'pc', hash: song.hash,
-    }));
+    }), q.net);
     const c = byHash?.candidates?.[0];
     if (c) {
       const hit = await download(c.id, c.accesskey);
@@ -395,7 +402,7 @@ export const kuGou: LyricsProvider = async q => {
 
   const byKeyword = await fetchJson<KuGouCandidates>(buildUrl('https://lyrics.kugou.com/search', {
     ver: 1, man: 'yes', client: 'pc', keyword, duration: d ? d * 1000 : undefined,
-  }));
+  }), q.net);
   const c = byKeyword?.candidates?.[0];
   return c ? download(c.id, c.accesskey) : null;
 };
@@ -426,7 +433,7 @@ export const allegraVersions = async (q: LyricsQuery): Promise<ProviderLyrics[]>
     title: q.title,
     artist: q.artist,
     duration: durationSecs(q),
-  }));
+  }), q.net);
   const data = res?.data;
   return (data?.versions ?? []).flatMap(version => {
     const hit = result('Allegra', version.lrc, {
@@ -477,7 +484,7 @@ export const jioSaavn: LyricsProvider = async q => {
     _format: 'json',
     _marker: 0,
     lyrics_id: song.id,
-  }));
+  }), q.net);
   return typeof res?.lyrics === 'string' ? result('JioSaavn', saavnLyricsText(res.lyrics)) : null;
 };
 

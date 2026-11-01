@@ -345,14 +345,20 @@ export const StreamService = {
 };
 
 const lyricsInFlight = new Set<string>();
+/** The playing song's lyric lookup: a newer song's cancels it, so skipping fast leaves one cascade running. */
+let lyricsLookup: { songId: string; controller: AbortController } | null = null;
 
 async function loadLyrics(streamId: string, meta: UnifiedSong | undefined): Promise<void> {
   const current = usePlayerStore.getState().currentSong;
   if (!current || current.id !== streamId || current.lyrics.length > 0 || lyricsInFlight.has(streamId)) return;
+  if (lyricsLookup && lyricsLookup.songId !== streamId) lyricsLookup.controller.abort();
+  const lookup = { songId: streamId, controller: new AbortController() };
+  lyricsLookup = lookup;
   lyricsInFlight.add(streamId);
   try {
     const result = await lyricaService.fetchLyrics(current.title, current.artist ?? '', false, meta?.duration ?? current.duration, {
       ref: fromMobileId(streamId) ?? undefined,
+      signal: lookup.controller.signal,
     });
     if (!result) return;
     const lyrics = lyricaService.parseLrc(result.lyrics, meta?.duration ?? current.duration);
@@ -367,6 +373,7 @@ async function loadLyrics(streamId: string, meta: UnifiedSong | undefined): Prom
     // Lyrics are a nice-to-have for a stream; playback carries on without them.
   } finally {
     lyricsInFlight.delete(streamId);
+    if (lyricsLookup === lookup) lyricsLookup = null;
   }
 }
 

@@ -155,6 +155,83 @@ describe('EchoLyricsCascade.fetchBest', () => {
     await expect(EchoLyricsCascade.fetchBest(query)).resolves.toBeNull();
     f.restore();
   });
+
+  it('remembers a song nobody has, and does not ask again', async () => {
+    const f = mockFetch([]); // every provider answers 404: a clean "none"
+    await expect(EchoLyricsCascade.fetchBest(query, ['LrcLib'])).resolves.toBeNull();
+    const asked = f.calls.length;
+    await expect(EchoLyricsCascade.fetchBest(query, ['LrcLib'])).resolves.toBeNull();
+    f.restore();
+    expect(asked).toBeGreaterThan(0);
+    expect(f.calls.length).toBe(asked);
+  });
+
+  it('asks again after a lookup that hit a server error', async () => {
+    const f = mockFetch([['https://lrclib.net', null]]); // 500
+    await expect(EchoLyricsCascade.fetchBest(query, ['LrcLib'])).resolves.toBeNull();
+    const asked = f.calls.length;
+    await EchoLyricsCascade.fetchBest(query, ['LrcLib']);
+    f.restore();
+    expect(f.calls.length).toBeGreaterThan(asked);
+  });
+});
+
+describe('EchoLyricsCascade.fetchBest cancelling', () => {
+  /** A network where every request waits until it is aborted, recording each request's signal. */
+  const hangingFetch = (): { signals: AbortSignal[]; restore: () => void } => {
+    const original = global.fetch;
+    const signals: AbortSignal[] = [];
+    global.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (signal) {
+        signals.push(signal);
+        signal.addEventListener('abort', () => reject(new Error('aborted')));
+      }
+    })) as typeof fetch;
+    return { signals, restore: () => { global.fetch = original; } };
+  };
+
+  it('answers null at once for a caller that gives up, and cancels the requests', async () => {
+    const net = hangingFetch();
+    const song = new AbortController();
+    const answer = EchoLyricsCascade.fetchBest(query, ['LrcLib'], false, song.signal);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    song.abort();
+    await expect(answer).resolves.toBeNull();
+    net.restore();
+    expect(net.signals.length).toBeGreaterThan(0);
+    expect(net.signals.every(signal => signal.aborted)).toBe(true);
+  });
+
+  it('keeps a shared lookup running while another caller still waits for it', async () => {
+    const net = hangingFetch();
+    const leaving = new AbortController();
+    const staying = new AbortController();
+    const first = EchoLyricsCascade.fetchBest(query, ['LrcLib'], false, leaving.signal);
+    const second = EchoLyricsCascade.fetchBest(query, ['LrcLib'], false, staying.signal);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    leaving.abort();
+    await expect(first).resolves.toBeNull();
+    expect(net.signals.some(signal => signal.aborted)).toBe(false);
+    staying.abort();
+    await expect(second).resolves.toBeNull();
+    net.restore();
+    expect(net.signals.every(signal => signal.aborted)).toBe(true);
+  });
+
+  it('does not remember a cancelled lookup as a miss', async () => {
+    const net = hangingFetch();
+    const song = new AbortController();
+    const answer = EchoLyricsCascade.fetchBest(query, ['LrcLib'], false, song.signal);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    song.abort();
+    await answer;
+    net.restore();
+    const f = mockFetch([['https://lrclib.net/api/get', { trackName: 'Blinding Lights', syncedLyrics: '[00:05.00]I been tryna call' }]]);
+    const hit = await EchoLyricsCascade.fetchBest(query, ['LrcLib']);
+    f.restore();
+    expect(hit?.synced).toBe(true);
+  });
 });
 
 describe('Allegra and JioSaavn', () => {

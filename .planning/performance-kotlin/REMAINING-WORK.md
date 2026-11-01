@@ -216,13 +216,13 @@ evaluated after item 9 ships with evidence. Neither is to be coded from this lis
 
 - [ ] 1. Release baseline on a real phone
 - [ ] 2. Lyrics geometry proven on a phone
-- [ ] 3. Stream feed virtualised
-- [ ] 4. Lyric lookups cancel, misses cached
+- [x] 3. Stream feed virtualised (#38; device scroll comparison still open: needs the item 1 baseline)
+- [x] 4. Lyric lookups cancel, misses cached (song change aborts the cascade; a clean miss is kept 30 min, an error never)
 - [ ] 5. Graphics/memory budget from the baseline
 - [ ] 6. Download completion records
 - [ ] 7. Native radio top-up and link refresh (design approved first)
 - [ ] 8. Media3 upgrade
-- [ ] 9. Native lyrics renderer (owner go/no-go)
+- [x] 9. Native lyrics renderer: already built as slice 3 of the native UI migration (`views/NativeLyricsView.kt`)
 - [ ] 10. YouTube video and Compose (owner decision; not built from this list)
 
 Tick a box only when its "Done when" is met. Write device-only gaps next to the item rather than ticking it.
