@@ -208,7 +208,6 @@ export function TasteOnboarding({ open, onSubmit, onSkip }: TasteOnboardingProps
                       const size = BUBBLE_SIZES[index % BUBBLE_SIZES.length];
                       return (
                         <motion.button key={genre.id} type="button" className={`taste-bubble taste-bubble--${size} ${active ? 'is-active' : ''}`} style={{ '--bubble-accent': accent } as CSSProperties} aria-pressed={active} whileTap={reduced ? undefined : { scale: 0.94 }} onClick={() => toggleGenre(genre.id, accent, palette)}>
-                          <span className="taste-bubble-emoji" aria-hidden="true">{genre.emoji}</span>
                           <span className="taste-chip-name">{genre.label}</span>
                           <AnimatePresence>{active ? <motion.span className="taste-chip-check" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={spring.tactile}><Check size={12} strokeWidth={3} aria-hidden="true" /></motion.span> : null}</AnimatePresence>
                         </motion.button>

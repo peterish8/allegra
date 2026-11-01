@@ -97,7 +97,7 @@
   /* Tracking */
   --tracking-display: -0.03em;
   --tracking-title: -0.02em;
-  --tracking-meta: 0.08em;
+  --tracking-meta: 0.01em;
 
   /* Motion */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);

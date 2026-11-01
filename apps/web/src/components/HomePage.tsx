@@ -44,14 +44,6 @@ interface HomePageProps {
   readonly onAskDj?: () => void;
 }
 
-function greeting(now = new Date()): string {
-  const hour = now.getHours();
-  if (hour < 5) return 'Still up';
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
-
 /** The provider's play counts run to eight digits; nobody reads those. */
 function formatPlays(count: number): string | null {
   if (!Number.isFinite(count) || count <= 0) return null;
@@ -105,7 +97,6 @@ export function HomePage({
 }: HomePageProps) {
   const reduced = useReducedMotion();
   const [skippedSetup, setSkippedSetup] = useState(() => window.localStorage.getItem('allegra-skip-setup') === '1');
-  const name = profile?.displayName?.split(' ')[0];
   const topArtists = taste?.topArtists.slice(0, 10) ?? [];
   const needsSetup = taste !== null && !taste.onboarded && !skippedSetup;
   const hasActivity = likedSongs.length > 0 || (taste?.signals ?? 0) >= 6;
@@ -152,7 +143,7 @@ export function HomePage({
     <div className="home-page">
       <motion.section
         className="home-hero"
-        aria-labelledby="home-greeting"
+        aria-labelledby="home-title"
         {...stagger}
         transition={{ duration: motionTokens.duration.slow, ease: motionTokens.ease.decelerate }}
       >
@@ -172,7 +163,7 @@ export function HomePage({
           ) : null}
         </AnimatePresence>
         <header className="home-hero__head">
-          <div className="page-title-row"><h1 id="home-greeting">{name ? `${greeting()}, ${name}` : greeting()}</h1><InfoTour label="About Home" steps={HOME_TOUR} stage={homeScene} /></div>
+          <div className="page-title-row"><h1 id="home-title">For you</h1><InfoTour label="About Home" steps={HOME_TOUR} stage={homeScene} /></div>
           {inRotation.length > 0 ? <p>Lately: {inRotation.join(' · ')}</p> : null}
         </header>
 
@@ -275,7 +266,7 @@ export function HomePage({
         <Shelf
           id="home-picks"
           title={picksReason ?? 'Made for you'}
-          eyebrow={<><Sparkles size={13} aria-hidden="true" /> {picksProvider ? `Picked for you, by ${picksProvider}` : 'Picked for you'}</>}
+          eyebrow={picksProvider ? `Picked for you by ${picksProvider.charAt(0).toUpperCase()}${picksProvider.slice(1)}` : 'Picked for you'}
           songs={picks.slice(0, 14)}
           {...{ reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }}
         />

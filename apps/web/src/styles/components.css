@@ -124,7 +124,7 @@ body::before { display: none; }
   padding: 12px 24px;
   background: var(--accent);
   color: var(--accent-ink);
-  font-weight: 700;
+  font-weight: 600;
   border-radius: var(--radius-pill);
   transition: transform var(--d-fast) var(--ease-standard);
 }
@@ -141,13 +141,13 @@ body::before { display: none; }
   color: var(--ink);
   text-decoration: none;
   font-size: 18px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: -0.03em;
 }
 
 .brand-label {
   color: var(--ink);
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .brand-orbit {
@@ -227,7 +227,7 @@ body::before { display: none; }
   margin: 0 0 14px;
   color: var(--ink);
   font-size: var(--text-display);
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: var(--tracking-display);
   line-height: 1.05;
 }
@@ -235,15 +235,6 @@ body::before { display: none; }
 .hero-copy h1 em {
   color: var(--accent-bright);
   font-style: normal;
-}
-
-/* The headline is split into inline-block word spans, and background-clip: text
- * does not paint through inline-block children, so the gradient goes on each word. */
-.hero-copy h1 em .gsap-word {
-  background: linear-gradient(145deg, var(--accent-bright) 0%, var(--accent) 58%, var(--vibe-lime) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
 .hero-copy > p {
@@ -335,8 +326,7 @@ body::before { display: none; }
   color: var(--ink-muted);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 
 .feature-topline span:first-child {
@@ -398,7 +388,7 @@ body::before { display: none; }
   margin: 0 0 4px;
   color: var(--ink);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .feature-info p {
@@ -440,9 +430,8 @@ body::before { display: none; }
   margin: 0;
   color: var(--ink-soft);
   font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .mood-pills {
@@ -488,7 +477,7 @@ body::before { display: none; }
   margin: 0;
   color: var(--ink);
   font-size: var(--text-heading);
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .track-head {
@@ -499,8 +488,7 @@ body::before { display: none; }
   color: var(--ink-faint);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 
 .track-list {
@@ -552,7 +540,7 @@ body::before { display: none; }
   margin: 0;
   color: var(--ink);
   font-size: 17px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .queue-intro {
@@ -700,7 +688,7 @@ body::before { display: none; }
 
 .ytm-lyrics__line {
   font-size: calc(clamp(36px, 4.5vw, 48px) * var(--lyrics-scale, 1));
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1.4;
   color: rgba(255, 255, 255, 0.25);
@@ -790,7 +778,7 @@ body::before { display: none; }
 .now-playing-info strong {
   color: #fff;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -884,7 +872,7 @@ body::before { display: none; }
   margin: 8px 0 12px;
   color: var(--ink);
   font-size: var(--text-title);
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: var(--tracking-title);
 }
 
@@ -912,14 +900,13 @@ body::before { display: none; }
 .library-stat strong {
   color: var(--ink);
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .library-stat span {
   color: var(--ink-faint);
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.01em;
 }
 
 /* Phase 7: Shared Controls ------------------------------------------------ */
@@ -936,7 +923,7 @@ body::before { display: none; }
   background: rgba(20, 26, 38, 0.85);
   color: var(--ink);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 16px rgba(0, 0, 0, 0.25);
   transition: var(--transition-fast);
@@ -1023,7 +1010,7 @@ body::before { display: none; }
   margin: 0 0 8px;
   color: var(--ink);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .empty-state p {
@@ -1140,15 +1127,14 @@ body::before { display: none; }
   margin-bottom: 10px;
   color: var(--ink-muted);
   font-size: var(--text-meta);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: var(--tracking-meta);
-  text-transform: uppercase;
 }
 
 .album-hero__copy h1 {
   margin: 0 0 8px;
   font-size: clamp(34px, 5vw, 56px);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: var(--tracking-title);
   line-height: 1.05;
 }
@@ -1601,7 +1587,7 @@ body::before { display: none; }
 .np-title {
   margin: 0;
   font-size: clamp(24px, 3vw, 32px);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.03em;
 }
 
@@ -1777,8 +1763,7 @@ body::before { display: none; }
   margin: 0 0 20px;
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
   color: var(--ink-muted);
 }
 
@@ -1880,7 +1865,7 @@ body::before { display: none; }
   /* --lyric-line-size / --lyric-line-height let an unlayered stage (app.css) resize the lines: an
      !important here in @layer legacy would beat any unlayered !important. */
   font-size: var(--lyric-line-size, calc(clamp(22px, 2.6vw, 36px) * var(--lyrics-scale, 1))) !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   letter-spacing: -0.02em !important;
   line-height: var(--lyric-line-height, 1.35) !important;
   color: #fff !important;
@@ -2034,7 +2019,7 @@ body::before { display: none; }
   text-align: left;
 }
 .np-karaoke-progress__heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 8px; }
-.np-karaoke-progress__heading strong { color: rgba(255, 255, 255, 0.96); font-size: 12px; font-weight: 650; }
+.np-karaoke-progress__heading strong { color: rgba(255, 255, 255, 0.96); font-size: 12px; font-weight: 600; }
 .np-karaoke-progress__heading > span { color: rgba(255, 255, 255, 0.7); font-size: 11px; font-variant-numeric: tabular-nums; }
 .np-karaoke-progress__bar { height: 4px; margin-top: 7px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, 0.14); }
 .np-karaoke-progress__bar > span { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--wave); transform: scaleX(0); transform-origin: left center; }
@@ -2087,7 +2072,7 @@ body::before { display: none; }
 }
 .karaoke-mix__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .karaoke-mix__copy { display: grid; gap: 4px; }
-.karaoke-mix__eyebrow { display: flex; align-items: center; gap: 7px; color: rgba(255, 255, 255, 0.55); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.12em; }
+.karaoke-mix__eyebrow { display: flex; align-items: center; gap: 7px; color: rgba(255, 255, 255, 0.55); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.12em; }
 .karaoke-mix__eyebrow::before { width: 7px; height: 7px; border-radius: 50%; background: #f2767c; content: ''; box-shadow: 0 0 10px rgba(242, 118, 124, 0.5); }
 .karaoke-mix__head h3 { margin: 0; font-size: 1.05rem; font-weight: 680; letter-spacing: -0.025em; }
 .karaoke-mix__copy p { margin: 0; color: rgba(255, 255, 255, 0.62); font-size: 0.75rem; line-height: 1.35; }
@@ -2112,11 +2097,11 @@ body::before { display: none; }
 .karaoke-mix__value { margin-left: auto; color: rgba(255, 255, 255, 0.72); font-variant-numeric: tabular-nums; font-size: 0.75rem; }
 .karaoke-mix__model { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border: 1px solid rgba(242, 118, 124, 0.24); border-radius: 14px; background: rgba(242, 118, 124, 0.08); }
 .karaoke-mix__model-copy { display: flex; min-width: 0; align-items: center; gap: 9px; }
-.karaoke-mix__model-mark { display: grid; flex: none; width: 30px; height: 30px; place-items: center; border: 1px solid rgba(242, 118, 124, 0.3); border-radius: 10px; background: rgba(242, 118, 124, 0.13); color: #ffb0b2; font-size: 0.62rem; font-weight: 750; letter-spacing: 0.02em; }
+.karaoke-mix__model-mark { display: grid; flex: none; width: 30px; height: 30px; place-items: center; border: 1px solid rgba(242, 118, 124, 0.3); border-radius: 10px; background: rgba(242, 118, 124, 0.13); color: #ffb0b2; font-size: 0.62rem; font-weight: 600; letter-spacing: 0.02em; }
 .karaoke-mix__model-copy > span:last-child { display: grid; min-width: 0; gap: 3px; }
-.karaoke-mix__model-copy strong { color: rgba(255, 255, 255, 0.92); font-size: 0.73rem; font-weight: 650; }
+.karaoke-mix__model-copy strong { color: rgba(255, 255, 255, 0.92); font-size: 0.73rem; font-weight: 600; }
 .karaoke-mix__model-copy small { color: rgba(255, 255, 255, 0.58); font-size: 0.64rem; line-height: 1.25; }
-.karaoke-mix__model-action { flex: none; min-width: 66px; min-height: 34px; padding: 0 10px; border: 0; border-radius: 10px; background: #f2767c; color: #211417; font-size: 0.7rem; font-weight: 700; cursor: pointer; transition: filter var(--d-fast) var(--ease-standard), transform var(--d-fast) var(--ease-press); }
+.karaoke-mix__model-action { flex: none; min-width: 66px; min-height: 34px; padding: 0 10px; border: 0; border-radius: 10px; background: #f2767c; color: #211417; font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: filter var(--d-fast) var(--ease-standard), transform var(--d-fast) var(--ease-press); }
 .karaoke-mix__model-action:hover:not(:disabled) { filter: brightness(1.08); }
 .karaoke-mix__model-action:active:not(:disabled) { transform: scale(0.96); }
 .karaoke-mix__model-action:disabled { cursor: wait; opacity: 0.65; }
@@ -2166,7 +2151,7 @@ body::before { display: none; }
 .karaoke-mix__range:focus-visible::-moz-range-thumb { outline: 2px solid var(--wave); outline-offset: 2px; }
 
 .karaoke-mix__preset-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: -9px; }
-.karaoke-mix__preset-head span:first-child { color: rgba(255, 255, 255, 0.86); font-size: 0.72rem; font-weight: 650; }
+.karaoke-mix__preset-head span:first-child { color: rgba(255, 255, 255, 0.86); font-size: 0.72rem; font-weight: 600; }
 .karaoke-mix__preset-head span:last-child { color: rgba(255, 255, 255, 0.45); font-size: 0.64rem; }
 .karaoke-mix__presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .karaoke-mix__preset {
