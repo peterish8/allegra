@@ -60,6 +60,17 @@ object OutsideMath {
         it.playing && it.packageName != ownPackage && it.title.isNotBlank() && !skip(it.artist, it.durationMs, it.mediaId)
     }
 
+    /**
+     * Whether the other app shows the song as liked: a heart rating it set on the song ([heart], null when it gave
+     * none), or a custom action that undoes a like ("Remove from Liked Songs", "Unlike", "Remove like"), which the
+     * app offers only for a song that is liked. ponytail: label matching, English labels only; a localised app
+     * reads as not liked, which only skips the like.
+     */
+    fun isLiked(heart: Boolean?, actionNames: List<String>): Boolean {
+        if (heart == true) return true
+        return actionNames.any { LIKED_ACTION.containsMatchIn(it.trim()) }
+    }
+
     /** The name to show for [packageName]: what Android resolved ([resolved]) if it did, else the known apps, else the package's last word. */
     fun appLabel(packageName: String, resolved: String?): String {
         if (!resolved.isNullOrBlank()) return resolved
@@ -69,6 +80,7 @@ object OutsideMath {
     }
 
     private val EPISODE_MARKS = listOf("episode", "podcast")
+    private val LIKED_ACTION = Regex("^(remove from (your )?(liked|favou?rites|library)|unlike|remove like)", RegexOption.IGNORE_CASE)
     private val KNOWN_APPS = mapOf(
         "com.spotify.music" to "Spotify",
         "com.google.android.apps.youtube.music" to "YouTube Music",

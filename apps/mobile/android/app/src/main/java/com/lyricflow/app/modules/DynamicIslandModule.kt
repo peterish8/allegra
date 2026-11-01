@@ -236,6 +236,7 @@ class DynamicIslandModule : Module() {
             "durationS" to song.durationMs.coerceAtLeast(0L) / 1000.0,
             "positionS" to tap.positionS,
             "playing" to tap.playing,
+            "liked" to tap.liked,
         ))
     }
 

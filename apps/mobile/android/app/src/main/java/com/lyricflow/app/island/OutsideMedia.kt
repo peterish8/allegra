@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadata
+import android.media.Rating
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
@@ -54,8 +55,11 @@ object OutsideMedia {
         val art: Bitmap?,
     )
 
-    /** A tap on "Play here": the song and where it was when the button was tapped (seconds, as JavaScript sees them). */
-    class TakeOver(val song: Song, val positionS: Double, val playing: Boolean)
+    /**
+     * A tap on "Continue here": the song, where it was when the button was tapped (seconds, as JavaScript sees
+     * them), and whether the other app shows it as liked.
+     */
+    class TakeOver(val song: Song, val positionS: Double, val playing: Boolean, val liked: Boolean)
 
     private const val TAG = "LyrFlowIsland"
 
@@ -132,8 +136,22 @@ object OutsideMedia {
         val listener = onTakeOver ?: return false
         // Its session gone since the offer: the song is still worth playing, from the start.
         val at = now(song.packageName)
-        listener(TakeOver(song, at?.first ?: 0.0, at?.second ?: false))
+        listener(TakeOver(song, at?.first ?: 0.0, at?.second ?: false, liked(song.packageName)))
         return true
+    }
+
+    /** Whether [packageName] shows its song as liked (OutsideMath.isLiked); false if its session is gone. */
+    private fun liked(packageName: String): Boolean {
+        val controller = controllers.firstOrNull { it.packageName == packageName } ?: return false
+        return try {
+            val rating = controller.metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)
+            val heart = rating?.takeIf { it.ratingStyle == Rating.RATING_HEART && it.isRated }?.hasHeart()
+            val actions = controller.playbackState?.customActions.orEmpty().map { it.name.toString() }
+            OutsideMath.isLiked(heart, actions)
+        } catch (e: Exception) {
+            Log.w(TAG, "could not read whether $packageName likes its song", e)
+            false
+        }
     }
 
     /** [packageName]'s live position in seconds and whether it plays, right now; null if its session is gone. */
