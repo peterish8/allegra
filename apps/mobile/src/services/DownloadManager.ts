@@ -12,9 +12,35 @@ import { Song } from '../types/song';
 import { StagingSong } from '../hooks/useSongStaging';
 import { lyricaService } from '../services/LyricaService';
 import { getNativeModule, nativeAddListener } from './nativeModule';
+import type { ReceiptMeta } from './downloadReceipts';
 
 // Module is already an EventEmitter on Expo SDK 52+ — do not wrap with EventEmitter.
 const DownloaderModule = getNativeModule<any>('Downloader');
+
+/** Every finished download's receipt as JSON text (services/downloadReceipts.ts); none off Android. */
+export function pendingDownloadReceipts(): string[] {
+    if (Platform.OS !== 'android' || typeof DownloaderModule?.pendingReceipts !== 'function') {
+        return [];
+    }
+    try {
+        const receipts: unknown = DownloaderModule.pendingReceipts();
+        return Array.isArray(receipts) ? receipts.filter((r): r is string => typeof r === 'string') : [];
+    } catch {
+        return [];
+    }
+}
+
+/** The song's row is in the library: its download receipt is done with. */
+export function clearDownloadReceipt(id: string): void {
+    if (Platform.OS !== 'android' || typeof DownloaderModule?.clearReceipt !== 'function') {
+        return;
+    }
+    try {
+        DownloaderModule.clearReceipt(id);
+    } catch {
+        // Cleared at the next start instead; adding the row again is a no-op.
+    }
+}
 
 class DownloadManager {
     private activeDownloads: Map<string, FileSystem.DownloadResumable> = new Map();
@@ -66,7 +92,8 @@ class DownloadManager {
     async finalizeDownload(
         staging: StagingSong,
         onProgress: (progress: number) => void,
-        downloadDirectoryUri?: string
+        downloadDirectoryUri?: string,
+        origin: { originId?: string; coverRemoteUri?: string } = {},
     ): Promise<Song> {
         
         if (!staging.selectedQuality) throw new Error('No quality selected');
@@ -130,8 +157,19 @@ class DownloadManager {
                     }
                 });
 
+                // Carried into the download's receipt, so the row can be added even if the app is gone when it finishes.
+                const meta: ReceiptMeta = {
+                    title: staging.title,
+                    artist: staging.artist,
+                    album: staging.album || undefined,
+                    duration: staging.duration,
+                    coverFallback: staging.selectedCoverUri || undefined,
+                    originId: origin.originId,
+                    coverRemoteUri: origin.coverRemoteUri,
+                };
+
                 try {
-                    DownloaderModule.enqueue(staging.id, audioUrl, coverUrl, songDir, lyrics, safDir);
+                    DownloaderModule.enqueue(staging.id, audioUrl, coverUrl, songDir, lyrics, safDir, JSON.stringify(meta));
                 } catch (e) {
                     cleanup();
                     reject(e);

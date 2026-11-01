@@ -10,7 +10,7 @@ import { usePlaylistStore } from '../store/playlistStore';
 import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { removeOnlineLike } from '../database/syncQueries';
 import * as playlistQueries from '../database/playlistQueries';
-import { downloadManager } from '../services/DownloadManager';
+import { clearDownloadReceipt, downloadManager } from '../services/DownloadManager';
 import { findYouTubeVideoId } from '../services/YouTubeSearchService';
 import { patchYoutubeVideoId } from '../database/queries';
 import { useQueueShape } from '../store/downloadQueueSelectors';
@@ -139,7 +139,11 @@ export const BackgroundDownloader = () => {
                         const scaledProgress = progress * 0.8;
                         if (mounted.current) updateItem(item.id, { progress: scaledProgress });
                     },
-                    useSettingsStore.getState().downloadDirectoryUri
+                    useSettingsStore.getState().downloadDirectoryUri,
+                    {
+                        originId: songRef(item.song.source, item.song.id) ?? undefined,
+                        coverRemoteUri: shareableArtwork(item.song.highResArt, item.song.thumbnail) || undefined,
+                    },
                 );
 
                 if (__DEV__) console.log(`[BackgroundDownloader] Audio download completed. Checking parallel lyrics search results...`);
@@ -202,6 +206,8 @@ export const BackgroundDownloader = () => {
                 newSong.originId = songRef(item.song.source, item.song.id) ?? undefined;
                 newSong.coverRemoteUri = shareableArtwork(item.song.highResArt, item.song.thumbnail) || undefined;
                 await addSong(newSong);
+                // The row is in: the worker's receipt for a killed app is not needed.
+                clearDownloadReceipt(newSong.id);
 
                 // A song liked online that is now downloaded: the like moves onto the
                 // row (Liked songs), the same catalog song, so the account sees no change.

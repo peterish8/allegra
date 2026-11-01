@@ -7,6 +7,8 @@ import { getAllPlaylists } from './playlistQueries';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import { buildLocalIndex, LIKED_PLAYLIST_ID, opsForFirstSync, planInbound, planPhonePlaylistReplacement, refForLocalSong, snapshotOfLocal, type AccountLibrary, type PhoneLibrary } from '../services/sync/plan';
 import type { LibraryChange } from '@shared/library';
+import * as songQueries from './queries';
+import { reconcileDownloadReceipts } from '../services/downloadReceipts';
 
 // Keep db.ts and syncQueries.ts real. Only bridge Expo's async native API to Node's
 // SQLite engine so these tests run the actual schema and SQL without a device runtime.
@@ -295,5 +297,42 @@ describe('sync queries against SQLite', () => {
     await syncDb.setCoverRemoteUri('d', 'https://other.example/d.jpg');
     const local = (await syncDb.getLocalSongs()).find(row => row.id === 'd');
     expect(local?.coverRemoteUri).toBe('https://c.saavncdn.com/d.jpg');
+  });
+});
+
+// services/downloadReceipts against the real songs table: a download the app never heard finish (Android killed it)
+// becomes a library row once, however often the receipts are read.
+describe('download receipts against SQLite', () => {
+  const receiptJson = (id: string): string => JSON.stringify({
+    v: 1,
+    id,
+    audioUri: `file:///data/music/${id}/audio.mp3`,
+    coverUri: `file:///data/music/${id}/cover.jpg`,
+    meta: JSON.stringify({ title: 'Tum Hi Ho', artist: 'Arijit Singh', duration: 262, originId: 'saavn:abc' }),
+    finishedAtMs: 1,
+  });
+
+  it('puts the song into the library once and clears its receipt', async () => {
+    const cleared: string[] = [];
+    const store = {
+      pending: () => (cleared.includes('download-1') ? [] : [receiptJson('download-1')]),
+      hasSong: async (id: string) => (await songQueries.getSongById(id)) !== null,
+      addSong: songQueries.insertSong,
+      clear: (id: string) => { cleared.push(id); },
+    };
+    await expect(reconcileDownloadReceipts(store)).resolves.toBe(1);
+    expect(await songQueries.getSongById('download-1')).toEqual(expect.objectContaining({
+      title: 'Tum Hi Ho',
+      artist: 'Arijit Singh',
+      audioUri: 'file:///data/music/download-1/audio.mp3',
+      originId: 'saavn:abc',
+    }));
+
+    // The next start, with the receipt still there because clearing failed, adds nothing.
+    await expect(reconcileDownloadReceipts({ ...store, pending: () => [receiptJson('download-1')] })).resolves.toBe(0);
+    const db = await getDatabase();
+    const count = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM songs WHERE id = ?', ['download-1']);
+    expect(count?.n).toBe(1);
+    expect(cleared).toEqual(['download-1', 'download-1']);
   });
 });
