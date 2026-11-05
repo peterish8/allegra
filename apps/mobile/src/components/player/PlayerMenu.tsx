@@ -4,17 +4,18 @@
  * rounded rows. Everything here does something real; rows that can't work
  * for this song or on this platform are left out rather than shown dead.
  */
-import React from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SheetScrollView } from './PlayerSheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Haptics from '../../utils/haptics';
-import { Song } from '../../types/song';
-import { isStreamSongId } from '../../services/stream/streamSong';
+import React from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { NativeAudioPlayer } from '../../services/NativeAudioPlayer';
 import { canSetRingtone } from '../../services/player/playerMenuActions';
-import { usePlaybackModesStore } from '../../store/playbackModesStore';
+import { isStreamSongId } from '../../services/stream/streamSong';
 import { useLuvLinkStore } from '../../store/luvLinkStore';
+import { usePlaybackModesStore } from '../../store/playbackModesStore';
+import { Song } from '../../types/song';
+import { Tactile, TactileRow } from '../../ui';
+import * as Haptics from '../../utils/haptics';
+import { SheetScrollView } from './PlayerSheet';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -33,20 +34,20 @@ interface PlayerMenuProps {
 }
 
 const Top: React.FC<{ icon: IconName; label: string; onPress: () => void }> = ({ icon, label, onPress }) => (
-  <Pressable onPress={onPress} style={({ pressed }) => [styles.top, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label}>
+  <Tactile onPress={onPress} wrapperStyle={styles.topCell} style={styles.top} accessibilityRole="button" accessibilityLabel={label}>
     <MaterialCommunityIcons name={icon} size={22} color="#fff" />
     <Text style={styles.topLabel} numberOfLines={1}>{label}</Text>
-  </Pressable>
+  </Tactile>
 );
 
 const Row: React.FC<{ icon: IconName; title: string; hint?: string; on?: boolean; onPress: () => void }> = ({ icon, title, hint, on, onPress }) => (
-  <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={title}>
+  <TactileRow onPress={onPress} style={styles.row} accessibilityRole="button" accessibilityLabel={title}>
     <MaterialCommunityIcons name={icon} size={23} color={on ? '#d9e66a' : '#fff'} />
     <View style={styles.rowText}>
       <Text style={styles.rowTitle}>{title}</Text>
       {hint ? <Text style={styles.rowHint}>{hint}</Text> : null}
     </View>
-  </Pressable>
+  </TactileRow>
 );
 
 export const PlayerMenu: React.FC<PlayerMenuProps> = ({ song, liked, showLyrics, onAction }) => {
@@ -118,8 +119,8 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 0 },
   content: { paddingBottom: 6 },
   topRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
+  topCell: { flex: 1 },
   top: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -143,7 +144,6 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   rowTitle: { color: '#fff', fontSize: 16, fontWeight: '600' },
   rowHint: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 2 },
-  pressed: { backgroundColor: 'rgba(255,255,255,0.14)' },
 });
 
 export default PlayerMenu;

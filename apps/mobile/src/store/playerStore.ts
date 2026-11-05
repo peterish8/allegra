@@ -1,12 +1,6 @@
 import { create } from 'zustand';
-import * as queries from '../database/queries';
-import { Song } from '../types/song';
-import { useSongsStore } from './songsStore';
-import { useSettingsStore } from './settingsStore';
-import { usePlaybackModesStore } from './playbackModesStore';
-import { setPlaybackIntent } from '../playback/playbackIntent';
-import { NativeAudioPlayer, isQueueBusy, whenQueueIdle, type NativeQueueState } from '../services/NativeAudioPlayer';
 import { prefetchCover } from '../components/player/coverImages';
+import * as queries from '../database/queries';
 import {
   currentQueueTag,
   fire,
@@ -24,6 +18,12 @@ import {
   songFromNative,
   toNativeItem,
 } from '../playback/nativeQueue';
+import { setPlaybackIntent } from '../playback/playbackIntent';
+import { NativeAudioPlayer, isQueueBusy, whenQueueIdle, type NativeQueueState } from '../services/NativeAudioPlayer';
+import { Song } from '../types/song';
+import { usePlaybackModesStore } from './playbackModesStore';
+import { useSettingsStore } from './settingsStore';
+import { useSongsStore } from './songsStore';
 
 let pausedLoadSongId: string | null = null;
 
@@ -178,24 +178,30 @@ export function takeResumePosition(songId: string): number | null {
 }
 
 interface PlayerState {
+  playbackSongId: string | null;
+  audible: boolean;
+  buffering: boolean;
+  playbackError: string | null;
+  reportPlayback: (audible: boolean, buffering: boolean) => void;
+  reportPlaybackError: (reason: string | null) => void;
   currentSongId: string | null;
   currentSong: Song | null;
   loadedAudioId: string | null; // Tracks what is actually loaded in the player
   showTransliteration: boolean;
   hideMiniPlayer: boolean;
   miniPlayerHiddenSources: Set<string>;
-  
+
   // Playlist queue management
   playlistQueue: Song[] | null;
   currentPlaylistId: string | null;
   currentQueueIndex: number;
-  
+
   // Playback State (for UI updates)
   isPlaying: boolean;
   setIsPlaying: (playing: boolean) => void;
   requestPlayback: (playing: boolean) => void;
 
-  
+
   loadSong: (songId: string) => Promise<void>;
   setInitialSong: (song: Song) => void;
   setLoadedAudioId: (songId: string | null) => void;
@@ -231,7 +237,7 @@ interface PlayerState {
   /** Put the saved queue back at launch, paused where it was. False when there was none. */
   restoreNativeQueue: () => Promise<boolean>;
   clearPlaylistQueue: () => void;
-  
+
   reset: () => void;
 }
 
@@ -391,26 +397,38 @@ async function pushQueue(playlistId: string, songs: Song[], startIndex: number, 
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
+  playbackSongId: null,
+  audible: false,
+  buffering: false,
+  playbackError: null,
+  reportPlayback: (audible, buffering) => {
+    const state = get();
+    const playbackError = audible || state.playbackSongId !== state.currentSongId ? null : state.playbackError;
+    if (state.audible !== audible || state.buffering !== buffering || state.playbackSongId !== state.currentSongId || state.playbackError !== playbackError)
+      set({ audible, buffering, playbackSongId: state.currentSongId, playbackError });
+  },
+  reportPlaybackError: reason => set({ playbackError: reason, playbackSongId: get().currentSongId }),
   currentSongId: null,
   currentSong: null,
   loadedAudioId: null,
   showTransliteration: false,
   hideMiniPlayer: false,
   miniPlayerHiddenSources: new Set(),
-  
+
   // Playlist queue state
   playlistQueue: null,
   currentPlaylistId: null,
   currentQueueIndex: -1,
-  
+
   isPlaying: false,
-  
+
   // setIsPlaying is the raw setter — reserved for PlayerContext syncing native
   // status. UI buttons must use requestPlayback so the intent guard is armed.
   setIsPlaying: (playing: boolean) => set({ isPlaying: playing }),
 
   requestPlayback: (playing: boolean) => {
     if (ownedRoomRoutingDisabled === 0 && ownedRoomRouter?.playback(playing)) return;
+    if (playing && get().playbackError) set({ playbackError: null, buffering: true });
     if (playing) pausedLoadSongId = null;
     if (nativeOwnsPlaybackState) {
       // Fire and let the player report back. playWhenReady flips synchronously
@@ -430,14 +448,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (state.currentPlaylistId && songId) {
         useSettingsStore.getState().updatePlaylistHistory(state.currentPlaylistId, songId);
     }
-    
+
     const cachedSong = useSongsStore.getState().songs.find(s => s.id === songId);
 
     if (cachedSong) {
         // Update UI & Audio immediately with cached data
         // Reset loadedAudioId to null to force MiniPlayer to sync new audio
         set({ currentSongId: songId, currentSong: cachedSong, loadedAudioId: null });
-        
+
         // Update history in songsStore (triggers lastPlayed update)
         useSongsStore.getState().setCurrentSong(cachedSong);
     }
@@ -504,7 +522,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       restoredSongId = song.id;
       set({ currentSongId: song.id, currentSong: song });
   },
-  
+
   setLoadedAudioId: (id) => set({ loadedAudioId: id }),
 
   // ✅ Allow updating the current song (e.g. lyrics changed) without reloading audio
@@ -513,7 +531,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   })),
 
   toggleShowTransliteration: () => set((state) => ({ showTransliteration: !state.showTransliteration })),
-  
+
   setMiniPlayerHidden: (hidden: boolean) => {
       // Legacy support: treats as 'global' or 'manual' override
       get().setMiniPlayerHiddenSource('manual', hidden);
@@ -526,7 +544,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       } else {
           newSources.delete(source);
       }
-      return { 
+      return {
           miniPlayerHiddenSources: newSources,
           hideMiniPlayer: newSources.size > 0
       };
@@ -641,7 +659,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         get().requestPlayback(autoplay);
     }
   },
-  
+
 
 
   removeFromQueue: (songId: string) => {
@@ -660,16 +678,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       fire(nativeQueue.remove(songId).then(() => scheduleReconcile()));
       return;
     }
-    
+
     const newQueue = state.playlistQueue.filter(s => s.id !== songId);
     const currentIndex = state.currentQueueIndex;
-    
+
     // If currently playing song was removed, stop playback
     if (state.currentSong?.id === songId) {
       if (__DEV__) {
         console.log('[PLAYER] Currently playing song removed from queue, clearing');
       }
-      set({ 
+      set({
         playlistQueue: newQueue.length > 0 ? newQueue : null,
         currentSong: null,
         currentSongId: null,
@@ -677,22 +695,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       });
       return;
     }
-    
+
     // Adjust index if song before current was removed
     const removedIndex = state.playlistQueue.findIndex(s => s.id === songId);
     const newIndex = removedIndex < currentIndex ? currentIndex - 1 : currentIndex;
-    
-    set({ 
+
+    set({
       playlistQueue: newQueue.length > 0 ? newQueue : null,
       currentQueueIndex: newIndex,
       currentPlaylistId: newQueue.length > 0 ? state.currentPlaylistId : null
     });
-    
+
     if (__DEV__) {
       console.log(`[PLAYER] Removed ${songId} from queue, ${newQueue.length} songs remaining`);
     }
   },
-  
+
   skipToQueueIndex: (index: number) => {
     const state = get();
     const queue = state.playlistQueue;
@@ -820,7 +838,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   clearPlaylistQueue: () => {
     // The engine keeps the song that is playing and drops the rest.
     if (usesNativeQueue()) fire(nativeQueue.replace([]).then(() => scheduleReconcile()));
-    set({ 
+    set({
       playlistQueue: null,
       currentPlaylistId: null,
       currentQueueIndex: -1

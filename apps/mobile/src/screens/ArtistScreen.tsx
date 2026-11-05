@@ -1,3 +1,4 @@
+import { AppScreen } from '../components/AppScreen';
 /**
  * An artist, laid out like YouTube Music's artist page and drawn in our own
  * language (Allegra: ink on near-black, the wave colour for the one primary
@@ -12,27 +13,22 @@
  * Songs play through the catalog (browsePlay), like every YouTube Music list
  * in the app.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useIsFocused } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BrowseStackParamList } from '../types/navigation';
+import Artwork from '../components/allegra/Artwork';
+import { RiseIn, Tactile } from '../components/allegra/motion';
+import { BrowseShelf } from '../components/browse/BrowseShelf';
+import { Radius, Signal, TypeScale } from '../constants/allegraTheme';
+import { useBottomClearance } from '../hooks/useBottomClearance';
+import { playEndpoint, playYTSongs } from '../services/stream/browsePlay';
 import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
 import { ArtistPage, Shelf, YTItem } from '../services/ytmusic/browse';
 import { YTSong } from '../services/ytmusic/parsers';
-import { playEndpoint, playYTSongs } from '../services/stream/browsePlay';
-import { BrowseShelf } from '../components/browse/BrowseShelf';
-import Artwork from '../components/allegra/Artwork';
-import { RiseIn, Tactile } from '../components/allegra/motion';
-import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
-import { Radius, Signal } from '../constants/allegraTheme';
-import CanvasVideoLayer from '../components/CanvasVideoLayer';
-import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
 import { useFollowedArtistsStore } from '../store/followedArtistsStore';
-import { TAB_BAR_CLEARANCE } from '../navigation/tabs';
+import { BrowseStackParamList } from '../types/navigation';
 import * as Haptics from '../utils/haptics';
 
 type Props = NativeStackScreenProps<BrowseStackParamList, 'Artist'>;
@@ -40,13 +36,12 @@ type Props = NativeStackScreenProps<BrowseStackParamList, 'Artist'>;
 /** The room every part of the page sits in. */
 const ROOM = Signal.bgDeep;
 
-const withAlpha = (hex: string, alpha: number): string =>
-  `${hex}${Math.round(Math.max(0, Math.min(1, alpha)) * 255).toString(16).padStart(2, '0')}`;
+
 
 const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const focused = useIsFocused();
+  const bottom = useBottomClearance();
+
   const [page, setPage] = useState<ArtistPage | null>(null);
   const [failed, setFailed] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -66,13 +61,11 @@ const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
     return () => { alive = false; };
   }, [route.params.browseId, route.params.name]);
 
-  const palette = useArtworkPalette(page?.thumbnail);
+
 
   const topShelf = page?.sections.find(s => s.items.every(i => i.kind === 'song'));
   const topSongs = useMemo(() => (topShelf ? topShelf.items.flatMap(i => (i.kind === 'song' ? [i.song] : [])) : []), [topShelf]);
-  const topSong = topShelf?.items[0]?.kind === 'song' ? topShelf.items[0].song : undefined;
-  // Echo's artist header video: the top song's motion artwork, when it has one.
-  const canvas = useCanvasArtwork(topSong && page ? { title: topSong.title, artist: page.name } : null);
+
 
   const followed = useFollowedArtistsStore(s => (page ? s.artists.some(a => a.browseId === page.browseId) : false));
 
@@ -94,7 +87,7 @@ const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   }, [navigation]);
 
-  const heroH = Math.round(width * 1.12);
+
 
   if (!page) {
     return (
@@ -112,20 +105,11 @@ const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
   }
 
   return (
-    <View style={[styles.fill, { backgroundColor: ROOM }]}>
-      <ScrollView contentContainerStyle={{ paddingBottom: TAB_BAR_CLEARANCE + insets.bottom + 90 }} showsVerticalScrollIndicator={false}>
-        <View style={{ height: heroH }}>
-          <Artwork uri={page.thumbnail} title={page.name} size={width} priority="high" style={[StyleSheet.absoluteFill, { width, height: heroH }]} />
-          {focused ? <CanvasVideoLayer canvas={canvas} playing={focused} scrimStrength={0.2} /> : null}
-          {/* Shade under the status bar, then the photo melts into the room through a low glow of its own colour. */}
-          <LinearGradient colors={['rgba(0,0,0,0.4)', 'transparent']} locations={[0, 0.22]} style={StyleSheet.absoluteFill} />
-          <LinearGradient
-            colors={['transparent', withAlpha(palette.primary, 0.1), 'rgba(7,8,11,0.78)', ROOM]}
-            locations={[0.42, 0.62, 0.86, 1]}
-            style={StyleSheet.absoluteFill}
-          />
+    <AppScreen style={[styles.fill, { backgroundColor: ROOM }]}>
+      <ScrollView contentContainerStyle={{ paddingBottom: bottom }} showsVerticalScrollIndicator={false}>
+        <View style={{ paddingTop: insets.top + 64, alignItems: 'center' }}>
+          <Artwork uri={page.thumbnail} title={page.name} size={184} priority="high" style={{ width: 184, height: 184, borderRadius: 92, overflow: 'hidden' }} />
           <View style={styles.heroText}>
-            <Text style={styles.kicker}>Artist</Text>
             <Text style={styles.name} numberOfLines={2} adjustsFontSizeToFit>{page.name}</Text>
             {page.subscribers || page.monthlyListeners ? (
               <View style={styles.stats}>
@@ -184,13 +168,6 @@ const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
         {page.description ? (
           <RiseIn index={1}>
             <Pressable onPress={() => setAboutOpen(o => !o)} style={styles.about} accessibilityRole="button" accessibilityLabel={aboutOpen ? 'About, tap to collapse' : 'About, tap to read more'}>
-              <LinearGradient
-                colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.14)', 'rgba(255,255,255,0)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.aboutEdge}
-                pointerEvents="none"
-              />
               <View style={styles.aboutHead}>
                 <Text style={styles.aboutTitle}>About</Text>
                 <Ionicons name={aboutOpen ? 'chevron-up' : 'chevron-down'} size={16} color={Signal.inkMuted} />
@@ -217,50 +194,48 @@ const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
       <Tactile onPress={() => navigation.goBack()} wrapperStyle={[styles.backWrap, { top: insets.top + 8 }]} style={styles.back} hitSlop={10} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Back">
         <Ionicons name="chevron-back" size={22} color={Signal.ink} />
       </Tactile>
-    </View>
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center' },
-  empty: { color: Signal.inkSoft, fontSize: 15 },
+  empty: { color: Signal.inkSoft, fontSize: TypeScale.body },
   retry: { marginTop: 16, paddingHorizontal: 22 },
-  heroText: { position: 'absolute', left: 20, right: 20, bottom: 14 },
-  kicker: { color: Signal.inkMuted, fontSize: 12, fontWeight: '600', marginBottom: 4 },
-  name: { color: Signal.ink, fontSize: 42, fontWeight: '800', letterSpacing: -0.8 },
+  heroText: { alignItems: 'center', paddingHorizontal: 16, marginTop: 16 },
+  name: { color: Signal.ink, fontSize: TypeScale.detail, fontWeight: '700' },
   stats: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 16, rowGap: 4, marginTop: 8 },
   stat: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   statDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Signal.wave },
-  statText: { color: Signal.inkSoft, fontSize: 14, fontWeight: '500', fontVariant: ['tabular-nums'] },
+  statText: { color: Signal.inkSoft, fontSize: TypeScale.body, fontWeight: '400', fontVariant: ['tabular-nums'] },
   actions: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginTop: 18 },
   actionWrap: { flex: 1 },
-  action: { height: 50, borderRadius: Radius.pill, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  action: { minHeight: 48, borderRadius: Radius.control, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   primary: { backgroundColor: Signal.wave },
   glass: { backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)' },
   follow: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   followOn: { borderColor: 'rgba(217, 230, 106, 0.5)', backgroundColor: 'rgba(217, 230, 106, 0.1)' },
-  actionText: { color: Signal.ink, fontSize: 15, fontWeight: '700' },
+  actionText: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '700' },
   about: {
     marginHorizontal: 16,
     marginTop: 18,
     paddingHorizontal: 18,
     paddingVertical: 16,
-    borderRadius: 22,
+    borderRadius: Radius.sheet,
     backgroundColor: 'rgba(255,255,255,0.04)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.09)',
     overflow: 'hidden',
   },
-  aboutEdge: { position: 'absolute', top: 0, left: 0, right: 0, height: 1 },
   aboutHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  aboutTitle: { color: Signal.ink, fontSize: 17, fontWeight: '700' },
-  aboutText: { color: Signal.inkSoft, fontSize: 14, lineHeight: 21 },
+  aboutTitle: { color: Signal.ink, fontSize: TypeScale.section, fontWeight: '700' },
+  aboutText: { color: Signal.inkSoft, fontSize: TypeScale.body, lineHeight: 21 },
   backWrap: { position: 'absolute', left: 14 },
   back: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: Radius.sheet,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(10,10,12,0.5)',

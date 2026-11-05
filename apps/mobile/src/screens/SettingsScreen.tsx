@@ -1,3 +1,5 @@
+import { AppScreen } from '../components/AppScreen';
+import { TypeScale } from '../constants/allegraTheme';
 /**
  * Settings, in Allegra's language: one scrolling page of dark sections
  * (components/settings/SettingsKit) in a dark room with the song's glow
@@ -5,52 +7,52 @@
  * Every control here changes something.
  */
 
-import React from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  Image,
-  Modal,
-  TextInput,
-  Alert,
-} from 'react-native';
-import Slider from '@react-native-community/slider';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
+import React from 'react';
 import type { LayoutChangeEvent } from 'react-native';
-import SettingsGlow from '../components/settings/SettingsGlow';
+import {
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import appConfig from '../../app.json';
+import { CustomAlert } from '../components/CustomAlert';
+import { LanguagePickerModal } from '../components/LanguagePickerModal';
+import { Toast } from '../components/Toast';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { SETTINGS_TOUR, settingsDials, settingsScene } from '../components/allegra/infoTours';
+import { Tactile } from '../components/allegra/motion';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
+import AllegraAccountSettings from '../components/settings/AllegraAccountSettings';
+import DynamicIslandSettings from '../components/settings/DynamicIslandSettings';
+import LuvLinkSettings from '../components/settings/LuvLinkSettings';
+import SettingsGlow from '../components/settings/SettingsGlow';
 import * as Kit from '../components/settings/SettingsKit';
 import { Action, Choice, JumpChips, Row, Section, SettingsAccordion } from '../components/settings/SettingsKit';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
-import { Motion, Radius, Signal } from '../constants/allegraTheme';
-import { Tactile } from '../components/allegra/motion';
-import * as Haptics from '../utils/haptics';
-import appConfig from '../../app.json';
-import { TabScreenProps } from '../types/navigation';
-import { usePlayerStore } from '../store/playerStore';
-import { AppBackground, LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, LyricsHighlight, MiniPlayerBackground, PlayerBackground, ReduceEffects, isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
-import { deviceTier } from '../utils/performanceTier';
-import { CustomAlert } from '../components/CustomAlert';
-import { Toast } from '../components/Toast';
-import LuvLinkSettings from '../components/settings/LuvLinkSettings';
-import DynamicIslandSettings from '../components/settings/DynamicIslandSettings';
-import { readIslandStatus } from '../services/NativeDynamicIsland';
-import AllegraAccountSettings from '../components/settings/AllegraAccountSettings';
+import { Motion, Radius, Signal, Space } from '../constants/allegraTheme';
 import { Colors } from '../constants/colors';
 import { SettingsStrings } from '../constants/uiStrings';
-import { exportAllSongs, shareExportedFile, importSongsFromJson } from '../utils/exportImport';
 import { clearAllData } from '../database/queries';
+import { useBottomClearance } from '../hooks/useBottomClearance';
+import { readIslandStatus } from '../services/NativeDynamicIsland';
+import { convertAudioFileToSong, scanAudioFiles } from '../services/mediaScanner';
 import { useLuvsPreferencesStore } from '../store/luvsPreferencesStore';
-import { LanguagePickerModal } from '../components/LanguagePickerModal';
-import { useSongsStore } from '../store/songsStore';
+import { usePlayerStore } from '../store/playerStore';
 import { usePlaylistStore } from '../store/playlistStore';
-import { scanAudioFiles, convertAudioFileToSong } from '../services/mediaScanner';
-import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
-import { SETTINGS_TOUR, settingsScene, settingsDials } from '../components/allegra/infoTours';
+import { LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, LyricsHighlight, PlayerBackground, ReduceEffects, isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
+import { useSongsStore } from '../store/songsStore';
+import { TabScreenProps } from '../types/navigation';
+import { Button, IconButton, Sheet, SheetScrollView, TactileRow } from '../ui';
+import { exportAllSongs, importSongsFromJson, shareExportedFile } from '../utils/exportImport';
+import * as Haptics from '../utils/haptics';
+import { deviceTier } from '../utils/performanceTier';
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
@@ -58,8 +60,9 @@ type Props = TabScreenProps<'Settings'>;
 
 const APP_VERSION = appConfig.expo.version;
 
-const SettingsScreen: React.FC<Props> = () => {
+const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
   const insets = useSafeAreaInsets();
+  const bottom = useBottomClearance(Space.xxl);
   const settings = useSettingsStore();
   // Selectors, not the whole store: this page stays mounted behind the others.
   const fetchSongs = useSongsStore(s => s.fetchSongs);
@@ -129,6 +132,14 @@ const SettingsScreen: React.FC<Props> = () => {
       Alert.alert('Scan failed', e instanceof Error ? e.message : 'Unknown error');
     }
   }, []);
+
+  React.useEffect(() => {
+    const action = route.params?.action;
+    if (!action) return;
+    navigation.setParams({ action: undefined });
+    if (action === 'import-phone') handleImportLocalAudio();
+    if (action === 'hidden-songs') { fetchHiddenSongs(); setHiddenSongsVisible(true); }
+  }, [route.params?.action, navigation, handleImportLocalAudio, fetchHiddenSongs]);
 
   const handleCloseSelectionModal = React.useCallback(() => {
     setSelectionModalVisible(false);
@@ -208,7 +219,7 @@ const SettingsScreen: React.FC<Props> = () => {
     player: `${BG_NAME[settings.playerBackground]} · canvas ${settings.canvasEnabled ? 'on' : 'off'}`,
     playback: `${settings.keepScreenOn ? 'Screen stays on' : 'Screen can sleep'} · haptics ${(settings.hapticsEnabled ?? true) ? 'on' : 'off'}`,
     lyrics: `Size ${settings.lyricsSize} · ${ALIGN_NAME[settings.lyricsAlign]} · ${settings.lyricsHighlight === 'letters' ? 'letter by letter' : 'line by line'} · ${timing === 0 ? 'in sync' : `${timing > 0 ? '+' : ''}${timing.toFixed(1)}s`}`,
-    nav: `${settings.navBarStyle === 'modern-pill' ? 'Floating pill' : 'Classic bar'} · voice ${(settings.micEnabled ?? true) ? 'on' : 'off'}`,
+    nav: 'Five tabs ? voice search',
     discover: `Languages: ${luvsLanguageSummary.toLowerCase()}`,
     library: `${songs.length} ${songs.length === 1 ? 'song' : 'songs'}${hiddenSongs.length > 0 ? ` · ${hiddenSongs.length} hidden` : ''}`,
     about: `Version ${APP_VERSION}`,
@@ -220,17 +231,8 @@ const SettingsScreen: React.FC<Props> = () => {
     youtube: 'The cover\u2019s colour washing down into black, with the artwork as a card, like YouTube Music.',
     aura: 'Black through the middle, with two of the cover\u2019s colours glowing in from the top and bottom and drifting slowly.',
   };
-  const appBgHint: Record<AppBackground, string> = {
-    shader: 'The live shader, moving with the music.',
-    glass: 'Dark frosted glass tinted by the song. Lighter on the battery.',
-    glow: 'Two of the cover’s colours drifting slowly across the top, fading into plain black.',
-  };
-  const miniHint: Record<MiniPlayerBackground, string> = {
-    glow: 'Two glows drifting in the cover\u2019s colours.',
-    tint: 'A calm tone of the cover.',
-    glass: 'Clear liquid glass that bends and lights whatever is behind it.',
-    black: 'Plain black, nothing behind the text.',
-  };
+
+
   const reduceHint: Record<ReduceEffects, string> = {
     auto: deviceTier() === 'low'
       ? 'This phone gets the lighter effects: glass without live blur and calmer motion, for smoother scrolling.'
@@ -240,7 +242,7 @@ const SettingsScreen: React.FC<Props> = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <AppScreen style={styles.container}>
       <SettingsGlow palette={hasSong ? palette : null} />
       <SettingsAccordion.Provider value={accordion}>
       <ScrollView
@@ -248,7 +250,7 @@ const SettingsScreen: React.FC<Props> = () => {
         stickyHeaderIndices={[1]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 150 + insets.bottom }}
+        contentContainerStyle={{ paddingTop: insets.top + Space.xs, paddingBottom: bottom }}
       >
         <View style={styles.hero}>
           <InfoTitleRow><Text style={styles.heroTitle} accessibilityRole="header">Settings</Text><InfoTour label="About Settings" steps={SETTINGS_TOUR} scene={settingsScene} persist={settingsDials} /></InfoTitleRow>
@@ -283,9 +285,6 @@ const SettingsScreen: React.FC<Props> = () => {
             value={settings.appleMusicInspired}
             onChange={settings.setAppleMusicInspired}
           />
-          {settings.appleMusicInspired ? (
-            <Kit.Switch label="Hide volume slider" hint="Keep the phone's volume keys only." value={settings.hidePlayerVolume} onChange={settings.setHidePlayerVolume} />
-          ) : null}
           {isCardPlayerBackground(settings.playerBackground) ? (
             <Kit.Switch
               label="Full-size cover"
@@ -300,20 +299,6 @@ const SettingsScreen: React.FC<Props> = () => {
             value={settings.playerBackground}
             options={[{ value: 'apple', label: 'Apple Music' }, { value: 'blend', label: 'Apple + glow' }, { value: 'youtube', label: 'YouTube Music' }, { value: 'aura', label: 'Cover glow' }]}
             onChange={settings.setPlayerBackground}
-          />
-          <Choice<AppBackground>
-            label="App background"
-            hint={appBgHint[settings.appBackground]}
-            value={settings.appBackground}
-            options={[{ value: 'shader', label: 'Live shader' }, { value: 'glass', label: 'Frosted glass' }, { value: 'glow', label: 'Glow' }]}
-            onChange={settings.setAppBackground}
-          />
-          <Choice<MiniPlayerBackground>
-            label="Mini player background"
-            hint={miniHint[settings.miniPlayerBackground]}
-            value={settings.miniPlayerBackground}
-            options={[{ value: 'glow', label: 'Glow animated' }, { value: 'tint', label: 'Cover tint' }, { value: 'glass', label: 'Liquid glass' }, { value: 'black', label: 'Pure black' }]}
-            onChange={settings.setMiniPlayerBackground}
           />
           <Choice<ReduceEffects>
             label="Reduce effects"
@@ -395,12 +380,6 @@ const SettingsScreen: React.FC<Props> = () => {
         </Section>
 
         <Section id="nav" summary={summaries.nav} icon="navigate-outline" title="Navigation and voice" lead="The bar at the bottom and the mic in it." onLayout={at('nav')}>
-          <Choice<'modern-pill' | 'classic'>
-            label="Bottom bar"
-            value={settings.navBarStyle}
-            options={[{ value: 'modern-pill', label: 'Floating pill' }, { value: 'classic', label: 'Classic' }]}
-            onChange={settings.setNavBarStyle}
-          />
           <Kit.Switch label="Voice button" hint="Say a song and it plays." value={settings.micEnabled ?? true} onChange={settings.setMicEnabled} />
           {(settings.micEnabled ?? true) ? (
             <Choice<'hold' | 'tap'>
@@ -498,112 +477,94 @@ const SettingsScreen: React.FC<Props> = () => {
       />
 
 
-      <Modal visible={selectionModalVisible} transparent animationType="slide" onRequestClose={handleCloseSelectionModal}>
-        <Pressable style={styles.selectionOverlay} onPress={handleCloseSelectionModal}>
-          <Pressable style={styles.selectionContainer} onPress={e => e.stopPropagation()}>
-            <View style={styles.selectionHeader}>
-              <Text style={styles.selectionTitle}>Select Songs ({selectedFiles.size}/{availableAudioFiles.length})</Text>
-              <Pressable onPress={handleCloseSelectionModal}>
-                <Ionicons name="close" size={24} color={Colors.textPrimary} />
-              </Pressable>
+      <Sheet visible={selectionModalVisible} onClose={handleCloseSelectionModal} title={`Select songs (${selectedFiles.size}/${availableAudioFiles.length})`} tall keyboard>
+        <View style={styles.searchBarContainer}>
+          <Ionicons name="search" size={18} color={Colors.textSecondary} />
+          <TextInput
+            style={styles.searchBarInput} placeholder="Search songs…" placeholderTextColor={Colors.textMuted}
+            value={searchQuery} onChangeText={setSearchQuery} autoCapitalize="none" autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <IconButton icon="close-circle" size="sm" variant="plain" label="Clear search" onPress={() => setSearchQuery('')} />
+          )}
+        </View>
+        <TactileRow
+          style={styles.selectAllButton}
+          onPress={toggleSelectAll}
+          accessibilityRole="checkbox"
+          accessibilityLabel="Select all"
+          accessibilityState={{ checked: selectedFiles.size === availableAudioFiles.length }}
+        >
+          <Ionicons name={selectedFiles.size === availableAudioFiles.length ? 'checkbox' : 'square-outline'} size={24} color="#EDEDED" />
+          <Text style={styles.selectAllText}>Select all</Text>
+        </TactileRow>
+        <SheetScrollView style={styles.selectionList} keyboardShouldPersistTaps="handled">
+          {filteredAudioFiles.length === 0 && searchQuery.trim() !== '' ? (
+            <View style={styles.emptySearchContainer}>
+              <Ionicons name="search-outline" size={40} color={Colors.textMuted} />
+              <Text style={styles.emptySearchText}>No songs match "{searchQuery}"</Text>
             </View>
-            <View style={styles.searchBarContainer}>
-              <Ionicons name="search" size={18} color={Colors.textSecondary} />
-              <TextInput
-                style={styles.searchBarInput} placeholder="Search songs…" placeholderTextColor={Colors.textMuted}
-                value={searchQuery} onChangeText={setSearchQuery} autoCapitalize="none" autoCorrect={false}
-              />
-              {searchQuery.length > 0 && (
-                <Pressable onPress={() => setSearchQuery('')}>
-                  <Ionicons name="close-circle" size={18} color={Colors.textSecondary} />
-                </Pressable>
-              )}
-            </View>
-            <Pressable style={styles.selectAllButton} onPress={toggleSelectAll}>
-              <Ionicons name={selectedFiles.size === availableAudioFiles.length ? 'checkbox' : 'square-outline'} size={24} color="#EDEDED" />
-              <Text style={styles.selectAllText}>Select all</Text>
-            </Pressable>
-            <ScrollView style={styles.selectionList} keyboardShouldPersistTaps="handled">
-              {filteredAudioFiles.length === 0 && searchQuery.trim() !== '' ? (
-                <View style={styles.emptySearchContainer}>
-                  <Ionicons name="search-outline" size={40} color={Colors.textMuted} />
-                  <Text style={styles.emptySearchText}>No songs match "{searchQuery}"</Text>
-                </View>
-              ) : (
-                filteredAudioFiles.map(file => (
-                  <Pressable key={file.uri} style={styles.selectionItem} onPress={() => toggleFileSelection(file.uri)}>
-                    <Ionicons name={selectedFiles.has(file.uri) ? 'checkbox' : 'square-outline'} size={24} color={selectedFiles.has(file.uri) ? '#EDEDED' : Colors.textSecondary} />
-                    <View style={styles.selectionItemInfo}>
-                      <Text style={styles.selectionItemTitle} numberOfLines={1}>{file.filename.replace(/\.[^/.]+$/, '')}</Text>
-                      <Text style={styles.selectionItemArtist} numberOfLines={1}>{file.artist || file.album || 'Unknown'}</Text>
-                    </View>
-                  </Pressable>
-                ))
-              )}
-            </ScrollView>
-            <View style={styles.selectionActions}>
-              <Pressable style={[styles.selectionButton, styles.selectionButtonCancel]} onPress={handleCloseSelectionModal}>
-                <Text style={styles.selectionButtonText}>{SettingsStrings.cancel}</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.selectionButton, styles.selectionButtonImport, selectedFiles.size === 0 && styles.selectionButtonDisabled]}
-                onPress={handleImportSelected} disabled={selectedFiles.size === 0}
+          ) : (
+            filteredAudioFiles.map(file => (
+              <TactileRow
+                key={file.uri}
+                style={styles.selectionItem}
+                onPress={() => toggleFileSelection(file.uri)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selectedFiles.has(file.uri) }}
               >
-                <Text style={[styles.selectionButtonText, styles.selectionButtonTextImport]}>Import {selectedFiles.size}</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={hiddenSongsVisible} transparent animationType="slide" onRequestClose={() => setHiddenSongsVisible(false)}>
-        <Pressable style={styles.selectionOverlay} onPress={() => setHiddenSongsVisible(false)}>
-          <Pressable style={styles.selectionContainer} onPress={e => e.stopPropagation()}>
-            <View style={styles.selectionHeader}>
-              <Text style={styles.selectionTitle}>Hidden Songs ({hiddenSongs.length})</Text>
-              <Pressable onPress={() => setHiddenSongsVisible(false)}>
-                <Ionicons name="close" size={24} color={Colors.textPrimary} />
-              </Pressable>
-            </View>
-            <ScrollView style={[styles.selectionList, { maxHeight: 500 }]} keyboardShouldPersistTaps="handled">
-              {hiddenSongs.length === 0 ? (
-                <View style={styles.emptySearchContainer}>
-                  <Ionicons name="eye-outline" size={40} color={Colors.textMuted} />
-                  <Text style={styles.emptySearchText}>No hidden songs</Text>
+                <Ionicons name={selectedFiles.has(file.uri) ? 'checkbox' : 'square-outline'} size={24} color={selectedFiles.has(file.uri) ? '#EDEDED' : Colors.textSecondary} />
+                <View style={styles.selectionItemInfo}>
+                  <Text style={styles.selectionItemTitle} numberOfLines={1}>{file.filename.replace(/\.[^/.]+$/, '')}</Text>
+                  <Text style={styles.selectionItemArtist} numberOfLines={1}>{file.artist || file.album || 'Unknown'}</Text>
                 </View>
-              ) : (
-                hiddenSongs.map(song => (
-                  <View key={song.id} style={styles.selectionItem}>
-                    {song.coverImageUri
-                      ? <Image source={{ uri: song.coverImageUri }} style={{ width: 44, height: 44, borderRadius: 8 }} />
-                      : <View style={{ width: 44, height: 44, borderRadius: 8, backgroundColor: '#2C2C2E', alignItems: 'center', justifyContent: 'center' }}>
-                          <Ionicons name="disc" size={24} color="rgba(255,255,255,0.3)" />
-                        </View>
-                    }
-                    <View style={styles.selectionItemInfo}>
-                      <Text style={styles.selectionItemTitle} numberOfLines={1}>{song.title}</Text>
-                      <Text style={styles.selectionItemArtist} numberOfLines={1}>{song.artist || 'Unknown Artist'}</Text>
-                    </View>
-                    <Pressable
-                      style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 16, backgroundColor: 'rgba(0,122,255,0.1)' }}
-                      onPress={() => unhideSong(song.id, false)}
-                    >
-                      <Text style={{ color: '#EDEDED', fontWeight: 'bold' }}>{SettingsStrings.unhide}</Text>
-                    </Pressable>
-                  </View>
-                ))
-              )}
-            </ScrollView>
-            <View style={styles.selectionActions}>
-              <Pressable style={[styles.selectionButton, styles.selectionButtonCancel, { flex: 1 }]} onPress={() => setHiddenSongsVisible(false)}>
-                <Text style={styles.selectionButtonText}>{SettingsStrings.close}</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+              </TactileRow>
+            ))
+          )}
+        </SheetScrollView>
+        <View style={styles.selectionActions}>
+          <View style={styles.selectionSlot}>
+            <Button label={SettingsStrings.cancel} variant="glass" block onPress={handleCloseSelectionModal} />
+          </View>
+          <View style={styles.selectionSlot}>
+            <Button label={`Import ${selectedFiles.size}`} variant="primary" block disabled={selectedFiles.size === 0} onPress={handleImportSelected} />
+          </View>
+        </View>
+      </Sheet>
 
-    </View>
+      <Sheet visible={hiddenSongsVisible} onClose={() => setHiddenSongsVisible(false)} title={`Hidden songs (${hiddenSongs.length})`}>
+        <SheetScrollView style={[styles.selectionList, { maxHeight: 500 }]} keyboardShouldPersistTaps="handled">
+          {hiddenSongs.length === 0 ? (
+            <View style={styles.emptySearchContainer}>
+              <Ionicons name="eye-outline" size={40} color={Colors.textMuted} />
+              <Text style={styles.emptySearchText}>No hidden songs</Text>
+            </View>
+          ) : (
+            hiddenSongs.map(song => (
+              <View key={song.id} style={styles.selectionItem}>
+                {song.coverImageUri
+                  ? <Image source={{ uri: song.coverImageUri }} style={{ width: 44, height: 44, borderRadius: 8 }} />
+                  : <View style={{ width: 44, height: 44, borderRadius: 8, backgroundColor: '#2C2C2E', alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="disc" size={24} color="rgba(255,255,255,0.3)" />
+                    </View>
+                }
+                <View style={styles.selectionItemInfo}>
+                  <Text style={styles.selectionItemTitle} numberOfLines={1}>{song.title}</Text>
+                  <Text style={styles.selectionItemArtist} numberOfLines={1}>{song.artist || 'Unknown Artist'}</Text>
+                </View>
+                <Button label={SettingsStrings.unhide} variant="glass" size="sm" onPress={() => unhideSong(song.id, false)} />
+              </View>
+            ))
+          )}
+        </SheetScrollView>
+        <View style={styles.selectionActions}>
+          <View style={styles.selectionSlot}>
+            <Button label={SettingsStrings.close} variant="glass" block onPress={() => setHiddenSongsVisible(false)} />
+          </View>
+        </View>
+      </Sheet>
+
+    </AppScreen>
   );
 };
 
@@ -680,19 +641,19 @@ const TimingRow: React.FC<{ value: number; onChange: (seconds: number) => void }
 const styles = StyleSheet.create({
   lyricsSample: { color: Signal.ink, fontWeight: '700', marginTop: 10, marginBottom: 4 },
   hero: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 6 },
-  heroTitle: { color: Signal.ink, fontSize: 34, fontWeight: '700' },
+  heroTitle: { color: Signal.ink, fontSize: TypeScale.page, fontWeight: '700' },
   slider: { width: '100%', height: 36 },
   resetWrap: { alignItems: 'flex-start', marginTop: 4 },
   resetPill: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 14, borderRadius: Radius.pill, backgroundColor: Signal.wave },
-  resetText: { color: Signal.waveInk, fontSize: 13, fontWeight: '600' },
+  resetText: { color: Signal.waveInk, fontSize: TypeScale.meta, fontWeight: '600' },
   tokenField: { marginBottom: 12 },
-  tokenLabel: { color: Signal.inkSoft, fontSize: 13, fontWeight: '600', marginBottom: 6 },
+  tokenLabel: { color: Signal.inkSoft, fontSize: TypeScale.meta, fontWeight: '600', marginBottom: 6 },
   tokenInput: {
     minHeight: 44,
     paddingHorizontal: 14,
     borderRadius: 16,
     color: Signal.ink,
-    fontSize: 14,
+    fontSize: TypeScale.body,
     backgroundColor: 'rgba(244,241,234,0.06)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.1)',
@@ -702,36 +663,27 @@ const styles = StyleSheet.create({
   // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
   nameModal: { backgroundColor: '#1C1C1E', borderRadius: 16, padding: 24, width: '80%', maxWidth: 320 },
-  nameModalTitle: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16, textAlign: 'center' },
+  nameModalTitle: { fontSize: TypeScale.section, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16, textAlign: 'center' },
   nameModalButtons: { flexDirection: 'row', gap: 10 },
   nameModalButton: { flex: 1, padding: 13, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center' },
   nameModalButtonPrimary: { backgroundColor: '#2E2E2E' },
-  nameModalButtonText: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
+  nameModalButtonText: { fontSize: TypeScale.body, fontWeight: '600', color: Colors.textPrimary },
   nameModalButtonTextPrimary: { color: '#fff' },
 
   // Selection modal
-  selectionOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'flex-end' },
-  selectionContainer: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%', paddingBottom: 40 },
-  selectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },
-  selectionTitle: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
   searchBarContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 12, marginBottom: 4, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
-  searchBarInput: { flex: 1, fontSize: 15, color: Colors.textPrimary },
+  searchBarInput: { flex: 1, fontSize: TypeScale.body, color: Colors.textPrimary },
   emptySearchContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 12 },
-  emptySearchText: { fontSize: 14, color: Colors.textMuted, textAlign: 'center' },
+  emptySearchText: { fontSize: TypeScale.body, color: Colors.textMuted, textAlign: 'center' },
   selectAllButton: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },
-  selectAllText: { fontSize: 15, fontWeight: '600', color: '#EDEDED' },
+  selectAllText: { fontSize: TypeScale.body, fontWeight: '600', color: '#EDEDED' },
   selectionList: { maxHeight: 400 },
   selectionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 12 },
   selectionItemInfo: { flex: 1 },
-  selectionItemTitle: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
-  selectionItemArtist: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
+  selectionItemTitle: { fontSize: TypeScale.body, fontWeight: '600', color: Colors.textPrimary },
+  selectionItemArtist: { fontSize: TypeScale.meta, color: Colors.textSecondary, marginTop: 2 },
   selectionActions: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 18 },
-  selectionButton: { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center' },
-  selectionButtonCancel: { backgroundColor: 'rgba(255,255,255,0.1)' },
-  selectionButtonImport: { backgroundColor: '#2E2E2E' },
-  selectionButtonDisabled: { backgroundColor: 'rgba(0,122,255,0.3)' },
-  selectionButtonText: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
-  selectionButtonTextImport: { color: '#fff' },
+  selectionSlot: { flex: 1 },
 });
 
 export default SettingsScreen;

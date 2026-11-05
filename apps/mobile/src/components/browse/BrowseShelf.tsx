@@ -4,13 +4,14 @@
  * cards — square covers for songs, albums and playlists, round photos for
  * artists.
  */
-import { sentenceCase } from '../../utils/sentenceCase';
-import React, { memo } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Artwork from '../allegra/Artwork';
+import React, { memo } from 'react';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { Shelf, YTItem } from '../../services/ytmusic/browse';
 import { YTSong } from '../../services/ytmusic/parsers';
+import { sentenceCase } from '../../utils/sentenceCase';
+import Artwork from '../allegra/Artwork';
+import { Tactile, TactileRow } from '../allegra/motion';
 
 const CARD = 150;
 const ARTIST = 124;
@@ -28,14 +29,14 @@ const songsOf = (items: YTItem[]): YTSong[] =>
   items.flatMap(i => (i.kind === 'song' ? [i.song] : []));
 
 export const SongRow: React.FC<{ song: YTSong; onPress: () => void; pending?: boolean; index?: number }> = memo(({ song, onPress, pending }) => (
-  <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={`Play ${song.title}`}>
+  <TactileRow onPress={onPress} style={styles.row} accessibilityRole="button" accessibilityLabel={`Play ${song.title}`}>
     <Artwork uri={song.thumbnail} title={song.title} artist={song.artists.join(', ')} size={52} style={styles.rowArt} />
     <View style={styles.rowText}>
       <Text style={styles.rowTitle} numberOfLines={1}>{song.title}</Text>
       <Text style={styles.rowSub} numberOfLines={1}>{song.artists.join(', ')}{song.album ? ` · ${song.album}` : ''}</Text>
     </View>
     {pending ? <Ionicons name="ellipsis-horizontal" size={18} color="rgba(255,255,255,0.7)" /> : null}
-  </Pressable>
+  </TactileRow>
 ));
 SongRow.displayName = 'SongRow';
 
@@ -46,11 +47,11 @@ const Card: React.FC<{ item: YTItem; onPress: () => void }> = memo(({ item, onPr
   const art = item.kind === 'song' ? item.song.thumbnail : item.thumbnail;
   const size = round ? ARTIST : CARD;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [{ width: size }, pressed && styles.pressedCard]} accessibilityRole="button" accessibilityLabel={title}>
+    <Tactile onPress={onPress} pressScale={0.98} wrapperStyle={{ width: size }} accessibilityRole="button" accessibilityLabel={title}>
       <Artwork uri={art} title={title} size={size} style={[styles.cardArt, { width: size, height: size, borderRadius: round ? size / 2 : 10 }]} />
       <Text style={[styles.cardTitle, round && styles.center]} numberOfLines={round ? 1 : 2}>{title}</Text>
       {sub && !round ? <Text style={styles.cardSub} numberOfLines={1}>{sub}</Text> : null}
-    </Pressable>
+    </Tactile>
   );
 });
 Card.displayName = 'Card';
@@ -62,9 +63,9 @@ export const ShelfHeader: React.FC<{ title: string; strapline?: string; onMore?:
       <Text style={styles.title} numberOfLines={1}>{title}</Text>
     </View>
     {onMore ? (
-      <Pressable onPress={onMore} hitSlop={12} accessibilityRole="button" accessibilityLabel={`More ${title}`}>
+      <Tactile onPress={onMore} hitSlop={12} pressScale={0.9} accessibilityRole="button" accessibilityLabel={`More ${title}`}>
         <Ionicons name="arrow-forward" size={22} color="rgba(255,255,255,0.8)" />
-      </Pressable>
+      </Tactile>
     ) : null}
   </View>
 );
@@ -126,6 +127,4 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   rowTitle: { color: '#fff', fontSize: 16, fontWeight: '600' },
   rowSub: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 2 },
-  pressed: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  pressedCard: { opacity: 0.8, transform: [{ scale: 0.98 }] },
 });

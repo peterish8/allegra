@@ -5,6 +5,8 @@
  * standard controls. What differs is where actions go: every control is a Connect command, the
  * volume is the playing device's, and a chip under the grabber says which device that is.
  */
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
@@ -22,38 +24,37 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SongSnapshot } from '@shared/songRef';
-import type { RootStackScreenProps } from '../../types/navigation';
+import { Motion, Signal } from '../../constants/allegraTheme';
+import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../../navigation/playerSheet';
+import { playerSheetProgress } from '../../navigation/sheetProgress';
+import { playerSheetRest, tabBarTopFromBottom } from '../../navigation/tabs';
+import { isSeeking } from '../../playback/positionBus';
+import { lyricaService } from '../../services/LyricaService';
+import { extractAlbumColors } from '../../services/NativePalette';
 import { useConnect } from '../../services/connect/ConnectProvider';
 import { useConnectPositionStore } from '../../services/connect/remotePositionStore';
 import { useSnapshotCover } from '../../services/connect/useSnapshotCover';
 import { toggleOnlineLike } from '../../services/sync/onlineLike';
-import { lyricaService } from '../../services/LyricaService';
-import { extractAlbumColors } from '../../services/NativePalette';
+import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
 import { usePlayerStore } from '../../store/playerStore';
 import { usePlaylistStore } from '../../store/playlistStore';
-import { useSongsStore } from '../../store/songsStore';
-import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import { useSongsStore } from '../../store/songsStore';
+import type { RootStackScreenProps } from '../../types/navigation';
 import { libraryLookup, matchKey } from '../../utils/downloadState';
-import { isSeeking } from '../../playback/positionBus';
-import { safeGoBack } from '../../utils/navigationService';
-import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../../navigation/playerSheet';
-import { playerSheetRest, tabBarTopFromBottom } from '../../navigation/tabs';
-import { playerSheetProgress } from '../../navigation/sheetProgress';
-import { Signal } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
+import { safeGoBack } from '../../utils/navigationService';
 import NowPlayingBackground from '../NowPlayingBackground';
+import NowPlayingControls from '../NowPlayingControls';
 import NowPlayingHeader from '../NowPlayingHeader';
 import NowPlayingLyricsArea, { CONTROLS_CLEARANCE, HEADER_CLEARANCE, LYRICS_MORPH_MS } from '../NowPlayingLyricsArea';
-import NowPlayingControls from '../NowPlayingControls';
 import type { SynchronizedLyricsRef } from '../SynchronizedLyrics';
-import { PlayerSheet, SheetScrollView } from '../player/PlayerSheet';
 import Artwork from '../allegra/Artwork';
+import { projectMomentum, rubberBand } from '../allegra/physics';
+import { PlayerSheet, SheetScrollView } from '../player/PlayerSheet';
 
 const { Gesture, GestureDetector } = GestureHandler;
 
@@ -68,22 +69,12 @@ const QueuedCover: React.FC<{ song: SongSnapshot; index: number; style: React.Co
 type Props = RootStackScreenProps<'NowPlaying'>;
 
 // The local player's sheet physics (screens/NowPlayingScreen.tsx), so both feel the same.
-const criticallyDamped = (stiffness: number) => ({ stiffness, damping: 2 * Math.sqrt(stiffness), mass: 1, overshootClamping: true }) as const;
-const SOFT_SPRING = criticallyDamped(400);
-const FLING_SPRING = criticallyDamped(1500);
+const SOFT_SPRING = Motion.spring.open;
+const FLING_SPRING = Motion.spring.fling;
 const CLOSE_REST = { restDisplacementThreshold: 0.5, restSpeedThreshold: 8 } as const;
-const FLICK = 800;
+const FLICK = Motion.flingVelocity;
 const PAGE_DIM = 0.5;
 const SHEET_CORNER = 22;
-const projectMomentum = (velocity: number): number => {
-  'worklet';
-  return (velocity / 1000) * (0.99 / (1 - 0.99));
-};
-const rubberBand = (overshoot: number, dimension: number): number => {
-  'worklet';
-  const a = Math.abs(overshoot);
-  return Math.sign(overshoot) * ((a * dimension * 0.55) / (dimension + 0.55 * a));
-};
 /** The remote position arrives once a second; the scrubber and lyrics glide between reports. */
 const TICK_MS = 1000;
 const FALLBACK_COLORS = ['#1b1a22', '#2a2833', '#08090d'];

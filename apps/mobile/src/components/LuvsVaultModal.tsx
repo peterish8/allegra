@@ -3,29 +3,36 @@
  * of covers and one button to download them all.
  */
 
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
-  View,
-  Text,
-  Modal,
-  StyleSheet,
-  Pressable,
-  FlatList,
   Dimensions,
+  FlatList,
+  StyleSheet,
+  Text,
+  View,
+  type FlatListProps,
 } from 'react-native';
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Frosted } from './allegra/Frosted';
-import Artwork from './allegra/Artwork';
-import { Glass, Signal } from '../constants/allegraTheme';
-import { useLuvsFeedStore } from '../store/luvsFeedStore';
+import { Signal } from '../constants/allegraTheme';
 import { useDownloadQueueStore } from '../store/downloadQueueStore';
+import { useLuvsFeedStore } from '../store/luvsFeedStore';
 import { UnifiedSong } from '../types/song';
-import { CustomAlert } from './CustomAlert';
+import { Button, ConfirmSheet, Sheet, SheetScrollable, Tactile } from '../ui';
+import Artwork from './allegra/Artwork';
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface LuvsVaultModalProps {
   visible: boolean;
   onClose: () => void;
+}
+
+/** A FlatList inside the sheet: a drag down at its top moves the sheet. */
+function SheetList<T>(props: FlatListProps<T>): React.ReactElement {
+  return (
+    <SheetScrollable>
+      <FlatList<T> {...props} />
+    </SheetScrollable>
+  );
 }
 
 export const LuvsVaultModal: React.FC<LuvsVaultModalProps> = ({
@@ -36,16 +43,13 @@ export const LuvsVaultModal: React.FC<LuvsVaultModalProps> = ({
   const removeFromVault = useLuvsFeedStore(s => s.removeFromVault);
   const clearVault = useLuvsFeedStore(s => s.clearVault);
   const addToQueue = useDownloadQueueStore((state) => state.addToQueue);
-  
+
   const [downloadAlertVisible, setDownloadAlertVisible] = React.useState(false);
   const [startedAlertVisible, setStartedAlertVisible] = React.useState(false);
-  const [emptyAlertVisible, setEmptyAlertVisible] = React.useState(false);
 
+  // The download button only shows while the vault has songs, so an empty vault has nothing to confirm.
   const handleDownloadAll = () => {
-    if (vault.length === 0) {
-      setEmptyAlertVisible(true);
-      return;
-    }
+    if (vault.length === 0) return;
     setDownloadAlertVisible(true);
   };
 
@@ -62,14 +66,15 @@ export const LuvsVaultModal: React.FC<LuvsVaultModalProps> = ({
   const renderSong = ({ item }: { item: UnifiedSong }) => (
     <View style={styles.songCard}>
       <Artwork uri={item.highResArt} title={item.title} artist={item.artist} size={(SCREEN_WIDTH - 48) / 3} style={styles.coverArt} />
-      <Pressable
-        style={styles.removeButton}
+      <Tactile
+        wrapperStyle={styles.removeButton}
         onPress={() => handleRemoveSong(item.id)}
         hitSlop={6}
+        accessibilityRole="button"
         accessibilityLabel={`Remove ${item.title}`}
       >
         <Ionicons name="close" size={14} color={Signal.ink} />
-      </Pressable>
+      </Tactile>
       <View style={styles.songInfo}>
         <Text style={styles.songTitle} numberOfLines={1}>
           {item.title}
@@ -82,137 +87,62 @@ export const LuvsVaultModal: React.FC<LuvsVaultModalProps> = ({
   );
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.modalContainer}>
-          <Frosted radius={30} intensity={60} tint={0.55} />
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Your Luvs <Text style={styles.headerCount}>{vault.length}</Text></Text>
-            <Pressable onPress={onClose} hitSlop={10} style={styles.closeButton}>
-              <Ionicons name="close" size={20} color={Signal.ink} />
-            </Pressable>
+    <>
+      <Sheet visible={visible} onClose={onClose} tall title={`Your Luvs ${vault.length}`}>
+        {vault.length > 0 ? (
+          <SheetList<UnifiedSong>
+            data={vault}
+            renderItem={renderSong}
+            keyExtractor={(item) => item.id}
+            numColumns={3}
+            contentContainerStyle={styles.gridContainer}
+            showsVerticalScrollIndicator={false}
+            columnWrapperStyle={styles.columnWrapper}
+          />
+        ) : (
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons name="heart-multiple-outline" size={64} color={Signal.inkFaint} />
+            <Text style={styles.emptyText}>Nothing here yet</Text>
+            <Text style={styles.emptySubtext}>
+              Tap the heart on a Luv and it waits here.
+            </Text>
           </View>
+        )}
 
-          {/* Song Grid */}
-          {vault.length > 0 ? (
-            <FlatList
-              data={vault}
-              renderItem={renderSong}
-              keyExtractor={(item) => item.id}
-              numColumns={3}
-              contentContainerStyle={styles.gridContainer}
-              showsVerticalScrollIndicator={false}
-              columnWrapperStyle={styles.columnWrapper}
-            />
-          ) : (
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="heart-multiple-outline" size={64} color={Signal.inkFaint} />
-              <Text style={styles.emptyText}>Nothing here yet</Text>
-              <Text style={styles.emptySubtext}>
-                Tap the heart on a Luv and it waits here.
-              </Text>
-            </View>
-          )}
+        {vault.length > 0 && (
+          <View style={styles.footer}>
+            <Button label={`Download all ${vault.length}`} icon="arrow-down" variant="primary" block onPress={handleDownloadAll} />
+          </View>
+        )}
+      </Sheet>
 
-          {/* Download All Button */}
-          {vault.length > 0 && (
-            <View style={styles.footer}>
-              <Pressable
-                style={styles.downloadButton}
-                onPress={handleDownloadAll}
-              >
-                <Ionicons name="arrow-down" size={20} color={Signal.waveInk} />
-                <Text style={styles.downloadButtonText}>
-                  Download all {vault.length}
-                </Text>
-              </Pressable>
-            </View>
-          )}
-        </View>
+      <ConfirmSheet
+        visible={downloadAlertVisible}
+        title="Download all"
+        body={`Download all ${vault.length} songs to your library?`}
+        confirmLabel="Download all"
+        onConfirm={confirmDownload}
+        onClose={() => setDownloadAlertVisible(false)}
+      />
 
-        {/* Custom Alerts */}
-        <CustomAlert
-          visible={emptyAlertVisible}
-          title="Nothing to download"
-          message="Heart a few Luvs first."
-          onClose={() => setEmptyAlertVisible(false)}
-          buttons={[{ text: 'OK', onPress: () => {} }]}
-        />
-
-        <CustomAlert
-          visible={downloadAlertVisible}
-          title="Download all"
-          message={`Download all ${vault.length} songs to your library?`}
-          onClose={() => setDownloadAlertVisible(false)}
-          buttons={[
-            { text: 'Cancel', style: 'cancel', onPress: () => {} },
-            { text: 'Download', onPress: confirmDownload }
-          ]}
-        />
-
-        <CustomAlert
-          visible={startedAlertVisible}
-          title="Downloading"
-          message={`${vault.length} songs are on their way. Clear them from your Luvs?`}
-          onClose={() => setStartedAlertVisible(false)}
-          buttons={[
-            { text: 'Clear', style: 'destructive', onPress: () => clearVault() },
-            { text: 'Keep them', style: 'cancel', onPress: () => onClose() }
-          ]}
-        />
-      </View>
-    </Modal>
+      <ConfirmSheet
+        visible={startedAlertVisible}
+        title="Downloading"
+        body={`${vault.length} songs are on their way. Clear them from your Luvs?`}
+        confirmLabel="Clear them"
+        cancelLabel="Keep them"
+        destructive
+        onConfirm={() => { setStartedAlertVisible(false); clearVault(); }}
+        onClose={() => { setStartedAlertVisible(false); onClose(); }}
+      />
+    </>
   );
 };
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: Glass.scrim,
-    justifyContent: 'flex-end',
-  },
-  modalContainer: {
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    overflow: 'hidden',
-    paddingTop: 22,
-    maxHeight: '85%',
-    width: '100%',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    marginBottom: 18,
-  },
-  headerTitle: {
-    color: Signal.ink,
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  headerCount: {
-    color: Signal.inkMuted,
-    fontWeight: '600',
-  },
-  closeButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: Glass.fillLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   gridContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 130,
+    paddingBottom: 12,
   },
   columnWrapper: {
     justifyContent: 'flex-start',
@@ -273,26 +203,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 36,
-  },
-  downloadButton: {
-    backgroundColor: Signal.wave,
-    borderRadius: 999,
-    paddingVertical: 15,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-  },
-  downloadButtonText: {
-    color: Signal.waveInk,
-    fontSize: 16,
-    fontWeight: '700',
   },
 });

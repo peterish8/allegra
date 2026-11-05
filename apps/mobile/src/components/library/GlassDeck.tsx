@@ -1,51 +1,50 @@
 /**
- * The Library's hero: your recent songs as a coverflow of glass cards.
+ * The Library's hero: your recent songs as a coverflow of covers.
  *
- *   - The card in the middle is the biggest and faces you; the ones either side
- *     are smaller, turned in towards it and overlapping, like a row of glass
- *     plates. Each plate carries its cover with the title and artist under it.
+ *   - The cover in the middle is the biggest and faces you; the ones either side
+ *     are smaller, turned in towards it and overlapping. Each is the plain cover
+ *     (rounded, a soft shadow, no glass plate) with the title and artist under it.
  *   - Drag to move along the row (it follows the finger, then settles on the
  *     nearest card with a spring). Tap the middle card to play it; tap a card
  *     beside it to bring it to the middle. With three cards or more the row
  *     loops: past the last card comes the first again, either way.
  *   - The row keeps its order and its place: playing a card leaves it in the
  *     middle (the list it comes from is kept in order by LibraryScreen).
- *   - Underneath, a glass pill: shuffle everything, step back or forward
- *     along the row, and play or pause the card in the middle.
+ *   - Underneath, a plain row of controls: shuffle everything, step back or
+ *     forward along the row, and play or pause the card in the middle.
  *
  * The position is a single shared value on the UI thread, so a drag never
- * waits on React. Transforms and opacity only. The plates are tinted glass, not
- * live blurs: a row of blurs would re-render on every frame of a drag, and the
- * room behind them is already soft.
+ * waits on React. Transforms and opacity only.
  */
+import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Extrapolation,
-  SharedValue,
   interpolate,
   runOnJS,
+  SharedValue,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
-import Artwork from '../allegra/Artwork';
-import { Tactile } from '../allegra/motion';
-import { Glass, Motion, Radius, Signal } from '../../constants/allegraTheme';
-import * as Haptics from '../../utils/haptics';
-import { flowOffset, focusFromDrag, loopDistance, loopFocusFromDrag, loops, loopSettleFocus, nearestPositionOf, settleFocus, tapSide, wrapIndex } from './flowMath';
+import { Motion, Radius, Signal, Space } from '../../constants/allegraTheme';
 import type { Song } from '../../types/song';
+import { IconButton, Text as UIText } from '../../ui';
+import * as Haptics from '../../utils/haptics';
+import Artwork from '../allegra/Artwork';
+import { flowOffset, focusFromDrag, loopDistance, loopFocusFromDrag, loops, loopSettleFocus, nearestPositionOf, settleFocus, tapSide, wrapIndex } from './flowMath';
 
 const SETTLE = { stiffness: 220, damping: 26, mass: 1 } as const;
 /** Cards within this distance of the centre are drawn; the rest wait out of sight. */
 const REACH = 2.4;
 const TILT_DEG = 26;
 const PERSPECTIVE = 1300;
+/** Room under each cover for its title and artist. */
+const LABEL_HEIGHT = 52;
 
 interface GlassDeckProps {
   songs: Song[];
@@ -89,21 +88,13 @@ const Plate: React.FC<{
       ] as const,
     };
   });
-  const art = size - 20;
+  // The cover is the card: full width, rounded, a soft shadow to lift it off the room. No glass plate behind it.
   return (
-    <Animated.View style={[styles.plate, { width: size, height, borderRadius: Radius.panel + 2 }, style]} pointerEvents="none">
-      <LinearGradient
-        colors={['rgba(255,255,255,0.20)', 'rgba(255,255,255,0.07)', 'rgba(255,255,255,0.11)']}
-        locations={[0, 0.55, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      {/* The rim, lit from above. */}
-      <View style={[styles.rim, { borderRadius: Radius.panel + 2 }]} />
-      <View style={styles.topLight} />
-      <View style={[styles.art, { width: art, height: art }]}>
-        <Artwork uri={song.coverImageUri} title={song.title} artist={song.artist} size={art} priority="high" style={StyleSheet.absoluteFill} />
+    <Animated.View style={[styles.plate, { width: size, height }, style]} pointerEvents="none">
+      <View style={[styles.art, { width: size, height: size }]}>
+        <View style={styles.artClip}>
+          <Artwork uri={song.coverImageUri} title={song.title} artist={song.artist} size={size} priority="high" style={StyleSheet.absoluteFill} />
+        </View>
         {nowPlaying ? (
           <View style={styles.playing}>
             <Ionicons name="volume-medium" size={14} color={Signal.waveInk} />
@@ -111,8 +102,8 @@ const Plate: React.FC<{
         ) : null}
       </View>
       <View style={styles.label}>
-        <Text style={styles.title} numberOfLines={1}>{song.title}</Text>
-        {song.artist ? <Text style={styles.artist} numberOfLines={1}>{song.artist}</Text> : null}
+        <UIText variant="row" align="center" numberOfLines={1}>{song.title}</UIText>
+        {song.artist ? <UIText variant="secondary" tone="muted" align="center" numberOfLines={1}>{song.artist}</UIText> : null}
       </View>
     </Animated.View>
   );
@@ -127,7 +118,8 @@ export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, is
   const position = useSharedValue(first);
   const start = useSharedValue(first);
   const [focus, setFocus] = useState(first);
-  const height = Math.round(size * 1.2);
+  /** The cover plus the two lines under it. */
+  const height = size + LABEL_HEIGHT;
   const step = Math.round(size * 0.66);
   const stageWidth = size + step * 2;
 
@@ -236,45 +228,23 @@ export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, is
         </View>
       </GestureDetector>
 
-      {/* The pill: shuffle, back, play / pause, forward. */}
-      <View style={styles.pill}>
-        <View style={styles.pillRim} pointerEvents="none" />
-        <Tactile onPress={onShuffle} hitSlop={6} pressScale={0.88} accessibilityRole="button" accessibilityLabel="Shuffle everything" style={styles.pillButton}>
-          <Ionicons name="shuffle" size={20} color={Signal.inkSoft} />
-        </Tactile>
-        <Tactile
-          onPress={() => moveBy(-1)}
-          disabled={!loop && focus <= 0}
-          hitSlop={6}
-          pressScale={0.88}
-          accessibilityRole="button"
-          accessibilityLabel="Previous song in the row"
-          style={[styles.pillButton, !loop && focus <= 0 && styles.dim]}
-        >
-          <Ionicons name="play-skip-back" size={22} color={Signal.ink} />
-        </Tactile>
-        <Tactile
+      {/* The controls: shuffle, back, play / pause, forward. A plain row, no glass behind it. */}
+      <View style={styles.controls}>
+        <IconButton icon="shuffle" label="Shuffle everything" variant="plain" size="lg" onPress={onShuffle} />
+        <IconButton icon="play-skip-back" label="Previous song in the row" variant="plain" size="lg" disabled={!loop && focus <= 0} onPress={() => moveBy(-1)} />
+        <IconButton
+          icon={playingHere ? 'pause' : 'play'}
+          label={playingHere ? 'Pause' : `Play ${centre?.title ?? ''}`}
+          variant="primary"
+          size="lg"
           onPress={playFocused}
-          pressScale={0.9}
-          accessibilityRole="button"
-          accessibilityLabel={playingHere ? 'Pause' : `Play ${centre?.title ?? ''}`}
           style={styles.playButton}
         >
-          <Ionicons name={playingHere ? 'pause' : 'play'} size={24} color={Signal.waveInk} style={playingHere ? undefined : styles.playNudge} />
-        </Tactile>
-        <Tactile
-          onPress={() => moveBy(1)}
-          disabled={!loop && focus >= n - 1}
-          hitSlop={6}
-          pressScale={0.88}
-          accessibilityRole="button"
-          accessibilityLabel="Next song in the row"
-          style={[styles.pillButton, !loop && focus >= n - 1 && styles.dim]}
-        >
-          <Ionicons name="play-skip-forward" size={22} color={Signal.ink} />
-        </Tactile>
-        <View style={styles.pillButton} pointerEvents="none">
-          <Text style={styles.count}>{focus + 1}/{n}</Text>
+          <Ionicons name={playingHere ? 'pause' : 'play'} size={26} color={Signal.waveInk} style={playingHere ? undefined : styles.playNudge} />
+        </IconButton>
+        <IconButton icon="play-skip-forward" label="Next song in the row" variant="plain" size="lg" disabled={!loop && focus >= n - 1} onPress={() => moveBy(1)} />
+        <View style={styles.countSlot} pointerEvents="none">
+          <UIText variant="caption" tone="muted" tabular>{focus + 1}/{n}</UIText>
         </View>
       </View>
     </View>
@@ -284,16 +254,18 @@ export const GlassDeck: React.FC<GlassDeckProps> = ({ songs, size, currentId, is
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center' },
   stage: { alignItems: 'center', justifyContent: 'center' },
-  plate: {
-    position: 'absolute',
-    overflow: 'hidden',
-    backgroundColor: 'rgba(24, 29, 32, 0.5)',
-    paddingTop: 10,
-    alignItems: 'center',
+  plate: { position: 'absolute', alignItems: 'center' },
+  // The shadow sits on the outer view; the clip inside rounds the cover (a clipping view can't cast it on Android).
+  art: {
+    borderRadius: Radius.well,
+    backgroundColor: Signal.bgSubtle,
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 12,
   },
-  rim: { ...StyleSheet.absoluteFillObject, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.28)' },
-  topLight: { position: 'absolute', top: 0, left: 22, right: 22, height: StyleSheet.hairlineWidth * 2, backgroundColor: 'rgba(255,255,255,0.5)' },
-  art: { borderRadius: Radius.well + 2, overflow: 'hidden', backgroundColor: Signal.bgSubtle },
+  artClip: { ...StyleSheet.absoluteFillObject, borderRadius: Radius.well, overflow: 'hidden' },
   playing: {
     position: 'absolute',
     right: 8,
@@ -305,27 +277,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Signal.wave,
   },
-  label: { alignSelf: 'stretch', paddingHorizontal: 14, paddingTop: 9, alignItems: 'center' },
-  title: { color: Signal.ink, fontSize: 15, fontWeight: '700' },
-  artist: { color: 'rgba(244,241,234,0.62)', fontSize: 12, fontWeight: '400', marginTop: 1 },
-  pill: {
+  label: { alignSelf: 'stretch', paddingHorizontal: Space.xs, paddingTop: Space.sm, gap: 2 },
+  controls: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 14,
-    height: 62,
-    minWidth: 292,
-    paddingHorizontal: 10,
-    borderRadius: 31,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    justifyContent: 'center',
+    gap: Space.md,
+    marginTop: Space.md,
   },
-  pillRim: { ...StyleSheet.absoluteFillObject, borderRadius: 31, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairlineStrong },
-  pillButton: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
-  playButton: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
-  playNudge: { marginLeft: 2 },
-  dim: { opacity: 0.35 },
-  count: { color: Signal.inkMuted, fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  playButton: { width: 56, height: 56, borderRadius: 28 },
+  playNudge: { marginLeft: 3 },
+  countSlot: { width: 44, alignItems: 'center' },
 });
 
 export default GlassDeck;

@@ -1,3 +1,4 @@
+import { TypeScale } from '../constants/allegraTheme';
 /**
  * Luvs — a map of your tastes, not a feed.
  *
@@ -14,53 +15,51 @@
  * lane can play next; the songs a swipe can reach are kept warm. The mini
  * player is hidden here (RootNavigator), and the library player yields.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import Animated, { FadeIn, FadeOut, useSharedValue } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as Haptics from '../utils/haptics';
-import { useLuvsFeedStore } from '../store/luvsFeedStore';
-import { useLuvsLanesStore } from '../store/luvsLanesStore';
-import { useLuvsPreferencesStore } from '../store/luvsPreferencesStore';
-import { useStreamHistoryStore } from '../store/streamHistoryStore';
-import { useSongsStore } from '../store/songsStore';
-import { usePlayerStore } from '../store/playerStore';
-import { useSettingsStore } from '../store/settingsStore';
-import { useDownloadQueueStore } from '../store/downloadQueueStore';
-import { useDownloadState } from '../hooks/useDownloadState';
-import { luvsBufferManager } from '../services/LuvsBufferManager';
-import { luvsEngine } from '../services/luvsEngine';
-import { hookOffsetSeconds } from '../services/luvsHook';
-import { tasteSeeds } from '../services/luvsTaste';
-import { FOR_YOU, LaneSources, MAX_ARTIST_LANES, creditsArtist, deepenLane, laneSpecs, loadLane, needsDeepening, warmAround } from '../services/luvsLanes';
-import { recommendFor, defaultDeps } from '../services/stream/recommend';
-import { personalMoodMix } from '../services/stream/moodMix';
-import { resolveMany } from '../services/ytmusic/resolver';
-import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
-import { StreamService } from '../services/stream/StreamService';
-import { streamIdFor } from '../services/stream/streamSong';
-import TasteExplorer from '../components/luvs/TasteExplorer';
-import TasteCard from '../components/luvs/TasteCard';
+import { Image } from 'expo-image';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Platform, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import Animated, { FadeIn, FadeOut, useSharedValue } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { LUVS_TOUR, luvsScene } from '../components/allegra/infoTours';
+import { SwapText, Tactile } from '../components/allegra/motion';
 import LaneRail from '../components/luvs/LaneRail';
 import { DoubleTapHeart, LuvAction, LuvScrubber, SpinningIcon } from '../components/luvs/LuvControls';
+import TasteCard from '../components/luvs/TasteCard';
+import TasteExplorer from '../components/luvs/TasteExplorer';
 import { LuvsVaultModal } from '../components/LuvsVaultModal';
 import { PlaylistSelectionModal } from '../components/PlaylistSelectionModal';
 import { Toast } from '../components/Toast';
-import { addOnlineSongToPlaylist } from '../services/sync/onlinePlaylist';
-import { snapshotOfSong } from '../services/connect/mobilePlayerPort';
-import { toStreamSong } from '../services/stream/streamSong';
-import { SwapText, Tactile } from '../components/allegra/motion';
 import { Glass, Signal } from '../constants/allegraTheme';
+import { useDownloadState } from '../hooks/useDownloadState';
 import { TAB_BAR_CLEARANCE } from '../navigation/tabs';
+import { snapshotOfSong } from '../services/connect/mobilePlayerPort';
+import { luvsBufferManager } from '../services/LuvsBufferManager';
+import { luvsEngine } from '../services/luvsEngine';
+import { hookOffsetSeconds } from '../services/luvsHook';
+import { creditsArtist, deepenLane, FOR_YOU, LaneSources, laneSpecs, loadLane, MAX_ARTIST_LANES, needsDeepening, warmAround } from '../services/luvsLanes';
+import { tasteSeeds } from '../services/luvsTaste';
+import { personalMoodMix } from '../services/stream/moodMix';
+import { defaultDeps, recommendFor } from '../services/stream/recommend';
+import { StreamService } from '../services/stream/StreamService';
+import { streamIdFor, toStreamSong } from '../services/stream/streamSong';
+import { addOnlineSongToPlaylist } from '../services/sync/onlinePlaylist';
+import { resolveMany } from '../services/ytmusic/resolver';
+import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
+import { useDownloadQueueStore } from '../store/downloadQueueStore';
+import { useLuvsFeedStore } from '../store/luvsFeedStore';
+import { useLuvsLanesStore } from '../store/luvsLanesStore';
+import { useLuvsPreferencesStore } from '../store/luvsPreferencesStore';
+import { usePlayerStore } from '../store/playerStore';
+import { useSettingsStore } from '../store/settingsStore';
+import { useSongsStore } from '../store/songsStore';
+import { useStreamHistoryStore } from '../store/streamHistoryStore';
 import type { RootStackParamList } from '../types/navigation';
 import type { UnifiedSong } from '../types/song';
-import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
-import { LUVS_TOUR, luvsScene } from '../components/allegra/infoTours';
+import * as Haptics from '../utils/haptics';
 
 // Stands in for "no song yet" so the download hook always has something to read.
 const NO_SONG = { id: '', title: '' };
@@ -420,7 +419,7 @@ const LuvsScreen: React.FC = () => {
             transition={500}
           />
         ) : null}
-        <LinearGradient colors={['rgba(7,8,11,0.55)', 'rgba(7,8,11,0.72)', 'rgba(7,8,11,0.92)']} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, styles.scrim]} />
       </View>
 
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
@@ -495,8 +494,9 @@ const LuvsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bgDeep },
   backdrop: { position: 'absolute', left: '50%', top: '50%', width: 40, height: 40, marginLeft: -20, marginTop: -20 },
+  scrim: { backgroundColor: 'rgba(0, 0, 0, 0.4)' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 8 },
-  title: { color: Signal.ink, fontSize: 28, fontWeight: '700' },
+  title: { color: Signal.ink, fontSize: TypeScale.page, fontWeight: '700' },
   headerActions: { flexDirection: 'row', gap: 10 },
   round: {
     width: 42,
@@ -509,16 +509,16 @@ const styles = StyleSheet.create({
     borderColor: Glass.hairlineStrong,
   },
   badge: { position: 'absolute', top: -2, right: -2, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.accent },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  badgeText: { color: '#fff', fontSize: TypeScale.caption, fontWeight: '700' },
   mapArea: { justifyContent: 'flex-end', marginTop: 10 },
   controls: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 24 },
   meta: { alignItems: 'center', minHeight: 50 },
-  songTitle: { color: Signal.ink, fontSize: 21, fontWeight: '700' },
-  songArtist: { color: Signal.inkMuted, fontSize: 14, marginTop: 2 },
-  hint: { height: 46, textAlignVertical: 'center', textAlign: 'center', lineHeight: 46, color: Signal.inkSoft, fontSize: 13 },
+  songTitle: { color: Signal.ink, fontSize: TypeScale.detail, fontWeight: '700' },
+  songArtist: { color: Signal.inkMuted, fontSize: TypeScale.body, marginTop: 2 },
+  hint: { height: 46, textAlignVertical: 'center', textAlign: 'center', lineHeight: 46, color: Signal.inkSoft, fontSize: TypeScale.meta },
   actions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
   placeholder: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, backgroundColor: Signal.bgSubtle },
-  placeholderText: { color: Signal.inkSoft, fontSize: 14, textAlign: 'center' },
+  placeholderText: { color: Signal.inkSoft, fontSize: TypeScale.body, textAlign: 'center' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });
 

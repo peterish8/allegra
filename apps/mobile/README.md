@@ -1,10 +1,16 @@
+> V6 frontend: five tabs, a shared frosted playback shell, compact Library and collection layouts,
+> and Updates at the top of the Stream logo sheet. Version and release evidence are tracked in
+> [the release ledger](../../.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md).
+> Build reusable UI from [DESIGN.md](DESIGN.md) and [src/ui](src/ui/); run `npm run mobile:check`
+> from the repository root. GitHub Actions builds and launch-checks the APK; main publishes `apk-latest`.
+
 <div align="center">
 
 # 🎵 LuvLyrics
 
 ### _A local-first music library with a premium synced-lyrics experience._
 
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen?style=flat-square&logo=github-actions&logoColor=white)](https://github.com/LuvLyricsApp/LuvLyricsApp/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/badge/CI-passing-brightgreen?style=flat-square&logo=github-actions&logoColor=white)](https://github.com/peterish8/allegra/actions/workflows/mobile-ci.yml)
 [![Expo](https://img.shields.io/badge/Expo-54.0-000020?style=flat-square&logo=expo&logoColor=white)](https://expo.dev)
 [![React Native](https://img.shields.io/badge/React_Native-0.81-61DAFB?style=flat-square&logo=react&logoColor=black)](https://reactnative.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)

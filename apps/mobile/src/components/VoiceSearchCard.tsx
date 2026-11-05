@@ -11,33 +11,35 @@
  *
  * Springs in from 0.92 scale; content swaps cross-fade. Reduce Motion fades.
  */
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, Pressable, StyleSheet, Text, useWindowDimensions, View, ViewStyle } from 'react-native';
-import Animated, { useAnimatedReaction,
+import Animated, {
   FadeIn,
   FadeOut,
   runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from '../utils/haptics';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TAB_BAR_CLEARANCE } from '../navigation/tabs';
 import { Glass, Motion, Radius, Signal } from '../constants/allegraTheme';
-import { useVoiceSearchStore, VoicePick } from '../store/voiceSearchStore';
-import { usePlayerStore } from '../store/playerStore';
-import { useDownloadQueueStore } from '../store/downloadQueueStore';
-import { StreamService } from '../services/stream/StreamService';
+import { TAB_BAR_CLEARANCE } from '../navigation/tabs';
+import { voiceLevel } from '../playback/voiceLevel';
 import { routeSongPick } from '../services/connect/playbackIntents';
-import { Tactile } from './allegra/motion';
+import { StreamService } from '../services/stream/StreamService';
+import { useDownloadQueueStore } from '../store/downloadQueueStore';
+import { usePlayerStore } from '../store/playerStore';
+import { useVoiceSearchStore, VoicePick } from '../store/voiceSearchStore';
+import { IconButton } from '../ui';
+import * as Haptics from '../utils/haptics';
 import Artwork from './allegra/Artwork';
 import Frosted from './allegra/Frosted';
-import { voiceLevel } from '../playback/voiceLevel';
+import { Tactile, TactileRow } from './allegra/motion';
 import { useArtworkPalette } from './allegra/useArtworkPalette';
 
 const pickArt = (p: VoicePick) => (p.kind === 'local' ? p.song.coverImageUri : p.song.highResArt);
@@ -204,24 +206,24 @@ export const VoiceSearchCard: React.FC = () => {
 
         {pick.kind === 'stream' ? (
           <View style={styles.secondary}>
-            <Pressable onPress={playNext} style={styles.secondaryBtn} accessibilityRole="button">
+            <Tactile onPress={playNext} pressScale={0.96} style={styles.secondaryBtn} accessibilityRole="button">
               <Ionicons name="return-down-forward" size={17} color={Signal.inkSoft} />
               <Text style={styles.secondaryText}>Play next</Text>
-            </Pressable>
-            <Pressable onPress={download} style={styles.secondaryBtn} accessibilityRole="button">
+            </Tactile>
+            <Tactile onPress={download} pressScale={0.96} style={styles.secondaryBtn} accessibilityRole="button">
               <Ionicons name="arrow-down-circle-outline" size={17} color={wantsDownload ? Signal.wave : Signal.inkSoft} />
               <Text style={[styles.secondaryText, wantsDownload && styles.secondaryOn]}>Download</Text>
-            </Pressable>
+            </Tactile>
           </View>
         ) : null}
 
         {others.length > 0 ? (
           <View style={styles.others}>
             {others.map(({ p, i }) => (
-              <Pressable
+              <TactileRow
                 key={`${p.kind}-${p.song.id}`}
                 onPress={() => { Haptics.selectionAsync().catch(() => {}); select(i); }}
-                style={({ pressed }) => [styles.other, pressed && styles.otherPressed]}
+                style={styles.other}
                 accessibilityRole="button"
                 accessibilityLabel={`${p.song.title}, ${pickArtist(p)}`}
               >
@@ -234,7 +236,7 @@ export const VoiceSearchCard: React.FC = () => {
                     {pickArtist(p)}{p.kind === 'local' ? ' · Library' : ''}
                   </Text>
                 </View>
-              </Pressable>
+              </TactileRow>
             ))}
           </View>
         ) : null}
@@ -245,7 +247,7 @@ export const VoiceSearchCard: React.FC = () => {
   return (
     <View style={styles.layer} pointerEvents={interactive ? 'auto' : 'none'}>
       <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} accessibilityRole="button" accessibilityLabel="Close">
+        <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} accessibilityElementsHidden importantForAccessibility="no">
           {phase === 'listening' || phase === 'searching' ? (
             // Listening and searching are the mic's to show (bloom, then the
             // spinning arc): dim the page but leave the tab bar clear.
@@ -263,9 +265,7 @@ export const VoiceSearchCard: React.FC = () => {
       <Animated.View style={[styles.card, { width: cardWidth }, cardStyle]} accessibilityViewIsModal={interactive}>
         <Frosted radius={Radius.sheet} intensity={70} palette={palette} />
         {interactive && phase !== 'notice' ? (
-          <Pressable onPress={dismiss} hitSlop={10} style={styles.close} accessibilityRole="button" accessibilityLabel="Close">
-            <Ionicons name="close" size={20} color={Signal.inkMuted} />
-          </Pressable>
+          <IconButton icon="close" label="Close" variant="plain" size="sm" onPress={dismiss} style={styles.close} />
         ) : null}
         {content}
       </Animated.View>
@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
     paddingTop: 28,
     paddingBottom: 20,
   },
-  close: { position: 'absolute', top: 14, right: 14, zIndex: 2, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  close: { position: 'absolute', top: 14, right: 14, zIndex: 2 },
   center: { alignItems: 'center' },
 
   bars: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 56, marginBottom: 18 },
@@ -324,7 +324,6 @@ const styles = StyleSheet.create({
 
   others: { marginTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Glass.hairline, paddingTop: 8 },
   other: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 7, borderRadius: 10 },
-  otherPressed: { backgroundColor: Glass.fillPressed },
   otherArt: { width: 40, height: 40, borderRadius: 6, overflow: 'hidden' },
   otherTitle: { fontSize: 15, fontWeight: '600', color: Signal.ink },
   otherArtist: { fontSize: 13, color: Signal.inkMuted, marginTop: 1 },

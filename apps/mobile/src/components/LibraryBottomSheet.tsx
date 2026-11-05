@@ -1,14 +1,23 @@
+/**
+ * A song's actions (the long press on any row of a song on the phone): Play next first, then lyrics, version,
+ * cover, details, and the ones that remove something last. The app's one `Sheet`, so it drags and closes like
+ * every other sheet.
+ */
+import { Image } from 'expo-image';
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView, Modal, Image } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Song } from '../types/song';
-import { Frosted } from './allegra/Frosted';
-import { Glass, Signal } from '../constants/allegraTheme';
+import { Artwork, Glass, Radius, Sheet, SheetOption, SheetScrollView, Space, Tactile, Text } from '../ui';
 
 interface LibraryBottomSheetProps {
   visible: boolean;
   onClose: () => void;
   selectedSong: Song | null;
+  /** Shown only while this phone has a queue the song can join. */
+  onPlayNext?: () => void;
+  onFindLyrics: () => void;
+  /** Shown when the sheet was opened from a playlist. */
+  onRemoveFromPlaylist?: () => void;
   onShare: () => void;
   onOpenVersionSearch: () => void;
   onPickImage: () => void;
@@ -19,26 +28,15 @@ interface LibraryBottomSheetProps {
   onHideSong: () => void;
   onEditInfo: () => void;
   onDelete: () => void;
-  colors: {
-    primary: string;
-  };
 }
-
-type Tone = 'normal' | 'warn' | 'danger';
-
-const Row: React.FC<{ icon: React.ComponentProps<typeof Ionicons>['name']; label: string; onPress: () => void; tone?: Tone; tint: string }> = ({ icon, label, onPress, tone = 'normal', tint }) => (
-  <Pressable style={({ pressed }) => [styles.option, pressed && styles.optionPressed]} onPress={onPress}>
-    <View style={[styles.optionIcon, tone === 'danger' && styles.optionIconDanger]}>
-      <Ionicons name={icon} size={19} color={tone === 'danger' ? Signal.accent : tone === 'warn' ? Signal.accentBright : tint} />
-    </View>
-    <Text style={[styles.optionText, tone === 'danger' && { color: Signal.accent }]}>{label}</Text>
-  </Pressable>
-);
 
 const LibraryBottomSheet: React.FC<LibraryBottomSheetProps> = ({
   visible,
   onClose,
   selectedSong,
+  onPlayNext,
+  onFindLyrics,
+  onRemoveFromPlaylist,
   onShare,
   onOpenVersionSearch,
   onPickImage,
@@ -49,69 +47,57 @@ const LibraryBottomSheet: React.FC<LibraryBottomSheetProps> = ({
   onHideSong,
   onEditInfo,
   onDelete,
-  colors,
-}) => {
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable style={styles.container} onPress={(e) => e.stopPropagation()}>
-          <Frosted radius={28} intensity={60} tint={0.55} />
-          <View style={styles.handle} />
-          <Text style={styles.title} numberOfLines={1}>{selectedSong?.title}</Text>
-          <Text style={styles.subtitle} numberOfLines={1}>{selectedSong?.artist}</Text>
+}) => (
+  <Sheet visible={visible} onClose={onClose} tall>
+    {selectedSong ? (
+      <View style={styles.head}>
+        <View style={styles.art}>
+          <Artwork uri={selectedSong.coverImageUri} title={selectedSong.title} artist={selectedSong.artist} size={52} style={StyleSheet.absoluteFill} />
+        </View>
+        <View style={styles.headText}>
+          <Text variant="row" numberOfLines={1}>{selectedSong.title}</Text>
+          {selectedSong.artist ? <Text variant="secondary" tone="muted" numberOfLines={1}>{selectedSong.artist}</Text> : null}
+        </View>
+      </View>
+    ) : null}
 
-          <ScrollView showsVerticalScrollIndicator={false} style={styles.scroll}>
-            <Row icon="share-social-outline" label="Share the audio" onPress={onShare} tint={colors.primary} />
-            <Row icon="language-outline" label="Another language or version" onPress={onOpenVersionSearch} tint={colors.primary} />
-            <Row icon="image-outline" label="Cover from your photos" onPress={onPickImage} tint={colors.primary} />
-            <Row icon="globe-outline" label="Find a cover online" onPress={onOpenCoverSearch} tint={colors.primary} />
+    <SheetScrollView showsVerticalScrollIndicator={false} style={styles.scroll}>
+      {onPlayNext ? <SheetOption label="Play next" icon="return-down-forward" onPress={onPlayNext} /> : null}
+      <SheetOption label="Find lyrics" icon="text-outline" onPress={onFindLyrics} />
+      <SheetOption label="Another language or version" icon="language-outline" onPress={onOpenVersionSearch} />
+      <SheetOption label="Share the audio" icon="share-social-outline" onPress={onShare} />
 
-            {recentArts.length > 0 && (
-              <View style={styles.recent}>
-                <Text style={styles.recentTitle}>Recent covers</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {recentArts.map((uri, index) => (
-                    <Pressable key={index} onPress={() => onSelectRecentArt(uri)} style={styles.recentItem}>
-                      <Image source={{ uri }} style={styles.recentImage} />
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
+      <Text variant="meta" tone="muted" style={styles.group}>Cover</Text>
+      <SheetOption label="Cover from your photos" icon="image-outline" onPress={onPickImage} />
+      <SheetOption label="Find a cover online" icon="globe-outline" onPress={onOpenCoverSearch} />
+      {recentArts.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recent}>
+          {recentArts.map((uri, index) => (
+            <Tactile key={`${uri}-${index}`} onPress={() => onSelectRecentArt(uri)} pressScale={0.96} haptic="select" accessibilityRole="button" accessibilityLabel={`Use recent cover ${index + 1}`}>
+              <Image source={{ uri }} style={styles.recentImage} contentFit="cover" />
+            </Tactile>
+          ))}
+        </ScrollView>
+      ) : null}
+      <SheetOption label="Remove the cover" icon="close-circle-outline" onPress={onRemoveCover} />
 
-            <Row icon="create-outline" label="Edit title and artist" onPress={onEditInfo} tint={colors.primary} />
-            <Row icon="eye-off-outline" label="Hide this song" onPress={onHideSong} tone="warn" tint={colors.primary} />
-            <Row icon="close-circle-outline" label="Remove the cover" onPress={onRemoveCover} tone="warn" tint={colors.primary} />
-
-            <Pressable style={({ pressed }) => [styles.delete, pressed && styles.optionPressed]} onPress={onDelete}>
-              <Ionicons name="trash-outline" size={18} color="#fff" />
-              <Text style={styles.deleteText}>Delete song</Text>
-            </Pressable>
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-};
+      <Text variant="meta" tone="muted" style={styles.group}>Song</Text>
+      <SheetOption label="Edit title and artist" icon="create-outline" onPress={onEditInfo} />
+      {onRemoveFromPlaylist ? <SheetOption label="Remove from this playlist" icon="remove-circle-outline" onPress={onRemoveFromPlaylist} /> : null}
+      <SheetOption label="Hide this song" icon="eye-off-outline" onPress={onHideSong} />
+      <SheetOption label="Delete song" icon="trash-outline" destructive onPress={onDelete} />
+    </SheetScrollView>
+  </Sheet>
+);
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: Glass.scrim, justifyContent: 'flex-end' },
-  container: { borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 34, maxHeight: '86%' },
-  handle: { width: 36, height: 5, backgroundColor: 'rgba(244,241,234,0.28)', borderRadius: 3, alignSelf: 'center', marginBottom: 16 },
-  title: { fontSize: 19, fontWeight: '700', color: Signal.ink, marginBottom: 2, textAlign: 'center' },
-  subtitle: { fontSize: 14, color: Signal.inkMuted, marginBottom: 18, textAlign: 'center' },
+  head: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingHorizontal: Space.xxs, paddingBottom: Space.sm },
+  art: { width: 52, height: 52, borderRadius: Space.xs, overflow: 'hidden' },
+  headText: { flex: 1, minWidth: 0, gap: 2 },
   scroll: { flexGrow: 0 },
-  option: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 6, borderRadius: 14 },
-  optionPressed: { backgroundColor: Glass.fillPressed },
-  optionIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: Glass.fillLight },
-  optionIconDanger: { backgroundColor: 'rgba(238, 107, 95, 0.14)' },
-  optionText: { fontSize: 16, color: Signal.ink, marginLeft: 14, fontWeight: '500' },
-  recent: { marginVertical: 10 },
-  recentTitle: { fontSize: 13, color: Signal.inkMuted, marginBottom: 10, marginLeft: 6 },
-  recentItem: { marginRight: 10 },
-  recentImage: { width: 72, height: 72, borderRadius: 12, backgroundColor: Glass.fillLight },
-  delete: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, paddingVertical: 14, borderRadius: 999, backgroundColor: Signal.accent },
-  deleteText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  group: { marginTop: Space.md, marginBottom: Space.xxs, marginLeft: Space.xs },
+  recent: { gap: Space.xs, paddingHorizontal: Space.xs, paddingVertical: Space.xs },
+  recentImage: { width: 64, height: 64, borderRadius: Radius.thumb, backgroundColor: Glass.fillLight },
 });
 
 export default React.memo(LibraryBottomSheet);

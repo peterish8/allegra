@@ -93,4 +93,18 @@ describe('createListenTracker', () => {
     expect(left).toEqual([['quick', 'skipped', 2], ['whole', 'ended', 19]]);
     expect(heard).toEqual(['ended']);
   });
+
+  it('reports a listen once when the report itself triggers another observation', () => {
+    // The radio re-ranks the queue in onLeft, which writes the player store and calls observe synchronously:
+    // the session must already be closed, or that re-enters finish until the stack overflows (1.0.x crash).
+    const left: string[] = [];
+    const tracker: ReturnType<typeof createListenTracker> = createListenTracker(() => undefined, undefined, (track, ending) => {
+      left.push(`${track.id}:${ending.exit}`);
+      if (left.length < 50) observe(tracker, 'song', 3, false, 3_100);
+    });
+    observe(tracker, 'song', 0, true, 0);
+    observe(tracker, 'song', 2, true, 2_000);
+    observe(tracker, 'song', 3, false, 3_000);
+    expect(left).toEqual(['song:paused']);
+  });
 });

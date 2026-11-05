@@ -1,37 +1,37 @@
-import React from 'react';
-import { Easing, Platform, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { createBottomTabNavigator, type BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CommonActions, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import React from 'react';
+import { Easing, Platform, View } from 'react-native';
 
-import { TabParamList, LibraryStackParamList, BrowseStackParamList } from '../types/navigation';
-import { ModernPillTabBar } from '../components/ModernPillTabBar';
-import { CustomTabBar } from '../components/CustomTabBar';
-import { NativeTabBar } from '../components/NativeTabBar';
+import { useIsDark, useThemeColors } from '../contexts/ThemeContext';
 import { useSettingsStore } from '../store/settingsStore';
-import { useThemeColors, useIsDark } from '../contexts/ThemeContext';
-import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { BrowseStackParamList, LibraryStackParamList, TabParamList } from '../types/navigation';
 
+import { V6TabBar } from '../components/V6TabBar';
+import { Motion, Signal } from '../constants/allegraTheme';
+import ArtistScreen from '../screens/ArtistScreen';
+import BlendJoinScreen from '../screens/BlendJoinScreen';
+import { BlendScreen } from '../screens/BlendScreen';
+import { BlendsScreen } from '../screens/BlendsScreen';
+import CollectionScreen from '../screens/CollectionScreen';
+import DjScreen from '../screens/DjScreen';
+import ImportScreen from '../screens/ImportScreen';
 import LibraryScreen from '../screens/LibraryScreen';
 import LuvsScreen from '../screens/LuvsScreen';
-import PlaylistsScreen from '../screens/PlaylistsScreen';
+import MixScreen from '../screens/MixScreen';
 import PlaylistDetailScreen from '../screens/PlaylistDetailScreen';
-import { BlendsScreen } from '../screens/BlendsScreen';
-import { BlendScreen } from '../screens/BlendScreen';
-import BlendJoinScreen from '../screens/BlendJoinScreen';
-import ImportScreen from '../screens/ImportScreen';
+import PlaylistsScreen from '../screens/PlaylistsScreen';
 import SearchScreen from '../screens/SearchScreen';
-import StreamScreen from '../screens/StreamScreen';
-import DjScreen from '../screens/DjScreen';
 import SettingsScreen from '../screens/SettingsScreen';
-import ArtistScreen from '../screens/ArtistScreen';
-import CollectionScreen from '../screens/CollectionScreen';
-import { SCREEN_BG, stackContentStyle } from './theme';
-import { Motion, Signal } from '../constants/allegraTheme';
-import { isDoubleTap } from './tabs';
-import { LIBRARY_ROOT, libraryRootMove, scrollLibraryHomeToTop } from './libraryRoot';
+import StreamScreen from '../screens/StreamScreen';
+import YouScreen from '../screens/YouScreen';
 import * as Haptics from '../utils/haptics';
+import { LIBRARY_ROOT, libraryRootMove, scrollLibraryHomeToTop } from './libraryRoot';
+import { isDoubleTap } from './tabs';
+import { SCREEN_BG, stackContentStyle } from './theme';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -76,7 +76,8 @@ const LibraryStackScreen: React.FC<BottomTabScreenProps<TabParamList, 'Library'>
     >
       <LibraryStack.Screen name="LibraryHome" component={LibraryScreen} />
       <LibraryStack.Screen name="Playlists" component={PlaylistsScreen} />
-      <LibraryStack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} options={{ animation: 'slide_from_bottom' }} />
+      {/* From the right, like Playlists before it: drilling down keeps one direction. */}
+      <LibraryStack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} options={{ animation: 'slide_from_right' }} />
       <LibraryStack.Screen name="Blends" component={BlendsScreen} options={BLEND_HEADER} />
       <LibraryStack.Screen name="Blend" component={BlendScreen} options={BLEND_HEADER} />
       <LibraryStack.Screen name="BlendJoin" component={BlendJoinScreen} options={{ ...BLEND_HEADER, title: 'Join a Blend' }} />
@@ -125,6 +126,7 @@ const BrowseStack = createNativeStackNavigator<BrowseStackParamList>();
  */
 const BrowseStackScreen: React.FC = () => (
   <BrowseStack.Navigator id="BrowseStack" screenOptions={STACK_OPTIONS}>
+    <BrowseStack.Screen name="Mix" component={MixScreen} />
     <BrowseStack.Screen name="Artist" component={ArtistScreen} getId={({ params }) => params?.browseId ?? params?.name} />
     <BrowseStack.Screen name="Collection" component={CollectionScreen} getId={({ params }) => params?.browseId} />
   </BrowseStack.Navigator>
@@ -135,7 +137,7 @@ const StreamIcon = ({ color, focused }: { color: string; focused: boolean }) => 
 );
 
 const LuvsIcon = ({ color, focused }: { color: string; focused: boolean }) => (
-  <MaterialCommunityIcons name={focused ? 'heart-multiple' : 'heart-multiple-outline'} size={24} color={color} />
+  <Ionicons name={focused ? 'heart' : 'heart-outline'} size={24} color={color} />
 );
 
 const LibraryIcon = ({ color, focused }: { color: string; focused: boolean }) => (
@@ -149,9 +151,11 @@ const SearchIcon = ({ color, focused }: { color: string; focused: boolean }) => 
 // Luvs keeps the nav bar so the feed is escapable by tapping another tab; only the
 // mini player is suppressed there (see RootNavigator) because Luvs runs its own
 // audio pool and a transport for a different player would be misleading.
-const renderModernPillTabBar = (props: BottomTabBarProps) => <ModernPillTabBar {...props} />;
-const renderCustomTabBar = (props: BottomTabBarProps) => <CustomTabBar {...props} />;
-const renderNativeTabBar = (props: BottomTabBarProps) => <NativeTabBar {...props} />;
+
+
+
+
+const renderV6TabBar = (props: BottomTabBarProps) => <V6TabBar {...props} />;
 
 export const TabNavigator: React.FC = () => {
   const colors = useThemeColors();
@@ -168,9 +172,7 @@ export const TabNavigator: React.FC = () => {
         initialRouteName="Stream"
         // Back from Settings returns to the tab you came from.
         backBehavior="history"
-        tabBar={Platform.OS === 'android'
-            ? renderNativeTabBar
-            : navBarStyle === 'modern-pill' ? renderModernPillTabBar : renderCustomTabBar}
+        tabBar={renderV6TabBar}
         screenOptions={{
           headerShown: false,
           ...TAB_TRANSITION,
@@ -189,6 +191,7 @@ export const TabNavigator: React.FC = () => {
         <Tab.Screen name="Luvs" component={LuvsScreen} options={{ tabBarLabel: 'Luvs', tabBarIcon: LuvsIcon, freezeOnBlur: false }} />
         <Tab.Screen name="Library" component={LibraryStackScreen} options={{ tabBarLabel: 'Library', tabBarIcon: LibraryIcon }} />
         <Tab.Screen name="Search" component={SearchScreen} options={{ tabBarLabel: 'Search', tabBarIcon: SearchIcon }} />
+        <Tab.Screen name="You" component={YouScreen} options={{ tabBarLabel: 'You' }} />
         <Tab.Screen name="Dj" component={DjScreen} options={{ tabBarLabel: 'Your DJ', tabBarButton: () => null }} />
         <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: 'Settings' }} />
         <Tab.Screen name="Browse" component={BrowseStackScreen} options={{ tabBarLabel: 'Browse' }} />

@@ -7,25 +7,29 @@
  * the same powers. Call `open(song)` from a row's long press and render
  * `element` once in the screen.
  */
-import React, { useCallback, useState } from 'react';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system/legacy';
-import LibraryBottomSheet from '../LibraryBottomSheet';
-import LibraryEditModal from '../LibraryEditModal';
-import { ModernDeleteModal } from '../ModernDeleteModal';
-import { SongVersionSearchModal } from '../SongVersionSearchModal';
-import { Toast } from '../Toast';
+import { useCallback, useState } from 'react';
+import { Signal } from '../../constants/allegraTheme';
 import { CoverArtSearchScreen } from '../../screens/CoverArtSearchScreen';
-import { useSongsStore } from '../../store/songsStore';
+import { canQueueNext, queueNext } from '../../services/player/queueNext';
 import { useArtHistoryStore } from '../../store/artHistoryStore';
 import { useLyricsScanQueueStore } from '../../store/lyricsScanQueueStore';
-import { Signal } from '../../constants/allegraTheme';
-import { songCanUpgradeToSyncedLyrics } from '../../utils/lyricsState';
+import { useSongsStore } from '../../store/songsStore';
 import { Song } from '../../types/song';
+import { ConfirmSheet } from '../../ui';
 import * as Haptics from '../../utils/haptics';
+import { songCanUpgradeToSyncedLyrics } from '../../utils/lyricsState';
+import LibraryBottomSheet from '../LibraryBottomSheet';
+import LibraryEditModal from '../LibraryEditModal';
+import { SongVersionSearchModal } from '../SongVersionSearchModal';
+import { Toast } from '../Toast';
 
-const SHEET_COLORS = { primary: Signal.wave };
+export interface SongActionExtras {
+  /** Opened from a playlist: offer "Remove from this playlist". */
+  onRemoveFromPlaylist?: () => void;
+}
 
 type ToastState = { message: string; type: 'success' | 'error' | 'info' } | null;
 
@@ -47,10 +51,12 @@ export const useSongActions = () => {
   const [editTitle, setEditTitle] = useState('');
   const [editArtist, setEditArtist] = useState('');
   const [toast, setToast] = useState<ToastState>(null);
+  const [extras, setExtras] = useState<SongActionExtras>({});
 
-  const open = useCallback((s: Song) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  /** The long press (TactileRow already ticked). `extras` adds what only the caller can do (remove from its playlist). */
+  const open = useCallback((s: Song, more: SongActionExtras = {}) => {
     setSong(s);
+    setExtras(more);
     setSheet(true);
   }, []);
 
@@ -63,7 +69,7 @@ export const useSongActions = () => {
       return;
     }
     addToScanQueue(s, plain);
-    Haptics.vibrate(50);
+    Haptics.success();
     setToast({ message: plain ? `Looking for synced lyrics: "${s.title}"` : `Searching lyrics for "${s.title}"`, type: 'success' });
   }, [addToScanQueue]);
 
@@ -121,6 +127,15 @@ export const useSongActions = () => {
         visible={sheet}
         onClose={() => setSheet(false)}
         selectedSong={song}
+        onPlayNext={song && canQueueNext(song) ? () => {
+          setSheet(false);
+          if (queueNext(song)) {
+            Haptics.success();
+            setToast({ message: 'Playing next', type: 'success' });
+          }
+        } : undefined}
+        onFindLyrics={() => { setSheet(false); if (song) findLyrics(song); }}
+        onRemoveFromPlaylist={extras.onRemoveFromPlaylist ? () => { setSheet(false); extras.onRemoveFromPlaylist?.(); } : undefined}
         onShare={share}
         onOpenVersionSearch={() => later(() => setVersions(true))}
         onPickImage={pickImage}
@@ -140,12 +155,13 @@ export const useSongActions = () => {
         }}
         onEditInfo={() => later(() => { setEditTitle(song?.title ?? ''); setEditArtist(song?.artist ?? ''); setEditing(true); })}
         onDelete={() => later(() => setConfirmDelete(true))}
-        colors={SHEET_COLORS}
       />
-      <ModernDeleteModal
+      <ConfirmSheet
         visible={confirmDelete}
-        title="Delete song"
-        message={`Delete "${song?.title}"? This cannot be undone.`}
+        title={`Delete “${song?.title ?? ''}”?`}
+        body="The file is removed from this phone. This can’t be undone."
+        confirmLabel="Delete song"
+        destructive
         onConfirm={async () => {
           if (!song) return;
           try {
@@ -156,7 +172,7 @@ export const useSongActions = () => {
             setToast({ message: 'Could not delete the song', type: 'error' });
           }
         }}
-        onCancel={() => setConfirmDelete(false)}
+        onClose={() => setConfirmDelete(false)}
       />
       <SongVersionSearchModal
         visible={versions}

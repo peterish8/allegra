@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Animated, StyleSheet, Text, View, Pressable, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Frosted } from './allegra/Frosted';
 import { Signal } from '../constants/allegraTheme';
+import { Button } from '../ui/Button';
+import { Frosted } from './allegra/Frosted';
 
 interface ToastProps {
   visible: boolean;
@@ -12,6 +13,7 @@ interface ToastProps {
   onDismiss: () => void;
   /** Auto-hide delay in ms. Default 4000. */
   duration?: number;
+  action?: { label: string; onPress: () => void };
 }
 
 const ENTER_MS = 280;
@@ -29,6 +31,7 @@ export const Toast: React.FC<ToastProps> = ({
   type = 'success',
   onDismiss,
   duration = DEFAULT_DURATION,
+  action,
 }) => {
   const insets = useSafeAreaInsets();
 
@@ -158,8 +161,7 @@ export const Toast: React.FC<ToastProps> = ({
   if (!mounted) return null;
 
   const isError = displayType === 'error';
-  const isInfo = displayType === 'info';
-  const accent = isError ? Signal.accent : isInfo ? Signal.vibeBlue : Signal.wave;
+  const accent = isError ? Signal.accent : Signal.wave;
   const iconName =
     displayType === 'success'
       ? 'checkmark-circle'
@@ -210,6 +212,7 @@ export const Toast: React.FC<ToastProps> = ({
           />
         </View>
       </Pressable>
+      {action ? <Button label={action.label} onPress={action.onPress} /> : null}
     </Animated.View>
   );
 };

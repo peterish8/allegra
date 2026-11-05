@@ -2,17 +2,16 @@
  * Settings' own room: near black, with one soft glow of the playing cover's
  * colour rising behind the title and a quieter one of its second colour off
  * the top right, both gone by the middle of the page so the panels sit on
- * true black. A faint lit edge along the top, like light on the rim of a
- * dark glass. No song: a neutral grey glow.
+ * true black. No song: a neutral grey glow.
  *
  * Nothing runs per frame (the page is long and read, not watched). A new
  * song's glow fades in over the last one.
  */
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import { Dimensions, LayoutChangeEvent, StyleSheet, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { AuraPalette, NEUTRAL_AURA } from '../allegra/palette';
 
 const FADE_MS = 900;
@@ -68,14 +67,12 @@ const SettingsGlow: React.FC<{ palette: AuraPalette | null }> = ({ palette }) =>
       ))}
       {/* Keeps the glow off the lower page: panels sit on true black. */}
       <LinearGradient colors={['rgba(4,4,5,0)', 'rgba(4,4,5,0.6)', '#040405']} locations={[0.18, 0.46, 0.7]} style={StyleSheet.absoluteFill} />
-      <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.18)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edge} />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   base: { backgroundColor: '#040405' },
-  edge: { position: 'absolute', top: 0, left: 0, right: 0, height: StyleSheet.hairlineWidth },
 });
 
 export default React.memo(SettingsGlow);

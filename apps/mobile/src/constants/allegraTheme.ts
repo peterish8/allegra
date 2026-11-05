@@ -1,28 +1,61 @@
 /**
- * Allegra "Soft Signal" design tokens, ported to React Native.
- *
- * The listening-room look: album art supplies the atmosphere, frosted glass
- * separates content without flattening it, one stable chartreuse action color
- * stays legible over any artwork. Import these instead of hardcoding values so
- * a single edit restyles every player surface.
+ * LuvLyrics V6. The one runtime source for colour, type, shape and motion.
+ * Artwork supplies colour; white marks actions and selection. Screens consume
+ * these through src/ui. Legacy Signal names remain aliases during migration.
  */
 import { Easing } from 'react-native-reanimated';
 
 /** Stable product colors. Artwork tints the ambient layer, never these. */
 export const Signal = {
-  wave: '#d9e66a', // primary action: play, progress, selected, focus
-  waveInk: '#17180d', // text/icon on a wave fill
-  accent: '#ee6b5f', // secondary warmth (liked, song-state)
-  accentBright: '#ffaaa0',
-  accentDeep: '#783e44',
-  vibeBlue: '#7bafd4',
-  ink: '#f4f1ea',
-  inkSoft: '#d1d0c9',
-  inkMuted: '#8e9498',
-  inkFaint: '#626b70',
-  bg: '#0a0b0e',
-  bgDeep: '#07080b',
-  bgSubtle: '#12141a',
+  wave: '#F4F4F5',
+  waveInk: '#0B0D10',
+  accent: '#F4F4F5',
+  accentBright: '#F4F4F5',
+  accentDeep: '#22252C',
+  vibeBlue: '#A3A5AE',
+  ink: '#F4F4F5',
+  inkSoft: '#A3A5AE',
+  inkMuted: '#8A8D96',
+  inkFaint: '#8A8D96',
+  bg: '#0B0D10',
+  bgDeep: '#0B0D10',
+  bgSubtle: '#17191E',
+  danger: '#FF6B61',
+} as const;
+
+/** Use semantic surfaces for new code; glass is reserved for persistent player surfaces. */
+export const Surface = {
+  base: Signal.bg,
+  raised: Signal.bgSubtle,
+  control: '#22252C',
+  pressed: '#2A2D34',
+  deep: '#0D0F12',
+  divider: 'rgba(255,255,255,0.06)',
+  scrim: '#000000',
+} as const;
+
+/** Geometry shared by controls; minimum sizes allow system text scaling. */
+export const Control = {
+  target: 48,
+  button: 48,
+  compactButton: 48,
+  icon: { sm: 36, md: 40, lg: 44 },
+  glyph: { sm: 18, md: 20, lg: 22 },
+  row: 64,
+  rowArtwork: 48,
+  option: 52,
+  gutter: 16,
+  disabledOpacity: 0.4,
+} as const;
+
+/**
+ * Text over artwork, the player and floating glass: three steps, nothing in between.
+ * `Signal.ink*` stays for text on the app's own dark surfaces.
+ */
+export const OnMedia = {
+  primary: '#ffffff',
+  secondary: 'rgba(255, 255, 255, 0.86)',
+  muted: 'rgba(255, 255, 255, 0.62)',
 } as const;
 
 /** Frosted material recipe: translucent fill + hairline + inset highlight. */
@@ -34,6 +67,7 @@ export const Glass = {
   hairline: 'rgba(255, 255, 255, 0.10)',
   hairlineStrong: 'rgba(255, 255, 255, 0.18)',
   highlight: 'rgba(255, 255, 255, 0.12)',
+  grabber: 'rgba(255,255,255,0.35)',
   scrim: 'rgba(7, 8, 11, 0.55)',
   scrimHeavy: 'rgba(7, 8, 11, 0.78)',
 } as const;
@@ -49,11 +83,13 @@ export const BlurIntensity = {
 /** One corner family everywhere. Artwork is never over-rounded. */
 export const Radius = {
   pill: 999,
-  panel: 24,
-  sheet: 30,
-  well: 16,
-  art: 16,
-  thumb: 10,
+  panel: 12,
+  sheet: 16,
+  well: 12,
+  art: 12,
+  thumb: 8,
+  control: 12,
+  chip: 8,
 } as const;
 
 export const Space = {
@@ -66,10 +102,48 @@ export const Space = {
   xxl: 48,
 } as const;
 
+/**
+ * The type scale, in points. Every `fontSize` comes from here. Nothing below 11: it stops being readable on
+ * 1080p Android. Weights are only Regular, Semibold and Bold — the three SF Pro faces that ship (`Weight`).
+ */
+export const TypeScale = {
+  meta: 13,
+  caption: 12,
+  secondary: 13,
+  body: 15,
+  row: 15,
+  lead: 19,
+  section: 18,
+  detail: 24,
+  playerTitle: 24,
+  page: 28,
+  display: 34,
+  hero: 42,
+} as const;
+
+export type Weight = '400' | '600' | '700';
+
+/** Text roles are shared by React Native primitives and future native adapters. */
+export const Typography = {
+  hero: { fontSize: TypeScale.hero, lineHeight: 50, fontWeight: '700' },
+  display: { fontSize: TypeScale.display, lineHeight: 42, fontWeight: '700' },
+  page: { fontSize: TypeScale.page, lineHeight: 34, fontWeight: '700' },
+  detail: { fontSize: TypeScale.detail, lineHeight: 30, fontWeight: '700' },
+  playerTitle: { fontSize: TypeScale.playerTitle, lineHeight: 30, fontWeight: '700' },
+  lead: { fontSize: TypeScale.lead, lineHeight: 25, fontWeight: '700' },
+  title: { fontSize: TypeScale.section, lineHeight: 24, fontWeight: '600' },
+  row: { fontSize: TypeScale.row, lineHeight: 20, fontWeight: '400' },
+  body: { fontSize: TypeScale.body, lineHeight: 21, fontWeight: '400' },
+  secondary: { fontSize: TypeScale.secondary, lineHeight: 19, fontWeight: '400' },
+  caption: { fontSize: TypeScale.caption, lineHeight: 16, fontWeight: '400' },
+  meta: { fontSize: TypeScale.meta, lineHeight: 18, fontWeight: '400' },
+  label: { fontSize: TypeScale.body, lineHeight: 20, fontWeight: '600' },
+} as const;
+
 /** Apple-Music-style type ramp for the player. */
 // Weights only — the face (SF Pro) is resolved per platform; see constants/fonts.ts.
 export const PlayerType = {
-  title: { fontWeight: '600', fontSize: 22 },
+  title: Typography.playerTitle,
   artist: { fontWeight: '400', fontSize: 18 },
   meta: { fontWeight: '600', fontSize: 11 },
   time: { fontWeight: '600', fontSize: 12, fontVariant: ['tabular-nums' as const] },
@@ -79,6 +153,10 @@ export const PlayerType = {
  * Motion vocabulary. Motion communicates state, it does not decorate. Animate
  * transform and opacity only — never width/height/top.
  */
+/** A spring that settles in the least time without overshooting: what a finger-driven surface wants. */
+export const criticallyDamped = (stiffness: number) =>
+  ({ stiffness, damping: 2 * Math.sqrt(stiffness), mass: 1, overshootClamping: true }) as const;
+
 export const Motion = {
   duration: {
     instant: 100,
@@ -89,12 +167,14 @@ export const Motion = {
     crossfade: 900, // canvas video <-> artwork swap
     flight: 280, // a cover flying from its row into the transfer crate
     deal: 320, // a finished sleeve dealt out of the crate
+    morph: 460, // one surface becoming another (lyrics opening, fullscreen)
   },
   ease: {
     standard: Easing.bezier(0.4, 0, 0.2, 1),
     decelerate: Easing.bezier(0, 0, 0.2, 1),
     accelerate: Easing.bezier(0.4, 0, 1, 1),
     emphasis: Easing.bezier(0.2, 0, 0, 1),
+    morph: Easing.bezier(0.32, 0.72, 0, 1),
   },
   spring: {
     // Press feedback: firm and quick to settle, so a tap registers at once (a hint of give, not a wobble).
@@ -103,7 +183,15 @@ export const Motion = {
     hero: { stiffness: 220, damping: 30, mass: 1 },
     lyrics: { stiffness: 260, damping: 38, mass: 0.85 },
     breathe: { stiffness: 120, damping: 28, mass: 1 },
+    /** A tap opens or closes something. */
+    open: criticallyDamped(400),
+    /** A flick past FLING_VELOCITY: the surface keeps the finger's speed. */
+    fling: criticallyDamped(1500),
+    /** Coming to rest after a drag that didn't commit. */
+    settle: { stiffness: 320, damping: 34, mass: 1, overshootClamping: true },
   },
+  /** Release speed (pt/s) above which a drag counts as a flick. */
+  flingVelocity: 800,
   /** A tapped control confirms within this window, independent of any IO. */
   ackMs: 120,
   /** The transfer ticker: at most this many visual updates a second; screen readers every summaryMs. */

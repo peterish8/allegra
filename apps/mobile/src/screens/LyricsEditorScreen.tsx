@@ -1,3 +1,5 @@
+import { AppScreen } from '../components/AppScreen';
+import { TypeScale } from '../constants/allegraTheme';
 /**
  * Edit lyrics — for a song saved on the phone, opened from the player's
  * Details sheet. (Adding lyrics without a song was removed: lyrics always
@@ -12,6 +14,8 @@
  * Every control does something; Save writes to the library and updates the
  * player if this song is playing.
  */
+import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,30 +29,25 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsFocused } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
-import DynamicAura from '../components/allegra/DynamicAura';
 import Artwork from '../components/allegra/Artwork';
 import { Tactile } from '../components/allegra/motion';
-import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
-import { Choice, Row, Section } from '../components/settings/SettingsKit';
 import { LrcSearchModal } from '../components/LrcSearchModal';
+import { Choice, Row, Section } from '../components/settings/SettingsKit';
 import { Toast } from '../components/Toast';
 import { Glass, Radius, Signal } from '../constants/allegraTheme';
-import { useSongsStore } from '../store/songsStore';
-import { usePlayerStore } from '../store/playerStore';
-import { lyricaService } from '../services/LyricaService';
 import { GeniusService } from '../services/GeniusService';
-import { TransliterationService } from '../services/TransliterationService';
+import { lyricaService } from '../services/LyricaService';
 import { SearchResult } from '../services/LyricsRepository';
-import { calculateDuration, lyricsToRawText, parseTimestampedLyrics } from '../utils/timestampParser';
-import { formatTime } from '../utils/formatters';
-import { formatOffset, hasTimestamps, parseDurationInput, shiftTimestamps } from '../utils/lyricsEditing';
-import { safeGoBack } from '../utils/navigationService';
-import * as Haptics from '../utils/haptics';
+import { TransliterationService } from '../services/TransliterationService';
+import { usePlayerStore } from '../store/playerStore';
+import { useSongsStore } from '../store/songsStore';
 import { RootStackScreenProps } from '../types/navigation';
 import { Song } from '../types/song';
+import { formatTime } from '../utils/formatters';
+import * as Haptics from '../utils/haptics';
+import { formatOffset, hasTimestamps, parseDurationInput, shiftTimestamps } from '../utils/lyricsEditing';
+import { safeGoBack } from '../utils/navigationService';
+import { calculateDuration, lyricsToRawText, parseTimestampedLyrics } from '../utils/timestampParser';
 
 type Props = RootStackScreenProps<'EditLyrics'>;
 type Align = 'left' | 'center' | 'right';
@@ -100,7 +99,7 @@ const Chip: React.FC<{
 const LyricsEditorScreen: React.FC<Props> = ({ navigation, route }) => {
   const { songId } = route.params;
   const insets = useSafeAreaInsets();
-  const isFocused = useIsFocused();
+
   const getSong = useSongsStore(s => s.getSong);
   const updateSong = useSongsStore(s => s.updateSong);
   const setMiniPlayerHiddenSource = usePlayerStore(s => s.setMiniPlayerHiddenSource);
@@ -120,7 +119,7 @@ const LyricsEditorScreen: React.FC<Props> = ({ navigation, route }) => {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  const palette = useArtworkPalette(original?.coverImageUri);
+
   const synced = useMemo(() => hasTimestamps(lyricsText), [lyricsText]);
   const say = (text: string, type: 'success' | 'error' | 'info' = 'info') => setNotice({ text, type });
 
@@ -258,8 +257,7 @@ const LyricsEditorScreen: React.FC<Props> = ({ navigation, route }) => {
   };
 
   return (
-    <View style={styles.root}>
-      <DynamicAura palette={palette} active={isFocused} dim={0.3} />
+    <AppScreen style={styles.root}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <Tactile onPress={close} pressScale={0.9} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close without saving" style={styles.round}>
@@ -370,7 +368,7 @@ const LyricsEditorScreen: React.FC<Props> = ({ navigation, route }) => {
         initialQuery={{ title, artist, duration: parseDurationInput(durationText) }}
       />
       <Toast visible={notice !== null} message={notice?.text ?? ''} type={notice?.type ?? 'info'} onDismiss={() => setNotice(null)} />
-    </View>
+    </AppScreen>
   );
 };
 
@@ -388,18 +386,18 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Glass.hairline,
   },
-  headerTitle: { color: Signal.ink, fontSize: 17, fontWeight: '600' },
+  headerTitle: { color: Signal.ink, fontSize: TypeScale.section, fontWeight: '600' },
   save: { minWidth: 76, height: 40, paddingHorizontal: 18, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
   saveOff: { opacity: 0.5 },
-  saveText: { color: Signal.waveInk, fontSize: 15, fontWeight: '700' },
+  saveText: { color: Signal.waveInk, fontSize: TypeScale.body, fontWeight: '700' },
   content: { paddingHorizontal: 16 },
   songCard: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 6, paddingHorizontal: 16 },
   songArt: { width: 64, height: 64, borderRadius: 12 },
-  songTitle: { color: Signal.ink, fontSize: 22, fontWeight: '700' },
-  songMeta: { color: Signal.inkMuted, fontSize: 13, marginTop: 3 },
+  songTitle: { color: Signal.ink, fontSize: TypeScale.detail, fontWeight: '700' },
+  songMeta: { color: Signal.inkMuted, fontSize: TypeScale.meta, marginTop: 3 },
   field: { paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Glass.hairline },
-  fieldLabel: { color: Signal.inkMuted, fontSize: 13 },
-  fieldInput: { color: Signal.ink, fontSize: 16, paddingVertical: 6 },
+  fieldLabel: { color: Signal.inkMuted, fontSize: TypeScale.meta },
+  fieldInput: { color: Signal.ink, fontSize: TypeScale.body, paddingVertical: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 12 },
   chip: {
     flexDirection: 'row',
@@ -413,7 +411,7 @@ const styles = StyleSheet.create({
     borderColor: Glass.hairlineStrong,
   },
   chipOn: { backgroundColor: Signal.wave, borderColor: Signal.wave },
-  chipText: { color: Signal.ink, fontSize: 14, fontWeight: '600' },
+  chipText: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '600' },
   chipTextOn: { color: Signal.waveInk },
   well: {
     borderRadius: Radius.well,
@@ -422,7 +420,7 @@ const styles = StyleSheet.create({
     borderColor: Glass.hairline,
     marginBottom: 16,
   },
-  lyrics: { minHeight: 280, color: Signal.ink, fontSize: 15, lineHeight: 24, padding: 14 },
+  lyrics: { minHeight: 280, color: Signal.ink, fontSize: TypeScale.body, lineHeight: 24, padding: 14 },
   offsets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   // Three to a row, always: the grid never runs off the edge.
   offsetCell: { flexBasis: '30%', flexGrow: 1 },
@@ -435,9 +433,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Glass.hairlineStrong,
   },
-  offsetText: { color: Signal.ink, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  offsetText: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '600', fontVariant: ['tabular-nums'] },
   undo: { alignSelf: 'flex-start', paddingVertical: 4 },
-  undoText: { color: Signal.wave, fontSize: 14, fontWeight: '600' },
+  undoText: { color: Signal.wave, fontSize: TypeScale.body, fontWeight: '600' },
 });
 
 export default LyricsEditorScreen;

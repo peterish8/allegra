@@ -6,7 +6,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -29,13 +28,19 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     private val onTabPress by EventDispatcher<Map<String, Any>>()
     private val onMorePress by EventDispatcher<Map<String, Any>>()
     private val tabs = listOf("Stream", "Luvs", "Library")
-    private val slotViews = ArrayList<View>(4)
+    private val v6Tabs = listOf("Stream", "Luvs", "Library", "Search", "You")
+    private val slotViews = ArrayList<View>(5)
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    // Labels in medium weight, not bold: they name the icon above them, they don't compete with it.
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
-    private val path = Path()
+    private val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        textSize = GLYPH_SIZE
+        typeface = ionicons(context)
+    }
     private val bounds = RectF()
     private var variant = "modern-pill"
     private var activeTab = "Stream"
@@ -49,21 +54,21 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     private var activeTint = Color.WHITE
     private var inactiveTint = ColorUtils.setAlphaComponent(Color.WHITE, 115)
     private var moreMorph = 0f
-    private val lift = FloatArray(4)
-    private val pressed = FloatArray(4)
-    private val animators = arrayOfNulls<ValueAnimator>(4)
+    private val lift = FloatArray(5)
+    private val pressed = FloatArray(5)
+    private val animators = arrayOfNulls<ValueAnimator>(5)
     private var moreAnimator: ValueAnimator? = null
 
     init {
         setBackgroundColor(Color.TRANSPARENT)
         setWillNotDraw(false)
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        repeat(4) { index ->
+        repeat(5) { index ->
             val slot = View(context).apply {
                 isClickable = true
                 isFocusable = true
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-                contentDescription = if (index == 3) "More" else tabs[index]
+                contentDescription = if (index >= 3) "More" else tabs[index]
                 ViewCompat.setAccessibilityDelegate(this, object : AccessibilityDelegateCompat() {
                     override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
                         super.onInitializeAccessibilityNodeInfo(host, info)
@@ -72,7 +77,7 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
                         // TalkBack's double tap performs ACTION_CLICK; say so outright.
                         info.isClickable = true
                         info.addAction(AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK)
-                        if (index == 3) info.addAction(
+                        if (index == 3 && variant != "v6") info.addAction(
                             if (moreOpen) AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_COLLAPSE
                             else AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_EXPAND,
                         )
@@ -103,10 +108,11 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     }
 
     fun setVariant(value: String?) {
-        val next = if (value == "classic") "classic" else "modern-pill"
+        val next = when (value) { "v6" -> "v6"; "classic" -> "classic"; else -> "modern-pill" }
         if (variant == next) return
         variant = next
-        elevation = dp(if (variant == "classic") 0f else 16f)
+        elevation = dp(if (variant == "modern-pill") 16f else 0f)
+        syncSelection()
         requestLayout(); invalidate()
     }
 
@@ -114,7 +120,7 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         val next = value ?: "Stream"
         if (activeTab != next) {
             val index = tabs.indexOf(next)
-            if (index >= 0) animateLift(index)
+            if (index >= 0 && variant != "v6") animateLift(index)
             activeTab = next
             invalidate()
         }
@@ -142,7 +148,8 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     /** What TalkBack announces: the lit tab is selected, More is selected while it or a menu page is up. */
     private fun syncSelection() {
         slotViews.forEachIndexed { i, view ->
-            view.isSelected = if (i == 3) moreActive else !moreActive && tabs[i] == activeTab
+            view.isSelected = if (variant == "v6") v6Tabs[i] == activeTab else if (i == 3) moreActive else i < tabs.size && !moreActive && tabs[i] == activeTab
+            view.contentDescription = if (variant == "v6") v6Tabs[i] else if (i >= 3) "More" else tabs[i]
         }
     }
 
@@ -177,6 +184,8 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         setMeasuredDimension(widthPx, heightPx)
         val slotRects = slotRects(widthPx / density(), heightPx / density())
         slotViews.forEachIndexed { index, child ->
+            if (index >= slotRects.size) { child.visibility = View.GONE; return@forEachIndexed }
+            child.visibility = View.VISIBLE
             val rect = slotRects[index]
             child.measure(
                 MeasureSpec.makeMeasureSpec((rect.right - rect.left).times(density()).roundToInt().coerceAtLeast(1), MeasureSpec.EXACTLY),
@@ -189,6 +198,7 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         super.onLayout(changed, left, top, right, bottom)
         val rects = slotRects((right - left) / density(), (bottom - top) / density())
         slotViews.forEachIndexed { index, child ->
+            if (index >= rects.size) return@forEachIndexed
             val rect = rects[index]
             child.layout(
                 (rect.left * density()).roundToInt(),
@@ -207,6 +217,7 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         if (widthDp <= 0f || heightDp <= 0f) return
         canvas.save()
         canvas.scale(scale, scale)
+        if (variant == "v6") { drawV6(canvas, widthDp); canvas.restore(); return }
         val y = barTop(heightDp)
         if (variant == "classic") drawClassicBackground(canvas, widthDp, y)
         else drawPillBackground(canvas, widthDp, y)
@@ -226,9 +237,9 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
             if (index == 3) drawMore(canvas, color) else drawTabIcon(canvas, tabs[index], color, focused)
             canvas.restore()
             if (variant == "modern-pill") {
-                labelPaint.textSize = 10.5f * resources.configuration.fontScale
+                labelPaint.textSize = 11f * resources.configuration.fontScale
                 labelPaint.color = color
-                val label = if (index == 3) "More" else tabs[index]
+                val label = if (index >= 3) "More" else tabs[index]
                 canvas.drawText(label, cx, y + 55f, labelPaint)
             }
         }
@@ -236,7 +247,8 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     }
 
     private fun activate(index: Int) {
-        if (index == 3) onMorePress(mapOf("open" to moreOpen))
+        if (variant == "v6") onTabPress(mapOf("route" to v6Tabs[index]))
+        else if (index == 3) onMorePress(mapOf("open" to moreOpen))
         else onTabPress(mapOf("route" to tabs[index]))
     }
 
@@ -259,9 +271,32 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         }
     }
 
-    private fun slotRects(width: Float, height: Float): List<RectF> =
-        TabBarGeometry.slots(variant == "modern-pill", micEnabled, width, barTop(height))
+    private fun slotRects(width: Float, height: Float): List<RectF> {
+        if (variant == "v6") return (0..4).map { i -> RectF(i * width / 5f, 0f, (i + 1) * width / 5f, 64f) }
+        return TabBarGeometry.slots(variant == "modern-pill", micEnabled, width, barTop(height))
             .map { RectF(it.left, it.top, it.right, it.bottom) }
+    }
+
+    private fun drawV6(canvas: Canvas, width: Float) {
+        v6Tabs.forEachIndexed { index, name ->
+            val selected = name == activeTab
+            val cx = width * (index + 0.5f) / 5f
+            if (selected) {
+                iconPaint.color = 0xFF22252C.toInt()
+                iconPaint.style = Paint.Style.FILL
+                canvas.drawRoundRect(RectF(cx - 28f, 5f, cx + 28f, 35f), 10f, 10f, iconPaint)
+            }
+            val color = if (selected) activeTint else inactiveTint
+            canvas.save()
+            canvas.translate(cx, 20f)
+            drawTabIcon(canvas, name, ColorUtils.setAlphaComponent(color, (Color.alpha(color) * (1f - pressed[index] * 0.15f)).roundToInt()), selected)
+            canvas.restore()
+            labelPaint.color = color
+            labelPaint.textSize = 12f * resources.configuration.fontScale.coerceAtMost(1.3f)
+            labelPaint.typeface = Typeface.create(if (selected) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
+            canvas.drawText(name, cx, 54f, labelPaint)
+        }
+    }
 
     private fun barTop(height: Float): Float =
         TabBarGeometry.barTop(variant == "modern-pill", height, bottomInset, bottomOffset)
@@ -302,62 +337,32 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         iconPaint.style = Paint.Style.FILL
     }
 
+    /**
+     * The tab's glyph from Ionicons, the icon set the rest of the app draws with: the outline when the tab is
+     * resting, the solid one when it is chosen. (These used to be hand-drawn arcs and paths whose "chosen" state
+     * filled a stroke shape, which turned them into blobs.)
+     */
     private fun drawTabIcon(canvas: Canvas, name: String, color: Int, focused: Boolean) {
-        iconPaint.color = color
-        iconPaint.style = if (focused) Paint.Style.FILL else Paint.Style.STROKE
-        iconPaint.strokeWidth = 1.9f
-        iconPaint.strokeCap = Paint.Cap.ROUND
-        iconPaint.strokeJoin = Paint.Join.ROUND
-        when (name) {
-            "Stream" -> {
-                canvas.drawCircle(0f, 0f, 2.1f, iconPaint.apply { style = Paint.Style.FILL })
-                iconPaint.style = Paint.Style.STROKE
-                canvas.drawArc(RectF(-6f, -6f, 6f, 6f), -55f, 110f, false, iconPaint)
-                canvas.drawArc(RectF(-11f, -11f, 11f, 11f), -55f, 110f, false, iconPaint)
-                canvas.drawArc(RectF(-6f, -6f, 6f, 6f), 125f, 110f, false, iconPaint)
-                canvas.drawArc(RectF(-11f, -11f, 11f, 11f), 125f, 110f, false, iconPaint)
-            }
-            "Luvs" -> {
-                drawHeart(canvas, -4.3f, -1.6f, 9.3f, color, focused)
-                drawHeart(canvas, 4.4f, 1.8f, 8.3f, color, focused)
-            }
-            "Library" -> {
-                canvas.drawRoundRect(RectF(-10f, -10f, 10f, 10f), 1.4f, 1.4f, iconPaint)
-                if (!focused) canvas.drawLine(-4f, -10f, -4f, 10f, iconPaint)
-                else {
-                    iconPaint.style = Paint.Style.STROKE
-                    canvas.drawLine(-4f, -10f, -4f, 10f, iconPaint)
-                    canvas.drawLine(3f, -10f, 3f, 10f, iconPaint)
-                }
-            }
-        }
+        val glyph = TAB_GLYPHS[name] ?: return
+        drawGlyph(canvas, if (focused) glyph.first else glyph.second, color)
     }
 
-    private fun drawHeart(canvas: Canvas, cx: Float, cy: Float, size: Float, color: Int, filled: Boolean) {
-        path.reset()
-        path.moveTo(cx, cy + size * 0.38f)
-        path.cubicTo(cx - size * 0.2f, cy + size * 0.2f, cx - size * 0.5f, cy - size * 0.03f, cx - size * 0.5f, cy - size * 0.25f)
-        path.cubicTo(cx - size * 0.5f, cy - size * 0.55f, cx - size * 0.1f, cy - size * 0.55f, cx, cy - size * 0.3f)
-        path.cubicTo(cx + size * 0.1f, cy - size * 0.55f, cx + size * 0.5f, cy - size * 0.55f, cx + size * 0.5f, cy - size * 0.25f)
-        path.cubicTo(cx + size * 0.5f, cy - size * 0.03f, cx + size * 0.2f, cy + size * 0.2f, cx, cy + size * 0.38f)
-        iconPaint.color = color
-        iconPaint.style = if (filled) Paint.Style.FILL else Paint.Style.STROKE
-        iconPaint.strokeWidth = 1.7f
-        canvas.drawPath(path, iconPaint)
-    }
-
+    /** â€¢â€¢â€¢ morphs into Ã— while the More menu is open: the two glyphs cross-fade, the Ã— turning in by 45Â°. */
     private fun drawMore(canvas: Canvas, color: Int) {
-        val alphaDots = (255 * (1f - moreMorph)).toInt()
-        val alphaCross = (255 * moreMorph).toInt()
-        iconPaint.style = Paint.Style.FILL
-        iconPaint.color = ColorUtils.setAlphaComponent(color, alphaDots)
-        for (x in floatArrayOf(-7f, 0f, 7f)) canvas.drawCircle(x, 0f, 1.7f, iconPaint)
-        iconPaint.style = Paint.Style.STROKE
-        iconPaint.strokeWidth = 2f
-        iconPaint.strokeCap = Paint.Cap.ROUND
-        iconPaint.color = ColorUtils.setAlphaComponent(color, alphaCross)
-        canvas.drawLine(-6f, -6f, 6f, 6f, iconPaint)
-        canvas.drawLine(6f, -6f, -6f, 6f, iconPaint)
+        drawGlyph(canvas, GLYPH_MORE, ColorUtils.setAlphaComponent(color, (Color.alpha(color) * (1f - moreMorph)).roundToInt()))
+        canvas.save()
+        canvas.rotate((1f - moreMorph) * -45f)
+        drawGlyph(canvas, GLYPH_CLOSE, ColorUtils.setAlphaComponent(color, (Color.alpha(color) * moreMorph).roundToInt()))
+        canvas.restore()
+    }
+
+    /** One Ionicons glyph centred on the canvas origin (the canvas is already in dp). */
+    private fun drawGlyph(canvas: Canvas, codepoint: Int, color: Int) {
+        if (Color.alpha(color) == 0) return
+        glyphPaint.color = color
+        val text = String(Character.toChars(codepoint))
+        val metrics = glyphPaint.fontMetrics
+        canvas.drawText(text, 0f, -(metrics.ascent + metrics.descent) / 2f, glyphPaint)
     }
 
     private fun parseColor(value: String?, fallback: Int): Int =
@@ -368,5 +373,23 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
 
     private companion object {
         const val TAB_HEIGHT = 64f
+        /** Glyph size in dp: Ionicons' 512-unit box drawn at the app's tab icon size. */
+        const val GLYPH_SIZE = 24f
+        /** Ionicons codepoints (glyphmaps/Ionicons.json in @expo/vector-icons): chosen, resting. */
+        val TAB_GLYPHS = mapOf(
+            "Stream" to (0xf4ff to 0xf506), // radio, radio-outline
+            "Luvs" to (0xf36a to 0xf377), // heart, heart-outline
+            "Search" to (0xf55f to 0xf563),
+            "You" to (0xf4a9 to 0xf4aa),
+            "Library" to (0xf3b5 to 0xf3b6), // library, library-outline
+        )
+        const val GLYPH_MORE = 0xf2ce // ellipsis-horizontal
+        const val GLYPH_CLOSE = 0xf24a // close
+        @Volatile private var ionicons: Typeface? = null
+        /** The font ships in assets/fonts (copied from @expo/vector-icons); loaded once per process. */
+        fun ionicons(context: Context): Typeface =
+            ionicons ?: runCatching { Typeface.createFromAsset(context.assets, "fonts/Ionicons.ttf") }
+                .getOrDefault(Typeface.DEFAULT)
+                .also { ionicons = it }
     }
 }

@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { SortOption, ViewMode } from '../types/song';
 import { createDebouncedStorage } from './debouncedStorage';
 
@@ -36,7 +36,7 @@ export const isCardPlayerBackground = (value: PlayerBackground): boolean => valu
 export type AppBackground = 'shader' | 'glass' | 'glow';
 
 /**
- * Settings → Reduce effects. 'auto' lets the phone decide (utils/performanceTier: old CPU cores, low memory, or
+ * Settings â†’ Reduce effects. 'auto' lets the phone decide (utils/performanceTier: old CPU cores, low memory, or
  * frames that kept missing); 'on' always takes the light path; 'off' keeps the full visuals even on a slow phone.
  */
 export type ReduceEffects = 'auto' | 'on' | 'off';
@@ -46,15 +46,15 @@ export type ReduceEffects = 'auto' | 'on' | 'off';
  * the closest look left is Apple + glow. Anything unknown gets the default.
  */
 /**
- * Settings → Lyrics → Timing, in seconds added to the playback position: 0 is "in sync" (the row says so).
- * The default used to be −1.2, a leftover from the first player, which lit every line 1.2 seconds after it
- * began and showed "Timing −1.2s" on a fresh install.
+ * Settings â†’ Lyrics â†’ Timing, in seconds added to the playback position: 0 is "in sync" (the row says so).
+ * The default used to be âˆ’1.2, a leftover from the first player, which lit every line 1.2 seconds after it
+ * began and showed "Timing âˆ’1.2s" on a fresh install.
  */
 export const DEFAULT_LYRICS_DELAY = 0;
 /** The old default. A saved value of exactly this was never chosen, so settings v5 moves it to in sync. */
 const OLD_DEFAULT_LYRICS_DELAY = -1.2;
 
-/** The timing a saved setting should carry after migration: untouched old default → in sync; any chosen value kept. */
+/** The timing a saved setting should carry after migration: untouched old default â†’ in sync; any chosen value kept. */
 export const migrateLyricsDelay = (version: number, saved: unknown): number => {
   if (typeof saved !== 'number' || !Number.isFinite(saved)) return DEFAULT_LYRICS_DELAY;
   return version < 5 && Math.abs(saved - OLD_DEFAULT_LYRICS_DELAY) < 1e-6 ? DEFAULT_LYRICS_DELAY : saved;
@@ -82,7 +82,7 @@ interface SettingsState {
   lyricsHighlight: LyricsHighlight;
   autoScrollPlainLyrics: boolean;
   lineSpacing: LineSpacing;
-  
+
   // Playback
   scrollSpeed: ScrollSpeed;
   skipDuration: 10 | 15 | 30;
@@ -101,15 +101,15 @@ interface SettingsState {
   libraryFocusMode: boolean; // Toggle for "Focus Mode" (Black Background)
   showPerformanceHUD: boolean; // Toggle for FPS counter
   applyThemeToOtherPages: boolean; // Option to apply theme to playlists and settings pages
-  
+
   // Library
   defaultView: ViewMode;
   defaultSort: SortOption;
   showThumbnails: boolean;
-  
+
   // Persistence
   playlistHistory: Record<string, string>; // playlistId -> lastSongId
-  
+
   // Downloads
   downloadDirectoryUri: string | null;
 
@@ -139,7 +139,7 @@ interface SettingsState {
   setDefaultView: (view: ViewMode) => void;
   setDefaultSort: (sort: SortOption) => void;
   setShowThumbnails: (show: boolean) => void;
-  
+
   // History Actions
   updatePlaylistHistory: (playlistId: string, songId: string) => void;
   setDownloadDirectory: (uri: string | null) => void;
@@ -179,10 +179,10 @@ interface SettingsState {
   playerCoverFull: boolean;
   setPlayerCoverFull: (v: boolean) => void;
   setCanvasEnabled: (enabled: boolean) => void;
-  /** Your own Apple MusicKit developer token — unlocks Apple motion artwork. */
+  /** Your own Apple MusicKit developer token â€” unlocks Apple motion artwork. */
   appleMusicToken: string;
   setAppleMusicToken: (token: string) => void;
-  /** Optional Tidal client token — unlocks Tidal video covers. */
+  /** Optional Tidal client token â€” unlocks Tidal video covers. */
   tidalToken: string;
   setTidalToken: (token: string) => void;
 
@@ -231,10 +231,10 @@ const DEFAULT_SETTINGS = {
   canvasEnabled: true,
   appBackground: 'shader' as AppBackground,
   miniPlayerBackground: 'glow' as MiniPlayerBackground,
-  appleMusicInspired: true,
-  hidePlayerVolume: false,
+  appleMusicInspired: false,
+  hidePlayerVolume: true,
   playerBackground: 'blend' as PlayerBackground,
-  playerCoverFull: true,
+  playerCoverFull: false,
   appleMusicToken: '',
   tidalToken: '',
   luvsStartAtHook: true,
@@ -246,7 +246,7 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       // Default values
       ...DEFAULT_SETTINGS,
-      
+
       // Appearance actions
       setTheme: (theme) => set({ theme }),
       setDefaultGradient: (defaultGradientId) => set({ defaultGradientId }),
@@ -255,7 +255,7 @@ export const useSettingsStore = create<SettingsState>()(
       setLyricsHighlight: (lyricsHighlight) => set({ lyricsHighlight }),
       setAutoScrollPlainLyrics: (autoScrollPlainLyrics) => set({ autoScrollPlainLyrics }),
       setLineSpacing: (lineSpacing) => set({ lineSpacing }),
-      
+
       // Playback actions
       setScrollSpeed: (scrollSpeed) => set({ scrollSpeed }),
       setSkipDuration: (skipDuration) => set({ skipDuration }),
@@ -273,12 +273,12 @@ export const useSettingsStore = create<SettingsState>()(
       setLibraryFocusMode: (libraryFocusMode: boolean) => set({ libraryFocusMode }),
       setShowPerformanceHUD: (showPerformanceHUD: boolean) => set({ showPerformanceHUD }),
       setApplyThemeToOtherPages: (applyThemeToOtherPages: boolean) => set({ applyThemeToOtherPages }),
-      
+
       // Library actions
       setDefaultView: (defaultView) => set({ defaultView }),
       setDefaultSort: (defaultSort) => set({ defaultSort }),
       setShowThumbnails: (showThumbnails) => set({ showThumbnails }),
-      
+
       // History implementation
       playlistHistory: {},
       updatePlaylistHistory: (playlistId: string, songId: string) => set((state) => ({
@@ -287,7 +287,7 @@ export const useSettingsStore = create<SettingsState>()(
               [playlistId]: songId
           }
       })),
-      
+
       setDownloadDirectory: (downloadDirectoryUri) => set({ downloadDirectoryUri }),
 
       // Quick pins
@@ -312,14 +312,14 @@ export const useSettingsStore = create<SettingsState>()(
       setAppBackground: (appBackground) => set({ appBackground }),
       miniPlayerBackground: 'glow',
       setMiniPlayerBackground: (miniPlayerBackground) => set({ miniPlayerBackground }),
-      appleMusicInspired: true,
+      appleMusicInspired: false,
       // As in Echo: turning the Apple Music player on also picks its background.
       setAppleMusicInspired: (appleMusicInspired) => set(s => (appleMusicInspired && isCardPlayerBackground(s.playerBackground) ? { appleMusicInspired, playerBackground: 'blend' } : { appleMusicInspired })),
-      hidePlayerVolume: false,
+      hidePlayerVolume: true,
       setHidePlayerVolume: (hidePlayerVolume) => set({ hidePlayerVolume }),
       playerBackground: 'blend',
       setPlayerBackground: (playerBackground) => set(playerBackgroundChange(playerBackground)),
-      playerCoverFull: true,
+      playerCoverFull: false,
       setPlayerCoverFull: (playerCoverFull) => set({ playerCoverFull }),
       appleMusicToken: '',
       setAppleMusicToken: (appleMusicToken) => set({ appleMusicToken: appleMusicToken.trim() }),
@@ -335,12 +335,17 @@ export const useSettingsStore = create<SettingsState>()(
       // Every change rewrote the whole saved settings, and the playlist history changes with every song: writes are
       // coalesced to one a second and flushed when the app leaves the foreground.
       storage: createJSONStorage(() => settingsStorage),
-      version: 5,
+      version: 6,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<SettingsState> & { lyricsFontSize?: string };
         const { lyricsFontSize, ...rest } = state;
         return {
           ...rest,
+          // V6 has one shell. The three retired appearance controls cannot revive old chrome.
+          navBarStyle: 'modern-pill',
+          appBackground: 'glow',
+          miniPlayerBackground: 'tint',
+          hidePlayerVolume: true,
           // v3: the Small / Medium / Large text size became a size in points.
           lyricsSize: version < 3
             ? LYRICS_PRESET_SIZE[lyricsFontSize as keyof typeof LYRICS_PRESET_SIZE] ?? 28
@@ -348,15 +353,13 @@ export const useSettingsStore = create<SettingsState>()(
           lyricsAlign: state.lyricsAlign ?? 'left',
           lyricsHighlight: state.lyricsHighlight === 'lines' ? 'lines' : 'letters',
           playerBackground: normalizePlayerBackground(state.playerBackground),
-          miniPlayerBackground: normalizeMiniPlayerBackground(state.miniPlayerBackground),
           // v2: hold-to-talk became the default. The old default was 'tap',
           // which kept listening after the finger lifted.
           voiceMode: version < 2 ? 'hold' : state.voiceMode ?? 'hold',
-          // v4: every player background opens on the full cover; a tap on it
-          // gives the square card.
-          playerCoverFull: version < 4 ? true : state.playerCoverFull ?? true,
-          appleMusicInspired: version < 4 ? true : state.appleMusicInspired ?? true,
-          // v5: the old −1.2 s default (never chosen) becomes in sync.
+          // v6: the sharp card is the default; the selected room/background is retained.
+          playerCoverFull: version < 6 ? false : state.playerCoverFull ?? false,
+          appleMusicInspired: version < 6 ? false : state.appleMusicInspired ?? false,
+          // v5: the old âˆ’1.2 s default (never chosen) becomes in sync.
           lyricsDelay: migrateLyricsDelay(version, state.lyricsDelay),
         } as SettingsState;
       },
@@ -364,7 +367,7 @@ export const useSettingsStore = create<SettingsState>()(
   )
 );
 
-/** Settings → Lyrics → Text size, in points. */
+/** Settings â†’ Lyrics â†’ Text size, in points. */
 export const LYRICS_SIZE_MIN = 20;
 export const LYRICS_SIZE_MAX = 44;
 export const clampLyricsSize = (size: number): number =>
@@ -372,7 +375,7 @@ export const clampLyricsSize = (size: number): number =>
 /** The old presets, for settings saved before sizes were custom. */
 const LYRICS_PRESET_SIZE = { small: 24, medium: 28, large: 34 } as const;
 
-/** Settings → Lyrics → Line spacing: the space above and below each line. */
+/** Settings â†’ Lyrics â†’ Line spacing: the space above and below each line. */
 export const LYRICS_LINE_GAP = { compact: 10, normal: 16, relaxed: 24 } as const;
 
 /** The lyric text style the settings ask for. */

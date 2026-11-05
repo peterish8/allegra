@@ -4,13 +4,14 @@
  * is open, a small chip beside it shows how many are listening; while another
  * device plays over Connect, one says which device it is.
  */
-import React, { useCallback } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useCallback } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Signal } from '../constants/allegraTheme';
+import { Tactile } from '../ui';
 import NativeHeader, { nativeHeaderAvailable } from './player/NativeHeader';
 import { shouldUseNativeHeader, type HeaderAction } from './player/nativeHeaderProps';
 
@@ -46,20 +47,20 @@ const NowPlayingHeader: React.FC<NowPlayingHeaderProps> = ({
         <NativeHeader together={together} playingOn={playingOn} waveColor={Signal.wave} onAction={onNativeAction} />
       ) : (
         <>
-          <Pressable onPress={onGoBack} hitSlop={{ top: 12, bottom: 12, left: 40, right: 40 }} accessibilityRole="button" accessibilityLabel="Close player">
+          <Tactile onPress={onGoBack} hitSlop={{ top: 12, bottom: 12, left: 40, right: 40 }} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Close player">
             <View style={styles.grabber} />
-          </Pressable>
+          </Tactile>
           {together !== null ? (
-            <Pressable onPress={onTogetherPress} style={styles.chip} accessibilityRole="button" accessibilityLabel={`Listening together, ${together} in the room`}>
+            <Tactile onPress={onTogetherPress} wrapperStyle={styles.chipWrap} style={styles.chip} pressScale={0.96} accessibilityRole="button" accessibilityLabel={`Listening together, ${together} in the room`}>
               <MaterialCommunityIcons name="account-multiple" size={15} color="#fff" />
               <Text style={styles.chipText}>{`Listening together · ${together}`}</Text>
-            </Pressable>
+            </Tactile>
           ) : null}
           {playingOn ? (
-            <Pressable onPress={onPlayingOnPress} style={styles.chip} accessibilityRole="button" accessibilityLabel={`Playing on ${playingOn.name}. Choose a device`}>
+            <Tactile onPress={onPlayingOnPress} wrapperStyle={styles.chipWrap} style={styles.chip} pressScale={0.96} accessibilityRole="button" accessibilityLabel={`Playing on ${playingOn.name}. Choose a device`}>
               <MaterialCommunityIcons name={playingOn.kind === 'web' ? 'laptop' : 'cellphone'} size={15} color={Signal.wave} />
               <Text style={styles.chipText} numberOfLines={1}>{`Playing on ${playingOn.name}`}</Text>
-            </Pressable>
+            </Tactile>
           ) : null}
         </>
       )}
@@ -70,7 +71,8 @@ const NowPlayingHeader: React.FC<NowPlayingHeaderProps> = ({
 const styles = StyleSheet.create({
   container: { position: 'absolute', top: 0, left: 0, right: 0, alignItems: 'center', zIndex: 20 },
   grabber: { width: 38, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.55)', marginVertical: 6 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, height: 30, maxWidth: '80%', paddingHorizontal: 12, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.35)' },
+  chipWrap: { marginTop: 6, maxWidth: '80%' },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, paddingHorizontal: 12, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.35)' },
   chipText: { flexShrink: 1, color: '#fff', fontSize: 13, fontWeight: '600' },
 });
 

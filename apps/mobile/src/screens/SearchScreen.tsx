@@ -1,3 +1,5 @@
+import { AppScreen } from '../components/AppScreen';
+import { TypeScale } from '../constants/allegraTheme';
 /**
  * Search — one field for everything: what is on this phone (downloaded songs
  * and your playlists) and what is online (the streaming catalog).
@@ -14,53 +16,51 @@
  * Same room as Stream: Allegra's live shader tinted by the playing cover, a
  * frosted field, sentence-case shelves, the shared SongRow.
  */
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import type { PerformanceAttempt } from '@shared/performanceTrace';
+import { PrefixCache, TYPEAHEAD_DEBOUNCE_MS } from '@shared/typeahead';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Keyboard,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from '../utils/haptics';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useIsFocused } from '@react-navigation/native';
-import { TabScreenProps } from '../types/navigation';
-import { useSongsStore } from '../store/songsStore';
-import { usePlaylistStore } from '../store/playlistStore';
-import { usePlayerStore } from '../store/playerStore';
-import { useSettingsStore } from '../store/settingsStore';
-import { useSearchHistoryStore } from '../store/searchHistoryStore';
-import { useDownloadQueueStore } from '../store/downloadQueueStore';
-import { Playlist, Song, UnifiedSong } from '../types/song';
-import { PrefixCache, TYPEAHEAD_DEBOUNCE_MS } from '@shared/typeahead';
-import { searchOfficial } from '../services/stream/officialSearch';
-import { androidPerformance } from '../services/performanceTrace';
-import type { PerformanceAttempt } from '@shared/performanceTrace';
-import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
-import type { YTPageItem } from '../services/ytmusic/browse';
-
-type YTArtistResult = YTPageItem<'artist'>;
-import { StreamService } from '../services/stream/StreamService';
-import { streamIdFor } from '../services/stream/streamSong';
-import { openPlayerSheet } from '../navigation/playerSheet';
-import { Radius, Signal, Space } from '../constants/allegraTheme';
-import DynamicAura from '../components/allegra/DynamicAura';
-import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
-import { RiseIn, Tactile } from '../components/allegra/motion';
-import { SectionHeading } from '../components/allegra/home';
 import Artwork from '../components/allegra/Artwork';
-import { GUTTER, MoodChips, SongRow, TrackItem } from '../components/stream/StreamHome';
-import { Toast } from '../components/Toast';
-import { useBottomClearance } from '../hooks/useBottomClearance';
+import { SectionHeading } from '../components/allegra/home';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { SEARCH_TOUR, searchScene } from '../components/allegra/infoTours';
+import { RiseIn, Tactile, TactileRow } from '../components/allegra/motion';
+import { GUTTER, MoodChips, SongRow, TrackItem } from '../components/stream/StreamHome';
+import { useStreamSongActions } from '../components/stream/useStreamSongActions';
+import { Toast } from '../components/Toast';
+import { Radius, Signal, Space } from '../constants/allegraTheme';
+import { useBottomClearance } from '../hooks/useBottomClearance';
+import { openPlayerSheet } from '../navigation/playerSheet';
+import { androidPerformance } from '../services/performanceTrace';
+import { searchOfficial } from '../services/stream/officialSearch';
+import { StreamService } from '../services/stream/StreamService';
+import { streamIdFor } from '../services/stream/streamSong';
+import type { YTPageItem } from '../services/ytmusic/browse';
+import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
+import { useDownloadQueueStore } from '../store/downloadQueueStore';
+import { usePlayerStore } from '../store/playerStore';
+import { usePlaylistStore } from '../store/playlistStore';
+import { useSearchHistoryStore } from '../store/searchHistoryStore';
+import { useSettingsStore } from '../store/settingsStore';
+import { useSongsStore } from '../store/songsStore';
+import { TabScreenProps } from '../types/navigation';
+import { Playlist, Song, UnifiedSong } from '../types/song';
+import * as Haptics from '../utils/haptics';
+
+type YTArtistResult = YTPageItem<'artist'>;
 
 type Props = TabScreenProps<'Search'>;
 type Scope = 'All' | 'On this phone' | 'Online';
@@ -87,15 +87,14 @@ const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g
 const SearchScreen: React.FC<Props> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const bottomClearance = useBottomClearance();
-  const isFocused = useIsFocused();
+
   const inputRef = useRef<TextInput>(null);
 
   const searchSongs = useSongsStore(s => s.searchSongs);
   const librarySongs = useSongsStore(s => s.songs);
   const playlists = usePlaylistStore(s => s.playlists);
   const currentSongId = usePlayerStore(s => s.currentSongId);
-  const currentCover = usePlayerStore(s => s.currentSong?.coverImageUri);
-  const isPlaying = usePlayerStore(s => s.isPlaying);
+
   const playInMiniPlayerOnly = useSettingsStore(s => s.playInMiniPlayerOnly);
   const recent = useSearchHistoryStore(s => s.recent);
   const remember = useSearchHistoryStore(s => s.remember);
@@ -124,7 +123,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
   const onlineCommittedAttempt = useRef<PerformanceAttempt | null>(null);
   const onlineSearchFailed = useRef(false);
 
-  const palette = useArtworkPalette(currentCover);
+
   const q = query.trim();
 
   const startSearch = useCallback((nextQuery: string, nextScope: Scope = scope) => {
@@ -364,11 +363,9 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     ]);
   }, []);
 
-  const queueNext = useCallback((song: UnifiedSong) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    StreamService.playNext(song);
-    setToast('Playing next');
-  }, []);
+  // A long press opens the song's actions (Play next first), as everywhere in the app.
+  const songActions = useStreamSongActions({ onDone: setToast });
+  const queueNext = songActions.open;
 
   const openPlaylist = useCallback((playlist: Playlist) => {
     commit();
@@ -406,25 +403,26 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
             <View style={styles.list}>
               {recent.map(r => (
                 <View key={r} style={styles.recentRow}>
-                  <Pressable
+                  <TactileRow
                     onPress={() => searchFor(r)}
-                    style={({ pressed }) => [styles.recentMain, pressed && styles.pressed]}
+                    wrapperStyle={styles.recentMainCell}
+                    style={styles.recentMain}
                     accessibilityRole="button"
                     accessibilityLabel={`Search ${r}`}
                   >
                     <Ionicons name="time-outline" size={18} color={Signal.inkMuted} />
                     <Text style={styles.recentText} numberOfLines={1}>{r}</Text>
-                  </Pressable>
-                  <Pressable onPress={() => forget(r)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Remove ${r}`}>
+                  </TactileRow>
+                  <Tactile onPress={() => forget(r)} hitSlop={10} pressScale={0.9} accessibilityRole="button" accessibilityLabel={`Remove ${r}`}>
                     <Ionicons name="close" size={18} color={Signal.inkFaint} />
-                  </Pressable>
+                  </Tactile>
                 </View>
               ))}
             </View>
           </>
         ) : null}
 
-        <SectionHeading title="Browse by mood" subtitle="Streams from the catalog" />
+        <SectionHeading title="Browse by mood" />
         <View style={styles.moodGrid}>
           {MOODS.map((m, i) => (
             <Tactile
@@ -552,8 +550,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
   }
 
   return (
-    <View style={styles.screen}>
-      <DynamicAura palette={palette} playing={isPlaying} active={isFocused} mood="chill" dim={0.14} />
+    <AppScreen style={styles.screen}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -564,9 +561,9 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={styles.title} accessibilityRole="header">Search</Text>
             <InfoTour label="About Search" steps={SEARCH_TOUR} scene={searchScene} />
             {androidPerformance.trace.enabled ? (
-              <Pressable onPress={showTraceActions} accessibilityRole="button" accessibilityLabel="Local performance trace" style={styles.traceButton}>
+              <Tactile onPress={showTraceActions} pressScale={0.97} accessibilityRole="button" accessibilityLabel="Local performance trace" style={styles.traceButton}>
                 <Text style={styles.traceButtonLabel}>Trace</Text>
-              </Pressable>
+              </Tactile>
             ) : null}
           </InfoTitleRow>
         </View>
@@ -586,9 +583,9 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
             accessibilityLabel="Search your phone and the catalog"
           />
           {query.length > 0 ? (
-            <Pressable onPress={clearField} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear search">
+            <Tactile onPress={clearField} hitSlop={10} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Clear search">
               <Ionicons name="close-circle" size={18} color={Signal.inkMuted} />
-            </Pressable>
+            </Tactile>
           ) : null}
         </View>
 
@@ -605,8 +602,9 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
         colors={['rgba(10, 11, 14, 0.92)', 'rgba(10, 11, 14, 0)']}
         style={[styles.statusScrim, { height: insets.top + 16 }]}
       />
+      {songActions.element}
       {toast ? <Toast visible message={toast} type="info" duration={2200} onDismiss={() => setToast(null)} /> : null}
-    </View>
+    </AppScreen>
   );
 };
 
@@ -623,9 +621,9 @@ const MOOD_TONES: readonly [string, string][] = [
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bg },
   header: { height: 52, justifyContent: 'center', paddingHorizontal: GUTTER },
-  title: { fontSize: 28, fontWeight: '700', color: Signal.ink },
+  title: { fontSize: TypeScale.page, fontWeight: '700', color: Signal.ink },
   traceButton: { paddingHorizontal: Space.xs, paddingVertical: Space.xs },
-  traceButtonLabel: { color: Signal.inkMuted, fontSize: 12, fontWeight: '600' },
+  traceButtonLabel: { color: Signal.inkMuted, fontSize: TypeScale.caption, fontWeight: '600' },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -639,12 +637,11 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.14)',
   },
-  searchInput: { flex: 1, color: Signal.ink, fontSize: 16, paddingVertical: 0 },
+  searchInput: { flex: 1, color: Signal.ink, fontSize: TypeScale.body, paddingVertical: 0 },
   chips: { marginTop: Space.sm },
   list: { paddingHorizontal: GUTTER },
   spinner: { marginTop: Space.md },
-  empty: { color: Signal.inkMuted, fontSize: 14, paddingHorizontal: GUTTER, marginBottom: Space.xs },
-  pressed: { opacity: 0.6 },
+  empty: { color: Signal.inkMuted, fontSize: TypeScale.body, paddingHorizontal: GUTTER, marginBottom: Space.xs },
   recentRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -652,8 +649,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
-  recentMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingVertical: Space.sm },
-  recentText: { flex: 1, color: Signal.ink, fontSize: 16 },
+  recentMainCell: { flex: 1 },
+  recentMain: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingVertical: Space.sm },
+  recentText: { flex: 1, color: Signal.ink, fontSize: TypeScale.body },
   moodGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -671,15 +669,15 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  moodLabel: { color: Signal.ink, fontSize: 16, fontWeight: '700' },
+  moodLabel: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '700' },
   shelf: { paddingHorizontal: GUTTER, gap: Space.sm },
   playlistCard: { width: 120 },
   personCard: { width: 96 },
   personArt: { width: 96, height: 96, borderRadius: 48, overflow: 'hidden', backgroundColor: Signal.bgSubtle },
   center: { textAlign: 'center' },
   playlistArt: { width: 120, height: 120, borderRadius: Radius.art, overflow: 'hidden', backgroundColor: Signal.bgSubtle },
-  cardTitle: { color: Signal.ink, fontSize: 14, fontWeight: '600', marginTop: Space.xs },
-  cardSub: { color: Signal.inkMuted, fontSize: 12, marginTop: 1 },
+  cardTitle: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '600', marginTop: Space.xs },
+  cardSub: { color: Signal.inkMuted, fontSize: TypeScale.caption, marginTop: 1 },
   statusScrim: { position: 'absolute', top: 0, left: 0, right: 0 },
 });
 

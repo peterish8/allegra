@@ -49,14 +49,16 @@ export function createListenTracker(
   let current: ListenSession | null = null;
 
   const finish = (exit: ListenExit = 'switched'): void => {
-    if (current) {
-      const { song, seconds, lastPositionSec } = current;
-      const ended = (song.duration ?? 0) > 0 && lastPositionSec >= (song.duration ?? 0) - LISTEN_RULES.endSlackSec;
-      const ending: ListenEnding = { exit: ended ? 'ended' : exit, heardSeconds: seconds, exitPositionSec: lastPositionSec };
-      onLeft(song, ending);
-      if (seconds >= LISTEN_RULES.historyAfterSec) onHeard(song, seconds, current.startedAt, ending);
-    }
+    // Close the session before reporting it: a report can change the player store (the radio re-ranks the queue),
+    // which calls observe again at once. With the session still open that re-entered finish forever.
+    const ending = current;
     current = null;
+    if (!ending) return;
+    const { song, seconds, lastPositionSec, startedAt } = ending;
+    const ended = (song.duration ?? 0) > 0 && lastPositionSec >= (song.duration ?? 0) - LISTEN_RULES.endSlackSec;
+    const result: ListenEnding = { exit: ended ? 'ended' : exit, heardSeconds: seconds, exitPositionSec: lastPositionSec };
+    onLeft(song, result);
+    if (seconds >= LISTEN_RULES.historyAfterSec) onHeard(song, seconds, startedAt, result);
   };
 
   return {

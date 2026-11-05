@@ -1,29 +1,36 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import Animated, { cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppScreen } from '../components/AppScreen';
 
-import { getDjSlashSuggestions, parseDjSlashCommand } from '@shared/dj';
+import { useIsFocused } from '@react-navigation/native';
 import type { DjGoal, DjProvider, DjSessionState, DjTrackContext, DjTurnRequest } from '@shared/dj';
+import { getDjSlashSuggestions, parseDjSlashCommand } from '@shared/dj';
 import type { SongRef, SongSnapshot } from '@shared/songRef';
 import { fromAllegraSong } from '@shared/songRef';
 import type { UnifiedSong as CatalogSong } from '@shared/types';
-import { useSongsStore } from '../store/songsStore';
-import { usePlayerStore } from '../store/playerStore';
-import { useStreamHistoryStore } from '../store/streamHistoryStore';
-import { usePlaylistStore } from '../store/playlistStore';
-import { StreamService } from '../services/stream/StreamService';
-import { STREAM_QUEUE_ID } from '../services/stream/streamSong';
-import { Signal, Space } from '../constants/allegraTheme';
 import Artwork from '../components/allegra/Artwork';
+import { useAppActive } from '../hooks/useAppActive';
 import { actWhereMusicIs } from '../services/connect/playbackIntents';
 import { requestDjTurn } from '../services/dj/djApi';
 import { hasDownloadedDjModel, prepareDjModel, requestLocalDjTurn } from '../services/dj/localDj';
+import { StreamService } from '../services/stream/StreamService';
+import { STREAM_QUEUE_ID } from '../services/stream/streamSong';
 import { addOnlineSongsToPlaylist } from '../services/sync/onlinePlaylist';
-import { useIsFocused } from '@react-navigation/native';
-import { useAppActive } from '../hooks/useAppActive';
+import { usePlayerStore } from '../store/playerStore';
+import { usePlaylistStore } from '../store/playlistStore';
+import { useSongsStore } from '../store/songsStore';
+import { useStreamHistoryStore } from '../store/streamHistoryStore';
+import {
+  Button, Chip, ChipRow, Glass, GUTTER, Haptics, IconButton, OnMedia, Panel, Radius, SheetOption, Signal, Space,
+  Tactile,
+  TextButton, TypeScale,
+  Text as UIText,
+  useBottomClearance,
+} from '../ui';
+import { countOf } from '../utils/formatters';
 
 type Pick = { readonly song: CatalogSong; readonly reason: string };
 type Emotion = 'idle' | 'listening' | 'thinking' | 'curious' | 'happy' | 'error';
@@ -102,7 +109,7 @@ function DjMascot({ vibing, emotion, tone, onPet, visible }: { readonly vibing: 
   const softAura = useAnimatedStyle(() => ({ borderRadius: shape.value + 38, transform: [{ scaleX: 1 + beat.value * 0.024 }, { scaleY: 1 + beat.value * 0.034 }] as const }));
   const coreAura = useAnimatedStyle(() => ({ borderRadius: shape.value * 0.72, transform: [{ scaleX: 1 + beat.value * 0.04 }, { scaleY: 1 + beat.value * 0.05 }] as const }));
   return (
-    <Pressable accessible accessibilityRole="button" accessibilityLabel={vibing ? 'Tap your DJ to say hi' : 'Tap your DJ to wake it up'} onPress={onPet} style={styles.mascot}>
+    <Tactile accessible accessibilityRole="button" accessibilityLabel={vibing ? 'Tap your DJ to say hi' : 'Tap your DJ to wake it up'} onPress={onPet} style={styles.mascot}>
       <Animated.View style={[styles.glow, { backgroundColor: tone[0] }, outerAura]} />
       <Animated.View style={[styles.glowSoft, { backgroundColor: tone[1] }, softAura]} />
       <Animated.View style={[styles.glowCore, { backgroundColor: tone[2] }, coreAura]} />
@@ -110,12 +117,13 @@ function DjMascot({ vibing, emotion, tone, onPet, visible }: { readonly vibing: 
         <Animated.View style={[styles.eye, styles.eyeLeft, leftEye]} />
         <Animated.View style={[styles.eye, styles.eyeRight, rightEye]} />
       </Animated.View>
-    </Pressable>
+    </Tactile>
   );
 }
 
 export const DjScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const bottom = useBottomClearance();
   const currentSong = usePlayerStore(state => state.currentSong);
   const isPlaying = usePlayerStore(state => state.isPlaying);
   const focused = useIsFocused();
@@ -342,102 +350,161 @@ export const DjScreen: React.FC = () => {
   const commandSuggestions = getDjSlashSuggestions(prompt, goal);
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, Space.md), paddingBottom: Math.max(insets.bottom, Space.xl) + 128 }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <AppScreen><KeyboardAvoidingView style={[styles.screen, { backgroundColor: 'transparent' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, Space.md), paddingBottom: bottom }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <DjMascot vibing={vibing} emotion={emotion} tone={tone} onPet={petMascot} visible={focused && appActive} />
 
-        <View style={styles.composeCard}>
+        <View>
           <View style={[styles.inputRow, emotion === 'listening' && styles.inputRowFocused]}>
-            <BlurView intensity={28} tint="light" pointerEvents="none" style={StyleSheet.absoluteFillObject} />
-            <TextInput ref={promptInputRef} value={prompt} onChangeText={value => { setPrompt(value); setStatus(''); }} onFocus={() => setEmotion('listening')} onBlur={() => setEmotion(current => current === 'listening' ? 'idle' : current)} onSubmitEditing={submitPrompt} returnKeyType="send" maxLength={500} placeholder="Ask for a mood, song, or type /…" placeholderTextColor="#89919a" style={styles.input} accessibilityLabel="Ask your DJ for music or type a slash command" accessibilityHint="Type slash to browse music and playlist shortcuts" />
-            <Pressable onPress={submitPrompt} disabled={working || !prompt.trim()} style={[styles.sendButton, (!prompt.trim() || working) && styles.dimmed]} accessibilityRole="button" accessibilityLabel="Ask the DJ">
-              {working ? <ActivityIndicator size="small" color="#34312d" /> : <Ionicons name="arrow-up" size={19} color="#34312d" />}
-            </Pressable>
+            <TextInput ref={promptInputRef} value={prompt} onChangeText={value => { setPrompt(value); setStatus(''); }} onFocus={() => setEmotion('listening')} onBlur={() => setEmotion(current => current === 'listening' ? 'idle' : current)} onSubmitEditing={submitPrompt} returnKeyType="send" maxLength={500} placeholder="Ask for a mood, a song, or type /" placeholderTextColor={OnMedia.muted} style={styles.input} accessibilityLabel="Ask your DJ for music or type a slash command" accessibilityHint="Type slash to browse music and playlist shortcuts" />
+            <IconButton icon="arrow-up" label="Ask the DJ" variant="primary" size="sm" disabled={working || !prompt.trim()} onPress={submitPrompt}>
+              {working ? <ActivityIndicator size="small" color={Signal.waveInk} /> : undefined}
+            </IconButton>
           </View>
-          {commandSuggestions.length ? <ScrollView style={styles.commandMenu} contentContainerStyle={styles.commandMenuContent} nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} accessibilityLabel="DJ shortcuts">
-            {commandSuggestions.map(suggestion => <Pressable key={suggestion.command} onPress={() => { setPrompt(suggestion.command); setStatus(''); requestAnimationFrame(() => promptInputRef.current?.focus()); }} style={styles.commandItem} accessibilityRole="button" accessibilityLabel={`${suggestion.command}, ${suggestion.detail}`}>
-              <View style={styles.commandCopy}><Text style={styles.commandLabel}>{suggestion.label}</Text><Text style={styles.commandDetail}>{suggestion.detail}</Text></View><Text style={styles.commandName}>{suggestion.command}</Text>
-            </Pressable>)}
-          </ScrollView> : null}
+          {commandSuggestions.length ? (
+            <Panel style={styles.commandMenu} padding={Space.xxs}>
+              <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} accessibilityLabel="DJ shortcuts">
+                {commandSuggestions.map(suggestion => (
+                  <SheetOption
+                    key={suggestion.command}
+                    label={suggestion.label}
+                    hint={suggestion.detail}
+                    trailing={<UIText variant="caption" tone="muted">{suggestion.command}</UIText>}
+                    onPress={() => { setPrompt(suggestion.command); setStatus(''); requestAnimationFrame(() => promptInputRef.current?.focus()); }}
+                  />
+                ))}
+              </ScrollView>
+            </Panel>
+          ) : null}
           {settingsOpen ? (
-            <View style={styles.settingsPanel}>
-              <Text style={styles.settingsTitle}>Choose your DJ brain</Text>
-              <View style={styles.providerRow}>
-                {(['openai', 'openrouter', 'gemini', 'local'] as const).map(value => <Pressable key={value} onPress={() => setProvider(value)} style={[styles.providerChip, provider === value && styles.providerChipActive]}><Text style={[styles.providerText, provider === value && styles.providerTextActive]}>{value === 'openrouter' ? 'OpenRouter' : value === 'local' ? 'On-device' : value === 'openai' ? 'OpenAI' : 'Gemini'}</Text></Pressable>)}
-              </View>
+            <Panel style={styles.settingsPanel}>
+              <UIText variant="row">Choose your DJ brain</UIText>
+              <ChipRow gutter={0}>
+                {(['openai', 'openrouter', 'gemini', 'local'] as const).map(value => (
+                  <Chip key={value} label={value === 'openrouter' ? 'OpenRouter' : value === 'local' ? 'On this phone' : value === 'openai' ? 'OpenAI' : 'Gemini'} selected={provider === value} onPress={() => setProvider(value)} />
+                ))}
+              </ChipRow>
               {provider === 'local' ? <>
-                <Text style={styles.settingsNote}>Qwen3 0.6B runs on this phone. First download is about 390 MB; it stays in app storage for later offline interpretation. Catalog search still needs a connection.</Text>
-                <Pressable onPress={() => { prepareLocalModel(); }} disabled={working || modelDownloaded} style={[styles.downloadButton, (working || modelDownloaded) && styles.dimmed]}><Text style={styles.downloadText}>{modelDownloaded ? 'Model ready on this device' : working ? 'Preparing model…' : 'Download model once'}</Text></Pressable>
+                <UIText variant="caption" tone="muted">Qwen3 0.6B runs on this phone. The first download is about 390 MB and stays in app storage, so later requests are understood offline. Finding songs still needs a connection.</UIText>
+                <Button label={modelDownloaded ? 'Model ready on this phone' : working ? 'Preparing the model…' : 'Download the model'} icon={modelDownloaded ? 'checkmark' : 'arrow-down'} block disabled={working || modelDownloaded} onPress={() => { prepareLocalModel(); }} />
               </> : <>
-                <TextInput value={model} onChangeText={setModel} autoCapitalize="none" autoCorrect={false} placeholder="Tool-calling model ID" placeholderTextColor="#89919a" style={styles.settingsInput} accessibilityLabel="AI model" />
-                <TextInput value={apiKey} onChangeText={setApiKey} autoCapitalize="none" autoCorrect={false} secureTextEntry textContentType="none" placeholder={`${provider === 'gemini' ? 'Gemini' : provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'} API key`} placeholderTextColor="#89919a" style={styles.settingsInput} accessibilityLabel="AI provider API key" />
-                <Text style={styles.settingsNote}>Your key is sent for each request only. It is not saved by Allegra.</Text>
-                {apiKey ? <Pressable onPress={() => setApiKey('')}><Text style={styles.forgetLink}>Forget key</Text></Pressable> : null}
+                <TextInput value={model} onChangeText={setModel} autoCapitalize="none" autoCorrect={false} placeholder="Tool-calling model ID" placeholderTextColor={OnMedia.muted} style={styles.settingsInput} accessibilityLabel="AI model" />
+                <TextInput value={apiKey} onChangeText={setApiKey} autoCapitalize="none" autoCorrect={false} secureTextEntry textContentType="none" placeholder={`${provider === 'gemini' ? 'Gemini' : provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'} API key`} placeholderTextColor={OnMedia.muted} style={styles.settingsInput} accessibilityLabel="AI provider API key" />
+                <UIText variant="caption" tone="muted">Your key goes with each request only. Allegra doesn’t save it.</UIText>
+                {apiKey ? <TextButton label="Forget key" tone="danger" onPress={() => setApiKey('')} /> : null}
               </>}
-            </View>
+            </Panel>
           ) : null}
         </View>
 
-        {currentSong ? <View style={styles.currentCard}>
-          <Artwork uri={currentSong.coverImageUri ?? currentSong.coverRemoteUri} title={currentSong.title} artist={currentSong.artist ?? ''} size={54} style={styles.artwork} />
-          <View style={styles.trackCopy}><Text style={styles.overline}>{isLive ? 'Right now' : 'Current track'}</Text><Text style={styles.trackTitle} numberOfLines={1}>{currentSong.title}</Text><Text style={styles.trackArtist} numberOfLines={1}>{currentSong.artist}</Text></View>
-          <Pressable onPress={async () => { const result = await toggleLike(currentSong.id); if (result === 'liked' && streamSeed) StreamService.love(streamSeed.id); }} style={styles.iconButton} accessibilityLabel={currentSongLiked ? 'Unlike song' : 'Like song'}><Ionicons name={currentSongLiked ? 'heart' : 'heart-outline'} size={20} color={currentSongLiked ? Signal.accentBright : Signal.inkSoft} /></Pressable>
-          <Pressable onPress={() => { actWhereMusicIs({ kind: isPlaying ? 'pause' : 'play' }, () => requestPlayback(!isPlaying)).catch(() => undefined); }} style={styles.iconButton} accessibilityLabel={isPlaying ? 'Pause' : 'Play'}><Ionicons name={isPlaying ? 'pause' : 'play'} size={19} color={Signal.inkSoft} /></Pressable>
-          <Pressable onPress={skipCurrent} style={styles.iconButton} accessibilityLabel="Skip song"><Ionicons name="play-skip-forward" size={20} color={Signal.inkSoft} /></Pressable>
-        </View> : null}
+        {currentSong ? (
+          <Panel style={styles.currentCard} padding={Space.sm}>
+            <View style={styles.art54}><Artwork uri={currentSong.coverImageUri ?? currentSong.coverRemoteUri} title={currentSong.title} artist={currentSong.artist ?? ''} size={54} style={StyleSheet.absoluteFill} /></View>
+            <View style={styles.trackCopy}>
+              <UIText variant="meta" tone="muted">{isLive ? 'Right now' : 'Playing'}</UIText>
+              <UIText variant="row" numberOfLines={1}>{currentSong.title}</UIText>
+              <UIText variant="secondary" tone="muted" numberOfLines={1}>{currentSong.artist}</UIText>
+            </View>
+            <IconButton icon={currentSongLiked ? 'heart' : 'heart-outline'} label={currentSongLiked ? 'Unlike song' : 'Like song'} variant="plain" haptic="light" onPress={async () => { const result = await toggleLike(currentSong.id); if (result === 'liked' && streamSeed) StreamService.love(streamSeed.id); }}>
+              <Ionicons name={currentSongLiked ? 'heart' : 'heart-outline'} size={20} color={currentSongLiked ? Signal.accent : OnMedia.secondary} />
+            </IconButton>
+            <IconButton icon={isPlaying ? 'pause' : 'play'} label={isPlaying ? 'Pause' : 'Play'} variant="plain" onPress={() => { Haptics.commit(); actWhereMusicIs({ kind: isPlaying ? 'pause' : 'play' }, () => requestPlayback(!isPlaying)).catch(() => undefined); }} />
+            <IconButton icon="play-skip-forward" label="Skip song" variant="plain" onPress={skipCurrent} />
+          </Panel>
+        ) : null}
 
-        {goal === 'mix' && canStart ? <Pressable onPress={startSet} style={styles.startButton}><Ionicons name="play" size={18} color="#fff" /><Text style={styles.startText}>Start this set</Text></Pressable> : null}
+        {goal === 'mix' && canStart ? <Button label="Start this set" icon="play" variant="primary" block onPress={startSet} haptic="light" /> : null}
 
-        {goal === 'playlist' ? <View style={styles.draftCard}>
-          <View style={styles.draftHeading}><View><Text style={styles.overline}>YOUR PLAYLIST</Text><Text style={styles.sectionTitle}>Shape the draft</Text></View><Text style={styles.draftCount}>{draft.length}/{songLimit}</Text></View>
-          <TextInput value={draftName} onChangeText={setDraftName} maxLength={100} placeholder="Playlist name" placeholderTextColor="#89919a" style={styles.nameInput} accessibilityLabel="Playlist name" />
-          {draft.length ? draft.map(({ song, reason }, index) => <View key={song.id} style={styles.draftTrack}>
-            <Text style={styles.queueIndex}>{String(index + 1).padStart(2, '0')}</Text><Artwork uri={song.artwork} title={song.title} artist={song.artist} size={42} style={styles.artwork} />
-            <View style={styles.trackCopy}><Text style={styles.trackTitle} numberOfLines={1}>{song.title}</Text><Text style={styles.trackArtist} numberOfLines={1}>{song.artist}</Text><Text style={styles.reason} numberOfLines={2}>{reason}</Text></View>
-            <Pressable onPress={() => setDraft(items => items.filter(item => item.song.id !== song.id))} style={styles.removeButton} accessibilityLabel={`Remove ${song.title}`}><Ionicons name="close" size={18} color={Signal.inkSoft} /></Pressable>
-          </View>) : <Text style={styles.emptyNote}>Tell the DJ a mood, a few songs, or a starting point to build your first draft.</Text>}
-          {draft.length ? <Pressable onPress={() => { savePlaylist(); }} disabled={saving} style={[styles.startButton, saving && styles.dimmed]}>{saving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={19} color="#fff" />}<Text style={styles.startText}>{saving ? 'Saving…' : 'Save playlist'}</Text></Pressable> : null}
-        </View> : draft.length > 0 ? <View style={styles.draftCard}>
-          <View style={styles.draftHeading}><View><Text style={styles.overline}>READY WHEN YOU ARE</Text><Text style={styles.sectionTitle}>Coming up</Text></View><Text style={styles.draftCount}>{draft.length} songs</Text></View>
-          {draft.map(({ song, reason }, index) => <View key={song.id} style={styles.draftTrack}><Text style={styles.queueIndex}>{String(index + 1).padStart(2, '0')}</Text><Artwork uri={song.artwork} title={song.title} artist={song.artist} size={42} style={styles.artwork} /><View style={styles.trackCopy}><Text style={styles.trackTitle} numberOfLines={1}>{song.title}</Text><Text style={styles.trackArtist} numberOfLines={1}>{song.artist}</Text>{reason ? <Text style={styles.reason} numberOfLines={2}>{reason}</Text> : null}</View></View>)}
-        </View> : null}
+        {goal === 'playlist' ? (
+          <Panel style={styles.draftCard}>
+            <View style={styles.draftHeading}>
+              <View><UIText variant="meta" tone="muted">Your playlist</UIText><UIText variant="lead">Shape the draft</UIText></View>
+              <UIText variant="caption" tone="muted" tabular>{draft.length}/{songLimit}</UIText>
+            </View>
+            <TextInput value={draftName} onChangeText={setDraftName} maxLength={100} placeholder="Playlist name" placeholderTextColor={OnMedia.muted} style={styles.nameInput} accessibilityLabel="Playlist name" />
+            {draft.length ? draft.map(({ song, reason }, index) => (
+              <View key={song.id} style={styles.draftTrack}>
+                <UIText variant="caption" tone="muted" tabular style={styles.queueIndex}>{index + 1}</UIText>
+                <View style={styles.art42}><Artwork uri={song.artwork} title={song.title} artist={song.artist} size={42} style={StyleSheet.absoluteFill} /></View>
+                <View style={styles.trackCopy}>
+                  <UIText variant="row" numberOfLines={1}>{song.title}</UIText>
+                  <UIText variant="secondary" tone="muted" numberOfLines={1}>{song.artist}</UIText>
+                  {reason ? <UIText variant="caption" tone="muted" numberOfLines={2}>{reason}</UIText> : null}
+                </View>
+                <IconButton icon="close" label={`Remove ${song.title}`} variant="plain" size="sm" onPress={() => setDraft(items => items.filter(item => item.song.id !== song.id))} />
+              </View>
+            )) : <UIText variant="secondary" tone="muted">Tell the DJ a mood, a few songs or a starting point to build your first draft.</UIText>}
+            {draft.length ? <Button label={saving ? 'Saving…' : 'Save playlist'} icon="checkmark" variant="primary" block busy={saving} onPress={() => { savePlaylist(); }} /> : null}
+          </Panel>
+        ) : draft.length > 0 ? (
+          <Panel style={styles.draftCard}>
+            <View style={styles.draftHeading}>
+              <View><UIText variant="meta" tone="muted">Ready when you are</UIText><UIText variant="lead">Coming up</UIText></View>
+              <UIText variant="caption" tone="muted" tabular>{countOf(draft.length, 'song')}</UIText>
+            </View>
+            {draft.map(({ song, reason }, index) => (
+              <View key={song.id} style={styles.draftTrack}>
+                <UIText variant="caption" tone="muted" tabular style={styles.queueIndex}>{index + 1}</UIText>
+                <View style={styles.art42}><Artwork uri={song.artwork} title={song.title} artist={song.artist} size={42} style={StyleSheet.absoluteFill} /></View>
+                <View style={styles.trackCopy}>
+                  <UIText variant="row" numberOfLines={1}>{song.title}</UIText>
+                  <UIText variant="secondary" tone="muted" numberOfLines={1}>{song.artist}</UIText>
+                  {reason ? <UIText variant="caption" tone="muted" numberOfLines={2}>{reason}</UIText> : null}
+                </View>
+              </View>
+            ))}
+          </Panel>
+        ) : null}
 
-        {goal === 'mix' && nextUp.length > 0 ? <View style={styles.queueCard}><Text style={styles.sectionTitle}>Already in your queue</Text>{nextUp.map((song, index) => <View key={`${song.id}:${index}`} style={styles.draftTrack}><Text style={styles.queueIndex}>{String(index + 1).padStart(2, '0')}</Text><Artwork uri={song.coverImageUri} title={song.title} artist={song.artist ?? ''} size={42} style={styles.artwork} /><View style={styles.trackCopy}><Text style={styles.trackTitle} numberOfLines={1}>{song.title}</Text><Text style={styles.trackArtist} numberOfLines={1}>{song.artist}</Text></View></View>)}</View> : null}
+        {goal === 'mix' && nextUp.length > 0 ? (
+          <Panel style={styles.draftCard}>
+            <UIText variant="lead">Already in your queue</UIText>
+            {nextUp.map((song, index) => (
+              <View key={`${song.id}:${index}`} style={styles.draftTrack}>
+                <UIText variant="caption" tone="muted" tabular style={styles.queueIndex}>{index + 1}</UIText>
+                <View style={styles.art42}><Artwork uri={song.coverImageUri} title={song.title} artist={song.artist ?? ''} size={42} style={StyleSheet.absoluteFill} /></View>
+                <View style={styles.trackCopy}>
+                  <UIText variant="row" numberOfLines={1}>{song.title}</UIText>
+                  <UIText variant="secondary" tone="muted" numberOfLines={1}>{song.artist}</UIText>
+                </View>
+              </View>
+            ))}
+          </Panel>
+        ) : null}
 
-        {status ? <Text accessibilityLiveRegion="polite" style={styles.status}>{status}</Text> : null}
+        {status ? <UIText variant="secondary" tone="muted" align="center" accessibilityLiveRegion="polite" style={styles.status}>{status}</UIText> : null}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingView></AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f6f2' },
-  content: { paddingHorizontal: 18, gap: 13 },
-  mascot: { height: 274, borderRadius: 29, overflow: 'hidden', backgroundColor: '#fffaf2', alignItems: 'center', justifyContent: 'center', position: 'relative', borderWidth: 1, borderColor: 'rgba(97,77,52,0.06)' },
-  glow: { position: 'absolute', width: '112%', height: '100%', bottom: -12, borderRadius: 200, opacity: 0.55 },
-  glowSoft: { position: 'absolute', width: '78%', height: '65%', bottom: -18, borderRadius: 180, opacity: 0.68 },
-  glowCore: { position: 'absolute', width: '48%', height: '40%', bottom: 4, borderRadius: 180, opacity: 0.48 },
-  eyes: { flexDirection: 'row', alignItems: 'center', gap: 18, marginTop: 72 },
-  eye: { width: 38, height: 54, backgroundColor: '#fff', borderRadius: 28, shadowColor: '#ae773c', shadowOpacity: 0.1, shadowRadius: 10, elevation: 2 },
-  eyeLeft: { transform: [{ rotate: '-9deg' }] }, eyeRight: { height: 45, transform: [{ rotate: '8deg' }, { translateY: 5 }] },
-  composeCard: { backgroundColor: 'transparent', borderRadius: 0, padding: 0, borderWidth: 0, borderColor: 'transparent' },
-  promptLine: { fontSize: 18, fontWeight: '600', letterSpacing: -0.2, color: '#252b31', marginBottom: 13 },
-  goalTabs: { flexDirection: 'row', gap: 4, backgroundColor: '#f1f0ed', padding: 4, borderRadius: 15, marginBottom: 13 },
-  goalTab: { flex: 1, minHeight: 44, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }, goalTabActive: { backgroundColor: '#fff', shadowColor: '#5b4631', shadowOpacity: 0.08, shadowRadius: 7, elevation: 1 },
-  goalTabText: { color: '#777f86', fontSize: 13, fontWeight: '600' }, goalTabTextActive: { color: '#262c31' },
-  chips: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingRight: 10, marginBottom: 13 }, chip: { minHeight: 40, justifyContent: 'center', paddingVertical: 8, paddingHorizontal: 13, borderRadius: 20, backgroundColor: '#f4f3ef' }, chipText: { color: '#59616a', fontSize: 12, fontWeight: '500' },
-  inputRow: { minHeight: 52, borderWidth: 1, borderColor: 'rgba(255,255,255,0.84)', backgroundColor: 'rgba(255,255,255,0.52)', borderRadius: 999, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', paddingLeft: 17, paddingRight: 7, shadowColor: '#62594e', shadowOpacity: 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: 7 }, elevation: 2 }, inputRowFocused: { borderColor: 'rgba(108,96,80,0.28)', shadowColor: '#62594e', shadowOpacity: 0.12, shadowRadius: 20, elevation: 3 },
-  input: { flex: 1, minHeight: 48, color: '#302d29', fontSize: 14, paddingVertical: 7 }, sendButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)', alignItems: 'center', justifyContent: 'center' }, dimmed: { opacity: 0.48 },
-  commandMenu: { maxHeight: 260, flexGrow: 0, marginTop: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.68)', borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.82)' }, commandMenuContent: { padding: 6, gap: 2 }, commandItem: { minHeight: 48, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, commandCopy: { flex: 1, minWidth: 0, gap: 3 }, commandLabel: { color: '#30363c', fontSize: 13, fontWeight: '600' }, commandDetail: { color: '#858c92', fontSize: 11 }, commandName: { color: '#776f64', fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-  setupRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6, minHeight: 48 }, smallHint: { color: '#858c92', fontSize: 11, flex: 1 }, setupAction: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 12 }, setupLink: { color: '#383f45', fontSize: 12, fontWeight: '600' },
-  settingsPanel: { marginTop: 12, padding: 12, borderRadius: 16, backgroundColor: '#f7f6f3', gap: 10 }, settingsTitle: { fontSize: 14, color: '#30363c', fontWeight: '700' }, providerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 }, providerChip: { borderWidth: 1, borderColor: '#e5e2dc', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 7 }, providerChipActive: { backgroundColor: '#30363c', borderColor: '#30363c' }, providerText: { color: '#626a70', fontSize: 11, fontWeight: '600' }, providerTextActive: { color: '#fff' },
-  settingsInput: { color: '#252b31', backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e7e4df', paddingHorizontal: 12, minHeight: 43, fontSize: 13 }, settingsNote: { fontSize: 11, lineHeight: 16, color: '#7d858b' }, forgetLink: { color: '#8a5444', fontSize: 12, fontWeight: '600' }, downloadButton: { backgroundColor: '#30363c', borderRadius: 12, padding: 11, alignItems: 'center' }, downloadText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  limitRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, limitLabel: { color: '#777f86', fontSize: 12 }, limitControls: { flexDirection: 'row', alignItems: 'center', gap: 9 }, limitButton: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#f1f0ec', alignItems: 'center', justifyContent: 'center' }, limitNumber: { minWidth: 20, textAlign: 'center', color: '#30363c', fontSize: 13, fontWeight: '700' },
-  currentCard: { backgroundColor: '#fffefa', borderRadius: 19, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderColor: 'rgba(34,43,52,0.05)' }, artwork: { borderRadius: 10 }, trackCopy: { flex: 1, minWidth: 0 }, overline: { color: '#9a8e7a', fontSize: 11, fontWeight: '600', marginBottom: 3 }, trackTitle: { color: '#30363c', fontWeight: '600', fontSize: 13 }, trackArtist: { color: '#858c92', fontSize: 11, marginTop: 2 }, iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  startButton: { minHeight: 48, borderRadius: 16, backgroundColor: '#30363c', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }, startText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  draftCard: { backgroundColor: '#fff', borderRadius: 22, padding: 15, gap: 11, borderWidth: 1, borderColor: 'rgba(34,43,52,0.05)' }, draftHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, sectionTitle: { color: '#30363c', fontSize: 17, fontWeight: '700', marginTop: 2 }, draftCount: { color: '#92989c', fontSize: 11, fontWeight: '600' }, nameInput: { color: '#30363c', fontSize: 15, fontWeight: '600', borderBottomWidth: 1, borderColor: '#eeece7', paddingVertical: 7 },
-  draftTrack: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 48 }, queueIndex: { color: '#a4a8aa', fontSize: 10, width: 18, fontVariant: ['tabular-nums'] }, reason: { color: '#95999b', fontSize: 10, marginTop: 3 }, removeButton: { width: 30, height: 34, alignItems: 'center', justifyContent: 'center' }, emptyNote: { color: '#8b9195', fontSize: 12, lineHeight: 18, paddingVertical: 4 },
-  queueCard: { backgroundColor: '#fff', borderRadius: 21, padding: 15, gap: 11 }, status: { color: '#727b82', textAlign: 'center', fontSize: 11, paddingBottom: 4 },
+  screen: { flex: 1, backgroundColor: Signal.bgDeep },
+  content: { paddingHorizontal: GUTTER, gap: Space.sm },
+  // The DJ lives in a dark room like the rest of the app; its colours are soft light behind the eyes.
+  mascot: { height: 272, borderRadius: Radius.panel, overflow: 'hidden', backgroundColor: Signal.bgSubtle, alignItems: 'center', justifyContent: 'center', position: 'relative', borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
+  glow: { position: 'absolute', width: '112%', height: '100%', bottom: -12, borderRadius: 200, opacity: 0.18 },
+  glowSoft: { position: 'absolute', width: '78%', height: '65%', bottom: -16, borderRadius: 180, opacity: 0.28 },
+  glowCore: { position: 'absolute', width: '48%', height: '40%', bottom: 4, borderRadius: 180, opacity: 0.34 },
+  eyes: { flexDirection: 'row', alignItems: 'center', gap: Space.md, marginTop: 72 },
+  eye: { width: 36, height: 52, backgroundColor: OnMedia.primary, borderRadius: 28 },
+  eyeLeft: { transform: [{ rotate: '-9deg' }] }, eyeRight: { height: 44, transform: [{ rotate: '8deg' }, { translateY: 4 }] },
+  inputRow: { minHeight: 52, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairlineStrong, backgroundColor: Glass.fillLight, borderRadius: Radius.pill, flexDirection: 'row', alignItems: 'center', paddingLeft: Space.md, paddingRight: Space.xs },
+  inputRowFocused: { borderColor: 'rgba(255,255,255,0.32)' },
+  input: { flex: 1, minHeight: 48, color: OnMedia.primary, fontSize: TypeScale.body, paddingVertical: Space.xs },
+  commandMenu: { maxHeight: 260, marginTop: Space.xs },
+  settingsPanel: { marginTop: Space.sm, gap: Space.sm },
+  settingsInput: { color: OnMedia.primary, backgroundColor: Glass.fillLight, borderRadius: Space.sm, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline, paddingHorizontal: Space.sm, minHeight: 44, fontSize: TypeScale.secondary },
+  currentCard: { flexDirection: 'row', alignItems: 'center', gap: Space.xs },
+  art54: { width: 54, height: 54, borderRadius: Space.xs, overflow: 'hidden' },
+  art42: { width: 42, height: 42, borderRadius: Space.xs, overflow: 'hidden' },
+  trackCopy: { flex: 1, minWidth: 0, gap: 2 },
+  draftCard: { gap: Space.sm },
+  draftHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  nameInput: { color: OnMedia.primary, fontSize: TypeScale.body, fontWeight: '600', borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairlineStrong, paddingVertical: Space.xs },
+  draftTrack: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, minHeight: 52 },
+  queueIndex: { width: 20, textAlign: 'right' },
+  status: { paddingBottom: Space.xxs },
 });
 
 export default DjScreen;

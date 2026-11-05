@@ -1,42 +1,41 @@
+import { AppScreen } from '../components/AppScreen';
 /**
  * PlaylistsScreen - Library Hub
- * Displays all playlists in a grid, with "Liked Songs" at the top
+ * Displays all playlists in a grid, with "Liked Songs" at the top. Built from src/ui: a long press opens the
+ * playlist's actions sheet, and deleting asks with a ConfirmSheet.
  */
 
-import React from 'react';
-import { StyleSheet, View, Text, FlatList, Pressable, ActivityIndicator, Alert, GestureResponderEvent, useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { usePlaylistStore } from '../store/playlistStore';
-import { usePlayerStore } from '../store/playerStore';
-import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
-import { getOnlinePlaylistSongs } from '../database/syncQueries';
-import { onlineRowToSong } from '../services/sync/onlineSongs';
-import { CustomMenu } from '../components/CustomMenu';
-import DynamicAura from '../components/allegra/DynamicAura';
-import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
-import { useThemeColors } from '../contexts/ThemeContext';
-import { PlaylistsStrings } from '../constants/uiStrings';
-import { displayPlaylistName } from '../utils/sentenceCase';
-import { DarkColors } from '../constants/colors';
-import { LibraryStackParamList, RootStackParamList } from '../types/navigation';
-import { Glass, Radius, Signal } from '../constants/allegraTheme';
-import { Playlist, Song } from '../types/song';
+import React from 'react';
+import { FlatList, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { PLAYLISTS_TOUR, playlistsScene } from '../components/allegra/infoTours';
-import PlaylistFolder from '../components/allegra/PlaylistFolder';
-import { Tactile } from '../components/allegra/motion';
+import { MosaicCover } from '../components/MosaicCover';
+import { PlaylistsStrings } from '../constants/uiStrings';
+import { getOnlinePlaylistSongs } from '../database/syncQueries';
+import { onlineRowToSong } from '../services/sync/onlineSongs';
+import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
+import { usePlaylistStore } from '../store/playlistStore';
+import { LibraryStackParamList, RootStackParamList } from '../types/navigation';
+import { Playlist, Song } from '../types/song';
+import {
+  ConfirmSheet, EmptyState, GUTTER, IconButton, Placeholder, Sheet, SheetOption, Signal, Space, Tactile, Text,
+  useBottomClearance,
+} from '../ui';
+import { countOf } from '../utils/formatters';
+import { displayPlaylistName } from '../utils/sentenceCase';
 
 /** The grid's side padding and each card's margin: two folders share what is left of the width. */
-const GRID_PADDING = 12;
-const CARD_MARGIN = 8;
+const GRID_PADDING = Space.sm;
+const CARD_MARGIN = Space.xs;
 
-export const PlaylistsScreen: React.FC = () => {
-  const colors = useThemeColors();
-  const { width: screenWidth } = useWindowDimensions();
-  const folderWidth = Math.floor((screenWidth - GRID_PADDING * 2 - CARD_MARGIN * 4) / 2);
+export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> = ({ embedded = false, query = '' }) => {
+  const { width: screenWidth, fontScale } = useWindowDimensions();
+  const columns = fontScale >= 1.6 ? 1 : 2;
+  const folderWidth = Math.floor((screenWidth - GRID_PADDING * 2 - CARD_MARGIN * 2 * columns) / columns);
+  const bottom = useBottomClearance();
   // This screen sits in the Library tab's nested stack: PlaylistDetail resolves
   // locally, everything else bubbles up to the root stack.
   const navigation = useNavigation<
@@ -49,10 +48,9 @@ export const PlaylistsScreen: React.FC = () => {
   const [playlistSongs, setPlaylistSongs] = React.useState<Record<string, Song[]>>({});
 
   // Same room as Library: the live shader, tinted by the playing cover.
-  const isFocused = useIsFocused();
-  const isPlaying = usePlayerStore(state => state.isPlaying);
-  const playingCover = usePlayerStore(state => state.currentSong?.coverImageUri);
-  const palette = useArtworkPalette(playingCover);
+
+
+
 
   // Load playlists on mount and refresh on focus
   useFocusEffect(
@@ -102,255 +100,150 @@ export const PlaylistsScreen: React.FC = () => {
     navigation.navigate('CreatePlaylist');
   };
 
-  // Menu State
-  const [menuVisible, setMenuVisible] = React.useState(false);
-  const [menuAnchor, setMenuAnchor] = React.useState<{ x: number, y: number } | undefined>(undefined);
+  // A long press opens the playlist's actions; deleting asks first.
   const [selectedPlaylist, setSelectedPlaylist] = React.useState<Playlist | null>(null);
+  const [actionsOpen, setActionsOpen] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
 
-  const handleLongPress = (playlist: Playlist, event: GestureResponderEvent) => {
+  const handleLongPress = (playlist: Playlist) => {
     if (playlist.isDefault) return; // Cannot modify "Liked Songs"
-    
-    const { pageX, pageY } = event.nativeEvent;
-    setMenuAnchor({ x: pageX, y: pageY });
     setSelectedPlaylist(playlist);
-    setMenuVisible(true);
-  };
-
-  const handleDeleteConfirm = () => {
-      if (!selectedPlaylist) return;
-      
-      Alert.alert(
-          'Delete playlist',
-          `Are you sure you want to delete "${selectedPlaylist.name}"?`,
-          [
-              { text: 'Cancel', style: 'cancel' },
-              { 
-                  text: 'Delete', 
-                  style: 'destructive',
-                  onPress: () => {
-                      deletePlaylist(selectedPlaylist.id);
-                      setMenuVisible(false);
-                  }
-              }
-          ]
-      );
+    setActionsOpen(true);
   };
 
   const handleRename = () => {
-      if (!selectedPlaylist) return;
-      setMenuVisible(false);
-      // Navigate to CreatePlaylistModal in Edit Mode
-      navigation.navigate('CreatePlaylist', {
-          playlistId: selectedPlaylist.id,
-          initialName: selectedPlaylist.name
-      });
+    if (!selectedPlaylist) return;
+    setActionsOpen(false);
+    navigation.navigate('CreatePlaylist', {
+      playlistId: selectedPlaylist.id,
+      initialName: selectedPlaylist.name,
+    });
   };
 
-  const menuOptions = [
-      {
-          label: 'Rename playlist',
-          icon: 'pencil-outline' as const,
-          onPress: handleRename
-      },
-      {
-          label: 'Delete playlist',
-          icon: 'trash-outline' as const,
-          onPress: handleDeleteConfirm,
-          isDestructive: true
-      }
-  ];
+  const handleDelete = () => {
+    if (!selectedPlaylist) return;
+    deletePlaylist(selectedPlaylist.id);
+    setConfirmDelete(false);
+  };
+
+  const selectedName = selectedPlaylist ? displayPlaylistName(selectedPlaylist.name) : '';
 
   return (
-    <View style={styles.container}>
-      <DynamicAura palette={palette} playing={isPlaying} active={isFocused} dim={0.25} />
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* ... Header ... */}
+    <AppScreen style={styles.container}>
+      <SafeAreaView style={styles.safeArea} edges={embedded ? [] : ['top']}>
         <View style={styles.header}>
+          {embedded ? <Text variant="meta" tone="secondary" style={styles.titleFlex}>{playlists.length} playlists</Text> : <>
           {navigation.canGoBack() ? (
-            <Pressable onPress={() => navigation.goBack()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back" style={styles.backButton}>
-              <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
-            </Pressable>
+            <IconButton icon="chevron-back" label="Back" variant="plain" onPress={() => navigation.goBack()} />
           ) : null}
-          <InfoTitleRow style={styles.titleFlex}><Text style={styles.title} accessibilityRole="header">Playlists</Text><InfoTour label="About playlists" steps={PLAYLISTS_TOUR} scene={playlistsScene} /></InfoTitleRow>
-          <Pressable onPress={handleCreatePlaylist} style={styles.addButton}>
-            <Ionicons name="add-circle-outline" size={28} color={colors.textPrimary} />
-          </Pressable>
+          <InfoTitleRow style={styles.titleFlex}>
+            <Text variant="page" accessibilityRole="header">Playlists</Text>
+            <InfoTour label="About playlists" steps={PLAYLISTS_TOUR} scene={playlistsScene} />
+          </InfoTitleRow>
+          </>}
+          <IconButton icon="add" label={PlaylistsStrings.createPlaylist} onPress={handleCreatePlaylist} />
         </View>
 
-
         {isLoading && playlists.length === 0 ? (
-             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                 <ActivityIndicator size="large" color={colors.primary} />
-             </View>
-        ) : playlists.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="folder-open-outline" size={80} color="rgba(255,255,255,0.2)" />
-            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>{PlaylistsStrings.noPlaylistsYet}</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>Create your first playlist to get started</Text>
-            <Pressable style={styles.createButton} onPress={handleCreatePlaylist}>
-              <Ionicons name="add" size={24} color={Signal.waveInk} />
-              <Text style={styles.createButtonText}>{PlaylistsStrings.createPlaylist}</Text>
-            </Pressable>
+          <View style={[styles.grid, styles.placeholderGrid]}>
+            {[0, 1, 2, 3].map(i => (
+              <View key={i} style={styles.playlistCard}>
+                <Placeholder width={folderWidth} height={folderWidth} radius={Space.md} />
+                <Placeholder width="70%" height={14} style={styles.placeholderLine} />
+              </View>
+            ))}
           </View>
+        ) : playlists.length === 0 ? (
+          <EmptyState
+            icon="folder-open-outline"
+            title={PlaylistsStrings.noPlaylistsYet}
+            body="Group songs you saved or streamed. They sync with Allegra on the web."
+            action={{ label: PlaylistsStrings.createPlaylist, icon: 'add', onPress: handleCreatePlaylist }}
+            style={[styles.empty, { paddingBottom: bottom }]}
+          />
         ) : (
           <FlatList
-            data={playlists}
-            key={'grid-2'}
-            numColumns={2}
+            data={playlists.filter(item => !query || item.name.toLowerCase().includes(query.toLowerCase()))}
+            key={`grid-${columns}`}
+            numColumns={columns}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.gridList}
-            renderItem={({ item }) => (
-              <Tactile
-                wrapperStyle={styles.playlistCard}
-                pressScale={0.98}
-                haptic="select"
-                onPress={() => handlePlaylistPress(item.id)}
-                onLongPress={(e) => handleLongPress(item, e)}
-                delayLongPress={300}
-                accessibilityRole="button"
-                accessibilityLabel={`Open ${displayPlaylistName(item.name)}, ${item.songCount || 0} ${item.songCount === 1 ? 'song' : 'songs'}`}
-              >
-                <PlaylistFolder songs={playlistSongs[item.id] || []} width={folderWidth} />
-                <View style={styles.playlistMeta}>
-                  <Text style={styles.playlistName} numberOfLines={1}>
-                    {displayPlaylistName(item.name)}
-                  </Text>
-                  <Text style={styles.playlistCount}>
-                    {item.songCount || 0} {item.songCount === 1 ? 'song' : 'songs'}
-                  </Text>
-                </View>
-              </Tactile>
-            )}
+            contentContainerStyle={[styles.grid, { paddingBottom: bottom }]}
+            renderItem={({ item }) => {
+              const name = displayPlaylistName(item.name);
+              const count = countOf(item.songCount || 0, 'song');
+              return (
+                <Tactile
+                  wrapperStyle={[styles.playlistCard, { maxWidth: columns === 1 ? '100%' : '46%' }]}
+                  pressScale={0.98}
+                  haptic="select"
+                  onPress={() => handlePlaylistPress(item.id)}
+                  onLongPress={item.isDefault ? undefined : () => handleLongPress(item)}
+                  delayLongPress={350}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${name}, ${count}`}
+                  accessibilityHint={item.isDefault ? undefined : 'Long press for more'}
+                >
+                  <MosaicCover songs={playlistSongs[item.id] || []} size={folderWidth} name={name} />
+                  <View style={styles.playlistMeta}>
+                    <Text variant="row" numberOfLines={1} style={styles.playlistName}>{name}</Text>
+                    <Text variant="meta" tone="muted" tabular>{count}</Text>
+                  </View>
+                </Tactile>
+              );
+            }}
           />
         )}
       </SafeAreaView>
 
-      <CustomMenu
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        title={selectedPlaylist?.name || 'Options'}
-        anchorPosition={menuAnchor}
-        options={menuOptions}
+      <Sheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title={selectedName}>
+        <SheetOption label="Rename playlist" icon="pencil-outline" onPress={handleRename} />
+        <SheetOption
+          label="Delete playlist"
+          icon="trash-outline"
+          destructive
+          onPress={() => { setActionsOpen(false); setConfirmDelete(true); }}
+        />
+      </Sheet>
+      <ConfirmSheet
+        visible={confirmDelete}
+        title={`Delete “${selectedName}”?`}
+        body="Songs stay in your library."
+        confirmLabel="Delete playlist"
+        destructive
+        onConfirm={handleDelete}
+        onClose={() => setConfirmDelete(false)}
       />
-    </View>
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  backButton: { marginRight: 6 },
-  titleFlex: { flex: 1 },
-  downloadsEntry: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: Radius.panel,
-    backgroundColor: Glass.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Glass.hairline,
-  },
-  downloadsIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Signal.wave,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  downloadsTitle: { fontSize: 16, fontWeight: '700', color: Signal.ink },
-  downloadsMeta: { fontSize: 12, color: Signal.inkMuted, marginTop: 2 },
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  safeArea: {
-    flex: 1,
-  },
+  container: { flex: 1, backgroundColor: Signal.bgDeep },
+  safeArea: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    gap: Space.xs,
+    paddingHorizontal: GUTTER - Space.xxs,
+    paddingVertical: Space.sm,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: DarkColors.textPrimary,
-  },
-  addButton: {
-    padding: 8,
-  },
-  gridList: {
-    paddingHorizontal: 12,
-    paddingBottom: 220,
-  },
+  titleFlex: { flex: 1 },
+  grid: { paddingHorizontal: GRID_PADDING },
+  placeholderGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  placeholderLine: { marginTop: Space.sm },
   playlistCard: {
     flex: 1,
     margin: CARD_MARGIN,
     maxWidth: '46%',
-    marginBottom: 18,
+    marginBottom: Space.md,
   },
   playlistMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 10,
+    gap: Space.xxs,
+    marginTop: Space.xs,
     paddingHorizontal: 2,
   },
-  playlistName: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '700',
-    color: DarkColors.textPrimary,
-  },
-  playlistCount: {
-    overflow: 'hidden',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    color: DarkColors.textSecondary,
-    fontSize: 11,
-    fontVariant: ['tabular-nums'],
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 220,
-    paddingHorizontal: 32,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: DarkColors.textPrimary,
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: DarkColors.textSecondary,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  createButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Signal.wave,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    marginTop: 24,
-    gap: 8,
-  },
-  createButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Signal.waveInk,
-  },
+  playlistName: { flex: 1 },
+  empty: { flex: 1, justifyContent: 'center' },
 });
 
 export default PlaylistsScreen;

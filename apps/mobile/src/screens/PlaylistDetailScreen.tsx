@@ -1,86 +1,79 @@
+import { fromMobileId } from '@shared/songRef';
+import { AppScreen } from '../components/AppScreen';
+import { addOnlineSongToPlaylist } from '../services/sync/onlinePlaylist';
+import { snapshotOfLocal } from '../services/sync/plan';
+import { usePlaylistStore } from '../store/playlistStore';
+import { playlistUndoOrder } from '../utils/playlistUndoOrder';
 /**
- * PlaylistDetailScreen - Optimized & Refined
- * Features:
- * - Reanimated Scroll (Native Driver)
- * - Optimized Drag & Drop (Memoized Item)
- * - Debounced Search (useMemo)
- * - Dynamic Header (Syncs with playing song)
+ * A playlist's page: the cover, its name and length, Play / Shuffle / Add, then the songs. Built from src/ui:
+ *
+ * - The cover's own colours wash the top of the page and fade to black, the way an album page reads. No aurora.
+ * - The header is clear at rest and gains a solid backing as the list scrolls under it (a scrim's opacity,
+ *   never an animated colour).
+ * - ••• opens the playlist's actions (sort, edit order, change cover); a song's long press or ••• opens the
+ *   song's actions. Edit mode is a pencil, not the •••.
+ * - Removing a song asks first (ConfirmSheet).
+ *
+ * Audio loading is not this page's job: MiniPlayer and NowPlaying own it (CLAUDE.md, "Audio load ownership"). An
+ * inline loader that listed `isPlaying` in its dependencies and called play() used to live here.
  */
 
-import { displayPlaylistName } from '../utils/sentenceCase';
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  Pressable,
-  ActivityIndicator,
-  TextInput,
-  Dimensions,
-  useWindowDimensions,
-} from 'react-native';
-import { Image } from 'expo-image';
-import { MosaicCover } from '../components/MosaicCover';
-import { useRoute, useNavigation, RouteProp, useFocusEffect, useIsFocused } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import DraggableFlatList, {
-  RenderItemParams,
-} from 'react-native-draggable-flatlist';
+import { RouteProp, useFocusEffect, useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
+import { FlashList } from '@shopify/flash-list';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { BlurView } from 'expo-blur';
+import React, { useCallback, useEffect, useState } from 'react';
+import { StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import Animated, {
-  useAnimatedScrollHandler,
-  useSharedValue,
-  useAnimatedStyle,
-  interpolate,
   Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FlashList } from '@shopify/flash-list';
+import { MosaicCover } from '../components/MosaicCover';
+import { displayPlaylistName } from '../utils/sentenceCase';
 
-import { useThemeColors } from '../contexts/ThemeContext';
-import { Song } from '../types/song';
-import { getGradientForSong, getGradientColors } from '../constants/gradients';
-import { useDailyStatsStore } from '../store/dailyStatsStore';
-import { useSongsStore } from '../store/songsStore';
-import { AuroraHeader } from '../components/AuroraHeader';
-import { usePlayer } from '../contexts/PlayerContext';
-import { usePlayerStore, playerControls } from '../store/playerStore';
-import { useSettingsStore } from '../store/settingsStore';
+import Artwork from '../components/allegra/Artwork';
+import Marquee from '../components/allegra/Marquee';
+import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
+import { useSongActions } from '../components/library/useSongActions';
+import { PlaylistItem } from '../components/PlaylistItem';
+import { Toast } from '../components/Toast';
 import * as playlistQueries from '../database/playlistQueries';
 import { getOnlinePlaylistSongs } from '../database/syncQueries';
-import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
-import { LIKED_PLAYLIST_ID } from '../services/sync/plan';
+import { useSortedSongs, type SortDirection, type SortOption } from '../hooks/useSortedSongs';
 import { onlineRowToSong, playList, removeOnlineFromPlaylist } from '../services/sync/onlineSongs';
-import { PlaylistItem } from '../components/PlaylistItem';
-import { CustomMenu } from '../components/CustomMenu';
-import { safeGoBack } from '../utils/navigationService';
-import Marquee from '../components/allegra/Marquee';
-import { Tactile } from '../components/allegra/motion';
-import { shuffled } from '../utils/shuffle';
+import { LIKED_PLAYLIST_ID } from '../services/sync/plan';
+import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
+import { playerControls, usePlayerStore } from '../store/playerStore';
+import { Song } from '../types/song';
+import {
+  EmptyState, Glass, GUTTER, IconButton, Motion, OnMedia, Radius, RowPlaceholder, Sheet, SheetOption, Signal, SongRow, Space, Text, TextButton, TypeScale, useBottomClearance
+} from '../ui';
 import { countOf } from '../utils/formatters';
-import { ModernDeleteModal } from '../components/ModernDeleteModal';
-import { Toast } from '../components/Toast';
-import { useLyricsScanQueueStore } from '../store/lyricsScanQueueStore';
-import { useSortedSongs } from '../hooks/useSortedSongs';
-import { songCanUpgradeToSyncedLyrics } from '../utils/lyricsState';
-import { bottomChromeHeight } from '../constants/layout';
-import { Glass, Signal } from '../constants/allegraTheme';
+import { safeGoBack } from '../utils/navigationService';
+import { shuffled } from '../utils/shuffle';
 
-type PlaylistDetailRouteProp = RouteProp<
-  { PlaylistDetail: { playlistId: string } },
-  'PlaylistDetail'
->;
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
+type PlaylistDetailRouteProp = RouteProp<{ PlaylistDetail: { playlistId: string } }, 'PlaylistDetail'>;
 
 const AnimatedDraggableFlatList = Animated.createAnimatedComponent(DraggableFlatList) as unknown as typeof DraggableFlatList;
+// FlashList's generic props don't survive createAnimatedComponent; the one cast the project allows (CLAUDE.md).
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as unknown as React.FC<any>;
 
+const HEADER_HEIGHT = 56;
+const SORT_LABELS: Record<Exclude<SortOption, 'recent'>, string> = {
+  custom: 'Custom order',
+  title: 'Title',
+  artist: 'Artist',
+  date: 'Recently added',
+};
+
 export const PlaylistDetailScreen: React.FC = () => {
-  const colors = useThemeColors();
   const route = useRoute<PlaylistDetailRouteProp>();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -88,19 +81,21 @@ export const PlaylistDetailScreen: React.FC = () => {
   const { playlistId } = route.params;
   // The cover leads the page, about two thirds of the width as on an album page.
   const { width: windowWidth } = useWindowDimensions();
-  const coverSize = Math.round(Math.min(windowWidth * 0.68, 300));
+  const coverSize = Math.round(Math.min(windowWidth - GUTTER * 2, 184));
+  const bottom = useBottomClearance();
 
   const [songs, setSongs] = useState<Song[]>([]);
   const [playlistName, setPlaylistName] = useState('');
   const [playlistCover, setPlaylistCover] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchActive, setIsSearchActive] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [songToDelete, setSongToDelete] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' } | null>(null);
-  // Store Hooks
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info'; action?: { label: string; onPress: () => void } } | null>(null);
+
   const currentSongId = usePlayerStore(state => state.currentSongId);
   const currentPlaylistId = usePlayerStore(state => state.currentPlaylistId);
   const currentSong = usePlayerStore(state => state.currentSong);
@@ -108,233 +103,69 @@ export const PlaylistDetailScreen: React.FC = () => {
   const isPlaying = usePlayerStore(state => state.isPlaying);
   const activeIsPlaying = currentPlaylistId === playlistId;
 
+  // A song's actions (Play next, Find lyrics, cover, version, remove from this playlist): the same sheet as Library.
+  const songActions = useSongActions();
 
-  const libraryBackgroundMode = useSettingsStore(state => state.libraryBackgroundMode);
-  const applyThemeToOtherPages = useSettingsStore(state => state.applyThemeToOtherPages);
-  const isSolidBg = libraryBackgroundMode === 'purest-black'
-    || libraryBackgroundMode === 'grey'
-    || libraryBackgroundMode === 'theme-subtle'
-    || libraryBackgroundMode === 'black'
-    || libraryBackgroundMode === 'theme-blue';
-  const playerCurrentCover = usePlayerStore(state => state.currentSong?.coverImageUri);
-  const playerCurrentGradient = usePlayerStore(state => state.currentSong?.gradientId);
-  const getSong = useSongsStore(state => state.getSong);
-  const allSongsStore = useSongsStore(state => state.songs);
-
-  // This screen lives in the Library tab's stack, so the tab bar is always behind
-  // it. The classic mini player only stacks on top of that when a song is loaded.
-  const hasClassicBar = !!currentSong;
-  const bottomChrome = bottomChromeHeight(insets.bottom, true, hasClassicBar);
-  const fabBottom = bottomChrome + 16;
-  const listPaddingBottom = bottomChrome + 80;
-
-  const [activeThemeColors, setActiveThemeColors] = useState<string[] | undefined>(undefined);
-  const [activeImageUri, setActiveImageUri] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!applyThemeToOtherPages) {
-      setActiveThemeColors(undefined);
-      setActiveImageUri(null);
-      return;
-    }
-    const updateTheme = async () => {
-      let themeColors: string[] | undefined;
-      let image: string | null = null;
-      if (libraryBackgroundMode === 'current') {
-        if (currentSongId) {
-          image = playerCurrentCover || null;
-          if (!image && playerCurrentGradient) {
-            themeColors = playerCurrentGradient === 'dynamic' ? ['#f7971e', '#ffd200', '#ff6b35'] : getGradientColors(playerCurrentGradient);
-          }
-        }
-      } else if (libraryBackgroundMode === 'daily') {
-        const topId = useDailyStatsStore.getState().getTopSongOfYesterday() || useDailyStatsStore.getState().getTopSongOfToday();
-        if (topId) {
-          const song = allSongsStore.find(s => s.id === topId) || await getSong(topId);
-          if (song) {
-            image = song.coverImageUri || null;
-            if (!image && song.gradientId) {
-              themeColors = song.gradientId === 'dynamic' ? ['#f7971e', '#ffd200', '#ff6b35'] : getGradientColors(song.gradientId);
-            }
-          }
-        }
-      } else if (libraryBackgroundMode === 'black') {
-        themeColors = ['#050505', '#050505', '#050505'];
-        image = null;
-      } else if (libraryBackgroundMode === 'purest-black') {
-        themeColors = ['#000000', '#000000', '#000000'];
-        image = null;
-      } else if (libraryBackgroundMode === 'grey') {
-        themeColors = ['#0D0D0D', '#181818', '#0D0D0D'];
-        image = null;
-      } else if (libraryBackgroundMode === 'theme-subtle') {
-        themeColors = ['#0A0A0A', '#1F1F1F', '#0A0A0A'];
-        image = null;
-      } else if (libraryBackgroundMode === 'theme-blue') {
-        themeColors = ['#0A1628', '#1A3A6B', '#2F8CFF'];
-        image = null;
-      }
-      setActiveThemeColors(themeColors); setActiveImageUri(image);
-    };
-    updateTheme();
-  }, [applyThemeToOtherPages, libraryBackgroundMode, currentSongId, playerCurrentCover, playerCurrentGradient, allSongsStore, allSongsStore.length, getSong]);
-
-  // Scan Queue Logic
-  const scanQueue = useLyricsScanQueueStore(state => state.queue);
-  const addToScanQueue = useLyricsScanQueueStore(state => state.addToQueue);
-
-  const handleAddToQueue = useCallback((song: Song) => {
-      const existing = scanQueue[song.id];
-      
-      // If result is plain, we allow "Upgrading" to synced
-      const isPlainResult =
-        (existing?.status === 'completed' && existing?.resultType === 'plain') ||
-        (!existing && songCanUpgradeToSyncedLyrics(song));
-
-      if (existing) {
-         if (existing.status === 'failed' || isPlainResult) {
-            // Allow retry or "Upgrade"
-            addToScanQueue(song, isPlainResult); // forceSynced = true if currently plain
-            setToast({ 
-                visible: true, 
-                message: isPlainResult ? `Retrying for synced lyrics: "${song.title}"` : `Retrying: "${song.title}"`, 
-                type: 'info' 
-            });
-         } else {
-            setToast({ visible: true, message: `Already searching for "${song.title}"`, type: 'info' });
-            return;
-         }
-      } else {
-         addToScanQueue(song);
-         setToast({ visible: true, message: `Finding lyrics for ${song.title}`, type: 'success' });
-      }
-  }, [scanQueue, addToScanQueue]);
-
-  // Sort State
-  type SortOption = 'custom' | 'title' | 'artist' | 'date';
-  type SortDirection = 'asc' | 'desc';
-  
+  // ─── Sort, remembered per playlist ───────────────────────────────────────
   const [sortOption, setSortOption] = useState<SortOption>('custom');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [sortMenuVisible, setSortMenuVisible] = useState(false);
-  const [sortMenuAnchor, setSortMenuAnchor] = useState<{ x: number, y: number } | undefined>(undefined);
-  
-  // Persistence Key
   const SORT_PREF_KEY = `playlist_sort_${playlistId}`;
 
-  // Load Sort Settings
   useEffect(() => {
-     const loadSort = async () => {
-         try {
-             // We use require here to avoid top-level async issues if any, implies AsyncStorage
-             const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-             const saved = await AsyncStorage.getItem(SORT_PREF_KEY);
-             if (saved) {
-                 const { option, direction } = JSON.parse(saved);
-                 setSortOption(option);
-                 setSortDirection(direction);
-             }
-         } catch (e) {
-             if (__DEV__) console.log('Failed to load sort settings', e);
-         }
-     };
-     loadSort();
-  }, [playlistId, SORT_PREF_KEY]);
-
-  // Save Sort Settings
-  const saveSort = async (option: SortOption, direction: SortDirection) => {
+    const loadSort = async () => {
       try {
-          const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-          await AsyncStorage.setItem(SORT_PREF_KEY, JSON.stringify({ option, direction }));
-      } catch (e) {
-          console.error('Failed to save sort settings', e);
-      }
-  };
-
-  const handleSortChange = (option: SortOption) => {
-      // If clicking same option, toggle direction
-      // If clicking different, set to Asc (or desc for date)
-      let newDirection: SortDirection = 'asc';
-      
-      if (option === sortOption) {
-          newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-      } else {
-          // Default directions: Date -> Desc (Newest), Others -> Asc (A-Z)
-          if (option === 'date') newDirection = 'desc';
-          else newDirection = 'asc';
-      }
-      
-      setSortOption(option);
-      setSortDirection(newDirection);
-      saveSort(option, newDirection);
-      setSortMenuVisible(false);
-  };
-
-  const getSortLabel = () => {
-      const dirArrow = sortDirection === 'asc' ? '↑' : '↓';
-      switch(sortOption) {
-          case 'title': return `Alphabetical ${dirArrow}`;
-          case 'artist': return `Artist ${dirArrow}`;
-          case 'date': return `Recently added ${dirArrow}`;
-          default: return 'Custom order';
-      }
-  };
-
-   const player = usePlayer();
-
-  // Removed manual interval polling of player.currentTime (does not exist in expo-audio)
-  // We rely on 'position' from usePlayerStore which is synced in PlayerContext.
-
-  // Ensure Audio is Loaded (Robust Check)
-  useEffect(() => {
-    const loadAudioIfNeeded = async () => {
-      if (activeIsPlaying && currentSong && player) {
-        const state = usePlayerStore.getState();
-        // If IDs don't match, load it.
-        // Trust loadedAudioId primarily. The duration check caused resets on Pause->Play.
-        const needsLoad = state.loadedAudioId !== currentSong.id;
-        
-        if (needsLoad) {
-           if (currentSong.audioUri) {
-               try {
-                   if (__DEV__) console.log(`[InlinePlayer] Loading audio for: ${currentSong.title}`);
-                   await player.replace(currentSong.audioUri);
-                   state.setLoadedAudioId(currentSong.id);
-                   if (isPlaying) {
-                       // Small delay to ensure native player is ready
-                       setTimeout(() => player.play(), 100);
-                   }
-               } catch (e) {
-                   if (__DEV__) console.log('[InlinePlayer] Load failed', e);
-               }
-           }
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const saved = await AsyncStorage.getItem(SORT_PREF_KEY);
+        if (saved) {
+          const { option, direction } = JSON.parse(saved);
+          setSortOption(option);
+          setSortDirection(direction);
         }
+      } catch (e) {
+        if (__DEV__) console.log('Failed to load sort settings', e);
       }
     };
-    
-    loadAudioIfNeeded();
-  }, [activeIsPlaying, currentSong, player, isPlaying]);
+    loadSort();
+  }, [playlistId, SORT_PREF_KEY]);
 
-  // Reanimated Shared Values
+  const saveSort = async (option: SortOption, direction: SortDirection) => {
+    try {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.setItem(SORT_PREF_KEY, JSON.stringify({ option, direction }));
+    } catch (e) {
+      if (__DEV__) console.log('Failed to save sort settings', e);
+    }
+  };
+
+  /** Picking the current option again flips its direction; a new one starts A–Z (newest first for dates). */
+  const handleSortChange = (option: SortOption) => {
+    const direction: SortDirection = option === sortOption
+      ? (sortDirection === 'asc' ? 'desc' : 'asc')
+      : option === 'date' ? 'desc' : 'asc';
+    setSortOption(option);
+    setSortDirection(direction);
+    saveSort(option, direction);
+    setSortOpen(false);
+  };
+
+  const sortLabel = sortOption === 'custom' || sortOption === 'recent'
+    ? SORT_LABELS.custom
+    : `${SORT_LABELS[sortOption]} ${sortDirection === 'asc' ? '↑' : '↓'}`;
+
+  // ─── Scroll ──────────────────────────────────────────────────────────────
   const scrollY = useSharedValue(0);
-
-  // formatDuration removed as unused
-
-  // Scroll Handler
-  const scrollHandler = useAnimatedScrollHandler((event) => {
+  const scrollHandler = useAnimatedScrollHandler(event => {
     scrollY.value = event.contentOffset.y;
   });
-
   const flatListRef = React.useRef<any>(null);
 
-  // Load Data
+  // ─── Data ────────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     try {
-      // Don't set loading true here avoids flickering on refresh
+      setLoadError(false);
       const playlists = await playlistQueries.getAllPlaylists();
-      const playlist = playlists.find((p) => p.id === playlistId);
+      const playlist = playlists.find(p => p.id === playlistId);
       const playlistSongs = await playlistQueries.getPlaylistSongs(playlistId);
-
       setPlaylistName(playlist?.name ? displayPlaylistName(playlist.name) : 'Playlist');
       setPlaylistCover(playlist?.coverImageUri || null);
       const onlineRows = playlistId === LIKED_PLAYLIST_ID
@@ -344,78 +175,47 @@ export const PlaylistDetailScreen: React.FC = () => {
       const onlineSongs = onlineRows.map(onlineRowToSong).filter(song => !localIds.has(song.id));
       setSongs([...playlistSongs, ...onlineSongs]);
     } catch (e) {
-      console.error('Failed to load playlist', e);
+      setLoadError(true);
+      if (__DEV__) console.log('Failed to load playlist', e);
     } finally {
       setLoading(false);
     }
-  }, [playlistId]); // Reload when playlistId changes
+  }, [playlistId]);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [loadData])
-  );
+  useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   // Songs that arrive from another device while the screen is open.
   const onlineVersion = useOnlineLibraryStore(state => state.playlistVersion + state.likes.length);
-  useEffect(() => {
-    loadData();
-  }, [onlineVersion, loadData]);
+  useEffect(() => { loadData(); }, [onlineVersion, loadData]);
 
   const filteredSongs = useSortedSongs(songs, searchQuery, sortOption, sortDirection);
 
-  // Update Queue when Sort Changes?
-  // Only if we are CURRENTLY playing this playlist.
+  // While this playlist plays, a new sort reorders what comes next (a search never does).
   useEffect(() => {
-      if (activeIsPlaying && !searchQuery) { // Don't disrupt queue on search, only sort
-           // Check if order actually changed effectively?
-           // Easiest is to just update the queue in store without interrupting playback
-           if (usePlayerStore.getState().updateQueue) {
-                usePlayerStore.getState().updateQueue(filteredSongs);
-           }
-      }
+    if (activeIsPlaying && !searchQuery) usePlayerStore.getState().updateQueue(filteredSongs);
   }, [filteredSongs, activeIsPlaying, searchQuery]);
 
-  // Dynamic Header Logic & Gradient
-  // Ensure the current song actually belongs to this playlist before showing it as active
+  // The playlist's own cover leads; the playing track only takes over while it belongs to this playlist.
   const isSongInPlaylist = currentSong && songs.some(s => s.id === currentSong.id);
-  const activeSongInPlaylist = (activeIsPlaying && isSongInPlaylist) ? currentSong : null;
-  
-  // The playlist's own cover owns its first impression. The playing track only takes over the
-  // atmosphere while it belongs to this playlist; browsing tracks never makes the header jump.
-  const headerImageUri =
-    playlistCover ||
-    activeSongInPlaylist?.coverImageUri ||
-    songs[0]?.coverImageUri;
+  const activeSongInPlaylist = activeIsPlaying && isSongInPlaylist ? currentSong : null;
+  const headerImageUri = playlistCover || activeSongInPlaylist?.coverImageUri || songs[0]?.coverImageUri;
+  const palette = useArtworkPalette(headerImageUri ?? undefined);
 
-  const activeSongGradient = useMemo(() => {
-     if (activeSongInPlaylist) return getGradientForSong(activeSongInPlaylist);
-     return getGradientForSong(songs[0] || { id: 'default', gradientId: 'dynamic' });
-  }, [activeSongInPlaylist, songs]);
-
-  const totalDuration = useMemo(
-    () => songs.reduce((acc, song) => acc + (song.duration || 0), 0),
-    [songs]
-  );
-
+  const totalDuration = songs.reduce((acc, song) => acc + (song.duration || 0), 0);
   const formatTotalDuration = () => {
     const hours = Math.floor(totalDuration / 3600);
     const mins = Math.floor((totalDuration % 3600) / 60);
-    if (hours > 0) return `${hours} hr ${mins} min`;
-    return `${mins} min`;
+    return hours > 0 ? `${hours} hr ${mins} min` : `${mins} min`;
   };
 
-  // --- ACTIONS ---
-
-  // --- ACTIONS ---
-  
-  // Play from the top, or pause/resume when this playlist is already the one playing.
+  // ─── Actions ─────────────────────────────────────────────────────────────
+  // Play from the top, or pause / resume when this playlist is already the one playing.
   const playOrPause = useCallback(() => {
     if (activeIsPlaying) {
       usePlayerStore.getState().requestPlayback(!usePlayerStore.getState().isPlaying);
     } else if (songs.length > 0) {
       playList(playlistId, songs, 0).then(ok => {
-        if (!ok) setToast({ visible: true, message: "Couldn't find these songs online", type: 'error' });
+        if (!ok) setToast({ visible: true, message: 'Couldn’t find these songs online', type: 'error' });
       });
     }
   }, [activeIsPlaying, songs, playlistId]);
@@ -423,65 +223,73 @@ export const PlaylistDetailScreen: React.FC = () => {
   const shufflePlaylist = useCallback(() => {
     if (songs.length > 0) playList(playlistId, shuffled(songs), 0);
   }, [songs, playlistId]);
-  
+
   const handleSongPress = useCallback((song: Song, index: number) => {
-    // If we filter, the index passed is from filtered list.
-    // We should queue the FILTERED list so "Next" matches what user sees.
+    // A filtered list queues what you see, so Next matches the page.
     playList(playlistId, filteredSongs, index).then(ok => {
       if (ok) play();
-      else setToast({ visible: true, message: "Couldn't find this song online", type: 'error' });
+      else setToast({ visible: true, message: 'Couldn’t find this song online', type: 'error' });
     });
   }, [playlistId, filteredSongs, play]);
 
   const handleDeleteSong = useCallback(async (songId: string) => {
-    setSongToDelete(songId);
-    setShowDeleteConfirm(true);
-  }, []);
+    const song = songs.find(item => item.id === songId);
+    if (!song) return;
+    const originalOrder = songs.map(item => item.id);
+    try {
+      if (songId.startsWith('stream:') && playlistId !== LIKED_PLAYLIST_ID) await removeOnlineFromPlaylist(playlistId, songId);
+      else if (songId.startsWith('stream:')) await (await import('../store/songsStore')).useSongsStore.getState().toggleLike(songId);
+      else await usePlaylistStore.getState().removeSongFromPlaylist(playlistId, songId);
+      await loadData();
+      setToast({ visible: true, message: 'Removed from the playlist', type: 'success', action: { label: 'Undo', onPress: () => {
+        setToast(null);
+        (async () => {
+          const ref = fromMobileId(song.id);
+          if (ref) {
+            const result = await addOnlineSongToPlaylist(playlistId, snapshotOfLocal(song, ref));
+            if (result === 'error') throw new Error('Could not restore this song');
+          } else {
+            await usePlaylistStore.getState().addSongToPlaylist(playlistId, songId);
+            // Restore surviving rows without dropping songs added since the removal.
+            const currentRows = await playlistQueries.getPlaylistSongs(playlistId);
+            await playlistQueries.updateSongOrder(playlistId, playlistUndoOrder(originalOrder, currentRows.map(item => item.id)));
+          }
+          await loadData();
+        })().catch(() => setToast({ visible: true, message: 'Could not restore the song. Try adding it again.', type: 'error' }));
+      } } });
+    } catch {
+      setToast({ visible: true, message: 'Could not remove the song. Try again.', type: 'error' });
+    }
+  }, [songs, playlistId, loadData]);
+
+  const openSongActions = useCallback((song: Song) => {
+    songActions.open(song, { onRemoveFromPlaylist: () => { handleDeleteSong(song.id); } });
+  }, [songActions, handleDeleteSong]);
 
   const handleDragEnd = useCallback(async ({ data }: { data: Song[] }) => {
-      setSongs(data);
-      if (searchQuery) return; // Don't save order if filtering
-      try {
-          await playlistQueries.updateSongOrder(playlistId, data.map(s => s.id));
-      } catch (e) {
-          console.error('Reorder failed', e);
-      }
+    setSongs(data);
+    if (searchQuery) return; // A filtered order isn't the playlist's order
+    try {
+      await playlistQueries.updateSongOrder(playlistId, data.map(s => s.id));
+    } catch (e) {
+      if (__DEV__) console.log('Reorder failed', e);
+    }
   }, [playlistId, searchQuery]);
 
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | undefined>(undefined);
-
-  const handleCoverPress = (event?: any) => {
-    if (!isEditMode) return;
-    
-    let pageX = 50;
-    let pageY = 150;
-
-    if (event?.nativeEvent?.pageX !== undefined) {
-        pageX = event.nativeEvent.pageX;
-        pageY = event.nativeEvent.pageY;
-    } else if (event?.absoluteX !== undefined) {
-        pageX = event.absoluteX;
-        pageY = event.absoluteY;
-    }
-
-    setMenuPosition({ x: pageX, y: pageY });
-    setMenuVisible(true);
-  };
-
   const handleResetCover = async () => {
+    setActionsOpen(false);
     setPlaylistCover(null);
-    await playlistQueries.updatePlaylist(playlistId, { coverImageUri: '' }); 
+    await playlistQueries.updatePlaylist(playlistId, { coverImageUri: '' });
   };
 
-  const handlePickLibrary = async () => {
+  const handlePickCover = async () => {
+    setActionsOpen(false);
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5,
     });
-
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const uri = result.assets[0].uri;
       setPlaylistCover(uri);
@@ -489,616 +297,236 @@ export const PlaylistDetailScreen: React.FC = () => {
     }
   };
 
-  interface MenuOption {
-    label: string;
-    icon?: keyof typeof Ionicons.glyphMap;
-    onPress: (e?: any) => void;
-    isDestructive?: boolean;
-  }
+  const openAddSongs = () => (navigation as unknown as { navigate: (name: string, params: object) => void }).navigate('AddToPlaylist', { playlistId });
 
-  const menuOptions: MenuOption[] = [
-    {
-        label: 'Choose from Library',
-        icon: 'images',
-        onPress: () => { handlePickLibrary(); }
-    },
-    {
-        label: 'Reset to Default',
-        icon: 'refresh',
-        isDestructive: true,
-        onPress: () => { handleResetCover(); }
-    }
-  ];
+  // ─── Rows ────────────────────────────────────────────────────────────────
+  const renderItem = useCallback(({ item, drag, isActive, getIndex }: RenderItemParams<Song>) => (
+    !isEditMode ? <SongRow title={item.title} artist={item.artist} artwork={item.coverImageUri} playing={item.id === currentSongId}
+      onPress={() => handleSongPress(item, getIndex?.() ?? 0)} onActions={() => openSongActions(item)} /> : <PlaylistItem
+      item={item}
+      drag={drag}
+      isActive={isActive}
+      getIndex={getIndex}
+      currentSongId={currentSongId}
+      isPlaying={isPlaying}
+      isEditMode={isEditMode}
+      onPress={handleSongPress}
+      onMore={openSongActions}
+      onDelete={handleDeleteSong}
+      displayIndex={getIndex ? getIndex() ?? 0 : 0}
+    />
+  ), [currentSongId, isPlaying, isEditMode, handleSongPress, handleDeleteSong, openSongActions]);
 
-  // --- RENDERERS ---
-
-  // Passing props to memoized component
-   const renderItem = useCallback(({ item, drag, isActive, getIndex }: RenderItemParams<Song>) => {
-    // scanJob lookup removed - PlaylistItem handles it internally
-
-    return (
-      <PlaylistItem
-        item={item}
-        drag={drag}
-        isActive={isActive}
-        getIndex={getIndex}
-        currentSongId={currentSongId}
-        isPlaying={isPlaying}
-        isEditMode={isEditMode}
-        onPress={handleSongPress}
-        onMagicPress={handleAddToQueue}
-
-        // isScanning/isCompleted removed
-        onDelete={handleDeleteSong}
-        displayIndex={getIndex ? getIndex() : 0}
-      />
-    );
-
-  }, [currentSongId, isPlaying, isEditMode, handleSongPress, handleDeleteSong, handleAddToQueue]);
-
-  // Like home LuvLyrics header: fully clear at rest, solid black only after scroll.
-  const headerStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(scrollY.value, [0, 60, 140], [0, 0.55, 1], Extrapolation.CLAMP);
-    return {
-      backgroundColor: `rgba(0,0,0,${opacity})`,
-    };
-  });
-
-  const animatedGradientStyle = useAnimatedStyle(() => {
-     // Scroll the background up with the list (Parallax-like or just direct scroll)
-     // The user requested: "not fade but it also shld scroll the bg"
-     return { 
-        transform: [
-            { translateY: -scrollY.value } 
-        ]
-     };
-  });
+  // ─── Motion ──────────────────────────────────────────────────────────────
+  // The header gains a solid backing as the list passes under it, and its title fades in once the big one is gone.
+  const headerBacking = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [coverSize * 0.6, coverSize + 40], [0, 1], Extrapolation.CLAMP) }));
+  const headerTitle = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [coverSize + 20, coverSize + 80], [0, 1], Extrapolation.CLAMP) }));
+  // The cover's wash scrolls away with the page.
 
   const fabStyle = useAnimatedStyle(() => {
-    const show = scrollY.value > 400;
+    const show = scrollY.value > 600;
     return {
-        opacity: withTiming(show ? 1 : 0),
-        transform: [{ scale: withTiming(show ? 1 : 0.8) }],
+      opacity: withTiming(show ? 1 : 0, { duration: Motion.duration.fast }),
+      transform: [{ translateY: withTiming(show ? 0 : 12, { duration: Motion.duration.base, easing: Motion.ease.decelerate }) }],
     };
   });
 
-  if (loading) {
-    return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color="#fff" />
-      </View>
-    );
-  }
+  const topInset = insets.top + HEADER_HEIGHT;
+  const playingHere = activeIsPlaying && isPlaying;
 
   const renderHeader = () => (
-    <View style={styles.listHeader}>
-      <Pressable
-        onPress={handleCoverPress}
-        disabled={!isEditMode}
-        accessibilityRole={isEditMode ? 'button' : undefined}
-        accessibilityLabel={isEditMode ? 'Change playlist cover' : undefined}
-      >
-        <View style={[styles.coverContainer, { width: coverSize, height: coverSize }]}>
+    <View style={styles.hero}>
+      <View style={[styles.cover, { width: coverSize, height: coverSize, shadowColor: palette.primary }]}>
+        <View style={styles.coverClip}>
           {/* The cover leads as on an album: the playlist's own, else a mosaic of four of its songs, as on the website. */}
           {!playlistCover && songs.length >= 4 ? (
             <MosaicCover songs={songs.slice(0, 4)} size={coverSize} />
           ) : headerImageUri ? (
-            <Image source={{ uri: headerImageUri }} style={styles.coverArt} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+            <Image source={{ uri: headerImageUri }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={0} />
           ) : (
-            <LinearGradient colors={activeSongGradient as [string, string]} style={styles.coverArt}>
-              <Ionicons name="musical-notes" size={70} color="rgba(255,255,255,0.48)" />
-            </LinearGradient>
+            <Artwork title={playlistName} size={coverSize} style={StyleSheet.absoluteFill} />
           )}
-          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.34)']} style={styles.coverShade} pointerEvents="none" />
-          {isEditMode ? <View style={styles.editOverlay}><Ionicons name="camera" size={28} color="#fff" /></View> : null}
         </View>
-      </Pressable>
+      </View>
 
-      <Text style={styles.playlistHeroTitle} numberOfLines={2}>{playlistName}</Text>
-      <View style={styles.metaContainer}>
-        <Text style={styles.playlistMeta}>{countOf(songs.length, 'song')} • {formatTotalDuration()}</Text>
-        <Pressable
-          style={styles.sortButton}
-          onPress={(e) => {
-            const { pageX, pageY } = e.nativeEvent;
-            setSortMenuAnchor({ x: pageX, y: pageY });
-            setSortMenuVisible(true);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={`Sort playlist, ${getSortLabel()}`}
-        >
-          <Ionicons name={sortOption === 'custom' ? 'filter' : 'filter-circle'} size={16} color={sortOption === 'custom' ? 'rgba(255,255,255,0.72)' : colors.primary} />
-          <Text style={[styles.sortButtonText, sortOption !== 'custom' && { color: colors.primary }]}>{getSortLabel()}</Text>
-        </Pressable>
+      {loadError ? <View><Text variant="secondary" tone="secondary">Couldn?t refresh this playlist. Saved songs are still here.</Text><TextButton label="Try again" onPress={() => { loadData(); }} /></View> : null}
+      <Text variant="detail" align="center" numberOfLines={2} style={styles.heroTitle} accessibilityRole="header">{playlistName}</Text>
+      <View style={styles.heroActions}>
+      <Text variant="secondary" tone="secondary" style={{ flex: 1 }} tabular>
+        {countOf(songs.length, 'song')}{songs.length > 0 ? ` · ${formatTotalDuration()}` : ''}
+      </Text>
+
+      {songs.length > 0 ? (
+        <>
+          <IconButton icon="shuffle" label="Shuffle playlist" size="lg" variant="secondary" shape="disc" onPress={shufflePlaylist} haptic="select" />
+          <IconButton
+            label={playingHere ? 'Pause playlist' : activeIsPlaying ? 'Resume playlist' : 'Play playlist'}
+            icon={playingHere ? 'pause' : 'play'}
+            variant="primary"
+            onPress={playOrPause}
+            haptic="light"
+            style={styles.playDisc}
+            shape="disc"
+          />
+        </>
+      ) : null}
       </View>
 
       {songs.length > 0 ? (
-        <View style={styles.heroActions}>
-          <Tactile style={styles.heroRoundAction} haptic="select" onPress={shufflePlaylist} accessibilityRole="button" accessibilityLabel="Shuffle playlist">
-            <Ionicons name="shuffle" size={21} color={Signal.wave} />
-          </Tactile>
-          <Tactile style={styles.heroPlayAction} haptic="light" onPress={playOrPause} accessibilityRole="button" accessibilityLabel={activeIsPlaying && isPlaying ? 'Pause playlist' : activeIsPlaying ? 'Resume playlist' : 'Play playlist'}>
-            <Ionicons name={activeIsPlaying && isPlaying ? 'pause' : 'play'} size={19} color="#101010" />
-            <Text style={styles.heroPlayLabel}>{activeIsPlaying && isPlaying ? 'Pause' : activeIsPlaying ? 'Resume' : 'Play'}</Text>
-          </Tactile>
-          <Tactile style={styles.heroRoundAction} haptic="select" onPress={() => (navigation as any).navigate('AddToPlaylist', { playlistId })} accessibilityRole="button" accessibilityLabel="Add songs to playlist">
-            <Ionicons name="add" size={24} color="#fff" />
-          </Tactile>
+        <View style={styles.listBar}>
+          <TextButton label={sortLabel} icon="chevron-down" onPress={() => setSortOpen(true)} accessibilityLabel={`Sort playlist, ${sortLabel}`} />
+          {isEditMode ? <TextButton label="Done" tone="accent" onPress={() => setIsEditMode(false)} /> : <TextButton label="Add songs" icon="add" onPress={openAddSongs} />}
         </View>
       ) : null}
     </View>
   );
 
+  const renderEmpty = () => (loading ? (
+    <View>{[0, 1, 2, 3, 4].map(i => <RowPlaceholder key={i} />)}</View>
+  ) : loadError ? (
+    <EmptyState icon="cloud-offline-outline" title="Couldn?t load this playlist" body="Check your connection and try again." action={{ label: 'Try again', onPress: () => { loadData(); } }} />
+  ) : searchQuery ? (
+    <EmptyState icon="search" title="No songs match" body={`Nothing in this playlist matches “${searchQuery}”.`} />
+  ) : (
+    <EmptyState icon="musical-notes-outline" title="No songs yet" body="Add songs you saved or streamed." action={{ label: 'Add songs', icon: 'add', onPress: openAddSongs }} />
+  ));
+
+  const listProps = {
+    ref: flatListRef,
+    data: filteredSongs,
+    keyExtractor: (item: Song) => item.id,
+    onScroll: scrollHandler,
+    scrollEventThrottle: 16,
+    contentContainerStyle: { paddingBottom: bottom, paddingTop: topInset },
+    ListHeaderComponent: renderHeader(),
+    ListEmptyComponent: renderEmpty(),
+  };
+
   return (
-    <View style={styles.container}>
-      {applyThemeToOtherPages ? (
-        <Animated.View style={[StyleSheet.absoluteFill, animatedGradientStyle]} pointerEvents="none">
-          <AuroraHeader palette="library" colors={activeThemeColors} imageUri={activeImageUri} isSolid={isSolidBg} />
-        </Animated.View>
-      ) : (
-        /* Blurred cover behind the deck — expo-image cross-dissolves on source
-           change, so no hard cut when the focused track changes. */
-        <Animated.View
-          style={[StyleSheet.absoluteFill, animatedGradientStyle, { backgroundColor: '#000', height: 500 }]}
-          pointerEvents="none"
-        >
-          {headerImageUri ? (
-            <Image
-              source={{ uri: headerImageUri }}
-              style={[StyleSheet.absoluteFill, { opacity: 0.62 }]}
-              contentFit="cover"
-              blurRadius={90}
-              cachePolicy="memory-disk"
-              transition={520}
-            />
-          ) : null}
+    <AppScreen style={styles.container}>
 
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.35)', '#000'] as const}
-            style={StyleSheet.absoluteFill}
-            locations={[0.15, 0.55, 1]}
-          />
-        </Animated.View>
-      )}
-
-      {/* Sticky Header — clear at top (home-style), black only after scroll */}
-      <Animated.View style={[styles.stickyHeader, { height: 50 + insets.top, paddingTop: insets.top }, headerStyle]}>
-          {!isSearchActive && (
-              <Pressable
-                  style={styles.iconButton}
-                  hitSlop={12}
-                  onPress={() => safeGoBack(navigation)}
-              >
-                <Ionicons name="chevron-back" size={28} color="#fff" />
-              </Pressable>
-          )}
-          
-          {/* Title always visible over artwork: one line, and a long name scrolls
-              through slowly (rests a couple of seconds between loops). */}
-          {!isSearchActive ? (
-              <View style={styles.stickyHeaderTitleWrap}>
-                  <Marquee text={playlistName} style={styles.stickyHeaderTitle} active={isFocused} containerStyle={styles.stickyHeaderTitleBox} />
-              </View>
-          ) : (
-              <View style={{flex: 1}} />
-          )}
-
-          {isSearchActive ? (
-              <Animated.View style={[styles.searchPill, { flex: 1, marginRight: 8 }]}>
-                  <Ionicons name="search" size={20} color="#666" style={{marginLeft: 12}} />
-                  <TextInput
-                        style={styles.searchInput}
-                        placeholder="Find in playlist"
-                        placeholderTextColor="#666"
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                        autoFocus
-                  />
-                  <Pressable onPress={() => { setIsSearchActive(false); setSearchQuery(''); }} style={{padding: 8}}>
-                      <Ionicons name="close-circle" size={20} color="#666" />
-                  </Pressable>
-              </Animated.View>
-          ) : (
-             <Pressable 
-                style={[styles.iconButton, { marginRight: 8 }]} 
-                hitSlop={12}
-                onPress={() => setIsSearchActive(true)}
-             >
-                <Ionicons name="search" size={24} color="#fff" />
-             </Pressable>
-          )}
-          
-           <Pressable 
-              style={[styles.iconButton, { marginRight: 8 }]} 
-              hitSlop={12}
-              onPress={() => (navigation as any).navigate('AddToPlaylist', { playlistId })}
-           >
-              <Ionicons name="add" size={28} color="#fff" />
-           </Pressable>
-
-          <Pressable 
-             style={[styles.iconButton, isEditMode && styles.activeButton]} 
-             hitSlop={12}
-             onPress={() => setIsEditMode(!isEditMode)}
-          >
-            <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
-          </Pressable>
-      </Animated.View>
-
-      {/* Main List */}
+      {/* One list in both modes: a draggable one while editing (it keeps its rows), FlashList otherwise. */}
       {!isEditMode ? (
         <AnimatedFlashList
-            ref={flatListRef}
-            data={filteredSongs}
-            estimatedItemSize={76} // Exact height of PlaylistItem
-            activationDistance={20}
-            containerStyle={{ flex: 1 }}
-            itemContainerStyle={{ height: 76 }} // Enforce height on container
-            keyExtractor={(item: { id: any; }) => item.id}
-            renderItem={({ item, index }: { item: Song, index: number }) => renderItem({ item, getIndex: () => index, drag: undefined, isActive: false } as any)}
-            onScroll={scrollHandler}
-            scrollEventThrottle={1}
-            contentContainerStyle={{ paddingBottom: listPaddingBottom, paddingTop: 50 + insets.top }}
-            ListHeaderComponent={renderHeader()}
+          {...listProps}
+          renderItem={({ item, index }: { item: Song; index: number }) => renderItem({ item, getIndex: () => index, drag: () => undefined, isActive: false } as unknown as RenderItemParams<Song>)}
         />
       ) : (
-      <AnimatedDraggableFlatList
-        ref={flatListRef}
-        data={filteredSongs}
-        onDragEnd={handleDragEnd}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        onScroll={scrollHandler}
-        scrollEventThrottle={1} // Use 1 for maximum update frequency
-        contentContainerStyle={{ paddingBottom: listPaddingBottom, paddingTop: 50 + insets.top }} 
-        ListHeaderComponent={renderHeader()}
-      />
+        <AnimatedDraggableFlatList {...listProps} onDragEnd={handleDragEnd} renderItem={renderItem} />
       )}
 
-      
-      {isEditMode && (
-          <BlurView intensity={20} tint="dark" style={[styles.editModeToast, { top: 60 + insets.top }]}>
-              <Text style={styles.editModeText}>Editing playlist</Text>
-          </BlurView>
-      )}
+      {/* The header: clear at rest, a solid backing once the list passes under it. */}
+      <View style={[styles.header, { paddingTop: insets.top, height: topInset }]}>
+        <Animated.View style={[StyleSheet.absoluteFill, styles.headerBacking, headerBacking]} pointerEvents="none" />
+        {!isSearchActive ? (
+          <>
+            <IconButton icon="chevron-back" label="Back" variant="plain" onPress={() => safeGoBack(navigation)} />
+            <Animated.View style={[styles.headerTitle, headerTitle]}>
+              <Marquee text={playlistName} style={styles.headerTitleText} active={isFocused} containerStyle={styles.headerTitleBox} />
+            </Animated.View>
+            <IconButton icon="search" label="Find in playlist" variant="plain" onPress={() => setIsSearchActive(true)} />
+            <IconButton icon="ellipsis-horizontal" label="Playlist options" variant="plain" onPress={() => setActionsOpen(true)} />
+          </>
+        ) : (
+          <View style={styles.search}>
+            <Ionicons name="search" size={18} color={OnMedia.muted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Find in playlist"
+              placeholderTextColor={OnMedia.muted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoFocus
+              returnKeyType="search"
+            />
+            <TextButton label="Cancel" onPress={() => { setIsSearchActive(false); setSearchQuery(''); }} />
+          </View>
+        )}
+      </View>
 
-      <CustomMenu
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        options={menuOptions}
-        title="Edit cover art"
-        anchorPosition={menuPosition}
-      />
-
-      <CustomMenu
-        visible={sortMenuVisible}
-        onClose={() => setSortMenuVisible(false)}
-        options={[
-            { 
-               label: 'Custom order', 
-               icon: sortOption === 'custom' ? 'checkmark' : undefined, 
-               onPress: () => handleSortChange('custom') 
-            },
-            { 
-               label: `Alphabetical ${sortOption === 'title' ? (sortDirection === 'asc' ? '(A-Z)' : '(Z-A)') : ''}`, 
-               icon: sortOption === 'title' ? (sortDirection === 'asc' ? 'arrow-down' : 'arrow-up') : 'text',
-               onPress: () => handleSortChange('title') 
-            },
-            { 
-               label: `Recently added ${sortOption === 'date' ? (sortDirection === 'asc' ? '(Oldest)' : '(Newest)') : ''}`, 
-               icon: sortOption === 'date' ? (sortDirection === 'asc' ? 'arrow-up' : 'arrow-down') : 'time', 
-               onPress: () => handleSortChange('date') 
-            },
-            { 
-               label: `Artist ${sortOption === 'artist' ? (sortDirection === 'asc' ? '(A-Z)' : '(Z-A)') : ''}`, 
-               icon: sortOption === 'artist' ? (sortDirection === 'asc' ? 'arrow-down' : 'arrow-up') : 'person',
-               onPress: () => handleSortChange('artist') 
-            },
-        ]}
-        title="Sort playlist"
-        anchorPosition={sortMenuAnchor}
-      />
-
-      {/* Scroll To Top FAB */}
-      <Animated.View 
-        style={[
-            styles.fab,
-            // Clears the tab bar plus the classic mini player when it is showing —
-            // a flat 80 put this button entirely behind the bar.
-            { bottom: fabBottom },
-            fabStyle
-        ]}
-        pointerEvents="box-none" 
-      >
-         <Pressable 
-            style={styles.fabButton}
-            onPress={() => {
-                flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-            }}
-         >
-            <Ionicons name="arrow-up" size={24} color="#000" />
-         </Pressable>
+      {/* Back to the top, once you're well down the list. */}
+      <Animated.View style={[styles.fab, { bottom: bottom - Space.lg }, fabStyle]} pointerEvents="box-none">
+        <IconButton icon="arrow-up" label="Back to the top" size="lg" onPress={() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true })} />
       </Animated.View>
 
-      <ModernDeleteModal
-        visible={showDeleteConfirm}
-        title="Remove song"
-        message="Remove this song from the playlist?"
-        confirmText="Remove"
-        onConfirm={async () => {
-            if (songToDelete) {
-                if (songToDelete.startsWith('stream:') && playlistId !== LIKED_PLAYLIST_ID) {
-                    await removeOnlineFromPlaylist(playlistId, songToDelete);
-                } else if (songToDelete.startsWith('stream:')) {
-                    const { toggleLike } = (await import('../store/songsStore')).useSongsStore.getState();
-                    await toggleLike(songToDelete);
-                } else {
-                    await playlistQueries.removeSongFromPlaylist(playlistId, songToDelete);
-                }
-                loadData();
-                setShowDeleteConfirm(false);
-                setToast({ visible: true, message: 'Song removed from playlist', type: 'success' });
-            }
-        }}
-        onCancel={() => setShowDeleteConfirm(false)}
-      />
+      <Sheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title={playlistName}>
+        <SheetOption label="Add songs" icon="add" onPress={() => { setActionsOpen(false); openAddSongs(); }} />
+        {songs.length > 1 ? <SheetOption label="Edit order" icon="reorder-three-outline" onPress={() => { setActionsOpen(false); setIsEditMode(true); }} /> : null}
+        <SheetOption label="Cover from your photos" icon="image-outline" onPress={handlePickCover} />
+        {playlistCover ? <SheetOption label="Use the songs’ covers" icon="grid-outline" onPress={handleResetCover} /> : null}
+      </Sheet>
 
-      <Toast 
-        visible={toast?.visible || false} 
-        message={toast?.message || ''} 
-        type={toast?.type || 'info'} 
-        onDismiss={() => setToast(null)} 
-      />
-    </View>
+      <Sheet visible={sortOpen} onClose={() => setSortOpen(false)} title="Sort by">
+        {(Object.keys(SORT_LABELS) as Exclude<SortOption, 'recent'>[]).map(option => (
+          <SheetOption
+            key={option}
+            label={SORT_LABELS[option]}
+            hint={option === sortOption && option !== 'custom' ? (sortDirection === 'asc' ? 'Ascending · tap to reverse' : 'Descending · tap to reverse') : undefined}
+            selected={option === sortOption}
+            onPress={() => handleSortChange(option)}
+          />
+        ))}
+      </Sheet>
+
+
+
+      {songActions.element}
+
+      <Toast visible={toast?.visible || false} message={toast?.message || ''} type={toast?.type || 'info'} onDismiss={() => setToast(null)} action={toast?.action} duration={8000} />
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stickyHeader: {
+  container: { flex: 1, backgroundColor: Signal.bgDeep },
+  wash: { position: 'absolute', top: 0, left: 0, right: 0 },
+  // Keeps the cover's colours under white text.
+  washShade: { backgroundColor: 'rgba(0,0,0,0.35)' },
+  header: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    zIndex: 100,
+    gap: Space.xxs,
+    paddingHorizontal: Space.xs,
+    zIndex: 10,
   },
-  stickyHeaderTitleWrap: { flex: 1, marginHorizontal: 12, justifyContent: 'center' },
-  stickyHeaderTitleBox: { alignSelf: 'stretch' },
-  stickyHeaderTitle: {
-      fontSize: 18,
-      fontWeight: '700',
-      color: '#fff',
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    // Transparent like home brand actions — no black strip at rest.
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  activeButton: {
-      backgroundColor: Glass.fillPressed,
-  },
-  listHeader: {
-    alignItems: 'center',
-    marginBottom: 16,
-    width: '100%',
-    paddingHorizontal: 24,
-    paddingTop: 10,
-  },
-  coverContainer: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.38,
-    shadowRadius: 18,
-    elevation: 10,
-  },
-  coverArt: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 20,
-  },
-  coverShade: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 20,
-  },
-  editOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 28,
-  },
-  playingIndicator: {
-      position: 'absolute',
-      bottom: 8,
-      right: 8,
-      backgroundColor: Signal.wave,
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      justifyContent: 'center',
-      alignItems: 'center'
-  },
-  playlistHeroTitle: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginTop: 18,
-    paddingHorizontal: 12,
-  },
-  playlistMeta: {
-      color: 'rgba(255,255,255,0.6)',
-      fontSize: 13,
-      fontWeight: '500',
-  },
-  metaContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginTop: 8,
-      gap: 8,
-  },
-  sortButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: 'rgba(255,255,255,0.1)',
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 12,
-      gap: 4,
-  },
-  sortButtonText: {
-      fontSize: 12,
-      color: 'rgba(255,255,255,0.8)',
-      fontWeight: '500',
-  },
-  heroActions: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: 14,
-      justifyContent: 'center',
-      marginBottom: 6,
-      marginTop: 18,
-  },
-  heroRoundAction: {
-      alignItems: 'center',
-      backgroundColor: 'rgba(255,255,255,0.12)',
-      borderColor: 'rgba(255,255,255,0.16)',
-      borderRadius: 23,
-      borderWidth: 1,
-      height: 46,
-      justifyContent: 'center',
-      width: 46,
-  },
-  heroPlayAction: {
-      alignItems: 'center',
-      backgroundColor: Signal.wave,
-      borderRadius: 23,
-      flexDirection: 'row',
-      gap: 7,
-      height: 46,
-      justifyContent: 'center',
-      minWidth: 116,
-      paddingHorizontal: 18,
-  },
-  heroPlayLabel: {
-      color: '#101010',
-      fontSize: 15,
-      fontWeight: '800',
-  },
-  searchPill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: 'rgba(255,255,255,0.9)',
-      borderRadius: 20,
-      height: 40,
-  },
-  searchContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: 'rgba(255,255,255,0.1)',
-      marginHorizontal: 24,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      height: 40,
-      marginBottom: 20,
-      width: SCREEN_WIDTH - 48,
-  },
-  searchIcon: {
-      marginRight: 8
-  },
-  searchInput: {
-      flex: 1,
-      fontSize: 14,
-      color: '#000' 
-  },
-  controlsRow: {
+  headerBacking: { backgroundColor: Signal.bgDeep, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Glass.hairline },
+  headerTitle: { flex: 1, marginHorizontal: Space.xxs, justifyContent: 'center' },
+  headerTitleBox: { alignSelf: 'stretch' },
+  headerTitleText: { fontSize: TypeScale.row, fontWeight: '700', color: OnMedia.primary },
+  search: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 20,
+    gap: Space.xs,
+    height: 40,
+    paddingLeft: Space.sm,
+    paddingRight: Space.xs,
+    borderRadius: Radius.pill,
+    backgroundColor: Glass.fillLight,
   },
-  secondaryButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  searchInput: { flex: 1, color: OnMedia.primary, fontSize: TypeScale.body, paddingVertical: 0 },
+  hero: { alignItems: 'center', paddingHorizontal: GUTTER, paddingTop: Space.xs, paddingBottom: Space.sm, gap: Space.xxs },
+  cover: {
+    borderRadius: Radius.well,
+    backgroundColor: Signal.bgSubtle,
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 14,
+    marginBottom: Space.md,
   },
-  editModeToast: {
-      position: 'absolute',
-      alignSelf: 'center',
-      paddingHorizontal: 20,
-      paddingVertical: 8,
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.2)',
-      overflow: 'hidden',
-  },
-  editModeText: {
-      color: '#fff',
-      fontWeight: '600',
-      fontSize: 12,
-  },
-  swipeHintContainer: {
-      ...StyleSheet.absoluteFillObject,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 10,
-  },
-  timerRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: 2,
-      width: '100%',
-  },
-  timerText: {
-      fontSize: 11,
-      color: '#FFFFFF',
-      fontVariant: ['tabular-nums'],
-  },
-  skipText: {
-      position: 'absolute',
-      fontSize: 8,
-      fontWeight: 'bold',
-      color: '#FFF',
-      marginTop: 2,
-  },
-  fab: {
-      position: 'absolute',
-      right: 20,
-      zIndex: 999,
-  },
-  fabButton: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      backgroundColor: '#fff',
-      justifyContent: 'center',
-      alignItems: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.3,
-      shadowRadius: 4,
-      elevation: 6,
-  },
+  coverClip: { ...StyleSheet.absoluteFillObject, borderRadius: Radius.well, overflow: 'hidden' },
+  heroTitle: { marginBottom: 2 },
+  heroActions: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: Space.sm, marginTop: Space.sm },
+  playDisc: { width: 56, height: 56, borderRadius: 28 },
+  playButton: { minWidth: 132 },
+  listBar: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Space.md, paddingHorizontal: Space.xxs },
+  fab: { position: 'absolute', right: GUTTER },
 });
 
 export default PlaylistDetailScreen;

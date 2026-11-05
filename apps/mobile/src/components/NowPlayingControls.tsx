@@ -1,3 +1,5 @@
+import { usePlaybackStatus } from '../hooks/usePlaybackStatus';
+import { PlaybackButton } from '../ui/PlaybackButton';
 /**
  * Now Playing transport — Apple Music's layout.
  *
@@ -11,17 +13,17 @@
  * White on the cover's own colours, no chrome of our own: the backdrop
  * (NowPlayingBackground) carries the look.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet, Text, GestureResponderEvent } from 'react-native';
-import * as Haptics from '../utils/haptics';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { GestureResponderEvent, StyleSheet, Text, View } from 'react-native';
 import Animated, {
+  cancelAnimation,
   DerivedValue,
   Easing,
   runOnJS,
   SharedValue,
-  cancelAnimation,
   useAnimatedReaction,
   useAnimatedStyle,
   useDerivedValue,
@@ -31,28 +33,27 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AppleSlider from './player/AppleSlider';
-import NativeScrubber, { NativeVolumeSlider, nativeScrubberAvailable } from './player/NativeScrubber';
-import { shouldUseNativeScrubber, shouldUseNativeVolume } from './player/nativeScrubberProps';
-import NativePlayerFooter, { NATIVE_FOOTER_SLOP, nativePlayerFooterAvailable } from './player/NativePlayerFooter';
-import { footerSleepLabel, shouldUseNativeFooter, type FooterAction } from './player/nativeFooterProps';
-import NativeSongActions, { nativeSongActionsAvailable } from './player/NativeSongActions';
-import { likeLabelOf, shouldUseNativeSongActions, type SongAction } from './player/nativeSongActionsProps';
-import { TIME_ROW_STYLE, TIME_TEXT_STYLE } from './player/scrubberLayout';
-import { MorphIcon, NudgeIcon, Tactile } from './allegra/motion';
-import { SwapMarquee } from './allegra/Marquee';
-import Artwork from './allegra/Artwork';
-import { DOCK_GAP, DOCK_THUMB, LYRICS_MORPH_MS } from './player/lyricsMorph';
 import { PlayerType, Signal } from '../constants/allegraTheme';
 import { formatTimeSV, isSeeking } from '../playback/positionBus';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
-import { useSettingsStore } from '../store/settingsStore';
 import { lastSongDirection } from '../store/playerStore';
-import { LYRICS_TAP_WINDOW_MS, lyricsButtonTap, LyricsTapRun, NO_TAPS } from './player/lyricsButtonTaps';
+import { useSettingsStore } from '../store/settingsStore';
+import * as Haptics from '../utils/haptics';
+import Artwork from './allegra/Artwork';
+import { SwapMarquee } from './allegra/Marquee';
+import { MorphIcon, NudgeIcon, Tactile } from './allegra/motion';
 import { NativeSkip } from './NativeSkip';
-import { hasNativeTransportBar, NativeTransportBar } from './NativeTransportBar';
+import AppleSlider from './player/AppleSlider';
+import { LYRICS_TAP_WINDOW_MS, lyricsButtonTap, LyricsTapRun, NO_TAPS } from './player/lyricsButtonTaps';
+import { DOCK_GAP, DOCK_THUMB, LYRICS_MORPH_MS } from './player/lyricsMorph';
+import { footerSleepLabel, shouldUseNativeFooter, type FooterAction } from './player/nativeFooterProps';
+import NativePlayerFooter, { NATIVE_FOOTER_SLOP, nativePlayerFooterAvailable } from './player/NativePlayerFooter';
+import NativeScrubber, { nativeScrubberAvailable } from './player/NativeScrubber';
+import { shouldUseNativeScrubber } from './player/nativeScrubberProps';
+import NativeSongActions, { nativeSongActionsAvailable } from './player/NativeSongActions';
+import { likeLabelOf, shouldUseNativeSongActions, type SongAction } from './player/nativeSongActionsProps';
+import { TIME_ROW_STYLE, TIME_TEXT_STYLE } from './player/scrubberLayout';
 
 interface NowPlayingControlsProps {
   animatedStyle: React.ComponentProps<typeof Animated.View>['style'];
@@ -64,6 +65,7 @@ interface NowPlayingControlsProps {
   /** Liked, but a streamed song is still downloading into Liked songs. */
   isLikeSaving?: boolean;
   onTogglePlay: () => void;
+  onRetry?: () => void;
   onSkipForward: () => void;
   onSkipBackward: () => void;
   /** Skips go straight to the engine on Android's main thread (components/NativeSkip); the local player only. */
@@ -127,7 +129,6 @@ interface NowPlayingControlsProps {
 const ROWS_MOVE = { duration: 460, easing: Easing.bezier(0.32, 0.72, 0, 1) };
 
 const CONTENT_PAD = 28;
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const INK = '#ffffff';
 const INK_SOFT = 'rgba(255,255,255,0.62)';
@@ -168,47 +169,6 @@ const TimeLabels: React.FC<{ display: DerivedValue<number>; durationSV: SharedVa
 };
 
 /** The system media volume, kept in step with the hardware keys. */
-const VolumeRow: React.FC = () => {
-  const [available] = useState(() => NativeAudioPlayer.getVolume() !== null);
-  // Where the Kotlin view exists it reads and sets the stream itself (and follows the hardware keys): no bridge traffic.
-  const native = shouldUseNativeVolume(nativeScrubberAvailable(), available);
-  const focused = useIsFocused();
-  const volume = useSharedValue(NativeAudioPlayer.getVolume() ?? 0);
-  useEffect(() => {
-    if (!available || native) return;
-    const sub = NativeAudioPlayer.addListener('onVolumeChanged', (e: { volume?: number }) => {
-      if (typeof e?.volume === 'number') volume.value = e.volume;
-    });
-    return () => sub.remove();
-  }, [available, native, volume]);
-  const set = useCallback((v: number) => {
-    volume.value = v;
-    NativeAudioPlayer.setVolume(v);
-  }, [volume]);
-  if (!available) return null;
-  return (
-    <View style={styles.volumeRow}>
-      <Ionicons name="volume-low" size={18} color={INK_SOFT} />
-      {native
-        ? <NativeVolumeSlider live={focused} trackHeight={6} accessibilityLabel="Volume" style={styles.volumeSlider} />
-        : <AppleSlider progress={volume} onChange={set} onCommit={set} height={6} accessibilityLabel="Volume" style={styles.volumeSlider} />}
-      <Ionicons name="volume-high" size={20} color={INK_SOFT} />
-    </View>
-  );
-};
-
-/** Connect: the volume of the device that plays, sent when the finger lifts. */
-const RemoteVolumeRow: React.FC<{ level: SharedValue<number>; onCommit: (volume: number) => void }> = ({ level, onCommit }) => {
-  const follow = useCallback((v: number) => { level.value = v; }, [level]);
-  return (
-    <View style={styles.volumeRow}>
-      <Ionicons name="volume-low" size={18} color={INK_SOFT} />
-      <AppleSlider progress={level} onChange={follow} onCommit={onCommit} height={6} accessibilityLabel="Volume on the playing device" style={styles.volumeSlider} />
-      <Ionicons name="volume-high" size={20} color={INK_SOFT} />
-    </View>
-  );
-};
-
 /** The heart breathes while a streamed song saves into Liked songs. */
 const SavingPulse: React.FC<{ saving: boolean; children: React.ReactNode }> = ({ saving, children }) => {
   const reduce = useReducedMotion();
@@ -235,6 +195,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   isCurrentSongLiked,
   isLikeSaving = false,
   onTogglePlay,
+  onRetry,
   onSkipForward,
   onSkipBackward,
   onToggleLike,
@@ -316,17 +277,15 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
     return { transform: [{ translateY: p * lift }] };
   });
   const dropStyle = useAnimatedStyle(() => ({ transform: [{ translateY: volumeH.value * compactP.value }] }));
-  const volumeStyle = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, compactP.value * 1.6) }));
   const lowerStyle = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, (upNext ? upNext.value : 0) * 2.5) }));
   const shadeStyle = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, (upNext ? upNext.value : 0) * 2.5) }));
   // Long titles scroll only while this screen is the one in front.
   const focused = useIsFocused();
   // Read at render: when the title changes this is the way the skip went.
   const songDirection = lastSongDirection();
-  const hideVolume = useSettingsStore(s => s.appleMusicInspired && s.hidePlayerVolume);
-  useEffect(() => {
-    if (hideVolume) volumeH.value = 0;
-  }, [hideVolume, volumeH]);
+  const localPlaybackStatus = usePlaybackStatus();
+  const playbackStatus = remoteVolume ? (storePlaying ? 'playing' : 'paused') : localPlaybackStatus;
+
   const [backNudge, setBackNudge] = useState(0);
   const [forwardNudge, setForwardNudge] = useState(0);
 
@@ -511,20 +470,23 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
           {docked ? (
             <View style={styles.dockSlot}>
               <Animated.View style={[styles.dockThumb, thumbStyle]} pointerEvents={showLyrics ? 'auto' : 'none'}>
-                <Pressable onPress={() => { tick('light'); onToggleLyrics(); }} accessibilityRole="button" accessibilityLabel="Show the cover">
+                <Tactile onPress={() => { tick('light'); onToggleLyrics(); }} pressScale={0.96} accessibilityRole="button" accessibilityLabel="Show the cover">
                   <Artwork uri={coverImageUri} title={currentSongTitle ?? ''} artist={currentSongArtist} size={DOCK_THUMB} style={styles.dockArt} />
-                </Pressable>
+                </Tactile>
               </Animated.View>
             </View>
           ) : null}
-          <AnimatedPressable style={[styles.metaText, titleStyle]} onPress={onArtistPress} disabled={!onArtistPress} accessibilityRole="button">
-            <View style={styles.swapLine}>
-              <SwapMarquee style={styles.title} direction={songDirection} active={focused}>{currentSongTitle || 'Not playing'}</SwapMarquee>
-            </View>
-            <View style={styles.swapLineSmall}>
-              <SwapMarquee style={styles.artist} direction={songDirection} active={focused}>{currentSongArtist || 'Unknown artist'}</SwapMarquee>
-            </View>
-          </AnimatedPressable>
+          <Tactile wrapperStyle={styles.metaText} pressScale={0.98} onPress={onArtistPress} disabled={!onArtistPress} accessibilityRole="button">
+            {/* The dock shift lives on its own view: Tactile's press scale would otherwise replace its transform. */}
+            <Animated.View style={titleStyle}>
+              <View style={styles.swapLine}>
+                <SwapMarquee style={styles.title} direction={songDirection} active={focused}>{currentSongTitle || 'Not playing'}</SwapMarquee>
+              </View>
+              <View style={styles.swapLineSmall}>
+                <SwapMarquee style={styles.artist} direction={songDirection} active={focused}>{currentSongArtist || 'Unknown artist'}</SwapMarquee>
+              </View>
+            </Animated.View>
+          </Tactile>
 
           {nativeActions ? (
             <NativeSongActions
@@ -602,16 +564,6 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
         </Animated.View>
 
         <Animated.View style={styles.transport} onLayout={e => { transportEnd.value = e.nativeEvent.layout.y + e.nativeEvent.layout.height; }}>
-          {hasNativeTransportBar ? (
-            <NativeTransportBar
-              playing={storePlaying}
-              nativeSkip={nativeSkip}
-              onTogglePlay={onTogglePlay}
-              onSkipForward={onSkipForward}
-              onSkipBackward={onSkipBackward}
-              style={styles.nativeTransport}
-            />
-          ) : (
             <>
               <View style={styles.transportSlot}>
                 <NativeSkip direction={-1} enabled={nativeSkip} slop={12}>
@@ -621,9 +573,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
                 </NativeSkip>
               </View>
               <View style={styles.transportSlot}>
-                <Tactile onPress={() => { tick('medium'); onTogglePlay(); }} hitSlop={12} pressScale={0.86} accessibilityRole="button" accessibilityLabel={storePlaying ? 'Pause' : 'Play'} style={styles.transportBtn}>
-                  <MorphIcon on={storePlaying} onIcon="pause" offIcon="play" size={54} color={INK} offStyle={styles.playNudge} />
-                </Tactile>
+                <PlaybackButton status={playbackStatus} onPress={() => { if (!remoteVolume && playbackStatus === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
               </View>
               <View style={styles.transportSlot}>
                 <NativeSkip direction={1} enabled={nativeSkip} slop={12}>
@@ -633,20 +583,11 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
                 </NativeSkip>
               </View>
             </>
-          )}
         </Animated.View>
         </Animated.View>
 
         <Animated.View style={[lowerStyle, nativeFooter && styles.lowerNative]} pointerEvents={upNextOpen ? 'none' : 'box-none'}>
-        {hideVolume ? null : (
-          <Animated.View
-            style={volumeStyle}
-            pointerEvents={compact ? 'none' : 'auto'}
-            onLayout={e => { volumeH.value = e.nativeEvent.layout.height; syncDock(); }}
-          >
-            {remoteVolume ? <RemoteVolumeRow level={remoteVolume.level} onCommit={remoteVolume.onCommit} /> : <VolumeRow />}
-          </Animated.View>
-        )}
+
 
         {nativeFooter ? (
           <NativePlayerFooter
@@ -668,23 +609,24 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
           </Tactile>
 
           <View style={styles.segment}>
-            <Pressable
+            <Tactile
               onPress={onOutputPress ? () => { tick('light'); onOutputPress(); } : output}
-              style={({ pressed }) => [styles.segmentHalf, pressed && styles.segmentPressed]}
+              pressScale={0.92}
+              style={styles.segmentHalf}
               accessibilityRole="button"
               accessibilityLabel="Play on another device"
             >
               {onOutputPress
                 ? <MaterialCommunityIcons name="devices" size={21} color={outputActive ? Signal.wave : INK_SOFT} />
                 : <MaterialCommunityIcons name="speaker" size={22} color={INK_SOFT} />}
-            </Pressable>
+            </Tactile>
             {onOpenTimer ? (
               <>
                 <View style={styles.segmentDivider} />
-                <Pressable onPress={() => { tick('light'); onOpenTimer(); }} style={({ pressed }) => [styles.segmentHalf, pressed && styles.segmentPressed]} accessibilityRole="button" accessibilityLabel="Sleep timer">
+                <Tactile onPress={() => { tick('light'); onOpenTimer(); }} pressScale={0.92} style={styles.segmentHalf} accessibilityRole="button" accessibilityLabel="Sleep timer">
                   <MaterialCommunityIcons name="timer-outline" size={21} color={sleepLabel ? INK : INK_SOFT} />
                   {sleepLabel ? <Text style={styles.sleepText}>{sleepLabel}</Text> : null}
-                </Pressable>
+                </Tactile>
               </>
             ) : null}
           </View>
@@ -772,7 +714,6 @@ const styles = StyleSheet.create({
   footerBtnOn: { backgroundColor: 'rgba(255,255,255,0.9)' },
   segment: { flexDirection: 'row', alignItems: 'center', height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.14)', overflow: 'hidden' },
   segmentHalf: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minWidth: 64, height: 44, paddingHorizontal: 16, gap: 6 },
-  segmentPressed: { backgroundColor: 'rgba(255,255,255,0.12)' },
   segmentDivider: { width: StyleSheet.hairlineWidth, height: 22, backgroundColor: 'rgba(255,255,255,0.3)' },
   sleepText: { color: INK, fontSize: 13, fontWeight: '600' },
 });

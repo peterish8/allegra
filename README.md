@@ -4,6 +4,10 @@
 
 **Live:** [allegravibe.vercel.app](https://allegravibe.vercel.app)
 
+LuvLyrics frontend rules live in [the mobile design system](apps/mobile/DESIGN.md), with
+reusable primitives in `apps/mobile/src/ui`. Its [release ledger](.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md)
+separates source checks, GitHub APK/emulator gates and pending phone validation.
+
 ## What this is
 
 Allegra began as a fully mocked front-end: hardcoded songs, playback faked with a timer, accounts faked in `localStorage`. It is now a working product: live catalog, streaming audio with working seek, artwork, time-synced lyrics with graceful degradation, guest sessions, and persistent likes, recent plays and playlists. Signed-in web and Android clients also sync their libraries and recommendations; Connect can control or transfer playback between online devices on the same account.

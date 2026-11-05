@@ -10,6 +10,7 @@ import type { Story } from '@shared/blendStories';
 import type { BlendDetail, BlendMemberView } from '@shared/blendView';
 
 import { Glass, Radius, Signal, Space } from '../../constants/allegraTheme';
+import { Tactile, Text as UIText } from '../../ui';
 
 // The website's member tones in the same order (apps/web/src/lib/blendTones.ts), so a listener has
 // one colour on both. All six are bright: the initials on a disc are dark ink, and orbs glow.
@@ -61,7 +62,7 @@ const StoryCard: React.FC<{ story: Story; detail: BlendDetail }> = ({ story, det
     case 'glue':
       return (
         <View style={styles.card} accessible accessibilityLabel={`${text.eyebrow}. ${text.headline}. ${text.detail ?? ''}`}>
-          <Text style={styles.eyebrow}>{text.eyebrow}</Text>
+          <UIText variant="caption" tone="muted">{text.eyebrow}</UIText>
           <Text style={[styles.headline, story.kind === 'match' && styles.headlineBig]}>{text.headline}</Text>
           {text.detail ? <Text style={styles.detail}>{text.detail}</Text> : null}
         </View>
@@ -92,18 +93,18 @@ export const ConsentSheet: React.FC<{
   onCancel: () => void;
 }> = ({ visible, mode, inviterName, busy, error, onConfirm, onCancel }) => (
   <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-    <Pressable style={styles.scrim} onPress={onCancel} accessibilityLabel="Close" />
+    <Pressable style={styles.scrim} onPress={onCancel} accessibilityElementsHidden importantForAccessibility="no" />
     <View style={styles.sheet} accessibilityViewIsModal>
       <Text style={styles.sheetTitle} accessibilityRole="header">{BLEND_TEXT.consentTitle}</Text>
       {mode === 'join' && inviterName ? <Text style={styles.sheetLead}>{inviterName} wants to Blend with you.</Text> : null}
       <Text style={styles.sheetBody}>{BLEND_TEXT.consentBody}</Text>
       <View style={styles.actions}>
-        <Pressable style={[styles.primary, busy && styles.disabled]} disabled={busy} onPress={onConfirm} accessibilityRole="button" accessibilityState={{ busy, disabled: busy }}>
+        <Tactile style={[styles.primary, busy && styles.disabled]} disabled={busy} onPress={onConfirm} accessibilityRole="button" accessibilityState={{ busy, disabled: busy }}>
           <Text style={styles.primaryText}>{busy ? (mode === 'create' ? 'Making it…' : 'Joining…') : mode === 'create' ? 'Make the Blend' : 'Join the Blend'}</Text>
-        </Pressable>
-        <Pressable style={styles.secondary} onPress={onCancel} accessibilityRole="button">
+        </Tactile>
+        <Tactile style={styles.secondary} onPress={onCancel} accessibilityRole="button">
           <Text style={styles.secondaryText}>Not now</Text>
-        </Pressable>
+        </Tactile>
       </View>
       {error ? <Text style={styles.error} accessibilityRole="alert">{error}</Text> : null}
     </View>
@@ -118,6 +119,8 @@ export const blendStyles = StyleSheet.create({
   panelTitle: { color: Signal.ink, fontSize: 17, fontWeight: '700' },
   panelBody: { color: Signal.inkSoft, fontSize: 14, lineHeight: 20 },
   primary: { alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: Space.md, justifyContent: 'center', borderRadius: Radius.pill, backgroundColor: Signal.wave },
+  /** A Tactile pill sized to its label: the touch area is the pill, not the panel's full width. */
+  selfStart: { alignSelf: 'flex-start' },
   primaryText: { color: Signal.waveInk, fontSize: 15, fontWeight: '700' },
   secondary: { alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: Space.md, justifyContent: 'center', borderRadius: Radius.pill, backgroundColor: Glass.fillLight },
   secondaryText: { color: Signal.ink, fontSize: 15, fontWeight: '600' },
@@ -134,7 +137,6 @@ const styles = StyleSheet.create({
   discs: { flexDirection: 'row', alignItems: 'center' },
   cards: { gap: Space.sm, paddingHorizontal: Space.md, paddingVertical: Space.xs },
   card: { width: 240, minHeight: 180, padding: Space.md, borderRadius: Radius.panel, backgroundColor: Glass.fill, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline, gap: Space.xs },
-  eyebrow: { color: Signal.inkMuted, fontSize: 11, fontWeight: '600' },
   headline: { color: Signal.ink, fontSize: 18, fontWeight: '700', lineHeight: 24 },
   headlineBig: { fontSize: 44, lineHeight: 50, fontWeight: '800' },
   detail: { color: Signal.inkSoft, fontSize: 13, lineHeight: 18 },

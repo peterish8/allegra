@@ -1,503 +1,121 @@
-/**
- * Library — the songs on this phone, in the room lit by what's playing.
- *
- *   Deck       your recent songs as a coverflow of glass cards: drag along the
- *              row, tap the middle one to play it (components/library/GlassDeck),
- *              with a glass pill under it to shuffle, step and play / pause —
- *              and a frosted play bar that stays at the top once you scroll
- *   Artists    round covers sized by how many of their songs you keep; tap to
- *              see only theirs (ArtistOrbit)
- *   Downloads  songs still arriving
- *   Songs      filter, sort, and an A–Z rail to jump through a long list
- *
- * Long-press any song for cover / version / info / lyrics / share / hide /
- * delete. Blends, Import, the download queue and Playlists are the four header icons.
- */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LayoutChangeEvent, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { FlashList, type FlashListProps, type FlashListRef } from '@shopify/flash-list';
-import { Ionicons } from '@expo/vector-icons';
-import Animated, { Extrapolation, interpolate, runOnJS, useAnimatedReaction, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from '../utils/haptics';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { CompositeNavigationProp } from '@react-navigation/native';
-import { LibraryStackParamList, RootStackParamList } from '../types/navigation';
-import { registerLibraryScrollToTop } from '../navigation/libraryRoot';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BackHandler, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppScreen } from '../components/AppScreen';
 import { DownloadQueueModal } from '../components/DownloadQueueModal';
 import { useSongActions } from '../components/library/useSongActions';
-import GlassDeck from '../components/library/GlassDeck';
-import ArtistOrbit from '../components/library/ArtistOrbit';
-import AlphabetRail from '../components/library/AlphabetRail';
-import { groupArtists, keepDeckOrder, leadArtist, letterIndex, pickDeck } from '../components/library/libraryShape';
-import { PlayingAura } from '../components/allegra/DynamicAura';
-import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
-import { RiseIn, Tactile } from '../components/allegra/motion';
-import { PrimaryButton, SectionHeading } from '../components/allegra/home';
-import { Glass, Radius, Signal, Space } from '../constants/allegraTheme';
-import { TrackRow } from '../components/stream/StreamItems';
-import { useSongsStore } from '../store/songsStore';
+import { registerLibraryScrollToTop } from '../navigation/libraryRoot';
+import { playList } from '../services/sync/onlineSongs';
 import { usePlayerStore } from '../store/playerStore';
-import { useDownloadQueueStore } from '../store/downloadQueueStore';
-import { useDownloadItem, useQueueShape } from '../store/downloadQueueSelectors';
-import { useBottomClearance } from '../hooks/useBottomClearance';
-import { Song } from '../types/song';
-import { shuffled } from '../utils/shuffle';
-import { countOf } from '../utils/formatters';
-import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
-import { LIBRARY_TOUR, libraryScene, librarySleeves } from '../components/allegra/infoTours';
+import { useSongsStore } from '../store/songsStore';
+import { LibraryStackParamList, RootStackParamList, TabParamList } from '../types/navigation';
+import type { Song } from '../types/song';
+import { CollectionCard, Control, EmptyState, IconButton, ListRow, PageHeader, Radius, Sheet, SheetOption, Signal, SongRow, Space, Surface, Tactile, Text, TextButton, Typography, useBottomClearance } from '../ui';
+import PlaylistsScreen from './PlaylistsScreen';
 
-const LIBRARY_QUEUE_ID = 'library';
-const DECK_MAX = 8;
+type Nav = NativeStackNavigationProp<LibraryStackParamList & RootStackParamList & TabParamList>;
+type Tab = 'Songs' | 'Playlists' | 'Artists' | 'Albums';
+type Sort = 'recent' | 'title' | 'artist';
+const TABS: readonly Tab[] = ['Songs', 'Playlists', 'Artists', 'Albums'];
+const LABELS: Record<Sort, string> = { recent: 'Recently added', title: 'Title A–Z', artist: 'Artist' };
+const SORT_KEY = 'v6-library-sort';
 
-type Nav = CompositeNavigationProp<NativeStackNavigationProp<LibraryStackParamList>, NativeStackNavigationProp<RootStackParamList>>;
-
-type SortMode = 'recent' | 'title' | 'artist';
-
-const sorters: Record<SortMode, (a: Song, b: Song) => number> = {
-  recent: (a, b) => Date.parse(b.dateCreated) - Date.parse(a.dateCreated),
-  title: (a, b) => a.title.localeCompare(b.title),
-  artist: (a, b) => (a.artist ?? '').localeCompare(b.artist ?? ''),
-};
-
-// The FlashList type shim (apps/mobile/CLAUDE.md): Reanimated's wrapper drops FlashList's generic props.
-const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as unknown as React.FC<FlashListProps<Song> & { ref?: React.Ref<FlashListRef<Song>> }>;
-const keyOf = (song: Song) => song.id;
-
-/** A song still arriving. It reads its own queue item, so its progress ticks re-render this row alone. */
-const ActiveDownloadRow: React.FC<{ id: string; onRetry: (id: string) => void }> = ({ id, onRetry }) => {
-  const item = useDownloadItem(id);
-  if (!item) return null;
-  const failed = item.status === 'failed';
-  return (
-    <TrackRow
-      title={item.song.title}
-      artist={item.song.artist}
-      artwork={item.song.highResArt}
-      meta={failed ? 'Failed' : item.stageStatus || item.status}
-      progress={failed ? undefined : item.progress}
-      onPress={() => {}}
-      trailingIcon={failed ? 'refresh' : undefined}
-      trailingLabel="Retry download"
-      onTrailingPress={failed ? () => onRetry(item.id) : undefined}
-    />
-  );
-};
-
-/**
- * One song row. Its handlers are built from stable callbacks and the row's index, so a parent render (the scroll
- * crossing the deck, a download finishing) leaves every row alone but the ones whose song or highlight changed.
- */
-const LibraryRow: React.FC<{
-  song: Song;
-  index: number;
-  isCurrent: boolean;
-  besideRail: boolean;
-  onPlay: (index: number) => void;
-  onMenu: (song: Song) => void;
-}> = React.memo(({ song, index, isCurrent, besideRail, onPlay, onMenu }) => {
-  const press = useCallback(() => onPlay(index), [onPlay, index]);
-  const longPress = useCallback(() => onMenu(song), [onMenu, song]);
-  return (
-    <View style={besideRail ? styles.rowBesideRail : undefined}>
-      <TrackRow
-        title={song.title}
-        artist={song.artist}
-        artwork={song.coverImageUri}
-        duration={song.duration}
-        meta={song.lyrics?.length ? 'Lyrics' : undefined}
-        isCurrent={isCurrent}
-        onPress={press}
-        onLongPress={longPress}
-      />
-    </View>
-  );
-});
-
-/** Play and pause re-render only the deck, not the page and its list. */
-const PlayingGlassDeck: React.FC<Omit<React.ComponentProps<typeof GlassDeck>, 'isPlaying'>> = props => {
-  const isPlaying = usePlayerStore(s => s.isPlaying);
-  return <GlassDeck {...props} isPlaying={isPlaying} />;
-};
-
-const LibraryScreen: React.FC = () => {
-  const { width: screenW, height: screenH } = useWindowDimensions();
-  // The middle glass card's width; its neighbours peek out either side.
-  const deckSize = Math.round(Math.min(screenW * 0.5, 232));
-  const insets = useSafeAreaInsets();
-  const bottomClearance = useBottomClearance(32);
+export default function LibraryScreen() {
   const navigation = useNavigation<Nav>();
-  const fetchSongs = useSongsStore(s => s.fetchSongs);
-  const actions = useSongActions();
-  const [queueOpen, setQueueOpen] = useState(false);
+  const { width, fontScale } = useWindowDimensions();
+  const columns = fontScale >= 1.6 ? 1 : 2;
+  const cardSize = (width - Control.gutter * 2 - Space.sm * (columns - 1)) / columns;
+  const insets = useSafeAreaInsets();
+  const bottom = useBottomClearance();
   const songs = useSongsStore(s => s.songs);
-  // The queue's shape, not the queue: this page stays mounted, and progress ticks
-  // (four a second per download) must not re-render its lists. Each downloading
-  // row reads its own item.
-  const queueShape = useQueueShape();
-  const retryItem = useDownloadQueueStore(s => s.retryItem);
-  const clearCompleted = useDownloadQueueStore(s => s.clearCompleted);
-  const currentSongId = usePlayerStore(s => s.currentSongId);
-  const currentCover = usePlayerStore(s => s.currentSong?.coverImageUri);
-  const isFocused = useIsFocused();
-  const [sort, setSort] = useState<SortMode>('recent');
-  const [filter, setFilter] = useState('');
-  const [artist, setArtist] = useState<string | null>(null);
-
-  const visible = useMemo(() => songs.filter(s => !s.isHidden), [songs]);
-  const artists = useMemo(() => groupArtists(visible), [visible]);
-
-  const list = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    // One pass for both filters; the sort works on the (usually much shorter) result.
-    return visible
-      .filter(s => (!artist || leadArtist(s.artist) === artist)
-        && (!needle || s.title.toLowerCase().includes(needle) || (s.artist ?? '').toLowerCase().includes(needle)))
-      .sort(sorters[sort]);
-  }, [visible, sort, filter, artist]);
-
-  // The deck: what you played last, else what arrived last — in the order it already had. Playing a card stamps it
-  // as played, which would jump it to the front and slide every card along; it stays where it was instead.
-  const deckOrder = useRef<string[]>([]);
-  const deck = useMemo(() => {
-    const next = keepDeckOrder(deckOrder.current, pickDeck(visible, DECK_MAX));
-    deckOrder.current = next.map(s => s.id);
-    return next;
-  }, [visible]);
-
-  // The room takes the colour of what's playing, else of the front of the deck.
-  const palette = useArtworkPalette(currentCover ?? deck[0]?.coverImageUri);
-  const { activeIds, doneCount } = useMemo(() => {
-    const queue = useDownloadQueueStore.getState().queue;
-    const inFlight = queue.filter(q => q.status !== 'completed');
-    return { activeIds: inFlight.map(q => q.id), doneCount: queue.length - inFlight.length };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queueShape]);
-
-  // Songs can change elsewhere (a download lands, lyrics arrive): refresh on focus.
-  useEffect(() => navigation.addListener('focus', () => { fetchSongs(); }), [navigation, fetchSongs]);
-
-  const playList = useCallback((items: Song[], index: number, shuffle = false) => {
-    if (items.length === 0) return;
-    Haptics.selectionAsync().catch(() => {});
-    usePlayerStore.getState().setPlaylistQueue(LIBRARY_QUEUE_ID, shuffle ? shuffled(items) : items, shuffle ? 0 : index);
-  }, []);
-  const playAll = useCallback((shuffle = false) => playList(list, 0, shuffle), [list, playList]);
-  // Rows play from the list as it is when tapped, through callbacks that never change.
-  const listNow = useRef(list);
-  listNow.current = list;
-  const playAt = useCallback((index: number) => playList(listNow.current, index), [playList]);
-  const actionsNow = useRef(actions);
-  actionsNow.current = actions;
-  const openMenu = useCallback((song: Song) => actionsNow.current.open(song), []);
-  const togglePlayback = useCallback(() => {
-    usePlayerStore.getState().requestPlayback(!usePlayerStore.getState().isPlaying);
-  }, []);
-  const playFromDeck = useCallback((song: Song) => {
-    const index = deck.findIndex(s => s.id === song.id);
-    playList(deck, Math.max(0, index));
-  }, [deck, playList]);
-
-  const totalMinutes = Math.round(list.reduce((sum, s) => sum + (s.duration || 0), 0) / 60);
-  const lengthText = totalMinutes >= 90 ? `${Math.round(totalMinutes / 60)} h` : `${totalMinutes} min`;
-
-  // ── Scroll: the sticky play bar and the A–Z rail ────────────────────────
+  const fetchSongs = useSongsStore(s => s.fetchSongs);
+  const current = usePlayerStore(s => s.currentSongId);
+  const actions = useSongActions();
+  const [tab, setTab] = useState<Tab>('Songs');
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<Sort>('recent');
+  const [sortOpen, setSortOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [downloads, setDownloads] = useState(false);
+  const [collection, setCollection] = useState<{ type: 'Artists' | 'Albums'; name: string } | null>(null);
   const listRef = useRef<FlashListRef<Song>>(null);
-  // A tap on the Library tab while this is already in front scrolls it to the top (navigation/TabNavigator).
   useEffect(() => registerLibraryScrollToTop(() => listRef.current?.scrollToOffset({ offset: 0, animated: true })), []);
-  const [heroBottom, setHeroBottom] = useState(420);
-  const scrollY = useSharedValue(0);
-  const [inList, setInList] = useState(false);
-  const onScroll = useAnimatedScrollHandler(e => { scrollY.value = e.contentOffset.y; });
-  // Past the deck: the bar and the A–Z rail come in (JS hears only the crossing).
-  useAnimatedReaction(
-    () => scrollY.value > heroBottom,
-    (past, before) => { if (past !== before) runOnJS(setInList)(past); },
-    [heroBottom],
-  );
-  const stickyStyle = useAnimatedStyle(() => {
-    const t = interpolate(scrollY.value, [heroBottom - 80, heroBottom], [0, 1], Extrapolation.CLAMP);
-    return { opacity: t, transform: [{ translateY: (1 - t) * -12 }] };
-  });
-
-  const railLetters = useMemo(() => {
-    if (sort === 'recent' || list.length < 30) return [];
-    return letterIndex(list, s => (sort === 'title' ? s.title : leadArtist(s.artist) || s.artist));
-  }, [list, sort]);
-  const jumpTo = useCallback((index: number) => {
-    listRef.current?.scrollToIndex({ index, animated: false, viewOffset: insets.top + 72 }).catch(() => undefined);
-  }, [insets.top]);
-
-  // Four equal glass circles, top right: Blends, Import, Downloads, Playlists. The words live in the labels.
-  const headerButtons = useMemo(() => (
-    <View style={styles.topActions}>
-      <Tactile onPress={() => navigation.navigate('Blends')} hitSlop={5} pressScale={0.9} haptic="select" accessibilityRole="button" accessibilityLabel="Blends" style={styles.iconButton}>
-        <Ionicons name="people-outline" size={20} color={Signal.ink} />
-      </Tactile>
-      <Tactile onPress={() => navigation.navigate('Import')} hitSlop={5} pressScale={0.9} haptic="select" accessibilityRole="button" accessibilityLabel="Import from Spotify" style={styles.iconButton}>
-        <Ionicons name="cloud-download-outline" size={20} color={Signal.ink} />
-      </Tactile>
-      <Tactile onPress={() => setQueueOpen(true)} hitSlop={5} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Download queue" style={styles.iconButton}>
-        <Ionicons name="download-outline" size={20} color={Signal.ink} />
-        {activeIds.length > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{activeIds.length}</Text></View> : null}
-      </Tactile>
-      <Tactile onPress={() => navigation.navigate('Playlists')} hitSlop={5} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Playlists" style={styles.iconButton}>
-        <Ionicons name="albums-outline" size={20} color={Signal.ink} />
-      </Tactile>
-    </View>
-  ), [navigation, activeIds.length]);
-
-  // Built again only when what it shows changes: the list hands the same element back on every other render.
-  const header = useMemo(() => (
-    <View style={{ paddingTop: insets.top + Space.sm }}>
-      <View style={styles.topBar}>
-        <InfoTitleRow><Text style={styles.title} accessibilityRole="header" numberOfLines={1}>Library</Text><InfoTour label="About your library" steps={LIBRARY_TOUR} scene={libraryScene} persist={librarySleeves} /></InfoTitleRow>
-        {headerButtons}
-      </View>
-
-      {visible.length > 0 ? (
-        <RiseIn style={styles.hero}>
-          <View onLayout={(e: LayoutChangeEvent) => setHeroBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
-            <PlayingGlassDeck
-              songs={deck}
-              size={deckSize}
-              currentId={currentSongId}
-              onPlay={playFromDeck}
-              onTogglePlay={togglePlayback}
-              onShuffle={() => playAll(true)}
-            />
-            <Text style={styles.meta}>
-              {countOf(visible.length, 'song')} · plays offline, lyrics included
-            </Text>
-          </View>
-        </RiseIn>
-      ) : null}
-
-      {artists.length > 1 ? (
-        <>
-          <SectionHeading title="Your artists" subtitle={artist ? 'Tap again to see everyone' : undefined} />
-          <ArtistOrbit artists={artists} selected={artist} onSelect={setArtist} />
-        </>
-      ) : null}
-
-      {activeIds.length > 0 ? (
-        <>
-          <SectionHeading
-            title="Downloading"
-            subtitle={`${activeIds.length} in progress`}
-            action={doneCount > 0 ? 'Clear done' : undefined}
-            onAction={doneCount > 0 ? clearCompleted : undefined}
-          />
-          {activeIds.map(id => <ActiveDownloadRow key={id} id={id} onRetry={retryItem} />)}
-        </>
-      ) : null}
-
-      {visible.length > 0 ? (
-        <>
-          <SectionHeading
-            title={artist ?? 'Songs'}
-            subtitle={`${list.length} ${list.length === 1 ? 'song' : 'songs'}${totalMinutes > 0 ? ` · ${lengthText}` : ''}`}
-            action={artist ? 'Play' : undefined}
-            onAction={artist ? () => playAll(false) : undefined}
-          />
-          <View style={styles.filterRow}>
-            <View style={styles.filterField}>
-              <Ionicons name="search" size={16} color={Signal.inkMuted} />
-              <TextInput
-                value={filter}
-                onChangeText={setFilter}
-                placeholder="Filter your songs"
-                placeholderTextColor={Signal.inkFaint}
-                style={styles.filterInput}
-                autoCorrect={false}
-                selectionColor={Signal.wave}
-                accessibilityLabel="Filter your songs"
-              />
-              {filter ? (
-                <Pressable onPress={() => setFilter('')} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear filter">
-                  <Ionicons name="close-circle" size={16} color={Signal.inkMuted} />
-                </Pressable>
-              ) : null}
-            </View>
-          </View>
-          <View style={styles.chips}>
-            {artist ? (
-              <Pressable onPress={() => setArtist(null)} accessibilityRole="button" accessibilityLabel={`Show everyone, not only ${artist}`} style={[styles.chip, styles.chipActive, styles.chipArtist]}>
-                <Text style={[styles.chipText, styles.chipTextActive]} numberOfLines={1}>{artist}</Text>
-                <Ionicons name="close" size={14} color={Signal.waveInk} />
-              </Pressable>
-            ) : null}
-            {(['recent', 'title', 'artist'] as SortMode[]).map(mode => (
-              <Pressable
-                key={mode}
-                onPress={() => { Haptics.selectionAsync().catch(() => {}); setSort(mode); }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: sort === mode }}
-                style={[styles.chip, sort === mode && !artist && styles.chipActive, sort === mode && artist && styles.chipOn]}
-              >
-                <Text style={[styles.chipText, sort === mode && !artist && styles.chipTextActive]}>
-                  {mode === 'recent' ? 'Recently added' : mode === 'title' ? 'A–Z' : 'By artist'}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </>
-      ) : null}
-    </View>
-  ), [
-    insets.top, headerButtons, visible.length, deck, deckSize, currentSongId, playFromDeck, togglePlayback, playAll,
-    artists, artist, activeIds, doneCount, clearCompleted, retryItem, list.length, totalMinutes, lengthText, filter, sort,
-  ]);
-
-  const besideRail = railLetters.length > 0;
-  const renderItem = useCallback(({ item, index }: { item: Song; index: number }) => (
-    <LibraryRow song={item} index={index} isCurrent={currentSongId === item.id} besideRail={besideRail} onPlay={playAt} onMenu={openMenu} />
-  ), [currentSongId, besideRail, playAt, openMenu]);
-
+  useFocusEffect(useCallback(() => { fetchSongs(); }, [fetchSongs]));
+  useEffect(() => { AsyncStorage.getItem(SORT_KEY).then(value => { if (value === 'recent' || value === 'title' || value === 'artist') setSort(value); }).catch(() => undefined); }, []);
+  useFocusEffect(useCallback(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (searching) { setSearching(false); setQuery(''); return true; }
+      if (collection) { setCollection(null); return true; }
+      return false;
+    });
+    return () => sub.remove();
+  }, [searching, collection]));
+  const visible = useMemo(() => songs.filter(song => !song.isHidden), [songs]);
+  const list = useMemo(() => visible.filter(song => (!collection || (collection.type === 'Artists' ? song.artist : song.album) === collection.name)
+    && (!query || `${song.title} ${song.artist ?? ''}`.toLowerCase().includes(query.toLowerCase())))
+    .sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title) : sort === 'artist' ? (a.artist ?? '').localeCompare(b.artist ?? '') : Date.parse(b.dateCreated) - Date.parse(a.dateCreated)), [visible, collection, query, sort]);
+  const groups = useMemo(() => {
+    const map = new Map<string, Song[]>();
+    for (const song of visible) {
+      const key = tab === 'Artists' ? song.artist : song.album;
+      if (!key || (query && !key.toLowerCase().includes(query.toLowerCase()))) continue;
+      const group = map.get(key) ?? []; group.push(song); map.set(key, group);
+    }
+    return Array.from(map, ([name, items]) => ({ name, items })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [tab, visible, query]);
+  const openPhone = () => navigation.navigate('Settings', { action: 'import-phone' });
+  const selectTab = (next: Tab) => { setTab(next); setQuery(''); setSearching(false); setCollection(null); };
+  const showSongs = tab === 'Songs' || collection !== null;
+  const changeSort = (value: Sort) => { setSort(value); setSortOpen(false); AsyncStorage.setItem(SORT_KEY, value).catch(() => undefined); };
   return (
-    <View style={styles.screen}>
-      <PlayingAura palette={palette} active={isFocused} dim={0.2} />
-      <AnimatedFlashList
-        ref={listRef}
-        data={list}
-        keyExtractor={keyOf}
-        ListHeaderComponent={header}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        renderItem={renderItem}
-        ListEmptyComponent={
-          <View style={styles.emptyCard}>
-            <Ionicons name={filter || artist ? 'search' : 'cloud-download-outline'} size={28} color={Signal.inkMuted} />
-            <Text style={styles.emptyTitle}>{filter || artist ? 'No matches' : 'No songs yet'}</Text>
-            <Text style={styles.emptyBody}>
-              {filter || artist
-                ? 'Try another title or artist.'
-                : 'Save any song from Stream or Luvs and it plays offline from here, lyrics included.'}
-            </Text>
-            {!filter && !artist ? (
-              <PrimaryButton icon="radio-outline" label="Find songs on Stream" onPress={() => navigation.navigate('Stream' as never)} />
-            ) : null}
-          </View>
-        }
-        contentContainerStyle={{ paddingBottom: bottomClearance }}
-      />
-
-      {/* Keeps the status bar legible over scrolled rows. */}
-      <Animated.View pointerEvents="none" style={[styles.scrim, { height: insets.top + 70 }, stickyStyle]}>
-        <LinearGradient colors={['rgba(8, 9, 12, 0.94)', 'rgba(8, 9, 12, 0.7)', 'rgba(8, 9, 12, 0)']} style={StyleSheet.absoluteFill} />
-      </Animated.View>
-      {/* Stays at the top once the deck scrolls away: play and shuffle are always one tap. */}
-      <Animated.View style={[styles.sticky, { paddingTop: insets.top + 6 }, stickyStyle]} pointerEvents={inList ? 'box-none' : 'none'}>
-        <View style={styles.stickyBar}>
-          <Text style={styles.stickyTitle} numberOfLines={1}>{artist ?? 'Library'}</Text>
-          <Tactile onPress={() => playAll(true)} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Shuffle" style={styles.stickyGlass}>
-            <Ionicons name="shuffle" size={18} color={Signal.ink} />
-          </Tactile>
-          <Tactile onPress={() => playAll(false)} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Play all" style={styles.stickyPlay}>
-            <Ionicons name="play" size={18} color={Signal.waveInk} />
-          </Tactile>
-        </View>
-      </Animated.View>
-
-      {inList && railLetters.length > 0 ? (
-        <AlphabetRail
-          letters={railLetters}
-          onPick={jumpTo}
-          style={[styles.rail, { top: insets.top + 84, maxHeight: screenH - insets.top - 84 - bottomClearance }]}
-        />
-      ) : null}
-
+    <AppScreen style={{ paddingTop: insets.top }}>
+      <PageHeader title={collection?.name ?? 'Library'} leading={collection ? <IconButton icon="arrow-back" label="Back to Library" onPress={() => setCollection(null)} /> : undefined}
+        actions={<><IconButton icon="download-outline" label="Downloads" onPress={() => setDownloads(true)} /><IconButton icon="ellipsis-vertical" label="Library options" onPress={() => setMenuOpen(true)} /></>} />
+      {searching ? <View style={styles.search}><IconButton icon="arrow-back" label="Close library search" onPress={() => { setSearching(false); setQuery(''); }} />
+        <TextInput autoFocus value={query} onChangeText={setQuery} style={styles.input} placeholder={`Search ${tab.toLowerCase()}`} placeholderTextColor={Signal.inkMuted} accessibilityLabel={`Search in ${tab}`} />
+        <IconButton icon="close" label="Clear search" onPress={() => setQuery('')} /></View>
+        : <View style={styles.tabs}><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
+          {TABS.map(value => <Tactile key={value} onPress={() => selectTab(value)} haptic="select" accessibilityRole="tab" accessibilityState={{ selected: tab === value }} style={[styles.tab, tab === value && styles.selected]}>
+            <Text tone={tab === value ? 'primary' : 'secondary'} style={tab === value && styles.selectedText}>{value}</Text></Tactile>)}
+        </ScrollView><IconButton icon="search" label={`Search in ${tab}`} onPress={() => setSearching(true)} /></View>}
+      {showSongs ? <><View style={styles.tools}><TextButton label={LABELS[sort]} icon="chevron-down" onPress={() => setSortOpen(true)} /><Text variant="meta" tone="secondary">{list.length} songs{searching ? ' · Songs only' : ''}</Text></View>
+        <FlashList ref={listRef} data={list} keyExtractor={song => song.id} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: bottom }}
+          renderItem={({ item, index }) => <SongRow title={item.title} artist={item.artist} artwork={item.coverImageUri} downloaded={!!item.audioUri && !item.audioUri.startsWith('http')} playing={item.id === current}
+            onPress={() => { playList('library', list, index); }} onActions={() => actions.open(item)} />}
+          ListEmptyComponent={<View style={styles.empty}>{query ? <EmptyState icon="search" title="No matches" body="Try another title or artist." />
+            : <><EmptyState icon="musical-notes-outline" title="Your next favorite starts here" body="Save songs from Stream, or add music files from this phone." action={{ label: 'Find music on Stream', onPress: () => navigation.navigate('Stream' as never) }} />
+              <TextButton label="Add songs from this phone" onPress={openPhone} /></>}</View>} />
+      </> : tab === 'Playlists' ? <PlaylistsScreen embedded query={query} /> : <ScrollView contentContainerStyle={{ paddingBottom: bottom }}>
+        {tab === 'Albums' ? <View style={styles.albumGrid}>{groups.map(({ name, items }) => <CollectionCard key={name} title={name} meta={`${items[0].artist ?? 'Unknown artist'} ? ${items.length} songs`} uri={items[0].coverImageUri} size={cardSize} onPress={() => setCollection({ type: 'Albums', name })} />)}</View> : groups.map(({ name, items }) => <ListRow key={name} title={name} subtitle={`${items.length} songs`} artwork={{ uri: items[0].coverImageUri, title: name, round: tab === 'Artists' }} chevron
+          onPress={() => setCollection({ type: tab as 'Artists' | 'Albums', name })} />)}
+        {groups.length === 0 ? <EmptyState icon={tab === 'Artists' ? 'person-outline' : 'albums-outline'} title={`No ${tab.toLowerCase()}${query ? ' found' : ' yet'}`} body="Songs saved on this phone appear here." /> : null}
+      </ScrollView>}
+      <Sheet visible={sortOpen} onClose={() => setSortOpen(false)} title="Sort songs by">{(Object.keys(LABELS) as Sort[]).map(value => <SheetOption key={value} label={LABELS[value]} selected={sort === value} onPress={() => changeSort(value)} />)}<Text variant="meta" tone="secondary">Kept for next time.</Text></Sheet>
+      <Sheet visible={menuOpen} onClose={() => setMenuOpen(false)} title="Library">
+        <SheetOption icon="cloud-download-outline" label="Import from Spotify" onPress={() => { setMenuOpen(false); navigation.navigate('Import'); }} />
+        <SheetOption icon="people-outline" label="Blends" onPress={() => { setMenuOpen(false); navigation.navigate('Blends'); }} />
+        <SheetOption icon="phone-portrait-outline" label="Add songs from this phone" onPress={() => { setMenuOpen(false); openPhone(); }} />
+        <SheetOption icon="eye-off-outline" label="Hidden songs" onPress={() => { setMenuOpen(false); navigation.navigate('Settings', { action: 'hidden-songs' }); }} />
+      </Sheet>
+      <DownloadQueueModal visible={downloads} onClose={() => setDownloads(false)} />
       {actions.element}
-      <DownloadQueueModal visible={queueOpen} onClose={() => setQueueOpen(false)} />
-    </View>
+    </AppScreen>
   );
-};
-
+}
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Signal.bg },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Space.sm, paddingHorizontal: Space.md },
-  topActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  badge: { position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
-  badgeText: { color: Signal.waveInk, fontSize: 10, fontWeight: '700' },
-  iconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Glass.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Glass.hairline,
-  },
-  title: { flexShrink: 1, fontWeight: '700', fontSize: 28, color: Signal.ink },
-  hero: { marginTop: Space.lg, alignItems: 'center' },
-  actions: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 10, marginTop: 6 },
-  meta: { fontWeight: '400', fontSize: 13, color: Signal.inkMuted, marginTop: 10, textAlign: 'center' },
-  filterRow: { paddingHorizontal: Space.md, marginTop: 4 },
-  filterField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Space.xs,
-    height: 42,
-    paddingHorizontal: Space.md,
-    borderRadius: Radius.pill,
-    backgroundColor: Glass.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Glass.hairline,
-  },
-  filterInput: { flex: 1, color: Signal.ink, fontSize: 15, fontWeight: '400', paddingVertical: 0 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.xs, paddingHorizontal: Space.md, marginTop: Space.sm, marginBottom: Space.xs },
-  chip: {
-    height: 32,
-    paddingHorizontal: 14,
-    borderRadius: Radius.pill,
-    justifyContent: 'center',
-    backgroundColor: Glass.fillLight,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Glass.hairline,
-  },
-  chipActive: { backgroundColor: Signal.wave, borderColor: Signal.wave },
-  chipOn: { borderColor: Signal.wave },
-  chipArtist: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 200 },
-  chipText: { fontWeight: '600', fontSize: 13, color: Signal.inkSoft },
-  chipTextActive: { color: Signal.waveInk },
-  emptyCard: {
-    marginHorizontal: Space.md,
-    marginTop: Space.lg,
-    padding: Space.lg,
-    borderRadius: Radius.panel,
-    backgroundColor: Glass.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Glass.hairline,
-    alignItems: 'center',
-    gap: Space.sm,
-  },
-  emptyTitle: { fontWeight: '700', fontSize: 18, color: Signal.ink },
-  emptyBody: { fontWeight: '400', fontSize: 14, color: Signal.inkMuted, textAlign: 'center' },
-  scrim: { position: 'absolute', top: 0, left: 0, right: 0 },
-  sticky: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12 },
-  stickyBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    height: 54,
-    paddingLeft: 18,
-    paddingRight: 7,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(14, 16, 20, 0.95)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Glass.hairlineStrong,
-  },
-  stickyTitle: { flex: 1, color: Signal.ink, fontSize: 17, fontWeight: '700' },
-  stickyGlass: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Glass.fillLight },
-  stickyPlay: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
-  rail: { position: 'absolute', right: 4 },
-  // Long titles stop short of the A–Z rail instead of running under it.
-  rowBesideRail: { paddingRight: 26 },
+  albumGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.sm, paddingHorizontal: Control.gutter },
+  tabs: { flexDirection: 'row', alignItems: 'center', paddingLeft: Control.gutter, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Surface.divider },
+  tabContent: { gap: Space.md },
+  tab: { minHeight: Control.target, minWidth: Control.target, justifyContent: 'center', paddingVertical: Space.sm },
+  selected: { borderBottomWidth: 2, borderColor: Signal.wave },
+  selectedText: { fontWeight: '600' },
+  search: { marginHorizontal: Control.gutter, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.control, backgroundColor: Surface.control },
+  input: { flex: 1, ...Typography.body, color: Signal.ink, paddingVertical: Space.sm },
+  tools: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Control.gutter },
+  empty: { alignItems: 'center', paddingTop: Space.xl },
 });
-
-export default LibraryScreen;
