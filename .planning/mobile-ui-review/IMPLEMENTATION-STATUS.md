@@ -2,7 +2,7 @@
 
 Updated 2026-11-06. Checkout: `C:\dev\allegra`, branch `feat/mobile-frontend-polish`.
 Base: `1b72928`, matched freshly fetched `origin/main` before preparing the PR.
-Target version: **1.37.0**. Publication is pending; a source version is not a shipped APK.
+Target version: **1.37.1**. Publication is pending; a source version is not a shipped APK.
 
 ## Decisions and scope
 
@@ -67,5 +67,28 @@ The unrelated local Gradle tuning and unused build-tools devDependency/lockfile 
 ## Continuation
 
 Fix CI failures on the same branch; merge only after all required checks including APK launch pass.
-Verify the main release run, asset/version and updater manifest before calling 1.37.0 published.
+Verify the main release run, asset/version and updater manifest before calling 1.37.1 published.
 Record exact commit/run/PR evidence here. Keep the three unrelated dirty local files intact.
+
+## PR 58 launch-gate follow-up
+
+PR: https://github.com/peterish8/allegra/pull/58. Initial head `5fda4d5`.
+GitHub run `42116277462`: arm64 and x86_64 APK builds passed, as did root/mobile checks and Kotlin tests.
+The first cold start reached About/Updates and the cover/lyrics checks passed. The second cold start
+reached Stream but its header was above the viewport; the update button could not be found. The artifact
+`second-no-about.png` and UI dump show a scrolled feed rather than a process or screen-layer crash.
+
+Fix: keep the Stream title, Connect and LuvLyrics mark outside FlashList, and disable automatic visible-item
+anchoring for asynchronously restored home sections. Add structural regression checks for both guarantees.
+Version bumped to 1.37.1. The launch gate stays unchanged and must pass before merge.
+
+Coverage follow-up: restored explicit React imports in four presentation files for the Jest classic-JSX
+coverage transform. Runtime typechecking uses automatic JSX; the release gate also verifies coverage collection.
+
+The external config-audit comment flags the existing signing-keystore environment binding. It is the
+GitHub secret written to the signing file, not printed or embedded in frontend configuration; secret
+scan passes. PR publication remains disabled, and main publication retains its build/check/launch gates.
+The external missing-ECC-manifest warning does not change the app or its release gates.
+
+Launch-fix validation: `npm run mobile:check` passed 130 suites / 1,041 tests, with no lint or
+type errors and no coverage-collection failures. PR 58 will rerun the unchanged emulator gate on this fix.

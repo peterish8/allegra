@@ -1,7 +1,7 @@
 import { seekTargetForGesture } from '../playback/seekTarget';
 import { PlaybackButton } from '../ui/PlaybackButton';
 /** V6 mini player: separated seek target, square cover and stable transport. */
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useDerivedValue } from 'react-native-reanimated';

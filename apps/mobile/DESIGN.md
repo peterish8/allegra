@@ -183,7 +183,7 @@ Sentence case; no all-caps labels, emoji or decorative tracking.
 
 ## Implementation status
 
-Version 1.37.0 combines the pending polish with the approved V6 migration. Source and automated
+Version 1.37.1 combines the pending polish with the approved V6 migration. Source and automated
 checks are distinct from a published APK and physical-phone validation. See
 [the release ledger](../../.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md).
 
@@ -194,7 +194,8 @@ is the equivalent for utility screens. There is no moving shader at rest, and no
 
 The five tabs are Stream, Luvs, Library, Search and You. Use Ionicons in both the React Native
 fallback and Kotlin V6 tab bar. Search and You are first-class destinations; voice remains available
-through the existing voice flows. The Stream top-right LuvLyrics mark opens About and Updates.
+through the existing voice flows. The Stream top-right LuvLyrics mark opens About and Updates. Keep that header outside the scrolling
+feed, so hydration, queue restoration and scrolling cannot hide the update entry.
 
 The bottom shell is flush with the edges: a 24dp seek band, a 56dp mini row and 64dp navigation
 plus the safe inset. Below 700dp tall, navigation reserves at least 8dp below its targets. At large

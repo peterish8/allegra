@@ -1,17 +1,9 @@
 import { AppScreen } from '../components/AppScreen';
 import { TypeScale } from '../constants/allegraTheme';
 /**
- * Stream — listen to anything in the catalog without downloading it.
- *
- * Laid out the way the big players do a home feed: search and mood chips up
- * top (YouTube Music), a "listen again" shortcut grid (Spotify), Quick picks as
- * paged columns of songs (YouTube Music), then plain cover shelves. Echo Music's
- * feed decides what's in it (services/stream/homeFeed.ts + recommend.ts).
- * Tapping a song streams it through the normal player queue with radio
- * autoplay; ↓ saves it into the Library; long-press plays it next.
- *
- * The header scrolls away with the content — no collapsing bar. Behind it all
- * runs Allegra's live shader (DynamicAura), tinted by the playing cover.
+ * Stream: pinned title/device/update controls above a scrolling, typed home feed.
+ * The current cover supplies the static glow. Songs retain the existing streaming,
+ * download and action handlers; collection cards open real mix pages.
  */
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
@@ -632,10 +624,32 @@ const StreamScreen: React.FC = () => {
 
   return (
     <AppScreen style={styles.screen}>
-      {/* Allegra's live shader: the playing cover's colours, full energy while
-          music plays, and the picked mood's motion. Frames stop off-screen. */}
+      {/* Keep the update entry reachable while feed sections hydrate or scroll. */}
+      <View style={{ paddingTop: insets.top + Space.xs }}>
+        <View style={styles.header}>
+          <InfoTitleRow>
+            <Text style={styles.title} accessibilityRole="header">Stream</Text>
+            <InfoTour label="About Stream" steps={STREAM_TOUR} scene={streamScene} />
+          </InfoTitleRow>
+          <View style={styles.headerActions}>
+            <ConnectDropdown />
+            <Tactile
+              onPress={() => { Haptics.selectionAsync().catch(() => {}); setAboutOpen(true); }}
+              hitSlop={8}
+              pressScale={0.9}
+              accessibilityRole="button"
+              accessibilityLabel={updateWaiting ? 'About LuvLyrics, update available' : 'About LuvLyrics'}
+              style={styles.aboutBtn}
+            >
+              <Image source={require('../../assets/luvlyrics-logo-white-mark.png')} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityIgnoresInvertColors />
+              {updateWaiting ? <View style={styles.aboutDot} /> : null}
+            </Tactile>
+          </View>
+        </View>
+      </View>
       <FlashList
         ref={scrollRef}
+        maintainVisibleContentPosition={{ disabled: true }}
         data={sections}
         keyExtractor={item => item.id}
         renderItem={renderSection}
@@ -645,34 +659,11 @@ const StreamScreen: React.FC = () => {
         scrollEventThrottle={16}
         onEndReached={onEndReached}
         onEndReachedThreshold={HOME_END_THRESHOLD}
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + Space.xs, paddingBottom: bottomClearance }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Signal.wave} progressViewOffset={insets.top + 40} />}
+        contentContainerStyle={[styles.content, { paddingTop: Space.xs, paddingBottom: bottomClearance }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Signal.wave} progressViewOffset={0} />}
         ListHeaderComponent={
-          <View>
-            <View style={styles.header}>
-              <InfoTitleRow>
-                <Text style={styles.title} accessibilityRole="header">Stream</Text>
-                <InfoTour label="About Stream" steps={STREAM_TOUR} scene={streamScene} />
-              </InfoTitleRow>
-              <View style={styles.headerActions}>
-                <ConnectDropdown />
-                <Tactile
-                  onPress={() => { Haptics.selectionAsync().catch(() => {}); setAboutOpen(true); }}
-                  hitSlop={8}
-                  pressScale={0.9}
-                  accessibilityRole="button"
-                  accessibilityLabel={updateWaiting ? 'About LuvLyrics, update available' : 'About LuvLyrics'}
-                  style={styles.aboutBtn}
-                >
-                  <Image source={require('../../assets/luvlyrics-logo-white-mark.png')} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityIgnoresInvertColors />
-                  {updateWaiting ? <View style={styles.aboutDot} /> : null}
-                </Tactile>
-              </View>
-            </View>
-
-            <View style={styles.chips}>
+          <View style={styles.chips}>
               <MoodChips moods={ytChips.length > 0 ? ytChips.map(c => c.title) : MOOD_LABELS} selected={mood} onSelect={selectMood} />
-            </View>
           </View>
         }
       />

@@ -10,7 +10,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
-import { useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Signal } from '../../constants/allegraTheme';
 import { CoverArtSearchScreen } from '../../screens/CoverArtSearchScreen';
 import { canQueueNext, queueNext } from '../../services/player/queueNext';

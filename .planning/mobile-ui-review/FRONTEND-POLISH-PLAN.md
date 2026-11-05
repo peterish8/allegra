@@ -1,5 +1,5 @@
 > 2026-11-06 continuation: the owner approved all V6 defaults and requested the complete source
-> migration, tests, GitHub APK build and merge. The target is now 1.37.0, combining pending polish
+> migration, tests, GitHub APK build and merge. The target is now 1.37.1, combining pending polish
 > and V6. See [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for implemented scope and exact
 > evidence. Physical phone checks remain deferred by the owner; static/unit checks do not replace them.
 
