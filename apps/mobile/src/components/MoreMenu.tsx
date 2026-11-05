@@ -11,6 +11,9 @@
  *
  * Reduce Motion: the card and rows just fade.
  */
+import { Ionicons } from '@expo/vector-icons';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, PixelRatio, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import Animated, {
@@ -24,19 +27,16 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { create } from 'zustand';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from '../utils/haptics';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Glass, Motion, Signal } from '../constants/allegraTheme';
 import { usePlayerStore } from '../store/playerStore';
+import * as Haptics from '../utils/haptics';
 import Frosted from './allegra/Frosted';
-import { Tactile } from './allegra/motion';
+import { Tactile, TactileRow } from './allegra/motion';
 import { useArtworkPalette } from './allegra/useArtworkPalette';
-import NativeMoreItems, { nativeMoreItemsAvailable } from './NativeMoreItems';
-import { moreItemsFitFontScale, moreItemsHeight, moreItemsPayload, morePalette } from './moreMenuPayload';
 import { MORE_ITEMS, MORE_ROWS, MORE_TILES, type MoreItem } from './moreItems';
+import { moreItemsFitFontScale, moreItemsHeight, moreItemsPayload, morePalette } from './moreMenuPayload';
+import NativeMoreItems, { nativeMoreItemsAvailable } from './NativeMoreItems';
 
 // The menu's entries are plain data in ./moreItems (re-exported here for the importers that always had them from this file).
 export { MORE_ITEMS, MORE_ROWS, MORE_TILES } from './moreItems';
@@ -144,7 +144,7 @@ export const MoreMenu: React.FC<MoreMenuProps> = ({ open, activeKey, anchorBotto
   return (
     <View style={[StyleSheet.absoluteFill, styles.layer]} pointerEvents={open ? 'auto' : 'none'}>
       <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close menu">
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityElementsHidden importantForAccessibility="no">
           <Frosted radius={0} intensity={22} tint={0.18} edge={false} />
           {/* Deepest where the menu is, so it lifts off the page. */}
           <LinearGradient
@@ -198,11 +198,12 @@ export const MoreMenu: React.FC<MoreMenuProps> = ({ open, activeKey, anchorBotto
                 return (
                   <Animated.View key={item.key} entering={reduce ? undefined : riseIn(MORE_TILES.length + i)}>
                     {i > 0 ? <View style={styles.rule} /> : null}
-                    <Pressable
+                    <TactileRow
                       onPress={() => choose(item.key)}
                       accessibilityRole="menuitem"
+                      accessibilityLabel={item.label}
                       accessibilityState={{ selected: on }}
-                      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                      style={styles.row}
                     >
                       <MoreMenuIcon item={item} size={22} color={on ? Signal.wave : Signal.inkSoft} active={on} />
                       <View style={styles.rowText}>
@@ -210,7 +211,7 @@ export const MoreMenu: React.FC<MoreMenuProps> = ({ open, activeKey, anchorBotto
                         {item.hint ? <Text style={styles.rowHint} numberOfLines={1}>{item.hint}</Text> : null}
                       </View>
                       <Ionicons name="chevron-forward" size={16} color={Signal.inkFaint} />
-                    </Pressable>
+                    </TactileRow>
                   </Animated.View>
                 );
               })}
@@ -278,7 +279,6 @@ const styles = StyleSheet.create({
     minHeight: 58,
     paddingHorizontal: 14,
   },
-  rowPressed: { backgroundColor: Glass.fillPressed },
   rowText: { flex: 1, minWidth: 0 },
   rule: { height: StyleSheet.hairlineWidth, marginLeft: 50, backgroundColor: Glass.hairline },
   rowLabel: { fontSize: 16, fontWeight: '600', color: Signal.ink },

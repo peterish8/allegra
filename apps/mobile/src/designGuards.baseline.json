@@ -1,0 +1,74 @@
+{
+  "pressable": {
+    "App.tsx": 2,
+    "components/blend/BlendParts.tsx": 1,
+    "components/blend/BlendStoryPlayer.tsx": 3,
+    "components/connect/ConnectDeviceSheet.tsx": 4,
+    "components/connect/ConnectNoticeHost.tsx": 2,
+    "components/connect/ConnectRemotePlayer.tsx": 7,
+    "components/CreatePlaylistModal.tsx": 1,
+    "components/CustomAlert.tsx": 2,
+    "components/CustomMenu.tsx": 3,
+    "components/import/SpotifySyncPanel.tsx": 1,
+    "components/LibraryEditModal.tsx": 3,
+    "components/LrcSearchModal.tsx": 5,
+    "components/luvLink/LuvLinkHost.tsx": 2,
+    "components/luvLink/LuvLinkLegacyPanel.tsx": 6,
+    "components/luvs/LaneRail.tsx": 1,
+    "components/LyricsResumePill.tsx": 1,
+    "components/MiniPlayer.tsx": 7,
+    "components/ModernDeleteModal.tsx": 3,
+    "components/MoreMenu.tsx": 1,
+    "components/NowPlayingLyricsArea.tsx": 1,
+    "components/player/AmbientMode.tsx": 1,
+    "components/player/LyricsPicker.tsx": 1,
+    "components/player/PlayerExtras.tsx": 4,
+    "components/settings/AccountConsentSheet.tsx": 1,
+    "components/settings/LuvLinkLegacySettings.tsx": 1,
+    "components/stream/DownloadButton.tsx": 1,
+    "components/SynchronizedLyrics.tsx": 2,
+    "components/Toast.tsx": 1,
+    "components/VoiceMicButton.tsx": 1,
+    "components/VoiceSearchCard.tsx": 1,
+    "components/YtMiniPlayer.tsx": 3,
+    "screens/ArtistScreen.tsx": 1,
+    "screens/BlendJoinScreen.tsx": 2,
+    "screens/LuvLinkScreen.tsx": 1,
+    "screens/LyricsEditorScreen.tsx": 1
+  },
+  "slideModal": {
+    "components/LrcSearchModal.tsx": 1
+  },
+  "weight": {
+    "App.tsx": 1,
+    "components/blend/BlendParts.tsx": 4,
+    "components/blend/BlendStage.tsx": 3,
+    "components/blend/BlendStoryPlayer.tsx": 4,
+    "components/CustomMenu.tsx": 1,
+    "components/import/SpotifyCrate.tsx": 1,
+    "components/import/SpotifySyncPanel.tsx": 2,
+    "components/TimelineScrubber.tsx": 1
+  },
+  "tracking": {
+    "components/luvLink/LuvLinkPanel.tsx": 2,
+    "components/settings/SettingsKit.tsx": 1
+  },
+  "bottomPad": {},
+  "alert": {
+    "components/import/SpotifySyncPanel.tsx": 1,
+    "screens/BlendScreen.tsx": 1,
+    "screens/SearchScreen.tsx": 1
+  },
+  "color": {
+    "screens/ArtistScreen.tsx": 8,
+    "screens/DjScreen.tsx": 1,
+    "screens/LuvsScreen.tsx": 2,
+    "screens/LyricsEditorScreen.tsx": 1,
+    "screens/NowPlayingScreen.tsx": 2,
+    "screens/PlaylistDetailScreen.tsx": 2,
+    "screens/SearchScreen.tsx": 4,
+    "screens/SettingsScreen.tsx": 12,
+    "screens/StreamScreen.tsx": 4
+  },
+  "typeSize": {}
+}

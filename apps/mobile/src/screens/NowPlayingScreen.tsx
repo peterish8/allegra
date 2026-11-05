@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Dimensions, StatusBar, View, StyleSheet, useWindowDimensions } from 'react-native';
-import * as GestureHandler from 'react-native-gesture-handler';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
+import { fromMobileId, parseSongRef } from '@shared/songRef';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Dimensions, StatusBar, StyleSheet, useWindowDimensions, View } from 'react-native';
+import * as GestureHandler from 'react-native-gesture-handler';
 import Animated, {
   Easing,
   Extrapolation,
@@ -16,51 +18,52 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { RootStackScreenProps } from '../types/navigation';
-import { playerControls, usePlayerStore } from '../store/playerStore';
-import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
-import { CoverArtSearchScreen } from './CoverArtSearchScreen';
-import { useNowPlayingLogic } from '../hooks/useNowPlayingLogic';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { projectMomentum, rubberBand } from '../components/allegra/physics';
+import ConnectRemotePlayer from '../components/connect/ConnectRemotePlayer';
+import LuvLinkPanel from '../components/luvLink/LuvLinkPanel';
+import { useNativeSkip } from '../components/NativeSkip';
 import NowPlayingBackground from '../components/NowPlayingBackground';
+import NowPlayingControls from '../components/NowPlayingControls';
 import NowPlayingHeader from '../components/NowPlayingHeader';
 import NowPlayingLyricsArea, { CONTROLS_CLEARANCE, HEADER_CLEARANCE, LYRICS_MORPH_MS } from '../components/NowPlayingLyricsArea';
-import NowPlayingControls from '../components/NowPlayingControls';
-import { navigationRef, safeGoBack } from '../utils/navigationService';
+import AmbientMode from '../components/player/AmbientMode';
+import { prefetchCover } from '../components/player/coverImages';
+import { isCoverFull, SEEK_STEP_S, seekSide, seekTarget } from '../components/player/coverStage';
+import LyricsPicker from '../components/player/LyricsPicker';
+import { PlaybackFailureNotice } from '../components/player/PlaybackFailureNotice';
+import { SongDetails, TempoPitch } from '../components/player/PlayerExtras';
+import PlayerMenu, { PlayerMenuAction } from '../components/player/PlayerMenu';
+import { PlayerSheet, SleepTimerList } from '../components/player/PlayerSheet';
+import SeekRipple, { SeekPulse } from '../components/player/SeekRipple';
+import UpNextPanel from '../components/player/UpNextPanel';
+import { Toast } from '../components/Toast';
+import { Motion } from '../constants/allegraTheme';
+import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
+import { useNowPlayingLogic } from '../hooks/useNowPlayingLogic';
+import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
 import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../navigation/playerSheet';
 import { shouldCloseSheet } from '../navigation/sheetClose';
-import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
-import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { playerSheetProgress } from '../navigation/sheetProgress';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from '../utils/haptics';
-import { diag } from '../utils/diag';
-import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
-import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
-import { PlayerSheet, SleepTimerList } from '../components/player/PlayerSheet';
-import UpNextPanel from '../components/player/UpNextPanel';
-import SeekRipple, { SeekPulse } from '../components/player/SeekRipple';
-import { isCoverFull, SEEK_STEP_S, seekSide, seekTarget } from '../components/player/coverStage';
-import { sleepLabel, useSleepTimerStore } from '../store/sleepTimerStore';
-import PlayerMenu, { PlayerMenuAction } from '../components/player/PlayerMenu';
-import { SongDetails, TempoPitch } from '../components/player/PlayerExtras';
-import AmbientMode from '../components/player/AmbientMode';
-import LuvLinkPanel from '../components/luvLink/LuvLinkPanel';
-import LyricsPicker from '../components/player/LyricsPicker';
-import { Toast } from '../components/Toast';
+import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
+import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
+import { useConnect } from '../services/connect/ConnectProvider';
+import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
+import { notifyIslandAppShownAfterDraw } from '../services/NativeDynamicIsland';
+import { refetchCurrent, setAsRingtone, shareSong, shuffleUpcoming } from '../services/player/playerMenuActions';
 import { StreamService } from '../services/stream/StreamService';
 import { isStreamSongId } from '../services/stream/streamSong';
-import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
-import { refetchCurrent, setAsRingtone, shareSong, shuffleUpcoming } from '../services/player/playerMenuActions';
-import { usePlaybackModesStore } from '../store/playbackModesStore';
 import { useLuvLinkStore } from '../store/luvLinkStore';
-import { fromMobileId, parseSongRef } from '@shared/songRef';
-import ConnectRemotePlayer from '../components/connect/ConnectRemotePlayer';
-import { useConnect } from '../services/connect/ConnectProvider';
-import { prefetchCover } from '../components/player/coverImages';
-import { useNativeSkip } from '../components/NativeSkip';
+import { usePlaybackModesStore } from '../store/playbackModesStore';
+import { playerControls, usePlayerStore } from '../store/playerStore';
+import { isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
+import { sleepLabel, useSleepTimerStore } from '../store/sleepTimerStore';
+import { RootStackScreenProps } from '../types/navigation';
 import { Song } from '../types/song';
-import { notifyIslandAppShownAfterDraw } from '../services/NativeDynamicIsland';
+import { diag } from '../utils/diag';
+import * as Haptics from '../utils/haptics';
+import { navigationRef, safeGoBack } from '../utils/navigationService';
+import { CoverArtSearchScreen } from './CoverArtSearchScreen';
 
 const { Gesture, GestureDetector } = GestureHandler;
 
@@ -69,24 +72,12 @@ const { Gesture, GestureDetector } = GestureHandler;
 // flick hands its speed to the firmer one (StiffnessMedium, 1500) so it lands
 // fast. Every one starts from where the sheet is with the finger's speed, so a
 // grab mid-flight just takes over.
-const criticallyDamped = (stiffness: number) => ({ stiffness, damping: 2 * Math.sqrt(stiffness), mass: 1, overshootClamping: true }) as const;
-const SOFT_SPRING = criticallyDamped(400);
-const FLING_SPRING = criticallyDamped(1500);
-const SETTLE_SPRING = { stiffness: 320, damping: 34, mass: 1, overshootClamping: true } as const;
+const SOFT_SPRING = Motion.spring.open;
+const FLING_SPRING = Motion.spring.fling;
+const SETTLE_SPRING = Motion.spring.settle;
 const CLOSE_REST = { restDisplacementThreshold: 0.5, restSpeedThreshold: 8 } as const;
 /** A release this fast (px/s) counts as a flick and takes the firmer spring. */
-const FLICK = 800;
-/** Momentum projection: where a flick would come to rest (deceleration 0.99/ms). */
-const projectMomentum = (velocity: number): number => {
-  'worklet';
-  return (velocity / 1000) * (0.99 / (1 - 0.99));
-};
-/** Progressive resistance past the top, instead of a hard stop. */
-const rubberBand = (overshoot: number, dimension: number): number => {
-  'worklet';
-  const a = Math.abs(overshoot);
-  return Math.sign(overshoot) * ((a * dimension * 0.55) / (dimension + 0.55 * a));
-};
+const FLICK = Motion.flingVelocity;
 // The page underneath only dims while the sheet moves. It used to blur, which
 // on Android re-renders the page under it on every frame of the drag and made
 // opening and closing the player stutter; a dim costs nothing.
@@ -545,31 +536,47 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     });
   }, [windowW, handleScrub]);
 
-  // dir: -1 = swiped left (next song), 1 = swiped right (previous).
-  const swipeSong = useCallback((dir: 1 | -1) => {
+  /** Whether a swipe in `dir` has a song to go to (-1 next, 1 previous). */
+  const canSwipe = useCallback((dir: 1 | -1): boolean => {
     const player = usePlayerStore.getState();
     const queued = player.playlistQueue?.length ?? 0;
+    return Boolean(adjacentSong(dir)) || (dir < 0 && (queued > 1 || player.currentPlaylistId === 'library'));
+  }, [adjacentSong]);
+
+  /** The direction the cover is being pulled with nothing there (0 when it can go): it stretches instead of following. */
+  const swipeBlocked = useSharedValue(0);
+  const swipeRefused = useSharedValue(false);
+  const noteSwipeDirection = useCallback((dir: 1 | -1) => {
+    swipeBlocked.value = canSwipe(dir) ? 0 : dir;
+    previewAdjacentSong(dir);
+  }, [canSwipe, previewAdjacentSong, swipeBlocked]);
+  const refuseSwipe = useCallback(() => Haptics.refuse(), []);
+
+  // dir: -1 = swiped left (next song), 1 = swiped right (previous). `velocity` is the finger's (px/s) at release.
+  const swipeSong = useCallback((dir: 1 | -1, velocity: number) => {
+    const player = usePlayerStore.getState();
     const preview = adjacentSong(dir);
-    const canSkip = Boolean(preview) || (dir < 0 && (queued > 1 || player.currentPlaylistId === 'library'));
+    const canSkip = canSwipe(dir);
     diag('player', `cover swipe ${dir < 0 ? 'left (next)' : 'right (previous)'}: ${canSkip ? 'skipping' : 'nothing to skip to'}`);
     if (!canSkip) {
-      // Nothing to go to: the cover springs back instead of leaving.
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      // Nothing to go to: the stretched cover eases home. The refusal was felt while pulling.
       clearSwipePreview();
       stageX.value = withSpring(0, SETTLE_SPRING);
       return;
     }
     if (preview && swipePreviewRef.current?.id !== preview.id) previewAdjacentSong(dir);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    Haptics.commit();
     if (dir < 0) skipForward().catch(() => {});
     else player.previousInPlaylist();
-    stageX.value = withTiming(dir * windowW, { duration: 160, easing: Easing.in(Easing.quad) }, done => {
+    // Off the edge at the finger's speed: a spring that starts where the flick was going, never an ease-in from rest.
+    const outward = dir * Math.max(0, dir * velocity);
+    stageX.value = withSpring(dir * windowW, { ...FLING_SPRING, velocity: outward }, done => {
       'worklet';
       if (!done) return;
       if (swipePreviewAvailable.value) runOnJS(settleSwipePreview)();
       else stageX.value = withSpring(0, SOFT_SPRING);
     });
-  }, [skipForward, stageX, windowW, adjacentSong, clearSwipePreview, previewAdjacentSong, settleSwipePreview, swipePreviewAvailable]);
+  }, [skipForward, stageX, windowW, adjacentSong, canSwipe, clearSwipePreview, previewAdjacentSong, settleSwipePreview, swipePreviewAvailable]);
 
   const stagePan = Gesture.Pan()
     .enabled(stageEnabled)
@@ -579,19 +586,29 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       'worklet';
       swipePreviewShown.value = false;
       swipePreviewAvailable.value = false;
+      swipeBlocked.value = 0;
+      swipeRefused.value = false;
     })
     .onUpdate(e => {
       'worklet';
-      stageX.value = e.translationX;
+      const dir = e.translationX < 0 ? -1 : 1;
+      // Toward a song that isn't there the cover gives a little and resists, instead of following 1:1.
+      const blocked = swipeBlocked.value === dir;
+      stageX.value = blocked ? rubberBand(e.translationX, 120) : e.translationX;
+      if (blocked && !swipeRefused.value && Math.abs(stageX.value) > 24) {
+        swipeRefused.value = true;
+        runOnJS(refuseSwipe)();
+      }
       if (Math.abs(e.translationX) > 12 && !swipePreviewShown.value) {
         swipePreviewShown.value = true;
-        runOnJS(previewAdjacentSong)(e.translationX < 0 ? -1 : 1);
+        runOnJS(noteSwipeDirection)(dir);
       }
     })
     .onEnd(e => {
       'worklet';
       const projected = e.translationX + e.velocityX * 0.12;
-      if (Math.abs(projected) > windowW * 0.26) runOnJS(swipeSong)(projected < 0 ? -1 : 1);
+      const dir = projected < 0 ? -1 : 1;
+      if (Math.abs(projected) > windowW * 0.26 && swipeBlocked.value !== dir) runOnJS(swipeSong)(dir, e.velocityX);
       else {
         stageX.value = withSpring(0, SETTLE_SPRING);
         runOnJS(clearSwipePreview)();
@@ -880,6 +897,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
         </GestureDetector>
         <SeekRipple pulse={seekPulse} width={windowW} height={Math.round(screenH * 0.56)} />
 
+        <PlaybackFailureNotice width={windowW} height={screenH} hidden={showLyrics || upNextOpen} onRetry={() => usePlayerStore.getState().requestPlayback(true)} />
         <NowPlayingControls
           animatedStyle={animatedStyle}
           controlsVisible={controlsVisible}
@@ -888,6 +906,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           currentSongArtist={swipePreview?.artist ?? currentSong?.artist}
           isCurrentSongLiked={isCurrentSongLiked}
           isLikeSaving={isCurrentSongSaving}
+          onRetry={() => usePlayerStore.getState().requestPlayback(true)}
           onTogglePlay={togglePlay}
           onSkipForward={skipForward}
           onSkipBackward={skipBackward}

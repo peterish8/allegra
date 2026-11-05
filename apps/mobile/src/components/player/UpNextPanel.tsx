@@ -14,27 +14,28 @@
  * Tap a row to play it, drag its handle to move it, swipe the panel down (with
  * the list at its top) to go back to the cover.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, NativeScrollEvent, NativeSyntheticEvent, Pressable, StyleSheet, Text, View, ViewProps } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, Text, View, ViewProps } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
 import Animated, { runOnJS, SharedValue, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Frosted from '../allegra/Frosted';
-import { useArtworkPalette } from '../allegra/useArtworkPalette';
-import Artwork from '../allegra/Artwork';
-import { Tactile } from '../allegra/motion';
 import { Motion, Signal } from '../../constants/allegraTheme';
+import { shouldCloseSheet } from '../../navigation/sheetClose';
+import { shuffleUpcoming } from '../../services/player/playerMenuActions';
+import { isStreamSongId } from '../../services/stream/streamSong';
 import { prepareNextInQueue, usePlayerStore } from '../../store/playerStore';
 import { usePlaylistStore } from '../../store/playlistStore';
 import { useSongsStore } from '../../store/songsStore';
-import { isStreamSongId } from '../../services/stream/streamSong';
-import { shuffleUpcoming } from '../../services/player/playerMenuActions';
-import { libraryKeys, matchKey } from '../../utils/downloadState';
-import { shouldCloseSheet } from '../../navigation/sheetClose';
-import * as Haptics from '../../utils/haptics';
-import { diag } from '../../utils/diag';
 import { Song } from '../../types/song';
+import { Chip, EmptyState } from '../../ui';
+import { diag } from '../../utils/diag';
+import { libraryKeys, matchKey } from '../../utils/downloadState';
+import * as Haptics from '../../utils/haptics';
+import Artwork from '../allegra/Artwork';
+import Frosted from '../allegra/Frosted';
+import { Tactile, TactileRow } from '../allegra/motion';
+import { useArtworkPalette } from '../allegra/useArtworkPalette';
 import { dropIndex, filterQueue, moveItem, playingFromLabel, rowShift, UpNextFilter } from './coverStage';
 import NativeQueueList, { nativeQueueListAvailable } from './NativeQueueList';
 import { queueClock as clock, queueRowsJson } from './nativeQueuePayload';
@@ -135,8 +136,10 @@ const Row: React.FC<{
     <Animated.View style={[styles.rowWrap, style]}>
       <Animated.View style={[StyleSheet.absoluteFill, styles.lifted, lift]} pointerEvents="none" />
       <View style={[styles.row, current && styles.rowCurrent]}>
-        <Pressable
-          style={({ pressed }) => [styles.rowMain, pressed && styles.pressed]}
+        <TactileRow
+          wrapperStyle={styles.rowMainWrap}
+          style={styles.rowMain}
+          pressedColor="rgba(255,255,255,0.1)"
           onPress={() => onPick(index)}
           accessibilityRole="button"
           accessibilityLabel={current ? `Now playing: ${song.title}` : `Play ${song.title}`}
@@ -151,7 +154,7 @@ const Row: React.FC<{
               {[song.artist || 'Unknown artist', clock(song.duration)].filter(Boolean).join(' · ')}
             </Text>
           </View>
-        </Pressable>
+        </TactileRow>
         {handle ? (
           <GestureDetector gesture={handle}>
             <View style={styles.handle} accessibilityLabel={`Move ${song.title}`} accessible>
@@ -352,23 +355,12 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
           </Tactile>
         </View>
         <View style={styles.chips}>
-          {FILTERS.map(f => {
-            const on = filter === f.value;
-            return (
-              <Pressable
-                key={f.value}
-                onPress={() => { Haptics.selectionAsync().catch(() => {}); setFilter(f.value); }}
-                style={[styles.chip, on && styles.chipOn]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-              >
-                <Text style={[styles.chipText, on && styles.chipTextOn]}>{f.label}</Text>
-              </Pressable>
-            );
-          })}
+          {FILTERS.map(f => (
+            <Chip key={f.value} label={f.label} selected={filter === f.value} onPress={() => setFilter(f.value)} />
+          ))}
         </View>
         {shown.length === 0 ? (
-          <Text style={styles.empty}>{songs.length === 0 ? 'Nothing queued after this song.' : filter === 'familiar' ? 'None of these are on your phone yet.' : 'Everything here is already on your phone.'}</Text>
+          <EmptyState icon="list-outline" title={songs.length === 0 ? 'You?re all caught up' : 'No songs in this view'} body={songs.length === 0 ? 'This song can keep playing. Add songs from Stream or your Library to keep the music going.' : filter === 'familiar' ? 'None of these songs are saved on this phone yet.' : 'Everything here is already on your phone.'} />
         ) : native ? (
           <NativeQueueList
             style={styles.nativeList}
@@ -437,27 +429,14 @@ const styles = StyleSheet.create({
   },
   pillText: { color: Signal.ink, fontSize: 15, fontWeight: '600' },
   chips: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginTop: 14, marginBottom: 8 },
-  chip: {
-    height: 34,
-    paddingHorizontal: 14,
-    borderRadius: 17,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
-  },
-  // The chosen chip is lit glass, not the app's green.
-  chipOn: { backgroundColor: 'rgba(255,255,255,0.92)', borderColor: 'rgba(255,255,255,0.92)' },
-  chipText: { color: Signal.ink, fontSize: 14, fontWeight: '600' },
-  chipTextOn: { color: '#0B0B0F' },
   nativeList: { flex: 1 },
   empty: { color: 'rgba(255,255,255,0.6)', fontSize: 15, paddingVertical: 28, textAlign: 'center' },
   rowWrap: { height: ROW_H, paddingHorizontal: 8 },
   lifted: { marginHorizontal: 8, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.12)' },
   row: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 14, overflow: 'hidden' },
-  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', paddingLeft: 12 },
+  rowMainWrap: { flex: 1, alignSelf: 'stretch' },
+  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: 12 },
   rowCurrent: { backgroundColor: 'rgba(255,255,255,0.08)' },
-  pressed: { backgroundColor: 'rgba(255,255,255,0.1)' },
   art: { width: 48, height: 48, borderRadius: 8 },
   nowMark: {
     ...StyleSheet.absoluteFillObject,

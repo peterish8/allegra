@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import PillPlayer from '../PillPlayer';
+import { TAB_BAR_HEIGHT } from '../../constants/layout';
+import { openPlayerSheet } from '../../navigation/playerSheet';
+import { PILL_STACK_GAP, pillBarTop } from '../../navigation/tabs';
+import { durationSV, positionSV } from '../../playback/positionBus';
 import { useConnect } from '../../services/connect/ConnectProvider';
 import { useSnapshotCover } from '../../services/connect/useSnapshotCover';
-import { openPlayerSheet } from '../../navigation/playerSheet';
 import { usePlayerStore } from '../../store/playerStore';
 import { useSettingsStore } from '../../store/settingsStore';
-import { positionSV, durationSV } from '../../playback/positionBus';
-import { pillBarTop, PILL_STACK_GAP } from '../../navigation/tabs';
-import { TAB_BAR_HEIGHT } from '../../constants/layout';
+import PillPlayer from '../PillPlayer';
 
 export const ConnectMiniPlayer: React.FC = () => {
   const connect = useConnect();
@@ -46,6 +46,7 @@ export const ConnectMiniPlayer: React.FC = () => {
 
   return (
     <PillPlayer
+      remote
       title={pending ? pending.title : song.title}
       artist={pending ? `Sending to ${pending.deviceName}…` : song.artist}
       coverImageUri={pending ? undefined : cover || undefined}

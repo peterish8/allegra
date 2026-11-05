@@ -1,17 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View, Text, StyleSheet, Modal, TextInput, Pressable,
-  FlatList, ActivityIndicator, Keyboard
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Frosted } from './allegra/Frosted';
-import { Artwork } from './allegra/Artwork';
+import * as FileSystem from 'expo-file-system/legacy';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Keyboard,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from 'react-native';
 import { Glass, Signal } from '../constants/allegraTheme';
-import { UnifiedSong, Song } from '../types/song';
 import { MultiSourceSearchService } from '../services/MultiSourceSearchService';
 import { useSongsStore } from '../store/songsStore';
-import * as FileSystem from 'expo-file-system/legacy';
+import { Song, UnifiedSong } from '../types/song';
+import { IconButton, Sheet, SheetScrollable, TactileRow } from '../ui';
+import { Artwork } from './allegra/Artwork';
 import { Toast } from './Toast';
 
 const getDocumentDirectory = () => FileSystem.documentDirectory ?? '';
@@ -24,7 +28,6 @@ interface Props {
 }
 
 export const SongVersionSearchModal: React.FC<Props> = ({ visible, targetSong, onClose, onSuccess }) => {
-  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UnifiedSong[]>([]);
   const [loading, setLoading] = useState(false);
@@ -94,34 +97,28 @@ export const SongVersionSearchModal: React.FC<Props> = ({ visible, targetSong, o
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.container}>
-        <Pressable style={[StyleSheet.absoluteFill, styles.scrim]} onPress={onClose} accessibilityLabel="Close" />
-        <View style={[styles.content, { paddingBottom: 16 + insets.bottom }]}>
-          <Frosted radius={28} intensity={60} tint={0.55} />
-          <View style={styles.grabber} />
-          <View style={styles.header}>
-            <Text style={styles.title}>Another version</Text>
-            <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
-              <Ionicons name="close" size={20} color={Signal.ink} />
-            </Pressable>
-          </View>
-          <Text style={styles.subtitle}>
-            Find {targetSong ? `"${targetSong.title}"` : 'this song'} in another language or version. The one you pick replaces the audio on your phone.
-          </Text>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={16} color={Signal.inkMuted} />
-            <TextInput
-              style={styles.input} value={query} onChangeText={setQuery}
-              placeholder="Song name and language" placeholderTextColor={Signal.inkFaint}
-              selectionColor={Signal.wave} returnKeyType="search"
-              onSubmitEditing={handleSearch} autoFocus
-            />
-          </View>
+    <Sheet visible={visible} onClose={onClose} tall keyboard>
+        <View style={styles.header}>
+          <Text style={styles.title} accessibilityRole="header">Another version</Text>
+          <IconButton icon="close" size="sm" label="Close" onPress={onClose} />
+        </View>
+        <Text style={styles.subtitle}>
+          Find {targetSong ? `"${targetSong.title}"` : 'this song'} in another language or version. The one you pick replaces the audio on your phone.
+        </Text>
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={16} color={Signal.inkMuted} />
+          <TextInput
+            style={styles.input} value={query} onChangeText={setQuery}
+            placeholder="Song name and language" placeholderTextColor={Signal.inkFaint}
+            selectionColor={Signal.wave} returnKeyType="search"
+            onSubmitEditing={handleSearch} autoFocus
+          />
+        </View>
 
-          {loading ? (
-            <ActivityIndicator size="large" color={Signal.wave} style={{ marginTop: 40 }} />
-          ) : (
+        {loading ? (
+          <ActivityIndicator size="large" color={Signal.wave} style={{ marginTop: 40 }} />
+        ) : (
+          <SheetScrollable>
             <FlatList
               data={results} keyExtractor={item => item.id} style={styles.list}
               contentContainerStyle={{ paddingBottom: 20 }}
@@ -129,10 +126,10 @@ export const SongVersionSearchModal: React.FC<Props> = ({ visible, targetSong, o
               renderItem={({ item }) => {
                 const busy = downloadingId === item.id;
                 return (
-                  <Pressable
-                    style={({ pressed }) => [styles.item, pressed && styles.itemPressed, !!downloadingId && !busy && styles.itemDimmed]}
+                  <TactileRow
                     onPress={() => handleReplace(item)} disabled={!!downloadingId}
                     accessibilityRole="button" accessibilityLabel={`Use ${item.title} by ${item.artist}`}
+                    style={[styles.item, !!downloadingId && !busy && styles.itemDimmed]}
                   >
                     <Artwork uri={item.thumbnail || item.highResArt} title={item.title} artist={item.artist} size={48} style={styles.thumb} />
                     <View style={styles.info}>
@@ -147,39 +144,32 @@ export const SongVersionSearchModal: React.FC<Props> = ({ visible, targetSong, o
                     ) : (
                       <Text style={styles.use}>Use</Text>
                     )}
-                  </Pressable>
+                  </TactileRow>
                 );
               }}
               ListEmptyComponent={
                 <Text style={styles.empty}>Search to see other versions.</Text>
               }
             />
-          )}
+          </SheetScrollable>
+        )}
 
-          {toast && <Toast visible={true} message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
-        </View>
-      </View>
-    </Modal>
+        {toast && <Toast visible={true} message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
+    </Sheet>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'flex-end' },
-  scrim: { backgroundColor: Glass.scrim },
-  content: { height: '85%', borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', paddingHorizontal: 20 },
-  grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, marginTop: 8, backgroundColor: Glass.hairlineStrong },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, marginBottom: 8 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 4, marginBottom: 8 },
   title: { fontSize: 20, fontWeight: '700', color: Signal.ink },
-  closeBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: Glass.fillLight },
   subtitle: { color: Signal.inkMuted, fontSize: 14, lineHeight: 20, marginBottom: 14 },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, height: 44, marginBottom: 12,
     borderRadius: 999, backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline,
   },
   input: { flex: 1, color: Signal.ink, fontSize: 15, paddingVertical: 0 },
-  list: { flex: 1, marginHorizontal: -8 },
+  list: { flexGrow: 0, marginHorizontal: -8 },
   item: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 8, borderRadius: 14, gap: 12 },
-  itemPressed: { backgroundColor: Glass.fillPressed },
   itemDimmed: { opacity: 0.4 },
   thumb: { width: 48, height: 48, borderRadius: 8 },
   info: { flex: 1 },

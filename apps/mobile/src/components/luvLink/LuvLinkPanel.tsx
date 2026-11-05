@@ -1,38 +1,38 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import QRCode from 'react-native-qrcode-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { SheetScrollView } from '../player/PlayerSheet';
+import { fromMobileId, type SongSnapshot } from '@shared/songRef';
+import * as Clipboard from 'expo-clipboard';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { Glass, Radius, Signal } from '../../constants/allegraTheme';
-import { useLuvLinkStore } from '../../store/luvLinkStore';
-import { usePlayerStore } from '../../store/playerStore';
 import { useAccount } from '../../services/account/AccountProvider';
 import { ALLEGRA_API_URL } from '../../services/account/config';
-import { handleOwnedLuvLinkToggle, playOwnedLuvLinkQueueEntry } from '../../services/luvLink/sync';
-import { fromMobileId, type SongSnapshot } from '@shared/songRef';
 import {
   addOwnedLuvLinkQueueItem,
   createOwnedLuvLink,
   joinOwnedLuvLink,
   leaveOwnedLuvLink,
   moveOwnedLuvLinkQueueItem,
-  removeOwnedLuvLinkQueueItem,
-  regenerateOwnedLuvLinkInvite,
   refreshOwnedLuvLinkGroupPicks,
-  setOwnedLuvLinkSuggestionsConsent,
+  removeOwnedLuvLinkQueueItem,
   setOwnedLuvLinkController,
   setOwnedLuvLinkMode,
   setOwnedLuvLinkSpeaker,
+  setOwnedLuvLinkSuggestionsConsent,
   watchOwnedLuvLinkGroupPicks,
-  type OwnedLuvLinkGroupPicks,
+  type OwnedLuvLinkGroupPicks
 } from '../../services/luvLink/client';
+import { handleOwnedLuvLinkToggle, playOwnedLuvLinkQueueEntry } from '../../services/luvLink/sync';
+import { useLuvLinkStore } from '../../store/luvLinkStore';
+import { usePlayerStore } from '../../store/playerStore';
+import { Tactile, TactileRow, Text as UIText } from '../../ui';
+import { SheetScrollView } from '../player/PlayerSheet';
 import LegacyLuvLinkPanel from './LuvLinkLegacyPanel';
 
 const Button: React.FC<{ label: string; onPress: () => void; secondary?: boolean; disabled?: boolean }> = ({ label, onPress, secondary, disabled }) => (
-  <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.button, secondary && styles.secondary, pressed && styles.pressed, disabled && styles.disabled]}>
+  <Tactile accessibilityRole="button" disabled={disabled} onPress={onPress} wrapperStyle={styles.buttonWrap} style={[styles.button, secondary && styles.secondary, disabled && styles.disabled]}>
     <Text style={[styles.buttonText, secondary && styles.secondaryText]}>{label}</Text>
-  </Pressable>
+  </Tactile>
 );
 
 const LuvLinkPanel: React.FC<{ visible?: boolean }> = ({ visible = true }) => {
@@ -109,11 +109,11 @@ const LuvLinkPanel: React.FC<{ visible?: boolean }> = ({ visible = true }) => {
   return (
     <SheetScrollView contentContainerStyle={styles.content}>
       <View style={styles.roomHeader}>
-        <View><Text style={styles.eyebrow}>{connection === 'connected' ? 'Connected' : 'Reconnecting'}</Text><Text style={styles.title}>Your LuvLink</Text></View>
+        <View><UIText variant="caption" tone="muted">{connection === 'connected' ? 'Connected' : 'Reconnecting'}</UIText><Text style={styles.title}>Your LuvLink</Text></View>
         <Text style={styles.count}>{room.memberCount}/8</Text>
       </View>
       <View style={styles.card}>
-        <Text style={styles.eyebrow}>Invite code</Text>
+        <UIText variant="caption" tone="muted">Invite code</UIText>
         <Text style={styles.code}>{code ?? '••••••'}</Text>
         {inviteUrl ? <View style={styles.qr}><QRCode value={inviteUrl} size={148} color="#17121b" backgroundColor="#ffffff" quietZone={8} /></View> : null}
         <View style={styles.row}><Button label="Share link" onPress={() => { void shareInvite(); }} disabled={!inviteUrl} /><Button label="Copy" secondary onPress={() => { void copyInvite(); }} disabled={!inviteUrl} /></View>
@@ -131,7 +131,7 @@ const LuvLinkPanel: React.FC<{ visible?: boolean }> = ({ visible = true }) => {
           <View style={styles.avatar}><Text style={styles.avatarText}>{member.displayName.slice(0, 1).toUpperCase()}</Text></View>
           <View style={styles.memberInfo}><Text style={styles.memberName}>{member.displayName}{member.userId === account.profile?.userId ? ' · you' : ''}</Text><Text style={styles.hint}>{member.role === 'host' ? 'Host' : member.userId === room.leaderUserId ? 'Speaker' : member.mode === 'listen' ? 'Listening' : 'Controller'}</Text></View>
           {isHost && room.mode === 'speaker' && member.userId !== room.leaderUserId ? <Button label="Make speaker" secondary onPress={() => { void run(() => setOwnedLuvLinkSpeaker(member.userId)); }} disabled={busy} /> : null}
-          {isHost && member.role !== 'host' ? <Pressable accessibilityRole="switch" accessibilityLabel={`${member.canControl ? 'Disable' : 'Allow'} controls for ${member.displayName}`} onPress={() => { void run(() => setOwnedLuvLinkController(member.userId, !member.canControl)); }}><Text style={styles.permission}>{member.canControl ? 'Controls on' : 'Controls off'}</Text></Pressable> : null}
+          {isHost && member.role !== 'host' ? <Tactile accessibilityRole="switch" accessibilityLabel={`${member.canControl ? 'Disable' : 'Allow'} controls for ${member.displayName}`} onPress={() => { void run(() => setOwnedLuvLinkController(member.userId, !member.canControl)); }}><Text style={styles.permission}>{member.canControl ? 'Controls on' : 'Controls off'}</Text></Tactile> : null}
           {!isHost && member.userId === account.profile?.userId ? <Text style={styles.permission}>{me?.canControl ? 'Controls on' : 'Controls off'}</Text> : null}
         </View>
       ))}
@@ -143,19 +143,19 @@ const LuvLinkPanel: React.FC<{ visible?: boolean }> = ({ visible = true }) => {
           <Text style={styles.order}>{index + 1}</Text>
           <View style={styles.memberInfo}><Text numberOfLines={1} style={styles.memberName}>{entry.song.title}</Text><Text numberOfLines={1} style={styles.hint}>{entry.song.artist} · added by {entry.addedByName}</Text></View>
           <View style={styles.queueActions}>
-            <Pressable accessibilityRole="button" accessibilityLabel={`Play ${entry.song.title} in LuvLink`} disabled={busy || !me?.canControl && !isHost} onPress={() => { void run(() => playOwnedLuvLinkQueueEntry(entry.entryId)); }}><Ionicons name="play" size={18} color={Signal.wave} /></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={`Move ${entry.song.title} up`} disabled={index === 0 || busy || !me?.canControl && !isHost} onPress={() => { void run(() => moveOwnedLuvLinkQueueItem(entry.entryId, queue.entries[index - 1]?.entryId ?? null)); }}><Ionicons name="chevron-up" size={20} color={Signal.ink} /></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${entry.song.title}`} disabled={busy || !me?.canControl && !isHost} onPress={() => { void run(() => removeOwnedLuvLinkQueueItem(entry.entryId)); }}><Ionicons name="close" size={20} color={Signal.inkFaint} /></Pressable>
+            <Tactile accessibilityRole="button" accessibilityLabel={`Play ${entry.song.title} in LuvLink`} disabled={busy || !me?.canControl && !isHost} onPress={() => { void run(() => playOwnedLuvLinkQueueEntry(entry.entryId)); }}><Ionicons name="play" size={18} color={Signal.wave} /></Tactile>
+            <Tactile accessibilityRole="button" accessibilityLabel={`Move ${entry.song.title} up`} disabled={index === 0 || busy || !me?.canControl && !isHost} onPress={() => { void run(() => moveOwnedLuvLinkQueueItem(entry.entryId, queue.entries[index - 1]?.entryId ?? null)); }}><Ionicons name="chevron-up" size={20} color={Signal.ink} /></Tactile>
+            <Tactile accessibilityRole="button" accessibilityLabel={`Remove ${entry.song.title}`} disabled={busy || !me?.canControl && !isHost} onPress={() => { void run(() => removeOwnedLuvLinkQueueItem(entry.entryId)); }}><Ionicons name="close" size={20} color={Signal.inkFaint} /></Tactile>
           </View>
         </View>
       ))}
       {queue.entries.length === 0 ? <Text style={styles.hint}>The room queue is ready for your first pick.</Text> : null}
 
       <View style={styles.queueHeading}><Text style={styles.sectionTitle}>Room picks</Text><Text style={styles.hint}>Optional suggestions from opted-in listeners</Text></View>
-      {me ? <Pressable accessibilityRole="switch" accessibilityLabel="Share my listening taste for LuvLink picks" accessibilityState={{ checked: me.canSuggest }} onPress={() => { void run(() => setOwnedLuvLinkSuggestionsConsent(!me.canSuggest)); }} style={styles.consent}>
+      {me ? <TactileRow accessibilityRole="switch" accessibilityLabel="Share my listening taste for LuvLink picks" accessibilityState={{ checked: me.canSuggest }} onPress={() => { void run(() => setOwnedLuvLinkSuggestionsConsent(!me.canSuggest)); }} style={styles.consent}>
         <View style={styles.memberInfo}><Text style={styles.memberName}>Share my listening taste</Text><Text style={styles.hint}>You can turn this off whenever you like.</Text></View>
         <Text style={styles.permission}>{me.canSuggest ? 'On' : 'Off'}</Text>
-      </Pressable> : null}
+      </TactileRow> : null}
       <Button label="Refresh room picks" secondary onPress={() => { void run(refreshOwnedLuvLinkGroupPicks); }} disabled={busy} />
       {groupPicks?.picks.map((pick, index) => (
         <View key={`${groupPicks.revision}:${pick.song.ref}:${index}`} style={styles.queueItem}>
@@ -176,16 +176,15 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', paddingVertical: 12, gap: 7 },
   title: { color: Signal.ink, fontSize: 22, fontWeight: '700' },
   copy: { color: Signal.inkMuted, fontSize: 14, textAlign: 'center' },
-  eyebrow: { color: Signal.inkFaint, fontSize: 11, fontWeight: '600' },
   sectionTitle: { color: Signal.ink, fontSize: 15, fontWeight: '600', marginTop: 8 },
   hint: { color: Signal.inkMuted, fontSize: 12 },
   input: { backgroundColor: Glass.fillLight, borderColor: Glass.hairline, borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.well, minHeight: 48, paddingHorizontal: 14, color: Signal.ink, fontSize: 16, letterSpacing: 1.3 },
-  button: { minHeight: 42, paddingHorizontal: 15, borderRadius: Radius.pill, backgroundColor: Signal.wave, justifyContent: 'center', alignItems: 'center', flex: 1 },
+  buttonWrap: { flex: 1 },
+  button: { minHeight: 42, paddingHorizontal: 15, borderRadius: Radius.pill, backgroundColor: Signal.wave, justifyContent: 'center', alignItems: 'center' },
   secondary: { backgroundColor: Glass.fillLight, borderColor: Glass.hairline, borderWidth: StyleSheet.hairlineWidth },
   buttonText: { color: Signal.waveInk, fontSize: 13, fontWeight: '700' },
   secondaryText: { color: Signal.ink },
   disabled: { opacity: 0.45 },
-  pressed: { opacity: 0.72 },
   row: { flexDirection: 'row', gap: 9, alignItems: 'center' },
   card: { padding: 16, borderRadius: 20, backgroundColor: Glass.fillLight, gap: 10 },
   code: { color: Signal.ink, fontSize: 27, fontWeight: '700', letterSpacing: 5 },

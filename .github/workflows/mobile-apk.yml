@@ -8,6 +8,13 @@ name: Mobile APK
 #   https://github.com/<owner>/<repo>/releases/download/apk-latest/LuvLyrics.apk
 
 on:
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - "packages/**"
+      - "convex/_generated/**"
+      - ".github/workflows/mobile-apk.yml"
+      - ".github/scripts/mobile-launch-check.sh"
   push:
     branches: [main, feat/connect-and-sync]
     paths:

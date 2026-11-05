@@ -9,22 +9,21 @@
  *
  * This is what the separate Get songs screen did for lists, inside the search it belongs to.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Frosted } from '../allegra/Frosted';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Radius, Signal } from '../../constants/allegraTheme';
+import { searchOfficial } from '../../services/stream/officialSearch';
+import { LIST_LIMIT, parseSongList, queryFor, type ListEntry } from '../../services/stream/songList';
+import { useDownloadQueueStore } from '../../store/downloadQueueStore';
+import { useSongsStore } from '../../store/songsStore';
+import type { UnifiedSong } from '../../types/song';
+import { IconButton, Sheet, SheetScrollView } from '../../ui';
+import { libraryKeys, matchKey } from '../../utils/downloadState';
+import * as Haptics from '../../utils/haptics';
 import { Artwork } from '../allegra/Artwork';
 import { Tactile } from '../allegra/motion';
 import { PlaylistSelectionModal } from '../PlaylistSelectionModal';
-import { Radius, Signal } from '../../constants/allegraTheme';
-import * as Haptics from '../../utils/haptics';
-import { useDownloadQueueStore } from '../../store/downloadQueueStore';
-import { useSongsStore } from '../../store/songsStore';
-import { libraryKeys, matchKey } from '../../utils/downloadState';
-import { searchOfficial } from '../../services/stream/officialSearch';
-import { LIST_LIMIT, parseSongList, queryFor, type ListEntry } from '../../services/stream/songList';
-import type { UnifiedSong } from '../../types/song';
 
 type RowStatus = 'searching' | 'found' | 'missing';
 
@@ -43,7 +42,6 @@ const PARALLEL = 2;
 const CANDIDATES = 5;
 
 const AddListSheet: React.FC<{ visible: boolean; onClose: () => void; onSaved: (message: string) => void }> = ({ visible, onClose, onSaved }) => {
-  const insets = useSafeAreaInsets();
   const [text, setText] = useState('');
   const [rows, setRows] = useState<Row[] | null>(null);
   const [pickingPlaylist, setPickingPlaylist] = useState(false);
@@ -108,16 +106,11 @@ const AddListSheet: React.FC<{ visible: boolean; onClose: () => void; onSaved: (
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-          <Frosted radius={28} intensity={60} tint={0.6} />
+    <>
+      <Sheet visible={visible} onClose={onClose} keyboard tall>
           <View style={styles.head}>
             <Text style={styles.title} accessibilityRole="header">{rows ? 'Your list' : 'Add a list'}</Text>
-            <Tactile onPress={onClose} hitSlop={10} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Close" style={styles.close}>
-              <Ionicons name="close" size={18} color={Signal.ink} />
-            </Tactile>
+            <IconButton icon="close" size="sm" label="Close" onPress={onClose} />
           </View>
 
           {rows === null ? (
@@ -146,7 +139,7 @@ const AddListSheet: React.FC<{ visible: boolean; onClose: () => void; onSaved: (
             </>
           ) : (
             <>
-              <ScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+              <SheetScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
                 {rows.map(row => {
                   const song = chosen(row);
                   const already = row.status === 'found' && isSaved(song);
@@ -180,7 +173,7 @@ const AddListSheet: React.FC<{ visible: boolean; onClose: () => void; onSaved: (
                     </View>
                   );
                 })}
-              </ScrollView>
+              </SheetScrollView>
               <View style={styles.footer}>
                 <Tactile onPress={() => { run.current += 1; setRows(null); }} pressScale={0.96} accessibilityRole="button" accessibilityLabel="Edit the list" style={styles.secondary}>
                   <Text style={styles.secondaryText}>Edit list</Text>
@@ -198,23 +191,19 @@ const AddListSheet: React.FC<{ visible: boolean; onClose: () => void; onSaved: (
               </View>
             </>
           )}
-        </KeyboardAvoidingView>
-        <PlaylistSelectionModal
-          visible={pickingPlaylist}
-          onClose={() => setPickingPlaylist(false)}
-          onSelect={(id, name) => { setPickingPlaylist(false); save(id, name); }}
-        />
-      </View>
-    </Modal>
+      </Sheet>
+      <PlaylistSelectionModal
+        visible={pickingPlaylist}
+        onClose={() => setPickingPlaylist(false)}
+        onSelect={(id, name) => { setPickingPlaylist(false); save(id, name); }}
+      />
+    </>
   );
 };
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet: { maxHeight: '86%', borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', paddingHorizontal: 18, paddingTop: 16 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { color: Signal.ink, fontSize: 22, fontWeight: '700' },
-  close: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)' },
   lead: { color: Signal.inkSoft, fontSize: 14, lineHeight: 20, marginTop: 8 },
   input: {
     marginTop: 14,
@@ -238,7 +227,7 @@ const styles = StyleSheet.create({
   secondary: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 44, paddingHorizontal: 16, borderRadius: Radius.pill, backgroundColor: 'rgba(255,255,255,0.09)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)' },
   secondaryText: { color: Signal.ink, fontSize: 14, fontWeight: '600' },
   dim: { opacity: 0.45 },
-  list: { marginTop: 12 },
+  list: { marginTop: 12, flexGrow: 0 },
   listContent: { paddingBottom: 4 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.08)' },
   rowOff: { opacity: 0.45 },

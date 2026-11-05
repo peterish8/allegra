@@ -43,4 +43,20 @@ const {
   withSentryResolver,
 } = require('@sentry/react-native/metro');
 
-module.exports = withSentryExcludeServerOnlyResolver(withSentryFeedbackResolver(withSentryResolver(config, false), false));
+const sentryConfig = withSentryExcludeServerOnlyResolver(withSentryFeedbackResolver(withSentryResolver(config, false), false));
+
+// Sentry stubs `@sentry/browser`'s feedbackSync/feedbackAsync wrappers only when the importing path contains
+// "@sentry/browser" with forward slashes. On Windows the path has backslashes, the wrappers stay in, and they
+// call the stubbed feedback package at startup: a bundle built on Windows crashed on launch with
+// "undefined is not a function" (CI builds on Linux were fine). Normalise the path and stub them here too.
+const SENTRY_FEEDBACK_WRAPPER = /\/feedback(Sync|Async)/;
+const sentryResolve = sentryConfig.resolver.resolveRequest;
+sentryConfig.resolver.resolveRequest = (context, moduleName, platform, ...rest) => {
+  const origin = (context.originModulePath ?? '').replace(/\\/g, '/');
+  if ((platform === 'android' || platform === 'ios') && origin.includes('/@sentry/browser/') && SENTRY_FEEDBACK_WRAPPER.test(moduleName)) {
+    return { type: 'empty' };
+  }
+  return sentryResolve ? sentryResolve(context, moduleName, platform, ...rest) : context.resolveRequest(context, moduleName, platform);
+};
+
+module.exports = sentryConfig;

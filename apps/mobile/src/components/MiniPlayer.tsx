@@ -1,45 +1,45 @@
-import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
-import { YtMiniPlayer } from './YtMiniPlayer';
-import PillPlayer from './PillPlayer';
-import { openPlayerSheet } from '../navigation/playerSheet';
-import { View, Text, Pressable, StyleSheet, Image, Dimensions, Platform, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Dimensions, Image, Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
-import SynchronizedLyrics from './SynchronizedLyrics';
-import TimelineScrubber from './TimelineScrubber';
-import CanvasVideoLayer from './CanvasVideoLayer';
-import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
-const { Gesture, GestureDetector } = GestureHandler;
 import Animated, {
+  Extrapolation,
+  interpolate,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withTiming,
   withSequence,
   withSpring,
-  interpolate,
-  Extrapolation,
-  runOnJS,
+  withTiming,
 } from 'react-native-reanimated';
-import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
+import { openPlayerSheet } from '../navigation/playerSheet';
+import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
+import CanvasVideoLayer from './CanvasVideoLayer';
+import PillPlayer from './PillPlayer';
+import SynchronizedLyrics from './SynchronizedLyrics';
+import TimelineScrubber from './TimelineScrubber';
+import { YtMiniPlayer } from './YtMiniPlayer';
+const { Gesture, GestureDetector } = GestureHandler;
 
+import { Glass, Signal } from '../constants/allegraTheme';
+import { getGradientColors } from '../constants/gradients';
+import { CLASSIC_MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from '../constants/layout';
 import { usePlayer } from '../contexts/PlayerContext';
-import { diag } from '../utils/diag';
-import { usePlayerStore, playerControls, beginAudioLoad, endAudioLoad, prepareNextInQueue, shouldAutoPlayLoadedSong, takeRestoredLoad, takeResumePosition } from '../store/playerStore';
+import { useIsSongLiked } from '../hooks/useIsSongLiked';
+import { PILL_STACK_GAP, pillBarInset, pillBarTop } from '../navigation/tabs';
+import { useConnect } from '../services/connect/ConnectProvider';
+import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
+import { handleOwnedLuvLinkNext, handleOwnedLuvLinkPrevious, handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
+import { beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeRestoredLoad, takeResumePosition, usePlayerStore } from '../store/playerStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSongsStore } from '../store/songsStore';
-import { useIsSongLiked } from '../hooks/useIsSongLiked';
-import { getGradientColors } from '../constants/gradients';
-import { TAB_BAR_HEIGHT, CLASSIC_MINI_PLAYER_HEIGHT } from '../constants/layout';
-import { pillBarInset, pillBarTop, PILL_STACK_GAP } from '../navigation/tabs';
+import { diag } from '../utils/diag';
+import Artwork from './allegra/Artwork';
 
 const PILL_RADIUS = 22;
-import Artwork from './allegra/Artwork';
-import { Signal } from '../constants/allegraTheme';
-import { useConnect } from '../services/connect/ConnectProvider';
-import { handleOwnedLuvLinkNext, handleOwnedLuvLinkPrevious, handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
-import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
 
 // Tallest the classic bar's blurred artwork ever needs to be — the full-expand
 // stage is 0.915 of the screen, with headroom so the image is never the thing
@@ -227,7 +227,7 @@ export const MiniPlayer: React.FC = () => {
       requestPlayback(!usePlayerStore.getState().isPlaying);
   }, [currentSong, requestPlayback, playButtonScale]);
 
-  
+
   const [expanded, setExpanded] = useState(false);
   const [classicFullExpanded, setClassicFullExpanded] = useState(false);
   const [lyricExpandedAt, setLyricExpandedAt] = useState(0);
@@ -238,21 +238,21 @@ export const MiniPlayer: React.FC = () => {
   const ytButtonTimer = useRef<NodeJS.Timeout | null>(null);
   const wasPlayingBeforeYt = useRef(false);
   const ytVideoPreview = useSettingsStore(state => state.ytVideoPreview);
-  
+
   // Animation values
   const expansionProgress = useSharedValue(0); // 0 = collapsed, 1 = half-opened
   const classicFullProgress = useSharedValue(0); // 0 = half-opened, 1 = 95% full
-  
+
   const screenHeight = Dimensions.get('window').height;
   // With the floating pill tab bar, the collapsed player is a matching pill
   // just above it (Apple Music style) and widens into the sheet as it expands.
   const pillMode = navBarStyle === 'modern-pill';
   const pillInset = pillBarInset(Dimensions.get('window').width);
 
-  const gradientColors = currentSong?.gradientId 
-    ? getGradientColors(currentSong.gradientId) 
+  const gradientColors = currentSong?.gradientId
+    ? getGradientColors(currentSong.gradientId)
     : ['#222', '#111'];
-    
+
   // Local state for persistent lyrics (Cross-fade support)
   const [displayedSong, setDisplayedSong] = useState(currentSong);
   const transitionOpacity = useSharedValue(1);
@@ -274,14 +274,14 @@ export const MiniPlayer: React.FC = () => {
             setDisplayedSong(currentSong);
             transitionOpacity.value = 1;
         }
-    } 
+    }
     // 2. Same Song, Updated Data (e.g. Lyrics found)
     else if (currentSong !== displayedSong) {
          setDisplayedSong(currentSong);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSong, expanded]);
-    
+
   const activeBgMode = classicBarBgMode;
   const useThemeBg = activeBgMode !== 'album-art';
 
@@ -303,7 +303,7 @@ export const MiniPlayer: React.FC = () => {
 
   // Seek lock timeout (isSeeking shared value lives in positionBus)
   const seekLockTimeout = useRef<NodeJS.Timeout | null>(null);
-  
+
 
 
 
@@ -320,7 +320,7 @@ export const MiniPlayer: React.FC = () => {
   useEffect(() => {
     const syncAudio = async () => {
       if (!currentSong || !player) return;
-      
+
       // If the player doesn't have this audio loaded, load it.
       // beginAudioLoad claims ownership so NowPlayingScreen — which watches the
       // same loadedAudioId — doesn't replace() the same track in parallel.
@@ -448,7 +448,7 @@ export const MiniPlayer: React.FC = () => {
       overflow: 'hidden' as const,
     };
   });
-  
+
   // Classic lyrics height + opacity.
   //
   // The height follows ONLY classicFullProgress — never expansionProgress. That
@@ -476,7 +476,7 @@ export const MiniPlayer: React.FC = () => {
       opacity: expandOp * transitionOpacity.value,
     };
   });
-  
+
   // Classic artwork scrim — collapsed is near-solid black (readable mini bar).
   // Half/full open dissolve almost all of it so cover colour stays vivid;
   // a thin residual keeps white lyric text readable.
@@ -491,7 +491,7 @@ export const MiniPlayer: React.FC = () => {
 
   // displayedSong while open, so a song change cross-fades instead of jumping.
   const songForLyrics = expanded ? displayedSong : currentSong;
-  
+
   const lyricsToUse = (showTransliteration && songForLyrics?.transliteratedLyrics && songForLyrics.transliteratedLyrics.length > 0)
     ? songForLyrics.transliteratedLyrics
     : songForLyrics?.lyrics;
@@ -696,6 +696,8 @@ export const MiniPlayer: React.FC = () => {
   const handleClassicLyricSeek = useCallback(async (time: number) => {
     if (!player) return;
     if (await handleOwnedLuvLinkSeek(time)) return;
+    const seekSongId = usePlayerStore.getState().currentSongId;
+    const previousPosition = positionSV.value;
     isSeeking.value = true;
     positionSV.value = time;
 
@@ -704,7 +706,10 @@ export const MiniPlayer: React.FC = () => {
       await player.seekTo(time);
       await notifyOwnedLuvLinkUserSeek(time);
       notifyLuvLinkUserSeek(time);
-      if (wasPlaying) player.play();
+      if (wasPlaying && usePlayerStore.getState().isPlaying && usePlayerStore.getState().currentSongId === seekSongId) player.play();
+    } catch (error) {
+      if (usePlayerStore.getState().currentSongId === seekSongId) positionSV.value = previousPosition;
+      throw error;
     } finally {
       if (seekLockTimeout.current) clearTimeout(seekLockTimeout.current);
       seekLockTimeout.current = setTimeout(() => {
@@ -717,12 +722,12 @@ export const MiniPlayer: React.FC = () => {
 
 
 
-  
+
   // Placeholder check to avoid early null return (safer for Reanimated hooks)
   const isActuallyVisible = currentSong && !isNowPlaying && !connect.remotePlayback;
-  
+
   if (!isActuallyVisible) return <View style={{ height: 0, opacity: 0 }} />;
-  
+
   // Classic bar is a root-level sibling of the stack (after it in tree), so it
   // can paint over the tab bar if its frame intersects. Anchor with `bottom`
   // equal to the full tab chrome — never bottom:0 + margin that can collapse.
@@ -744,6 +749,8 @@ export const MiniPlayer: React.FC = () => {
         onTogglePlay={togglePlay}
         onNext={skipForward}
         onPrevious={skipBackward}
+        onRetry={() => usePlayerStore.getState().requestPlayback(true)}
+        onSeek={handleClassicLyricSeek}
       />
     );
   }
@@ -823,9 +830,9 @@ export const MiniPlayer: React.FC = () => {
               showTimeLabels={false}
            />
          </View>
-      
-      <AnimatedPressable 
-        onPress={!expanded ? onBarPress : undefined} 
+
+      <AnimatedPressable
+        onPress={!expanded ? onBarPress : undefined}
         pointerEvents={expanded ? 'box-none' : 'auto'}
         style={[
           styles.content,
@@ -928,12 +935,9 @@ export const MiniPlayer: React.FC = () => {
                               }}
                               hitSlop={8}
                             >
-                              <LinearGradient
-                                colors={['#FF0000', '#CC0000']}
-                                style={styles.ytPreviewBtnInner}
-                              >
-                                <Ionicons name="logo-youtube" size={18} color="#fff" />
-                              </LinearGradient>
+                              <View style={[styles.ytPreviewBtnInner, { backgroundColor: Glass.fillLight }]}>
+                                <Ionicons name="logo-youtube" size={18} color={Signal.ink} />
+                              </View>
                             </Pressable>
                           </Animated.View>
                         )}
@@ -1061,11 +1065,6 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#FF0000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 6,
   },
 
   coverThumbnail: {

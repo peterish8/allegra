@@ -38,11 +38,11 @@ jest.mock('../services/NativeAudioPlayer', () => ({
   },
 }));
 
-import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
-import { usePlayerStore, playerControls, setNativeOwnsPlaybackState, beginAudioLoad, endAudioLoad, resumeNextLoadAt } from './playerStore';
-import { usePlaybackModesStore } from './playbackModesStore';
 import { forgetEngineQueue, noteEngineQueue, onQueueLow } from '../playback/nativeQueue';
+import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import type { Song } from '../types/song';
+import { usePlaybackModesStore } from './playbackModesStore';
+import { beginAudioLoad, endAudioLoad, playerControls, resumeNextLoadAt, setNativeOwnsPlaybackState, usePlayerStore } from './playerStore';
 
 const native = NativeAudioPlayer as unknown as Record<string, jest.Mock>;
 const song = (id: string): Song =>
@@ -459,5 +459,21 @@ describe('losing the engine', () => {
   it('clears the engine too when the song is gone', () => {
     usePlayerStore.getState().reset();
     expect(native.clearQueue).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('V6 playback feedback', () => {
+  it('retries through the native owner without declaring playback audible early', () => {
+    usePlayerStore.setState({ currentSongId: 'a', playbackSongId: 'a', isPlaying: false, audible: false });
+    usePlayerStore.getState().reportPlaybackError('network');
+    usePlayerStore.getState().requestPlayback(true);
+    expect(playerControls.play).toHaveBeenCalledTimes(1);
+    expect(usePlayerStore.getState()).toMatchObject({ playbackError: null, buffering: true, audible: false, isPlaying: false });
+  });
+  it('clears failed feedback when the engine reports audible playback', () => {
+    usePlayerStore.getState().reportPlaybackError('stall');
+    usePlayerStore.getState().reportPlayback(true, false);
+    expect(usePlayerStore.getState()).toMatchObject({ playbackSongId: 'a', audible: true, buffering: false, playbackError: null });
   });
 });

@@ -7,9 +7,9 @@
  *
  * Transform and opacity only. Reduce Motion collapses to a plain fade.
  */
+import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
 import { Pressable, PressableProps, StyleProp, StyleSheet, TextProps, TextStyle, View, ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   EntryAnimationsValues,
   ExitAnimationsValues,
@@ -21,7 +21,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { Motion } from '../../constants/allegraTheme';
+import { Motion, Surface } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
 import { useLowEndDevice } from '../../utils/performanceTier';
 
@@ -97,8 +97,8 @@ export const Tactile: React.FC<TactileProps> = ({ style, wrapperStyle, pressScal
       {...rest}
       style={wrapperStyle}
       onPress={e => {
-        if (haptic === 'light') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-        else if (haptic === 'select') Haptics.selectionAsync().catch(() => {});
+        if (haptic === 'light') Haptics.toggle();
+        else if (haptic === 'select') Haptics.tap();
         onPress?.(e);
       }}
       onPressIn={e => {
@@ -113,6 +113,60 @@ export const Tactile: React.FC<TactileProps> = ({ style, wrapperStyle, pressScal
       }}
     >
       <Animated.View style={[style, animated]}>{children}</Animated.View>
+    </Pressable>
+  );
+};
+
+/** How far a full-width row sinks: a button's 0.94 would make a row lurch. */
+const ROW_PRESS_SCALE = 0.985;
+
+interface TactileRowProps extends Omit<PressableProps, 'style'> {
+  style?: StyleProp<ViewStyle>;
+  wrapperStyle?: StyleProp<ViewStyle>;
+  /** The pressed surface's colour; the glass step by default. */
+  pressedColor?: string;
+  haptic?: 'select' | 'light';
+  children: React.ReactNode;
+}
+
+/**
+ * Tactile for rows and cards: the same spring and 70ms hold, but the press lights a surface step behind the
+ * content (following the row's own radius) and sinks only 1.5%. A long press ticks before its handler runs.
+ * Reduce Motion keeps the light and drops the sink.
+ */
+export const TactileRow: React.FC<TactileRowProps> = ({ style, wrapperStyle, pressedColor = Surface.control, haptic, children, onPress, onPressIn, onPressOut, onLongPress, ...rest }) => {
+  const reduce = useReducedMotion();
+  const pressed = useSharedValue(0);
+  const downAt = useRef(0);
+  const flat = StyleSheet.flatten(style);
+  const radius = typeof flat?.borderRadius === 'number' ? flat.borderRadius : 0;
+  const lift = useAnimatedStyle(() => ({ transform: reduce ? [] : [{ scale: 1 + (ROW_PRESS_SCALE - 1) * pressed.value }] }));
+  const light = useAnimatedStyle(() => ({ opacity: pressed.value }));
+  return (
+    <Pressable
+      {...rest}
+      style={wrapperStyle}
+      onPress={e => {
+        if (haptic === 'light') Haptics.toggle();
+        else if (haptic === 'select') Haptics.tap();
+        onPress?.(e);
+      }}
+      onLongPress={onLongPress ? e => { Haptics.toggle(); onLongPress(e); } : undefined}
+      onPressIn={e => {
+        downAt.current = Date.now();
+        pressed.value = withSpring(1, Motion.spring.tactile);
+        onPressIn?.(e);
+      }}
+      onPressOut={e => {
+        const held = Date.now() - downAt.current;
+        pressed.value = withDelay(Math.max(0, MIN_PRESS_MS - held), withSpring(0, Motion.spring.tactile));
+        onPressOut?.(e);
+      }}
+    >
+      <Animated.View style={[style, lift]}>
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: pressedColor, borderRadius: radius }, light]} />
+        {children}
+      </Animated.View>
     </Pressable>
   );
 };

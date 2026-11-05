@@ -6,18 +6,19 @@
  * `intro` is the reveal, played here rather than over the page: the orbs start far apart and spring
  * to their match distance, a light pool rises, the number counts up. Tap Skip to land at once.
  * `focus` is the lens: that member's orb grows a little and the others dim. Waiting for a friend,
- * an outlined ghost orb breathes where they will be and the invite sits under it.
+ * the invite sits where they will be.
  * Reduced motion: no travel or drift, fades only. Transform and opacity only; nothing ticks off screen.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Canvas, Circle, DashPathEffect, Group, RadialGradient, vec } from '@shopify/react-native-skia';
-import { cancelAnimation, useDerivedValue, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { Canvas, Circle, Group, RadialGradient, vec } from '@shopify/react-native-skia';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { cancelAnimation, useDerivedValue, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { orbApart, orbReach, orbSeat } from '@shared/blendOrbs';
 import type { BlendMemberView } from '@shared/blendView';
 import { Motion, Signal } from '../../constants/allegraTheme';
+import { Tactile } from '../../ui';
 import { discColour } from './BlendParts';
 import { tapHaptic } from './stageHaptics';
 
@@ -104,7 +105,6 @@ export const BlendStage: React.FC<{
   const appear = useSharedValue(playing ? 0 : 1);
   const drift = useSharedValue(0);
   const breath = useSharedValue(1);
-  const ghost = useSharedValue(0.45);
 
   const done = useRef(onIntroDone);
   done.current = onIntroDone;
@@ -131,13 +131,12 @@ export const BlendStage: React.FC<{
     return undefined;
   }, [phase, reduce, appear, travel, finish]);
 
-  // Ambient drift and the ghost's breathing: off under Reduce Motion, stopped on unmount.
+  // Ambient drift: off under Reduce Motion, stopped on unmount.
   useEffect(() => {
     if (reduce) return undefined;
     drift.value = withRepeat(withTiming(1, { duration: DRIFT_MS, easing: Motion.ease.standard }), -1, true);
-    ghost.value = withRepeat(withTiming(0.6, { duration: DRIFT_MS / 2, easing: Motion.ease.standard }), -1, true);
-    return () => { cancelAnimation(drift); cancelAnimation(ghost); };
-  }, [reduce, drift, ghost]);
+    return () => { cancelAnimation(drift); };
+  }, [reduce, drift]);
 
   useEffect(() => {
     if (pulse === 0) return;
@@ -195,11 +194,6 @@ export const BlendStage: React.FC<{
               />
             ))}
           </Group>
-          {waiting ? (
-            <Circle c={vec(centre.x + ghostSeat.x * orb, centre.y)} r={orb * 0.35} style="stroke" strokeWidth={2} color="rgba(255,255,255,0.32)" opacity={ghost}>
-              <DashPathEffect intervals={[8, 8]} />
-            </Circle>
-          ) : null}
         </Canvas>
       ) : null}
 
@@ -225,17 +219,17 @@ export const BlendStage: React.FC<{
       }) : null}
 
       {waiting && onInvite && width > 0 ? (
-        <Pressable onPress={onInvite} accessibilityRole="button" accessibilityLabel="Send invite" style={[styles.invite, { left: centre.x + ghostSeat.x * orb - 70, top: centre.y + orb * 0.44 - 8 }]}>
+        <Tactile onPress={onInvite} accessibilityRole="button" accessibilityLabel="Send invite" wrapperStyle={[styles.inviteWrap, { left: centre.x + ghostSeat.x * orb - 70, top: centre.y + orb * 0.44 - 8 }]} style={styles.invite}>
           <Ionicons name="share-outline" size={16} color={Signal.waveInk} />
           <Text style={styles.inviteText}>Send invite</Text>
-        </Pressable>
+        </Tactile>
       ) : null}
 
       {playing ? (
-        <Pressable onPress={() => finish('skipped')} accessibilityRole="button" accessibilityLabel="Skip the reveal" hitSlop={8} style={styles.skip}>
+        <Tactile onPress={() => finish('skipped')} accessibilityRole="button" accessibilityLabel="Skip the reveal" hitSlop={8} wrapperStyle={styles.skipWrap} style={styles.skip}>
           <Ionicons name="close" size={14} color={Signal.ink} />
           <Text style={styles.skipText}>Skip</Text>
-        </Pressable>
+        </Tactile>
       ) : null}
     </View>
   );
@@ -251,8 +245,11 @@ const styles = StyleSheet.create({
   name: { position: 'absolute', width: 120, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   nameDot: { width: 8, height: 8, borderRadius: 4 },
   nameText: { color: '#fff', fontSize: 13, fontWeight: '600', maxWidth: 100, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 8 },
-  invite: { position: 'absolute', width: 140, height: 44, borderRadius: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Signal.wave },
+  // Position and size sit on the touch wrapper; the pill fills it.
+  inviteWrap: { position: 'absolute', width: 140, height: 44 },
+  invite: { width: '100%', height: '100%', borderRadius: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Signal.wave },
   inviteText: { color: Signal.waveInk, fontSize: 14, fontWeight: '800' },
-  skip: { position: 'absolute', top: 0, right: 16, flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.16)' },
+  skipWrap: { position: 'absolute', top: 0, right: 16 },
+  skip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.16)' },
   skipText: { color: Signal.ink, fontSize: 13, fontWeight: '600' },
 });

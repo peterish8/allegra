@@ -1,29 +1,31 @@
+import { useWindowDimensions } from 'react-native';
 /**
  * Stream home building blocks, modelled on the layouts every major player has
  * settled on rather than on a landing page:
  *
- *   MoodChips      YouTube Music's filter row — rounded-rect chips, one selected
+ *   MoodChips      YouTube Music's filter row â€” rounded-rect chips, one selected
  *   ShortcutGrid   Spotify's two-column "jump back in" grid (up to six)
  *   QuickPicks     YouTube Music's paged columns of four song rows
  *   SongRow        one track: art, title, artist, a single trailing action
  *   CoverShelf     horizontal shelf of plain square covers with title + artist
  *
- * Flat surfaces, no glass, no numbered ranks, no play disc on every cover — the
+ * Flat surfaces, no glass, no numbered ranks, no play disc on every cover â€” the
  * whole cover is the play target. The playing song is marked with the signal
  * colour and a speaker glyph on its art.
  */
-import React from 'react';
-import { FlatList, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React from 'react';
+import { FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Signal, Space } from '../../constants/allegraTheme';
+import type { DownloadTarget } from '../../hooks/useDownloadState';
+import { Chip, Control, SongRow as SharedSongRow } from '../../ui';
 import Artwork from '../allegra/Artwork';
 import { Tactile } from '../allegra/motion';
 import DownloadButton from './DownloadButton';
 import SavedBadge from './SavedBadge';
-import type { DownloadTarget } from '../../hooks/useDownloadState';
 
 // Matches SectionHeading's inset so headings and content share an edge.
-export const GUTTER = Space.lg - 4;
+export const GUTTER = Control.gutter;
 const SURFACE = 'rgba(255, 255, 255, 0.07)';
 const SURFACE_ON = 'rgba(255, 255, 255, 0.12)';
 
@@ -43,7 +45,7 @@ const PlayingMark: React.FC<{ size: number }> = ({ size }) => (
   </View>
 );
 
-// ─── Mood chips ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Mood chips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const MoodChips: React.FC<{
   moods: readonly string[];
@@ -54,31 +56,24 @@ export const MoodChips: React.FC<{
     {moods.map(mood => {
       const on = mood === selected;
       return (
-        <Tactile
-          key={mood}
-          onPress={() => onSelect(on ? null : mood)}
-          pressScale={0.96}
-          accessibilityRole="button"
-          accessibilityState={{ selected: on }}
-          style={[styles.chip, on && styles.chipOn]}
-        >
-          <Text style={[styles.chipText, on && styles.chipTextOn]}>{mood}</Text>
-        </Tactile>
+        <Chip key={mood} label={mood} selected={on} onPress={() => onSelect(on ? null : mood)} />
       );
     })}
   </ScrollView>
 );
 
-// ─── Shortcut grid ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Shortcut grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const ShortcutGrid: React.FC<{
   items: TrackItem[];
   onPress: (index: number) => void;
   onLongPress?: (index: number) => void;
-}> = ({ items, onPress, onLongPress }) => (
+}> = ({ items, onPress, onLongPress }) => {
+  const { fontScale } = useWindowDimensions();
+  return (
   <View style={styles.grid}>
     {items.slice(0, 6).map((item, i) => (
-      <View key={item.key} style={styles.gridCell}>
+      <View key={item.key} style={[styles.gridCell, fontScale >= 1.6 && { width: '100%' }]}>
         <Tactile
           onPress={() => onPress(i)}
           onLongPress={onLongPress ? () => onLongPress(i) : undefined}
@@ -98,90 +93,20 @@ export const ShortcutGrid: React.FC<{
     ))}
   </View>
 );
-
-// ─── Song row ──────────────────────────────────────────────────────────────
-
-export const SongRow: React.FC<{
-  item: TrackItem;
-  onPress: () => void;
-  onLongPress?: () => void;
-  onSave?: () => void;
-}> = ({ item, onPress, onLongPress, onSave }) => (
-  <View style={styles.row}>
-    <Tactile
-      onPress={onPress}
-      onLongPress={onLongPress}
-      pressScale={0.985}
-      accessibilityRole="button"
-      accessibilityLabel={`${item.title}${item.artist ? `, ${item.artist}` : ''}`}
-      wrapperStyle={styles.flex}
-      style={styles.rowMain}
-    >
-      <View style={styles.rowArt}>
-        <Artwork uri={item.artwork} title={item.title} artist={item.artist} size={52} style={StyleSheet.absoluteFill} />
-        {item.isCurrent ? <PlayingMark size={18} /> : null}
-      </View>
-      <View style={styles.flex}>
-        <Text style={[styles.rowTitle, item.isCurrent && styles.current]} numberOfLines={1}>{item.title}</Text>
-        {item.artist ? <Text style={styles.rowArtist} numberOfLines={1}>{item.artist}</Text> : null}
-      </View>
-    </Tactile>
-    {onSave && item.download ? (
-      <View style={styles.rowAction}>
-        <DownloadButton song={item.download} onSave={onSave} />
-      </View>
-    ) : onSave ? (
-      <Tactile onPress={onSave} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Download ${item.title}`} style={styles.rowAction}>
-        <Ionicons name="arrow-down-circle-outline" size={22} color={Signal.inkMuted} />
-      </Tactile>
-    ) : null}
-  </View>
-);
-
-// ─── Quick picks: paged columns of four ────────────────────────────────────
-
-const ROWS_PER_COLUMN = 4;
-
-export const QuickPicks: React.FC<{
-  items: TrackItem[];
-  onPress: (index: number) => void;
-  onLongPress?: (index: number) => void;
-  onSave?: (index: number) => void;
-}> = ({ items, onPress, onLongPress, onSave }) => {
-  const { width } = useWindowDimensions();
-  // The next column peeks in, so it reads as swipeable without a hint.
-  const columnWidth = width - GUTTER * 2 - 40;
-  const columns: number[][] = [];
-  for (let i = 0; i < items.length; i += ROWS_PER_COLUMN) {
-    columns.push(items.slice(i, i + ROWS_PER_COLUMN).map((_, j) => i + j));
-  }
-  return (
-    <FlatList
-      horizontal
-      data={columns}
-      keyExtractor={col => `col-${col[0]}`}
-      showsHorizontalScrollIndicator={false}
-      snapToInterval={columnWidth + Space.xs}
-      decelerationRate="fast"
-      contentContainerStyle={styles.columns}
-      renderItem={({ item: col }) => (
-        <View style={{ width: columnWidth }}>
-          {col.map(i => (
-            <SongRow
-              key={items[i].key}
-              item={items[i]}
-              onPress={() => onPress(i)}
-              onLongPress={onLongPress ? () => onLongPress(i) : undefined}
-              onSave={onSave ? () => onSave(i) : undefined}
-            />
-          ))}
-        </View>
-      )}
-    />
-  );
 };
 
-// ─── Cover shelf ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Song row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export const SongRow: React.FC<{ item: TrackItem; onPress: () => void; onLongPress?: () => void; onSave?: () => void }> = ({ item, onPress, onLongPress, onSave }) => (
+  <SharedSongRow title={item.title} artist={item.artist} artwork={item.artwork} playing={item.isCurrent} onPress={onPress} onActions={onLongPress}
+    trailing={onSave && item.download ? <DownloadButton song={item.download} onSave={onSave} /> : undefined} />
+);
+
+// â”€â”€â”€ Quick picks: paged columns of four â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export const QuickPicks: React.FC<{ items: TrackItem[]; onPress: (index: number) => void; onLongPress?: (index: number) => void; onSave?: (index: number) => void }> = ({ items, onPress, onLongPress, onSave }) => (
+  <View>{items.slice(0, 4).map((item, index) => <SongRow key={item.key} item={item} onPress={() => onPress(index)} onLongPress={onLongPress ? () => onLongPress(index) : undefined} onSave={onSave ? () => onSave(index) : undefined} />)}</View>
+);
 
 const COVER = 148;
 
@@ -239,13 +164,13 @@ const styles = StyleSheet.create({
   shortcut: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 56,
-    borderRadius: 6,
+    minHeight: 64,
+    borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: SURFACE,
   },
   shortcutArt: { width: 56, height: 56 },
-  shortcutTitle: { flex: 1, fontSize: 13, lineHeight: 16, fontWeight: '700', color: Signal.ink, paddingHorizontal: 10 },
+  shortcutTitle: { flex: 1, fontSize: 15, lineHeight: 20, fontWeight: '400', color: Signal.ink, paddingHorizontal: 10 },
 
   columns: { paddingHorizontal: GUTTER, gap: Space.xs },
   row: { flexDirection: 'row', alignItems: 'center' },

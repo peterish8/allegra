@@ -5,21 +5,26 @@
  * Update → Downloading → Install. WorkManager owns the transfer; this view only observes it while it
  * is visible and the app is in front.
  */
+import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Linking, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
-import { Tactile } from '../allegra/motion';
-import { Switch } from '../settings/SettingsKit';
-import { Motion, Radius, Signal } from '../../constants/allegraTheme';
+import appConfig from '../../../app.json';
+import { Motion, Radius, Signal, Surface } from '../../constants/allegraTheme';
 import {
-  ALL_RELEASES_URL, checkedAgo, formatSize, INSTALLED_BUILD, LatestBuild, LATEST_APK_URL, ReleaseNotes, releasedAgo, RELEASES_URL, standingOf,
+  ALL_RELEASES_URL, checkedAgo, formatSize, INSTALLED_BUILD,
+  LATEST_APK_URL,
+  LatestBuild,
+  releasedAgo,
+  ReleaseNotes,
+  RELEASES_URL, standingOf,
 } from '../../services/appUpdate';
-import { canInstallUpdate, downloadUpdate, DownloadStatus, installUpdate, supportsAppUpdates, updateDownloadStatus } from '../../services/appUpdateDownload';
+import { canInstallUpdate, DownloadStatus, downloadUpdate, installUpdate, supportsAppUpdates, updateDownloadStatus } from '../../services/appUpdateDownload';
 import { checkNow } from '../../services/updateCheck';
 import { useUpdateStore } from '../../store/updateStore';
 import * as Haptics from '../../utils/haptics';
-import appConfig from '../../../app.json';
+import { Tactile } from '../allegra/motion';
+import { Switch } from '../settings/SettingsKit';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -235,8 +240,8 @@ const styles = StyleSheet.create({
   body: { color: Signal.inkSoft, fontSize: 14, lineHeight: 21, marginTop: 10 },
   card: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 12, padding: 14, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)' },
   tile: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)' },
-  tileWave: { backgroundColor: 'rgba(217, 230, 106, 0.14)' },
-  tileOk: { backgroundColor: 'rgba(217, 230, 106, 0.1)' },
+  tileWave: { backgroundColor: Surface.control },
+  tileOk: { backgroundColor: Surface.control },
   tileWarn: { backgroundColor: 'rgba(238, 107, 95, 0.16)' },
   cardCopy: { flex: 1, gap: 2 },
   cardTitle: { color: Signal.ink, fontSize: 15, fontWeight: '700' },
@@ -252,11 +257,11 @@ const styles = StyleSheet.create({
   // Grows by scale from the left edge: transform only, no layout per frame.
   fill: { height: 8, borderRadius: 4, backgroundColor: Signal.wave, transformOrigin: 'left' },
   notice: { color: Signal.accentBright, fontSize: 13, lineHeight: 19, marginTop: 12 },
-  button: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, paddingHorizontal: 20, borderRadius: Radius.pill, backgroundColor: Signal.wave, marginTop: 16 },
+  button: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 48, paddingVertical: 12, paddingHorizontal: 20, borderRadius: Radius.control, backgroundColor: Signal.wave, marginTop: 16 },
   buttonWide: { alignSelf: 'stretch' },
   buttonText: { color: Signal.waveInk, fontSize: 15, fontWeight: '700' },
   dim: { opacity: 0.7 },
   settings: { marginTop: 14 },
-  links: { flexDirection: 'row', gap: 18, marginTop: 6 },
-  link: { color: Signal.inkMuted, fontSize: 13, paddingVertical: 8 },
+  links: { flexDirection: 'row', flexWrap: 'wrap', gap: 18, marginTop: 6 },
+  link: { color: Signal.inkMuted, fontSize: 13, minHeight: 48, paddingVertical: 14 },
 });

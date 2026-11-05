@@ -1,12 +1,12 @@
 /**
- * The pieces around the Luvs taste map: the action buttons (a press sinks,
- * overshoots and settles on a spring, with a haptic), the heart burst on a
+ * The pieces around the Luvs taste map: the action buttons (they press like
+ * every other button; turning one on gives it one small pop), the ring on a
  * Luv, the equaliser on the playing card and the scrubber for the clip.
  * Transforms and opacity only.
  */
-import React, { useCallback, useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -19,9 +19,10 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import TimelineScrubber from '../TimelineScrubber';
-import { luvsBufferManager } from '../../services/LuvsBufferManager';
 import { Glass, Motion, Signal } from '../../constants/allegraTheme';
+import { luvsBufferManager } from '../../services/LuvsBufferManager';
+import { Tactile } from '../allegra/motion';
+import TimelineScrubber from '../TimelineScrubber';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -116,26 +117,25 @@ export const LuvAction: React.FC<{
   burst?: number;
   disabled?: boolean;
 }> = ({ icon, label, onPress, on = false, tint = Signal.wave, burst = 0, disabled = false }) => {
-  const sc = useSharedValue(1);
+  const reduce = useReducedMotion();
+  const pop = useSharedValue(1);
   const glow = useSharedValue(on ? 1 : 0);
   useEffect(() => {
     glow.value = withTiming(on ? 1 : 0, { duration: Motion.duration.base });
   }, [on, glow]);
-  const press = useCallback(() => {
-    sc.value = withSequence(
-      withSpring(0.8, { damping: 14, stiffness: 600 }),
-      withSpring(1.1, { damping: 8, stiffness: 320 }),
-      withSpring(1, Motion.spring.tactile),
-    );
-    onPress();
-  }, [onPress, sc]);
-  const circle = useAnimatedStyle(() => ({ transform: [{ scale: sc.value }] }));
+  // The press itself is Tactile's (sinks, comes back, even if the finger slides off). Only the moment the action
+  // turns on — a Luv, a save — gets one small pop on the settle spring; every other press stays a press.
+  useEffect(() => {
+    if (burst === 0 || reduce) return;
+    pop.value = withSequence(withTiming(1.12, { duration: Motion.duration.fast, easing: Motion.ease.decelerate }), withSpring(1, Motion.spring.settle));
+  }, [burst, reduce, pop]);
+  const circle = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }] }));
   const fill = useAnimatedStyle(() => ({ opacity: glow.value }));
   return (
-    <Pressable
-      onPress={disabled ? undefined : press}
-      onPressIn={() => { sc.value = withSpring(0.9, Motion.spring.tactile); }}
+    <Tactile
+      onPress={onPress}
       disabled={disabled}
+      pressScale={0.9}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: on, disabled }}
@@ -148,7 +148,7 @@ export const LuvAction: React.FC<{
         <Ionicons name={icon} size={24} color={on && tint === Signal.wave ? Signal.waveInk : Signal.ink} />
       </Animated.View>
       <Text style={styles.label} numberOfLines={1}>{label}</Text>
-    </Pressable>
+    </Tactile>
   );
 };
 

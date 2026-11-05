@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>You and Settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&amp;display=block">
+<style>
+:root{--base:#0B0D10;--raised:#17191E;--control:#22252C;--pressed:#2A2D34;--t1:#F4F4F5;--t2:#A3A5AE;--t3:#8A8D96;--div:rgba(255,255,255,.06);--danger:#FF6B61;--scrim:rgba(0,0,0,.4)}
+*{box-sizing:border-box}
+body{margin:0;background:#202226;font-family:Inter,system-ui,sans-serif;color:var(--t1);-webkit-font-smoothing:antialiased}
+button,input,textarea{font-family:inherit;color:inherit}
+h1,h2,h3,p,ul,ol{margin:0;padding:0}
+ul,ol{list-style:none}
+.ms{font-family:'Ionicons';font-weight:400;font-style:normal;font-size:24px;line-height:1;display:inline-block;white-space:nowrap;direction:ltr;font-feature-settings:'liga';font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;flex-shrink:0}
+.ms.f{font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24}
+
+/* board furniture (annotation, not UI) */
+.board{display:inline-flex;gap:40px;padding:28px 32px 40px;align-items:flex-start}
+.cell{width:390px;display:flex;flex-direction:column;gap:14px;flex-shrink:0}
+.cap{height:124px;overflow:hidden;font:600 14px/19px Inter;color:#E8E9EC}
+.cap p{margin-top:4px;font-weight:400;font-size:12px;line-height:17px;color:#9EA1AA}
+.cap .pr{color:#F2C14E}
+.cap .gap{color:#FF8A80}
+
+/* phone */
+.ph{position:relative;width:390px;height:844px;border-radius:36px;overflow:hidden;background:var(--base);box-shadow:0 0 0 1px rgba(255,255,255,.1),0 30px 60px rgba(0,0,0,.35)}
+.scr{position:absolute;inset:0;padding-top:28px;overflow:hidden;display:flex;flex-direction:column}
+.sb{position:absolute;top:0;left:0;right:0;height:28px;display:flex;justify-content:space-between;align-items:center;padding:0 18px 0 24px;font:600 12px Inter;z-index:80;pointer-events:none}
+.sb .ms{font-size:15px;margin-left:3px}
+.gb{position:absolute;left:0;right:0;bottom:0;height:16px;display:flex;align-items:center;justify-content:center;z-index:90;pointer-events:none}
+.gb i{width:108px;height:4px;border-radius:2px;background:rgba(255,255,255,.42)}
+.glow{position:absolute;left:-60px;top:-150px;width:510px;height:430px;filter:blur(70px);opacity:.5;pointer-events:none}
+.glow i{position:absolute;border-radius:50%}
+.glow.np{top:-120px;height:620px;opacity:.75}
+
+/* headers */
+.top{display:flex;align-items:center;height:56px;padding:0 4px;flex-shrink:0}
+.top .tt{flex:1;min-width:0;font:600 18px/24px Inter;padding-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.page{display:flex;align-items:center;height:56px;padding:0 4px 0 16px;flex-shrink:0}
+.page h1{flex:1;font:700 28px/34px Inter}
+.sec{display:flex;align-items:center;justify-content:space-between;height:48px;padding:0 4px 0 16px;margin-top:8px}
+.sec h2{font:600 18px/24px Inter}
+.ib{width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:0;background:none;color:var(--t1);padding:0;flex-shrink:0;position:relative}
+.ib.m{color:var(--t2)}
+.dot{position:absolute;top:10px;right:10px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--t1);color:var(--base);font:700 10px/16px Inter;text-align:center;box-shadow:0 0 0 2px var(--base)}
+
+/* text roles */
+.meta{font:400 13px/18px Inter;color:var(--t2)}
+.body{font:400 15px/22px Inter;color:var(--t2)}
+.lead{font:700 20px/26px Inter}
+.cap12{font:400 12px/16px Inter;color:var(--t3)}
+
+/* tabs and chips */
+.tabs{display:flex;gap:24px;height:48px;padding:0 16px;box-shadow:inset 0 -1px 0 var(--div);flex-shrink:0}
+.tab{position:relative;height:48px;border:0;background:none;padding:0;font:400 15px Inter;color:var(--t2);white-space:nowrap}
+.tab.on{font-weight:600;color:var(--t1)}
+.tab.on::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:1px;background:var(--t1)}
+.chips{display:flex;gap:8px;padding:0 16px;flex-shrink:0;overflow:hidden}
+.chip{height:48px;display:flex;align-items:center;border:0;background:none;padding:0;flex-shrink:0}
+.chip>span{display:flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;background:var(--control);font:400 13px Inter;color:var(--t1);white-space:nowrap}
+.chip.on>span{background:var(--t1);color:var(--base);font-weight:600;padding-left:8px}
+.chip .ms{font-size:18px}
+
+/* fields and sort */
+.field{display:flex;align-items:center;gap:8px;height:48px;padding:0 4px 0 12px;border-radius:12px;background:var(--raised);color:var(--t2);flex-shrink:0}
+.field .ms{font-size:20px}
+.field input,.field .v{flex:1;min-width:0;border:0;background:none;font:400 15px Inter;color:var(--t1);outline:none;white-space:nowrap;overflow:hidden}
+.field .ph-t{color:var(--t3)}
+.field.focus{box-shadow:inset 0 0 0 1.5px var(--t1)}
+.caret{display:inline-block;width:1.5px;height:18px;background:var(--t1);vertical-align:-3px;margin-left:1px}
+.sortb{height:48px;display:flex;align-items:center;border:0;background:none;padding:0;flex-shrink:0}
+.sortb>span{display:flex;align-items:center;gap:6px;height:36px;padding:0 8px 0 10px;border-radius:8px;background:var(--control);font:600 13px Inter;color:var(--t1)}
+.sortb .ms{font-size:18px}
+.sortb .ms.c{color:var(--t2)}
+.lbl{font:600 13px/18px Inter;color:var(--t2);padding:0 16px}
+
+/* buttons */
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;height:48px;padding:0 20px;border:0;border-radius:12px;font:600 15px Inter;white-space:nowrap;flex-shrink:0}
+.btn .ms{font-size:20px}
+.btn.p{background:var(--t1);color:var(--base)}
+.btn.s{background:var(--control);color:var(--t1)}
+.btn.t{background:none;color:var(--t1);padding:0 12px}
+.btn.d{background:rgba(255,107,97,.14);color:var(--danger)}
+.btn.dis{opacity:.38}
+.btn.blk{width:100%}
+.btn.sm{height:48px;padding:0 12px;font-size:14px}
+.btn.sm>span.v{display:flex;align-items:center;gap:6px;height:36px}
+.btns{display:flex;gap:12px;padding:0 16px;flex-shrink:0}
+.btns .btn{flex:1}
+.btns[style*="column"] .btn{flex:none}
+
+/* song row: one component, every list */
+.row{display:flex;align-items:center;gap:12px;height:64px;padding:0 4px 0 16px;flex-shrink:0}
+.row.nm{padding-right:16px}
+.row.pr{background:rgba(255,255,255,.06)}
+.aw{position:relative;width:48px;height:48px;flex-shrink:0}
+.art{width:48px;height:48px;border-radius:8px;object-fit:cover;display:block;flex-shrink:0}
+.art.c{border-radius:50%}
+.gen{display:flex;align-items:center;justify-content:center;font:700 20px Inter;color:rgba(255,255,255,.78)}
+.bdg{position:absolute;right:-4px;bottom:-4px;width:22px;height:22px;border-radius:11px;background:var(--t1);color:var(--base);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--base)}
+.bdg .ms{font-size:15px}
+.bdg.pa{background:var(--control);color:var(--t1)}
+.rt{flex:1;min-width:0;height:64px;display:flex;flex-direction:column;justify-content:center;box-shadow:inset 0 -1px 0 var(--div)}
+.row.last .rt{box-shadow:none}
+.rt b{font:400 15px/20px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row.on .rt b{font-weight:600}
+.rt s{text-decoration:none;font:400 13px/18px Inter;color:var(--t2);display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden}
+.rt s .ms{font-size:14px}
+.rt s em{font-style:normal;overflow:hidden;text-overflow:ellipsis}
+.row.un .art,.row.un .rt b{opacity:.45}
+.row.dis{opacity:.4}
+.num{width:24px;text-align:center;font:400 15px Inter;color:var(--t2);font-variant-numeric:tabular-nums;flex-shrink:0}
+.ring{width:14px;height:14px;border-radius:50%;border:2px solid #3A3D45;border-top-color:var(--t1);border-right-color:var(--t1);flex-shrink:0}
+.ring.lg{width:22px;height:22px;border-width:2.5px}
+
+/* list rows for menus, settings, hubs */
+.li{display:flex;align-items:center;gap:16px;min-height:56px;padding:4px 4px 4px 16px;flex-shrink:0}
+.li>.ms{color:var(--t2)}
+.li .lt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;padding:6px 0}
+.li .lt b{font:400 15px/20px Inter}
+.li .lt s{text-decoration:none;font:400 13px/18px Inter;color:var(--t2)}
+.li .val{font:400 14px Inter;color:var(--t2);white-space:nowrap}
+.li .chev{color:var(--t3);width:40px;text-align:center}
+.li.d,.li.d>.ms{color:var(--danger)}
+.grp{padding:8px 0}
+.gt{font:600 13px/18px Inter;color:var(--t2);padding:16px 16px 4px}
+.hr{height:1px;background:var(--div);margin:8px 16px;flex-shrink:0}
+.sw{width:52px;height:32px;border-radius:16px;background:var(--control);box-shadow:inset 0 0 0 2px var(--t3);position:relative;flex-shrink:0;margin-right:12px}
+.sw i{position:absolute;left:8px;top:8px;width:16px;height:16px;border-radius:8px;background:var(--t3)}
+.sw.on{background:var(--t1);box-shadow:none}
+.sw.on i{left:24px;top:4px;width:24px;height:24px;border-radius:12px;background:var(--base)}
+
+/* sheets, scrim, toast */
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:50}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:60;background:var(--raised);border-radius:16px 16px 0 0;padding:8px 0 24px;display:flex;flex-direction:column}
+.sheet.deep{background:#0D0F12;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.gr{align-self:center;width:32px;height:4px;border-radius:2px;background:#3A3D45;margin-bottom:4px;flex-shrink:0}
+.sh{display:flex;align-items:center;gap:12px;min-height:56px;padding:0 4px 0 16px;flex-shrink:0}
+.sh h2{flex:1;font:600 18px/24px Inter}
+.sh .id{flex:1;min-width:0;display:flex;flex-direction:column}
+.sh .id b{font:600 16px/21px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opt{display:flex;align-items:center;gap:16px;min-height:52px;padding:0 16px;border:0;background:none;width:100%;text-align:left;font:400 15px Inter;color:var(--t1);flex-shrink:0}
+.opt>.ms:first-child{color:var(--t2)}
+.opt .ot{flex:1;min-width:0;display:flex;flex-direction:column;padding:6px 0}
+.opt .ot small{font:400 13px/18px Inter;color:var(--t2)}
+.opt.on{font-weight:600}
+.opt.d,.opt.d>.ms:first-child{color:var(--danger)}
+.opt .ck{margin-left:auto}
+.toast{position:absolute;left:12px;right:12px;z-index:45;min-height:48px;border-radius:12px;background:rgba(42,45,52,.88);backdrop-filter:blur(20px) saturate(1.3);display:flex;align-items:center;gap:12px;padding:0 4px 0 16px;font:400 14px/20px Inter;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.toast .x{flex:1}
+
+/* top glow: the playing song's cover, blurred once, fading out by ~20% of the screen */
+.tg{position:absolute;left:0;right:0;top:0;height:270px;overflow:hidden;pointer-events:none;
+    -webkit-mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.55) 50%,transparent 100%);mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.55) 50%,transparent 100%)}
+.tg img{position:absolute;left:-70px;top:-150px;width:calc(100% + 140px);height:420px;object-fit:cover;filter:blur(54px) saturate(2) brightness(1.15);opacity:.85}
+
+/* frost: a dark tint over the playing cover blurred once (no live blur of scrolling content) */
+.frost{position:absolute;inset:0;overflow:hidden;pointer-events:none;background:#121418}
+.frost img{position:absolute;left:-40px;top:-60px;width:calc(100% + 80px);height:calc(100% + 120px);object-fit:cover;filter:blur(36px) saturate(1.8) brightness(1.1);opacity:.6}
+.frost i{position:absolute;inset:0;background:rgba(18,20,24,.58)}
+.frost.solid img,.frost.solid i{display:none}
+.frost.solid{background:var(--raised)}
+
+/* shell: mini player + navigation, one anchored surface */
+.shell{position:absolute;left:0;right:0;bottom:0;background:transparent;z-index:20;box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+.shell>*:not(.frost){position:relative}
+.pg{height:2px;background:var(--pressed);overflow:hidden}
+.pg i{display:block;height:2px;background:var(--t1)}
+.pg.ind i{width:30%;margin-left:35%;background:var(--t2)}
+.mini{display:flex;align-items:center;gap:4px;height:64px;padding:0 4px 0 16px}
+.mini .id{flex:1;min-width:0;display:flex;align-items:center;gap:12px;height:64px}
+.mini .art{width:44px;height:44px}
+.mini .tx{display:flex;flex-direction:column;min-width:0}
+.mini b{font:600 15px/20px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini s{text-decoration:none;font:400 13px/18px Inter;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px}
+.mini s.err{color:var(--t1)}
+.mini s .ms{font-size:15px}
+.nav{display:grid;grid-template-columns:repeat(5,1fr);height:80px;padding-bottom:16px;border-top:1px solid var(--div)}
+.nav.top0{border-top:0}
+.nv{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:400 12px Inter;color:var(--t2);border:0;background:none;padding:0}
+.nv .ind{display:flex;align-items:center;justify-content:center;width:56px;height:30px;border-radius:10px}
+.nv.on{color:var(--t1);font-weight:600}
+.nv.on .ind{background:rgba(255,255,255,.13)}
+
+/* keyboard (system) */
+.kb{position:absolute;left:0;right:0;bottom:0;z-index:70;background:#1B1C1F;padding:6px 3px 20px}
+.kb .sug{display:flex;justify-content:space-around;height:40px;align-items:center;font:400 15px Inter;color:var(--t2)}
+.kb .kr{display:flex;justify-content:center;gap:5px;margin-top:9px}
+.kb .k{width:33px;height:44px;border-radius:6px;background:#2E3034;display:flex;align-items:center;justify-content:center;font:400 18px Inter;color:var(--t1)}
+.kb .k.w{width:52px;background:#3A3D42}
+.kb .k.sp{width:170px}
+.kb .k.go{width:52px;background:#A8C7FA;color:#062E6F}
+
+/* empty, loading, error */
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:0 32px}
+.empty .ei{width:64px;height:64px;border-radius:16px;background:var(--control);display:flex;align-items:center;justify-content:center;color:var(--t2);margin-bottom:8px}
+.empty .ei .ms{font-size:32px}
+.sk{background:var(--control);border-radius:6px}
+.skrow{display:flex;align-items:center;gap:12px;height:64px;padding:0 16px}
+
+/* cards and grids */
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 12px;padding:8px 16px}
+.card .cv{width:100%;aspect-ratio:1;border-radius:12px;object-fit:cover;display:block}
+.card b{display:block;margin-top:8px;font:400 15px/20px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card s{display:block;text-decoration:none;font:400 13px/18px Inter;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mos{display:grid;grid-template-columns:1fr 1fr;border-radius:12px;overflow:hidden;aspect-ratio:1}
+.mos img{width:100%;height:100%;object-fit:cover;display:block}
+.shelf{display:flex;gap:12px;padding:0 16px;overflow:hidden;flex-shrink:0}
+.shelf .card{width:136px;flex-shrink:0}
+.tile{display:flex;align-items:center;justify-content:center;background:var(--control);color:var(--t1)}
+.av{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;font:600 15px Inter;color:#fff;flex-shrink:0;box-shadow:0 0 0 2px var(--base)}
+.code{font:700 34px/40px Inter;letter-spacing:4px;font-variant-numeric:tabular-nums}
+
+/* 200% system font scale (Android scales large text less: 28 -> 42) */
+.x2 .page h1{font-size:42px;line-height:50px}
+.x2 .page{height:auto;min-height:64px}
+.x2 .tab{font-size:26px}
+.x2 .tabs{height:64px;overflow:hidden}
+.x2 .tab{height:64px}
+.x2 .field{height:auto;min-height:60px}
+.x2 .field .v{font-size:28px;line-height:36px}
+.x2 .sortb>span{height:auto;min-height:44px;font-size:24px;line-height:30px;padding:6px 10px}
+.x2 .btn{font-size:26px;height:auto;min-height:56px}
+.x2 .row{height:auto;min-height:64px;padding-top:6px;padding-bottom:6px;align-items:flex-start}
+.x2 .rt{height:auto;padding:4px 0 10px}
+.x2 .rt b{font-size:30px;line-height:38px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.x2 .rt s{font-size:26px;line-height:32px;white-space:normal}
+.x2 .mini b{font-size:24px;line-height:30px}
+.x2 .mini s{font-size:20px;line-height:26px}
+.x2 .nv{font-size:15px}
+.x2 .bl{display:none}
+
+/* mini player seek band: the line is the top edge; the band is its own 20 tall touch strip */
+.sband{position:relative;height:24px}
+.sband .tr{position:absolute;left:0;right:0;top:0;height:2px;background:rgba(255,255,255,.14)}
+.sband .tr i{display:block;height:2px;background:var(--t1)}
+.sband.scrub .tr{height:4px;top:-1px}
+.sband.scrub .tr i{height:4px}
+.sband .th{position:absolute;top:-6px;width:14px;height:14px;border-radius:7px;background:var(--t1);box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.sband .bub{position:absolute;bottom:calc(100% + 10px);padding:6px 10px;border-radius:8px;background:rgba(18,20,24,.9);backdrop-filter:blur(16px);
+    font:600 13px Inter;color:var(--t1);font-variant-numeric:tabular-nums;white-space:nowrap;box-shadow:0 8px 20px rgba(0,0,0,.35)}
+.sband.off .tr{background:repeating-linear-gradient(90deg,rgba(255,255,255,.22) 0 6px,transparent 6px 10px)}
+.mini{height:56px}
+.mini .id{height:56px}
+.mini.dim{opacity:.4}
+
+/* hierarchy: secondary actions are text; a text button never stretches */
+.btns:has(.btn.t){justify-content:flex-end;align-items:center}
+.btns:has(.btn.t) .btn{flex:0 0 auto}
+.empty{gap:6px;padding:0 40px}
+.empty .lead{font:700 19px/25px Inter}
+.empty .body{font:400 14px/20px Inter;max-width:280px}
+.empty .ei{width:52px;height:52px;border-radius:14px;margin-bottom:6px}
+.empty .ei .ms{font-size:26px}
+.acts{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:14px}
+.acts .btn.t{color:var(--t2)}
+.jt .pr{position:absolute;left:0;bottom:0;width:56px;height:3px;background:rgba(0,0,0,.5)}
+.jt .pr i{display:block;height:3px;background:var(--t1)}
+
+/* library: search lives in the tab row; quiet sort */
+.tabs.ws{padding-right:4px;align-items:center}
+.tabs.ws .sp{flex:1}
+.sortq{height:48px;display:flex;align-items:center;gap:4px;border:0;background:none;padding:0 8px;margin-left:8px;font:600 13px Inter;color:var(--t2)}
+.sortq .ms{font-size:18px}
+.lsearch{display:flex;align-items:center;gap:4px;height:48px;margin:4px 12px 0;padding:0 4px;border-radius:12px;
+    background:rgba(255,255,255,.08);backdrop-filter:blur(18px) saturate(1.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.lsearch .v{flex:1;min-width:0;font:400 15px Inter;color:var(--t1);white-space:nowrap;overflow:hidden}
+
+/* playlist */
+.pstage{position:relative;align-self:center;width:184px;height:184px;margin-top:4px;flex-shrink:0}
+.pstage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:12px;filter:blur(26px) saturate(1.6);opacity:.65;transform:translateY(18px) scale(.86)}
+.pstage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.22),0 22px 44px -10px rgba(0,0,0,.55)}
+.pstage .rim{position:absolute;inset:0;border-radius:12px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.ptitle{flex-shrink:0;font:700 24px/30px Inter;text-align:center;padding:0 24px;margin-top:18px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pact{flex-shrink:0;display:flex;align-items:center;gap:4px;padding:10px 12px 0 16px}
+.pact .m{flex:1;min-width:0;font:400 13px/18px Inter;color:var(--t2)}
+.gshuf{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center}
+.gshuf span{width:44px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.1);color:var(--t1);box-shadow:inset 0 1px 0 rgba(255,255,255,.1)}
+.pplay{width:56px;height:56px;border-radius:28px;border:0;padding:0;display:flex;align-items:center;justify-content:center;background:var(--t1);color:var(--base);margin-left:4px}
+.pplay .ms{font-size:32px}
+.putil{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:6px 4px 0 0}
+.qbtn{height:48px;display:flex;align-items:center;gap:4px;border:0;background:none;padding:0 12px;font:600 13px Inter;color:var(--t2)}
+.qbtn .ms{font-size:18px}
+.note{display:flex;align-items:center;gap:10px;margin:6px 16px 2px;padding:8px 4px 8px 12px;border-radius:10px;background:rgba(255,255,255,.06);font:400 13px/18px Inter;color:var(--t1)}
+.note .x{flex:1}
+
+/* stream */
+.jgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 16px}
+.jt{position:relative;display:flex;align-items:center;gap:10px;height:56px;padding-right:8px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.06);border:0;color:inherit;text-align:left}
+.jt img,.jt .gen{width:56px;height:56px;object-fit:cover;flex-shrink:0;border-radius:0}
+.jt img.c{width:40px;height:40px;border-radius:20px;margin-left:8px}
+.jt span{display:flex;flex-direction:column;min-width:0}
+.jt b{font:600 13px/17px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jt s{text-decoration:none;font:400 12px/16px Inter;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sh2{display:flex;align-items:center;height:48px;padding:0 4px 0 16px;margin-top:12px}
+.sh2 h2{flex:1;font:600 18px/24px Inter}
+.mcard{width:148px;flex-shrink:0}
+.mcard .cv{width:148px;height:148px;border-radius:12px;object-fit:cover;display:block}
+.mcard b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:8px;font:400 15px/20px Inter}
+.mcard s{display:block;text-decoration:none;font:400 13px/18px Inter;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acard{width:96px;flex-shrink:0;text-align:center}
+.acard img,.acard .gen{width:96px;height:96px;border-radius:48px;object-fit:cover;display:flex}
+.acard b{display:block;margin-top:8px;font:400 13px/18px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* illustration: a small fanned deck with a note */
+.deckill{position:relative;width:150px;height:118px;margin-bottom:10px}
+.deckill i{position:absolute;left:45px;top:14px;width:62px;height:62px;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.08)}
+.deckill .n{position:absolute;color:var(--t1)}
+.x2 .jgrid{grid-template-columns:1fr}
+.x2 .jt{height:auto;min-height:64px}
+.x2 .jt b{font-size:22px;line-height:28px;white-space:normal}
+.x2 .jt s{font-size:20px;line-height:26px}
+.x2 .sh2 h2,.x2 .ptitle{font-size:34px;line-height:40px}
+.x2 .pact .m{font-size:22px;line-height:28px}
+.x2 .chip>span{font-size:22px;height:auto;min-height:40px}
+
+@font-face{font-family:Ionicons;src:url(assets/Ionicons.ttf) format('truetype');font-weight:400;font-display:block}
+.ms{font-family:Ionicons;font-variation-settings:normal;font-feature-settings:normal}
+/* V6: readable content scrolls above the anchored shell. */
+.scr{overflow-y:auto;scrollbar-width:none;padding-bottom:160px}
+.scr:has(+.shell):not(:has(+.shell .mini)){padding-bottom:80px}
+.ph:has(.npbg)>.scr{padding-bottom:0}
+.scr:has(+.kb){padding-bottom:310px}
+.nav{height:80px;padding-bottom:16px}
+.ph.compact .nav{height:72px;padding-bottom:8px}
+.ph.compact .scr{padding-bottom:152px}
+.tabs.ws{overflow:visible;flex-shrink:0}
+.tabscroll{display:flex;gap:20px;min-width:0;overflow-x:auto;scrollbar-width:none;flex:1}
+.tabs.ws>.ib{position:relative;flex-shrink:0}
+.tabscroll .tab{flex-shrink:0}
+.tab{min-width:48px}
+.x2 .tabs.ws{height:72px;overflow:visible}
+.x2 .tabscroll .tab{height:72px;font-size:26px}
+.x2 .sortq{height:auto;min-height:48px;font-size:22px;line-height:28px;text-align:left}
+.x2 .lsearch{min-height:64px;height:auto}
+.x2 .lsearch .v{font-size:28px;line-height:36px}
+.x2 .mini .tx{min-width:0}
+.x2 .mini b{font-size:24px;line-height:28px}
+.x2 .mini s{font-size:20px;line-height:24px}
+.x2 .mini,.x2 .mini .id{height:72px}
+.x2 .scr{padding-bottom:176px}
+.seg button{min-height:48px}
+.setting-note{padding:8px 16px;color:var(--t2);font:400 13px/19px Inter}
+.queue-empty{display:flex;flex:1;align-items:center;justify-content:center;padding:24px 0 40px}
+.queue-empty .empty{color:var(--t1)}
+.pstage.artist,.pstage.artist img,.pstage.artist .rim{border-radius:50%}
+.sband[aria-disabled=true]{opacity:.55}
+.sheet.deep{background:#0D0F12;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.card .cv.tile{display:flex;align-items:center;justify-content:center}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition-property:opacity!important}}
+</style>
+</helmet>
+<div class="board"><div class="cell"><div class="cap">You<p>One place for everything that isn’t listening or browsing: today’s ••• menu plus the Library header tools.</p><p class="pr">Planned app change: New tab replacing ••• (Your DJ, Settings, Playlists, Search live elsewhere)</p></div><div class="ph"><div class="tg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""></div><div class="scr"><header class="page"><h1>You</h1></header><div style="display:flex;align-items:center;gap:12px;margin:4px 16px 8px;padding:12px;border-radius:12px;background:var(--raised)"><span class="av" style="width:48px;height:48px;background:#5b4a7c;font-size:19px" aria-hidden="true">A</span><div style="flex:1"><p style="font:600 15px/20px Inter">Asha</p><p class="meta">Signed in to Allegra · library synced</p></div><span class="ms" aria-hidden="true" data-ionicon="chevron-forward-outline" style="color:var(--t3)">&#62015;</span></div><p class="gt">Listening</p><div class="li" role="button"><span class="ms" aria-hidden="true" data-ionicon="musical-notes-outline" style="">&#62570;</span><span class="lt"><b>Your DJ</b><s>Ask for a mood, a song, or a set</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="ms" aria-hidden="true" data-ionicon="git-merge-outline" style="">&#62276;</span><span class="lt"><b>Blends</b><s>2 Blends · 1 waiting for a friend</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="ms" aria-hidden="true" data-ionicon="people-outline" style="">&#62627;</span><span class="lt"><b>LuvLink</b><s>Listen with friends in sync</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><p class="gt">Library</p><div class="li" role="button"><span class="ms" aria-hidden="true" data-ionicon="download-outline" style="">&#62138;</span><span class="lt"><b>Downloads</b><s>2 in progress</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="ms" aria-hidden="true" data-ionicon="file-tray-outline" style="">&#62201;</span><span class="lt"><b>Import from Spotify</b></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="ms" aria-hidden="true" data-ionicon="desktop-outline" style="">&#62111;</span><span class="lt"><b>Connect devices</b><s>Living room PC is ready</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><p class="gt">App</p><div class="li" role="button"><span class="ms" aria-hidden="true" data-ionicon="settings-outline" style="">&#62828;</span><span class="lt"><b>Settings</b><s>Playback, lyrics, look</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="ms" aria-hidden="true" data-ionicon="information-circle-outline" style="">&#62361;</span><span class="lt"><b>About LuvLyrics</b><s>Update available · 1.36.0</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div></div><div class="shell"><div class="frost" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="sband" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="mini" role="group" aria-label="Now playing"><button class="id" style="border:0;background:none;padding:0;color:inherit;text-align:left" aria-label="Low Tide by Harbor Kids. Open player"><img class="art" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:44px;height:44px"><span class="tx"><b>Low Tide</b><s>Harbor Kids</s></span></button><button class="ib" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="font-size:32px">&#62611;</span></button><button class="ib" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-skip-forward" style="">&#62686;</span></button></div><nav class="nav" aria-label="Main"><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="radio-outline" style="">&#62726;</span></span>Stream</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="heart-outline" style="">&#62327;</span></span>Luvs</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="library-outline" style="">&#62390;</span></span>Library</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="search-outline" style="">&#62819;</span></span>Search</button><button class="nv on" aria-current="page"><span class="ind"><span class="ms f" aria-hidden="true" data-ionicon="person-circle" style="">&#62633;</span></span>You</button></nav></div><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Today: ••• menu (reference)<p>What the You tab replaces.</p></div><div class="ph"><div class="tg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""></div><div class="scr"><header class="page"><h1>Library</h1><button class="ib" aria-label="Downloads"><span class="ms" aria-hidden="true" data-ionicon="download-outline" style="">&#62138;</span></button><button class="ib" aria-label="More library options"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-vertical-outline" style="">&#62168;</span></button></header><div class="tabs ws"><div class="tabscroll" role="tablist" aria-label="Show in Library"><button class="tab on" role="tab" aria-selected="true">Songs</button><button class="tab" role="tab" aria-selected="false">Playlists</button><button class="tab" role="tab" aria-selected="false">Artists</button><button class="tab" role="tab" aria-selected="false">Albums</button></div><button class="ib" aria-label="Search in Songs"><span class="ms" aria-hidden="true" data-ionicon="search-outline" style="">&#62819;</span></button></div><div style="display:flex;align-items:center;padding:2px 0 0"><button class="sortq" aria-haspopup="dialog" aria-label="Sort: Recently added. Change"><span class="ms" aria-hidden="true" data-ionicon="swap-vertical-outline" style="">&#62900;</span>Recently added<span class="ms" aria-hidden="true" data-ionicon="chevron-down-outline" style="">&#62006;</span></button><span class="meta" style="margin-left:auto;padding-right:16px">248 songs</span></div><ul><li class="row on"><span class="aw"><img class="art" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:48px;height:48px"><span class="bdg" aria-hidden="true"><span class="ms" aria-hidden="true" data-ionicon="musical-notes-outline" style="">&#62570;</span></span></span><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Low Tide, Harbor Kids, now playing"><b>Low Tide</b><s><em>Harbor Kids · Playing</em></s></button><button class="ib m" aria-label="More actions for Low Tide"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-vertical-outline" style="">&#62168;</span></button></li><li class="row"><img class="art" src="/_blob/a28a4910c4101fff1cdaca12e592f638" alt="" style="width:48px;height:48px"><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Baarish (Monsoon Version) [feat. Aditi Rao], Kabir &amp; The Monsoons, downloaded"><b>Baarish (Monsoon Version) [feat. Aditi Rao]</b><s><span class="ms f" aria-hidden="true" data-ionicon="checkmark-done" style="">&#61985;</span><em>Kabir &amp; The Monsoons</em></s></button><button class="ib m" aria-label="More actions for Baarish (Monsoon Version) [feat. Aditi Rao]"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-vertical-outline" style="">&#62168;</span></button></li><li class="row"><img class="art" src="/_blob/74f23f1848c6d7e932d5d628b033f576" alt="" style="width:48px;height:48px"><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Static in the Rain, Orla North"><b>Static in the Rain</b><s><em>Orla North</em></s></button><button class="ib m" aria-label="More actions for Static in the Rain"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-vertical-outline" style="">&#62168;</span></button></li><li class="row"><img class="art" src="/_blob/80224f83fc614ceab8ebe2fc0d545939" alt="" style="width:48px;height:48px"><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Small Hours, Mira Vale, downloaded"><b>Small Hours</b><s><span class="ms f" aria-hidden="true" data-ionicon="checkmark-done" style="">&#61985;</span><em>Mira Vale</em></s></button><button class="ib m" aria-label="More actions for Small Hours"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-vertical-outline" style="">&#62168;</span></button></li><li class="row"><img class="art" src="/_blob/0dc4f7bf0bc5a28e32fa4938e355182c" alt="" style="width:48px;height:48px"><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Paper Lanterns, Mira Vale"><b>Paper Lanterns</b><s><em>Mira Vale</em></s></button><button class="ib m" aria-label="More actions for Paper Lanterns"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-vertical-outline" style="">&#62168;</span></button></li><li class="row"><img class="art" src="/_blob/ea11274cd3d13d724014f84d61a8c141" alt="" style="width:48px;height:48px"><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Fade, Neon Choir"><b>Fade</b><s><em>Neon Choir</em></s></button><button class="ib m" aria-label="More actions for Fade"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-vertical-outline" style="">&#62168;</span></button></li><li class="row"><img class="art" src="/_blob/16f9f309d813cf2399715dd3c34f6d9a" alt="" style="width:48px;height:48px"><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Golden Hour Again, Sunny Arcade, downloaded"><b>Golden Hour Again</b><s><span class="ms f" aria-hidden="true" data-ionicon="checkmark-done" style="">&#61985;</span><em>Sunny Arcade</em></s></button><button class="ib m" aria-label="More actions for Golden Hour Again"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-vertical-outline" style="">&#62168;</span></button></li><li class="row"><img class="art" src="/_blob/434b7a8267d07e303d359e48e3568765" alt="" style="width:48px;height:48px"><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Night Drive, The Overpass"><b>Night Drive</b><s><em>The Overpass</em></s></button><button class="ib m" aria-label="More actions for Night Drive"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-vertical-outline" style="">&#62168;</span></button></li><li class="row"><img class="art" src="/_blob/4df23e692f869f66f7cb10047bdc6679" alt="" style="width:48px;height:48px"><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Monsoon Mornings, Kabir &amp; The Monsoons"><b>Monsoon Mornings</b><s><em>Kabir &amp; The Monsoons</em></s></button><button class="ib m" aria-label="More actions for Monsoon Mornings"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-vertical-outline" style="">&#62168;</span></button></li></ul></div><div class="shell"><div class="frost" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="sband" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="mini" role="group" aria-label="Now playing"><button class="id" style="border:0;background:none;padding:0;color:inherit;text-align:left" aria-label="Low Tide by Harbor Kids. Open player"><img class="art" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:44px;height:44px"><span class="tx"><b>Low Tide</b><s>Harbor Kids</s></span></button><button class="ib" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="font-size:32px">&#62611;</span></button><button class="ib" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-skip-forward" style="">&#62686;</span></button></div><nav class="nav" aria-label="Main"><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="radio-outline" style="">&#62726;</span></span>Stream</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="heart-outline" style="">&#62327;</span></span>Luvs</button><button class="nv on" aria-current="page"><span class="ind"><span class="ms f" aria-hidden="true" data-ionicon="library" style="">&#62389;</span></span>Library</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="search-outline" style="">&#62819;</span></span>Search</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="person-circle-outline" style="">&#62634;</span></span>You</button></nav></div><div class="scrim"></div><section class="sheet deep" role="dialog" aria-modal="true" aria-label="More"><div class="gr" aria-hidden="true"></div><div class="sh"><h2>More</h2></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 16px"><span style="height:80px;border-radius:12px;background:var(--control);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font:400 13px Inter"><span class="ms" aria-hidden="true" data-ionicon="musical-notes-outline" style="">&#62570;</span>Your DJ</span><span style="height:80px;border-radius:12px;background:var(--control);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font:400 13px Inter"><span class="ms" aria-hidden="true" data-ionicon="search-outline" style="">&#62819;</span>Search</span><span style="height:80px;border-radius:12px;background:var(--control);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font:400 13px Inter"><span class="ms" aria-hidden="true" data-ionicon="list-outline" style="">&#62399;</span>Playlists</span></div><div style="height:8px"></div><div class="li" role="button"><span class="ms" aria-hidden="true" data-ionicon="settings-outline" style="">&#62828;</span><span class="lt"><b>Settings</b><s>Playback, lyrics, look</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div></section><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Settings<p>Grouped list; values on the right open a sheet; switches act at once.</p><p class="pr">Planned app change: Retire App background, Mini player background and Bottom bar style: the shell and screen backgrounds are now fixed</p></div><div class="ph"><div class="tg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""></div><div class="scr"><div class="top"><button class="ib" aria-label="Back"><span class="ms" aria-hidden="true" data-ionicon="arrow-back-outline" style="">&#61739;</span></button><span class="tt"></span></div><h1 style="font:700 28px/34px Inter;padding:0 16px 4px">Settings</h1><div class="chips" style="margin-top:4px"><button class="chip"><span>Player</span></button><button class="chip"><span>Playback</span></button><button class="chip"><span>Lyrics</span></button><button class="chip"><span>Navigation and voice</span></button><button class="chip"><span>Discover</span></button></div><p class="gt">Player</p><div class="li" role="button"><span class="lt"><b>Player background</b></span><span class="val">Apple + glow</span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Apple Music inspired</b><s>Full-width cover that melts into its blur</s></span><span class="sw on" role="switch" aria-checked="true" aria-label="Apple Music inspired"><i></i></span></div><div class="li" role="button"><span class="lt"><b>Canvas</b><s>Motion artwork when a song has it</s></span><span class="sw on" role="switch" aria-checked="true" aria-label="Canvas"><i></i></span></div><div class="li" role="button"><span class="lt"><b>Keep screen on</b><s>While Now Playing is open</s></span><span class="sw" role="switch" aria-checked="false" aria-label="Keep screen on"><i></i></span></div><p class="gt">Playback</p><div class="li" role="button"><span class="lt"><b>Keep playing similar songs</b><s>When the queue is about to end, songs like the one playing are added.</s></span><span class="sw on" role="switch" aria-checked="true" aria-label="Keep playing similar songs"><i></i></span></div><div class="li" role="button"><span class="lt"><b>Stay on the list when a song starts</b><s>Off opens Now Playing every time you pick a song.</s></span><span class="sw on" role="switch" aria-checked="true" aria-label="Stay on the list when a song starts"><i></i></span></div></div><div class="shell"><div class="frost" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="sband" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="mini" role="group" aria-label="Now playing"><button class="id" style="border:0;background:none;padding:0;color:inherit;text-align:left" aria-label="Low Tide by Harbor Kids. Open player"><img class="art" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:44px;height:44px"><span class="tx"><b>Low Tide</b><s>Harbor Kids</s></span></button><button class="ib" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="font-size:32px">&#62611;</span></button><button class="ib" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-skip-forward" style="">&#62686;</span></button></div><nav class="nav" aria-label="Main"><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="radio-outline" style="">&#62726;</span></span>Stream</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="heart-outline" style="">&#62327;</span></span>Luvs</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="library-outline" style="">&#62390;</span></span>Library</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="search-outline" style="">&#62819;</span></span>Search</button><button class="nv on" aria-current="page"><span class="ind"><span class="ms f" aria-hidden="true" data-ionicon="person-circle" style="">&#62633;</span></span>You</button></nav></div><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Settings: library and data<p>Destructive rows are red and ask first.</p></div><div class="ph"><div class="tg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""></div><div class="scr"><div class="top"><button class="ib" aria-label="Back"><span class="ms" aria-hidden="true" data-ionicon="arrow-back-outline" style="">&#61739;</span></button><span class="tt"></span></div><h1 style="font:700 28px/34px Inter;padding:0 16px 4px">Settings</h1><p class="gt">Library and data</p><div class="li" role="button"><span class="lt"><b>Library sync</b><s>Signed in · synced 2 minutes ago</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Add songs from this phone</b><s>Find music files already on your device.</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Export library</b><s>Songs, lyrics and playlists as one file.</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Import a backup</b></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Hidden songs</b></span><span class="val">3</span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Reset settings</b><s>Put everything on this page back to how it started. Your songs stay.</s></span></div><div class="li d" role="button"><span class="lt"><b>Delete all library data</b><s>Every song and playlist on this phone. This cannot be undone.</s></span></div></div><div class="shell"><div class="frost" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="sband" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="mini" role="group" aria-label="Now playing"><button class="id" style="border:0;background:none;padding:0;color:inherit;text-align:left" aria-label="Low Tide by Harbor Kids. Open player"><img class="art" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:44px;height:44px"><span class="tx"><b>Low Tide</b><s>Harbor Kids</s></span></button><button class="ib" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="font-size:32px">&#62611;</span></button><button class="ib" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-skip-forward" style="">&#62686;</span></button></div><nav class="nav" aria-label="Main"><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="radio-outline" style="">&#62726;</span></span>Stream</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="heart-outline" style="">&#62327;</span></span>Luvs</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="library-outline" style="">&#62390;</span></span>Library</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="search-outline" style="">&#62819;</span></span>Search</button><button class="nv on" aria-current="page"><span class="ind"><span class="ms f" aria-hidden="true" data-ionicon="person-circle" style="">&#62633;</span></span>You</button></nav></div><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">A choice sheet<p>Every multi-choice setting uses this.</p></div><div class="ph"><div class="tg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""></div><div class="scr"><div class="top"><button class="ib" aria-label="Back"><span class="ms" aria-hidden="true" data-ionicon="arrow-back-outline" style="">&#61739;</span></button><span class="tt"></span></div><h1 style="font:700 28px/34px Inter;padding:0 16px 4px">Settings</h1><div class="chips" style="margin-top:4px"><button class="chip"><span>Player</span></button><button class="chip"><span>Playback</span></button><button class="chip"><span>Lyrics</span></button><button class="chip"><span>Navigation and voice</span></button><button class="chip"><span>Discover</span></button></div><p class="gt">Player</p><div class="li" role="button"><span class="lt"><b>Player background</b></span><span class="val">Apple + glow</span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Apple Music inspired</b><s>Full-width cover that melts into its blur</s></span><span class="sw on" role="switch" aria-checked="true" aria-label="Apple Music inspired"><i></i></span></div><div class="li" role="button"><span class="lt"><b>Canvas</b><s>Motion artwork when a song has it</s></span><span class="sw on" role="switch" aria-checked="true" aria-label="Canvas"><i></i></span></div><div class="li" role="button"><span class="lt"><b>Keep screen on</b><s>While Now Playing is open</s></span><span class="sw" role="switch" aria-checked="false" aria-label="Keep screen on"><i></i></span></div><p class="gt">Playback</p><div class="li" role="button"><span class="lt"><b>Keep playing similar songs</b><s>When the queue is about to end, songs like the one playing are added.</s></span><span class="sw on" role="switch" aria-checked="true" aria-label="Keep playing similar songs"><i></i></span></div><div class="li" role="button"><span class="lt"><b>Stay on the list when a song starts</b><s>Off opens Now Playing every time you pick a song.</s></span><span class="sw on" role="switch" aria-checked="true" aria-label="Stay on the list when a song starts"><i></i></span></div></div><div class="shell"><div class="frost" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="sband" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="mini" role="group" aria-label="Now playing"><button class="id" style="border:0;background:none;padding:0;color:inherit;text-align:left" aria-label="Low Tide by Harbor Kids. Open player"><img class="art" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:44px;height:44px"><span class="tx"><b>Low Tide</b><s>Harbor Kids</s></span></button><button class="ib" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="font-size:32px">&#62611;</span></button><button class="ib" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-skip-forward" style="">&#62686;</span></button></div><nav class="nav" aria-label="Main"><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="radio-outline" style="">&#62726;</span></span>Stream</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="heart-outline" style="">&#62327;</span></span>Luvs</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="library-outline" style="">&#62390;</span></span>Library</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="search-outline" style="">&#62819;</span></span>Search</button><button class="nv on" aria-current="page"><span class="ind"><span class="ms f" aria-hidden="true" data-ionicon="person-circle" style="">&#62633;</span></span>You</button></nav></div><div class="scrim"></div><section class="sheet deep" role="dialog" aria-modal="true" aria-label="Player background"><div class="gr" aria-hidden="true"></div><div class="sh"><h2>Player background</h2><button class="ib" aria-label="Close"><span class="ms" aria-hidden="true" data-ionicon="close-outline" style="">&#62030;</span></button></div><button class="opt on" role="menuitemradio" aria-checked="true"><span class="ot">Apple + glow<small>Apple Music for the cover, glow once lyrics open</small></span><span class="ms ck" aria-hidden="true" data-ionicon="checkmark-outline" style="">&#61991;</span></button><button class="opt" role="menuitemradio" aria-checked="false"><span class="ot">Apple Music<small>The cover blurred soft behind a sharp hero</small></span></button><button class="opt" role="menuitemradio" aria-checked="false"><span class="ot">Cover glow<small>Black middle, the cover’s colours from the edges</small></span></button><button class="opt" role="menuitemradio" aria-checked="false"><span class="ot">YouTube<small>The cover’s colour washing into black</small></span></button></section><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">First sync<p>Signing in with a library on both sides asks once.</p></div><div class="ph"><div class="tg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""></div><div class="scr"><div class="top"><button class="ib" aria-label="Back"><span class="ms" aria-hidden="true" data-ionicon="arrow-back-outline" style="">&#61739;</span></button><span class="tt"></span></div><h1 style="font:700 28px/34px Inter;padding:0 16px 4px">Settings</h1><p class="gt">Library and data</p><div class="li" role="button"><span class="lt"><b>Library sync</b><s>Signed in · synced 2 minutes ago</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Add songs from this phone</b><s>Find music files already on your device.</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Export library</b><s>Songs, lyrics and playlists as one file.</s></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Import a backup</b></span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Hidden songs</b></span><span class="val">3</span><span class="ms chev" aria-hidden="true" data-ionicon="chevron-forward-outline" style="">&#62015;</span></div><div class="li" role="button"><span class="lt"><b>Reset settings</b><s>Put everything on this page back to how it started. Your songs stay.</s></span></div><div class="li d" role="button"><span class="lt"><b>Delete all library data</b><s>Every song and playlist on this phone. This cannot be undone.</s></span></div></div><div class="shell"><div class="frost" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="sband" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="mini" role="group" aria-label="Now playing"><button class="id" style="border:0;background:none;padding:0;color:inherit;text-align:left" aria-label="Low Tide by Harbor Kids. Open player"><img class="art" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:44px;height:44px"><span class="tx"><b>Low Tide</b><s>Harbor Kids</s></span></button><button class="ib" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="font-size:32px">&#62611;</span></button><button class="ib" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-skip-forward" style="">&#62686;</span></button></div><nav class="nav" aria-label="Main"><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="radio-outline" style="">&#62726;</span></span>Stream</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="heart-outline" style="">&#62327;</span></span>Luvs</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="library-outline" style="">&#62390;</span></span>Library</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="search-outline" style="">&#62819;</span></span>Search</button><button class="nv on" aria-current="page"><span class="ind"><span class="ms f" aria-hidden="true" data-ionicon="person-circle" style="">&#62633;</span></span>You</button></nav></div><div class="scrim"></div><section class="sheet deep" role="dialog" aria-modal="true" aria-label="Choose how to sync"><div class="gr" aria-hidden="true"></div><div class="sh"><h2>Choose how to sync your library</h2></div><p class="body" style="padding:0 16px 8px">This phone has 248 songs and 6 playlists. Your Allegra account has 1,204 likes and 14 playlists. Downloads stay on this phone either way.</p><button class="opt on" role="menuitemradio" aria-checked="true"><span class="ms" aria-hidden="true" data-ionicon="git-merge-outline" style="">&#62276;</span><span class="ot">Merge both<small>Likes and playlists from both sides, kept the same here and on the website</small></span><span class="ms ck" aria-hidden="true" data-ionicon="checkmark-outline" style="">&#61991;</span></button><button class="opt" role="menuitemradio" aria-checked="false"><span class="ms" aria-hidden="true" data-ionicon="cloud-download-outline" style="">&#62040;</span><span class="ot">Use your account’s library<small>This phone’s likes and playlists are replaced by your account’s.</small></span></button><div class="btns" style="margin-top:16px"><button class="btn t">Cancel</button><button class="btn p">Start syncing</button></div></section><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Hidden songs<p>Select and show again.</p></div><div class="ph"><div class="tg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""></div><div class="scr"><div class="top"><button class="ib" aria-label="Back"><span class="ms" aria-hidden="true" data-ionicon="arrow-back-outline" style="">&#61739;</span></button><span class="tt">Hidden songs</span><button class="btn t">Select all</button></div><p class="meta" style="padding:0 16px 8px">Hidden songs stay on this phone but don’t show in your library.</p><ul><li class="row"><span class="art gen" aria-hidden="true" style="width:48px;height:48px;border-radius:8px;background:linear-gradient(135deg,#3b3f6b,#6b3b5c);font-size:20px">V</span><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Voice memo 14, Unknown artist"><b>Voice memo 14</b><s><em>Unknown artist</em></s></button><button class="ib" role="checkbox" aria-checked="true" aria-label="Select Voice memo 14"><span class="ms f" aria-hidden="true" data-ionicon="checkmark-circle" style="">&#61982;</span></button></li><li class="row"><img class="art" src="/_blob/ea11274cd3d13d724014f84d61a8c141" alt="" style="width:48px;height:48px"><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Fade, Neon Choir"><b>Fade</b><s><em>Neon Choir</em></s></button><button class="ib" role="checkbox" aria-checked="true" aria-label="Select Fade"><span class="ms f" aria-hidden="true" data-ionicon="checkmark-circle" style="">&#61982;</span></button></li><li class="row last"><img class="art" src="/_blob/4df23e692f869f66f7cb10047bdc6679" alt="" style="width:48px;height:48px"><button class="rt" style="border:0;background:none;padding:0;text-align:left;color:inherit" aria-label="Monsoon Mornings, Kabir &amp; The Monsoons"><b>Monsoon Mornings</b><s><em>Kabir &amp; The Monsoons</em></s></button><button class="ib m" role="checkbox" aria-checked="false" aria-label="Select Monsoon Mornings"><span class="ms" aria-hidden="true" data-ionicon="ellipse-outline" style="">&#62156;</span></button></li></ul></div><div style="position:absolute;left:0;right:0;bottom:0;z-index:20;background:var(--raised);padding:12px 16px 28px;border-top:1px solid var(--div)"><button class="btn p blk">Show 2 songs again</button></div><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Hidden songs: none<p>Says what would appear here.</p></div><div class="ph"><div class="tg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""></div><div class="scr"><div class="top"><button class="ib" aria-label="Back"><span class="ms" aria-hidden="true" data-ionicon="arrow-back-outline" style="">&#61739;</span></button><span class="tt">Hidden songs</span></div><div style="flex:1;display:flex;align-items:center;padding-bottom:160px"><div class="empty"><span class="ei" aria-hidden="true"><span class="ms" aria-hidden="true" data-ionicon="eye-outline" style="">&#62186;</span></span><p class="lead">No hidden songs</p><p class="body">Songs you hide from your library are listed here.</p></div></div></div><div class="shell"><div class="frost" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="sband" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="mini" role="group" aria-label="Now playing"><button class="id" style="border:0;background:none;padding:0;color:inherit;text-align:left" aria-label="Low Tide by Harbor Kids. Open player"><img class="art" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:44px;height:44px"><span class="tx"><b>Low Tide</b><s>Harbor Kids</s></span></button><button class="ib" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="font-size:32px">&#62611;</span></button><button class="ib" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-skip-forward" style="">&#62686;</span></button></div><nav class="nav" aria-label="Main"><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="radio-outline" style="">&#62726;</span></span>Stream</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="heart-outline" style="">&#62327;</span></span>Luvs</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="library-outline" style="">&#62390;</span></span>Library</button><button class="nv"><span class="ind"><span class="ms" aria-hidden="true" data-ionicon="search-outline" style="">&#62819;</span></span>Search</button><button class="nv on" aria-current="page"><span class="ind"><span class="ms f" aria-hidden="true" data-ionicon="person-circle" style="">&#62633;</span></span>You</button></nav></div><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":0,"height":0}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

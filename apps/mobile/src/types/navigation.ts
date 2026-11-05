@@ -2,9 +2,11 @@
  * LyricFlow - Navigation Type Definitions
  */
 
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { Song, UnifiedSong } from './song';
+export type MixParams = { title: string } & ({ kind: 'stream'; songs: UnifiedSong[] } | { kind: 'local'; songs: Song[] });
 
 // Root Stack Navigator
 /** Sheets Now Playing can open straight away (deep links, invites). */
@@ -29,15 +31,17 @@ export type TabParamList = {
   Luvs: undefined;
   Library: NavigatorScreenParams<LibraryStackParamList> | undefined; // Was Playlists
   Search: undefined; // replaced Settings in the tab bar
+  You: undefined;
   Dj: undefined;
   // Pushed screens without a tab icon. They live in the tab navigator so the
   // bottom bar stays on screen, as in Spotify and Apple Music (see VISIBLE_TABS).
-  Settings: undefined;
+  Settings: { action?: 'import-phone' | 'hidden-songs' } | undefined;
   /** YouTube Music pages (artists, albums, playlists), stacked so back walks the trail. */
   Browse: NavigatorScreenParams<BrowseStackParamList> | undefined;
 };
 
 export type BrowseStackParamList = {
+  Mix: MixParams;
   /** By channel id, or by name (looked up on YouTube Music). */
   Artist: { browseId?: string; name?: string };
   Collection: { browseId: string; title?: string; thumbnail?: string };

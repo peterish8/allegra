@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Now playing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&amp;display=block">
+<style>
+:root{--base:#0B0D10;--raised:#17191E;--control:#22252C;--pressed:#2A2D34;--t1:#F4F4F5;--t2:#A3A5AE;--t3:#8A8D96;--div:rgba(255,255,255,.06);--danger:#FF6B61;--scrim:rgba(0,0,0,.4)}
+*{box-sizing:border-box}
+body{margin:0;background:#202226;font-family:Inter,system-ui,sans-serif;color:var(--t1);-webkit-font-smoothing:antialiased}
+button,input,textarea{font-family:inherit;color:inherit}
+h1,h2,h3,p,ul,ol{margin:0;padding:0}
+ul,ol{list-style:none}
+.ms{font-family:'Ionicons';font-weight:400;font-style:normal;font-size:24px;line-height:1;display:inline-block;white-space:nowrap;direction:ltr;font-feature-settings:'liga';font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;flex-shrink:0}
+.ms.f{font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24}
+
+/* board furniture (annotation, not UI) */
+.board{display:inline-flex;gap:40px;padding:28px 32px 40px;align-items:flex-start}
+.cell{width:390px;display:flex;flex-direction:column;gap:14px;flex-shrink:0}
+.cap{height:124px;overflow:hidden;font:600 14px/19px Inter;color:#E8E9EC}
+.cap p{margin-top:4px;font-weight:400;font-size:12px;line-height:17px;color:#9EA1AA}
+.cap .pr{color:#F2C14E}
+.cap .gap{color:#FF8A80}
+
+/* phone */
+.ph{position:relative;width:390px;height:844px;border-radius:36px;overflow:hidden;background:var(--base);box-shadow:0 0 0 1px rgba(255,255,255,.1),0 30px 60px rgba(0,0,0,.35)}
+.scr{position:absolute;inset:0;padding-top:28px;overflow:hidden;display:flex;flex-direction:column}
+.sb{position:absolute;top:0;left:0;right:0;height:28px;display:flex;justify-content:space-between;align-items:center;padding:0 18px 0 24px;font:600 12px Inter;z-index:80;pointer-events:none}
+.sb .ms{font-size:15px;margin-left:3px}
+.gb{position:absolute;left:0;right:0;bottom:0;height:16px;display:flex;align-items:center;justify-content:center;z-index:90;pointer-events:none}
+.gb i{width:108px;height:4px;border-radius:2px;background:rgba(255,255,255,.42)}
+.glow{position:absolute;left:-60px;top:-150px;width:510px;height:430px;filter:blur(70px);opacity:.5;pointer-events:none}
+.glow i{position:absolute;border-radius:50%}
+.glow.np{top:-120px;height:620px;opacity:.75}
+
+/* headers */
+.top{display:flex;align-items:center;height:56px;padding:0 4px;flex-shrink:0}
+.top .tt{flex:1;min-width:0;font:600 18px/24px Inter;padding-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.page{display:flex;align-items:center;height:56px;padding:0 4px 0 16px;flex-shrink:0}
+.page h1{flex:1;font:700 28px/34px Inter}
+.sec{display:flex;align-items:center;justify-content:space-between;height:48px;padding:0 4px 0 16px;margin-top:8px}
+.sec h2{font:600 18px/24px Inter}
+.ib{width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:0;background:none;color:var(--t1);padding:0;flex-shrink:0;position:relative}
+.ib.m{color:var(--t2)}
+.dot{position:absolute;top:10px;right:10px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--t1);color:var(--base);font:700 10px/16px Inter;text-align:center;box-shadow:0 0 0 2px var(--base)}
+
+/* text roles */
+.meta{font:400 13px/18px Inter;color:var(--t2)}
+.body{font:400 15px/22px Inter;color:var(--t2)}
+.lead{font:700 20px/26px Inter}
+.cap12{font:400 12px/16px Inter;color:var(--t3)}
+
+/* tabs and chips */
+.tabs{display:flex;gap:24px;height:48px;padding:0 16px;box-shadow:inset 0 -1px 0 var(--div);flex-shrink:0}
+.tab{position:relative;height:48px;border:0;background:none;padding:0;font:400 15px Inter;color:var(--t2);white-space:nowrap}
+.tab.on{font-weight:600;color:var(--t1)}
+.tab.on::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:1px;background:var(--t1)}
+.chips{display:flex;gap:8px;padding:0 16px;flex-shrink:0;overflow:hidden}
+.chip{height:48px;display:flex;align-items:center;border:0;background:none;padding:0;flex-shrink:0}
+.chip>span{display:flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;background:var(--control);font:400 13px Inter;color:var(--t1);white-space:nowrap}
+.chip.on>span{background:var(--t1);color:var(--base);font-weight:600;padding-left:8px}
+.chip .ms{font-size:18px}
+
+/* fields and sort */
+.field{display:flex;align-items:center;gap:8px;height:48px;padding:0 4px 0 12px;border-radius:12px;background:var(--raised);color:var(--t2);flex-shrink:0}
+.field .ms{font-size:20px}
+.field input,.field .v{flex:1;min-width:0;border:0;background:none;font:400 15px Inter;color:var(--t1);outline:none;white-space:nowrap;overflow:hidden}
+.field .ph-t{color:var(--t3)}
+.field.focus{box-shadow:inset 0 0 0 1.5px var(--t1)}
+.caret{display:inline-block;width:1.5px;height:18px;background:var(--t1);vertical-align:-3px;margin-left:1px}
+.sortb{height:48px;display:flex;align-items:center;border:0;background:none;padding:0;flex-shrink:0}
+.sortb>span{display:flex;align-items:center;gap:6px;height:36px;padding:0 8px 0 10px;border-radius:8px;background:var(--control);font:600 13px Inter;color:var(--t1)}
+.sortb .ms{font-size:18px}
+.sortb .ms.c{color:var(--t2)}
+.lbl{font:600 13px/18px Inter;color:var(--t2);padding:0 16px}
+
+/* buttons */
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;height:48px;padding:0 20px;border:0;border-radius:12px;font:600 15px Inter;white-space:nowrap;flex-shrink:0}
+.btn .ms{font-size:20px}
+.btn.p{background:var(--t1);color:var(--base)}
+.btn.s{background:var(--control);color:var(--t1)}
+.btn.t{background:none;color:var(--t1);padding:0 12px}
+.btn.d{background:rgba(255,107,97,.14);color:var(--danger)}
+.btn.dis{opacity:.38}
+.btn.blk{width:100%}
+.btn.sm{height:48px;padding:0 12px;font-size:14px}
+.btn.sm>span.v{display:flex;align-items:center;gap:6px;height:36px}
+.btns{display:flex;gap:12px;padding:0 16px;flex-shrink:0}
+.btns .btn{flex:1}
+.btns[style*="column"] .btn{flex:none}
+
+/* song row: one component, every list */
+.row{display:flex;align-items:center;gap:12px;height:64px;padding:0 4px 0 16px;flex-shrink:0}
+.row.nm{padding-right:16px}
+.row.pr{background:rgba(255,255,255,.06)}
+.aw{position:relative;width:48px;height:48px;flex-shrink:0}
+.art{width:48px;height:48px;border-radius:8px;object-fit:cover;display:block;flex-shrink:0}
+.art.c{border-radius:50%}
+.gen{display:flex;align-items:center;justify-content:center;font:700 20px Inter;color:rgba(255,255,255,.78)}
+.bdg{position:absolute;right:-4px;bottom:-4px;width:22px;height:22px;border-radius:11px;background:var(--t1);color:var(--base);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--base)}
+.bdg .ms{font-size:15px}
+.bdg.pa{background:var(--control);color:var(--t1)}
+.rt{flex:1;min-width:0;height:64px;display:flex;flex-direction:column;justify-content:center;box-shadow:inset 0 -1px 0 var(--div)}
+.row.last .rt{box-shadow:none}
+.rt b{font:400 15px/20px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row.on .rt b{font-weight:600}
+.rt s{text-decoration:none;font:400 13px/18px Inter;color:var(--t2);display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden}
+.rt s .ms{font-size:14px}
+.rt s em{font-style:normal;overflow:hidden;text-overflow:ellipsis}
+.row.un .art,.row.un .rt b{opacity:.45}
+.row.dis{opacity:.4}
+.num{width:24px;text-align:center;font:400 15px Inter;color:var(--t2);font-variant-numeric:tabular-nums;flex-shrink:0}
+.ring{width:14px;height:14px;border-radius:50%;border:2px solid #3A3D45;border-top-color:var(--t1);border-right-color:var(--t1);flex-shrink:0}
+.ring.lg{width:22px;height:22px;border-width:2.5px}
+
+/* list rows for menus, settings, hubs */
+.li{display:flex;align-items:center;gap:16px;min-height:56px;padding:4px 4px 4px 16px;flex-shrink:0}
+.li>.ms{color:var(--t2)}
+.li .lt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;padding:6px 0}
+.li .lt b{font:400 15px/20px Inter}
+.li .lt s{text-decoration:none;font:400 13px/18px Inter;color:var(--t2)}
+.li .val{font:400 14px Inter;color:var(--t2);white-space:nowrap}
+.li .chev{color:var(--t3);width:40px;text-align:center}
+.li.d,.li.d>.ms{color:var(--danger)}
+.grp{padding:8px 0}
+.gt{font:600 13px/18px Inter;color:var(--t2);padding:16px 16px 4px}
+.hr{height:1px;background:var(--div);margin:8px 16px;flex-shrink:0}
+.sw{width:52px;height:32px;border-radius:16px;background:var(--control);box-shadow:inset 0 0 0 2px var(--t3);position:relative;flex-shrink:0;margin-right:12px}
+.sw i{position:absolute;left:8px;top:8px;width:16px;height:16px;border-radius:8px;background:var(--t3)}
+.sw.on{background:var(--t1);box-shadow:none}
+.sw.on i{left:24px;top:4px;width:24px;height:24px;border-radius:12px;background:var(--base)}
+
+/* sheets, scrim, toast */
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:50}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:60;background:var(--raised);border-radius:16px 16px 0 0;padding:8px 0 24px;display:flex;flex-direction:column}
+.sheet.deep{background:#0D0F12;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.gr{align-self:center;width:32px;height:4px;border-radius:2px;background:#3A3D45;margin-bottom:4px;flex-shrink:0}
+.sh{display:flex;align-items:center;gap:12px;min-height:56px;padding:0 4px 0 16px;flex-shrink:0}
+.sh h2{flex:1;font:600 18px/24px Inter}
+.sh .id{flex:1;min-width:0;display:flex;flex-direction:column}
+.sh .id b{font:600 16px/21px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opt{display:flex;align-items:center;gap:16px;min-height:52px;padding:0 16px;border:0;background:none;width:100%;text-align:left;font:400 15px Inter;color:var(--t1);flex-shrink:0}
+.opt>.ms:first-child{color:var(--t2)}
+.opt .ot{flex:1;min-width:0;display:flex;flex-direction:column;padding:6px 0}
+.opt .ot small{font:400 13px/18px Inter;color:var(--t2)}
+.opt.on{font-weight:600}
+.opt.d,.opt.d>.ms:first-child{color:var(--danger)}
+.opt .ck{margin-left:auto}
+.toast{position:absolute;left:12px;right:12px;z-index:45;min-height:48px;border-radius:12px;background:rgba(42,45,52,.88);backdrop-filter:blur(20px) saturate(1.3);display:flex;align-items:center;gap:12px;padding:0 4px 0 16px;font:400 14px/20px Inter;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.toast .x{flex:1}
+
+/* top glow: the playing song's cover, blurred once, fading out by ~20% of the screen */
+.tg{position:absolute;left:0;right:0;top:0;height:270px;overflow:hidden;pointer-events:none;
+    -webkit-mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.55) 50%,transparent 100%);mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.55) 50%,transparent 100%)}
+.tg img{position:absolute;left:-70px;top:-150px;width:calc(100% + 140px);height:420px;object-fit:cover;filter:blur(54px) saturate(2) brightness(1.15);opacity:.85}
+
+/* frost: a dark tint over the playing cover blurred once (no live blur of scrolling content) */
+.frost{position:absolute;inset:0;overflow:hidden;pointer-events:none;background:#121418}
+.frost img{position:absolute;left:-40px;top:-60px;width:calc(100% + 80px);height:calc(100% + 120px);object-fit:cover;filter:blur(36px) saturate(1.8) brightness(1.1);opacity:.6}
+.frost i{position:absolute;inset:0;background:rgba(18,20,24,.58)}
+.frost.solid img,.frost.solid i{display:none}
+.frost.solid{background:var(--raised)}
+
+/* shell: mini player + navigation, one anchored surface */
+.shell{position:absolute;left:0;right:0;bottom:0;background:transparent;z-index:20;box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+.shell>*:not(.frost){position:relative}
+.pg{height:2px;background:var(--pressed);overflow:hidden}
+.pg i{display:block;height:2px;background:var(--t1)}
+.pg.ind i{width:30%;margin-left:35%;background:var(--t2)}
+.mini{display:flex;align-items:center;gap:4px;height:64px;padding:0 4px 0 16px}
+.mini .id{flex:1;min-width:0;display:flex;align-items:center;gap:12px;height:64px}
+.mini .art{width:44px;height:44px}
+.mini .tx{display:flex;flex-direction:column;min-width:0}
+.mini b{font:600 15px/20px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini s{text-decoration:none;font:400 13px/18px Inter;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px}
+.mini s.err{color:var(--t1)}
+.mini s .ms{font-size:15px}
+.nav{display:grid;grid-template-columns:repeat(5,1fr);height:80px;padding-bottom:16px;border-top:1px solid var(--div)}
+.nav.top0{border-top:0}
+.nv{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:400 12px Inter;color:var(--t2);border:0;background:none;padding:0}
+.nv .ind{display:flex;align-items:center;justify-content:center;width:56px;height:30px;border-radius:10px}
+.nv.on{color:var(--t1);font-weight:600}
+.nv.on .ind{background:rgba(255,255,255,.13)}
+
+/* keyboard (system) */
+.kb{position:absolute;left:0;right:0;bottom:0;z-index:70;background:#1B1C1F;padding:6px 3px 20px}
+.kb .sug{display:flex;justify-content:space-around;height:40px;align-items:center;font:400 15px Inter;color:var(--t2)}
+.kb .kr{display:flex;justify-content:center;gap:5px;margin-top:9px}
+.kb .k{width:33px;height:44px;border-radius:6px;background:#2E3034;display:flex;align-items:center;justify-content:center;font:400 18px Inter;color:var(--t1)}
+.kb .k.w{width:52px;background:#3A3D42}
+.kb .k.sp{width:170px}
+.kb .k.go{width:52px;background:#A8C7FA;color:#062E6F}
+
+/* empty, loading, error */
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:0 32px}
+.empty .ei{width:64px;height:64px;border-radius:16px;background:var(--control);display:flex;align-items:center;justify-content:center;color:var(--t2);margin-bottom:8px}
+.empty .ei .ms{font-size:32px}
+.sk{background:var(--control);border-radius:6px}
+.skrow{display:flex;align-items:center;gap:12px;height:64px;padding:0 16px}
+
+/* cards and grids */
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 12px;padding:8px 16px}
+.card .cv{width:100%;aspect-ratio:1;border-radius:12px;object-fit:cover;display:block}
+.card b{display:block;margin-top:8px;font:400 15px/20px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card s{display:block;text-decoration:none;font:400 13px/18px Inter;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mos{display:grid;grid-template-columns:1fr 1fr;border-radius:12px;overflow:hidden;aspect-ratio:1}
+.mos img{width:100%;height:100%;object-fit:cover;display:block}
+.shelf{display:flex;gap:12px;padding:0 16px;overflow:hidden;flex-shrink:0}
+.shelf .card{width:136px;flex-shrink:0}
+.tile{display:flex;align-items:center;justify-content:center;background:var(--control);color:var(--t1)}
+.av{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;font:600 15px Inter;color:#fff;flex-shrink:0;box-shadow:0 0 0 2px var(--base)}
+.code{font:700 34px/40px Inter;letter-spacing:4px;font-variant-numeric:tabular-nums}
+
+/* 200% system font scale (Android scales large text less: 28 -> 42) */
+.x2 .page h1{font-size:42px;line-height:50px}
+.x2 .page{height:auto;min-height:64px}
+.x2 .tab{font-size:26px}
+.x2 .tabs{height:64px;overflow:hidden}
+.x2 .tab{height:64px}
+.x2 .field{height:auto;min-height:60px}
+.x2 .field .v{font-size:28px;line-height:36px}
+.x2 .sortb>span{height:auto;min-height:44px;font-size:24px;line-height:30px;padding:6px 10px}
+.x2 .btn{font-size:26px;height:auto;min-height:56px}
+.x2 .row{height:auto;min-height:64px;padding-top:6px;padding-bottom:6px;align-items:flex-start}
+.x2 .rt{height:auto;padding:4px 0 10px}
+.x2 .rt b{font-size:30px;line-height:38px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.x2 .rt s{font-size:26px;line-height:32px;white-space:normal}
+.x2 .mini b{font-size:24px;line-height:30px}
+.x2 .mini s{font-size:20px;line-height:26px}
+.x2 .nv{font-size:15px}
+.x2 .bl{display:none}
+
+/* mini player seek band: the line is the top edge; the band is its own 20 tall touch strip */
+.sband{position:relative;height:24px}
+.sband .tr{position:absolute;left:0;right:0;top:0;height:2px;background:rgba(255,255,255,.14)}
+.sband .tr i{display:block;height:2px;background:var(--t1)}
+.sband.scrub .tr{height:4px;top:-1px}
+.sband.scrub .tr i{height:4px}
+.sband .th{position:absolute;top:-6px;width:14px;height:14px;border-radius:7px;background:var(--t1);box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.sband .bub{position:absolute;bottom:calc(100% + 10px);padding:6px 10px;border-radius:8px;background:rgba(18,20,24,.9);backdrop-filter:blur(16px);
+    font:600 13px Inter;color:var(--t1);font-variant-numeric:tabular-nums;white-space:nowrap;box-shadow:0 8px 20px rgba(0,0,0,.35)}
+.sband.off .tr{background:repeating-linear-gradient(90deg,rgba(255,255,255,.22) 0 6px,transparent 6px 10px)}
+.mini{height:56px}
+.mini .id{height:56px}
+.mini.dim{opacity:.4}
+
+/* hierarchy: secondary actions are text; a text button never stretches */
+.btns:has(.btn.t){justify-content:flex-end;align-items:center}
+.btns:has(.btn.t) .btn{flex:0 0 auto}
+.empty{gap:6px;padding:0 40px}
+.empty .lead{font:700 19px/25px Inter}
+.empty .body{font:400 14px/20px Inter;max-width:280px}
+.empty .ei{width:52px;height:52px;border-radius:14px;margin-bottom:6px}
+.empty .ei .ms{font-size:26px}
+.acts{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:14px}
+.acts .btn.t{color:var(--t2)}
+.jt .pr{position:absolute;left:0;bottom:0;width:56px;height:3px;background:rgba(0,0,0,.5)}
+.jt .pr i{display:block;height:3px;background:var(--t1)}
+
+/* library: search lives in the tab row; quiet sort */
+.tabs.ws{padding-right:4px;align-items:center}
+.tabs.ws .sp{flex:1}
+.sortq{height:48px;display:flex;align-items:center;gap:4px;border:0;background:none;padding:0 8px;margin-left:8px;font:600 13px Inter;color:var(--t2)}
+.sortq .ms{font-size:18px}
+.lsearch{display:flex;align-items:center;gap:4px;height:48px;margin:4px 12px 0;padding:0 4px;border-radius:12px;
+    background:rgba(255,255,255,.08);backdrop-filter:blur(18px) saturate(1.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.lsearch .v{flex:1;min-width:0;font:400 15px Inter;color:var(--t1);white-space:nowrap;overflow:hidden}
+
+/* playlist */
+.pstage{position:relative;align-self:center;width:184px;height:184px;margin-top:4px;flex-shrink:0}
+.pstage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:12px;filter:blur(26px) saturate(1.6);opacity:.65;transform:translateY(18px) scale(.86)}
+.pstage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.22),0 22px 44px -10px rgba(0,0,0,.55)}
+.pstage .rim{position:absolute;inset:0;border-radius:12px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.ptitle{flex-shrink:0;font:700 24px/30px Inter;text-align:center;padding:0 24px;margin-top:18px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pact{flex-shrink:0;display:flex;align-items:center;gap:4px;padding:10px 12px 0 16px}
+.pact .m{flex:1;min-width:0;font:400 13px/18px Inter;color:var(--t2)}
+.gshuf{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center}
+.gshuf span{width:44px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.1);color:var(--t1);box-shadow:inset 0 1px 0 rgba(255,255,255,.1)}
+.pplay{width:56px;height:56px;border-radius:28px;border:0;padding:0;display:flex;align-items:center;justify-content:center;background:var(--t1);color:var(--base);margin-left:4px}
+.pplay .ms{font-size:32px}
+.putil{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:6px 4px 0 0}
+.qbtn{height:48px;display:flex;align-items:center;gap:4px;border:0;background:none;padding:0 12px;font:600 13px Inter;color:var(--t2)}
+.qbtn .ms{font-size:18px}
+.note{display:flex;align-items:center;gap:10px;margin:6px 16px 2px;padding:8px 4px 8px 12px;border-radius:10px;background:rgba(255,255,255,.06);font:400 13px/18px Inter;color:var(--t1)}
+.note .x{flex:1}
+
+/* stream */
+.jgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 16px}
+.jt{position:relative;display:flex;align-items:center;gap:10px;height:56px;padding-right:8px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.06);border:0;color:inherit;text-align:left}
+.jt img,.jt .gen{width:56px;height:56px;object-fit:cover;flex-shrink:0;border-radius:0}
+.jt img.c{width:40px;height:40px;border-radius:20px;margin-left:8px}
+.jt span{display:flex;flex-direction:column;min-width:0}
+.jt b{font:600 13px/17px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jt s{text-decoration:none;font:400 12px/16px Inter;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sh2{display:flex;align-items:center;height:48px;padding:0 4px 0 16px;margin-top:12px}
+.sh2 h2{flex:1;font:600 18px/24px Inter}
+.mcard{width:148px;flex-shrink:0}
+.mcard .cv{width:148px;height:148px;border-radius:12px;object-fit:cover;display:block}
+.mcard b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:8px;font:400 15px/20px Inter}
+.mcard s{display:block;text-decoration:none;font:400 13px/18px Inter;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acard{width:96px;flex-shrink:0;text-align:center}
+.acard img,.acard .gen{width:96px;height:96px;border-radius:48px;object-fit:cover;display:flex}
+.acard b{display:block;margin-top:8px;font:400 13px/18px Inter;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* illustration: a small fanned deck with a note */
+.deckill{position:relative;width:150px;height:118px;margin-bottom:10px}
+.deckill i{position:absolute;left:45px;top:14px;width:62px;height:62px;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.08)}
+.deckill .n{position:absolute;color:var(--t1)}
+.x2 .jgrid{grid-template-columns:1fr}
+.x2 .jt{height:auto;min-height:64px}
+.x2 .jt b{font-size:22px;line-height:28px;white-space:normal}
+.x2 .jt s{font-size:20px;line-height:26px}
+.x2 .sh2 h2,.x2 .ptitle{font-size:34px;line-height:40px}
+.x2 .pact .m{font-size:22px;line-height:28px}
+.x2 .chip>span{font-size:22px;height:auto;min-height:40px}
+
+@font-face{font-family:Ionicons;src:url(assets/Ionicons.ttf) format('truetype');font-weight:400;font-display:block}
+.ms{font-family:Ionicons;font-variation-settings:normal;font-feature-settings:normal}
+/* V6: readable content scrolls above the anchored shell. */
+.scr{overflow-y:auto;scrollbar-width:none;padding-bottom:160px}
+.scr:has(+.shell):not(:has(+.shell .mini)){padding-bottom:80px}
+.ph:has(.npbg)>.scr{padding-bottom:0}
+.scr:has(+.kb){padding-bottom:310px}
+.nav{height:80px;padding-bottom:16px}
+.ph.compact .nav{height:72px;padding-bottom:8px}
+.ph.compact .scr{padding-bottom:152px}
+.tabs.ws{overflow:visible;flex-shrink:0}
+.tabscroll{display:flex;gap:20px;min-width:0;overflow-x:auto;scrollbar-width:none;flex:1}
+.tabs.ws>.ib{position:relative;flex-shrink:0}
+.tabscroll .tab{flex-shrink:0}
+.tab{min-width:48px}
+.x2 .tabs.ws{height:72px;overflow:visible}
+.x2 .tabscroll .tab{height:72px;font-size:26px}
+.x2 .sortq{height:auto;min-height:48px;font-size:22px;line-height:28px;text-align:left}
+.x2 .lsearch{min-height:64px;height:auto}
+.x2 .lsearch .v{font-size:28px;line-height:36px}
+.x2 .mini .tx{min-width:0}
+.x2 .mini b{font-size:24px;line-height:28px}
+.x2 .mini s{font-size:20px;line-height:24px}
+.x2 .mini,.x2 .mini .id{height:72px}
+.x2 .scr{padding-bottom:176px}
+.seg button{min-height:48px}
+.setting-note{padding:8px 16px;color:var(--t2);font:400 13px/19px Inter}
+.queue-empty{display:flex;flex:1;align-items:center;justify-content:center;padding:24px 0 40px}
+.queue-empty .empty{color:var(--t1)}
+.pstage.artist,.pstage.artist img,.pstage.artist .rim{border-radius:50%}
+.sband[aria-disabled=true]{opacity:.55}
+.sheet.deep{background:#0D0F12;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.card .cv.tile{display:flex;align-items:center;justify-content:center}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition-property:opacity!important}}
+</style>
+</helmet>
+<div class="board"><div class="cell"><div class="cap">Playing<p>No volume row; depth from the cover. One frosted play disc.</p></div><div class="ph"><div class="npbg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="scr"><style>
+.npbg{position:absolute;inset:0;overflow:hidden;background:#08090B}
+.npbg img{position:absolute;left:-90px;top:-90px;width:calc(100% + 180px);height:calc(100% + 180px);object-fit:cover;filter:blur(72px) saturate(1.5) brightness(.82)}
+.npbg i{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,9,11,.28) 0%,rgba(8,9,11,.06) 30%,rgba(8,9,11,.42) 62%,rgba(8,9,11,.86) 100%)}
+.npm1{color:#fff}.npm2{color:rgba(255,255,255,.72)}.npm3{color:rgba(255,255,255,.56)}
+.grab{align-self:center;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.38);margin:6px 0 0;flex-shrink:0}
+.nphd{display:flex;align-items:center;height:52px;padding:0 4px;flex-shrink:0}
+.nphd .src{flex:1;display:flex;flex-direction:column;align-items:center;border:0;background:none;color:#fff}
+.nphd .src small{font:600 11px/14px Inter;color:rgba(255,255,255,.56)}
+.nphd .src span{font:600 13px/18px Inter}
+.nib{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.86);flex-shrink:0}
+.gl{width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.14);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 12px rgba(0,0,0,.18);backdrop-filter:blur(14px)}
+.gl .ms{font-size:20px}
+.stage{position:relative;align-self:center;flex-shrink:0}
+.stage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;filter:blur(30px) saturate(1.7);opacity:.75;transform:translateY(24px) scale(.88)}
+.stage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,.22),0 28px 56px -12px rgba(0,0,0,.6)}
+.stage .rim{position:absolute;inset:0;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);pointer-events:none}
+.npt{display:flex;align-items:center;gap:8px;padding:0 16px 0 24px;flex-shrink:0}
+.npt h1{font:700 24px/30px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npt .ar{border:0;background:none;padding:0;font:400 17px/22px Inter;color:rgba(255,255,255,.72);text-align:left}
+.seek{padding:0 24px;flex-shrink:0}
+.seek .hit{position:relative;height:48px;margin:-12px 0 -10px;display:flex;align-items:center}
+.seek .tr{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden}
+.seek .tr i{display:block;height:5px;background:rgba(255,255,255,.92)}
+.seek .tm{display:flex;justify-content:space-between;font:600 12px Inter;color:rgba(255,255,255,.56);font-variant-numeric:tabular-nums}
+.trn{display:flex;align-items:center;justify-content:space-between;padding:0 20px;flex-shrink:0}
+.trn .sk{width:64px;height:64px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:#fff}
+.trn .sk .ms{font-size:46px}
+.trn .md{position:relative;width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.56)}
+.trn .md.on{color:#fff}
+.trn .md.on::after{content:'';position:absolute;bottom:6px;width:4px;height:4px;border-radius:2px;background:#fff}
+.disc{width:84px;height:84px;border-radius:42px;border:0;padding:0;display:flex;align-items:center;justify-content:center;color:#fff;
+    background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 0 rgba(0,0,0,.12),0 14px 34px rgba(0,0,0,.32)}
+.disc .ms{font-size:46px}
+.disc.sm{width:64px;height:64px;border-radius:32px}
+.disc.sm .ms{font-size:36px}
+.vol{display:flex;align-items:center;gap:10px;height:48px;padding:0 24px;color:rgba(255,255,255,.56);flex-shrink:0}
+.vol .ms{font-size:18px}
+.vol .tr{position:relative;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.vol .tr i{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.72)}
+.npb{display:flex;align-items:center;justify-content:space-between;padding:0 32px;margin-top:auto;margin-bottom:26px;flex-shrink:0}
+.npb .nib{color:rgba(255,255,255,.78)}
+.npb .nib.on .lit{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.npnote{display:flex;align-items:center;gap:8px;margin:10px 24px 0;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.28);font:400 13px/18px Inter;color:#fff;backdrop-filter:blur(12px)}
+.npnote .ms{font-size:16px}
+.lyr p{font:700 30px/38px Inter;color:#fff;margin-bottom:18px}
+.sheet.glass{background:rgba(20,22,27,.82);backdrop-filter:blur(40px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.sheet.glass .gr{background:rgba(255,255,255,.3)}
+.sheet.glass .hr{background:rgba(255,255,255,.08)}
+.deck{position:relative;height:176px;margin:4px 0 0;flex-shrink:0}
+.deck img{position:absolute;object-fit:cover;border-radius:12px}
+.qp{position:absolute;left:0;right:0;bottom:0;z-index:10;border-radius:22px 22px 0 0;background:rgba(14,15,19,.74);backdrop-filter:blur(36px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 -18px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;padding-top:6px}
+.qh{display:flex;align-items:center;gap:8px;padding:8px 12px 4px 20px}
+.qh h2{font:700 18px/24px Inter;color:#fff}
+.qh p{font:400 12px/16px Inter;color:rgba(255,255,255,.56)}
+.seg{display:flex;margin:8px 20px 4px;padding:3px;border-radius:11px;background:rgba(255,255,255,.07)}
+.seg button{flex:1;height:34px;border:0;border-radius:8px;background:none;font:400 13px Inter;color:rgba(255,255,255,.72)}
+.seg button.on{background:rgba(255,255,255,.16);color:#fff;font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.ql{font:600 12px/16px Inter;color:rgba(255,255,255,.56);padding:12px 20px 4px}
+.qr{display:flex;align-items:center;gap:12px;height:56px;padding:0 4px 0 20px}
+.qr img{width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0}
+.qr .t{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:none;padding:0;text-align:left}
+.qr .t b{font:400 15px/20px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .t s{text-decoration:none;font:400 13px/18px Inter;color:rgba(255,255,255,.56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .d{font:400 12px Inter;color:rgba(255,255,255,.5);font-variant-numeric:tabular-nums}
+.qr .h{color:rgba(255,255,255,.42)}
+</style><div class="grab" aria-hidden="true"></div><div class="nphd"><button class="nib" aria-label="Close player"><span class="ms" aria-hidden="true" data-ionicon="chevron-down-outline" style="">&#62006;</span></button><button class="src" aria-label="Playing from Night drive. Open"><small>Playing from</small><span>Night drive</span></button><button class="nib" aria-label="Playing on this phone. Choose where it plays"><span class="ms" aria-hidden="true" data-ionicon="desktop-outline" style="">&#62111;</span></button></div><div class="stage" style="width:342px;height:342px;margin-top:16px"><img class="amb" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" aria-hidden="true"><img class="cv" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="Cover of Low Tide" style="transition:filter .24s"><span class="rim" aria-hidden="true"></span></div><div style="height:32px"></div><div class="npt"><div style="flex:1;min-width:0"><h1 style="font-size:24px">Low Tide</h1><button class="ar" aria-label="Harbor Kids. Go to artist">Harbor Kids</button></div><button class="nib" aria-label="Liked" aria-pressed="true"><span class="gl"><span class="ms f" aria-hidden="true" data-ionicon="heart" style="">&#62314;</span></span></button><button class="nib" aria-label="More actions for Low Tide"><span class="gl"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-horizontal-outline" style="">&#62162;</span></span></button></div><div style="height:22px"></div><div class="seek"><div class="hit" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="tm"><span>1:24</span><span>-2:17</span></div></div><div style="height:18px"></div><div class="trn"><button class="md" aria-label="Shuffle what plays next"><span class="ms" aria-hidden="true" data-ionicon="shuffle-outline" style="">&#62852;</span></button><button class="sk" aria-label="Previous song"><span class="ms f" aria-hidden="true" data-ionicon="play-back" style="">&#62663;</span></button><button class="disc" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="">&#62611;</span></button><button class="sk" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-forward" style="">&#62672;</span></button><button class="md" aria-label="Repeat this song" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="repeat-outline" style="">&#62768;</span></button></div><div class="npb"><button class="nib" aria-label="Lyrics" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="chatbox-ellipses-outline" style="">&#61965;</span></button><button class="nib" aria-label="Sleep timer"><span class="ms" aria-hidden="true" data-ionicon="moon-outline" style="">&#62561;</span></button><button class="nib" aria-label="Up next" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="list-outline" style="">&#62399;</span></button></div></div><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Loading<p>Only the disc changes (spinner, aria-busy). Reduce Motion: a still ring.</p><p class="gap">Needs code: show the buffering state the player already reports (playWhenReady vs isPlaying)</p></div><div class="ph"><div class="npbg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="scr"><style>
+.npbg{position:absolute;inset:0;overflow:hidden;background:#08090B}
+.npbg img{position:absolute;left:-90px;top:-90px;width:calc(100% + 180px);height:calc(100% + 180px);object-fit:cover;filter:blur(72px) saturate(1.5) brightness(.82)}
+.npbg i{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,9,11,.28) 0%,rgba(8,9,11,.06) 30%,rgba(8,9,11,.42) 62%,rgba(8,9,11,.86) 100%)}
+.npm1{color:#fff}.npm2{color:rgba(255,255,255,.72)}.npm3{color:rgba(255,255,255,.56)}
+.grab{align-self:center;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.38);margin:6px 0 0;flex-shrink:0}
+.nphd{display:flex;align-items:center;height:52px;padding:0 4px;flex-shrink:0}
+.nphd .src{flex:1;display:flex;flex-direction:column;align-items:center;border:0;background:none;color:#fff}
+.nphd .src small{font:600 11px/14px Inter;color:rgba(255,255,255,.56)}
+.nphd .src span{font:600 13px/18px Inter}
+.nib{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.86);flex-shrink:0}
+.gl{width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.14);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 12px rgba(0,0,0,.18);backdrop-filter:blur(14px)}
+.gl .ms{font-size:20px}
+.stage{position:relative;align-self:center;flex-shrink:0}
+.stage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;filter:blur(30px) saturate(1.7);opacity:.75;transform:translateY(24px) scale(.88)}
+.stage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,.22),0 28px 56px -12px rgba(0,0,0,.6)}
+.stage .rim{position:absolute;inset:0;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);pointer-events:none}
+.npt{display:flex;align-items:center;gap:8px;padding:0 16px 0 24px;flex-shrink:0}
+.npt h1{font:700 24px/30px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npt .ar{border:0;background:none;padding:0;font:400 17px/22px Inter;color:rgba(255,255,255,.72);text-align:left}
+.seek{padding:0 24px;flex-shrink:0}
+.seek .hit{position:relative;height:48px;margin:-12px 0 -10px;display:flex;align-items:center}
+.seek .tr{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden}
+.seek .tr i{display:block;height:5px;background:rgba(255,255,255,.92)}
+.seek .tm{display:flex;justify-content:space-between;font:600 12px Inter;color:rgba(255,255,255,.56);font-variant-numeric:tabular-nums}
+.trn{display:flex;align-items:center;justify-content:space-between;padding:0 20px;flex-shrink:0}
+.trn .sk{width:64px;height:64px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:#fff}
+.trn .sk .ms{font-size:46px}
+.trn .md{position:relative;width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.56)}
+.trn .md.on{color:#fff}
+.trn .md.on::after{content:'';position:absolute;bottom:6px;width:4px;height:4px;border-radius:2px;background:#fff}
+.disc{width:84px;height:84px;border-radius:42px;border:0;padding:0;display:flex;align-items:center;justify-content:center;color:#fff;
+    background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 0 rgba(0,0,0,.12),0 14px 34px rgba(0,0,0,.32)}
+.disc .ms{font-size:46px}
+.disc.sm{width:64px;height:64px;border-radius:32px}
+.disc.sm .ms{font-size:36px}
+.vol{display:flex;align-items:center;gap:10px;height:48px;padding:0 24px;color:rgba(255,255,255,.56);flex-shrink:0}
+.vol .ms{font-size:18px}
+.vol .tr{position:relative;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.vol .tr i{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.72)}
+.npb{display:flex;align-items:center;justify-content:space-between;padding:0 32px;margin-top:auto;margin-bottom:26px;flex-shrink:0}
+.npb .nib{color:rgba(255,255,255,.78)}
+.npb .nib.on .lit{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.npnote{display:flex;align-items:center;gap:8px;margin:10px 24px 0;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.28);font:400 13px/18px Inter;color:#fff;backdrop-filter:blur(12px)}
+.npnote .ms{font-size:16px}
+.lyr p{font:700 30px/38px Inter;color:#fff;margin-bottom:18px}
+.sheet.glass{background:rgba(20,22,27,.82);backdrop-filter:blur(40px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.sheet.glass .gr{background:rgba(255,255,255,.3)}
+.sheet.glass .hr{background:rgba(255,255,255,.08)}
+.deck{position:relative;height:176px;margin:4px 0 0;flex-shrink:0}
+.deck img{position:absolute;object-fit:cover;border-radius:12px}
+.qp{position:absolute;left:0;right:0;bottom:0;z-index:10;border-radius:22px 22px 0 0;background:rgba(14,15,19,.74);backdrop-filter:blur(36px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 -18px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;padding-top:6px}
+.qh{display:flex;align-items:center;gap:8px;padding:8px 12px 4px 20px}
+.qh h2{font:700 18px/24px Inter;color:#fff}
+.qh p{font:400 12px/16px Inter;color:rgba(255,255,255,.56)}
+.seg{display:flex;margin:8px 20px 4px;padding:3px;border-radius:11px;background:rgba(255,255,255,.07)}
+.seg button{flex:1;height:34px;border:0;border-radius:8px;background:none;font:400 13px Inter;color:rgba(255,255,255,.72)}
+.seg button.on{background:rgba(255,255,255,.16);color:#fff;font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.ql{font:600 12px/16px Inter;color:rgba(255,255,255,.56);padding:12px 20px 4px}
+.qr{display:flex;align-items:center;gap:12px;height:56px;padding:0 4px 0 20px}
+.qr img{width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0}
+.qr .t{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:none;padding:0;text-align:left}
+.qr .t b{font:400 15px/20px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .t s{text-decoration:none;font:400 13px/18px Inter;color:rgba(255,255,255,.56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .d{font:400 12px Inter;color:rgba(255,255,255,.5);font-variant-numeric:tabular-nums}
+.qr .h{color:rgba(255,255,255,.42)}
+</style><div class="grab" aria-hidden="true"></div><div class="nphd"><button class="nib" aria-label="Close player"><span class="ms" aria-hidden="true" data-ionicon="chevron-down-outline" style="">&#62006;</span></button><button class="src" aria-label="Playing from Night drive. Open"><small>Playing from</small><span>Night drive</span></button><button class="nib" aria-label="Playing on this phone. Choose where it plays"><span class="ms" aria-hidden="true" data-ionicon="desktop-outline" style="">&#62111;</span></button></div><div class="stage" style="width:342px;height:342px;margin-top:16px"><img class="amb" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" aria-hidden="true"><img class="cv" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="Cover of Low Tide" style="transition:filter .24s"><span class="rim" aria-hidden="true"></span></div><div style="height:32px"></div><div class="npt"><div style="flex:1;min-width:0"><h1 style="font-size:24px">Low Tide</h1><button class="ar" aria-label="Harbor Kids. Go to artist">Harbor Kids</button></div><button class="nib" aria-label="Liked" aria-pressed="true"><span class="gl"><span class="ms f" aria-hidden="true" data-ionicon="heart" style="">&#62314;</span></span></button><button class="nib" aria-label="More actions for Low Tide"><span class="gl"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-horizontal-outline" style="">&#62162;</span></span></button></div><div style="height:22px"></div><div class="seek"><div class="hit" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="tm"><span>1:24</span><span>-2:17</span></div></div><div style="height:18px"></div><div class="trn"><button class="md" aria-label="Shuffle what plays next"><span class="ms" aria-hidden="true" data-ionicon="shuffle-outline" style="">&#62852;</span></button><button class="sk" aria-label="Previous song"><span class="ms f" aria-hidden="true" data-ionicon="play-back" style="">&#62663;</span></button><button class="disc" aria-label="Loading. Pause" aria-busy="true"><span class="ring lg" aria-hidden="true" style="width:30px;height:30px;border-width:3px;border-color:rgba(255,255,255,.25);border-top-color:#fff;border-right-color:#fff"></span></button><button class="sk" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-forward" style="">&#62672;</span></button><button class="md" aria-label="Repeat this song" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="repeat-outline" style="">&#62768;</span></button></div><div class="npb"><button class="nib" aria-label="Lyrics" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="chatbox-ellipses-outline" style="">&#61965;</span></button><button class="nib" aria-label="Sleep timer"><span class="ms" aria-hidden="true" data-ionicon="moon-outline" style="">&#62561;</span></button><button class="nib" aria-label="Up next" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="list-outline" style="">&#62399;</span></button></div></div><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Couldn’t play<p>The disc becomes the one retry. An info control sits in the cover’s top-right corner only while there is an error.</p><p class="gap">Needs code: surface MainPlayer.onPlaybackError (exists, never shown)</p></div><div class="ph"><div class="npbg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="scr"><style>
+.npbg{position:absolute;inset:0;overflow:hidden;background:#08090B}
+.npbg img{position:absolute;left:-90px;top:-90px;width:calc(100% + 180px);height:calc(100% + 180px);object-fit:cover;filter:blur(72px) saturate(1.5) brightness(.82)}
+.npbg i{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,9,11,.28) 0%,rgba(8,9,11,.06) 30%,rgba(8,9,11,.42) 62%,rgba(8,9,11,.86) 100%)}
+.npm1{color:#fff}.npm2{color:rgba(255,255,255,.72)}.npm3{color:rgba(255,255,255,.56)}
+.grab{align-self:center;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.38);margin:6px 0 0;flex-shrink:0}
+.nphd{display:flex;align-items:center;height:52px;padding:0 4px;flex-shrink:0}
+.nphd .src{flex:1;display:flex;flex-direction:column;align-items:center;border:0;background:none;color:#fff}
+.nphd .src small{font:600 11px/14px Inter;color:rgba(255,255,255,.56)}
+.nphd .src span{font:600 13px/18px Inter}
+.nib{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.86);flex-shrink:0}
+.gl{width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.14);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 12px rgba(0,0,0,.18);backdrop-filter:blur(14px)}
+.gl .ms{font-size:20px}
+.stage{position:relative;align-self:center;flex-shrink:0}
+.stage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;filter:blur(30px) saturate(1.7);opacity:.75;transform:translateY(24px) scale(.88)}
+.stage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,.22),0 28px 56px -12px rgba(0,0,0,.6)}
+.stage .rim{position:absolute;inset:0;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);pointer-events:none}
+.npt{display:flex;align-items:center;gap:8px;padding:0 16px 0 24px;flex-shrink:0}
+.npt h1{font:700 24px/30px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npt .ar{border:0;background:none;padding:0;font:400 17px/22px Inter;color:rgba(255,255,255,.72);text-align:left}
+.seek{padding:0 24px;flex-shrink:0}
+.seek .hit{position:relative;height:48px;margin:-12px 0 -10px;display:flex;align-items:center}
+.seek .tr{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden}
+.seek .tr i{display:block;height:5px;background:rgba(255,255,255,.92)}
+.seek .tm{display:flex;justify-content:space-between;font:600 12px Inter;color:rgba(255,255,255,.56);font-variant-numeric:tabular-nums}
+.trn{display:flex;align-items:center;justify-content:space-between;padding:0 20px;flex-shrink:0}
+.trn .sk{width:64px;height:64px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:#fff}
+.trn .sk .ms{font-size:46px}
+.trn .md{position:relative;width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.56)}
+.trn .md.on{color:#fff}
+.trn .md.on::after{content:'';position:absolute;bottom:6px;width:4px;height:4px;border-radius:2px;background:#fff}
+.disc{width:84px;height:84px;border-radius:42px;border:0;padding:0;display:flex;align-items:center;justify-content:center;color:#fff;
+    background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 0 rgba(0,0,0,.12),0 14px 34px rgba(0,0,0,.32)}
+.disc .ms{font-size:46px}
+.disc.sm{width:64px;height:64px;border-radius:32px}
+.disc.sm .ms{font-size:36px}
+.vol{display:flex;align-items:center;gap:10px;height:48px;padding:0 24px;color:rgba(255,255,255,.56);flex-shrink:0}
+.vol .ms{font-size:18px}
+.vol .tr{position:relative;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.vol .tr i{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.72)}
+.npb{display:flex;align-items:center;justify-content:space-between;padding:0 32px;margin-top:auto;margin-bottom:26px;flex-shrink:0}
+.npb .nib{color:rgba(255,255,255,.78)}
+.npb .nib.on .lit{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.npnote{display:flex;align-items:center;gap:8px;margin:10px 24px 0;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.28);font:400 13px/18px Inter;color:#fff;backdrop-filter:blur(12px)}
+.npnote .ms{font-size:16px}
+.lyr p{font:700 30px/38px Inter;color:#fff;margin-bottom:18px}
+.sheet.glass{background:rgba(20,22,27,.82);backdrop-filter:blur(40px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.sheet.glass .gr{background:rgba(255,255,255,.3)}
+.sheet.glass .hr{background:rgba(255,255,255,.08)}
+.deck{position:relative;height:176px;margin:4px 0 0;flex-shrink:0}
+.deck img{position:absolute;object-fit:cover;border-radius:12px}
+.qp{position:absolute;left:0;right:0;bottom:0;z-index:10;border-radius:22px 22px 0 0;background:rgba(14,15,19,.74);backdrop-filter:blur(36px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 -18px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;padding-top:6px}
+.qh{display:flex;align-items:center;gap:8px;padding:8px 12px 4px 20px}
+.qh h2{font:700 18px/24px Inter;color:#fff}
+.qh p{font:400 12px/16px Inter;color:rgba(255,255,255,.56)}
+.seg{display:flex;margin:8px 20px 4px;padding:3px;border-radius:11px;background:rgba(255,255,255,.07)}
+.seg button{flex:1;height:34px;border:0;border-radius:8px;background:none;font:400 13px Inter;color:rgba(255,255,255,.72)}
+.seg button.on{background:rgba(255,255,255,.16);color:#fff;font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.ql{font:600 12px/16px Inter;color:rgba(255,255,255,.56);padding:12px 20px 4px}
+.qr{display:flex;align-items:center;gap:12px;height:56px;padding:0 4px 0 20px}
+.qr img{width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0}
+.qr .t{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:none;padding:0;text-align:left}
+.qr .t b{font:400 15px/20px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .t s{text-decoration:none;font:400 13px/18px Inter;color:rgba(255,255,255,.56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .d{font:400 12px Inter;color:rgba(255,255,255,.5);font-variant-numeric:tabular-nums}
+.qr .h{color:rgba(255,255,255,.42)}
+</style><div class="grab" aria-hidden="true"></div><div class="nphd"><button class="nib" aria-label="Close player"><span class="ms" aria-hidden="true" data-ionicon="chevron-down-outline" style="">&#62006;</span></button><button class="src" aria-label="Playing from Night drive. Open"><small>Playing from</small><span>Night drive</span></button><button class="nib" aria-label="Playing on this phone. Choose where it plays"><span class="ms" aria-hidden="true" data-ionicon="desktop-outline" style="">&#62111;</span></button></div><div class="stage" style="width:342px;height:342px;margin-top:16px"><img class="amb" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" aria-hidden="true"><img class="cv" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="Cover of Low Tide" style="transition:filter .24s"><span class="rim" aria-hidden="true"></span><button class="nib" aria-label="Playback problem. Show details" aria-expanded="false" style="position:absolute;top:4px;right:4px;z-index:2"><span style="width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;background:rgba(8,9,11,.55);color:#fff;backdrop-filter:blur(10px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)"><span class="ms" aria-hidden="true" data-ionicon="information-circle-outline" style="font-size:20px">&#62361;</span></span></button></div><div style="height:32px"></div><div class="npt"><div style="flex:1;min-width:0"><h1 style="font-size:24px">Low Tide</h1><button class="ar" aria-label="Harbor Kids. Go to artist">Harbor Kids</button></div><button class="nib" aria-label="Liked" aria-pressed="true"><span class="gl"><span class="ms f" aria-hidden="true" data-ionicon="heart" style="">&#62314;</span></span></button><button class="nib" aria-label="More actions for Low Tide"><span class="gl"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-horizontal-outline" style="">&#62162;</span></span></button></div><div style="height:22px"></div><div class="seek"><div class="hit" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="tm"><span>1:24</span><span>-2:17</span></div></div><div style="height:18px"></div><div class="trn"><button class="md" aria-label="Shuffle what plays next"><span class="ms" aria-hidden="true" data-ionicon="shuffle-outline" style="">&#62852;</span></button><button class="sk" aria-label="Previous song"><span class="ms f" aria-hidden="true" data-ionicon="play-back" style="">&#62663;</span></button><button class="disc" aria-label="Couldn’t play. Try again"><span class="ms" aria-hidden="true" data-ionicon="refresh-outline" style="">&#62744;</span></button><button class="sk" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-forward" style="">&#62672;</span></button><button class="md" aria-label="Repeat this song" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="repeat-outline" style="">&#62768;</span></button></div><div class="npb"><button class="nib" aria-label="Lyrics" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="chatbox-ellipses-outline" style="">&#61965;</span></button><button class="nib" aria-label="Sleep timer"><span class="ms" aria-hidden="true" data-ionicon="moon-outline" style="">&#62561;</span></button><button class="nib" aria-label="Up next" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="list-outline" style="">&#62399;</span></button></div></div><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Couldn’t play: details<p>Tap info: the cover softens in place and explains; the control becomes ×. Back closes it first. Nothing else moves; Try again here is a quiet text action, the disc stays the main retry.</p></div><div class="ph"><div class="npbg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="scr"><style>
+.npbg{position:absolute;inset:0;overflow:hidden;background:#08090B}
+.npbg img{position:absolute;left:-90px;top:-90px;width:calc(100% + 180px);height:calc(100% + 180px);object-fit:cover;filter:blur(72px) saturate(1.5) brightness(.82)}
+.npbg i{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,9,11,.28) 0%,rgba(8,9,11,.06) 30%,rgba(8,9,11,.42) 62%,rgba(8,9,11,.86) 100%)}
+.npm1{color:#fff}.npm2{color:rgba(255,255,255,.72)}.npm3{color:rgba(255,255,255,.56)}
+.grab{align-self:center;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.38);margin:6px 0 0;flex-shrink:0}
+.nphd{display:flex;align-items:center;height:52px;padding:0 4px;flex-shrink:0}
+.nphd .src{flex:1;display:flex;flex-direction:column;align-items:center;border:0;background:none;color:#fff}
+.nphd .src small{font:600 11px/14px Inter;color:rgba(255,255,255,.56)}
+.nphd .src span{font:600 13px/18px Inter}
+.nib{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.86);flex-shrink:0}
+.gl{width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.14);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 12px rgba(0,0,0,.18);backdrop-filter:blur(14px)}
+.gl .ms{font-size:20px}
+.stage{position:relative;align-self:center;flex-shrink:0}
+.stage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;filter:blur(30px) saturate(1.7);opacity:.75;transform:translateY(24px) scale(.88)}
+.stage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,.22),0 28px 56px -12px rgba(0,0,0,.6)}
+.stage .rim{position:absolute;inset:0;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);pointer-events:none}
+.npt{display:flex;align-items:center;gap:8px;padding:0 16px 0 24px;flex-shrink:0}
+.npt h1{font:700 24px/30px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npt .ar{border:0;background:none;padding:0;font:400 17px/22px Inter;color:rgba(255,255,255,.72);text-align:left}
+.seek{padding:0 24px;flex-shrink:0}
+.seek .hit{position:relative;height:48px;margin:-12px 0 -10px;display:flex;align-items:center}
+.seek .tr{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden}
+.seek .tr i{display:block;height:5px;background:rgba(255,255,255,.92)}
+.seek .tm{display:flex;justify-content:space-between;font:600 12px Inter;color:rgba(255,255,255,.56);font-variant-numeric:tabular-nums}
+.trn{display:flex;align-items:center;justify-content:space-between;padding:0 20px;flex-shrink:0}
+.trn .sk{width:64px;height:64px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:#fff}
+.trn .sk .ms{font-size:46px}
+.trn .md{position:relative;width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.56)}
+.trn .md.on{color:#fff}
+.trn .md.on::after{content:'';position:absolute;bottom:6px;width:4px;height:4px;border-radius:2px;background:#fff}
+.disc{width:84px;height:84px;border-radius:42px;border:0;padding:0;display:flex;align-items:center;justify-content:center;color:#fff;
+    background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 0 rgba(0,0,0,.12),0 14px 34px rgba(0,0,0,.32)}
+.disc .ms{font-size:46px}
+.disc.sm{width:64px;height:64px;border-radius:32px}
+.disc.sm .ms{font-size:36px}
+.vol{display:flex;align-items:center;gap:10px;height:48px;padding:0 24px;color:rgba(255,255,255,.56);flex-shrink:0}
+.vol .ms{font-size:18px}
+.vol .tr{position:relative;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.vol .tr i{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.72)}
+.npb{display:flex;align-items:center;justify-content:space-between;padding:0 32px;margin-top:auto;margin-bottom:26px;flex-shrink:0}
+.npb .nib{color:rgba(255,255,255,.78)}
+.npb .nib.on .lit{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.npnote{display:flex;align-items:center;gap:8px;margin:10px 24px 0;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.28);font:400 13px/18px Inter;color:#fff;backdrop-filter:blur(12px)}
+.npnote .ms{font-size:16px}
+.lyr p{font:700 30px/38px Inter;color:#fff;margin-bottom:18px}
+.sheet.glass{background:rgba(20,22,27,.82);backdrop-filter:blur(40px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.sheet.glass .gr{background:rgba(255,255,255,.3)}
+.sheet.glass .hr{background:rgba(255,255,255,.08)}
+.deck{position:relative;height:176px;margin:4px 0 0;flex-shrink:0}
+.deck img{position:absolute;object-fit:cover;border-radius:12px}
+.qp{position:absolute;left:0;right:0;bottom:0;z-index:10;border-radius:22px 22px 0 0;background:rgba(14,15,19,.74);backdrop-filter:blur(36px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 -18px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;padding-top:6px}
+.qh{display:flex;align-items:center;gap:8px;padding:8px 12px 4px 20px}
+.qh h2{font:700 18px/24px Inter;color:#fff}
+.qh p{font:400 12px/16px Inter;color:rgba(255,255,255,.56)}
+.seg{display:flex;margin:8px 20px 4px;padding:3px;border-radius:11px;background:rgba(255,255,255,.07)}
+.seg button{flex:1;height:34px;border:0;border-radius:8px;background:none;font:400 13px Inter;color:rgba(255,255,255,.72)}
+.seg button.on{background:rgba(255,255,255,.16);color:#fff;font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.ql{font:600 12px/16px Inter;color:rgba(255,255,255,.56);padding:12px 20px 4px}
+.qr{display:flex;align-items:center;gap:12px;height:56px;padding:0 4px 0 20px}
+.qr img{width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0}
+.qr .t{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:none;padding:0;text-align:left}
+.qr .t b{font:400 15px/20px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .t s{text-decoration:none;font:400 13px/18px Inter;color:rgba(255,255,255,.56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .d{font:400 12px Inter;color:rgba(255,255,255,.5);font-variant-numeric:tabular-nums}
+.qr .h{color:rgba(255,255,255,.42)}
+</style><div class="grab" aria-hidden="true"></div><div class="nphd"><button class="nib" aria-label="Close player"><span class="ms" aria-hidden="true" data-ionicon="chevron-down-outline" style="">&#62006;</span></button><button class="src" aria-label="Playing from Night drive. Open"><small>Playing from</small><span>Night drive</span></button><button class="nib" aria-label="Playing on this phone. Choose where it plays"><span class="ms" aria-hidden="true" data-ionicon="desktop-outline" style="">&#62111;</span></button></div><div class="stage" style="width:342px;height:342px;margin-top:16px"><img class="amb" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" aria-hidden="true"><img class="cv" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="Cover of Low Tide" style="transition:filter .24s;filter:blur(14px) brightness(.55) saturate(1.2)"><span class="rim" aria-hidden="true"></span><button class="nib" aria-label="Hide playback problem details" aria-expanded="true" style="position:absolute;top:4px;right:4px;z-index:2"><span style="width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;background:rgba(8,9,11,.55);color:#fff;backdrop-filter:blur(10px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)"><span class="ms" aria-hidden="true" data-ionicon="close-outline" style="font-size:20px">&#62030;</span></span></button><div role="alert" style="position:absolute;inset:0;z-index:1;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:24px 22px 18px;background:rgba(8,9,11,.35)"><span class="ms" aria-hidden="true" data-ionicon="alert-circle-outline" style="font-size:28px;color:#fff">&#61716;</span><p style="font:700 20px/26px Inter;color:#fff;margin-top:10px">Couldn’t play this song</p><p style="font:400 14px/20px Inter;color:rgba(255,255,255,.82);margin-top:6px">The song stopped loading before it could start. Try again, or skip to the next song.</p><div style="margin:12px 0 0 -12px"><button class="btn t sm" style="color:#fff"><span class="ms" aria-hidden="true" data-ionicon="refresh-outline" style="">&#62744;</span>Try again</button></div></div></div><div style="height:32px"></div><div class="npt"><div style="flex:1;min-width:0"><h1 style="font-size:24px">Low Tide</h1><button class="ar" aria-label="Harbor Kids. Go to artist">Harbor Kids</button></div><button class="nib" aria-label="Liked" aria-pressed="true"><span class="gl"><span class="ms f" aria-hidden="true" data-ionicon="heart" style="">&#62314;</span></span></button><button class="nib" aria-label="More actions for Low Tide"><span class="gl"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-horizontal-outline" style="">&#62162;</span></span></button></div><div style="height:22px"></div><div class="seek"><div class="hit" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="tm"><span>1:24</span><span>-2:17</span></div></div><div style="height:18px"></div><div class="trn"><button class="md" aria-label="Shuffle what plays next"><span class="ms" aria-hidden="true" data-ionicon="shuffle-outline" style="">&#62852;</span></button><button class="sk" aria-label="Previous song"><span class="ms f" aria-hidden="true" data-ionicon="play-back" style="">&#62663;</span></button><button class="disc" aria-label="Couldn’t play. Try again"><span class="ms" aria-hidden="true" data-ionicon="refresh-outline" style="">&#62744;</span></button><button class="sk" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-forward" style="">&#62672;</span></button><button class="md" aria-label="Repeat this song" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="repeat-outline" style="">&#62768;</span></button></div><div class="npb"><button class="nib" aria-label="Lyrics" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="chatbox-ellipses-outline" style="">&#61965;</span></button><button class="nib" aria-label="Sleep timer"><span class="ms" aria-hidden="true" data-ionicon="moon-outline" style="">&#62561;</span></button><button class="nib" aria-label="Up next" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="list-outline" style="">&#62399;</span></button></div></div><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Lyrics<p>Lyrics take the screen; cover thumb and lit button return.</p></div><div class="ph"><div class="npbg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="scr"><style>
+.npbg{position:absolute;inset:0;overflow:hidden;background:#08090B}
+.npbg img{position:absolute;left:-90px;top:-90px;width:calc(100% + 180px);height:calc(100% + 180px);object-fit:cover;filter:blur(72px) saturate(1.5) brightness(.82)}
+.npbg i{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,9,11,.28) 0%,rgba(8,9,11,.06) 30%,rgba(8,9,11,.42) 62%,rgba(8,9,11,.86) 100%)}
+.npm1{color:#fff}.npm2{color:rgba(255,255,255,.72)}.npm3{color:rgba(255,255,255,.56)}
+.grab{align-self:center;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.38);margin:6px 0 0;flex-shrink:0}
+.nphd{display:flex;align-items:center;height:52px;padding:0 4px;flex-shrink:0}
+.nphd .src{flex:1;display:flex;flex-direction:column;align-items:center;border:0;background:none;color:#fff}
+.nphd .src small{font:600 11px/14px Inter;color:rgba(255,255,255,.56)}
+.nphd .src span{font:600 13px/18px Inter}
+.nib{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.86);flex-shrink:0}
+.gl{width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.14);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 12px rgba(0,0,0,.18);backdrop-filter:blur(14px)}
+.gl .ms{font-size:20px}
+.stage{position:relative;align-self:center;flex-shrink:0}
+.stage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;filter:blur(30px) saturate(1.7);opacity:.75;transform:translateY(24px) scale(.88)}
+.stage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,.22),0 28px 56px -12px rgba(0,0,0,.6)}
+.stage .rim{position:absolute;inset:0;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);pointer-events:none}
+.npt{display:flex;align-items:center;gap:8px;padding:0 16px 0 24px;flex-shrink:0}
+.npt h1{font:700 24px/30px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npt .ar{border:0;background:none;padding:0;font:400 17px/22px Inter;color:rgba(255,255,255,.72);text-align:left}
+.seek{padding:0 24px;flex-shrink:0}
+.seek .hit{position:relative;height:48px;margin:-12px 0 -10px;display:flex;align-items:center}
+.seek .tr{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden}
+.seek .tr i{display:block;height:5px;background:rgba(255,255,255,.92)}
+.seek .tm{display:flex;justify-content:space-between;font:600 12px Inter;color:rgba(255,255,255,.56);font-variant-numeric:tabular-nums}
+.trn{display:flex;align-items:center;justify-content:space-between;padding:0 20px;flex-shrink:0}
+.trn .sk{width:64px;height:64px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:#fff}
+.trn .sk .ms{font-size:46px}
+.trn .md{position:relative;width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.56)}
+.trn .md.on{color:#fff}
+.trn .md.on::after{content:'';position:absolute;bottom:6px;width:4px;height:4px;border-radius:2px;background:#fff}
+.disc{width:84px;height:84px;border-radius:42px;border:0;padding:0;display:flex;align-items:center;justify-content:center;color:#fff;
+    background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 0 rgba(0,0,0,.12),0 14px 34px rgba(0,0,0,.32)}
+.disc .ms{font-size:46px}
+.disc.sm{width:64px;height:64px;border-radius:32px}
+.disc.sm .ms{font-size:36px}
+.vol{display:flex;align-items:center;gap:10px;height:48px;padding:0 24px;color:rgba(255,255,255,.56);flex-shrink:0}
+.vol .ms{font-size:18px}
+.vol .tr{position:relative;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.vol .tr i{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.72)}
+.npb{display:flex;align-items:center;justify-content:space-between;padding:0 32px;margin-top:auto;margin-bottom:26px;flex-shrink:0}
+.npb .nib{color:rgba(255,255,255,.78)}
+.npb .nib.on .lit{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.npnote{display:flex;align-items:center;gap:8px;margin:10px 24px 0;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.28);font:400 13px/18px Inter;color:#fff;backdrop-filter:blur(12px)}
+.npnote .ms{font-size:16px}
+.lyr p{font:700 30px/38px Inter;color:#fff;margin-bottom:18px}
+.sheet.glass{background:rgba(20,22,27,.82);backdrop-filter:blur(40px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.sheet.glass .gr{background:rgba(255,255,255,.3)}
+.sheet.glass .hr{background:rgba(255,255,255,.08)}
+.deck{position:relative;height:176px;margin:4px 0 0;flex-shrink:0}
+.deck img{position:absolute;object-fit:cover;border-radius:12px}
+.qp{position:absolute;left:0;right:0;bottom:0;z-index:10;border-radius:22px 22px 0 0;background:rgba(14,15,19,.74);backdrop-filter:blur(36px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 -18px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;padding-top:6px}
+.qh{display:flex;align-items:center;gap:8px;padding:8px 12px 4px 20px}
+.qh h2{font:700 18px/24px Inter;color:#fff}
+.qh p{font:400 12px/16px Inter;color:rgba(255,255,255,.56)}
+.seg{display:flex;margin:8px 20px 4px;padding:3px;border-radius:11px;background:rgba(255,255,255,.07)}
+.seg button{flex:1;height:34px;border:0;border-radius:8px;background:none;font:400 13px Inter;color:rgba(255,255,255,.72)}
+.seg button.on{background:rgba(255,255,255,.16);color:#fff;font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.ql{font:600 12px/16px Inter;color:rgba(255,255,255,.56);padding:12px 20px 4px}
+.qr{display:flex;align-items:center;gap:12px;height:56px;padding:0 4px 0 20px}
+.qr img{width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0}
+.qr .t{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:none;padding:0;text-align:left}
+.qr .t b{font:400 15px/20px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .t s{text-decoration:none;font:400 13px/18px Inter;color:rgba(255,255,255,.56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .d{font:400 12px Inter;color:rgba(255,255,255,.5);font-variant-numeric:tabular-nums}
+.qr .h{color:rgba(255,255,255,.42)}
+</style><div class="grab" aria-hidden="true"></div><div style="display:flex;align-items:center;gap:12px;padding:10px 12px 0 20px;flex-shrink:0"><button aria-label="Show the cover (leave lyrics)" style="border:0;padding:0;background:none;display:flex;align-items:center;gap:12px;flex:1;min-width:0;text-align:left;color:#fff"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover;box-shadow:0 8px 20px rgba(0,0,0,.4)"><span style="display:flex;flex-direction:column;min-width:0"><b style="font:600 15px/20px Inter">Low Tide</b><span class="npm3" style="font:400 13px/18px Inter">Harbor Kids</span></span></button><button class="nib on" aria-label="Hide lyrics" aria-pressed="true"><span class="lit"><span class="ms" aria-hidden="true" data-ionicon="chatbox-ellipses-outline" style="">&#61965;</span></span></button></div><div class="lyr" role="list" aria-label="Lyrics" style="flex:1;padding:22px 28px 0;overflow:hidden"><p style="opacity:.28;filter:blur(1.4px)">the tide pulls back the evening</p><p style="opacity:.36;filter:blur(.8px)">and the harbour lights go out</p><p style="opacity:.44">one by one, like the years we lost</p><p style="opacity:1" aria-current="true">I count them on the water</p><p style="opacity:.5">every light a name I used to know</p><p style="opacity:.44">and the tide comes in</p><p style="opacity:.38;filter:blur(.6px)">slow enough to miss it</p><p style="opacity:.32;filter:blur(1px)">you said the sea forgets</p><p style="opacity:.26;filter:blur(1.6px)">but it keeps everything we drop</p><p style="opacity:.2;filter:blur(2px)">low tide, low tide</p></div><div class="seek"><div class="hit" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="tm"><span>1:24</span><span>-2:17</span></div></div><div class="trn" style="justify-content:center;gap:28px"><button class="sk" aria-label="Previous song"><span class="ms f" aria-hidden="true" data-ionicon="play-back" style="">&#62663;</span></button><button class="disc sm" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="">&#62611;</span></button><button class="sk" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-forward" style="">&#62672;</span></button></div><div style="height:30px"></div></div><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Up next (half)<p>Cover deck on top, calm glass queue below.</p></div><div class="ph"><div class="npbg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="scr"><style>
+.npbg{position:absolute;inset:0;overflow:hidden;background:#08090B}
+.npbg img{position:absolute;left:-90px;top:-90px;width:calc(100% + 180px);height:calc(100% + 180px);object-fit:cover;filter:blur(72px) saturate(1.5) brightness(.82)}
+.npbg i{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,9,11,.28) 0%,rgba(8,9,11,.06) 30%,rgba(8,9,11,.42) 62%,rgba(8,9,11,.86) 100%)}
+.npm1{color:#fff}.npm2{color:rgba(255,255,255,.72)}.npm3{color:rgba(255,255,255,.56)}
+.grab{align-self:center;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.38);margin:6px 0 0;flex-shrink:0}
+.nphd{display:flex;align-items:center;height:52px;padding:0 4px;flex-shrink:0}
+.nphd .src{flex:1;display:flex;flex-direction:column;align-items:center;border:0;background:none;color:#fff}
+.nphd .src small{font:600 11px/14px Inter;color:rgba(255,255,255,.56)}
+.nphd .src span{font:600 13px/18px Inter}
+.nib{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.86);flex-shrink:0}
+.gl{width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.14);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 12px rgba(0,0,0,.18);backdrop-filter:blur(14px)}
+.gl .ms{font-size:20px}
+.stage{position:relative;align-self:center;flex-shrink:0}
+.stage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;filter:blur(30px) saturate(1.7);opacity:.75;transform:translateY(24px) scale(.88)}
+.stage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,.22),0 28px 56px -12px rgba(0,0,0,.6)}
+.stage .rim{position:absolute;inset:0;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);pointer-events:none}
+.npt{display:flex;align-items:center;gap:8px;padding:0 16px 0 24px;flex-shrink:0}
+.npt h1{font:700 24px/30px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npt .ar{border:0;background:none;padding:0;font:400 17px/22px Inter;color:rgba(255,255,255,.72);text-align:left}
+.seek{padding:0 24px;flex-shrink:0}
+.seek .hit{position:relative;height:48px;margin:-12px 0 -10px;display:flex;align-items:center}
+.seek .tr{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden}
+.seek .tr i{display:block;height:5px;background:rgba(255,255,255,.92)}
+.seek .tm{display:flex;justify-content:space-between;font:600 12px Inter;color:rgba(255,255,255,.56);font-variant-numeric:tabular-nums}
+.trn{display:flex;align-items:center;justify-content:space-between;padding:0 20px;flex-shrink:0}
+.trn .sk{width:64px;height:64px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:#fff}
+.trn .sk .ms{font-size:46px}
+.trn .md{position:relative;width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.56)}
+.trn .md.on{color:#fff}
+.trn .md.on::after{content:'';position:absolute;bottom:6px;width:4px;height:4px;border-radius:2px;background:#fff}
+.disc{width:84px;height:84px;border-radius:42px;border:0;padding:0;display:flex;align-items:center;justify-content:center;color:#fff;
+    background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 0 rgba(0,0,0,.12),0 14px 34px rgba(0,0,0,.32)}
+.disc .ms{font-size:46px}
+.disc.sm{width:64px;height:64px;border-radius:32px}
+.disc.sm .ms{font-size:36px}
+.vol{display:flex;align-items:center;gap:10px;height:48px;padding:0 24px;color:rgba(255,255,255,.56);flex-shrink:0}
+.vol .ms{font-size:18px}
+.vol .tr{position:relative;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.vol .tr i{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.72)}
+.npb{display:flex;align-items:center;justify-content:space-between;padding:0 32px;margin-top:auto;margin-bottom:26px;flex-shrink:0}
+.npb .nib{color:rgba(255,255,255,.78)}
+.npb .nib.on .lit{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.npnote{display:flex;align-items:center;gap:8px;margin:10px 24px 0;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.28);font:400 13px/18px Inter;color:#fff;backdrop-filter:blur(12px)}
+.npnote .ms{font-size:16px}
+.lyr p{font:700 30px/38px Inter;color:#fff;margin-bottom:18px}
+.sheet.glass{background:rgba(20,22,27,.82);backdrop-filter:blur(40px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.sheet.glass .gr{background:rgba(255,255,255,.3)}
+.sheet.glass .hr{background:rgba(255,255,255,.08)}
+.deck{position:relative;height:176px;margin:4px 0 0;flex-shrink:0}
+.deck img{position:absolute;object-fit:cover;border-radius:12px}
+.qp{position:absolute;left:0;right:0;bottom:0;z-index:10;border-radius:22px 22px 0 0;background:rgba(14,15,19,.74);backdrop-filter:blur(36px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 -18px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;padding-top:6px}
+.qh{display:flex;align-items:center;gap:8px;padding:8px 12px 4px 20px}
+.qh h2{font:700 18px/24px Inter;color:#fff}
+.qh p{font:400 12px/16px Inter;color:rgba(255,255,255,.56)}
+.seg{display:flex;margin:8px 20px 4px;padding:3px;border-radius:11px;background:rgba(255,255,255,.07)}
+.seg button{flex:1;height:34px;border:0;border-radius:8px;background:none;font:400 13px Inter;color:rgba(255,255,255,.72)}
+.seg button.on{background:rgba(255,255,255,.16);color:#fff;font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.ql{font:600 12px/16px Inter;color:rgba(255,255,255,.56);padding:12px 20px 4px}
+.qr{display:flex;align-items:center;gap:12px;height:56px;padding:0 4px 0 20px}
+.qr img{width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0}
+.qr .t{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:none;padding:0;text-align:left}
+.qr .t b{font:400 15px/20px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .t s{text-decoration:none;font:400 13px/18px Inter;color:rgba(255,255,255,.56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .d{font:400 12px Inter;color:rgba(255,255,255,.5);font-variant-numeric:tabular-nums}
+.qr .h{color:rgba(255,255,255,.42)}
+</style><div class="grab" aria-hidden="true"></div><div class="nphd"><button class="nib" aria-label="Close player"><span class="ms" aria-hidden="true" data-ionicon="chevron-down-outline" style="">&#62006;</span></button><button class="src" aria-label="Playing from Night drive. Open"><small>Playing from</small><span>Night drive</span></button><button class="nib" aria-label="Playing on this phone. Choose where it plays"><span class="ms" aria-hidden="true" data-ionicon="desktop-outline" style="">&#62111;</span></button></div><div class="deck" style="height:212px"><img src="/_blob/ea11274cd3d13d724014f84d61a8c141" alt="" aria-hidden="true" style="left:276px;top:44px;width:96px;height:96px;opacity:.32"><img src="/_blob/74f23f1848c6d7e932d5d628b033f576" alt="" aria-hidden="true" style="left:212px;top:30px;width:124px;height:124px;opacity:.55"><img src="/_blob/80224f83fc614ceab8ebe2fc0d545939" alt="" aria-hidden="true" style="left:140px;top:14px;width:152px;height:152px;opacity:.82;box-shadow:0 16px 32px rgba(0,0,0,.4)"><div class="stage" style="position:absolute;left:24px;top:0;width:176px;height:176px"><img class="amb" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" aria-hidden="true"><img class="cv" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="Cover of Low Tide"><span class="rim" aria-hidden="true"></span></div><p style="position:absolute;left:216px;top:176px;font:600 11px/14px Inter;color:rgba(255,255,255,.56)">Next</p><p style="position:absolute;left:216px;top:190px;font:600 13px/18px Inter;color:#fff;white-space:nowrap">Small Hours</p></div><div style="height:10px"></div><div class="npt"><div style="flex:1;min-width:0"><h1 style="font-size:22px">Low Tide</h1><button class="ar" aria-label="Harbor Kids. Go to artist">Harbor Kids</button></div><button class="nib" aria-label="Liked" aria-pressed="true"><span class="gl"><span class="ms f" aria-hidden="true" data-ionicon="heart" style="">&#62314;</span></span></button><button class="nib" aria-label="More actions for Low Tide"><span class="gl"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-horizontal-outline" style="">&#62162;</span></span></button></div><div style="height:10px"></div><div class="seek"><div class="hit" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="tm"><span>1:24</span><span>-2:17</span></div></div><div class="trn"><button class="md" aria-label="Shuffle what plays next"><span class="ms" aria-hidden="true" data-ionicon="shuffle-outline" style="">&#62852;</span></button><button class="sk" aria-label="Previous song"><span class="ms f" aria-hidden="true" data-ionicon="play-back" style="">&#62663;</span></button><button class="disc sm" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="">&#62611;</span></button><button class="sk" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-forward" style="">&#62672;</span></button><button class="md" aria-label="Repeat this song" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="repeat-outline" style="">&#62768;</span></button></div></div><section class="qp" aria-label="Up next" style="top:500px"><div class="grab" aria-hidden="true" style="margin:0 auto"></div><div class="qh"><div style="flex:1;min-width:0"><h2>Up next</h2><p>From Night drive · 21 songs · 1 h 18 min</p></div><button class="nib" aria-label="Shuffle what plays next"><span class="gl"><span class="ms" aria-hidden="true" data-ionicon="shuffle-outline" style="">&#62852;</span></span></button><button class="nib" aria-label="Repeat this song" aria-pressed="false"><span class="gl"><span class="ms" aria-hidden="true" data-ionicon="repeat-outline" style="">&#62768;</span></span></button></div><div class="seg" role="radiogroup" aria-label="Show"><button role="radio" aria-checked="true" class="on">All</button><button role="radio" aria-checked="false" class="">Familiar</button><button role="radio" aria-checked="false" class="">Discover</button></div><ul><li class="qr"><img src="/_blob/80224f83fc614ceab8ebe2fc0d545939" alt=""><button class="t" aria-label="Small Hours, Mira Vale. Play now"><b>Small Hours</b><s>Mira Vale</s></button><span class="d">2:58</span><button class="nib h" aria-label="Move Small Hours"><span class="ms" aria-hidden="true" data-ionicon="reorder-two-outline" style="">&#62765;</span></button></li><li class="qr"><img src="/_blob/74f23f1848c6d7e932d5d628b033f576" alt=""><button class="t" aria-label="Static in the Rain, Orla North. Play now"><b>Static in the Rain</b><s>Orla North</s></button><span class="d">4:05</span><button class="nib h" aria-label="Move Static in the Rain"><span class="ms" aria-hidden="true" data-ionicon="reorder-two-outline" style="">&#62765;</span></button></li><li class="qr"><img src="/_blob/ea11274cd3d13d724014f84d61a8c141" alt=""><button class="t" aria-label="Fade, Neon Choir. Play now"><b>Fade</b><s>Neon Choir</s></button><span class="d">3:20</span><button class="nib h" aria-label="Move Fade"><span class="ms" aria-hidden="true" data-ionicon="reorder-two-outline" style="">&#62765;</span></button></li></ul><p class="ql">Then similar songs, added automatically</p></section><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Up next (pulled up)<p>The whole queue.</p></div><div class="ph"><div class="npbg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="scr"><style>
+.npbg{position:absolute;inset:0;overflow:hidden;background:#08090B}
+.npbg img{position:absolute;left:-90px;top:-90px;width:calc(100% + 180px);height:calc(100% + 180px);object-fit:cover;filter:blur(72px) saturate(1.5) brightness(.82)}
+.npbg i{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,9,11,.28) 0%,rgba(8,9,11,.06) 30%,rgba(8,9,11,.42) 62%,rgba(8,9,11,.86) 100%)}
+.npm1{color:#fff}.npm2{color:rgba(255,255,255,.72)}.npm3{color:rgba(255,255,255,.56)}
+.grab{align-self:center;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.38);margin:6px 0 0;flex-shrink:0}
+.nphd{display:flex;align-items:center;height:52px;padding:0 4px;flex-shrink:0}
+.nphd .src{flex:1;display:flex;flex-direction:column;align-items:center;border:0;background:none;color:#fff}
+.nphd .src small{font:600 11px/14px Inter;color:rgba(255,255,255,.56)}
+.nphd .src span{font:600 13px/18px Inter}
+.nib{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.86);flex-shrink:0}
+.gl{width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.14);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 12px rgba(0,0,0,.18);backdrop-filter:blur(14px)}
+.gl .ms{font-size:20px}
+.stage{position:relative;align-self:center;flex-shrink:0}
+.stage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;filter:blur(30px) saturate(1.7);opacity:.75;transform:translateY(24px) scale(.88)}
+.stage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,.22),0 28px 56px -12px rgba(0,0,0,.6)}
+.stage .rim{position:absolute;inset:0;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);pointer-events:none}
+.npt{display:flex;align-items:center;gap:8px;padding:0 16px 0 24px;flex-shrink:0}
+.npt h1{font:700 24px/30px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npt .ar{border:0;background:none;padding:0;font:400 17px/22px Inter;color:rgba(255,255,255,.72);text-align:left}
+.seek{padding:0 24px;flex-shrink:0}
+.seek .hit{position:relative;height:48px;margin:-12px 0 -10px;display:flex;align-items:center}
+.seek .tr{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden}
+.seek .tr i{display:block;height:5px;background:rgba(255,255,255,.92)}
+.seek .tm{display:flex;justify-content:space-between;font:600 12px Inter;color:rgba(255,255,255,.56);font-variant-numeric:tabular-nums}
+.trn{display:flex;align-items:center;justify-content:space-between;padding:0 20px;flex-shrink:0}
+.trn .sk{width:64px;height:64px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:#fff}
+.trn .sk .ms{font-size:46px}
+.trn .md{position:relative;width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.56)}
+.trn .md.on{color:#fff}
+.trn .md.on::after{content:'';position:absolute;bottom:6px;width:4px;height:4px;border-radius:2px;background:#fff}
+.disc{width:84px;height:84px;border-radius:42px;border:0;padding:0;display:flex;align-items:center;justify-content:center;color:#fff;
+    background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 0 rgba(0,0,0,.12),0 14px 34px rgba(0,0,0,.32)}
+.disc .ms{font-size:46px}
+.disc.sm{width:64px;height:64px;border-radius:32px}
+.disc.sm .ms{font-size:36px}
+.vol{display:flex;align-items:center;gap:10px;height:48px;padding:0 24px;color:rgba(255,255,255,.56);flex-shrink:0}
+.vol .ms{font-size:18px}
+.vol .tr{position:relative;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.vol .tr i{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.72)}
+.npb{display:flex;align-items:center;justify-content:space-between;padding:0 32px;margin-top:auto;margin-bottom:26px;flex-shrink:0}
+.npb .nib{color:rgba(255,255,255,.78)}
+.npb .nib.on .lit{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.npnote{display:flex;align-items:center;gap:8px;margin:10px 24px 0;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.28);font:400 13px/18px Inter;color:#fff;backdrop-filter:blur(12px)}
+.npnote .ms{font-size:16px}
+.lyr p{font:700 30px/38px Inter;color:#fff;margin-bottom:18px}
+.sheet.glass{background:rgba(20,22,27,.82);backdrop-filter:blur(40px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.sheet.glass .gr{background:rgba(255,255,255,.3)}
+.sheet.glass .hr{background:rgba(255,255,255,.08)}
+.deck{position:relative;height:176px;margin:4px 0 0;flex-shrink:0}
+.deck img{position:absolute;object-fit:cover;border-radius:12px}
+.qp{position:absolute;left:0;right:0;bottom:0;z-index:10;border-radius:22px 22px 0 0;background:rgba(14,15,19,.74);backdrop-filter:blur(36px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 -18px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;padding-top:6px}
+.qh{display:flex;align-items:center;gap:8px;padding:8px 12px 4px 20px}
+.qh h2{font:700 18px/24px Inter;color:#fff}
+.qh p{font:400 12px/16px Inter;color:rgba(255,255,255,.56)}
+.seg{display:flex;margin:8px 20px 4px;padding:3px;border-radius:11px;background:rgba(255,255,255,.07)}
+.seg button{flex:1;height:34px;border:0;border-radius:8px;background:none;font:400 13px Inter;color:rgba(255,255,255,.72)}
+.seg button.on{background:rgba(255,255,255,.16);color:#fff;font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.ql{font:600 12px/16px Inter;color:rgba(255,255,255,.56);padding:12px 20px 4px}
+.qr{display:flex;align-items:center;gap:12px;height:56px;padding:0 4px 0 20px}
+.qr img{width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0}
+.qr .t{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:none;padding:0;text-align:left}
+.qr .t b{font:400 15px/20px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .t s{text-decoration:none;font:400 13px/18px Inter;color:rgba(255,255,255,.56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .d{font:400 12px Inter;color:rgba(255,255,255,.5);font-variant-numeric:tabular-nums}
+.qr .h{color:rgba(255,255,255,.42)}
+</style><div class="grab" aria-hidden="true"></div><div class="nphd"><button class="nib" aria-label="Close player"><span class="ms" aria-hidden="true" data-ionicon="chevron-down-outline" style="">&#62006;</span></button><button class="src" aria-label="Playing from Night drive. Open"><small>Playing from</small><span>Night drive</span></button><button class="nib" aria-label="Playing on this phone. Choose where it plays"><span class="ms" aria-hidden="true" data-ionicon="desktop-outline" style="">&#62111;</span></button></div><div style="display:flex;align-items:center;gap:12px;padding:4px 16px 8px 20px"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:56px;height:56px;border-radius:8px;object-fit:cover;box-shadow:0 8px 20px rgba(0,0,0,.4)"><div style="flex:1;min-width:0"><p style="font:700 17px/22px Inter;color:#fff">Low Tide</p><p class="npm2" style="font:400 14px/19px Inter">Harbor Kids · 1:24 of 3:41</p></div><button class="disc sm" style="width:48px;height:48px" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="font-size:28px">&#62611;</span></button></div></div><section class="qp" aria-label="Up next" style="top:176px"><div class="grab" aria-hidden="true" style="margin:0 auto"></div><div class="qh"><div style="flex:1;min-width:0"><h2>Up next</h2><p>From Night drive · 21 songs · 1 h 18 min</p></div><button class="nib" aria-label="Shuffle what plays next"><span class="gl"><span class="ms" aria-hidden="true" data-ionicon="shuffle-outline" style="">&#62852;</span></span></button><button class="nib" aria-label="Repeat this song" aria-pressed="false"><span class="gl"><span class="ms" aria-hidden="true" data-ionicon="repeat-outline" style="">&#62768;</span></span></button></div><div class="seg" role="radiogroup" aria-label="Show"><button role="radio" aria-checked="true" class="on">All</button><button role="radio" aria-checked="false" class="">Familiar</button><button role="radio" aria-checked="false" class="">Discover</button></div><p class="ql">Next from Night drive</p><ul><li class="qr"><img src="/_blob/80224f83fc614ceab8ebe2fc0d545939" alt=""><button class="t" aria-label="Small Hours, Mira Vale. Play now"><b>Small Hours</b><s>Mira Vale</s></button><span class="d">2:58</span><button class="nib h" aria-label="Move Small Hours"><span class="ms" aria-hidden="true" data-ionicon="reorder-two-outline" style="">&#62765;</span></button></li><li class="qr"><img src="/_blob/74f23f1848c6d7e932d5d628b033f576" alt=""><button class="t" aria-label="Static in the Rain, Orla North. Play now"><b>Static in the Rain</b><s>Orla North</s></button><span class="d">4:05</span><button class="nib h" aria-label="Move Static in the Rain"><span class="ms" aria-hidden="true" data-ionicon="reorder-two-outline" style="">&#62765;</span></button></li><li class="qr"><img src="/_blob/ea11274cd3d13d724014f84d61a8c141" alt=""><button class="t" aria-label="Fade, Neon Choir. Play now"><b>Fade</b><s>Neon Choir</s></button><span class="d">3:20</span><button class="nib h" aria-label="Move Fade"><span class="ms" aria-hidden="true" data-ionicon="reorder-two-outline" style="">&#62765;</span></button></li><li class="qr"><img src="/_blob/a28a4910c4101fff1cdaca12e592f638" alt=""><button class="t" aria-label="Baarish (Monsoon Version) [feat. Aditi Rao], Kabir &amp; The Monsoons. Play now"><b>Baarish (Monsoon Version) [feat. Aditi Rao]</b><s>Kabir &amp; The Monsoons</s></button><span class="d">5:12</span><button class="nib h" aria-label="Move Baarish (Monsoon Version) [feat. Aditi Rao]"><span class="ms" aria-hidden="true" data-ionicon="reorder-two-outline" style="">&#62765;</span></button></li><li class="qr"><img src="/_blob/16f9f309d813cf2399715dd3c34f6d9a" alt=""><button class="t" aria-label="Golden Hour Again, Sunny Arcade. Play now"><b>Golden Hour Again</b><s>Sunny Arcade</s></button><span class="d">3:12</span><button class="nib h" aria-label="Move Golden Hour Again"><span class="ms" aria-hidden="true" data-ionicon="reorder-two-outline" style="">&#62765;</span></button></li></ul><p class="ql">Then similar songs, added automatically</p><ul><li class="qr"><img src="/_blob/16f9f309d813cf2399715dd3c34f6d9a" alt=""><button class="t" aria-label="Glasshouse, Mira Vale. Play now"><b>Glasshouse</b><s>Mira Vale · similar</s></button><span class="d">3:47</span><button class="nib h" aria-label="Move Glasshouse"><span class="ms" aria-hidden="true" data-ionicon="reorder-two-outline" style="">&#62765;</span></button></li><li class="qr"><img src="/_blob/74f23f1848c6d7e932d5d628b033f576" alt=""><button class="t" aria-label="Undertow, Mira Vale. Play now"><b>Undertow</b><s>Mira Vale · similar</s></button><span class="d">4:02</span><button class="nib h" aria-label="Move Undertow"><span class="ms" aria-hidden="true" data-ionicon="reorder-two-outline" style="">&#62765;</span></button></li></ul></section><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Player ⋮<p>Song actions, then player tools.</p></div><div class="ph"><div class="npbg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="scr"><style>
+.npbg{position:absolute;inset:0;overflow:hidden;background:#08090B}
+.npbg img{position:absolute;left:-90px;top:-90px;width:calc(100% + 180px);height:calc(100% + 180px);object-fit:cover;filter:blur(72px) saturate(1.5) brightness(.82)}
+.npbg i{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,9,11,.28) 0%,rgba(8,9,11,.06) 30%,rgba(8,9,11,.42) 62%,rgba(8,9,11,.86) 100%)}
+.npm1{color:#fff}.npm2{color:rgba(255,255,255,.72)}.npm3{color:rgba(255,255,255,.56)}
+.grab{align-self:center;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.38);margin:6px 0 0;flex-shrink:0}
+.nphd{display:flex;align-items:center;height:52px;padding:0 4px;flex-shrink:0}
+.nphd .src{flex:1;display:flex;flex-direction:column;align-items:center;border:0;background:none;color:#fff}
+.nphd .src small{font:600 11px/14px Inter;color:rgba(255,255,255,.56)}
+.nphd .src span{font:600 13px/18px Inter}
+.nib{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.86);flex-shrink:0}
+.gl{width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.14);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 12px rgba(0,0,0,.18);backdrop-filter:blur(14px)}
+.gl .ms{font-size:20px}
+.stage{position:relative;align-self:center;flex-shrink:0}
+.stage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;filter:blur(30px) saturate(1.7);opacity:.75;transform:translateY(24px) scale(.88)}
+.stage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,.22),0 28px 56px -12px rgba(0,0,0,.6)}
+.stage .rim{position:absolute;inset:0;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);pointer-events:none}
+.npt{display:flex;align-items:center;gap:8px;padding:0 16px 0 24px;flex-shrink:0}
+.npt h1{font:700 24px/30px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npt .ar{border:0;background:none;padding:0;font:400 17px/22px Inter;color:rgba(255,255,255,.72);text-align:left}
+.seek{padding:0 24px;flex-shrink:0}
+.seek .hit{position:relative;height:48px;margin:-12px 0 -10px;display:flex;align-items:center}
+.seek .tr{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden}
+.seek .tr i{display:block;height:5px;background:rgba(255,255,255,.92)}
+.seek .tm{display:flex;justify-content:space-between;font:600 12px Inter;color:rgba(255,255,255,.56);font-variant-numeric:tabular-nums}
+.trn{display:flex;align-items:center;justify-content:space-between;padding:0 20px;flex-shrink:0}
+.trn .sk{width:64px;height:64px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:#fff}
+.trn .sk .ms{font-size:46px}
+.trn .md{position:relative;width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.56)}
+.trn .md.on{color:#fff}
+.trn .md.on::after{content:'';position:absolute;bottom:6px;width:4px;height:4px;border-radius:2px;background:#fff}
+.disc{width:84px;height:84px;border-radius:42px;border:0;padding:0;display:flex;align-items:center;justify-content:center;color:#fff;
+    background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 0 rgba(0,0,0,.12),0 14px 34px rgba(0,0,0,.32)}
+.disc .ms{font-size:46px}
+.disc.sm{width:64px;height:64px;border-radius:32px}
+.disc.sm .ms{font-size:36px}
+.vol{display:flex;align-items:center;gap:10px;height:48px;padding:0 24px;color:rgba(255,255,255,.56);flex-shrink:0}
+.vol .ms{font-size:18px}
+.vol .tr{position:relative;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.vol .tr i{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.72)}
+.npb{display:flex;align-items:center;justify-content:space-between;padding:0 32px;margin-top:auto;margin-bottom:26px;flex-shrink:0}
+.npb .nib{color:rgba(255,255,255,.78)}
+.npb .nib.on .lit{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.npnote{display:flex;align-items:center;gap:8px;margin:10px 24px 0;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.28);font:400 13px/18px Inter;color:#fff;backdrop-filter:blur(12px)}
+.npnote .ms{font-size:16px}
+.lyr p{font:700 30px/38px Inter;color:#fff;margin-bottom:18px}
+.sheet.glass{background:rgba(20,22,27,.82);backdrop-filter:blur(40px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.sheet.glass .gr{background:rgba(255,255,255,.3)}
+.sheet.glass .hr{background:rgba(255,255,255,.08)}
+.deck{position:relative;height:176px;margin:4px 0 0;flex-shrink:0}
+.deck img{position:absolute;object-fit:cover;border-radius:12px}
+.qp{position:absolute;left:0;right:0;bottom:0;z-index:10;border-radius:22px 22px 0 0;background:rgba(14,15,19,.74);backdrop-filter:blur(36px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 -18px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;padding-top:6px}
+.qh{display:flex;align-items:center;gap:8px;padding:8px 12px 4px 20px}
+.qh h2{font:700 18px/24px Inter;color:#fff}
+.qh p{font:400 12px/16px Inter;color:rgba(255,255,255,.56)}
+.seg{display:flex;margin:8px 20px 4px;padding:3px;border-radius:11px;background:rgba(255,255,255,.07)}
+.seg button{flex:1;height:34px;border:0;border-radius:8px;background:none;font:400 13px Inter;color:rgba(255,255,255,.72)}
+.seg button.on{background:rgba(255,255,255,.16);color:#fff;font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.ql{font:600 12px/16px Inter;color:rgba(255,255,255,.56);padding:12px 20px 4px}
+.qr{display:flex;align-items:center;gap:12px;height:56px;padding:0 4px 0 20px}
+.qr img{width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0}
+.qr .t{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:none;padding:0;text-align:left}
+.qr .t b{font:400 15px/20px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .t s{text-decoration:none;font:400 13px/18px Inter;color:rgba(255,255,255,.56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .d{font:400 12px Inter;color:rgba(255,255,255,.5);font-variant-numeric:tabular-nums}
+.qr .h{color:rgba(255,255,255,.42)}
+</style><div class="grab" aria-hidden="true"></div><div class="nphd"><button class="nib" aria-label="Close player"><span class="ms" aria-hidden="true" data-ionicon="chevron-down-outline" style="">&#62006;</span></button><button class="src" aria-label="Playing from Night drive. Open"><small>Playing from</small><span>Night drive</span></button><button class="nib" aria-label="Playing on this phone. Choose where it plays"><span class="ms" aria-hidden="true" data-ionicon="desktop-outline" style="">&#62111;</span></button></div><div class="stage" style="width:342px;height:342px;margin-top:16px"><img class="amb" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" aria-hidden="true"><img class="cv" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="Cover of Low Tide" style="transition:filter .24s"><span class="rim" aria-hidden="true"></span></div><div style="height:32px"></div><div class="npt"><div style="flex:1;min-width:0"><h1 style="font-size:24px">Low Tide</h1><button class="ar" aria-label="Harbor Kids. Go to artist">Harbor Kids</button></div><button class="nib" aria-label="Liked" aria-pressed="true"><span class="gl"><span class="ms f" aria-hidden="true" data-ionicon="heart" style="">&#62314;</span></span></button><button class="nib" aria-label="More actions for Low Tide"><span class="gl"><span class="ms" aria-hidden="true" data-ionicon="ellipsis-horizontal-outline" style="">&#62162;</span></span></button></div><div style="height:22px"></div><div class="seek"><div class="hit" role="slider" aria-label="Song position" aria-valuetext="1:24 of 3:41"><span class="tr"><i style="width:38%"></i></span></div><div class="tm"><span>1:24</span><span>-2:17</span></div></div><div style="height:18px"></div><div class="trn"><button class="md" aria-label="Shuffle what plays next"><span class="ms" aria-hidden="true" data-ionicon="shuffle-outline" style="">&#62852;</span></button><button class="sk" aria-label="Previous song"><span class="ms f" aria-hidden="true" data-ionicon="play-back" style="">&#62663;</span></button><button class="disc" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="">&#62611;</span></button><button class="sk" aria-label="Next song"><span class="ms f" aria-hidden="true" data-ionicon="play-forward" style="">&#62672;</span></button><button class="md" aria-label="Repeat this song" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="repeat-outline" style="">&#62768;</span></button></div><div class="npb"><button class="nib" aria-label="Lyrics" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="chatbox-ellipses-outline" style="">&#61965;</span></button><button class="nib" aria-label="Sleep timer"><span class="ms" aria-hidden="true" data-ionicon="moon-outline" style="">&#62561;</span></button><button class="nib" aria-label="Up next" aria-pressed="false"><span class="ms" aria-hidden="true" data-ionicon="list-outline" style="">&#62399;</span></button></div></div><div class="scrim"></div><section class="sheet glass" role="dialog" aria-modal="true" aria-label="Player actions" style="top:40px;"><div class="gr" aria-hidden="true"></div><div class="sh"><img class="art" src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><span class="id"><b>Low Tide</b><span class="meta">Harbor Kids · Night drive</span></span><button class="ib" aria-label="Close"><span class="ms" aria-hidden="true" data-ionicon="close-outline" style="">&#62030;</span></button></div><div class="hr" style="margin:4px 0 4px"></div><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="return-down-forward-outline" style="">&#62780;</span><span class="ot">Play next</span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="list-outline" style="">&#62399;</span><span class="ot">Add to playlist</span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="radio-outline" style="">&#62726;</span><span class="ot">Start radio</span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="share-social-outline" style="">&#62837;</span><span class="ot">Share</span></button><div class="hr"></div><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="person-outline" style="">&#62636;</span><span class="ot">View artist<small>Harbor Kids</small></span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="chatbox-ellipses-outline" style="">&#61965;</span><span class="ot">Lyrics sources…</span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="download-outline" style="">&#62138;</span><span class="ot">Download</span></button><div class="hr"></div><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="tv-outline" style="">&#62981;</span><span class="ot">Cast to…</span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="desktop-outline" style="">&#62111;</span><span class="ot">Connect devices<small>Move playback to your other devices</small></span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="people-outline" style="">&#62627;</span><span class="ot">LuvLink<small>Listen with friends in sync</small></span></button><div class="hr"></div><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="expand-outline" style="">&#62177;</span><span class="ot">Ambient mode</span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="information-circle-outline" style="">&#62361;</span><span class="ot">Details<small>Song information, edit lyrics, cover</small></span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="options-outline" style="">&#62603;</span><span class="ot">Equalizer</span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="options-outline" style="">&#62603;</span><span class="ot">Tempo and pitch</span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="refresh-outline" style="">&#62744;</span><span class="ot">Reload the song</span></button><button class="opt"><span class="ms" aria-hidden="true" data-ionicon="notifications-outline" style="">&#62591;</span><span class="ot">Set as ringtone</span></button></section><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div><div class="cell"><div class="cap">Up next · empty<p>No fake cover deck, filters or shuffle when nothing follows. Find music opens Search; current playback continues.</p></div><div class="ph"><div class="npbg" aria-hidden="true"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt=""><i></i></div><div class="scr"><style>
+.npbg{position:absolute;inset:0;overflow:hidden;background:#08090B}
+.npbg img{position:absolute;left:-90px;top:-90px;width:calc(100% + 180px);height:calc(100% + 180px);object-fit:cover;filter:blur(72px) saturate(1.5) brightness(.82)}
+.npbg i{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,9,11,.28) 0%,rgba(8,9,11,.06) 30%,rgba(8,9,11,.42) 62%,rgba(8,9,11,.86) 100%)}
+.npm1{color:#fff}.npm2{color:rgba(255,255,255,.72)}.npm3{color:rgba(255,255,255,.56)}
+.grab{align-self:center;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.38);margin:6px 0 0;flex-shrink:0}
+.nphd{display:flex;align-items:center;height:52px;padding:0 4px;flex-shrink:0}
+.nphd .src{flex:1;display:flex;flex-direction:column;align-items:center;border:0;background:none;color:#fff}
+.nphd .src small{font:600 11px/14px Inter;color:rgba(255,255,255,.56)}
+.nphd .src span{font:600 13px/18px Inter}
+.nib{width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.86);flex-shrink:0}
+.gl{width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.14);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 12px rgba(0,0,0,.18);backdrop-filter:blur(14px)}
+.gl .ms{font-size:20px}
+.stage{position:relative;align-self:center;flex-shrink:0}
+.stage .amb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;filter:blur(30px) saturate(1.7);opacity:.75;transform:translateY(24px) scale(.88)}
+.stage .cv{position:relative;display:block;width:100%;height:100%;object-fit:cover;border-radius:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,.22),0 28px 56px -12px rgba(0,0,0,.6)}
+.stage .rim{position:absolute;inset:0;border-radius:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);pointer-events:none}
+.npt{display:flex;align-items:center;gap:8px;padding:0 16px 0 24px;flex-shrink:0}
+.npt h1{font:700 24px/30px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npt .ar{border:0;background:none;padding:0;font:400 17px/22px Inter;color:rgba(255,255,255,.72);text-align:left}
+.seek{padding:0 24px;flex-shrink:0}
+.seek .hit{position:relative;height:48px;margin:-12px 0 -10px;display:flex;align-items:center}
+.seek .tr{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden}
+.seek .tr i{display:block;height:5px;background:rgba(255,255,255,.92)}
+.seek .tm{display:flex;justify-content:space-between;font:600 12px Inter;color:rgba(255,255,255,.56);font-variant-numeric:tabular-nums}
+.trn{display:flex;align-items:center;justify-content:space-between;padding:0 20px;flex-shrink:0}
+.trn .sk{width:64px;height:64px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:#fff}
+.trn .sk .ms{font-size:46px}
+.trn .md{position:relative;width:48px;height:48px;border:0;background:none;padding:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.56)}
+.trn .md.on{color:#fff}
+.trn .md.on::after{content:'';position:absolute;bottom:6px;width:4px;height:4px;border-radius:2px;background:#fff}
+.disc{width:84px;height:84px;border-radius:42px;border:0;padding:0;display:flex;align-items:center;justify-content:center;color:#fff;
+    background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 0 rgba(0,0,0,.12),0 14px 34px rgba(0,0,0,.32)}
+.disc .ms{font-size:46px}
+.disc.sm{width:64px;height:64px;border-radius:32px}
+.disc.sm .ms{font-size:36px}
+.vol{display:flex;align-items:center;gap:10px;height:48px;padding:0 24px;color:rgba(255,255,255,.56);flex-shrink:0}
+.vol .ms{font-size:18px}
+.vol .tr{position:relative;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.vol .tr i{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.72)}
+.npb{display:flex;align-items:center;justify-content:space-between;padding:0 32px;margin-top:auto;margin-bottom:26px;flex-shrink:0}
+.npb .nib{color:rgba(255,255,255,.78)}
+.npb .nib.on .lit{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.npnote{display:flex;align-items:center;gap:8px;margin:10px 24px 0;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.28);font:400 13px/18px Inter;color:#fff;backdrop-filter:blur(12px)}
+.npnote .ms{font-size:16px}
+.lyr p{font:700 30px/38px Inter;color:#fff;margin-bottom:18px}
+.sheet.glass{background:rgba(20,22,27,.82);backdrop-filter:blur(40px) saturate(1.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.sheet.glass .gr{background:rgba(255,255,255,.3)}
+.sheet.glass .hr{background:rgba(255,255,255,.08)}
+.deck{position:relative;height:176px;margin:4px 0 0;flex-shrink:0}
+.deck img{position:absolute;object-fit:cover;border-radius:12px}
+.qp{position:absolute;left:0;right:0;bottom:0;z-index:10;border-radius:22px 22px 0 0;background:rgba(14,15,19,.74);backdrop-filter:blur(36px) saturate(1.4);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 -18px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;padding-top:6px}
+.qh{display:flex;align-items:center;gap:8px;padding:8px 12px 4px 20px}
+.qh h2{font:700 18px/24px Inter;color:#fff}
+.qh p{font:400 12px/16px Inter;color:rgba(255,255,255,.56)}
+.seg{display:flex;margin:8px 20px 4px;padding:3px;border-radius:11px;background:rgba(255,255,255,.07)}
+.seg button{flex:1;height:34px;border:0;border-radius:8px;background:none;font:400 13px Inter;color:rgba(255,255,255,.72)}
+.seg button.on{background:rgba(255,255,255,.16);color:#fff;font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.ql{font:600 12px/16px Inter;color:rgba(255,255,255,.56);padding:12px 20px 4px}
+.qr{display:flex;align-items:center;gap:12px;height:56px;padding:0 4px 0 20px}
+.qr img{width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0}
+.qr .t{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:none;padding:0;text-align:left}
+.qr .t b{font:400 15px/20px Inter;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .t s{text-decoration:none;font:400 13px/18px Inter;color:rgba(255,255,255,.56);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr .d{font:400 12px Inter;color:rgba(255,255,255,.5);font-variant-numeric:tabular-nums}
+.qr .h{color:rgba(255,255,255,.42)}
+</style><div class="grab" aria-hidden="true"></div><div class="nphd"><button class="nib" aria-label="Close player"><span class="ms" aria-hidden="true" data-ionicon="chevron-down-outline" style="">&#62006;</span></button><button class="src" aria-label="Playing from Night drive. Open"><small>Playing from</small><span>Night drive</span></button><button class="nib" aria-label="Playing on this phone. Choose where it plays"><span class="ms" aria-hidden="true" data-ionicon="desktop-outline" style="">&#62111;</span></button></div><div style="display:flex;align-items:center;gap:12px;padding:4px 16px 8px 20px"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width:56px;height:56px;border-radius:8px;object-fit:cover;box-shadow:0 8px 20px rgba(0,0,0,.4)"><div style="flex:1;min-width:0"><p style="font:700 17px/22px Inter;color:#fff">Low Tide</p><p class="npm2" style="font:400 14px/19px Inter">Harbor Kids · 1:24 of 3:41</p></div><button class="disc sm" style="width:48px;height:48px" aria-label="Pause"><span class="ms f" aria-hidden="true" data-ionicon="pause" style="font-size:28px">&#62611;</span></button></div></div><section class="qp" aria-label="Up next" style="top:176px"><div class="grab" aria-hidden="true" style="margin:0 auto"></div><div class="qh"><div><h2>Up next</h2><p>No songs queued</p></div></div><div class="queue-empty"><div class="empty"><span class="ei" aria-hidden="true"><span class="ms" aria-hidden="true" data-ionicon="list-outline" style="">&#62399;</span></span><p class="lead">You’re all caught up</p><p class="body">Choose another song to keep listening.</p><div class="acts"><button class="btn p"><span class="ms" aria-hidden="true" data-ionicon="search-outline" style="">&#62819;</span>Find music</button></div></div></div></section><div class="sb" aria-hidden="true"><span>9:41</span><span><span class="ms f" aria-hidden="true" data-ionicon="cellular" style="">&#61960;</span><span class="ms f" aria-hidden="true" data-ionicon="wifi" style="">&#63025;</span><span class="ms f" aria-hidden="true" data-ionicon="battery-full" style="">&#61831;</span></span></div><div class="gb" aria-hidden="true"><i></i></div></div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":0,"height":0}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

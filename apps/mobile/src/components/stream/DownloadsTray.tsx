@@ -3,13 +3,13 @@
  * the queue lives. It is what the Downloads tab of the old Get songs screen was for, as a glance: it shows
  * only while something is queued or running, and is gone the moment the queue is done.
  */
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
-import { Tactile } from '../allegra/motion';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Motion, Radius, Signal } from '../../constants/allegraTheme';
 import { useDownloadQueueStore } from '../../store/downloadQueueStore';
+import { Tactile } from '../allegra/motion';
 
 const ACTIVE = ['pending', 'staging', 'downloading'];
 
@@ -18,7 +18,9 @@ export const DownloadsTray: React.FC<{ onPress: () => void }> = ({ onPress }) =>
   const active = useDownloadQueueStore(state => state.queue.filter(item => ACTIVE.includes(item.status)).length);
   if (active === 0) return null;
   return (
-    <Animated.View entering={FadeIn.duration(Motion.duration.base)} exiting={FadeOut.duration(Motion.duration.fast)} layout={LinearTransition.duration(Motion.duration.base)}>
+    // Fades in and out on its own; no `layout` transition here — an exiting child under a layout animation
+    // crashed Reanimated 4.1 on Android (designGuards.test.ts).
+    <Animated.View entering={FadeIn.duration(Motion.duration.base)} exiting={FadeOut.duration(Motion.duration.fast)}>
       <Tactile onPress={onPress} pressScale={0.98} accessibilityRole="button" accessibilityLabel={`Saving ${active} ${active === 1 ? 'song' : 'songs'}. Open your library`} style={styles.tray}>
         <ActivityIndicator size="small" color={Signal.wave} />
         <Text style={styles.text}>Saving {active} {active === 1 ? 'song' : 'songs'}</Text>

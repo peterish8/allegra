@@ -24,6 +24,20 @@
   Feature-branch APKs are downloaded by hand from the Actions run; only `main` publishes `apk-latest`.
 - Connect and library sync with Allegra web: `../../.planning/connect-and-sync/PLAN.md`.
 
+## V6 frontend maintenance
+
+- Read `DESIGN.md` and `src/ui/AGENTS.md` before changing a screen. Tokens live in
+  `src/constants/allegraTheme.ts`; reusable controls and layout patterns live in `src/ui`.
+- Bind application state outside the primitive library (`AppScreen`, `AppSafeArea`, screen hooks).
+  Song rows, square collection cards and circular artist artwork communicate distinct content types.
+- Keep the Stream top-right LuvLyrics mark as the About/Updates entry. Updates stays first in the sheet.
+- Native audio stays the sole Android playback owner. A loading/retry UI must call owner callbacks,
+  never load audio from a reusable control. Keep Connect and LuvLink routing intact.
+- Run `npm run mobile:check` at the repo root. GitHub Actions builds the APK and runs its emulator
+  launch gate on the PR; only main publishes `apk-latest`. Do not claim physical checks from CI.
+- Device playback, sheet/keyboard, 200% text, TalkBack, and frame-time checks remain pending until
+  evidence is recorded in `.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md`.
+
 ## Commit style
 - Never add AI attribution lines (no "Co-Authored-By" footers). Commits look like normal human commits.
 - Use conventional commits: `fix(scope):`, `feat(scope):`, `refactor(scope):`, etc.
@@ -139,6 +153,7 @@ because a streamed song can arrive before its audio link resolves.
 | Screens | `src/screens/` — Library, NowPlaying, Playlist, Search, Settings, etc. |
 
 ## Rules
+- **UI is built from `src/ui`** (the component library: `Text`, `Button`, `IconButton`, `Chip`, `Segmented`, `ListRow`, `SheetOption`, `Sheet`, `ConfirmSheet`, `PageHeader`, `EmptyState`, tokens, `Haptics`). Read `DESIGN.md` §0 before touching a screen. No bare `Pressable`, no typed colours, font sizes, durations or bottom paddings in screens; add what is missing to `src/ui` instead. `src/designGuards.test.ts` enforces it.
 - No `console.log` in production paths — wrap with `if (__DEV__)` or use `diag`
 - No `as any` unless unavoidable (FlashList type shim is the one exception)
 - No mock DB in tests — always hit real SQLite

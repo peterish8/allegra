@@ -1,8 +1,9 @@
 ---
-name: LuvLyrics — Soft Signal for mobile
+name: LuvLyrics V6 frontend system
 status: active
-inherits: Allegra "Soft Signal" (allegra/DESIGN.md)
+inherits: Approved V6 direction (.planning/mobile-ui-review/REDESIGN-V6-NOTES.md)
 source_of_truth:
+  - src/ui/
   - src/constants/allegraTheme.ts
   - src/components/allegra/
   - src/components/PillPlayer.tsx
@@ -11,6 +12,31 @@ source_of_truth:
 ---
 
 # LuvLyrics design system
+
+> ## Redesign direction (approved 2026-11-06; runtime migration, release pending)
+>
+> The owner approved the redesign's direction: **neat, minimal, modern, frosted, with depth**. It replaces the
+> earlier look as each area is implemented. The shared token and primitive rules below now describe prepared V6 source;
+> the shell and screen migration are in source, with runtime/device validation tracked separately. Designs: `.planning/mobile-ui-review/design-gallery/index.html` (offline) and the Design canvas
+> linked in `.planning/mobile-ui-review/HANDOFF-2026-11-06-round6.md`. Specs: `REDESIGN-V6-NOTES.md`, `REDESIGN-V5-SPEC.md`.
+>
+> - **Ground and colour**: near-black base `#0B0D10`, raised `#17191E`, control `#22252C`; text `#F4F4F5` / `#A3A5AE` /
+>   `#8A8D96`; danger `#FF6B61`. **White is the only accent**: the one primary action and selected states. Colour comes
+>   from artwork.
+> - **Glow**: the playing song's cover, blurred once, across the top ~20% of every screen, fading into the ground. No glow
+>   before anything has played.
+> - **Frost, sparingly**: the bottom shell, toasts, player panels. On Android it is the cover bitmap blurred once under a
+>   dark tint, never a live blur of scrolling content; an opaque fallback for reduced transparency, Battery Saver and
+>   low-end phones. Lists and reading areas stay crisp.
+> - **Depth on Now playing**: cover blurred full-screen, the sharp cover lifted by its own coloured shadow, a frosted play
+>   disc, no volume row, status shown inside existing controls so nothing moves.
+> - **Hierarchy**: one compact primary action per state; secondary actions are text; no full-width buttons in empty
+>   states; long press always opens actions.
+> - **Shape and type**: radius 8 / 12 / 16; circles only for people and play discs; 48 dp targets; SF Pro 400/600/700 only;
+>   rows 15/400 (playing 600), meta 13, titles 28 and 24.
+> - **Types at a glance**: rows are songs, squares are collections, circles are artists.
+>
+> When an area is implemented, move its rules into the sections below and delete what they replace.
 
 LuvLyrics is a lyrics-first music player. It shares Allegra's visual language —
 album art supplies the atmosphere, frosted material separates content, one
@@ -25,208 +51,179 @@ and the code disagree, fix one of them in the same change.
 
 ---
 
-## 1. Colour
+## 0. Build from the library (`src/ui`)
 
-### Stable colours (`Signal` in `allegraTheme.ts`)
+Every screen is built from one component library. Import from `src/ui` and
+nowhere else:
 
-| Token | Hex | Use |
-| --- | --- | --- |
-| `wave` | `#d9e66a` | Primary action, selected state, progress, the playing row |
-| `waveInk` | `#17180d` | Text and icons on a `wave` fill |
-| `accent` | `#ee6b5f` | Liked, love, destructive-but-warm (remove from playlist) |
-| `ink` | `#f4f1ea` | Primary text |
-| `inkSoft` | `#d1d0c9` | Secondary text that must still read over art |
-| `inkMuted` | `#8e9498` | Metadata, hints |
-| `inkFaint` | `#626b70` | Placeholders, disabled |
-| `bg` / `bgDeep` / `bgSubtle` | `#0a0b0e` / `#07080b` / `#12141a` | Page, deepest room, wells |
+```tsx
+import { Button, IconButton, Chip, ListRow, Sheet, ConfirmSheet, Text, PageHeader, Haptics, useBottomClearance } from '../ui';
+```
 
-Rules
+A one-off button is how the app ended up with six pressed colours, 28 font
+sizes and a ••• that does nothing. If the library lacks something, add it to
+`src/ui/`, export it from `src/ui/index.ts`, add a row below, and use it in
+the same change.
 
-- Chartreuse means "act here" or "this one is on". Never decoration.
-- Coral means love. The heart, the Luv button, the liked badge. Nothing else.
-- No new one-off accent. If a role is missing, add a token first.
-- The app is dark. Light mode exists for text-heavy settings only; the player,
-  Stream, Luvs, Search and Library are always the dark room.
+| Need | Component |
+| --- | --- |
+| Any text | `<Text variant tone tabular? align?>`: size and weight from the role, colour from the tone (§3) |
+| A labelled action | `<Button label icon? variant="primary·glass·plain·danger" size="md·sm" block? busy?>` |
+| An icon-only control | `<IconButton icon label onPress size="sm 36·md 40·lg 44" variant? selected?>`. `label` is required (the screen reader's name); the touch area is at least 48 |
+| An inline text action ("See all", "Undo") | `<TextButton label onPress>` |
+| A filter, a sort, a mood | `<Chip label selected onPress clearable?>` in a `<ChipRow>`; chosen is lit white glass |
+| 2–4 exclusive options | `<Segmented value options onChange label>`: the lit plate slides |
+| A row in a list | `<ListRow title subtitle artwork·icon onPress onLongPress trailing chevron? active?>`, 64 pt (`ROW_HEIGHT`) |
+| A row in a sheet or menu | `<SheetOption label icon? selected? hint? destructive? onPress>` |
+| Something rising from the bottom | `<Sheet visible onClose title? tall? surface="deep?raised?player" palette? keyboard?>` (§2a) |
+| A question before something final | `<ConfirmSheet title body confirmLabel destructive onConfirm onClose>` |
+| A tab page's title | `<PageHeader title subtitle? actions? leading?>` |
+| Nothing here yet | `<EmptyState icon title body action?>` |
+| Loading | `<RowPlaceholder>` / `<Placeholder width height>`: the shape of what is coming |
+| A glass card or menu body | `<Panel>`; the material itself is `Frosted` |
+| A custom tappable (a cover card, the deck) | wrap it in `<Tactile>` (buttons, cards) or `<TactileRow>` (full-width rows) |
 
-### Artwork colour
-
-`useArtworkPalette(uri)` extracts the cover's colours natively on Android
-(`NativePalette`) with Allegra's vivify rules, falling back to a supplied
-duotone, then to Allegra's default room. Artwork colour may tint:
-
-- the live shader (`DynamicAura`),
-- glass washes (`Frosted` palette prop),
-- the colour that rises at the foot of a Luvs card,
-- glows behind featured art.
-
-It must never recolour text or the `wave` action colour.
-
----
-
-## 2. Material
-
-### Frosted glass
-
-Floating surfaces (menus, sheets, the voice card) use `allegra/Frosted`: real
-blur on both platforms (`experimentalBlurMethod` on Android), a thin dark tint,
-an optional cover wash, a specular sheen and a lit top edge.
-
-**Never put live blur on always-visible chrome.** The tab bar and the now
-playing pill blur a *bitmap* of the cover once (`Image blurRadius`) under a dark
-tint. A live Android blur re-renders on every scroll frame.
-
-### The cheap blur
-
-For any large blurred background (Luvs backdrop, cover glows): decode a tiny copy
-(`resizeMethod="resize"`, 24–36 px), blur that, and scale it up with a
-transform. Blurring a thumbnail is instant; blurring a full-resolution cover on
-the CPU takes 1–2 s on older phones, which is exactly the "sharp, then fogs
-over" glitch Luvs used to have. Every mounted card carries its blur from the
-first frame — never gate blur on `isActive`.
-
-### Hierarchy
-
-One glass surface plus quieter wells. Don't stack opaque cards to fake depth.
-
-| Surface | Radius | Treatment |
-| --- | --- | --- |
-| Tab bar | pill | cover bitmap blur + tint, hairline, top highlight |
-| Now playing pill | pill, 56 px, max 330 | blurred cover / glow / solid; `wave` progress ring round the art |
-| More menu / sheets | 26–30 | `Frosted`, dim + blur behind |
-| Luvs card | 30 | art (or canvas while playing) full-bleed, hairline edge; the next in the lane peeks over its top |
-| Content wells, search field | 16 / pill | `rgba(255,255,255,0.06–0.10)` + hairline |
-| Artwork | 16 (thumbs 10–12) | crisp; never over-rounded |
-| Icon buttons | circle, ≥ 40 px | `Glass.fillLight` + hairline |
+Tokens (`Signal`, `OnMedia`, `Glass`, `Space`, `Radius`, `TypeScale`,
+`Motion`) are re-exported from `src/ui` too. A screen never writes a colour, a
+font size, a duration or a bottom padding as a number.
 
 ---
+
+## 1. Colour and tokens
+
+`src/constants/allegraTheme.ts` is the runtime source of truth, re-exported by `src/ui`.
+Screens select semantic roles; they do not define their own palette or type ramp.
+
+| Role | Token | Value |
+| --- | --- | --- |
+| Page | `Surface.base` | `#0B0D10` |
+| Raised reading surface | `Surface.raised` | `#17191E` |
+| Secondary control | `Surface.control` | `#22252C` |
+| Pressed surface | `Surface.pressed` | `#2A2D34` |
+| Song actions | `Surface.deep` | `#0D0F12` |
+| Primary action / selection | `Signal.wave` | `#F4F4F5` |
+| Ink on action | `Signal.waveInk` | `#0B0D10` |
+| Primary / secondary / muted text | `Signal.ink / inkSoft / inkMuted` | `#F4F4F5 / #A3A5AE / #8A8D96` |
+| Destructive | `Signal.danger` | `#FF6B61` |
+
+White is the only action accent. Artwork supplies atmosphere, never the control palette.
+Legacy `Signal.accent*`, `vibeBlue`, `inkFaint` names remain compatibility aliases during
+screen migration; new components use semantic roles. Do not introduce another colour system.
+
+`Text` defaults to opaque surface tones. `onMedia` explicitly selects `OnMedia` whites
+for artwork-backed player surfaces. Muted text passes 4.5:1 on base, raised, control and
+song-action surfaces; it does not pass on `Surface.pressed`, so toast copy uses primary
+or secondary. Filled destructive buttons use dark ink, not white text on coral.
+
+## 2. Shared materials and controls
+
+Shape is 8 for thumbnails/chips, 12 for fields/buttons/panels, 16 for sheets.
+Circles are for people and player discs (`IconButton shape="disc"`). `Control` owns
+minimum touch targets (48), button sizes, glyph sizes, list rhythm and the 16 gutter.
+
+`Button` exposes primary, secondary, plain and danger. One compact primary per state;
+Cancel and Not now use plain. The old `glass` variant is an opaque secondary compatibility
+alias. Buttons grow with system text; `sm` changes the label and padding, not the 48 target.
+`IconButton` keeps its 36/40/44 visual inside a real 48 target, rather than overlapping
+neighbours with hit slop. `Chip` is an 8-radius opaque control; selected is white.
+`Segmented` uses the same material and target rules, with transform-only indicator movement.
+
+`Panel` is opaque raised by default. Supplying a player artwork palette opts into the
+existing frosted material. Never use live list blur on persistent chrome. The bitmap
+shell and top artwork glow are implemented by `ShellMaterial` and `AppScreen`. Reduced-transparency,
+Battery Saver and low-end devices use the opaque fallback.
+
+### Sheets (`Sheet`)
+
+`surface="deep"` is the opaque default for song actions and contextual choices;
+`raised` is a quieter opaque surface; `player` opts into player glass. Existing callers
+with a palette retain player glass. The card anchors to the bottom with 16 top corners
+and a quiet hairline. Scrim opacity stops at 0.4.
+
+```tsx
+<Sheet visible={open} onClose={close} title="Sort by" surface="deep">
+  {SORTS.map(s => <SheetOption key={s.key} label={s.label}
+    selected={sort === s.key} onPress={() => pick(s.key)} />)}
+</Sheet>
+```
+
+The sheet springs open, follows the finger and settles or closes at release speed.
+Reduce Motion fades. Its list uses `SheetScrollView`, or `SheetScrollable` around an
+existing FlatList/FlashList; the wrapper reports the offset itself. Keyboard sheets pass
+`keyboard`. Native back closes modal sheets; player sheets use inline presentation.
+Confirm irreversible actions with `ConfirmSheet`, with a named destructive action and
+text Cancel. Reversible removals should offer Undo when that screen is migrated.
+
+`EmptyState` has one optional compact action and a short explanation. Reading rows use
+`ListRow`, sheet actions use `SheetOption`, selection rows use `CheckRow`. Rows have minimum
+heights and can grow with text. Do not use a fixed `getItemLayout` on variable-height rows.
+Artwork fallback stays in `Artwork`; icons come from Ionicons.
 
 ## 3. Type
 
-SF Pro everywhere (see CLAUDE.md for how Android gets it). Styles set only
-`fontWeight` and `fontSize`.
+`Typography` is the semantic role map used by `Text`. It references `TypeScale` and
+bundles size, line height and weight. SF Pro resolution remains in `constants/fonts.ts`
+and `theme/appleTypography.ts`. Only 400/600/700 ship. No manual tracking on labels.
 
-| Role | Size / weight |
-| --- | --- |
-| Page title (Stream, Search, Library, Luvs) | 28 / 700 |
-| Shelf heading (`SectionHeading`) | 22 / 700 + optional 13 / 400 subtitle |
-| Featured title, player title | 22 / 700, 22 / 600 |
-| Row title / subtitle | 15–16 / 600 · 13 / 400 |
-| Chip / button label | 14–15 / 600 |
-| Meta, times | 12–13, tabular numbers |
+| `variant` | Size / weight | Use |
+| --- | --- | --- |
+| `page` | 28 / 700 | Tab title |
+| `detail`, `playerTitle` | 24 / 700 | Detail / playing song |
+| `title` | 18 / 600 | Section / sheet heading |
+| `lead` | 19 / 700 | Empty / confirmation heading |
+| `row` | 15 / 400 | Normal row; playing title 600 |
+| `body` | 15 / 400 | Reading copy |
+| `label` | 15 / 600 | Action |
+| `secondary`, `meta` | 13 / 400 | Metadata |
+| `caption` | 12 / 400 | Navigation / short hint |
 
-Sentence case, always. No all-caps, no tracking on labels, no emoji or sparkle
-glyphs in UI copy, no "magic" wording.
+`hero` and `display` remain for existing special surfaces. Allow system scaling, grow
+rows/controls and wrap important labels. Numbers that change in place use `tabular`.
+Sentence case; no all-caps labels, emoji or decorative tracking.
 
----
+## Implementation status
 
-## 4. Layout and the bottom chrome
+Version 1.37.1 combines the pending polish with the approved V6 migration. Source and automated
+checks are distinct from a published APK and physical-phone validation. See
+[the release ledger](../../.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md).
 
-```
-┌──────────────────────────┐
-│ status bar scrim         │
-│ Title          (glass ○) │
-│ search field / mood chips│
-│ …content…                │
-│                          │
-│ ╭ now playing pill ────╮ │  ← every screen except Luvs & the player
-│ ╰──────────────────────╯ │
-│ ╭ Stream Luvs 🎙 Library •••╮│  ← floating tab bar
-└──────────────────────────┘
-```
+## 4. Layout and the bottom shell
 
-- Gutter: 20 px (`GUTTER` in `StreamHome`). Headings and content share it.
-- Everything that scrolls pads its bottom with `useBottomClearance()` — tab bar
-  plus the pill when it shows. Don't hardcode 100/180/208 again.
-- The ••• menu, the pill and the voice card are mounted at the **root**
-  (`RootNavigator`), in that paint order: pill → menu (`MoreMenuHost`) → voice
-  card. The tab bar owns the menu's state and publishes it through
-  `HostedMoreMenu`, so the menu always opens on top of the pill.
-- A new destination goes in `MORE_ITEMS`, not in the tab bar.
+`AppScreen` binds the current cover to the stateless `Screen`/`CoverGlow` primitives. `AppSafeArea`
+is the equivalent for utility screens. There is no moving shader at rest, and no glow before a song.
 
----
+The five tabs are Stream, Luvs, Library, Search and You. Use Ionicons in both the React Native
+fallback and Kotlin V6 tab bar. Search and You are first-class destinations; voice remains available
+through the existing voice flows. The Stream top-right LuvLyrics mark opens About and Updates. Keep that header outside the scrolling
+feed, so hydration, queue restoration and scrolling cannot hide the update entry.
 
-## 5. The player
+The bottom shell is flush with the edges: a 24dp seek band, a 56dp mini row and 64dp navigation
+plus the safe inset. Below 700dp tall, navigation reserves at least 8dp below its targets. At large
+text the mini row grows to 72dp. `v6Shell.ts` is the geometry source; `useBottomClearance()` reserves
+only visible mini-player space, including Connect remote playback. Hide the shell for the keyboard.
 
-### Now playing pill (`PillPlayer`)
+`ShellMaterial` blurs only a tiny copy of the cover. It never blurs scrolling content. Use opaque
+raised fill for reduced transparency, Battery Saver, low-end devices, or missing artwork. The old
+App background, Mini player background and Bottom bar style settings are retired.
 
-Default mini player (`miniPlayerStyle: 'pill'`), modelled on Echo Music's
-NewMiniPlayer. Shows on every screen in the tab shell except Luvs. Round art
-inside a `wave` progress ring, title over artist, then previous · play · next.
-The play button is Echo's nine-lobed "cookie": a circle at rest that grows soft
-lobes and turns once every 8 s while music plays.
+## 5. Playback surfaces
 
-| Gesture | Result |
-| --- | --- |
-| Tap | open the player |
-| Swipe up | open the player, carrying the flick's speed into the sheet |
-| Drag sideways | the row follows the finger; past 60 px or faster than 600 px/s, it skips |
+The mini player uses square artwork and separate metadata, play/retry and next targets. Its seek
+band is adjustable by TalkBack in ten-second steps, clamps to known duration, shows a scrub thumb
+and time preview, cancels when the track changes or loading starts, and restores position on failure.
+Unknown duration is a dashed inactive track. Connect remote seek stays inactive until supported.
 
-The row springs home without bounce. It is 54 px tall: 40 px art in its ring,
-a 40 px cookie, 18 px skip glyphs.
+`playbackStatus` separates playback intent from audible playback. Loading, play/pause and retry
+occupy the same disc; a reduced-motion loading state is static. Error details are a cover inset, so
+neither the title nor scrubber moves. Retry callbacks come from the existing playback owners;
+presentation components never start another audio player. Native audio, native skip, scrubber and
+lyrics clocks keep their current ownership. V6 uses the shared React Native transport disc so loading
+and retry remain visible; it does not use the older native play/pause-only transport bar.
 
-The Dynamic Island (`island`) and classic bar (`bar`) remain as settings.
-
-### Player sheet (`NowPlayingScreen` + `navigation/playerSheet.ts`)
-
-The route is a transparent modal with no native animation; the screen animates
-itself so it can be dragged.
-
-- **It is the pill, grown.** Closed, the sheet rests on the pill's top edge,
-  scaled to the pill's width (`playerSheetRest`); open, it is full screen. One
-  progress value (`navigation/sheetProgress.ts`) drives both: the pill rides
-  the sheet's top edge and fades over the first tenth of the travel while the
-  sheet turns solid over the first eighth, so the two overlap with no gap.
-- **Open:** a clamped spring (`stiffness 240, damping 32`) from the pill, carrying
-  the swipe's speed.
-- **Drag down from anywhere** to close. Over the lyrics the drag belongs to the
-  list until it is scrolled to its top (Apple Music's split). A grab mid-flight
-  takes over from where the sheet is; past the top it rubber-bands.
-- **Release:** the decision uses where the flick is heading (momentum
-  projection), not where the finger let go: past 22 % of the screen or faster
-  than 900 px/s → a clamped spring back onto the pill with the finger's speed;
-  otherwise it springs open.
-- **The page underneath** is drawn (the route is transparent) and blurred while
-  the sheet is up, clearing as it lowers — the blur's opacity follows the
-  progress. It is mounted only while the sheet moves; low-end phones dim instead.
-- Back button and the chevron use the same exit (`usePreventRemove`).
-- Controls never auto-hide.
-
-### Player look (Settings → Player)
-
-**Apple Music inspired** (switch): the cover runs full width across the top and
-melts into its own blur — Echo's hero, with the canvas playing inside it. Off
-shows a floating artwork card.
-
-**Player background:**
-
-| Style | What it is |
-| --- | --- |
-| **Apple Music** | Echo's style: the cover blurred soft behind a sharp hero |
-| **Apple + glow** (default, `blend`) | the Apple Music room, cross-fading into Echo's drifting glow while lyrics are open |
-
-"Glow animated" on its own was retired; a stored `glow` migrates to Apple + glow.
-
-**Mini player background:** glow animated (two blobs in the cover's colours) or
-cover tint.
-
-### Player menu and sheets
-
-••• opens a tall frosted sheet in Echo's order: Radio · Add · Share as pill
-buttons, then rounded rows (Cast, Ambient mode, Lyrics, Shuffle, Download,
-Like, Repeat, Refetch), View artist, Set as ringtone, Listen together, and
-Details · Equalizer · Advanced. A row that would do nothing for this song is
-not shown. Active modes (liked, repeat, in a room) tint their icon `wave`.
-Results come back as a short toast, never an alert.
-
-**Listen together** is a sheet too: name + "Start a room" (`wave`), or a room
-code to join; inside, the big room code with copy / share, join requests with
-Decline / Let in, who's listening (host badge, dimmed when offline) and End /
-Leave. A join request also appears as a frosted card at the top of any screen.
-While in a room the player shows a small "Listening together · n" chip under
-the grabber.
-
-**Ambient mode** fills the screen with the canvas (or the cover, centred) and
-the title underneath, keeps the screen awake, and returns on a tap or back.
+Now playing defaults to a sharp cover card, at most 342dp, over the chosen Player background.
+Keep cover-to-lyrics and swipe gestures, the player sheet, Up next and playback ownership invariants.
+There is no volume row. Player background remains configurable. Up next explains an empty queue
+without hiding the current song's transport.
 
 ### Canvas
 
@@ -244,39 +241,83 @@ can't blank it.
 
 ---
 
-## 6. Screens
+## 6. Screen hierarchy
 
-| Screen | Recipe |
+| Screen | Composition |
 | --- | --- |
-| **Stream** | `DynamicAura`, title, mood chips, shortcut grid, quick picks, cover shelves. Double-tap the Stream tab: scroll to the top, focus search, keyboard up (the first tap still switches at once) |
-| **Search** | same room; one field for the phone *and* the catalog; scopes All · On this phone · Online; recent searches; mood tiles |
-| **Library** | same room; the **cover deck** (recent songs as a staggered stack of sleeves — tap the front one to play, flick to leaf through; order lives on the UI thread so a flick never flickers), **Play all · Shuffle** under it and again in a frosted sticky bar once you scroll past, **Your artists** (round covers sized by how many songs you keep, tap to filter), Downloading, then Songs with filter, sort (Recently added · A–Z · By artist) and an **A–Z rail** (letter bubble, a tick per letter, jumps by fixed 64 pt rows) |
-| **Playlist** | CoverFlow deck, playlist name, meta + sort chip, **Play / Shuffle** (transport lives in the pill), glass header that fades in on scroll |
-| **Luvs** | a **taste map**, not a feed: lanes of taste side by side (For you, one per favourite artist, your chill and energy mixes) that turn like a carousel with the neighbours peeking at the edges; each lane is a stack — swipe up and the card lifts away while the next grows from behind, swipe down to bring the last one back. A lane rail slides with the camera and counts how deep you are. Under the map: title, clip scrubber, Luv · Save · Full song · Share (springy presses, a heart burst on Luv). The cover blurred small is the room |
-| **Player** | canvas or artwork stage, grab handle, controls on a scrim, `wave` play button; tap the artist to open their page |
-| **Artist** | Echo's layout: one sharp square photo masked into the shader (drifts at ⅓ scroll, stretches on overscroll), 40/700 name on its foot, subscriber + `wave` monthly chips, About, Play · Radio · Shuffle, Top songs, On this phone, shelves (albums, singles, fans also like as round avatars) |
+| Stream | Moods, Jump back in (six typed song shortcuts), four vertical Quick picks with Play all, one Made for you collection shelf, Your artists, typed provider shelves. Collection taps open a real mix page; long press opens real actions. The LuvLyrics mark stays at top right, with an update dot. |
+| Library | Songs, Playlists, Artists, Albums. Search is pinned beside horizontally scrolling tabs and searches the active scope. Song sorting is remembered. Albums and playlists use square covers; artists use circles. Phone import, hidden songs and account import remain accessible through Library options. |
+| Playlist | Centered 184dp cover, 24dp title, metadata with compact shuffle/play discs, quiet order and Add songs utilities, then shared song rows. Edit mode retains reorder handles. Removal offers Undo; concurrent additions survive restoration. |
+| Artist / album | Centered compact artwork, 24dp title, quiet metadata and compact actions, then real catalog sections. No decorative full-height hero. |
+| Search | Dedicated search destination retaining local/catalog scopes and real result actions, on the shared room. |
+| You | Listening, Library and App groups with DJ, Blends, LuvLink, downloads/import, devices, Settings and About. |
+| About / Updates | Updates first, installed version and status, progress and install action, then a short creator note, links, feedback form and privacy. Download/install remain owned by WorkManager and Android's installer. |
+| Luvs / DJ / Blend / utility screens | Shared semantic palette, type and control library. Preserve their existing feature-specific interactions and playback ownership. Utilities use the shared static cover glow. |
 
-### Shader at rest
-
-`DynamicAura` keeps the field lit when nothing plays (66% opacity, 0.34 energy)
-— at 30% under the scrims the Stream page read as plain black. Screens pass a
-small `dim` (0.06 Stream, ~0.14 elsewhere); don't stack extra dark scrims on it.
+Do not change playlist SQL or loading topology on visual assumptions. The loading suspects in the
+handoff still require real measurements; this migration does not claim latency or frame-time gains.
 
 ---
 
 ## 7. Motion
 
-Primitives: `RiseIn`, `Tactile`, `SwapText`, `MorphIcon`, `NudgeIcon`
-(`allegra/motion.tsx`). Reuse them.
+Primitives: `RiseIn`, `Tactile`, `TactileRow`, `SwapText`, `MorphIcon`,
+`NudgeIcon` (`allegra/motion.tsx`), and the release physics in
+`allegra/physics.ts`. All re-exported from `src/ui`. Reuse them.
 
-- Springs for anything a finger can interrupt; 160–400 ms timings for state.
-- 40 ms list staggers, capped at 10 items.
+| Token | Use |
+| --- | --- |
+| `Motion.spring.tactile` | Press feedback (inside `Tactile`) |
+| `Motion.spring.open` | A tap opens or closes something (critically damped, 400) |
+| `Motion.spring.fling` | A release faster than `Motion.flingVelocity` (800 pt/s) |
+| `Motion.spring.settle` | A drag that didn't commit, coming back |
+| `Motion.duration.fast 160 · base 240 · slow 400 · morph 460` | Timed state changes |
+| `Motion.ease.decelerate` · `morph` | Arrivals · one surface becoming another |
+
+- Springs for anything a finger can interrupt; 160–460 ms timings for state.
+  Every number comes from a token, never typed into a screen.
+- **Springs never wobble.** Every shared spring has a damping ratio of at least
+  0.6 (`physics.test.ts`). Overshoot is kept for one event: the heart when liked.
+- **A release keeps the finger's speed.** Exits and settles take
+  `releaseSpring(velocity / distance, fingerVelocity)`, never a fixed ease-in
+  that restarts from zero.
+- **Edges stretch.** With nothing to go to (no next song, the end of a deck),
+  follow the finger through `rubberBand(overshoot, 120)`, not 1:1.
+- **No `exiting` child inside a `layout={…}` parent.** That crashed
+  Reanimated 4.1 on Android. Keep the child mounted, fade it with a shared
+  value, and unmount it when the fade ends.
+- 40 ms list staggers, capped at 6 items.
 - **Transform and opacity only.** No animated `height`, `width`, `top`,
   `backgroundColor` or `borderRadius`. Equaliser bars use `scaleY` from the
   baseline; progress bars use `scaleX` from the left; a header "turns solid" by
   fading a scrim, not by animating its colour.
 - At most two self-running effects per screen (e.g. the shader + a canvas).
 - Reduce Motion collapses movement to fades; it never removes a feature.
+  Loops stop, except `Placeholder`'s breath, which means "loading".
+
+### 7a. Touch and haptics
+
+Every tappable thing presses through `Tactile` or `TactileRow`, usually via a
+library component. It sinks and lights for at least 70 ms, so even the
+quickest tap is seen. A bare `Pressable` in a screen is a bug; the only
+exception is a sheet's backdrop.
+
+**Long press means "actions" everywhere.** On any song, playlist or artist it
+opens that item's actions sheet, with Play next first. It never acts silently.
+
+Haptics go through `Haptics` (`utils/haptics.ts`, which respects the Settings
+switch). Name the moment, not the motor:
+
+| Call | When |
+| --- | --- |
+| `Haptics.tap()` | A selection changed: chip, choice, tab, sheet option, a sheet swiped shut |
+| `Haptics.toggle()` | Like, switch, a long press opening a sheet, a drag picking something up |
+| `Haptics.commit()` | Play/pause anywhere, a skip by gesture, confirming a destructive action |
+| `Haptics.success()` | Something finished: download, lyrics saved, songs added |
+| `Haptics.refuse()` | It can't: nothing to skip to, a disabled action tried |
+
+`haptic="select" | "light"` on `Tactile`, `TactileRow` and the buttons maps
+to `tap` and `toggle`.
 
 ### Old-phone budget
 
@@ -308,13 +349,44 @@ dark translucent fill.
 
 ---
 
-## 9. Checklist for a new screen
+## 9. Copy
+
+- Sentence case everywhere ("Now playing", "Up next"). Never all caps.
+- Buttons say what they do: "Delete playlist", "Save to library". Never "OK" or "Submit".
+- No period at the end of a single line (labels, buttons, one-line empty states).
+  Paragraphs keep their periods.
+- No exclamation marks, emoji, sparkles, "magic", "seamless" or "unlock".
+- Errors say what happened and what to do, in plain words. Never show a raw
+  `error.message` to the listener: log it with `diag`.
+- Use "Unknown artist", curly apostrophes (’), and `countOf(n, 'song')`,
+  never "song(s)".
+
+---
+
+## 10. Checklist for a new screen
 
 1. Dark room: `Signal.bg`, `DynamicAura` (with `active={isFocused}`) or a
    cheap-blur backdrop — not flat black.
-2. 28/700 sentence-case title on the gutter; glass round buttons for actions.
-3. Shelves with `SectionHeading`; rows with `SongRow` / `PlaylistItem`.
+2. `PageHeader` title on the gutter (`GUTTER`); `IconButton`s for actions.
+3. Shelves with `SectionHeading`; rows with `ListRow`; menus and pickers in a
+   `Sheet`; questions in a `ConfirmSheet`.
 4. Bottom padding from `useBottomClearance()`.
 5. Play/pause through `requestPlayback`; open the player with `openPlayerSheet`.
-6. Loading, empty and offline states designed, never blank glass.
-7. Transform/opacity motion from the primitives; check on a low-end phone.
+6. Loading (`RowPlaceholder`), empty (`EmptyState`) and offline states
+   designed, never blank glass.
+7. Every tap through a library component, `Tactile` or `TactileRow`. Long press
+   opens the item's actions.
+8. Transform/opacity motion from the tokens and primitives, with a Reduce
+   Motion fade; check on a low-end phone.
+
+## 11. Guards
+
+`src/designGuards.test.ts` reads the source and fails on:
+- a bare `Pressable` or `TouchableOpacity` outside `src/ui/` and `components/allegra/`
+- `animationType="slide"`
+- a `layout=` parent with an `exiting=` child in the same file
+- a `fontWeight` other than 400/600/700
+- `letterSpacing`
+
+Most of them carry an allowlist of files not moved yet. A list only shrinks:
+when you move a file onto the library, take it off its list.

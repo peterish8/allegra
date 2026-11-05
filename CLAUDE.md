@@ -26,6 +26,14 @@ npm workspaces: **one `npm install` at the root, one lockfile.** Never add a per
 resolves function dependencies from the root, so a split lockfile lets a package exist locally and be
 missing in production.
 
+## Mobile frontend
+
+For V6 mobile work, read `apps/mobile/DESIGN.md`, `apps/mobile/CLAUDE.md` and
+`apps/mobile/src/ui/AGENTS.md`. Use the shared tokens/components and preserve the existing
+Android audio owner. GitHub Actions owns release APK builds; `apk-latest` publishes only from
+main after checks and emulator launch pass. Physical-phone evidence is tracked separately in
+`.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md`.
+
 ## Run it (don't go searching)
 
 ```bash

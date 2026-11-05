@@ -4,29 +4,21 @@
  * services/feedback), a check for a newer build (services/appUpdate) and
  * what the app does with your data. Dark glass panels, like Settings.
  */
+import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
   Linking,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Clipboard from 'expo-clipboard';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Tactile } from '../allegra/motion';
-import { Radius, Signal } from '../../constants/allegraTheme';
-import * as Haptics from '../../utils/haptics';
 import appConfig from '../../../app.json';
+import { Radius, Signal, Space, Surface } from '../../constants/allegraTheme';
 import { FEEDBACK_MAX, feedbackProblem, sendFeedback } from '../../services/feedback';
+import { Button, Sheet, SheetScrollView, TactileRow } from '../../ui';
+import * as Haptics from '../../utils/haptics';
 import UpdatePanel from './UpdatePanel';
 
 const WEBSITE = 'https://prathick.vercel.app';
@@ -38,33 +30,23 @@ const ALLEGRA = 'allegravibe.vercel.app';
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const Panel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <View style={styles.panel}>
-    <LinearGradient
-      colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)', 'rgba(255,255,255,0)']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 0 }}
-      style={styles.panelEdge}
-      pointerEvents="none"
-    />
-    {children}
-  </View>
+  <View style={styles.panel}>{children}</View>
 );
 
 const LinkRow: React.FC<{ icon: IconName; label: string; value: string; onPress: () => void; last?: boolean }> = ({ icon, label, value, onPress, last }) => (
-  <Tactile onPress={onPress} pressScale={0.985} style={[styles.row, !last && styles.rowDivider]} accessibilityRole="link" accessibilityLabel={`${label}: ${value}`}>
+  <TactileRow onPress={onPress} style={[styles.row, !last && styles.rowDivider]} accessibilityRole="link" accessibilityLabel={`${label}: ${value}`}>
     <View style={styles.rowIcon}><Ionicons name={icon} size={18} color={Signal.wave} /></View>
     <View style={styles.flex}>
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={styles.rowValue} numberOfLines={1}>{value}</Text>
     </View>
     <Ionicons name="arrow-forward" size={16} color={Signal.inkMuted} />
-  </Tactile>
+  </TactileRow>
 );
 
 type SendState = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'error'; message: string };
 
 const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visible, onClose }) => {
-  const insets = useSafeAreaInsets();
   const [message, setMessage] = useState('');
   const [contact, setContact] = useState('');
   const [send, setSend] = useState<SendState>({ kind: 'idle' });
@@ -108,21 +90,15 @@ const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visib
   }, [message, contact]);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.sheet, { paddingTop: insets.top + 12 }]}>
-          <View style={styles.head}>
-            <Text style={styles.title} accessibilityRole="header">About</Text>
-            <Tactile onPress={onClose} hitSlop={10} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Close" style={styles.close}>
-              <Ionicons name="close" size={20} color={Signal.ink} />
-            </Tactile>
-          </View>
+    <Sheet visible={visible} onClose={onClose} title="LuvLyrics" tall keyboard>
+          <SheetScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Panel>
+              <UpdatePanel visible={visible} />
+            </Panel>
 
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
             <Panel>
               <Text style={styles.kicker}>LuvLyrics {appConfig.expo.version}</Text>
-              <Text style={styles.story}>I made this entire thing.</Text>
+              <Text style={styles.story}>Made for your music.</Text>
               <Text style={styles.body}>
                 Every screen, every animation and every little detail — through many iterations and even more ideas, until it landed here.
                 It is free, and it always will be. Hope it feels like yours.
@@ -167,23 +143,17 @@ const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visib
                 <Text style={[styles.status, send.kind === 'error' && styles.statusError]} numberOfLines={2}>
                   {send.kind === 'sent' ? 'Sent. Thank you.' : send.kind === 'error' ? send.message : ''}
                 </Text>
-                <Tactile
-                  onPress={submit}
-                  disabled={send.kind === 'sending'}
-                  pressScale={0.95}
-                  accessibilityRole="button"
+                <Button
+                  label={send.kind === 'sending' ? 'Sending' : 'Send'}
+                  icon="paper-plane"
+                  variant="primary"
+                  busy={send.kind === 'sending'}
                   accessibilityLabel="Send the report"
-                  style={[styles.primary, send.kind === 'sending' && styles.dim]}
-                >
-                  {send.kind === 'sending' ? <ActivityIndicator size="small" color={Signal.waveInk} /> : <Ionicons name="paper-plane" size={16} color={Signal.waveInk} />}
-                  <Text style={styles.primaryText}>{send.kind === 'sending' ? 'Sending' : 'Send'}</Text>
-                </Tactile>
+                  onPress={submit}
+                />
               </View>
             </Panel>
 
-            <Panel>
-              <UpdatePanel visible={visible} />
-            </Panel>
 
             <Panel>
               <Text style={styles.panelTitle}>Privacy</Text>
@@ -197,47 +167,30 @@ const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visib
                 Google sign-in connects this app with {ALLEGRA}. Account privacy controls on the website let you stop learning from listening, download your data or delete your account.
               </Text>
             </Panel>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
+          </SheetScrollView>
+    </Sheet>
   );
 };
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet: { flex: 1, backgroundColor: Signal.bgDeep, paddingHorizontal: 16 },
-  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingBottom: 6 },
-  title: { color: Signal.ink, fontSize: 34, fontWeight: '800', letterSpacing: -0.6 },
-  close: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
-  },
   panel: {
     marginTop: 14,
     paddingHorizontal: 18,
     paddingVertical: 16,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: Radius.sheet,
+    backgroundColor: Surface.raised,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.09)',
     overflow: 'hidden',
   },
-  panelEdge: { position: 'absolute', top: 0, left: 0, right: 0, height: 1 },
   kicker: { color: Signal.wave, fontSize: 12, fontWeight: '600' },
-  story: { color: Signal.ink, fontSize: 24, fontWeight: '800', letterSpacing: -0.4, marginTop: 8 },
-  body: { color: Signal.inkSoft, fontSize: 14, lineHeight: 21, marginTop: 6 },
+  story: { color: Signal.ink, fontSize: 24, fontWeight: '700', marginTop: 8 },
+  body: { color: Signal.inkSoft, fontSize: 15, lineHeight: 23, marginTop: 6 },
   gap: { marginTop: 10 },
   signature: { color: Signal.inkMuted, fontSize: 14, fontWeight: '600', marginTop: 10 },
-  panelTitle: { color: Signal.ink, fontSize: 17, fontWeight: '700' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12 },
+  panelTitle: { color: Signal.ink, fontSize: 18, fontWeight: '700' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, borderRadius: Space.sm },
   rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.07)' },
   rowIcon: {
     width: 36,
@@ -245,19 +198,18 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(217, 230, 106, 0.1)',
+    backgroundColor: Surface.control,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(217, 230, 106, 0.28)',
+    borderColor: Surface.divider,
   },
   rowLabel: { color: Signal.ink, fontSize: 15, fontWeight: '600' },
   rowValue: { color: Signal.inkMuted, fontSize: 13, marginTop: 2 },
-  pressed: { opacity: 0.7 },
   input: {
     marginTop: 12,
-    minHeight: 46,
+    minHeight: 48,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 16,
+    borderRadius: Radius.control,
     color: Signal.ink,
     fontSize: 15,
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -268,9 +220,6 @@ const styles = StyleSheet.create({
   sendRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
   status: { flex: 1, color: Signal.wave, fontSize: 13, fontWeight: '600' },
   statusError: { color: Signal.accentBright },
-  primary: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, paddingHorizontal: 18, borderRadius: Radius.pill, backgroundColor: Signal.wave },
-  primaryText: { color: Signal.waveInk, fontSize: 15, fontWeight: '700' },
-  dim: { opacity: 0.7 },
 });
 
 export default AboutSheet;

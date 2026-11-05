@@ -1,11 +1,12 @@
+import { SongRow as SharedSongRow } from '../../ui/SongRow';
 /**
  * Allegra-styled track row and loading shimmer for the Stream and Downloads
  * pages (the home blocks live in components/allegra/home.tsx). Everything
  * sits on the frosted material and the shared radius family.
  */
-import React, { useEffect } from 'react';
-import { PixelRatio, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect } from 'react';
+import { PixelRatio, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -15,6 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Glass, Motion, Radius, Signal, Space } from '../../constants/allegraTheme';
 import Artwork from '../allegra/Artwork';
+import { Tactile, TactileRow } from '../allegra/motion';
 import NativeTrackRow, { nativeTrackRowAvailable } from './NativeTrackRow';
 import { formatTrackDuration, shouldUseNativeTrackRow } from './trackRowPayload';
 
@@ -54,44 +56,11 @@ const ReactNativeTrackRow: React.FC<TrackRowProps> = React.memo(({
   onTrailingPress,
   progress,
 }) => (
-  <Pressable
-    onPress={onPress}
-    onLongPress={onLongPress}
-    accessibilityRole="button"
-    accessibilityLabel={`${title}${artist ? ` by ${artist}` : ''}`}
-    style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-  >
-    <View style={styles.rowArtWrap}>
-      <Artwork uri={artwork} title={title} artist={artist} size={48} style={styles.rowArt} />
-      {isCurrent ? (
-        <View style={styles.nowDot}>
-          <Ionicons name="volume-medium" size={11} color={Signal.waveInk} />
-        </View>
-      ) : null}
-    </View>
-    <View style={styles.rowText}>
-      <Text style={[styles.rowTitle, isCurrent && { color: Signal.wave }]} numberOfLines={1}>{title}</Text>
-      <Text style={styles.rowMeta} numberOfLines={1}>
-        {[artist, meta, formatTrackDuration(duration)].filter(Boolean).join(' · ')}
-      </Text>
-      {progress !== undefined ? (
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { transform: [{ scaleX: Math.max(0.02, Math.min(1, progress)) }] }]} />
-        </View>
-      ) : null}
-    </View>
-    {trailingIcon && onTrailingPress ? (
-      <Pressable
-        onPress={onTrailingPress}
-        hitSlop={10}
-        accessibilityRole="button"
-        accessibilityLabel={trailingLabel ?? 'More'}
-        style={({ pressed }) => [styles.trailing, pressed && styles.pressed]}
-      >
-        <Ionicons name={trailingIcon} size={22} color={Signal.inkSoft} />
-      </Pressable>
-    ) : null}
-  </Pressable>
+  <View>
+    <SharedSongRow title={title} artist={artist} artwork={artwork} meta={[meta, formatTrackDuration(duration)].filter(Boolean).join(' ? ')} playing={isCurrent}
+      onPress={onPress} onActions={onLongPress} actionIcon={trailingIcon} actionLabel={trailingLabel} onActionPress={onTrailingPress} />
+    {progress !== undefined ? <View style={styles.progressTrack}><View style={[styles.progressFill, { transform: [{ scaleX: Math.max(0.02, Math.min(1, progress)) }] }]} /></View> : null}
+  </View>
 ));
 
 /** Opacity-only shimmer — the one motion Reduce Motion keeps (as a still). */
@@ -116,9 +85,6 @@ export const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: Space.sm,
     minHeight: 64,
-  },
-  rowPressed: {
-    backgroundColor: Glass.fillLight,
   },
   rowArtWrap: {
     width: 48,
@@ -177,9 +143,5 @@ export const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  pressed: {
-    opacity: 0.8,
-    transform: [{ scale: Motion.pressScale }],
   },
 });

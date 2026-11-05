@@ -3,18 +3,18 @@
  * Simple bottom bar with inline mic button.
  */
 
-import React from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
-import Animated from 'react-native-reanimated';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import React from 'react';
+import { StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { VoiceMicButton } from './VoiceMicButton';
-import { useSettingsStore } from '../store/settingsStore';
 import { TAB_BAR_HEIGHT } from '../constants/layout';
-import { tabBarTopFromBottom, tabTapParams, VISIBLE_TABS } from '../navigation/tabs';
 import { useTabBarPushStyle } from '../navigation/sheetProgress';
+import { tabBarTopFromBottom, tabTapParams, VISIBLE_TABS } from '../navigation/tabs';
+import { useSettingsStore } from '../store/settingsStore';
 import { HostedMoreMenu, useMoreMenu } from './MoreMenu';
-import { MorphIcon } from './allegra/motion';
+import { VoiceMicButton } from './VoiceMicButton';
+import { MorphIcon, Tactile } from './allegra/motion';
 
 const MIC_WRAPPER_SIZE = 56;
 
@@ -51,13 +51,21 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
     };
 
     return (
-      <Pressable key={route.key} onPress={onPress} style={styles.tab}>
+      <Tactile
+        key={route.key}
+        onPress={onPress}
+        haptic="select"
+        wrapperStyle={styles.tab}
+        accessibilityRole="tab"
+        accessibilityLabel={options.title ?? route.name}
+        accessibilityState={{ selected: isFocused }}
+      >
         {options.tabBarIcon?.({
           focused: isFocused,
           color: isFocused ? '#fff' : 'rgba(255,255,255,0.5)',
           size: 24,
         })}
-      </Pressable>
+      </Tactile>
     );
   };
 
@@ -91,15 +99,16 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
           {/* Right tabs */}
           <View style={styles.tabGroup}>
             {rightRoutes.map(renderTab)}
-            <Pressable
+            <Tactile
               onPress={more.toggle}
-              style={styles.tab}
+              haptic="select"
+              wrapperStyle={styles.tab}
               accessibilityRole="button"
               accessibilityLabel="More"
               accessibilityState={{ expanded: more.open, selected: moreActive }}
             >
               <MorphIcon on={more.open} onIcon="close" offIcon="ellipsis-horizontal" size={24} color={moreActive ? '#fff' : 'rgba(255,255,255,0.5)'} />
-            </Pressable>
+            </Tactile>
           </View>
         </View>
       </View>

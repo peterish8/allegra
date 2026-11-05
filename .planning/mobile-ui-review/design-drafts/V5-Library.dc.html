@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Library</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&amp;display=block">
+<style>
+body{margin:0}
+.ms{font-family:'Material Symbols Rounded';font-weight:normal;font-style:normal;font-size:24px;line-height:1;display:inline-block;white-space:nowrap;direction:ltr;-webkit-font-smoothing:antialiased;font-feature-settings:'liga';font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24}
+.ms.f{font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; position: relative; background: #0B0D10; color: #F4F4F5; font-family: Inter, system-ui, sans-serif;">
+
+  <main style="position: relative; display: flex; flex-direction: column; padding-top: 28px;">
+    <header style="display: flex; align-items: center; height: 56px; padding: 0 16px;">
+      <h1 style="margin: 0; font-size: 28px; font-weight: 700; line-height: 34px;">Library</h1>
+    </header>
+
+    <div role="tablist" aria-label="Show in Library" style="display: flex; gap: 24px; height: 48px; padding: 0 16px; box-shadow: inset 0 -1px 0 rgba(255,255,255,0.06);">
+      <button role="tab" aria-selected="true" style="position: relative; height: 48px; border: 0; padding: 0; background: none; color: #F4F4F5; font: 600 15px Inter, sans-serif;">Songs<span aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 1px; background: #F4F4F5;"></span></button>
+      <button role="tab" aria-selected="false" style="height: 48px; border: 0; padding: 0; background: none; color: #A3A5AE; font: 500 15px Inter, sans-serif;">Playlists</button>
+      <button role="tab" aria-selected="false" style="height: 48px; border: 0; padding: 0; background: none; color: #A3A5AE; font: 500 15px Inter, sans-serif;">Artists</button>
+      <button role="tab" aria-selected="false" style="height: 48px; border: 0; padding: 0; background: none; color: #A3A5AE; font: 500 15px Inter, sans-serif;">Albums</button>
+    </div>
+
+    <div style="display: flex; gap: 8px; padding: 12px 16px 4px;">
+      <label style="flex: 1; display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 12px; border-radius: 12px; background: #17191E; color: #A3A5AE;">
+        <span class="ms" aria-hidden="true" style="font-size: 20px;">search</span>
+        <input type="search" aria-label="Filter your songs" placeholder="Filter songs" style="flex: 1; min-width: 0; border: 0; background: none; color: #F4F4F5; font: 400 15px Inter, sans-serif; outline: none;">
+      </label>
+      <button aria-haspopup="dialog" aria-label="Sort: Recently added. Change sort" style="display: flex; align-items: center; gap: 4px; height: 48px; padding: 0 10px 0 12px; border: 0; border-radius: 12px; background: #17191E; color: #F4F4F5; font: 600 13px Inter, sans-serif;"><span class="ms" aria-hidden="true" style="font-size: 18px;">swap_vert</span>Recent<span class="ms" aria-hidden="true" style="font-size: 18px; color: #A3A5AE;">expand_more</span></button>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 48px; padding: 0 4px 0 16px;">
+      <span style="font-size: 13px; font-weight: 500; color: #A3A5AE;">248 songs</span>
+      <button style="display: flex; align-items: center; gap: 6px; height: 48px; padding: 0 12px; border: 0; background: none; color: #F4F4F5; font: 600 14px Inter, sans-serif;"><span class="ms" aria-hidden="true" style="font-size: 20px;">shuffle</span>Shuffle all</button>
+    </div>
+
+    <ul style="list-style: none; margin: 0; padding: 0;">
+      <li style="display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 4px 0 16px;">
+        <span style="position: relative; width: 48px; height: 48px; flex-shrink: 0;"><img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width: 48px; height: 48px; border-radius: 8px; object-fit: cover;"><span aria-hidden="true" style="position: absolute; right: -4px; bottom: -4px; width: 22px; height: 22px; border-radius: 11px; background: #F4F4F5; color: #0B0D10; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #0B0D10;"><span class="ms" style="font-size: 15px;">graphic_eq</span></span></span>
+        <button aria-label="Low Tide, Harbor Kids, now playing" style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; flex-grow: 1; min-width: 0; height: 64px; border: 0; padding: 0; background: none; color: #F4F4F5; text-align: left; box-shadow: inset 0 -1px 0 rgba(255,255,255,0.06);"><span style="font-size: 15px; font-weight: 600; line-height: 20px;">Low Tide</span><span style="font-size: 13px; line-height: 18px; color: #A3A5AE;">Harbor Kids · Playing</span></button>
+        <button aria-label="More actions for Low Tide" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 0; padding: 0; background: none; color: #A3A5AE; flex-shrink: 0;"><span class="ms" aria-hidden="true">more_vert</span></button>
+      </li>
+      <li style="display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 4px 0 16px;">
+        <img src="/_blob/a28a4910c4101fff1cdaca12e592f638" alt="" style="width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex-shrink: 0;">
+        <button aria-label="Baarish, Monsoon Version, featuring Aditi Rao, Kabir and The Monsoons, downloaded" style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; flex-grow: 1; min-width: 0; height: 64px; border: 0; padding: 0; background: none; color: #F4F4F5; text-align: left; box-shadow: inset 0 -1px 0 rgba(255,255,255,0.06);"><span style="max-width: 100%; font-size: 15px; font-weight: 500; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Baarish (Monsoon Version) [feat. Aditi Rao]</span><span style="display: flex; align-items: center; gap: 4px; font-size: 13px; line-height: 18px; color: #A3A5AE;"><span class="ms f" aria-hidden="true" style="font-size: 14px;">download_done</span>Kabir &amp; The Monsoons</span></button>
+        <button aria-label="More actions for Baarish" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 0; padding: 0; background: none; color: #A3A5AE; flex-shrink: 0;"><span class="ms" aria-hidden="true">more_vert</span></button>
+      </li>
+      <li style="display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 4px 0 16px;">
+        <img src="/_blob/74f23f1848c6d7e932d5d628b033f576" alt="" style="width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex-shrink: 0;">
+        <button aria-label="Static in the Rain, Orla North" style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; flex-grow: 1; min-width: 0; height: 64px; border: 0; padding: 0; background: none; color: #F4F4F5; text-align: left; box-shadow: inset 0 -1px 0 rgba(255,255,255,0.06);"><span style="font-size: 15px; font-weight: 500; line-height: 20px;">Static in the Rain</span><span style="font-size: 13px; line-height: 18px; color: #A3A5AE;">Orla North</span></button>
+        <button aria-label="More actions for Static in the Rain" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 0; padding: 0; background: none; color: #A3A5AE; flex-shrink: 0;"><span class="ms" aria-hidden="true">more_vert</span></button>
+      </li>
+      <li style="display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 4px 0 16px;">
+        <img src="/_blob/80224f83fc614ceab8ebe2fc0d545939" alt="" style="width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex-shrink: 0;">
+        <button aria-label="Small Hours, Mira Vale, downloaded" style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; flex-grow: 1; min-width: 0; height: 64px; border: 0; padding: 0; background: none; color: #F4F4F5; text-align: left; box-shadow: inset 0 -1px 0 rgba(255,255,255,0.06);"><span style="font-size: 15px; font-weight: 500; line-height: 20px;">Small Hours</span><span style="display: flex; align-items: center; gap: 4px; font-size: 13px; line-height: 18px; color: #A3A5AE;"><span class="ms f" aria-hidden="true" style="font-size: 14px;">download_done</span>Mira Vale</span></button>
+        <button aria-label="More actions for Small Hours" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 0; padding: 0; background: none; color: #A3A5AE; flex-shrink: 0;"><span class="ms" aria-hidden="true">more_vert</span></button>
+      </li>
+      <li style="display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 4px 0 16px;">
+        <img src="/_blob/0dc4f7bf0bc5a28e32fa4938e355182c" alt="" style="width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex-shrink: 0;">
+        <button aria-label="Paper Lanterns, Mira Vale" style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; flex-grow: 1; min-width: 0; height: 64px; border: 0; padding: 0; background: none; color: #F4F4F5; text-align: left; box-shadow: inset 0 -1px 0 rgba(255,255,255,0.06);"><span style="font-size: 15px; font-weight: 500; line-height: 20px;">Paper Lanterns</span><span style="font-size: 13px; line-height: 18px; color: #A3A5AE;">Mira Vale</span></button>
+        <button aria-label="More actions for Paper Lanterns" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 0; padding: 0; background: none; color: #A3A5AE; flex-shrink: 0;"><span class="ms" aria-hidden="true">more_vert</span></button>
+      </li>
+      <li style="display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 4px 0 16px;">
+        <img src="/_blob/ea11274cd3d13d724014f84d61a8c141" alt="" style="width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex-shrink: 0;">
+        <button aria-label="Fade, Neon Choir" style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; flex-grow: 1; min-width: 0; height: 64px; border: 0; padding: 0; background: none; color: #F4F4F5; text-align: left;"><span style="font-size: 15px; font-weight: 500; line-height: 20px;">Fade</span><span style="font-size: 13px; line-height: 18px; color: #A3A5AE;">Neon Choir</span></button>
+        <button aria-label="More actions for Fade" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 0; padding: 0; background: none; color: #A3A5AE; flex-shrink: 0;"><span class="ms" aria-hidden="true">more_vert</span></button>
+      </li>
+    </ul>
+  </main>
+
+  <!-- SHELL:START -->
+  <div style="position: absolute; left: 0; right: 0; bottom: 0; background: #17191E;">
+    <div aria-hidden="true" style="height: 2px; background: #2A2D34;"><div style="width: 38%; height: 2px; background: #F4F4F5;"></div></div>
+    <div role="group" aria-label="Now playing" style="display: flex; align-items: center; gap: 4px; height: 64px; padding: 0 4px 0 16px;">
+      <button aria-label="Low Tide by Harbor Kids. Open player" style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; height: 64px; border: 0; padding: 0; background: none; color: #F4F4F5; text-align: left;">
+        <img src="/_blob/02316c7dda6de4813b5e72088faae3cf" alt="" style="width: 44px; height: 44px; border-radius: 8px; object-fit: cover; flex-shrink: 0;">
+        <span style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: 15px; font-weight: 600; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Low Tide</span><span style="font-size: 13px; line-height: 18px; color: #A3A5AE; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Harbor Kids</span></span>
+      </button>
+      <button aria-label="Pause" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 0; padding: 0; background: none; color: #F4F4F5; flex-shrink: 0;"><span class="ms f" aria-hidden="true" style="font-size: 30px;">pause</span></button>
+      <button aria-label="Next song" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 0; padding: 0; background: none; color: #F4F4F5; flex-shrink: 0;"><span class="ms f" aria-hidden="true">skip_next</span></button>
+    </div>
+    <nav aria-label="Main" style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); height: 64px; padding-bottom: 16px; border-top: 1px solid rgba(255,255,255,0.06);">
+      <a href="#" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #A3A5AE; text-decoration: none; font-size: 12px; font-weight: 500;"><span class="ms" aria-hidden="true">radio</span>Stream</a>
+      <a href="#" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #A3A5AE; text-decoration: none; font-size: 12px; font-weight: 500;"><span class="ms" aria-hidden="true">favorite</span>Luvs</a>
+      <a href="#" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #F4F4F5; text-decoration: none; font-size: 12px; font-weight: 600;"><span class="ms f" aria-hidden="true">library_music</span>Library</a>
+      <a href="#" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #A3A5AE; text-decoration: none; font-size: 12px; font-weight: 500;"><span class="ms" aria-hidden="true">search</span>Search</a>
+      <a href="#" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #A3A5AE; text-decoration: none; font-size: 12px; font-weight: 500;"><span class="ms" aria-hidden="true">account_circle</span>You</a>
+    </nav>
+  </div>
+  <!-- SHELL:END -->
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

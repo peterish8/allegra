@@ -1,31 +1,32 @@
-import { displayPlaylistName } from '../utils/sentenceCase';
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  FlatList,
-  Dimensions,
-  TextInput,
   ActivityIndicator,
+  Dimensions,
+  FlatList,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type FlatListProps,
   type ListRenderItem,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { displayPlaylistName } from '../utils/sentenceCase';
 
+import { Glass, Radius, Signal } from '../constants/allegraTheme';
+import * as playlistQueries from '../database/playlistQueries';
+import { getOnlinePlaylistSongs } from '../database/syncQueries';
+import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSongsStore } from '../store/songsStore';
 import { RootStackParamList } from '../types/navigation';
-import { Song, Playlist } from '../types/song';
-import * as playlistQueries from '../database/playlistQueries';
+import { Playlist, Song } from '../types/song';
+import { Button, IconButton, Sheet, SheetScrollable, TactileRow } from '../ui';
+import * as Haptics from '../utils/haptics';
 import { safeGoBack } from '../utils/navigationService';
 import Artwork from './allegra/Artwork';
-import { Frosted } from './allegra/Frosted';
-import { Tactile } from './allegra/motion';
-import * as Haptics from '../utils/haptics';
-import { Glass, Radius, Signal } from '../constants/allegraTheme';
 
 type AddToPlaylistNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type AddToPlaylistRouteProp = RouteProp<RootStackParamList, 'AddToPlaylist'>;
@@ -36,6 +37,15 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_ITEM_WIDTH = (SCREEN_WIDTH - 48 - 12) / 3;
 
 const isSongItem = (item: SelectableItem): item is Song => 'title' in item;
+
+/** A FlatList inside the sheet: a drag down at its top moves the sheet. */
+function SheetList<T>(props: FlatListProps<T>): React.ReactElement {
+  return (
+    <SheetScrollable>
+      <FlatList<T> {...props} />
+    </SheetScrollable>
+  );
+}
 
 export const AddToPlaylistModal = () => {
   const navigation = useNavigation<AddToPlaylistNavigationProp>();
@@ -55,7 +65,7 @@ export const AddToPlaylistModal = () => {
 
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [existingItems, setExistingItems] = useState<Set<string>>(new Set());
 
@@ -69,6 +79,19 @@ export const AddToPlaylistModal = () => {
           setExistingItems(new Set(currentSongs.map(s => s.id)));
         } else {
           await fetchPlaylists();
+          if (targetSongId) {
+            const memberships = await Promise.all(usePlaylistStore.getState().playlists.map(async playlist => {
+              if (targetSongId.startsWith('stream:')) {
+                const ref = targetSongId.slice(7);
+                const exists = playlist.id === usePlaylistStore.getState().defaultPlaylistId
+                  ? useOnlineLibraryStore.getState().likedRefs.has(ref as never)
+                  : (await getOnlinePlaylistSongs(playlist.id)).some(song => song.ref === ref);
+                return exists ? playlist.id : null;
+              }
+              return await playlistQueries.isSongInPlaylist(playlist.id, targetSongId) ? playlist.id : null;
+            }));
+            setExistingItems(new Set(memberships.filter((id): id is string => id !== null)));
+          }
         }
       } catch (error) {
         console.error('Failed to init modal', error);
@@ -77,7 +100,7 @@ export const AddToPlaylistModal = () => {
       }
     };
     init();
-  }, [mode, targetPlaylistId, songs.length, fetchSongs, fetchPlaylists]);
+  }, [mode, targetPlaylistId, targetSongId, songs.length, fetchSongs, fetchPlaylists]);
 
   const dataToRender = useMemo<SelectableItem[]>(() => {
     if (mode === 'ADD_SONGS_TO_PLAYLIST') {
@@ -122,10 +145,13 @@ export const AddToPlaylistModal = () => {
 
     if (viewMode === 'grid') {
       return (
-        <Pressable
+        <TactileRow
           style={[styles.gridItem, (isSelected || isExisting) && styles.gridItemSelected]}
           onPress={() => toggleSelection(item.id)}
           disabled={isExisting}
+          accessibilityRole="checkbox"
+          accessibilityLabel={item.title}
+          accessibilityState={{ checked: isSelected || isExisting, disabled: isExisting }}
         >
           <View style={[styles.gridImage, isExisting && { opacity: 0.3 }]}>
             <Artwork uri={item.coverImageUri} title={item.title} artist={item.artist} size={GRID_ITEM_WIDTH} style={StyleSheet.absoluteFill} />
@@ -141,15 +167,18 @@ export const AddToPlaylistModal = () => {
             </View>
           )}
           <Text style={styles.gridText} numberOfLines={1}>{item.title}</Text>
-        </Pressable>
+        </TactileRow>
       );
     }
 
     return (
-      <Pressable
+      <TactileRow
         style={[styles.listItem, (isSelected || isExisting) && styles.listItemSelected]}
         onPress={() => toggleSelection(item.id)}
         disabled={isExisting}
+        accessibilityRole="checkbox"
+        accessibilityLabel={item.title}
+        accessibilityState={{ checked: isSelected || isExisting, disabled: isExisting }}
       >
         <View style={styles.listLeft}>
           <View style={[styles.listImage, isExisting && { opacity: 0.5 }]}>
@@ -165,16 +194,20 @@ export const AddToPlaylistModal = () => {
           {isExisting && <Ionicons name="checkmark-done-circle" size={24} color={Signal.inkMuted} />}
           {!isSelected && !isExisting && <View style={styles.emptyCircle} />}
         </View>
-      </Pressable>
+      </TactileRow>
     );
   }, [selectedItems, existingItems, viewMode, toggleSelection]);
 
   const renderPlaylistItem = useCallback(({ item }: { item: Playlist }) => {
-    const isSelected = selectedItems.has(item.id);
+    const isExisting = existingItems.has(item.id);
+    const isSelected = selectedItems.has(item.id) || isExisting;
     return (
-      <Pressable
+      <TactileRow
         style={[styles.listItem, isSelected && styles.listItemSelected]}
         onPress={() => toggleSelection(item.id)}
+        accessibilityRole="checkbox"
+        accessibilityLabel={displayPlaylistName(item.name)}
+        accessibilityState={{ checked: isSelected, disabled: isExisting }}
       >
         <View style={styles.listLeft}>
           <View style={[styles.listImage, styles.placeholderList]}>
@@ -182,7 +215,7 @@ export const AddToPlaylistModal = () => {
           </View>
           <View style={styles.listTextContainer}>
             <Text style={styles.listTitle} numberOfLines={1}>{displayPlaylistName(item.name)}</Text>
-            <Text style={styles.listSubtitle} numberOfLines={1}>{item.songCount === 1 ? '1 song' : `${item.songCount} songs`}</Text>
+            <Text style={styles.listSubtitle} numberOfLines={1}>{isExisting ? 'Already in playlist' : item.songCount === 1 ? '1 song' : `${item.songCount} songs`}</Text>
           </View>
         </View>
         <View style={styles.listCheckbox}>
@@ -190,9 +223,9 @@ export const AddToPlaylistModal = () => {
             ? <Ionicons name="checkmark-circle" size={24} color={Signal.wave} />
             : <View style={styles.emptyCircle} />}
         </View>
-      </Pressable>
+      </TactileRow>
     );
-  }, [selectedItems, toggleSelection]);
+  }, [selectedItems, existingItems, toggleSelection]);
 
   const renderSelectableItem = useCallback<ListRenderItem<SelectableItem>>(({ item }) => {
     if (mode === 'ADD_SONGS_TO_PLAYLIST' && isSongItem(item)) return renderSongItem({ item });
@@ -201,99 +234,77 @@ export const AddToPlaylistModal = () => {
   }, [mode, renderSongItem, renderPlaylistItem]);
 
   return (
-    <View style={styles.container}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={() => safeGoBack(navigation)} accessibilityLabel="Close" />
-      <View style={styles.content}>
-        <Frosted radius={Radius.sheet} intensity={60} tint={0.6} />
-        <View style={styles.grabber} />
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>
-              {mode === 'ADD_SONGS_TO_PLAYLIST' ? 'Add songs' : 'Add to playlist'}
-            </Text>
-            {mode === 'ADD_SONGS_TO_PLAYLIST' && (
-              <Text style={styles.subtitle}>{selectedItems.size} selected</Text>
-            )}
-          </View>
-          <View style={styles.headerRight}>
-            {mode === 'ADD_SONGS_TO_PLAYLIST' && (
-              <Tactile
-                onPress={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}
-                style={styles.iconBtn}
-                accessibilityRole="button"
-                accessibilityLabel={viewMode === 'grid' ? 'Show as list' : 'Show as grid'}
-              >
-                <Ionicons name={viewMode === 'grid' ? 'list' : 'grid'} size={20} color={Signal.ink} />
-              </Tactile>
-            )}
-            <Tactile onPress={() => safeGoBack(navigation)} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Close">
-              <Ionicons name="close" size={22} color={Signal.ink} />
-            </Tactile>
-          </View>
-        </View>
-
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={18} color={Signal.inkMuted} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder={mode === 'ADD_SONGS_TO_PLAYLIST' ? 'Search your songs' : 'Search playlists'}
-            placeholderTextColor={Signal.inkFaint}
-            selectionColor={Signal.wave}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
+    <Sheet
+      visible
+      presentation="inline"
+      keyboard
+      tall
+      title={mode === 'ADD_SONGS_TO_PLAYLIST' ? 'Add songs' : 'Add to playlist'}
+      onClose={() => safeGoBack(navigation)}
+    >
+      {mode === 'ADD_SONGS_TO_PLAYLIST' ? (
+        <View style={styles.subHeader}>
+          <Text style={styles.subtitle}>{selectedItems.size} selected</Text>
+          <IconButton
+            icon={viewMode === 'grid' ? 'list' : 'grid'}
+            label={viewMode === 'grid' ? 'Show as list' : 'Show as grid'}
+            size="sm"
+            onPress={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}
           />
         </View>
+      ) : null}
 
-        {loading ? (
-          <ActivityIndicator color={Signal.wave} size="large" style={styles.loading} />
-        ) : (
-          <FlatList<SelectableItem>
-            key={viewMode}
-            data={dataToRender}
-            keyExtractor={(item) => item.id}
-            numColumns={mode === 'ADD_SONGS_TO_PLAYLIST' && viewMode === 'grid' ? 3 : 1}
-            renderItem={renderSelectableItem}
-            contentContainerStyle={styles.listContent}
-            columnWrapperStyle={mode === 'ADD_SONGS_TO_PLAYLIST' && viewMode === 'grid' ? { gap: 6 } : undefined}
-            initialNumToRender={20}
-          />
-        )}
-
-        <View style={styles.footer}>
-          <Tactile
-            style={[styles.doneButton, selectedItems.size === 0 && styles.disabledButton]}
-            onPress={handleDone}
-            disabled={selectedItems.size === 0}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: selectedItems.size === 0 }}
-          >
-            <Text style={styles.doneText}>
-              {mode !== 'ADD_SONGS_TO_PLAYLIST'
-                ? 'Done'
-                : selectedItems.size === 1 ? 'Add 1 song' : selectedItems.size > 1 ? `Add ${selectedItems.size} songs` : 'Add songs'}
-            </Text>
-          </Tactile>
-        </View>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={18} color={Signal.inkMuted} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder={mode === 'ADD_SONGS_TO_PLAYLIST' ? 'Search your songs' : 'Search playlists'}
+          placeholderTextColor={Signal.inkFaint}
+          selectionColor={Signal.wave}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
       </View>
-    </View>
+
+      {loading ? (
+        <ActivityIndicator color={Signal.wave} size="large" style={styles.loading} />
+      ) : (
+        <SheetList<SelectableItem>
+          key={viewMode}
+          data={dataToRender}
+          keyExtractor={(item) => item.id}
+          numColumns={mode === 'ADD_SONGS_TO_PLAYLIST' && viewMode === 'grid' ? 3 : 1}
+          renderItem={renderSelectableItem}
+          contentContainerStyle={styles.listContent}
+          columnWrapperStyle={mode === 'ADD_SONGS_TO_PLAYLIST' && viewMode === 'grid' ? { gap: 6 } : undefined}
+          initialNumToRender={20}
+        />
+      )}
+
+      <View style={styles.footer}>
+        <Button
+          label={mode !== 'ADD_SONGS_TO_PLAYLIST'
+            ? 'Done'
+            : selectedItems.size === 1 ? 'Add 1 song' : selectedItems.size > 1 ? `Add ${selectedItems.size} songs` : 'Add songs'}
+          variant="primary"
+          block
+          disabled={selectedItems.size === 0}
+          onPress={handleDone}
+        />
+      </View>
+    </Sheet>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Glass.scrim, justifyContent: 'flex-end' },
-  content: { borderTopLeftRadius: Radius.sheet, borderTopRightRadius: Radius.sheet, overflow: 'hidden', height: '85%', paddingHorizontal: 24, paddingTop: 10, paddingBottom: 40 },
-  grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, backgroundColor: Glass.hairlineStrong, marginBottom: 14 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  headerRight: { flexDirection: 'row', gap: 10 },
-  title: { fontSize: 22, fontWeight: '700', color: Signal.ink },
-  subtitle: { fontSize: 14, marginTop: 2, color: Signal.inkMuted },
-  iconBtn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: Glass.fillLight },
+  subHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  subtitle: { fontSize: 14, color: Signal.inkMuted },
   searchBar: { flexDirection: 'row', backgroundColor: Glass.fillLight, borderRadius: Radius.pill, paddingHorizontal: 14, height: 44, alignItems: 'center', marginBottom: 20 },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, color: Signal.ink, fontSize: 16 },
-  loading: { flex: 1 },
-  listContent: { paddingBottom: 100 },
-  gridItem: { width: GRID_ITEM_WIDTH, marginBottom: 12, alignItems: 'center' },
+  loading: { marginVertical: 32 },
+  listContent: { paddingBottom: 12 },
+  gridItem: { width: GRID_ITEM_WIDTH, marginBottom: 12, alignItems: 'center', borderRadius: Radius.thumb },
   gridItemSelected: { opacity: 0.8 },
   gridImage: { width: GRID_ITEM_WIDTH, height: GRID_ITEM_WIDTH, borderRadius: Radius.thumb, overflow: 'hidden', marginBottom: 6 },
   gridText: { color: Signal.inkSoft, fontSize: 12, textAlign: 'center', width: '100%' },
@@ -310,10 +321,7 @@ const styles = StyleSheet.create({
   listSubtitle: { color: Signal.inkMuted, fontSize: 13 },
   listCheckbox: { marginLeft: 12 },
   emptyCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: Signal.inkFaint },
-  footer: { position: 'absolute', bottom: 32, left: 24, right: 24 },
-  doneButton: { height: 52, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
-  disabledButton: { opacity: 0.4 },
-  doneText: { color: Signal.waveInk, fontWeight: '700', fontSize: 16 },
+  footer: { marginTop: 12 },
 });
 
 export default AddToPlaylistModal;

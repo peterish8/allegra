@@ -1,6 +1,7 @@
+import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PILL_STACK_GAP, TAB_BAR_CLEARANCE } from '../navigation/tabs';
-import { PILL_PLAYER_HEIGHT } from '../components/PillPlayer';
+import { shellHeight } from '../navigation/v6Shell';
+import { useConnect } from '../services/connect/ConnectProvider';
 import { usePlayerStore } from '../store/playerStore';
 
 /**
@@ -10,6 +11,10 @@ import { usePlayerStore } from '../store/playerStore';
  */
 export const useBottomClearance = (extra = 24): number => {
   const insets = useSafeAreaInsets();
-  const hasSong = usePlayerStore(s => s.currentSong != null);
-  return insets.bottom + TAB_BAR_CLEARANCE + (hasSong ? PILL_PLAYER_HEIGHT + PILL_STACK_GAP : 0) + extra;
+  const { height, fontScale } = useWindowDimensions();
+  const localSong = usePlayerStore(s => s.currentSong != null);
+  const hidden = usePlayerStore(s => s.hideMiniPlayer);
+  const connect = useConnect();
+  const hasSong = !hidden && (localSong || !!(connect.remotePlayback && connect.view?.song));
+  return shellHeight(height, insets.bottom, hasSong, fontScale) + extra;
 };

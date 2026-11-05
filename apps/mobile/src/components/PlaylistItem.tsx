@@ -1,19 +1,29 @@
-import React, { memo } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, interpolate, Easing, cancelAnimation, SharedValue } from 'react-native-reanimated';
+import React, { memo } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { RenderItemParams } from 'react-native-draggable-flatlist';
-import { Song } from '../types/song';
+import Animated, { cancelAnimation, Easing, interpolate, SharedValue, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { useLyricsScanQueueStore } from '../store/lyricsScanQueueStore';
-import { useThemeColors } from '../contexts/ThemeContext';
+import { Song } from '../types/song';
+import { Glass, IconButton, Motion, OnMedia, Signal, Space, TactileRow, Text } from '../ui';
 import Artwork from './allegra/Artwork';
+
+/** Every row is this tall, so the list can lay itself out without measuring. */
+export const PLAYLIST_ROW_HEIGHT = 72;
+
+const formatDuration = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
 
 interface PlaylistItemProps extends Partial<RenderItemParams<Song>> {
   item: Song;
   currentSongId: string | null;
   isEditMode: boolean;
   onPress: (song: Song, index: number) => void;
-  onMagicPress?: (song: Song) => void;
+  /** The song's actions sheet: the ••• and a long press. */
+  onMore?: (song: Song) => void;
   onDelete: (songId: string) => void;
   isPlaying: boolean;
   displayIndex: number;
@@ -27,32 +37,34 @@ const VisualizerBar = ({ anim }: { anim: SharedValue<number> }) => {
   return <Animated.View style={[styles.visualizerBar, style]} />;
 };
 
+/** Three bars dancing over the playing song's cover. Still (mid height) when paused or under Reduce Motion. */
 const LiveVisualizer = ({ isPlaying }: { isPlaying: boolean }) => {
+  const reduce = useReducedMotion();
   const sv1 = useSharedValue(0.3);
   const sv2 = useSharedValue(0.4);
   const sv3 = useSharedValue(0.3);
   const animations = React.useMemo(() => [sv1, sv2, sv3], [sv1, sv2, sv3]);
 
   React.useEffect(() => {
-    if (!isPlaying) {
-      animations.forEach(anim => { cancelAnimation(anim); anim.value = withTiming(0.3, { duration: 300 }); });
+    if (!isPlaying || reduce) {
+      animations.forEach(anim => { cancelAnimation(anim); anim.value = withTiming(0.5, { duration: Motion.duration.base }); });
       return;
     }
-    animations.forEach((anim, i) => {
-      const delay = i * 50;
-      setTimeout(() => {
-        anim.value = withRepeat(
-          withSequence(
-            withTiming(Math.random(), { duration: 150, easing: Easing.linear }),
-            withTiming(Math.random(), { duration: 100, easing: Easing.quad }),
-            withTiming(Math.random(), { duration: 250, easing: Easing.inOut(Easing.quad) }),
-            withTiming(Math.random(), { duration: 120, easing: Easing.linear }),
-          ), -1, true
-        );
-      }, delay);
-    });
-    return () => { animations.forEach(anim => cancelAnimation(anim)); };
-  }, [isPlaying, animations]);
+    const timers = animations.map((anim, i) => setTimeout(() => {
+      anim.value = withRepeat(
+        withSequence(
+          withTiming(Math.random(), { duration: Motion.duration.fast, easing: Easing.linear }),
+          withTiming(Math.random(), { duration: Motion.duration.instant, easing: Easing.quad }),
+          withTiming(Math.random(), { duration: Motion.duration.base, easing: Easing.inOut(Easing.quad) }),
+          withTiming(Math.random(), { duration: Motion.duration.instant, easing: Easing.linear }),
+        ), -1, true
+      );
+    }, i * 50));
+    return () => {
+      timers.forEach(clearTimeout);
+      animations.forEach(anim => cancelAnimation(anim));
+    };
+  }, [isPlaying, reduce, animations]);
 
   return (
     <View style={styles.visualizerContainer}>
@@ -63,123 +75,79 @@ const LiveVisualizer = ({ isPlaying }: { isPlaying: boolean }) => {
 
 const PlaylistItemComponent: React.FC<PlaylistItemProps> = ({
   item, drag, isActive, currentSongId, isEditMode,
-  onPress, onMagicPress, onDelete, isPlaying, displayIndex
+  onPress, onMore, onDelete, isPlaying, displayIndex
 }) => {
-  const colors = useThemeColors();
-  const isActiveSong = currentSongId === item.id;
+  const isActiveSong = currentSongId === item.id && !isEditMode;
   const scanJob = useLyricsScanQueueStore(state => state.queue[item.id]);
   const isScanning = scanJob?.status === 'scanning' || scanJob?.status === 'pending';
-  const isCompleted = scanJob?.status === 'completed';
+  const hasLyrics = scanJob?.status === 'completed' || (item.lyrics?.length ?? 0) > 0;
+  const artist = item.artist || 'Unknown artist';
 
-  const tapCountRef = React.useRef(0);
-  const lastTapRef = React.useRef(0);
-  const timerRef = React.useRef<NodeJS.Timeout | null>(null);
-
-  const handlePress = () => {
-    if (isEditMode) return;
-    const now = Date.now();
-    const delay = 400;
-    if (now - lastTapRef.current < delay) { tapCountRef.current += 1; } else { tapCountRef.current = 1; }
-    lastTapRef.current = now;
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (tapCountRef.current === 3) {
-      if (onMagicPress) onMagicPress(item);
-      tapCountRef.current = 0;
-    } else {
-      timerRef.current = setTimeout(() => {
-        if (tapCountRef.current === 1) onPress(item, displayIndex);
-        tapCountRef.current = 0;
-      }, delay);
-    }
-  };
-
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
+  // A tap plays at once: no multi-tap timer in front of the common case. Finding lyrics lives in the actions sheet.
   return (
-    <Pressable
-      onLongPress={isEditMode ? drag : undefined}
-      onPress={handlePress}
+    <TactileRow
+      onPress={isEditMode ? undefined : () => onPress(item, displayIndex)}
+      onLongPress={isEditMode ? drag : onMore ? () => onMore(item) : undefined}
+      delayLongPress={isEditMode ? 200 : 350}
       disabled={isActive}
-      style={[styles.songRow, isActiveSong && !isEditMode && styles.songRowActive, isActive && styles.songRowDragging]}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.title}, ${artist}`}
+      accessibilityState={{ selected: isActiveSong }}
+      accessibilityHint={isEditMode ? 'Long press and drag to move' : onMore ? 'Long press for more' : undefined}
+      style={[styles.songRow, isActiveSong && styles.songRowActive, isActive && styles.songRowDragging]}
     >
       <View style={styles.leftAction}>
         {isEditMode ? (
-          <Pressable onPressIn={drag} hitSlop={20}>
-            <Ionicons name="reorder-two" size={24} color="#666" />
-          </Pressable>
+          <IconButton icon="reorder-two" label={`Move ${item.title}`} variant="plain" size="sm" onPress={() => undefined} onLongPress={drag} />
         ) : (
-          <Text style={styles.songNumber}>{displayIndex + 1}</Text>
+          <Text variant="secondary" tone="muted" tabular>{displayIndex + 1}</Text>
         )}
       </View>
 
-      <View style={styles.smallCoverContainer}>
-        <Artwork uri={item.coverImageUri} title={item.title} artist={item.artist} size={48} style={styles.smallCover} />
-        {isScanning && (
-          <View style={styles.scanningOverlay}>
-            <Ionicons name="sync" size={16} color="#FFF" />
-          </View>
-        )}
-        {isActiveSong && !isEditMode && !isScanning && (
-          <View style={styles.visualizerOverlay}>
-            <LiveVisualizer isPlaying={isPlaying} />
-          </View>
-        )}
+      <View style={styles.cover}>
+        <Artwork uri={item.coverImageUri} title={item.title} artist={item.artist} size={48} style={StyleSheet.absoluteFill} />
+        {isScanning ? (
+          <View style={styles.coverOverlay}><Ionicons name="sync" size={16} color={OnMedia.primary} /></View>
+        ) : isActiveSong ? (
+          <View style={styles.coverOverlay}><LiveVisualizer isPlaying={isPlaying} /></View>
+        ) : null}
       </View>
 
       <View style={styles.songInfo}>
         <View style={styles.titleRow}>
-          <Text style={[styles.songTitle, isActiveSong && !isEditMode && styles.songTitleActive]} numberOfLines={1}>
-            {item.title}
-          </Text>
-          {(isCompleted || (item.lyrics && item.lyrics.length > 0)) && (
-            <Ionicons name="checkmark-circle" size={12} color={colors.primary} style={styles.checkIcon} />
-          )}
+          <Text variant="row" tone={isActiveSong ? 'accent' : 'primary'} numberOfLines={1} style={styles.title}>{item.title}</Text>
+          {hasLyrics ? <Ionicons name="checkmark-circle" size={12} color={Signal.wave} accessibilityLabel="Has lyrics" /> : null}
         </View>
-        <Text style={styles.songArtist} numberOfLines={1}>{item.artist || 'Unknown Artist'}</Text>
+        <Text variant="secondary" tone="muted" numberOfLines={1}>{artist}</Text>
       </View>
 
       {isEditMode ? (
-        <Pressable onPress={() => onDelete(item.id)} hitSlop={10}>
-          <Ionicons name="remove-circle" size={24} color="#ff4444" />
-        </Pressable>
+        <IconButton icon="remove-circle" label={`Remove ${item.title}`} variant="plain" size="sm" onPress={() => onDelete(item.id)}>
+          <Ionicons name="remove-circle" size={22} color={Signal.danger} />
+        </IconButton>
       ) : (
-        <Text style={styles.songDuration}>{formatDuration(item.duration || 0)}</Text>
+        <>
+          <Text variant="secondary" tone="muted" tabular style={styles.duration}>{formatDuration(item.duration || 0)}</Text>
+          {onMore ? <IconButton icon="ellipsis-vertical" label={`More for ${item.title}`} variant="plain" size="sm" onPress={() => onMore(item)} /> : null}
+        </>
       )}
-
-      {!isEditMode && (
-        <Pressable style={styles.moreButton} hitSlop={10}>
-          <Ionicons name="ellipsis-vertical" size={20} color="rgba(255,255,255,0.6)" />
-        </Pressable>
-      )}
-    </Pressable>
+    </TactileRow>
   );
 };
 
 const styles = StyleSheet.create({
-  songRow: { flexDirection: 'row', alignItems: 'center', height: 76, paddingHorizontal: 16, borderRadius: 8, marginHorizontal: 8 },
-  songRowActive: { backgroundColor: 'rgba(255,255,255,0.07)' },
-  songRowDragging: { backgroundColor: 'rgba(255,255,255,0.2)', transform: [{ scale: 1.02 }] },
-  leftAction: { width: 30, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-  songNumber: { fontSize: 14, color: 'rgba(255,255,255,0.6)', fontWeight: '600' },
-  smallCoverContainer: { marginRight: 12 },
-  smallCover: { width: 48, height: 48, borderRadius: 4, backgroundColor: '#333' },
-  placeholderCover: { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' },
-  scanningOverlay: { position: 'absolute', bottom: 0, right: 0, left: 0, top: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4, justifyContent: 'center', alignItems: 'center' },
-  visualizerOverlay: { position: 'absolute', bottom: 0, right: 0, left: 0, top: 0, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 4, justifyContent: 'center', alignItems: 'center' },
+  songRow: { flexDirection: 'row', alignItems: 'center', height: PLAYLIST_ROW_HEIGHT, paddingHorizontal: Space.sm, borderRadius: Space.sm, marginHorizontal: Space.xs, gap: Space.sm },
+  songRowActive: { backgroundColor: Glass.fillLight },
+  songRowDragging: { backgroundColor: Glass.fillPressed },
+  leftAction: { width: 28, alignItems: 'center', justifyContent: 'center' },
+  cover: { width: 48, height: 48, borderRadius: Space.xs, overflow: 'hidden' },
+  coverOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
   visualizerContainer: { flexDirection: 'row', alignItems: 'flex-end', height: 16, gap: 2 },
-  visualizerBar: { width: 3, height: 14, backgroundColor: '#FFF', borderRadius: 2, transformOrigin: 'bottom' },
-  songInfo: { flex: 1, justifyContent: 'center' },
-  titleRow: { flexDirection: 'row', alignItems: 'center' },
-  songTitle: { fontSize: 16, color: '#fff', fontWeight: '500', marginBottom: 2 },
-  songTitleActive: { color: '#fff', fontWeight: '600' },
-  checkIcon: { marginLeft: 4 },
-  songArtist: { fontSize: 13, color: 'rgba(255,255,255,0.6)' },
-  songDuration: { fontSize: 13, color: 'rgba(255,255,255,0.6)', marginLeft: 8 },
-  moreButton: { padding: 8, marginLeft: 4 },
+  visualizerBar: { width: 3, height: 14, backgroundColor: OnMedia.primary, borderRadius: 2, transformOrigin: 'bottom' },
+  songInfo: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 2 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: Space.xxs },
+  title: { flexShrink: 1 },
+  duration: { marginLeft: Space.xxs },
 });
 
 export const PlaylistItem = memo(PlaylistItemComponent, (prevProps, nextProps) => {
@@ -188,8 +156,10 @@ export const PlaylistItem = memo(PlaylistItemComponent, (prevProps, nextProps) =
   const editModeChanged = prevProps.isEditMode !== nextProps.isEditMode;
   const indexChanged = prevProps.displayIndex !== nextProps.displayIndex;
   const currentSongChanged = prevProps.currentSongId !== nextProps.currentSongId;
+  const playingChanged = prevProps.isPlaying !== nextProps.isPlaying;
   const isActiveSong = prevProps.item.id === prevProps.currentSongId || nextProps.item.id === nextProps.currentSongId;
   if (idChanged || activeChanged || editModeChanged || indexChanged) return false;
-  if (currentSongChanged && isActiveSong) return false;
+  if ((currentSongChanged || playingChanged) && isActiveSong) return false;
+  if (prevProps.onMore !== nextProps.onMore) return false;
   return true;
 });

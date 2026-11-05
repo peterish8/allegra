@@ -3,7 +3,7 @@
  * apps/web/src/components/SettingsPage.tsx):
  *
  *   Section — one dark glass panel (22 radius, hairline, light along the top
- *             edge) with a chartreuse icon tile, a title and a one-line lead
+ *             edge) with a plain section icon, a title and a one-line lead
  *   Row     — label + plain hint on the left, the control on the right,
  *             hairline dividers between rows
  *   Switch  — chartreuse track when on, the thumb slides by transform
@@ -12,11 +12,11 @@
  *
  * Only controls that change something go in these — no placeholders.
  */
-import React, { useEffect } from 'react';
-import { LayoutChangeEvent, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeIn as EnterFade, FadeOut as ExitFade, LinearTransition, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming, interpolateColor } from 'react-native-reanimated';
+import React, { useEffect, useState } from 'react';
+import { LayoutChangeEvent, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import Animated, { FadeIn as EnterFade, interpolateColor, LinearTransition, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Motion, Radius, Signal } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
 import { Tactile } from '../allegra/motion';
@@ -55,10 +55,26 @@ export const Section: React.FC<{
     turn.value = reduce ? withTiming(open ? 1 : 0, { duration: 0 }) : withSpring(open ? 1 : 0, Motion.spring.tactile);
   }, [open, reduce, turn]);
   const chevron = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 180}deg` }] }));
+  // Closing fades the body out, then unmounts it, and only then does the section's layout transition shrink.
+  // Never an `exiting` animation here: an exiting child inside a `layout` parent crashed Reanimated 4.1 on
+  // Android (designGuards.test.ts).
+  const [bodyMounted, setBodyMounted] = useState(open);
+  const bodyOpacity = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    if (open) {
+      setBodyMounted(true);
+      bodyOpacity.value = 1;
+      return;
+    }
+    bodyOpacity.value = withTiming(0, { duration: reduce ? 0 : Motion.duration.instant }, done => {
+      if (done) runOnJS(setBodyMounted)(false);
+    });
+  }, [open, reduce, bodyOpacity]);
+  const bodyFade = useAnimatedStyle(() => ({ opacity: bodyOpacity.value }));
 
   const head = (
     <View style={[styles.head, !open && styles.headClosed]}>
-      <View style={styles.headIcon}><Ionicons name={icon} size={18} color={Signal.wave} /></View>
+      <View style={styles.headIcon}><Ionicons name={icon} size={18} color={Signal.inkMuted} /></View>
       <View style={styles.flex}>
         <Text style={styles.headTitle} accessibilityRole="header">{title}</Text>
         <Text style={styles.headLead} numberOfLines={open ? undefined : 1}>{open ? lead : summary ?? lead}</Text>
@@ -88,8 +104,8 @@ export const Section: React.FC<{
           {head}
         </Tactile>
       ) : head}
-      {open ? (
-        <Animated.View entering={reduce ? undefined : EnterFade.duration(Motion.duration.base)} exiting={reduce ? undefined : ExitFade.duration(Motion.duration.instant)}>
+      {bodyMounted ? (
+        <Animated.View entering={reduce ? undefined : EnterFade.duration(Motion.duration.base)} style={bodyFade}>
           {children}
         </Animated.View>
       ) : null}
@@ -124,21 +140,21 @@ export const Switch: React.FC<{ label: string; hint?: string; value: boolean; on
     backgroundColor: interpolateColor(on.value, [0, 1], ['#ffffff', Signal.waveInk]),
   }));
   return (
-    <Pressable
+    <Tactile
       onPress={() => { Haptics.selectionAsync().catch(() => {}); onChange(!value); }}
       onPressIn={() => { held.value = withSpring(1, Motion.spring.tactile); }}
       onPressOut={() => { held.value = withSpring(0, Motion.spring.tactile); }}
+      pressScale={0.985}
       accessibilityRole="switch"
       accessibilityState={{ checked: value }}
       accessibilityLabel={label}
-      style={({ pressed }) => [pressed && styles.pressed]}
     >
       <Row label={label} hint={hint}>
         <Animated.View style={[styles.track, track]}>
           <Animated.View style={[styles.thumb, thumb]} />
         </Animated.View>
       </Row>
-    </Pressable>
+    </Tactile>
   );
 };
 
@@ -246,12 +262,8 @@ const styles = StyleSheet.create({
   headIcon: {
     width: 38,
     height: 38,
-    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(217, 230, 106, 0.1)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(217, 230, 106, 0.28)',
   },
   headTitle: { color: Signal.ink, fontSize: 18, fontWeight: '700', letterSpacing: -0.2 },
   headLead: { color: Signal.inkMuted, fontSize: 13, marginTop: 2 },
@@ -279,7 +291,6 @@ const styles = StyleSheet.create({
   choiceOptionOn: { backgroundColor: Signal.wave },
   choiceText: { color: Signal.inkSoft, fontSize: 13, fontWeight: '600' },
   choiceTextOn: { color: Signal.waveInk },
-  pressed: { opacity: 0.75 },
   jump: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingVertical: 8 },
   jumpChip: { minHeight: 36, paddingHorizontal: 15, borderRadius: Radius.pill, justifyContent: 'center', backgroundColor: 'rgba(22, 22, 25, 0.88)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)' },
   jumpText: { color: Signal.inkSoft, fontSize: 13, fontWeight: '600' },

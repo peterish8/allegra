@@ -1,22 +1,22 @@
-import React from 'react';
-import { Dimensions, InteractionManager, Pressable, Text, View, StyleSheet, useWindowDimensions } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import React from 'react';
+import { Dimensions, InteractionManager, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import Animated, { EntryAnimationsValues, ExitAnimationsValues, SharedValue, useAnimatedStyle, useReducedMotion, withTiming } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Motion } from '../constants/allegraTheme';
+import { useAppActive } from '../hooks/useAppActive';
+import { usePlayerStore } from '../store/playerStore';
+import { isCardPlayerBackground, lyricsTextStyle, useSettingsStore } from '../store/settingsStore';
 import Artwork from './allegra/Artwork';
 import { COVER_GLOW_BASE } from './allegra/edgeGlowMath';
-import { isCardPlayerBackground, lyricsTextStyle, useSettingsStore } from '../store/settingsStore';
 import { washAt, youtubeWash } from './allegra/palette';
-import { isCoverFull } from './player/coverStage';
-import { usePlayerStore } from '../store/playerStore';
-import Animated, { EntryAnimationsValues, ExitAnimationsValues, SharedValue, useAnimatedStyle, useReducedMotion, withTiming } from 'react-native-reanimated';
-import { Motion } from '../constants/allegraTheme';
-import { DOCK_THUMB, LYRICS_MORPH_MS } from './player/lyricsMorph';
 import { useArtworkPalette } from './allegra/useArtworkPalette';
-import SynchronizedLyrics, { SynchronizedLyricsRef } from './SynchronizedLyrics';
-import { NativeSynchronizedLyrics, canUseNativeLyrics } from './NativeSynchronizedLyrics';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ErrorBoundary from './ErrorBoundary';
-import { useIsFocused } from '@react-navigation/native';
-import { useAppActive } from '../hooks/useAppActive';
+import { NativeSynchronizedLyrics, canUseNativeLyrics } from './NativeSynchronizedLyrics';
+import { isCoverFull } from './player/coverStage';
+import { DOCK_THUMB, LYRICS_MORPH_MS } from './player/lyricsMorph';
+import SynchronizedLyrics, { SynchronizedLyricsRef } from './SynchronizedLyrics';
 
 type ProcessedLyric = { timestamp: number; text: string };
 
@@ -174,7 +174,7 @@ const Stage: React.FC<{
   // Short screens: the card also fits the height above the title, which used
   // to run over the card's bottom edge.
   const room = Math.max(160, screenH - paddingTop - CONTROLS_ROOM);
-  const card = Math.min(width - 64, 380, room);
+  const card = Math.min(width - 48, 342, room);
 
   // Swipe-follow, and the flight into the title's thumbnail.
   const centreX = width / 2;
@@ -202,7 +202,7 @@ const Stage: React.FC<{
         <FullCover key="full" width={width} screenH={screenH} uri={uri} title={title} artist={artist} primary={palette.primary} onBlack={onBlack} stageX={stageX} lyricsP={lyricsP} />
       ) : null}
       <View style={[styles.cardArea, { paddingTop }]}>
-        <Animated.View style={[{ width: card, height: card, alignItems: 'center', justifyContent: 'center' }, stageStyle]}>
+        <Animated.View style={[{ width: card, height: card, alignItems: 'center', justifyContent: 'center', shadowColor: palette.primary, shadowOpacity: 0.28, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 8 }, stageStyle]}>
           {mode === 'card' ? (
             <Animated.View key="card" entering={reduce ? undefined : shrinkIn} exiting={reduce ? undefined : fadeAway} style={styles.stageLayer}>
               <Artwork uri={uri} title={title} artist={artist} size={card} priority="high" continuous quiet style={[styles.card, { width: card, height: card }]} />
@@ -382,7 +382,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
 const styles = StyleSheet.create({
   cardArea: { alignItems: 'center' },
   stageLayer: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  card: { borderRadius: 14, overflow: 'hidden' },
+  card: { borderRadius: 12, overflow: 'hidden' },
   fullCover: { position: 'absolute', top: 0, left: 0, right: 0, overflow: 'hidden' },
   fullShade: { position: 'absolute', top: 0, left: 0, right: 0 },
   fullMelt: { position: 'absolute', bottom: 0, left: 0, right: 0 },

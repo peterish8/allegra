@@ -1,17 +1,17 @@
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { usePlayerStore, playerControls, setNativeOwnsPlaybackState } from '../store/playerStore';
+import { forgetEngineQueue, nativeQueue, notifyQueueLow } from '../playback/nativeQueue';
 import { isStalePlayingEcho } from '../playback/playbackIntent';
-import { usePositionStore } from '../store/positionStore';
-import { shouldPreservePlayingStateDuringSeek, shouldAdoptNativePlayingState } from './playerStatusGuard';
-import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
+import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
+import { PlaybackLoss, recoverPlayback } from '../playback/recovery';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { androidPerformance } from '../services/performanceTrace';
 import { usePlaybackModesStore } from '../store/playbackModesStore';
-import { PlaybackLoss, recoverPlayback } from '../playback/recovery';
-import { forgetEngineQueue, nativeQueue, notifyQueueLow } from '../playback/nativeQueue';
+import { playerControls, setNativeOwnsPlaybackState, usePlayerStore } from '../store/playerStore';
+import { usePositionStore } from '../store/positionStore';
 import type { Song } from '../types/song';
+import { shouldAdoptNativePlayingState, shouldPreservePlayingStateDuringSeek } from './playerStatusGuard';
 
 const PlayerContext = createContext<any>(null);
 
@@ -53,6 +53,7 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const uri = typeof source === 'string' ? source : source?.uri;
       if (!uri) return;
       const store = usePlayerStore.getState();
+
       const target = song ?? store.currentSong;
       if (!target) return;
       return nativeQueue.load(target, uri, store.playlistQueue, store.currentPlaylistId);
@@ -106,6 +107,7 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const statusSub = NativeAudioPlayer.addListener('onPlaybackStatus', (event: any) => {
       const { position, duration, isPlaying, playWhenReady, suppressed } = event;
       const store = usePlayerStore.getState();
+      store.reportPlayback(isPlaying === true, event.isBuffering === true);
 
       if (androidPerformance.trace.enabled) {
         androidPerformance.observeNativePlayback(
@@ -162,6 +164,7 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // The status already says paused; pick the song up where it stopped.
     const errorSub = NativeAudioPlayer.addListener('onPlaybackError', (event: { reason?: PlaybackLoss; position?: number }) => {
       if (!event?.reason) return;
+      usePlayerStore.getState().reportPlaybackError(event.reason);
       if (androidPerformance.trace.enabled) {
         androidPerformance.playbackFailed(usePlayerStore.getState().currentSongId);
       }
@@ -261,6 +264,7 @@ const IosPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
     const { currentTime, duration, playing, playbackState, isBuffering, isLoaded, didJustFinish } = status;
     const store = usePlayerStore.getState();
+    store.reportPlayback(playing, isBuffering || !isLoaded);
 
     if (!isSeeking.value) {
       positionSV.value = currentTime;

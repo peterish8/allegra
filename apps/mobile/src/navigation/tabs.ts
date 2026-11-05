@@ -8,7 +8,7 @@ import { TAB_BAR_HEIGHT } from '../constants/layout';
  * bar stays on screen while they're open) but live behind the ••• menu
  * (components/MoreMenu.tsx). Only the full-screen player covers the bar.
  */
-export const VISIBLE_TABS: ReadonlySet<string> = new Set(['Stream', 'Luvs', 'Library']);
+export const VISIBLE_TABS: ReadonlySet<string> = new Set(['Stream', 'Luvs', 'Library', 'Search', 'You']);
 
 /**
  * Height the floating pill bar takes above the safe-area inset, including its

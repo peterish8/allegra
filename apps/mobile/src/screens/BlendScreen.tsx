@@ -1,3 +1,5 @@
+import { AppScreen } from '../components/AppScreen';
+import { TypeScale } from '../constants/allegraTheme';
 /**
  * One Blend on the phone: its cover (the first four songs), who is in it, the match, a story you can
  * watch full screen (components/blend/BlendStoryPlayer) and the day's tracks with their covers. Playing
@@ -6,34 +8,35 @@
  * overlap by the match. The first visit to each day's build plays that as the reveal, in the hero
  * itself; the lens chips light the chosen person's orb. Transform and opacity only.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, Share, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, useReducedMotion } from 'react-native-reanimated';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, FlatList, Share, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown, useReducedMotion } from 'react-native-reanimated';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BLEND_TEXT, changeText, artistName, learningOffText } from '@shared/blendCopy';
+import { artistName, BLEND_TEXT, changeText, learningOffText } from '@shared/blendCopy';
 import { utcDay } from '@shared/blendLimits';
 import type { BlendDetail } from '@shared/blendView';
 import type { SongSnapshot } from '@shared/songRef';
 
-import { blendStyles as s, discColour, MemberDiscs } from '../components/blend/BlendParts';
+import { Artwork } from '../components/allegra/Artwork';
+import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { BLEND_TOUR, blendScene } from '../components/allegra/infoTours';
+import { RiseIn, Tactile } from '../components/allegra/motion';
+import { discColour, MemberDiscs, blendStyles as s } from '../components/blend/BlendParts';
 import { BlendStage } from '../components/blend/BlendStage';
 import { BlendStoryPlayer } from '../components/blend/BlendStoryPlayer';
-import { Artwork } from '../components/allegra/Artwork';
-import { RiseIn, Tactile } from '../components/allegra/motion';
 import { Glass, Motion, Radius, Signal, Space } from '../constants/allegraTheme';
-import { shuffled } from '../utils/shuffle';
+import { useBottomClearance } from '../hooks/useBottomClearance';
 import { useAccount } from '../services/account/AccountProvider';
 import { blendTrackSong, getBlend, getInvite, inviteUrl, leaveBlend } from '../services/blend/blendApi';
 import { watchStaleBlend } from '../services/blend/staleRefresh';
 import { StreamService } from '../services/stream/StreamService';
 import type { LibraryStackParamList } from '../types/navigation';
-import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
-import { BLEND_TOUR, blendScene } from '../components/allegra/infoTours';
+import { shuffled } from '../utils/shuffle';
 
 const revealKey = (detail: BlendDetail): string => `blend-revealed:${detail.members.find(member => member.isYou)?.userId ?? 'guest'}:${detail.id}:${detail.builtFor}:${detail.buildVersion ?? 0}`;
 
@@ -49,6 +52,7 @@ export const BlendScreen: React.FC = () => {
   const [watching, setWatching] = useState(false);
   const [pulse, setPulse] = useState(0);
   const insets = useSafeAreaInsets();
+  const bottom = useBottomClearance();
   const reducedMotion = useReducedMotion();
   const closeStory = useCallback(() => setWatching(false), []);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -135,8 +139,8 @@ export const BlendScreen: React.FC = () => {
       <SafeAreaView style={s.screen} edges={['top']}>
         <View style={s.panel}>
           <Text style={s.panelBody}>{error ?? (!account.loading && !account.signedIn ? 'Sign in to see this Blend.' : 'Loading your Blend…')}</Text>
-          {error && token ? <Pressable accessibilityRole="button" accessibilityLabel="Retry loading Blend" onPress={() => { setError(null); void load(); }}><Text style={s.panelBody}>Try again</Text></Pressable> : null}
-          {!account.loading && !account.signedIn ? <Pressable accessibilityRole="button" accessibilityLabel="Sign in to see this Blend" onPress={() => { void account.signInWithGoogle(); }}><Text style={s.panelBody}>Sign in</Text></Pressable> : null}
+          {error && token ? <Tactile accessibilityRole="button" accessibilityLabel="Retry loading Blend" onPress={() => { setError(null); void load(); }}><Text style={s.panelBody}>Try again</Text></Tactile> : null}
+          {!account.loading && !account.signedIn ? <Tactile accessibilityRole="button" accessibilityLabel="Sign in to see this Blend" onPress={() => { void account.signInWithGoogle(); }}><Text style={s.panelBody}>Sign in</Text></Tactile> : null}
         </View>
       </SafeAreaView>
     );
@@ -161,7 +165,7 @@ export const BlendScreen: React.FC = () => {
   ].filter(Boolean).join(' · ');
 
   return (
-    <View style={s.screen}>
+    <AppScreen style={s.screen}>
       <FlatList
         data={detail.state === 'ready' ? tracks : []}
         // Keyed by the lens too: switching person re-deals the list (rows rise in, a 40ms stagger).
@@ -191,8 +195,8 @@ export const BlendScreen: React.FC = () => {
               </View>
             </RiseIn>
             {detail.change ? <Text style={styles.note}>{changeText(detail.change, artistName(detail.change.artist, detail.tracks))}</Text> : null}
-            {refreshFailed ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.note}>Couldn’t refresh just now. Tap to try again.</Text></Pressable>
-              : detail.stale && detail.members.length >= 2 ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.note}>Your Blend is waiting to refresh. Tap to refresh.</Text></Pressable> : null}
+            {refreshFailed ? <Tactile accessibilityRole="button" onPress={() => void load()}><Text style={styles.note}>Couldn’t refresh just now. Tap to try again.</Text></Tactile>
+              : detail.stale && detail.members.length >= 2 ? <Tactile accessibilityRole="button" onPress={() => void load()}><Text style={styles.note}>Your Blend is waiting to refresh. Tap to refresh.</Text></Tactile> : null}
             {detail.members.filter((member) => !member.learning).map((member) => (
               <Text key={member.userId} style={styles.note}>{member.isYou ? 'Your picks come from likes and playlists.' : learningOffText(member.displayName)}</Text>
             ))}
@@ -243,10 +247,10 @@ export const BlendScreen: React.FC = () => {
             </Animated.View>
           );
         }}
-        contentContainerStyle={{ paddingBottom: 220 }}
+        contentContainerStyle={{ paddingBottom: bottom }}
       />
       <BlendStoryPlayer detail={detail} visible={watching} onClose={closeStory} onPlay={playFromStory} />
-    </View>
+    </AppScreen>
   );
 };
 
@@ -254,29 +258,29 @@ const TRACK_ART = 48;
 
 const styles = StyleSheet.create({
   hero: { alignItems: 'center', paddingHorizontal: Space.md, paddingBottom: Space.sm },
-  name: { color: Signal.ink, fontSize: 26, fontWeight: '800', textAlign: 'center', marginTop: Space.sm },
-  meta: { color: Signal.inkMuted, fontSize: 13, textAlign: 'center', marginTop: 4 },
+  name: { color: Signal.ink, fontSize: TypeScale.detail, fontWeight: '700', textAlign: 'center', marginTop: Space.sm },
+  meta: { color: Signal.inkMuted, fontSize: TypeScale.meta, textAlign: 'center', marginTop: 4 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, marginTop: Space.md },
   round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
-  play: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
+  play: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
   dim: { opacity: 0.45 },
-  note: { color: Signal.inkMuted, fontSize: 13, paddingHorizontal: Space.md, textAlign: 'center', marginTop: 4 },
+  note: { color: Signal.inkMuted, fontSize: TypeScale.meta, paddingHorizontal: Space.md, textAlign: 'center', marginTop: 4 },
   storyTile: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, marginHorizontal: Space.md, marginTop: Space.md, padding: Space.sm, paddingLeft: Space.md, borderRadius: Radius.panel, backgroundColor: Glass.fill, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairlineStrong },
   storyStack: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
   storyThumb: { width: 40, height: 40, borderRadius: 8, borderWidth: 1.5, borderColor: Signal.bg },
-  storyTitle: { color: Signal.ink, fontSize: 16, fontWeight: '700' },
-  storySub: { color: Signal.inkMuted, fontSize: 12, marginTop: 2 },
+  storyTitle: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '700' },
+  storySub: { color: Signal.inkMuted, fontSize: TypeScale.caption, marginTop: 2 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Space.xs, paddingHorizontal: Space.md, marginTop: Space.md, marginBottom: Space.xs },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 14, borderRadius: Radius.pill, backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline, maxWidth: 180 },
   chipOn: { backgroundColor: Signal.ink, borderColor: Signal.ink },
   chipDot: { width: 8, height: 8, borderRadius: 4 },
-  chipText: { color: Signal.inkSoft, fontSize: 13, fontWeight: '600' },
+  chipText: { color: Signal.inkSoft, fontSize: TypeScale.meta, fontWeight: '600' },
   chipTextOn: { color: Signal.bg },
   track: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, minHeight: 64, paddingHorizontal: Space.md, paddingVertical: 8 },
   trackArt: { width: TRACK_ART, height: TRACK_ART, borderRadius: Radius.thumb },
-  trackTitle: { color: Signal.ink, fontSize: 15, fontWeight: '600' },
-  trackArtist: { color: Signal.inkMuted, fontSize: 13, marginTop: 2 },
-  newTag: { color: Signal.wave, fontSize: 12, fontWeight: '700' },
+  trackTitle: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '600' },
+  trackArtist: { color: Signal.inkMuted, fontSize: TypeScale.meta, marginTop: 2 },
+  newTag: { color: Signal.wave, fontSize: TypeScale.caption, fontWeight: '700' },
 });
 
 export default BlendScreen;
