@@ -57,3 +57,13 @@ Source gate in a cloud session: `npm ci` + `npm run ci` in `apps/mobile` (Jest i
 | 4 Play / Shuffle | Filled Play + compact (40 in 48) Shuffle on artist, playlist, album | `ui/round7.test.ts` | Pending: 360dp, 200% text |
 | 2 Menus | `SheetIdentity` + `SheetDivider` + chevron rows on stream/library song sheets and the mix sheet | `ui/round7.test.ts` | Pending: drag/scrim/Back/× dismissal, TalkBack focus return |
 | 6 Voice | Mic + listening panel in the Search field; gesture copy; Cancel/Stop; top match; problems stay in the field | `voiceFieldCopy.test.ts`, `voiceSearchStore.test.ts` | Pending: hold vs tap, permission flow, Reduce Motion |
+
+### Round 7 CI and release (main `666ac0a`, PR #63)
+
+| Check | Result |
+| --- | --- |
+| PR #63: Mobile CI (Jest + Kotlin unit tests), CI, Mobile APK build, "Opens on an emulator" launch gate | All passed |
+| main: Mobile CI, CI, Mobile APK (build, launch gate, publish) | All passed |
+| `apk-latest` | **LuvLyrics 1.40.0**, built from `666ac0a`, published 2026-11-06 17:11 UTC |
+| Mobile smoke test 42256072092 (main `666ac0a`) | A (cover) and B (lyrics) all ok; **15 failed**: C rounds 2–5 (player not reopened, 0 app nodes), D (screen-off media keys), E (restored queue). The same 15 failed on 1.39.0 (run 42182112546) and 1.37.1 (42126270194): existing failures, not new in Round 7. Open: C's reopen after round 1 and D/E |
+| Emulator screenshots of the Round 7 screens, device, TalkBack, 200% text | Pending (no emulator or phone in the cloud session) |
