@@ -1,5 +1,12 @@
 # V6 implementation and release ledger
 
+> **2026-11-06, 1.38.0 in review:** PR https://github.com/peterish8/allegra/pull/59 (branch
+> `fix/mobile-v6-verification`, from main 473c4d8) carries UI-01 to UI-05 and UI-08 to UI-10 in source, with the
+> broader-smoke label fix. Local gate: 135 suites / 1,074 tests, lint and typecheck clean. PR APK, emulator launch
+> and branch smoke run 42177973408 were running when this was written; emulator visual retest, device,
+> accessibility, performance and install checks are pending. Row-by-row status: [VERIFICATION-MATRIX.md](VERIFICATION-MATRIX.md).
+> The owner reviews the design in the V6 canvas, not in the local gallery render (which lacks covers and fonts).
+
 > Current continuation, 2026-11-06: **1.37.1 is merged and published** via PR 58, main
 > `473c4d8806144619a19b9bb414d1dce31ad4d48c`; main APK run 42126270090 passed and the public manifest
 > matches that version/commit. The broader smoke run 42126270194 failed 15 player-probe assertions.
