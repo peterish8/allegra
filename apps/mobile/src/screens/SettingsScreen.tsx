@@ -53,6 +53,8 @@ import { Button, IconButton, Sheet, SheetScrollView, TactileRow } from '../ui';
 import { exportAllSongs, importSongsFromJson, shareExportedFile } from '../utils/exportImport';
 import * as Haptics from '../utils/haptics';
 import { deviceTier } from '../utils/performanceTier';
+import { DISPLAY_SIZES, DisplaySize } from '../utils/displaySize';
+import { displaySizeAvailable, readDisplaySize, saveDisplaySize } from '../services/displaySizeNative';
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
@@ -93,6 +95,13 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
   const unhideSong = useSongsStore(s => s.hideSong);
 
   const [notice, setNotice] = React.useState<string | null>(null);
+  // Display size lives natively (it must apply before React starts); saving it redraws the screen at that size.
+  const [displaySize, setDisplaySize] = React.useState<DisplaySize>(readDisplaySize);
+  const changeDisplaySize = React.useCallback((size: DisplaySize) => {
+    if (size === displaySize) return;
+    setDisplaySize(size);
+    if (!saveDisplaySize(size)) { setDisplaySize(readDisplaySize()); setNotice('Could not change the display size'); }
+  }, [displaySize]);
   const [alertConfig, setAlertConfig] = React.useState<{
     visible: boolean; title: string; message: string;
     buttons: { text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }[];
@@ -279,6 +288,15 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
         <AllegraAccountSettings onLayout={at('account')} onNotice={setNotice} />
 
         <Section id="player" summary={summaries.player} icon="play-circle-outline" title="Player" lead="How Now Playing and the mini player look." onLayout={at('player')}>
+          {displaySizeAvailable() ? (
+            <Choice<DisplaySize>
+              label="Display size"
+              hint="Everything in LuvLyrics at once: text, buttons, covers and the bars. The screen redraws at the new size; music keeps playing."
+              value={displaySize}
+              options={DISPLAY_SIZES.map(s => ({ value: s.value, label: s.label }))}
+              onChange={changeDisplaySize}
+            />
+          ) : null}
           <Kit.Switch
             label="Apple Music inspired"
             hint="The cover runs full width and melts into its own blur. Off shows a floating artwork card."

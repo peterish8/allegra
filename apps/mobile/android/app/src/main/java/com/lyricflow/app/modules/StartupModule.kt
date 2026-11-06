@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import com.lyricflow.app.recovery.LaunchGuard
 import com.lyricflow.app.recovery.UiRecovery
 import com.lyricflow.app.startup.CpuClass
+import com.lyricflow.app.startup.DisplayScale
 import com.lyricflow.app.startup.FrameWatch
 import com.lyricflow.app.startup.StartupPreloader
 import expo.modules.kotlin.modules.Module
@@ -58,6 +59,19 @@ class StartupModule : Module() {
         // The error that took the last React instance down (recovery/UiRecovery.kt), once; null when there is none.
         Function("takeUiCrash") {
             appContext.reactContext?.let { UiRecovery.take(it) }
+        }
+
+        // Display size (startup/DisplayScale): the saved size, and saving one. Saving rebuilds the screen at the new size
+        // (the activity recreates; playback lives in its service and keeps going).
+        Function("getDisplayScale") {
+            appContext.reactContext?.let { DisplayScale.read(it).toDouble() } ?: DisplayScale.DEFAULT.toDouble()
+        }
+
+        Function("setDisplayScale") { scale: Double ->
+            val context = appContext.reactContext ?: return@Function DisplayScale.DEFAULT.toDouble()
+            val saved = DisplayScale.write(context, scale.toFloat())
+            appContext.currentActivity?.let { activity -> activity.runOnUiThread { activity.recreate() } }
+            saved.toDouble()
         }
 
         // Battery Saver: the shader and glows step down while it is on
