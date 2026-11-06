@@ -318,6 +318,18 @@ const initializeTables = async (database: SQLite.SQLiteDatabase): Promise<void> 
       await database.execAsync('ALTER TABLE songs ADD COLUMN catalog_checked_at INTEGER');
       log('Migration complete');
     }
+    // 1.41.0: a song saved only so a downloaded playlist plays offline. It lives on the phone but stays out of the
+    // Library's song list; saving it yourself later turns the flag off instead of downloading it again.
+    if (!columns.some(c => c.name === 'playlist_only')) {
+      log('Adding playlist_only column...');
+      await database.execAsync('ALTER TABLE songs ADD COLUMN playlist_only INTEGER DEFAULT 0');
+      log('Migration complete');
+    }
+    // A queued download keeps whether it is only for a playlist, so a restart doesn't put it in the Library list.
+    const jobColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(download_jobs)');
+    if (!jobColumns.some(c => c.name === 'playlist_only')) {
+      await database.execAsync('ALTER TABLE download_jobs ADD COLUMN playlist_only INTEGER DEFAULT 0');
+    }
     // Word-synced lyrics: each line's word timings as JSON (`LyricWord[]`), null for a line-synced line.
     const lyricColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(lyrics)');
     if (!lyricColumns.some(c => c.name === 'words')) {

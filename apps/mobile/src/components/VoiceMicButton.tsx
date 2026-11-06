@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
     borderTopColor: Signal.wave,
-    borderRightColor: 'rgba(217, 230, 106, 0.35)',
+    borderRightColor: 'rgba(244, 244, 245, 0.35)',
   },
   disc: {
     overflow: 'hidden',
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
   },
   idle: { backgroundColor: 'rgba(255, 255, 255, 0.16)' },
   // Slightly translucent so the gloss and rim still read as glass when lit.
-  live: { backgroundColor: 'rgba(217, 230, 106, 0.92)' },
+  live: { backgroundColor: 'rgba(244, 244, 245, 0.92)' },
   // Lit from above: bright top edge, soft sides, almost none at the bottom.
   rim: {
     borderWidth: 1,

@@ -1,11 +1,12 @@
 /**
- * A segmented control: two to four options in one pill, the chosen one under a lit plate that slides to it.
- * The plate's radius is the pill's minus its padding, so the curves nest. For more options, use `Chip`s.
+ * A segmented control: two to four options in one frosted capsule, the chosen one under a white capsule plate that
+ * slides to it (1.41.0: the same capsule language as chips and buttons; it sits on glass panels such as Up next).
+ * Both are full capsules, so the curves nest. For more options, use `Chip`s.
  */
 import React, { useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, withSpring } from 'react-native-reanimated';
-import { Control, Motion, Radius, Signal, Space, Surface } from '../constants/allegraTheme';
+import { Control, Glass, Motion, Radius, Signal, Space } from '../constants/allegraTheme';
 import { Tactile } from '../components/allegra/motion';
 import { Text } from './Text';
 
@@ -68,10 +69,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     minHeight: HEIGHT,
     padding: PAD,
-    borderRadius: Radius.control,
-    backgroundColor: Surface.control,
+    borderRadius: Radius.pill,
+    backgroundColor: Glass.capsule,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Glass.hairline,
   },
-  plate: { position: 'absolute', top: PAD, bottom: PAD, left: PAD, borderRadius: Radius.chip, backgroundColor: Signal.wave },
+  plate: { position: 'absolute', top: PAD, bottom: PAD, left: PAD, borderRadius: Radius.pill, backgroundColor: Signal.wave },
   cellWrap: { flex: 1 },
   cell: { flex: 1, minHeight: Control.target, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Space.xs, paddingVertical: Space.xs },
   text: { fontWeight: '600' },

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useDownloadQueueStore } from '../store/downloadQueueStore';
+import { useDownloadQueueStore, type QueueItem } from '../store/downloadQueueStore';
 import { useSongsStore } from '../store/songsStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { lyricaService } from '../services/LyricaService';
@@ -12,7 +12,8 @@ import { removeOnlineLike } from '../database/syncQueries';
 import * as playlistQueries from '../database/playlistQueries';
 import { clearDownloadReceipt, downloadManager } from '../services/DownloadManager';
 import { findYouTubeVideoId } from '../services/YouTubeSearchService';
-import { patchYoutubeVideoId } from '../database/queries';
+import { patchYoutubeVideoId, setPlaylistOnly } from '../database/queries';
+import { reuseBeforeDownload } from '../services/offlinePlaylistPlan';
 import { useQueueShape } from '../store/downloadQueueSelectors';
 import { shareableArtwork } from '@shared/artwork';
 import { songRef } from '@shared/songRef';
@@ -63,7 +64,7 @@ export const BackgroundDownloader = () => {
             }
         }
 
-        const processItem = async (item: any) => {
+        const processItem = async (item: QueueItem) => {
             // Check limits BEFORE adding to active set
             if (activeDownloads.current.has(item.id)) {
                 if (__DEV__) console.log(`[BackgroundDownloader] ${item.id} already downloading`);
@@ -88,6 +89,29 @@ export const BackgroundDownloader = () => {
                 return;
             }
 
+            // Already on the phone (1.41.0)? Nothing is fetched: a playlist links the copy, and a song you save that
+            // the phone held only for a downloaded playlist joins your Library instead of downloading again.
+            const reuse = reuseBeforeDownload({
+                ref: songRef(item.song.source, item.song.id),
+                title: item.song.title,
+                artist: item.song.artist,
+                playlistOnly: item.playlistOnly === true,
+            }, useSongsStore.getState().songs);
+            if (reuse) {
+                try {
+                    if (reuse.promote) await setPlaylistOnly(reuse.copy.id, false);
+                    if (item.targetPlaylistId) {
+                        await playlistQueries.addSongToPlaylistWithOrder(item.targetPlaylistId, reuse.copy.id, item.sortOrder || 0);
+                        await usePlaylistStore.getState().fetchPlaylists();
+                    }
+                    if (reuse.promote) await useSongsStore.getState().fetchSongs();
+                } catch {
+                    // The copy stays where it was; the job still ends, nothing was downloaded.
+                }
+                updateItem(item.id, { status: 'completed', progress: 1, stageStatus: 'Already on this phone' });
+                return;
+            }
+
             // Add to active set IMMEDIATELY (synchronously)
             activeDownloads.current.add(item.id);
             if (__DEV__) {
@@ -104,7 +128,8 @@ export const BackgroundDownloader = () => {
                     id: item.song.id,
                     title: item.song.title,
                     artist: item.song.artist,
-                    album: item.song.album || '',
+                    // Some catalog sources add an album to the song they return; UnifiedSong doesn't promise one.
+                    album: (item.song as typeof item.song & { album?: string }).album || '',
                     duration: item.song.duration || 0,
                     selectedQuality: {
                         url: targetUrl,
@@ -205,6 +230,8 @@ export const BackgroundDownloader = () => {
                 // and the catalog's cover: the downloaded cover file never leaves this phone.
                 newSong.originId = songRef(item.song.source, item.song.id) ?? undefined;
                 newSong.coverRemoteUri = shareableArtwork(item.song.highResArt, item.song.thumbnail) || undefined;
+                // Saved for a downloaded playlist only: on the phone, out of the Library list (1.41.0).
+                newSong.playlistOnly = item.playlistOnly === true;
                 await addSong(newSong);
                 // The row is in: the worker's receipt for a killed app is not needed.
                 clearDownloadReceipt(newSong.id);

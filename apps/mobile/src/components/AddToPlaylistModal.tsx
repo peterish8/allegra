@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
   checkOverlay: { position: 'absolute', top: 4, right: 4, backgroundColor: Glass.scrimHeavy, borderRadius: 12 },
   // The border is always there (clear at rest) so selecting never shifts the row.
   listItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, backgroundColor: Glass.fillLight, padding: 8, borderRadius: Radius.well, borderWidth: 1, borderColor: 'transparent' },
-  listItemSelected: { backgroundColor: 'rgba(217, 230, 106, 0.1)', borderColor: 'rgba(217, 230, 106, 0.45)' },
+  listItemSelected: { backgroundColor: Glass.selected, borderColor: Glass.selectedRim },
   listLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   listImage: { width: 48, height: 48, borderRadius: Radius.thumb, overflow: 'hidden', marginRight: 12 },
   placeholderList: { justifyContent: 'center', alignItems: 'center', backgroundColor: Glass.fillPressed },

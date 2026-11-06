@@ -94,9 +94,23 @@ export const freshSongs = (lane: UnifiedSong[], incoming: UnifiedSong[]): Unifie
 export const needsDeepening = (depth: number, length: number, loading: boolean): boolean =>
   !loading && length > 0 && depth >= length - DEEPEN_AHEAD;
 
+/** How long a visit to Luvs waits on a feed request before the next visit may ask again (1.41.0). */
+export const FEED_RETRY_TIMEOUT_MS = 15_000;
+
+/** Settles with `promise`, or rejects after `ms` so a hung request never blocks the next try. */
+export const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timed out')), ms);
+    promise.then(
+      value => { clearTimeout(timer); resolve(value); },
+      error => { clearTimeout(timer); reject(error); },
+    );
+  });
+
 /**
- * The songs to keep warm around a position: the next two down the lane,
- * the one above, and what the neighbouring lanes are on.
+ * The songs to keep warm around a position, most likely next first: the next one down the lane, what the
+ * neighbouring lanes are on, then the one after next and the one above. The native pool keeps only the first few
+ * (1.41.0: three, one on a low-memory phone), so the order is the priority.
  */
 export const warmAround = (
   lanes: { songs: UnifiedSong[] }[],
@@ -105,11 +119,8 @@ export const warmAround = (
 ): UnifiedSong[] => {
   const lane = lanes[laneIndex]?.songs ?? [];
   const depth = depths[laneIndex] ?? 0;
-  const out = [lane[depth + 1], lane[depth + 2], lane[depth - 1]];
-  for (const side of [laneIndex - 1, laneIndex + 1]) {
-    const songs = lanes[side]?.songs;
-    if (songs) out.push(songs[depths[side] ?? 0]);
-  }
+  const side = (index: number) => lanes[index]?.songs?.[depths[index] ?? 0];
+  const out = [lane[depth + 1], side(laneIndex + 1), side(laneIndex - 1), lane[depth + 2], lane[depth - 1]];
   return out.filter((s): s is UnifiedSong => !!s);
 };
 

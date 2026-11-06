@@ -8,7 +8,7 @@ import { PlaybackButton } from '../ui/PlaybackButton';
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, I18nManager, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useDerivedValue, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { usePlaybackStatus } from '../hooks/usePlaybackStatus';
@@ -19,9 +19,13 @@ import { miniSwipe, swipeFollow } from '../playback/miniSwipe';
 import { durationSV, positionSV } from '../playback/positionBus';
 import { usePlayerStore } from '../store/playerStore';
 import { usePositionStore } from '../store/positionStore';
-import { Control, IconButton, Motion, Radius, Signal, Space, Surface, Tactile, Text } from '../ui';
+import { Control, IconButton, Motion, Radius, Signal, Space, Surface, Tactile, Text, Typography } from '../ui';
+import Marquee from './allegra/Marquee';
+import { miniPlayerLine } from './allegra/marqueeMath';
 import Artwork from './allegra/Artwork';
-import { ShellMaterial } from './ShellMaterial';
+import { MiniPlayerGlow } from './MiniPlayerGlow';
+import { MiniScrubber } from './MiniScrubber';
+import { scrubSeconds } from '../playback/miniScrub';
 
 interface Props {
   title: string; artist?: string; coverImageUri?: string; playing: boolean; bottom: number; sheetUp?: boolean;
@@ -47,8 +51,8 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   const duration = remote ? 0 : localDuration;
   const position = usePositionStore(s => s.position);
   const loading = status === 'loading';
-  const [drag, setDrag] = useState<number | null>(null);
-  const [width, setWidth] = useState(1);
+  /** 0..1 while the line is being scrubbed (1.41.0: on the UI thread, no React render per frame). */
+  const scrubbing = useSharedValue(0);
   const [infoWidth, setInfoWidth] = useState(1);
   const keyboard = useKeyboardVisible();
   const seekGeneration = useRef(0);
@@ -56,25 +60,21 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   const gestureSong = useRef(songId);
   const push = useTabBarPushStyle(bottom);
   const enabled = !!onSeek && Number.isFinite(duration) && duration > 0 && !loading;
-  useEffect(() => { setDrag(null); seekGeneration.current++; }, [songId, loading]);
-  const fraction = useDerivedValue(() => durationSV.value > 0 ? Math.max(0, Math.min(1, positionSV.value / durationSV.value)) : 0);
-  const progress = useAnimatedStyle(() => ({ transform: [{ scaleX: drag !== null && duration > 0 ? drag / duration : fraction.value }] }));
+  useEffect(() => { seekGeneration.current++; gestureSong.current = songId; }, [songId, loading]);
   const commit = async (seconds: number, startedOn = track.current) => {
     if (!enabled || !track.current || !onSeek) return;
     const target = seekTargetForGesture(startedOn, track.current, seconds, duration, loading);
-    if (target === null) { setDrag(null); return; }
-    const id = track.current;
-    const generation = ++seekGeneration.current;
+    if (target === null) return;
+    ++seekGeneration.current;
     try { await onSeek(target); }
     catch { AccessibilityInfo.announceForAccessibility('Could not seek. Position restored.'); }
-    finally { if (generation === seekGeneration.current && id === track.current) setDrag(null); }
   };
-  const pan = Gesture.Pan().enabled(enabled).activeOffsetX([-4, 4]).runOnJS(true)
-    .onStart(e => { gestureSong.current = track.current; setDrag(Math.max(0, Math.min(duration, e.x / width * duration))); })
-    .onUpdate(e => setDrag(Math.max(0, Math.min(duration, e.x / width * duration))))
-    .onEnd(e => { commit(e.x / width * duration, gestureSong.current); })
-    .onFinalize((_e, success) => { if (!success) setDrag(null); });
-  const tap = Gesture.Tap().enabled(enabled).runOnJS(true).onEnd((e, success) => { if (success) commit(e.x / width * duration); });
+  // The scrub started on this song; a skip mid-drag must not seek the next one (seekTargetForGesture refuses it).
+  const commitFraction = async (fraction: number) => {
+    const seconds = scrubSeconds(fraction, duration);
+    if (seconds !== null) await commit(seconds, gestureSong.current);
+  };
+  const rowDim = useAnimatedStyle(() => ({ opacity: 1 - (1 - Control.disabledOpacity) * scrubbing.value }));
 
   // ── Sideways skip on the cover and title ───────────────────────────────
   const shift = useSharedValue(0);
@@ -130,18 +130,18 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   if (sheetUp || keyboard) return null;
   const rowHeight = miniRowHeight(fontScale);
   return <Animated.View style={[styles.shell, { bottom }, push]}>
-    <ShellMaterial uri={coverImageUri} below={bottom} />
-    <GestureDetector gesture={Gesture.Race(pan, tap)}>
-      <View style={styles.seek} onLayout={e => setWidth(e.nativeEvent.layout.width)} accessible accessibilityRole="adjustable" accessibilityLabel="Song position"
-        accessibilityState={{ disabled: !enabled }} accessibilityValue={{ min: 0, max: duration || 1, now: drag ?? position, text: `${time(drag ?? position)} of ${time(duration)}` }}
-        accessibilityActions={[{ name: 'increment', label: 'Forward ten seconds' }, { name: 'decrement', label: 'Back ten seconds' }]}
-        onAccessibilityAction={e => { if (enabled) commit(usePositionStore.getState().position + (e.nativeEvent.actionName === 'increment' ? 10 : -10)); }}>
-        <View style={[styles.track, duration <= 0 && styles.unknown]}>{duration > 0 ? <Animated.View style={[styles.fill, progress]} /> : null}</View>
-        {drag !== null && duration > 0 ? <View style={[styles.thumb, { left: Math.max(0, Math.min(width - 8, drag / duration * width - 4)) }]} /> : null}
-        {drag !== null ? <View style={[styles.preview, { left: Math.max(8, Math.min(width - 140, drag / duration * width - 60)) }]}><Text variant="meta" tabular>{time(drag)} / {time(duration)}</Text></View> : null}
-      </View>
-    </GestureDetector>
-    <View style={[styles.row, { height: rowHeight }, drag !== null && styles.dim]} pointerEvents={drag !== null ? 'none' : 'auto'}>
+    {/* 1.41.0: the mini player has its own soft, frosted cover glow; the navigation keeps the shell material. */}
+    <MiniPlayerGlow uri={coverImageUri} active />
+    <MiniScrubber positionSV={positionSV} durationSV={durationSV} enabled={enabled} active={scrubbing} height={SEEK_BAND_HEIGHT}
+      onCommit={commitFraction}
+      accessibility={{
+        accessible: true, accessibilityRole: 'adjustable', accessibilityLabel: 'Song position',
+        accessibilityState: { disabled: !enabled },
+        accessibilityValue: { min: 0, max: duration || 1, now: position, text: `${time(position)} of ${time(duration)}` },
+        accessibilityActions: [{ name: 'increment', label: 'Forward ten seconds' }, { name: 'decrement', label: 'Back ten seconds' }],
+        onAccessibilityAction: e => { if (enabled) commit(usePositionStore.getState().position + (e.nativeEvent.actionName === 'increment' ? 10 : -10)); },
+      }} />
+    <Animated.View style={[styles.row, { height: rowHeight }, rowDim]}>
       <GestureDetector gesture={infoGesture}><View style={styles.main} onLayout={e => setInfoWidth(e.nativeEvent.layout.width)}>
         <Tactile onPress={() => onOpen()} pressScale={0.985} accessibilityRole="button" accessibilityLabel={miniPlayerLabel(title)} accessibilityHint={artist ? `By ${artist}` : undefined}
           accessibilityActions={[{ name: 'activate' }, { name: 'next', label: 'Next song' }, { name: 'previous', label: 'Previous song' }]}
@@ -149,28 +149,27 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
           style={[styles.info, { height: rowHeight }]}>
           <Animated.View style={[styles.follow, following]}>
             <View style={styles.cover}><Artwork uri={coverImageUri} title={title} artist={artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></View>
-            <View style={styles.copy}><Text variant="row" style={styles.title} numberOfLines={1}>{title}</Text><Text variant="secondary" tone="secondary" numberOfLines={1}>{status === 'error' ? 'Couldn’t play · tap retry' : artist}</Text></View>
+            {/* 1.41.0 (owner): one line as Spotify shows it, "Song • Artist", scrolling slowly when it doesn't fit. */}
+            <View style={styles.copy}>
+              {status === 'error'
+                ? <Text variant="row" style={styles.title} numberOfLines={1}>{`${title} • Couldn’t play, tap to retry`}</Text>
+                : <Marquee text={miniPlayerLine(title, artist)} style={styles.line} active={!sheetUp} />}
+            </View>
           </Animated.View>
         </Tactile>
       </View></GestureDetector>
       <PlaybackButton size={48} plain status={status} onPress={() => { if (!remote && status === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
       <IconButton icon="play-skip-forward" label="Next song" onPress={onNext} />
-    </View>
+    </Animated.View>
   </Animated.View>;
 }
 const styles = StyleSheet.create({
-  // No fill of its own: ShellMaterial is the surface, shared with the navigation bar below (Round 7 item 8).
+  // No fill of its own: MiniPlayerGlow is its surface (1.41.0).
   shell: { position: 'absolute', left: 0, right: 0, zIndex: 15 },
-  // The line runs along the top of the band; the band under it is the drag target, inside the shell, never over songs.
-  seek: { height: SEEK_BAND_HEIGHT }, track: { height: 2, backgroundColor: Surface.control },
-  unknown: { backgroundColor: 'transparent', borderTopWidth: 2, borderStyle: 'dashed', borderColor: Signal.inkMuted },
-  thumb: { position: 'absolute', top: -3, width: 8, height: 8, borderRadius: 4, backgroundColor: Signal.ink },
-  fill: { height: 2, backgroundColor: Signal.wave, transformOrigin: 'left' },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Space.xs },
   main: { flex: 1, minWidth: 0 }, info: { justifyContent: 'center' },
   follow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingLeft: Space.xs },
   cover: { width: MINI_COVER_SIZE, height: MINI_COVER_SIZE, borderRadius: Radius.cover, overflow: 'hidden', backgroundColor: Surface.control },
   copy: { flex: 1, minWidth: 0 }, title: { fontWeight: '600' },
-  dim: { opacity: Control.disabledOpacity },
-  preview: { position: 'absolute', bottom: 20, padding: Space.xs, borderRadius: Radius.thumb, backgroundColor: Surface.deep },
+  line: { ...Typography.row, color: Signal.ink, fontWeight: '600' },
 });

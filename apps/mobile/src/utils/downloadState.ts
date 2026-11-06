@@ -22,12 +22,16 @@ type QueueStatus = 'pending' | 'staging' | 'downloading' | 'completed' | 'failed
 
 const keyCache = new WeakMap<object, Set<string>>();
 
-/** Keys of every song on the phone. Cached per songs array, so it is cheap to ask often. */
-export const libraryKeys = (songs: readonly { title: string; artist?: string; audioUri?: string }[]): Set<string> => {
+/**
+ * Keys of every song in your Library. Cached per songs array, so it is cheap to ask often. A copy kept only for a
+ * downloaded playlist doesn't count: its Download button still offers to save it, and saving it moves the copy into
+ * the Library without downloading it again (1.41.0).
+ */
+export const libraryKeys = (songs: readonly { title: string; artist?: string; audioUri?: string; playlistOnly?: boolean }[]): Set<string> => {
   const cached = keyCache.get(songs);
   if (cached) return cached;
   const keys = new Set<string>();
-  for (const s of songs) if (s.audioUri) keys.add(matchKey(s.title, s.artist));
+  for (const s of songs) if (s.audioUri && !s.playlistOnly) keys.add(matchKey(s.title, s.artist));
   keyCache.set(songs, keys);
   return keys;
 };

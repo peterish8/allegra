@@ -13,6 +13,30 @@ source_of_truth:
 
 # LuvLyrics design system
 
+## Owner requests, 2026-11-06 (1.41.0)
+
+- **Colour.** White is the only accent. The old Allegra green (`#d9e66a`, `#7ED957`) is gone from every screen,
+  sheet, widget and native view; chosen glass is a lit white step (`Glass.selected` / `Glass.selectedRim`), and an "on"
+  row in the player menu shows a tick. Generated covers and the no-cover room use no lime either.
+- **Mini player.** The band above it is 12dp (shell 116dp above the inset). Its progress line is Apple Music's:
+  rounded, about 2.4dp at rest, 6dp under the finger, no thumb, no time readout, scrubbed on the UI thread
+  (`MiniScrubber`, `playback/miniScrub`); the row dims while scrubbing. Its background is its own: the cover's
+  "Glow animated" light softened under a blurred cover and a frosted tint (`MiniPlayerGlow`, `ShellFrost.mini*`),
+  opaque under Reduce Transparency, Battery Saver, low-end phones or with no cover. The navigation keeps `ShellMaterial`.
+- **Rows.** Pressing a song lights the whole row edge to edge, Download and ⋮ included.
+- **Up next.** Its filters (`Segmented`, everywhere) are a frosted capsule with a white capsule plate; Shuffle is a
+  compact frosted capsule.
+- **Dynamic island.** Width goes down to 40% (was 80%): the camera plus a cover and the level bars beside it.
+- **Library shortcuts** (Settings → Navigation and shortcuts): Library opens on Songs, Playlists, Artists or Albums;
+  holding the Library tab for 2 seconds opens a chosen playlist (`navigation/tabHold`, Kotlin `HOLD_MS`; TalkBack's
+  long-press action does the same).
+- **Widget.** See §8: four pinned playlists that play from the home screen without opening the app.
+- **Offline playlists.** A playlist's page has Download → "Downloading 3 of 20" → "Downloaded". Songs the phone has are
+  linked, never downloaded again; the rest are saved playlist-only (`songs.playlist_only`): on the phone, out of the
+  Library list and the Downloads list. Saving such a song yourself moves it into the Library with no new download.
+  Removing the download (or the playlist) deletes the playlist-only files nothing else uses. New songs in a downloaded
+  playlist follow at start-up (`services/offlinePlaylist`, decisions in `offlinePlaylistPlan`).
+
 ## Round 7, 2026-11-06 (1.40.0, owner-approved boards on the canvas page "Round 7")
 
 - **Rows, every list.** One row: 56 tall (`Control.row`), a 44 cover (`Control.rowArtwork`) with 6dp corners
@@ -55,8 +79,9 @@ slim mini player and nav), as the owner reviewed it in the canvas rather than th
   It rests (still, lit) off focus, in the background, once scrolled away, and under Reduce Motion, Reduce
   Transparency (also lighter), Battery Saver and low-end devices. No song: no glow. Pages opt out of the static
   `CoverGlow` with `staticGlow={false}`. Stream's title, Connect and LuvLyrics/Updates stay pinned outside the feed.
-- **Shell.** 16dp seek band (the 2dp line along its top; the band is the drag target, inside the shell), 48dp
-  mini row with a 40dp cover, 56dp nav: 120dp above the inset, down from 144dp. Large text keeps a 72dp row.
+- **Shell.** 12dp seek band since 1.41.0 (was 16; the rounded line along its top; the band is the drag target,
+  inside the shell), 48dp mini row with a 40dp cover, 56dp nav: 116dp above the inset, down from 144dp. Large text
+  keeps a 72dp row.
 - **Mini player swipes.** Left on the cover/title plays next, right goes to previous, through the owner callbacks
   (`playback/miniSwipe`: 56dp or 22% of the lane, or a same-direction flick past 24dp; mostly vertical drags open
   the player instead). The content follows at half speed, leaves on commit and the new song settles in; Reduce
@@ -66,8 +91,9 @@ slim mini player and nav), as the owner reviewed it in the canvas rather than th
 - **Feed measurement.** In FlashList feeds keep headers in the data (not `ListHeaderComponent`), give cells
   definite widths (no percentages of an unmeasured parent) and no Reanimated `entering` in recycled cells.
 - **Up next** filters are one `Segmented` control; the native list clips rows to its own frame.
-- **Player title** stays one line that shrinks to fit (to 80%), then ellipsizes; it never scrolls beside the song
-  actions and never grows into the cover (1.38.1).
+- **Player title** (1.41.0, replacing 1.38.1's shrink-to-fit): one line at its full size that, when too long, scrolls
+  slowly right to left and rests 5 seconds between loops; the artist (16, smaller than the title) rests 3 seconds. It
+  never wraps into the cover. The mini player shows one line, "Song • Artist", scrolling the same way (Spotify's).
 - **Rows**: superseded by Round 7 (Download and ⋮ both). The mini player's play glyph has no disc; the header glow uses
   a dark tint of the cover (1.38.1).
 - **Display size** (Settings → Player, 1.39.0): Compact 85%, Small 92%, Default, Large 108%. Android sets the app's
@@ -265,14 +291,14 @@ fallback and Kotlin V6 tab bar. Search and You are first-class destinations; voi
 through the existing voice flows. The Stream top-right LuvLyrics mark opens About and Updates. Keep that header outside the scrolling
 feed, so hydration, queue restoration and scrolling cannot hide the update entry.
 
-The bottom shell is flush with the edges: a 16dp seek band, a 48dp mini row (40dp cover) and 56dp
+The bottom shell is flush with the edges: a 12dp seek band, a 48dp mini row (40dp cover) and 56dp
 navigation plus the safe inset (the Kotlin V6 bar's `V6_BAR_DP` matches `NAV_BAR_HEIGHT`). Below 700dp tall, navigation reserves at least 8dp below its targets. At large
 text the mini row grows to 72dp. `v6Shell.ts` is the geometry source; `useBottomClearance()` reserves
 only visible mini-player space, including Connect remote playback. Hide the shell for the keyboard.
 
-`ShellMaterial` blurs only a tiny copy of the cover. It never blurs scrolling content. Use opaque
-raised fill for reduced transparency, Battery Saver, low-end devices, or missing artwork. The old
-App background, Mini player background and Bottom bar style settings are retired.
+`ShellMaterial` (the navigation) and `MiniPlayerGlow` (the mini player) blur only a tiny copy of the cover. Neither
+blurs scrolling content. Both use the opaque fill for reduced transparency, Battery Saver, low-end devices, or missing
+artwork. The old App background, Mini player background and Bottom bar style settings are retired.
 
 ## 5. Playback surfaces
 
@@ -407,14 +433,19 @@ Built with `react-native-android-widget`; glyphs are inline SVG (`widget/icons.t
 glass pill with the song, share and like circles; elapsed / remaining; a white
 progress bar; round dark-glass transport buttons. Below ~190 dp it drops text.
 
-**Playlist** (4×3, resizable): cover, name, count, a `wave` play button and ›
-to cycle playlists; a scrollable list where the playing row wears `wave`.
+**Playlists** (4×3, resizable; 1.41.0): the song playing with play/pause on top, then
+up to four pinned playlists as cover tiles (Settings → Navigation and shortcuts →
+Widget playlists; the first four until some are pinned). A tap on a tile plays that
+playlist at once, without opening the app, even when it is closed: the click runs in
+the headless JS task (`widget/playPinned.ts`), which hands the playlist's songs on the
+phone to the Kotlin queue engine (or to the player store when the app is running).
+Only songs stored on the phone play there, so a downloaded playlist works offline; a
+playlist with none says "Download … to play it from here".
 
-The app writes a snapshot (`widget/widgetData.ts`) on song, play-state, like and
-playlist changes, plus a 20 s tick while playing. Transport acts on the live
-player; rows, "play playlist" and share are `lyricflow://widget/…` deep links so
-they work from a cold start. RemoteViews can't blur: "frosted" there means a
-dark translucent fill.
+The app writes a snapshot (`widget/widgetData.ts`) on song, play-state, like,
+playlist and pin changes, plus a 20 s tick while playing. Transport acts on the live
+player; "now playing" and share are `lyricflow://widget/…` deep links. RemoteViews
+can't blur: "frosted" there means a dark translucent fill.
 
 ---
 

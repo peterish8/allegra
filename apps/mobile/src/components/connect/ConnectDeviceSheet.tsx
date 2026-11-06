@@ -8,6 +8,7 @@ import type { TransferResult } from '../../../../../packages/connect/src/index';
 import { useAccount } from '../../services/account/AccountProvider';
 import { signInMessage } from '../../services/account/signInFlow';
 import * as Haptics from '../../utils/haptics';
+import { Signal } from '../../constants/allegraTheme';
 
 type TransferFailure = Partial<Pick<Extract<TransferResult, { ok: false }>, 'reason' | 'code' | 'error'>>;
 
@@ -89,7 +90,7 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
           <>
             {view.activeDevice ? (
               <View style={styles.active}>
-                <Ionicons name="musical-notes" size={19} color="#d9e66a" />
+                <Ionicons name="musical-notes" size={19} color={Signal.wave} />
                 <Text style={styles.activeText} numberOfLines={1}>{activeGone ? 'Last played on' : 'Playing on'} {view.activeDevice.name}</Text>
               </View>
             ) : <Text style={styles.empty}>Start playback on a signed-in device to connect it.</Text>}
@@ -125,12 +126,12 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
                   onPress={() => transfer(device.deviceId)}
                   style={({ pressed }) => [styles.device, pressed && styles.pressed, unavailable && styles.unavailable]}
                 >
-                  <Ionicons name={device.kind === 'web' ? 'laptop-outline' : 'phone-portrait-outline'} size={22} color={isActive ? '#d9e66a' : '#fff'} />
+                  <Ionicons name={device.kind === 'web' ? 'laptop-outline' : 'phone-portrait-outline'} size={22} color={isActive ? Signal.wave : '#fff'} />
                   <View style={styles.rowCopy}>
                     <Text style={styles.rowTitle} numberOfLines={1}>{device.name}{isThisPhone ? ' · this phone' : ''}</Text>
                     <Text style={styles.rowHint}>{status}</Text>
                   </View>
-                  {busy ? <ActivityIndicator color="#fff" /> : isActive ? <Ionicons name="checkmark-circle" size={21} color="#d9e66a" /> : !unavailable ? <Ionicons name="arrow-forward-circle-outline" size={21} color="#ddd" /> : null}
+                  {busy ? <ActivityIndicator color="#fff" /> : isActive ? <Ionicons name="checkmark-circle" size={21} color={Signal.wave} /> : !unavailable ? <Ionicons name="arrow-forward-circle-outline" size={21} color="#ddd" /> : null}
                 </Pressable>
               );
             })}
@@ -146,7 +147,7 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
                     maxLength={40}
                     autoFocus
                     returnKeyType="done"
-                    selectionColor="#d9e66a"
+                    selectionColor={Signal.wave}
                     accessibilityLabel="Name for this phone"
                   />
                   <Pressable accessibilityRole="button" onPress={saveName} hitSlop={8}>
@@ -197,7 +198,7 @@ const styles = StyleSheet.create({
   rename: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 6, paddingTop: 4 },
   renameInput: { flex: 1, height: 44, paddingHorizontal: 16, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 15 },
   renameLink: { alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 8 },
-  renameAction: { color: '#d9e66a', fontSize: 14, fontWeight: '600' },
+  renameAction: { color: Signal.wave, fontSize: 14, fontWeight: '600' },
 });
 
 export default ConnectDeviceSheet;

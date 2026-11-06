@@ -262,8 +262,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   tileOn: {
-    backgroundColor: 'rgba(217, 230, 106, 0.14)',
-    borderColor: 'rgba(217, 230, 106, 0.35)',
+    backgroundColor: Glass.selected,
+    borderColor: Glass.selectedRim,
   },
   tileLabel: { fontSize: 12.5, fontWeight: '600', color: Signal.ink },
   rows: {

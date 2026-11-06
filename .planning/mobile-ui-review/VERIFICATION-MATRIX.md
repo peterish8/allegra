@@ -67,3 +67,23 @@ Source gate in a cloud session: `npm ci` + `npm run ci` in `apps/mobile` (Jest i
 | `apk-latest` | **LuvLyrics 1.40.0**, built from `666ac0a`, published 2026-11-06 17:11 UTC |
 | Mobile smoke test 42256072092 (main `666ac0a`) | A (cover) and B (lyrics) all ok; **15 failed**: C rounds 2–5 (player not reopened, 0 app nodes), D (screen-off media keys), E (restored queue). The same 15 failed on 1.39.0 (run 42182112546) and 1.37.1 (42126270194): existing failures, not new in Round 7. Open: C's reopen after round 1 and D/E |
 | Emulator screenshots of the Round 7 screens, device, TalkBack, 200% text | Pending (no emulator or phone in the cloud session) |
+
+## 1.41.0 owner requests (2026-11-06)
+
+Source gate in the cloud session: `npm ci` + `npm run ci` in `apps/mobile` (Jest in band): 147 suites, 1,157 tests,
+lint 0 errors. No emulator or phone: every runtime check below is **pending**.
+
+| Request | Source change | Tests | Device / emulator |
+| --- | --- | --- | --- |
+| Widget: 4 pinned playlists, tap plays in the background | Playlists widget grid; `PLAY_PLAYLIST` in the headless task → native queue engine (`widget/playPinned`) | `widget/pinnedPlaylists.test.ts` | Pending: tap with the app closed starts playback and the media notification |
+| Hold Library 2 s → chosen playlist | Kotlin `NativeTabBarView` hold timer + `onTabLongPress`; JS fallback `delayLongPress` | `pinnedPlaylists.test.ts` (tabHold) | Pending |
+| Library opens on a chosen tab | `libraryStartTab` setting | `pinnedPlaylists.test.ts` | Pending |
+| Offline playlist download | `services/offlinePlaylist(Plan)`, `songs.playlist_only`, dedupe in `BackgroundDownloader` | `offlinePlaylistPlan.test.ts`, `downloadQueueMerge.test.ts`, `database/offlinePlaylistQueries.test.ts` (real SQLite) | Pending: download, airplane mode playback, remove download |
+| Green accent removed | JS, widget and Kotlin views → V6 whites | grep clean | Pending visual |
+| Up next capsules | `Segmented` frosted capsule; Shuffle compact capsule | — | Pending |
+| Island narrower | width 40–150% (`IslandGeometry.compactFloor`) | `IslandGeometryTest` (JVM, CI) | Pending |
+| Full-row press | `SongRow` row-wide pressed layer | — | Pending |
+| Mini player: 12dp band, Apple-style scrub, glow background | `MiniScrubber` (UI thread), `MiniPlayerGlow` | `miniScrub.test.ts`, `round7.test.ts`, `v6Shell.test.ts` | Pending: feel on a phone |
+| Luvs closed the app / nothing on return | Native pool capped (3, 1 on low RAM), released on memory pressure, coroutine guard; empty feed retried on every visit | `LuvsWarmPoolTest` (JVM), `luvsLanes.test.ts` | Pending: the original crash had no log; confirm on the phone that showed it |
+| Memory and performance | LRU caches, `getPlaylistSongs` 2 queries (was 2 per song), lighter widget sync | `lruMap.test.ts`, real-SQLite test | Pending: memory profile on a device |
+| Scrolling song lines | Now Playing title full size, slow scroll, 5 s rest; artist 16pt, 3 s rest; mini player one line "Song • Artist" | `nowPlayingTitle.test.ts`, `playerMarquee.test.ts` | Pending: look on a phone |

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { extractGlowColors } from '../../services/NativePalette';
+import { LruMap } from '../../utils/lruMap';
 
-const cache = new Map<string, string[]>();
+// Bounded (1.41.0): the mini player now reads a glow palette for every song, so an unbounded cache grew all session.
+const cache = new LruMap<string, string[]>(150);
 
 /**
  * Echo's glow palette for a cover. Keeps the previous song's colours until

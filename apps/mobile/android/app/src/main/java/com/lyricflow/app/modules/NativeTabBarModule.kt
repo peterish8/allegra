@@ -10,7 +10,11 @@ class NativeTabBarModule : Module() {
         Name("NativeTabBar")
 
         View(NativeTabBarView::class) {
-            Events("onTabPress", "onMorePress")
+            Events("onTabPress", "onMorePress", "onTabLongPress")
+
+            Prop("holdTab") { view: NativeTabBarView, value: String? ->
+                view.setHoldTab(value)
+            }
 
             Prop("variant") { view: NativeTabBarView, value: String? ->
                 view.setVariant(value)

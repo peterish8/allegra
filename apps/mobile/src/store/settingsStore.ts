@@ -40,6 +40,29 @@ export type AppBackground = 'shader' | 'glass' | 'glow';
  * frames that kept missing); 'on' always takes the light path; 'off' keeps the full visuals even on a slow phone.
  */
 export type ReduceEffects = 'auto' | 'on' | 'off';
+/** Settings → Library → Opens on. */
+export type LibraryStartTab = 'Songs' | 'Playlists' | 'Artists' | 'Albums';
+export const LIBRARY_START_TABS: readonly LibraryStartTab[] = ['Songs', 'Playlists', 'Artists', 'Albums'];
+/** The home-screen widget holds at most this many pinned playlists. */
+export const WIDGET_PIN_LIMIT = 4;
+
+/** Pinned widget playlists: unique ids in the order chosen, at most four. */
+export const normalizePinnedPlaylists = (ids: unknown): string[] => {
+  if (!Array.isArray(ids)) return [];
+  const out: string[] = [];
+  for (const id of ids) {
+    if (typeof id === 'string' && id.length > 0 && !out.includes(id)) out.push(id);
+    if (out.length === WIDGET_PIN_LIMIT) break;
+  }
+  return out;
+};
+
+/** A pin toggled from Settings: added at the end while there is room, removed if it was pinned. */
+export const togglePinnedPlaylist = (ids: readonly string[], id: string): string[] =>
+  ids.includes(id) ? ids.filter(x => x !== id) : normalizePinnedPlaylists([...ids, id]);
+
+export const normalizeLibraryStartTab = (tab: unknown): LibraryStartTab =>
+  LIBRARY_START_TABS.includes(tab as LibraryStartTab) ? (tab as LibraryStartTab) : 'Songs';
 
 /**
  * Stored settings from before "Glow animated" was retired still say 'glow';
@@ -105,6 +128,18 @@ interface SettingsState {
   // Library
   defaultView: ViewMode;
   defaultSort: SortOption;
+  /** Which Library tab opens first (Settings → Library). */
+  libraryStartTab: LibraryStartTab;
+  setLibraryStartTab: (tab: LibraryStartTab) => void;
+  /** Holding the Library tab for 2 s opens this playlist; null leaves the long press alone. */
+  libraryHoldPlaylistId: string | null;
+  setLibraryHoldPlaylistId: (id: string | null) => void;
+  /** Up to four playlists on the home-screen widget; a tap plays one without opening the app. */
+  widgetPinnedPlaylistIds: string[];
+  setWidgetPinnedPlaylistIds: (ids: string[]) => void;
+  /** Playlists downloaded for offline play: songs added to them later download too. */
+  offlinePlaylistIds: string[];
+  setPlaylistOffline: (id: string, offline: boolean) => void;
   showThumbnails: boolean;
 
   // Persistence
@@ -220,6 +255,10 @@ const DEFAULT_SETTINGS = {
   libraryFocusMode: false, // Default disabled
   defaultView: 'grid' as ViewMode,
   defaultSort: 'recent' as SortOption,
+  libraryStartTab: 'Songs' as LibraryStartTab,
+  libraryHoldPlaylistId: null as string | null,
+  widgetPinnedPlaylistIds: [] as string[],
+  offlinePlaylistIds: [] as string[],
   showThumbnails: true,
   showPerformanceHUD: false, // Default disabled
   downloadDirectoryUri: null,
@@ -277,6 +316,14 @@ export const useSettingsStore = create<SettingsState>()(
       // Library actions
       setDefaultView: (defaultView) => set({ defaultView }),
       setDefaultSort: (defaultSort) => set({ defaultSort }),
+      setLibraryStartTab: (libraryStartTab) => set({ libraryStartTab: normalizeLibraryStartTab(libraryStartTab) }),
+      setLibraryHoldPlaylistId: (libraryHoldPlaylistId) => set({ libraryHoldPlaylistId }),
+      setWidgetPinnedPlaylistIds: (ids) => set({ widgetPinnedPlaylistIds: normalizePinnedPlaylists(ids) }),
+      setPlaylistOffline: (id, offline) => set(state => ({
+        offlinePlaylistIds: offline
+          ? (state.offlinePlaylistIds.includes(id) ? state.offlinePlaylistIds : [...state.offlinePlaylistIds, id])
+          : state.offlinePlaylistIds.filter(x => x !== id),
+      })),
       setShowThumbnails: (showThumbnails) => set({ showThumbnails }),
 
       // History implementation
@@ -335,7 +382,7 @@ export const useSettingsStore = create<SettingsState>()(
       // Every change rewrote the whole saved settings, and the playlist history changes with every song: writes are
       // coalesced to one a second and flushed when the app leaves the foreground.
       storage: createJSONStorage(() => settingsStorage),
-      version: 6,
+      version: 7,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Partial<SettingsState> & { lyricsFontSize?: string };
         const { lyricsFontSize, ...rest } = state;
@@ -361,6 +408,13 @@ export const useSettingsStore = create<SettingsState>()(
           appleMusicInspired: version < 6 ? false : state.appleMusicInspired ?? false,
           // v5: the old âˆ’1.2 s default (never chosen) becomes in sync.
           lyricsDelay: migrateLyricsDelay(version, state.lyricsDelay),
+          // 1.41.0: Library's first tab, the Library hold shortcut and the widget's pinned playlists.
+          libraryStartTab: normalizeLibraryStartTab(state.libraryStartTab),
+          libraryHoldPlaylistId: typeof state.libraryHoldPlaylistId === 'string' ? state.libraryHoldPlaylistId : null,
+          widgetPinnedPlaylistIds: normalizePinnedPlaylists(state.widgetPinnedPlaylistIds),
+          offlinePlaylistIds: Array.isArray(state.offlinePlaylistIds)
+            ? state.offlinePlaylistIds.filter((id): id is string => typeof id === 'string')
+            : [],
         } as SettingsState;
       },
     }

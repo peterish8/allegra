@@ -15,6 +15,7 @@ import { toStreamSong } from '../stream/streamSong';
 import { prepareNextInQueue, usePlayerStore } from '../../store/playerStore';
 import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
 import type { Song, UnifiedSong } from '../../types/song';
+import { LruMap } from '../../utils/lruMap';
 import { record } from './LibrarySync';
 import { playlistItemOp } from './plan';
 
@@ -22,12 +23,13 @@ import { playlistItemOp } from './plan';
 const FIRST_WINDOW = 12;
 const PARALLEL = 4;
 
-const resolved = new Map<string, UnifiedSong>();
+// Bounded (1.41.0): a big synced library resolves song after song; the most recent few thousand are plenty.
+const resolved = new LruMap<string, UnifiedSong>(3000);
 /**
  * When a song last found no match. The catalog search answers [] offline too, so a miss is only trusted for a
  * while: one tap on a bad network used to leave the song unplayable until the app restarted.
  */
-const failedAt = new Map<string, number>();
+const failedAt = new LruMap<string, number>(1000);
 const RETRY_MISS_MS = 10 * 60_000;
 /** Bumped by every playList: a lookup that finishes after a newer pick never replaces it. */
 let playRun = 0;
@@ -78,6 +80,9 @@ async function resolveOne(song: Song): Promise<UnifiedSong | null> {
   failedAt.set(ref, Date.now());
   return null;
 }
+
+/** The catalog song an online row is, for downloading it (an offline playlist). Null when it cannot be found. */
+export const resolveOnlineRow = (row: OnlineSongRow): Promise<UnifiedSong | null> => resolveOne(onlineRowToSong(row));
 
 /** Resolves songs a few at a time, keeping their order. Songs that cannot be found are left out. */
 async function resolveAll(songs: readonly Song[]): Promise<Song[]> {

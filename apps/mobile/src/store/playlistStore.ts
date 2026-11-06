@@ -114,6 +114,12 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
       await playlistQueries.deletePlaylist(id);
       recordPlaylistDelete(id);
       await get().fetchPlaylists();
+      // A deleted playlist's offline copies (1.41.0) go too, unless another playlist or your Library holds them.
+      import('../services/offlinePlaylist').then(async m => {
+        const { useSettingsStore } = await import('./settingsStore');
+        useSettingsStore.getState().setPlaylistOffline(id, false);
+        await m.pruneOrphanPlaylistOnlySongs();
+      }).catch(() => {});
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to delete playlist', isLoading: false });
       throw error;

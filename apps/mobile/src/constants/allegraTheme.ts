@@ -71,6 +71,9 @@ export const Glass = {
   chip: 'rgba(255, 255, 255, 0.09)',
   capsule: 'rgba(255, 255, 255, 0.10)',
   capsulePressed: 'rgba(255, 255, 255, 0.16)',
+  /** A chosen tile or row on glass (the Connect device, a picked playlist): a lit white step, never a hue. */
+  selected: 'rgba(255, 255, 255, 0.14)',
+  selectedRim: 'rgba(255, 255, 255, 0.32)',
   /** The keyboard focus ring: its own ring, never the look of selection. */
   focusRing: 'rgba(255, 255, 255, 0.9)',
   highlight: 'rgba(255, 255, 255, 0.12)',
@@ -96,6 +99,13 @@ export const ShellFrost = {
   tint: 'rgba(13, 15, 19, 0.84)',
   coverOpacity: 0.16,
   solid: '#16181D',
+  /**
+   * The mini player alone (1.41.0): the cover's animated glow (Settings' "Glow animated", Echo's two mini blobs),
+   * softened under a blurred cover and a frosted dark tint so it reads as light behind glass, never as a colour block.
+   */
+  miniGlowOpacity: 0.7,
+  miniCoverOpacity: 0.28,
+  miniTint: 'rgba(11, 13, 16, 0.46)',
 } as const;
 
 /** One corner family everywhere. Artwork is never over-rounded. */
@@ -164,7 +174,8 @@ export const Typography = {
 // Weights only — the face (SF Pro) is resolved per platform; see constants/fonts.ts.
 export const PlayerType = {
   title: Typography.playerTitle,
-  artist: { fontWeight: '400', fontSize: 18 },
+  /** Smaller than the title so the song's name leads (1.41.0, was 18). */
+  artist: { fontWeight: '400', fontSize: 16 },
   meta: { fontWeight: '600', fontSize: 11 },
   time: { fontWeight: '600', fontSize: 12, fontVariant: ['tabular-nums' as const] },
 } as const;

@@ -72,10 +72,17 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
     expect(read('components/V6TabBar.tsx')).not.toMatch(/styles\.selected/);
   });
 
-  it('lets the mini player and the bar share one material, with no fill of the mini player own', () => {
-    expect(read('components/PillPlayer.tsx')).toMatch(/<ShellMaterial uri=\{coverImageUri\} below=\{bottom\} \/>/);
+  it('gives the mini player its own soft cover glow (1.41.0) and the bar the frosted shell material', () => {
+    expect(read('components/PillPlayer.tsx')).toMatch(/<MiniPlayerGlow uri=\{coverImageUri\} active \/>/);
     expect(read('components/PillPlayer.tsx')).not.toMatch(/shell: \{[^}]*backgroundColor/);
-    expect(read('components/V6TabBar.tsx')).toMatch(/<ShellMaterial uri=\{cover\} above=/);
+    expect(read('components/V6TabBar.tsx')).toMatch(/<ShellMaterial uri=\{cover\} \/>/);
+  });
+
+  it('scrubs the mini player on the UI thread with no thumb and no time readout (1.41.0)', () => {
+    const pill = read('components/PillPlayer.tsx');
+    expect(pill).toMatch(/<MiniScrubber /);
+    expect(pill).not.toMatch(/setDrag|styles\.thumb|styles\.preview/);
+    expect(read('components/MiniScrubber.tsx')).not.toMatch(/runOnJS\(true\)/);
   });
 });
 

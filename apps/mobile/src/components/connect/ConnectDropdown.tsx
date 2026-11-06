@@ -3,7 +3,7 @@ import { useIsFocused } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 
-import { Signal } from '../../constants/allegraTheme';
+import { Glass, Signal } from '../../constants/allegraTheme';
 import { useConnect } from '../../services/connect/ConnectProvider';
 import { Sheet, SheetScrollView, Tactile } from '../../ui';
 import * as Haptics from '../../utils/haptics';
@@ -42,5 +42,5 @@ export function ConnectDropdown(): React.JSX.Element {
 const styles = StyleSheet.create({
   // Same 40pt circle as the logo button beside it; hitSlop takes the target past 48dp.
   trigger: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)' },
-  triggerRemote: { backgroundColor: 'rgba(217,230,106,0.12)', borderColor: 'rgba(217,230,106,0.55)' },
+  triggerRemote: { backgroundColor: Glass.selected, borderColor: Glass.selectedRim },
 });

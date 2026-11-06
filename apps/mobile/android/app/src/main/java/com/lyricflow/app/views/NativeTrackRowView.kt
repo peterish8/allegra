@@ -69,7 +69,7 @@ class NativeTrackRowView(context: Context, appContext: AppContext) : ExpoView(co
         val ink: Int = 0xFFF4F1EA.toInt(),
         val inkSoft: Int = 0xFFD1D0C9.toInt(),
         val inkMuted: Int = 0xFF8E9498.toInt(),
-        val wave: Int = 0xFFD9E66A.toInt(),
+        val wave: Int = 0xFFF4F4F5.toInt(),
         val waveInk: Int = 0xFF17180D.toInt(),
         val bg: Int = 0xFF0A0B0E.toInt(),
         val pressed: Int = 0x14FFFFFF,

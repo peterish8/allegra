@@ -36,6 +36,7 @@ import LuvLinkSettings from '../components/settings/LuvLinkSettings';
 import SettingsGlow from '../components/settings/SettingsGlow';
 import * as Kit from '../components/settings/SettingsKit';
 import { Action, Choice, JumpChips, Row, Section, SettingsAccordion } from '../components/settings/SettingsKit';
+import { ShortcutSettings } from '../components/settings/ShortcutSettings';
 import { Motion, Radius, Signal, Space } from '../constants/allegraTheme';
 import { Colors } from '../constants/colors';
 import { SettingsStrings } from '../constants/uiStrings';
@@ -228,7 +229,7 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
     player: `${BG_NAME[settings.playerBackground]} · canvas ${settings.canvasEnabled ? 'on' : 'off'}`,
     playback: `${settings.keepScreenOn ? 'Screen stays on' : 'Screen can sleep'} · haptics ${(settings.hapticsEnabled ?? true) ? 'on' : 'off'}`,
     lyrics: `Size ${settings.lyricsSize} · ${ALIGN_NAME[settings.lyricsAlign]} · ${settings.lyricsHighlight === 'letters' ? 'letter by letter' : 'line by line'} · ${timing === 0 ? 'in sync' : `${timing > 0 ? '+' : ''}${timing.toFixed(1)}s`}`,
-    nav: 'Five tabs ? voice search',
+    nav: `Library opens on ${settings.libraryStartTab} · widget ${settings.widgetPinnedPlaylistIds.length} pinned`,
     discover: `Languages: ${luvsLanguageSummary.toLowerCase()}`,
     library: `${songs.length} ${songs.length === 1 ? 'song' : 'songs'}${hiddenSongs.length > 0 ? ` · ${hiddenSongs.length} hidden` : ''}`,
     about: `Version ${APP_VERSION}`,
@@ -397,7 +398,7 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
           <Kit.Switch label="Auto-scroll lyrics without timing" hint="Move plain lyrics steadily through the song. Scroll by hand to pause." value={settings.autoScrollPlainLyrics} onChange={settings.setAutoScrollPlainLyrics} />
         </Section>
 
-        <Section id="nav" summary={summaries.nav} icon="navigate-outline" title="Navigation and voice" lead="The bar at the bottom and the mic in it." onLayout={at('nav')}>
+        <Section id="nav" summary={summaries.nav} icon="navigate-outline" title="Navigation and shortcuts" lead="Voice, Library and your home-screen widget." onLayout={at('nav')}>
           <Kit.Switch label="Voice button" hint="Say a song and it plays." value={settings.micEnabled ?? true} onChange={settings.setMicEnabled} />
           {(settings.micEnabled ?? true) ? (
             <Choice<'hold' | 'tap'>
@@ -410,6 +411,7 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
               onChange={settings.setVoiceMode}
             />
           ) : null}
+          <ShortcutSettings />
         </Section>
 
         <Section id="discover" summary={summaries.discover} icon="compass-outline" title="Discover" lead="What Luvs and Stream bring you." onLayout={at('discover')}>

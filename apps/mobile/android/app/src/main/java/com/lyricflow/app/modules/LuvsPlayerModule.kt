@@ -31,8 +31,24 @@ private const val BUFFER_AFTER_REBUFFER_MS = 2_000
 // stalling behind a burst of allocations.
 private const val WARM_STAGGER_MS = 80L
 
+/**
+ * 1.41.0: at most this many players warm beside the live one (each holds a decoder, an audio track and its own
+ * buffer). JS lists them most-likely-next first, so the cap keeps the swipes that matter. Opening Luvs on a phone
+ * with little memory closed the app; low-RAM phones keep one, and memory pressure drops them all.
+ */
+internal const val MAX_WARM_PLAYERS = 3
+internal const val MAX_WARM_PLAYERS_LOW_RAM = 1
+
+/** The warm list to keep: the first [limit] distinct, non-blank URLs other than the live one. */
+internal fun warmToKeep(active: String, warm: List<String>, limit: Int): List<String> =
+    warm.asSequence().filter { it.isNotBlank() && it != active }.distinct().take(limit.coerceAtLeast(0)).toList()
+
 class LuvsPlayerModule : Module() {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    // A failure inside one of these coroutines (a player that throws while it is built or released) must never take
+    // the app down: it is logged and Luvs carries on with what it has.
+    private val crashGuard = CoroutineExceptionHandler { _, e -> android.util.Log.w("LuvsPlayer", "luvs player job failed: ${e.message}") }
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + crashGuard)
+    private var memoryWatch: android.content.ComponentCallbacks2? = null
     // The taste map (lanes × depth) addresses songs by URL: an index means
     // nothing once there is more than one list. This is the one pool.
     private val byUrl = mutableMapOf<String, ExoPlayer>()
@@ -51,13 +67,60 @@ class LuvsPlayerModule : Module() {
         return (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode ?: false
     }
 
+    /** A phone Android calls low-RAM, or one that gives this app a small heap. */
+    private fun lowMemoryPhone(): Boolean {
+        val context = appContext.reactContext ?: return false
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager ?: return false
+        return am.isLowRamDevice || am.memoryClass <= 192
+    }
+
+    private fun warmLimit(): Int = if (powerSaveOn() || lowMemoryPhone()) MAX_WARM_PLAYERS_LOW_RAM else MAX_WARM_PLAYERS
+
+    /** Lets every warm player go and keeps only the live one (memory pressure, or leaving the screen). */
+    private fun releaseWarm() {
+        val live = activeUrl
+        byUrl.keys.filter { it != live }.forEach { key -> byUrl.remove(key)?.release() }
+    }
+
+    private fun watchMemory(context: Context) {
+        if (memoryWatch != null) return
+        val watch = object : android.content.ComponentCallbacks2 {
+            override fun onTrimMemory(level: Int) {
+                // RUNNING_LOW while in front, or any level once in the background: the warm players are the first to go.
+                @Suppress("DEPRECATION")
+                if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) scope.launch { releaseWarm() }
+            }
+            override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {}
+            @Deprecated("Deprecated in Java")
+            override fun onLowMemory() { scope.launch { releaseWarm() } }
+        }
+        context.applicationContext.registerComponentCallbacks(watch)
+        memoryWatch = watch
+    }
+
+    private fun stopWatchingMemory() {
+        val context = appContext.reactContext ?: return
+        memoryWatch?.let { context.applicationContext.unregisterComponentCallbacks(it) }
+        memoryWatch = null
+    }
+
     override fun definition() = ModuleDefinition {
         Name("LuvsPlayer")
 
         Events("onLuvsStatus")
 
+        OnDestroy {
+            stopWatchingMemory()
+            stopStatusPoller()
+            byUrl.values.forEach { runCatching { it.release() } }
+            byUrl.clear()
+            activeUrl = null
+            scope.cancel()
+        }
+
         Function("enterLuvsMode") {
             val context = appContext.reactContext ?: return@Function null
+            watchMemory(context)
             audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -95,9 +158,10 @@ class LuvsPlayerModule : Module() {
                 }
 
                 // Release all players
-                byUrl.values.forEach { it.release() }
+                byUrl.values.forEach { runCatching { it.release() } }
                 byUrl.clear()
                 activeUrl = null
+                stopWatchingMemory()
             }
         }
 
@@ -126,7 +190,7 @@ class LuvsPlayerModule : Module() {
                     startStatusPoller(player)
                 }
 
-                val warmUrls = if (powerSaveOn()) warm.take(1) else warm
+                val warmUrls = warmToKeep(url, warm, warmLimit())
                 val keep = (warmUrls + url).toSet()
                 byUrl.keys.filter { it !in keep }.forEach { key -> byUrl.remove(key)?.release() }
                 // Warm the rest just after, so the song you landed on loads first.

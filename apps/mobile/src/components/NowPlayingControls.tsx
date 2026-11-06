@@ -42,6 +42,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import * as Haptics from '../utils/haptics';
 import Artwork from './allegra/Artwork';
 import { SwapMarquee } from './allegra/Marquee';
+import { PLAYER_ARTIST_REST_MS, PLAYER_TITLE_REST_MS, PLAYER_TITLE_SPEED } from './allegra/marqueeMath';
 import { MorphIcon, NudgeIcon, Tactile } from './allegra/motion';
 import { NativeSkip } from './NativeSkip';
 import AppleSlider from './player/AppleSlider';
@@ -480,10 +481,13 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             {/* The dock shift lives on its own view: Tactile's press scale would otherwise replace its transform. */}
             <Animated.View style={titleStyle}>
               <View style={styles.swapLine}>
-                <SwapMarquee style={styles.title} direction={songDirection} active={focused} still>{currentSongTitle || 'Not playing'}</SwapMarquee>
+                {/* 1.41.0 (owner): full size, scrolling slowly right to left with a 5 s rest; never shrunk to fit. */}
+                <SwapMarquee style={styles.title} direction={songDirection} active={focused} speed={PLAYER_TITLE_SPEED}
+                  restMs={PLAYER_TITLE_REST_MS}>{currentSongTitle || 'Not playing'}</SwapMarquee>
               </View>
               <View style={styles.swapLineSmall}>
-                <SwapMarquee style={styles.artist} direction={songDirection} active={focused}>{currentSongArtist || 'Unknown artist'}</SwapMarquee>
+                <SwapMarquee style={styles.artist} direction={songDirection} active={focused} speed={PLAYER_TITLE_SPEED}
+                  restMs={PLAYER_ARTIST_REST_MS}>{currentSongArtist || 'Unknown artist'}</SwapMarquee>
               </View>
             </Animated.View>
           </Tactile>

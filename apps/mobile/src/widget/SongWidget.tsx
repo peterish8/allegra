@@ -6,22 +6,22 @@
  * then elapsed / remaining time, a progress hairline and round transport
  * buttons over a dark fade at the foot.
  *
- * PlaylistWidget — one of your playlists as a scrollable list; tap a song to
- * play it from there, the round button plays the whole playlist, › cycles to
- * the next playlist.
+ * PlaylistWidget — up to four pinned playlists as tiles; a tap plays one in
+ * the background without opening the app (1.41.0), and the header shows the
+ * song playing with play/pause.
  *
  * RemoteViews can't blur, so "frosted" is a dark translucent fill over the
  * cover, and every glyph is an inline SVG (icons.ts).
  */
 import React from 'react';
-import { FlexWidget, ImageWidget, ListWidget, OverlapWidget, SvgWidget, TextWidget } from 'react-native-android-widget';
+import { FlexWidget, ImageWidget, OverlapWidget, SvgWidget, TextWidget } from 'react-native-android-widget';
 import type { ColorProp } from 'react-native-android-widget';
 import { Icon } from './icons';
-import { formatClock, widgetLink, WidgetPlaylist, WidgetSnapshot } from './widgetData';
+import { formatClock, widgetLink, WidgetPin, WidgetSnapshot } from './widgetData';
 
 const INK = '#F4F1EA';
 const INK_MUTED = '#A9ADB2';
-const WAVE = '#D9E66A';
+const WAVE = '#F4F4F5';
 const CORAL = '#EE6B5F';
 const FRAME = '#1B1C20';
 const GLASS: ColorProp = 'rgba(38, 39, 44, 0.78)';
@@ -206,23 +206,23 @@ export const NowPlayingWidget: React.FC<{ snapshot: WidgetSnapshot; width: numbe
 
 // ─── Playlist ───────────────────────────────────────────────────────────────
 
-export const PlaylistWidget: React.FC<{ snapshot: WidgetSnapshot; width: number }> = ({ snapshot, width }) => {
-  const playlists = snapshot.playlists;
-  const playlist: WidgetPlaylist | undefined = playlists.length
-    ? playlists[((snapshot.playlistIndex % playlists.length) + playlists.length) % playlists.length]
-    : undefined;
-  const playingId = snapshot.song?.id;
-
+/**
+ * 1.41.0: four pinned playlists (Settings → Navigation and shortcuts → Widget playlists). A tap on a tile plays that
+ * playlist straight away, from songs on this phone, without opening the app; the header shows what is playing with
+ * play/pause. Until some are pinned, the first four playlists stand in.
+ */
+export const PlaylistWidget: React.FC<{ snapshot: WidgetSnapshot; width: number; height?: number }> = ({ snapshot, width, height = 240 }) => {
+  const pins = snapshot.pinned ?? [];
   const shell = {
     width: 'match_parent' as const,
     height: 'match_parent' as const,
     borderRadius: 28,
-    backgroundGradient: { from: 'rgba(30, 28, 36, 0.97)' as ColorProp, to: 'rgba(12, 13, 16, 0.97)' as ColorProp, orientation: 'TOP_BOTTOM' as const },
-    padding: 14,
+    backgroundGradient: { from: 'rgba(23, 25, 30, 0.97)' as ColorProp, to: 'rgba(11, 13, 16, 0.97)' as ColorProp, orientation: 'TOP_BOTTOM' as const },
+    padding: 12,
     flexDirection: 'column' as const,
   };
 
-  if (!playlist) {
+  if (pins.length === 0) {
     return (
       <FlexWidget clickAction="OPEN_APP" style={{ ...shell, justifyContent: 'center', alignItems: 'center' }}>
         <SvgWidget svg={Icon.note(WAVE)} style={{ width: 28, height: 28 }} />
@@ -232,55 +232,67 @@ export const PlaylistWidget: React.FC<{ snapshot: WidgetSnapshot; width: number 
     );
   }
 
-  const rowWidth = Math.max(160, width - 28);
+  const gap = 8;
+  const header = 44;
+  const footer = snapshot.notice || !snapshot.pinnedChosen ? 18 : 0;
+  const cols = 2;
+  const rows = pins.length > 2 ? 2 : 1;
+  const tileW = Math.max(64, Math.floor((width - 24 - gap * (cols - 1)) / cols));
+  const tileH = Math.max(56, Math.floor((height - 24 - header - footer - gap * rows) / rows));
+  const song = snapshot.song;
+
+  const tile = (pin: WidgetPin) => (
+    <FlexWidget
+      key={pin.id}
+      clickAction="PLAY_PLAYLIST"
+      clickActionData={{ playlistId: pin.id, name: pin.name }}
+      accessibilityLabel={`Play ${pin.name}`}
+      style={{ width: tileW, height: tileH, borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.08)' }}
+    >
+      <OverlapWidget style={{ width: tileW, height: tileH }}>
+        {pin.cover ? <ImageWidget image={asImage(pin.cover)} imageWidth={tileW} imageHeight={tileH} radius={16} /> : <Cover size={Math.min(tileW, tileH)} radius={16} />}
+        <FlexWidget style={{
+          width: tileW, height: tileH, borderRadius: 16, flexDirection: 'column', justifyContent: 'flex-end', padding: 8,
+          backgroundGradient: { from: 'rgba(0, 0, 0, 0)', to: 'rgba(0, 0, 0, 0.72)', orientation: 'TOP_BOTTOM' },
+        }}>
+          <FlexWidget style={{ flexDirection: 'row', alignItems: 'center', width: tileW - 16 }}>
+            <FlexWidget style={{ flex: 1, flexDirection: 'column' }}>
+              <TextWidget text={pin.name} maxLines={1} truncate="END" style={{ fontSize: 13, fontWeight: '700', color: INK }} />
+              <TextWidget text={`${pin.songCount} ${pin.songCount === 1 ? 'song' : 'songs'}`} maxLines={1} style={{ fontSize: 11, color: INK_MUTED }} />
+            </FlexWidget>
+            <FlexWidget style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: WAVE, justifyContent: 'center', alignItems: 'center' }}>
+              <SvgWidget svg={Icon.play('#0B0D10')} style={{ width: 13, height: 13 }} />
+            </FlexWidget>
+          </FlexWidget>
+        </FlexWidget>
+      </OverlapWidget>
+    </FlexWidget>
+  );
 
   return (
     <FlexWidget style={shell}>
-      {/* Header */}
-      <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-        <Cover uri={playlist.cover} size={44} radius={12} />
-        <FlexWidget style={{ flex: 1, flexDirection: 'column', marginLeft: 10 }}>
-          <TextWidget text={playlist.name} maxLines={1} truncate="END" style={{ fontSize: 16, fontWeight: '700', color: INK }} />
-          <TextWidget text={`${playlist.songCount} ${playlist.songCount === 1 ? 'song' : 'songs'}`} style={{ fontSize: 12, color: INK_MUTED }} />
+      <FlexWidget style={{ width: 'match_parent', height: header, flexDirection: 'row', alignItems: 'center' }}>
+        <FlexWidget clickAction="OPEN_URI" clickActionData={{ uri: widgetLink.nowPlaying() }} style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+          {song ? <Cover uri={song.cover} size={34} radius={6} /> : <SvgWidget svg={Icon.note(WAVE)} style={{ width: 22, height: 22 }} />}
+          <FlexWidget style={{ flex: 1, flexDirection: 'column', marginLeft: 8 }}>
+            <TextWidget text={song ? song.title : 'LuvLyrics'} maxLines={1} truncate="END" style={{ fontSize: 14, fontWeight: '700', color: INK }} />
+            <TextWidget text={song ? song.artist || 'Unknown artist' : 'Tap a playlist to play it'} maxLines={1} truncate="END" style={{ fontSize: 11, color: INK_MUTED }} />
+          </FlexWidget>
         </FlexWidget>
-        <RoundButton size={40} iconSize={20} icon={Icon.play('#17180D')} action="OPEN_URI" data={{ uri: widgetLink.playPlaylist(playlist.id) }} fill={WAVE} label={`Play ${playlist.name}`} />
-        {playlists.length > 1 ? (
-          <>
-            <FlexWidget style={{ width: 6, height: 1 }} />
-            <RoundButton size={34} iconSize={16} icon={Icon.chevronRight(INK)} action="NEXT_PLAYLIST" label="Next playlist" fill={GLASS_LIGHT} />
-          </>
-        ) : null}
+        {song ? <RoundButton size={36} iconSize={18} icon={snapshot.isPlaying ? Icon.pause(INK) : Icon.play(INK)} action="TOGGLE_PLAY" label={snapshot.isPlaying ? 'Pause' : 'Play'} fill={GLASS_LIGHT} /> : null}
       </FlexWidget>
-
-      {/* Songs */}
-      <ListWidget style={{ width: 'match_parent', height: 'match_parent' }}>
-        {playlist.songs.map(s => {
-          const on = s.id === playingId;
-          return (
-            <FlexWidget
-              key={s.id}
-              clickAction="OPEN_URI"
-              clickActionData={{ uri: widgetLink.playSong(playlist.id, s.id) }}
-              style={{
-                width: rowWidth,
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 6,
-                paddingHorizontal: 6,
-                borderRadius: 14,
-                backgroundColor: on ? 'rgba(217, 230, 106, 0.12)' : 'rgba(0, 0, 0, 0)',
-              }}
-            >
-              <Cover uri={s.cover} size={40} radius={9} />
-              <FlexWidget style={{ flex: 1, flexDirection: 'column', marginLeft: 10 }}>
-                <TextWidget text={s.title} maxLines={1} truncate="END" style={{ fontSize: 14, fontWeight: '600', color: on ? WAVE : INK }} />
-                <TextWidget text={s.artist || 'Unknown artist'} maxLines={1} truncate="END" style={{ fontSize: 12, color: INK_MUTED }} />
-              </FlexWidget>
-              {on ? <SvgWidget svg={(snapshot.isPlaying ? Icon.pause : Icon.play)(WAVE)} style={{ width: 16, height: 16 }} /> : null}
-            </FlexWidget>
-          );
-        })}
-      </ListWidget>
+      <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', justifyContent: 'space-between', marginTop: gap }}>
+        {pins.slice(0, 2).map(tile)}
+      </FlexWidget>
+      {rows > 1 ? (
+        <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', justifyContent: 'space-between', marginTop: gap }}>
+          {pins.slice(2, 4).map(tile)}
+        </FlexWidget>
+      ) : null}
+      {footer ? (
+        <TextWidget text={snapshot.notice ?? 'Pin playlists in Settings → Navigation and shortcuts'} maxLines={1} truncate="END"
+          style={{ fontSize: 11, color: INK_MUTED, marginTop: 4 }} />
+      ) : null}
     </FlexWidget>
   );
 };

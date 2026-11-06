@@ -62,6 +62,7 @@ export const getAllSongs = async (): Promise<Song[]> => {
       is_hidden: number | null;
       origin_id: string | null;
       cover_remote_uri: string | null;
+      playlist_only: number | null;
     }>('SELECT * FROM songs WHERE is_hidden = 0 ORDER BY date_created DESC');
     
     return songsRows.map((row) => ({
@@ -85,6 +86,7 @@ export const getAllSongs = async (): Promise<Song[]> => {
       isHidden: row.is_hidden === 1,
       originId: row.origin_id ?? undefined,
       coverRemoteUri: row.cover_remote_uri ?? undefined,
+      playlistOnly: row.playlist_only === 1,
     }));
   });
 };
@@ -111,6 +113,7 @@ export const getHiddenSongs = async (): Promise<Song[]> => {
       is_hidden: number | null;
       origin_id: string | null;
       cover_remote_uri: string | null;
+      playlist_only: number | null;
     }>('SELECT * FROM songs WHERE is_hidden = 1 ORDER BY date_created DESC');
     
     return songsRows.map((row) => ({
@@ -138,42 +141,51 @@ export const getHiddenSongs = async (): Promise<Song[]> => {
   });
 };
 
+/** A `songs` row as stored. */
+export interface SongDbRow {
+  id: string;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  gradient_id: string;
+  duration: number;
+  date_created: string;
+  date_modified: string;
+  play_count: number;
+  last_played: string | null;
+  scroll_speed: number;
+  cover_image_uri: string | null;
+  lyrics_align: string | null;
+  text_case: string | null;
+  audio_uri: string | null;
+  is_liked: number | null;
+  is_hidden: number | null;
+  youtube_video_id: string | null;
+  origin_id: string | null;
+  cover_remote_uri: string | null;
+  playlist_only: number | null;
+}
+
+/** A `lyrics` row as stored. */
+export interface LyricDbRow {
+  id: number;
+  song_id?: string;
+  timestamp: number;
+  text: string;
+  line_order: number;
+  words: string | null;
+}
+
 export const getSongById = async (id: string): Promise<Song | null> => {
   const db = await getDatabase();
-  
-  const songRow = await db.getFirstAsync<{
-    id: string;
-    title: string;
-    artist: string | null;
-    album: string | null;
-    gradient_id: string;
-    duration: number;
-    date_created: string;
-    date_modified: string;
-    play_count: number;
-    last_played: string | null;
-    scroll_speed: number;
-    cover_image_uri: string | null;
-    lyrics_align: string | null;
-    text_case: string | null;
-    audio_uri: string | null;
-    is_liked: number | null;
-    is_hidden: number | null;
-    youtube_video_id: string | null;
-    origin_id: string | null;
-    cover_remote_uri: string | null;
-  }>('SELECT * FROM songs WHERE id = ?', [id]);
-  
+  const songRow = await db.getFirstAsync<SongDbRow>('SELECT * FROM songs WHERE id = ?', [id]);
   if (!songRow) return null;
-  
-  const lyricsRows = await db.getAllAsync<{
-    id: number;
-    timestamp: number;
-    text: string;
-    line_order: number;
-    words: string | null;
-  }>('SELECT * FROM lyrics WHERE song_id = ? ORDER BY line_order', [id]);
-  
+  const lyricsRows = await db.getAllAsync<LyricDbRow>('SELECT * FROM lyrics WHERE song_id = ? ORDER BY line_order', [id]);
+  return songFromRows(songRow, lyricsRows);
+};
+
+/** One song from its row and its lyric rows (already in line order). */
+export const songFromRows = (songRow: SongDbRow, lyricsRows: readonly LyricDbRow[]): Song => {
   return {
     id: songRow.id,
     title: songRow.title,
@@ -195,6 +207,7 @@ export const getSongById = async (id: string): Promise<Song | null> => {
     youtubeVideoId: songRow.youtube_video_id ?? undefined,
     originId: songRow.origin_id ?? undefined,
     coverRemoteUri: songRow.cover_remote_uri ?? undefined,
+    playlistOnly: songRow.playlist_only === 1,
     lyrics: normalizeLyrics(lyricsRows.map((row) => ({
       id: row.id,
       timestamp: row.timestamp,
@@ -215,8 +228,8 @@ export const insertSong = async (song: Song): Promise<void> => {
       `INSERT OR REPLACE INTO songs
          (id, title, artist, album, gradient_id, duration, date_created, date_modified,
           play_count, scroll_speed, lyrics_align, text_case, audio_uri, is_liked, cover_image_uri, youtube_video_id, origin_id,
-          cover_remote_uri)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          cover_remote_uri, playlist_only)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         song.id,
         song.title,
@@ -236,6 +249,7 @@ export const insertSong = async (song: Song): Promise<void> => {
         song.youtubeVideoId ?? null,
         song.originId ?? null,
         song.coverRemoteUri ?? null,
+        song.playlistOnly ? 1 : 0,
       ]
     );
 
@@ -369,6 +383,24 @@ export const hideSong = async (id: string, hide: boolean): Promise<void> => {
     await db.runAsync(`UPDATE songs SET is_hidden = ? WHERE id = ?`, [hide ? 1 : 0, id]);
   });
 };
+
+/** A playlist-only song saved by the listener too: it joins the Library's list, nothing is downloaded again. */
+export const setPlaylistOnly = async (id: string, playlistOnly: boolean): Promise<void> => {
+  await withDbSafe(async (db) => {
+    await db.runAsync(`UPDATE songs SET playlist_only = ? WHERE id = ?`, [playlistOnly ? 1 : 0, id]);
+  });
+};
+
+/**
+ * Playlist-only songs that no playlist holds any more (the playlist was deleted, the song taken out of it, or its
+ * download removed). Their files can go: nothing on the phone points at them.
+ */
+export const getOrphanPlaylistOnlySongIds = async (): Promise<string[]> => withDbRead(async (db) => {
+  const rows = await db.getAllAsync<{ id: string }>(
+    `SELECT id FROM songs WHERE playlist_only = 1 AND id NOT IN (SELECT song_id FROM playlist_songs)`,
+  );
+  return rows.map(r => r.id);
+});
 
 export const updatePlayStats = async (id: string): Promise<void> => {
   await withDbSafe(async (db) => {

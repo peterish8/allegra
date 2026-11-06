@@ -48,6 +48,8 @@ import * as playlistQueries from '../database/playlistQueries';
 import { getOnlinePlaylistSongs } from '../database/syncQueries';
 import { useSortedSongs, type SortDirection, type SortOption } from '../hooks/useSortedSongs';
 import { onlineRowToSong, playList, removeOnlineFromPlaylist } from '../services/sync/onlineSongs';
+import { withoutCopies } from '../services/offlinePlaylistPlan';
+import { OfflineControl } from '../components/playlist/OfflineControl';
 import { LIKED_PLAYLIST_ID } from '../services/sync/plan';
 import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { playerControls, usePlayerStore } from '../store/playerStore';
@@ -171,8 +173,9 @@ export const PlaylistDetailScreen: React.FC = () => {
       const onlineRows = playlistId === LIKED_PLAYLIST_ID
         ? useOnlineLibraryStore.getState().likes
         : await getOnlinePlaylistSongs(playlistId);
-      const localIds = new Set(playlistSongs.map(local => local.id));
-      const onlineSongs = onlineRows.map(onlineRowToSong).filter(song => !localIds.has(song.id));
+      // A streaming entry the phone holds a copy of (a downloaded playlist, or the same song saved) shows once: as
+      // the copy. Ids never match across the two (a stream id vs a file's), so compare the catalog song and the key.
+      const onlineSongs = withoutCopies(playlistSongs, onlineRows).map(onlineRowToSong);
       setSongs([...playlistSongs, ...onlineSongs]);
     } catch (e) {
       setLoadError(true);
@@ -371,6 +374,11 @@ export const PlaylistDetailScreen: React.FC = () => {
         </>
       ) : null}
       </View>
+      {/* 1.41.0: download the whole playlist to play it with no connection. */}
+      <View style={styles.offline}>
+        <OfflineControl playlistId={playlistId} name={playlistName} songs={songs} onChanged={loadData}
+          onNotice={message => setToast({ visible: true, message, type: 'info' })} />
+      </View>
 
       {songs.length > 0 ? (
         <View style={styles.listBar}>
@@ -523,6 +531,7 @@ const styles = StyleSheet.create({
   coverClip: { ...StyleSheet.absoluteFillObject, borderRadius: Radius.well, overflow: 'hidden' },
   heroTitle: { marginBottom: 2 },
   heroActions: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Space.xs, marginTop: Space.sm },
+  offline: { alignItems: 'center', marginTop: Space.xxs },
   playButton: { minWidth: 132 },
   listBar: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Space.md, paddingHorizontal: Space.xxs },
   fab: { position: 'absolute', right: GUTTER },

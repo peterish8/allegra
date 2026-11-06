@@ -12,6 +12,7 @@ import { useHeaderGlow } from '../hooks/useHeaderGlow';
 import { registerLibraryScrollToTop } from '../navigation/libraryRoot';
 import { playList } from '../services/sync/onlineSongs';
 import { usePlayerStore } from '../store/playerStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { useSongsStore } from '../store/songsStore';
 import { LibraryStackParamList, RootStackParamList, TabParamList } from '../types/navigation';
 import type { Song } from '../types/song';
@@ -36,7 +37,8 @@ export default function LibraryScreen() {
   const fetchSongs = useSongsStore(s => s.fetchSongs);
   const current = usePlayerStore(s => s.currentSongId);
   const actions = useSongActions();
-  const [tab, setTab] = useState<Tab>('Songs');
+  // Settings → Library → Opens on: the tab Library shows first (1.41.0).
+  const [tab, setTab] = useState<Tab>(() => useSettingsStore.getState().libraryStartTab);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<Sort>('recent');
@@ -56,7 +58,8 @@ export default function LibraryScreen() {
     });
     return () => sub.remove();
   }, [searching, collection]));
-  const visible = useMemo(() => songs.filter(song => !song.isHidden), [songs]);
+  // Songs saved only for a downloaded playlist play from that playlist; they are not part of your Library list.
+  const visible = useMemo(() => songs.filter(song => !song.isHidden && !song.playlistOnly), [songs]);
   const list = useMemo(() => visible.filter(song => (!collection || (collection.type === 'Artists' ? song.artist : song.album) === collection.name)
     && (!query || `${song.title} ${song.artist ?? ''}`.toLowerCase().includes(query.toLowerCase())))
     .sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title) : sort === 'artist' ? (a.artist ?? '').localeCompare(b.artist ?? '') : Date.parse(b.dateCreated) - Date.parse(a.dateCreated)), [visible, collection, query, sort]);

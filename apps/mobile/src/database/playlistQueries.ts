@@ -4,7 +4,7 @@
 
 import { withDbRead, withDbWrite } from './db';
 import { Playlist, Song } from '../types/song';
-import { getSongById } from './queries';
+import { songFromRows, type LyricDbRow, type SongDbRow } from './queries';
 
 const log = (msg: string, data?: any) => {
   if (__DEV__) console.log(`[PLAYLIST_QUERIES] ${msg}`, data ?? '');
@@ -137,22 +137,41 @@ export const deletePlaylist = async (id: string): Promise<void> => {
 /**
  * Get all songs in a playlist
  */
+/**
+ * A playlist's songs on this phone, in its order, with their lyrics. 1.41.0: two queries for the whole playlist
+ * (songs joined in order, then every lyric line at once) instead of two per song: a 300-song playlist made 600
+ * queries on every open, widget tap and offline download.
+ */
 export const getPlaylistSongs = async (playlistId: string): Promise<Song[]> => {
   return withDbRead(async (db) => {
-    const rows = await db.getAllAsync<{ song_id: string }>(`
-      SELECT song_id
-      FROM playlist_songs
-      WHERE playlist_id = ?
-      ORDER BY sort_order ASC, added_at DESC
+    const rows = await db.getAllAsync<SongDbRow>(`
+      SELECT s.*
+      FROM playlist_songs ps
+      JOIN songs s ON s.id = ps.song_id
+      WHERE ps.playlist_id = ?
+      ORDER BY ps.sort_order ASC, ps.added_at DESC
     `, [playlistId]);
-
-    // Fetch full song data for each ID
-    const songs = await Promise.all(
-      rows.map(row => getSongById(row.song_id))
-    );
-
-    return songs.filter((s): s is Song => s !== null);
+    if (rows.length === 0) return [];
+    const lyricRows = await db.getAllAsync<LyricDbRow>(`
+      SELECT l.*
+      FROM lyrics l
+      WHERE l.song_id IN (SELECT song_id FROM playlist_songs WHERE playlist_id = ?)
+      ORDER BY l.song_id, l.line_order
+    `, [playlistId]);
+    return songsWithLyrics(rows, lyricRows);
   });
+};
+
+/** Each song row with its own lyric lines (the lines arrive grouped by song, in line order). */
+export const songsWithLyrics = (rows: readonly SongDbRow[], lyricRows: readonly LyricDbRow[]): Song[] => {
+  const bySong = new Map<string, LyricDbRow[]>();
+  for (const line of lyricRows) {
+    if (!line.song_id) continue;
+    const list = bySong.get(line.song_id);
+    if (list) list.push(line);
+    else bySong.set(line.song_id, [line]);
+  }
+  return rows.map(row => songFromRows(row, bySong.get(row.id) ?? []));
 };
 
 /**

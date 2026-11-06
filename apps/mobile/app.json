@@ -2,7 +2,7 @@
   "expo": {
     "name": "LuvLyrics",
     "slug": "lyricflow",
-    "version": "1.40.0",
+    "version": "1.41.0",
     "orientation": "portrait",
     "icon": "./assets/luvlyrics-icon-white.png",
     "userInterfaceStyle": "dark",
@@ -84,8 +84,8 @@
             },
             {
               "name": "Playlist",
-              "label": "Playlist",
-              "description": "A playlist you can scroll and play from",
+              "label": "Playlists",
+              "description": "Four pinned playlists. Tap one and it plays",
               "minWidth": "250dp",
               "minHeight": "180dp",
               "targetCellWidth": 4,

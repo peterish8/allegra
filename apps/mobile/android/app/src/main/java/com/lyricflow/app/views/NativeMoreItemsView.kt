@@ -358,12 +358,12 @@ class NativeMoreItemsView(context: Context, appContext: AppContext) : ExpoView(c
         }
         val r = MoreMenuGeometry.TILE_RADIUS * density
         rect.set(a.left * density, a.top * density, a.right * density, a.bottom * density)
-        fill.color = if (on) Color.argb(36, 217, 230, 106) else Color.argb(20, 255, 255, 255)
+        fill.color = if (on) Color.argb(36, 255, 255, 255) else Color.argb(20, 255, 255, 255)
         canvas.drawRoundRect(rect, r, r, fill)
         // The hairline border is drawn inside the box.
         val hw = hairlineDp * density
         stroke.strokeWidth = hw
-        stroke.color = if (on) Color.argb(89, 217, 230, 106) else Color.argb(31, 255, 255, 255)
+        stroke.color = if (on) Color.argb(82, 255, 255, 255) else Color.argb(31, 255, 255, 255)
         rect.inset(hw / 2f, hw / 2f)
         canvas.drawRoundRect(rect, r - hw / 2f, r - hw / 2f, stroke)
 
