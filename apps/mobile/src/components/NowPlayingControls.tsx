@@ -480,7 +480,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             {/* The dock shift lives on its own view: Tactile's press scale would otherwise replace its transform. */}
             <Animated.View style={titleStyle}>
               <View style={styles.swapLine}>
-                <SwapMarquee style={styles.title} direction={songDirection} active={focused} lines={2}>{currentSongTitle || 'Not playing'}</SwapMarquee>
+                <SwapMarquee style={styles.title} direction={songDirection} active={focused} still>{currentSongTitle || 'Not playing'}</SwapMarquee>
               </View>
               <View style={styles.swapLineSmall}>
                 <SwapMarquee style={styles.artist} direction={songDirection} active={focused}>{currentSongArtist || 'Unknown artist'}</SwapMarquee>

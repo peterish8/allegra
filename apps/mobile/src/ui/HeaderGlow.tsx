@@ -30,13 +30,13 @@ const Pools: React.FC<{ colors: GlowColors; id: string }> = ({ colors, id }) => 
   <Svg width="100%" height="100%" preserveAspectRatio="none" viewBox="0 0 100 100">
     <Defs>
       <RadialGradient id={`${id}a`} cx="50%" cy="50%" rx="50%" ry="50%">
-        <Stop offset="0" stopColor={colors.primary} stopOpacity="0.55" />
-        <Stop offset="0.55" stopColor={colors.primary} stopOpacity="0.18" />
+        <Stop offset="0" stopColor={colors.primary} stopOpacity="0.42" />
+        <Stop offset="0.55" stopColor={colors.primary} stopOpacity="0.14" />
         <Stop offset="1" stopColor={colors.primary} stopOpacity="0" />
       </RadialGradient>
       <RadialGradient id={`${id}b`} cx="50%" cy="50%" rx="50%" ry="50%">
-        <Stop offset="0" stopColor={colors.secondary} stopOpacity="0.45" />
-        <Stop offset="0.6" stopColor={colors.secondary} stopOpacity="0.12" />
+        <Stop offset="0" stopColor={colors.secondary} stopOpacity="0.36" />
+        <Stop offset="0.6" stopColor={colors.secondary} stopOpacity="0.1" />
         <Stop offset="1" stopColor={colors.secondary} stopOpacity="0" />
       </RadialGradient>
     </Defs>

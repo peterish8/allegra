@@ -360,11 +360,6 @@ const StreamScreen: React.FC = () => {
 
 
 
-  const save = useCallback((song: UnifiedSong) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    addToDownloads([song]);
-    setToast(`Saving “${song.title}” to your library`);
-  }, [addToDownloads]);
 
   // Save all: every result that is not already on the phone. (Ones already queued are skipped by the queue.)
   const unsavedResults = useMemo(() => {
@@ -540,7 +535,7 @@ const StreamScreen: React.FC = () => {
     const listenAgain = feed?.keepListening.slice(0, 6) ?? [];
     if (listenAgain.length) add('jump-back-in', <><SectionHeading title="Jump back in" /><ShortcutGrid items={listenAgain.map(track)} onPress={i => play(listenAgain, i)} onLongPress={i => queueNext(listenAgain[i])} /></>);
     const quick = accountPicks.length ? accountPicks : feed?.quickPicks ?? [];
-    if (quick.length) add('quick-picks', <><SectionHeading title="Quick picks" action="Play all" onAction={() => play(quick, 0)} /><QuickPicks items={quick.map(track)} onPress={i => play(quick, i)} onLongPress={i => queueNext(quick[i])} onSave={i => save(quick[i])} /></>);
+    if (quick.length) add('quick-picks', <><SectionHeading title="Quick picks" action="Play all" onAction={() => play(quick, 0)} /><QuickPicks items={quick.map(track)} onPress={i => play(quick, i)} onLongPress={i => queueNext(quick[i])} /></>);
     const mixes: MixParams[] = [];
     if (feed?.dailyDiscover.length) mixes.push({ title: 'Daily discover', kind: 'stream', songs: feed.dailyDiscover.map(item => item.recommendation) });
     for (const related of feed?.similar ?? []) if (related.songs.length) mixes.push({ title: `More like ${related.artist}`, kind: 'stream', songs: related.songs });
@@ -553,7 +548,7 @@ const StreamScreen: React.FC = () => {
     if (loading && !quick.length && !ytHome?.shelves.length) add('loading', <View style={styles.skeleton}>{[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="100%" height={64} />)}</View>);
     if (!loading && !quick.length && !ytHome?.shelves.length) add('catalog-unavailable', <View style={styles.emptyCard}><UiText variant="lead">Can?t reach the catalog</UiText><UiText tone="secondary">Pull down to try again. Your saved songs still play.</UiText><PrimaryButton label="Open Library" icon="library-outline" onPress={openDownloads} /></View>);
     return sections;
-  }, [feed, track, play, queueNext, accountPicks, save, openMix, followedShelf, openItem, playYT, ytHome, pendingSong, loading, openDownloads]);
+  }, [feed, track, play, queueNext, accountPicks, openMix, followedShelf, openItem, playYT, ytHome, pendingSong, loading, openDownloads]);
 
   const chipSections = useMemo(() => {
     if (!ytChip || searchActive) return [];
@@ -632,14 +627,13 @@ const StreamScreen: React.FC = () => {
           // A search hit plays with its own song radio after it, not the rest of the results.
           onPress={() => (mood ? play(results ?? [], item.index) : playHit(item.song))}
           onLongPress={() => queueNext(item.song)}
-          onSave={() => save(item.song)}
         />
       </View>;
     }
     // No Reanimated `entering` here: a layout animation inside a recycled FlashList cell can hand FlashList a stale
     // size, which left a tall blank gap under a short "Jump back in" (owner report, 2026-11-06).
     return <View>{item.content}</View>;
-  }, [mood, play, playHit, queueNext, results, save, track]);
+  }, [mood, play, playHit, queueNext, results, track]);
 
   return (
     <AppScreen style={styles.screen} staticGlow={false}>

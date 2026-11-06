@@ -50,7 +50,6 @@ import { StreamService } from '../services/stream/StreamService';
 import { streamIdFor } from '../services/stream/streamSong';
 import type { YTPageItem } from '../services/ytmusic/browse';
 import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
-import { useDownloadQueueStore } from '../store/downloadQueueStore';
 import { usePlayerStore } from '../store/playerStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSearchHistoryStore } from '../store/searchHistoryStore';
@@ -100,7 +99,6 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
   const remember = useSearchHistoryStore(s => s.remember);
   const forget = useSearchHistoryStore(s => s.forget);
   const clearRecent = useSearchHistoryStore(s => s.clear);
-  const addToDownloads = useDownloadQueueStore(s => s.addToQueue);
 
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<Scope>('All');
@@ -336,11 +334,6 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     }
   }, [commit]);
 
-  const save = useCallback((song: UnifiedSong) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    addToDownloads([song]);
-    setToast(`Saving “${song.title}” to Downloads`);
-  }, [addToDownloads]);
 
   const showTraceActions = useCallback(() => {
     const count = androidPerformance.trace.exportRecords().length;
@@ -539,7 +532,6 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
                   item={onlineTrack(s)}
                   onPress={() => playOnline(onlineSongs, i)}
                   onLongPress={() => queueNext(s)}
-                  onSave={() => save(s)}
                 />
               ))}
             </View>
