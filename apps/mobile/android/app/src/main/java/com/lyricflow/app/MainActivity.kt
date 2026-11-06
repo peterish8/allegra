@@ -1,5 +1,6 @@
 package com.lyricflow.app
 
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.MotionEvent
@@ -8,6 +9,8 @@ import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.facebook.react.uimanager.DisplayMetricsHolder
+import com.lyricflow.app.startup.DisplayScale
 
 import expo.modules.ReactActivityDelegateWrapper
 import com.lyricflow.app.recovery.LaunchGuard
@@ -30,8 +33,26 @@ class MainActivity : ReactActivity() {
       finish()
       return
     }
-    LaunchGuard.noteStart(this)
+    // Only a cold start counts towards the rescue screen: a recreate (Display size rebuilding the screen) arrives with
+    // saved state, and three size changes in a row must never look like three failed starts.
+    if (savedInstanceState == null) LaunchGuard.noteStart(this)
+    // Display size (startup/DisplayScale) on this window's resources and the app's, before React lays anything out.
+    applyDisplayScale()
     super.onCreate(null)
+  }
+
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    // The system recomputed the density for the change; put the chosen size back before React reads it.
+    applyDisplayScale()
+    super.onConfigurationChanged(newConfig)
+  }
+
+  private fun applyDisplayScale() {
+    runCatching {
+      DisplayScale.apply(this, resources)
+      DisplayScale.apply(this, applicationContext.resources)
+      DisplayMetricsHolder.initDisplayMetrics(applicationContext)
+    }
   }
 
   // The system island steps aside while the app is in front, when the listener chose that (Settings → Dynamic island).

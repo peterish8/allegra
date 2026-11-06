@@ -36,7 +36,14 @@ slim mini player and nav), as the owner reviewed it in the canvas rather than th
 - **Feed measurement.** In FlashList feeds keep headers in the data (not `ListHeaderComponent`), give cells
   definite widths (no percentages of an unmeasured parent) and no Reanimated `entering` in recycled cells.
 - **Up next** filters are one `Segmented` control; the native list clips rows to its own frame.
-- **Player title** wraps to two lines with an ellipsis; it never scrolls beside the song actions.
+- **Player title** stays one line that shrinks to fit (to 80%), then ellipsizes; it never scrolls beside the song
+  actions and never grows into the cover (1.38.1).
+- **Rows** on Stream and Search have one trailing ⋮ (Save to library lives in its sheet); the mini player's play
+  glyph has no disc; the header glow uses a dark tint of the cover (1.38.1).
+- **Display size** (Settings → Player, 1.39.0): Compact 85%, Small 92%, Default, Large 108%. Android sets the app's
+  density from it before React starts (`startup/DisplayScale.kt`, re-applied on configuration changes), so text,
+  icons, spacing, covers and the native bars scale together; saving recreates the activity while playback carries
+  on. Design in dp as usual; never multiply sizes by it in JavaScript. It sits on top of the system font size.
 
 Remaining interaction-audit and device checks are tracked in
 [PLAN-V6-VERIFICATION.md](../../.planning/mobile-ui-review/PLAN-V6-VERIFICATION.md) and the verification matrix.

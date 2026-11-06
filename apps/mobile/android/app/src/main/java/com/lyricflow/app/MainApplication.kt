@@ -16,6 +16,7 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
 import com.lyricflow.app.recovery.LaunchGuard
+import com.lyricflow.app.startup.DisplayScale
 import com.lyricflow.app.startup.StartupPreloader
 
 class MainApplication : Application(), ReactApplication {
@@ -41,6 +42,8 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // Display size (startup/DisplayScale): React Native reads this density when it starts below.
+    runCatching { DisplayScale.apply(this) }
     // First: MainActivity's constructor reads it to decide whether this start opens the rescue screen.
     LaunchGuard.init(this)
     StartupPreloader.preload(this)
@@ -54,6 +57,8 @@ class MainApplication : Application(), ReactApplication {
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {
+    // The system has just recomputed the density from the device: the chosen Display size goes back on first.
+    runCatching { DisplayScale.apply(this) }
     super.onConfigurationChanged(newConfig)
     ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)
   }

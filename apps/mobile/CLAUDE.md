@@ -31,6 +31,9 @@
   (DESIGN.md "Owner corrections"): animated Stream/Library header glow, slimmer shell, mini-player swipes, the
   Stream/Up next overlaps and the player title. Preserve pinned update access and the probe's mini-player label.
 - The visual target is the V6 design canvas; the local `design-gallery` HTML renders without its covers and fonts.
+- Display size (1.39.0) is native: `startup/DisplayScale.kt` sets the app's density at launch and on configuration
+  changes; `MainActivity` counts only cold starts (no saved state) towards the rescue screen so its recreate is not a
+  failed start. JS reads/saves it through `services/displaySizeNative.ts`; steps live in `utils/displaySize.ts`.
 - FlashList feeds: no `ListHeaderComponent` for content that can change size, no percentage widths in cells, no
   Reanimated `entering` in recycled cells (each produced stale cell sizes and overlaps on Stream).
 
