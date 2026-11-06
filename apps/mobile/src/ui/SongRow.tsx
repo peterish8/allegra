@@ -6,6 +6,7 @@ import { TactileRow } from '../components/allegra/motion';
 import { Control, Radius, Signal, Space } from '../constants/allegraTheme';
 import { IconButton, type IconName } from './Button';
 import { Text } from './Text';
+import { songRowSubtitle } from './round7Rules';
 
 export interface SongRowProps {
   title: string;
@@ -23,9 +24,7 @@ export interface SongRowProps {
   onActionPress?: () => void;
 }
 
-/** The second line: the artist and the caller's note. Never the title again; never more than one line. */
-export const songRowSubtitle = (artist?: string, meta?: string, playing?: boolean): string =>
-  [artist, meta, playing ? 'Playing' : undefined].filter(Boolean).join(' · ');
+export { songRowSubtitle };
 
 /**
  * Every song list's row (Round 7 item 9 and the lists rule): 56 tall, a 44 cover with 6dp corners, the title on one

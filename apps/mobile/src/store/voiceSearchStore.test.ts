@@ -72,3 +72,30 @@ describe('voice search', () => {
     expect(useVoiceSearchStore.getState().phase).toBe('idle');
   });
 });
+
+describe('voice search in the Search field (Round 7 item 6)', () => {
+  it('starts every listen as a hold and becomes a tap only while listening', () => {
+    const store = useVoiceSearchStore.getState();
+    store.setGesture('tap');
+    expect(useVoiceSearchStore.getState().gesture).toBe('hold');
+    store.listen();
+    store.setGesture('tap');
+    expect(useVoiceSearchStore.getState().gesture).toBe('tap');
+    store.listen();
+    expect(useVoiceSearchStore.getState().gesture).toBe('hold');
+  });
+
+  it('keeps a problem on screen in the field until it is answered, but fades it on the card', () => {
+    const store = useVoiceSearchStore.getState();
+    store.setOrigin('field');
+    store.notify('Didn’t hear a song');
+    jest.advanceTimersByTime(5000);
+    expect(useVoiceSearchStore.getState().phase).toBe('notice');
+
+    store.dismiss();
+    expect(useVoiceSearchStore.getState().origin).toBe('card');
+    store.notify('Playing next');
+    jest.advanceTimersByTime(1500);
+    expect(useVoiceSearchStore.getState().phase).toBe('idle');
+  });
+});

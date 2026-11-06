@@ -10,6 +10,7 @@ import Artwork from '../components/allegra/Artwork';
 import { Radius, Space, Surface } from '../constants/allegraTheme';
 import { IconButton } from './Button';
 import { Text } from './Text';
+import { identityMeta } from './round7Rules';
 
 export const IDENTITY_ART = 56;
 
@@ -23,9 +24,7 @@ export interface SheetIdentityProps {
   onClose?: () => void;
 }
 
-/** "Song · Mira Vale · 3:33": the kind first, then whatever the caller knows, never an empty part. */
-export const identityMeta = (kind: string, ...parts: (string | undefined | null | false)[]): string =>
-  [kind, ...parts].filter((part): part is string => typeof part === 'string' && part.trim().length > 0).join(' · ');
+export { identityMeta };
 
 export const SheetIdentity: React.FC<SheetIdentityProps> = ({ title, meta, artwork, cover, onClose }) => (
   <View style={styles.head} accessible={false}>

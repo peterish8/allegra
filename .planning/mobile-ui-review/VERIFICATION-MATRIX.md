@@ -38,3 +38,22 @@ with the published 1.37.1 APK (manifest commit 473c4d8). Surfaces are kept apart
 | Header glow frame timing (drift + scroll) on representative hardware | Pending |
 | Playlist load timing baseline | Pending; no optimisation made without numbers |
 | Old signed build → in-app download → install 1.38.0, data kept | Pending |
+
+## Round 7 (1.40.0, owner approved the canvas boards on 2026-11-06)
+
+Boards: canvas page "Round 7: revision brief (for approval)" (https://claude.ai/artifact/UGiYJ1UaRjWA66qTFjsmHT).
+Owner: "do all together … version bump minor", so items 1–9 ship in one change instead of one PR each.
+Source gate in a cloud session: `npm ci` + `npm run ci` in `apps/mobile` (Jest in band): 140 suites, 1,111 tests, lint
+0 errors. No emulator or phone in that session: every runtime cell below is **pending** until checked on a CI APK.
+
+| Item | Source change | Tests | Emulator / device |
+| --- | --- | --- | --- |
+| 5 Playlists background | Embedded `PlaylistsScreen` renders a transparent `View`, not its own `AppScreen` | `PlaylistsScreen.layout.test.ts` | Pending |
+| 9 + lists rule | One row: 56 tall, 44 cover, 6dp corners, title and artist one line each; Browse rows use it; Up next native row 56/44/6 | `ui/round7.test.ts` | Pending (incl. 200% text) |
+| 9 Download | Restored beside ⋮ on Stream (Quick picks, results) and Search; own 48dp target, no slop | `ui/round7.test.ts` | Pending: tap Download never plays the row |
+| 8 Bottom surface | Mini player + nav share one `ShellMaterial` (no seam), translucent tint, opaque fallback | `shellMaterialMath.test.ts` | Pending: look over scrolling rows, Reduce Transparency, Battery Saver |
+| 3 Navigation | Selected tab = foreground only (Kotlin `drawV6` + JS fallback); D-pad focus ring | `ui/round7.test.ts` | Pending: keyboard focus ring |
+| 1 Chips | Frosted capsule, check on chosen, pressed state, focus ring | `ui/round7.test.ts` | Pending |
+| 4 Play / Shuffle | Filled Play + compact (40 in 48) Shuffle on artist, playlist, album | `ui/round7.test.ts` | Pending: 360dp, 200% text |
+| 2 Menus | `SheetIdentity` + `SheetDivider` + chevron rows on stream/library song sheets and the mix sheet | `ui/round7.test.ts` | Pending: drag/scrim/Back/× dismissal, TalkBack focus return |
+| 6 Voice | Mic + listening panel in the Search field; gesture copy; Cancel/Stop; top match; problems stay in the field | `voiceFieldCopy.test.ts`, `voiceSearchStore.test.ts` | Pending: hold vs tap, permission flow, Reduce Motion |

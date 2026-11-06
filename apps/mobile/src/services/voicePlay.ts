@@ -2,7 +2,7 @@
  * Plays a voice search's chosen match: a library song through the player (or the device Connect points at), a catalog
  * song with the other streamable matches after it. Shared by the floating card and the Search field.
  */
-import { routeSongPick } from './connect/playbackIntents';
+import { routeSongPick } from '../services/connect/playbackIntents';
 import { StreamService } from './stream/StreamService';
 import { usePlayerStore } from '../store/playerStore';
 import type { VoicePick } from '../store/voiceSearchStore';

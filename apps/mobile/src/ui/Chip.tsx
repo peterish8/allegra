@@ -11,6 +11,7 @@ import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated'
 import { Control, Glass, Motion, Radius, Signal, Space } from '../constants/allegraTheme';
 import { Tactile } from '../components/allegra/motion';
 import { Text } from './Text';
+import { chipLeadingIcon } from './round7Rules';
 import type { IconName } from './Button';
 
 export interface ChipProps {
@@ -24,8 +25,6 @@ export interface ChipProps {
   accessibilityLabel?: string;
 }
 
-/** What a chip shows before its label: the caller's icon, or a check once it is chosen. */
-export const chipLeadingIcon = (selected: boolean, icon?: IconName): IconName | undefined => icon ?? (selected ? 'checkmark' : undefined);
 
 export const Chip: React.FC<ChipProps> = ({ label, onPress, selected = false, icon, clearable, disabled, accessibilityLabel }) => {
   // The lit fill fades rather than snapping, so a choice moving between chips reads as one change.

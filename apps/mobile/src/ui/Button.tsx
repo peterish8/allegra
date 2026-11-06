@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Control, Glass, Radius, Signal, Space, TypeScale } from '../constants/allegraTheme';
 import { Tactile } from '../components/allegra/motion';
 import { Text } from './Text';
+import { COMPACT_HEIGHT } from './round7Rules';
 
 export type IconName = React.ComponentProps<typeof Ionicons>['name'];
 export type ButtonVariant = 'primary' | 'secondary' | 'glass' | 'plain' | 'danger';
@@ -77,8 +78,7 @@ export const Button: React.FC<ButtonProps> = ({ label, onPress, icon, variant = 
   );
 };
 
-/** A compact capsule's drawn height; its target stays 48. */
-export const COMPACT_HEIGHT = 40;
+export { COMPACT_HEIGHT };
 
 /** Round icon buttons come in three sizes, so the same kind of control is the same size everywhere. */
 const ICON_SIZES = Control.icon;
@@ -101,16 +101,21 @@ export interface IconButtonProps {
   children?: React.ReactNode;
   haptic?: 'select' | 'light';
   onLongPress?: () => void;
+  /** Press-and-hold controls (the voice mic): when the finger lands and lifts. */
+  onPressIn?: () => void;
+  onPressOut?: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
-export const IconButton: React.FC<IconButtonProps> = ({ icon, label, onPress, variant = 'plain', size = 'md', selected, shape = 'control', disabled, children, haptic, onLongPress, style }) => {
+export const IconButton: React.FC<IconButtonProps> = ({ icon, label, onPress, variant = 'plain', size = 'md', selected, shape = 'control', disabled, children, haptic, onLongPress, onPressIn, onPressOut, style }) => {
   const box = ICON_SIZES[size];
   const ink = selected ? Signal.bgDeep : INK[variant];
   return (
     <Tactile
       onPress={onPress}
       onLongPress={onLongPress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
       disabled={disabled}
       haptic={haptic}
       wrapperStyle={styles.iconTarget}
