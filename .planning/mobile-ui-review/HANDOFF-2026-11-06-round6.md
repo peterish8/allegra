@@ -136,3 +136,13 @@ A–Z, By artist (no direction). Playlist sorts: Custom, Title, Artist, Recently
 (`saveSort`). Player shuffle reshuffles what's next; repeat UI is repeat-one. Sleep timer 15/30/45/60/end of song.
 Buffering and playback errors are reported by the player but never shown. No onboarding; permissions are asked in
 context. Stream's home is built in `screens/StreamScreen.tsx` + `components/stream/StreamHome.tsx` + `services/stream/homeFeed.ts`.
+
+
+## Update: V6 shipped; new owner corrections and verification handoff (2026-11-06)
+
+PR 58 merged and version 1.37.1 is published. Continue from
+[HANDOFF-2026-11-06-v6-verification.md](HANDOFF-2026-11-06-v6-verification.md), its
+[executable plan](PLAN-V6-VERIFICATION.md) and [starter prompt](STARTER-PROMPT-v6-verification.md).
+The owner supplied two screenshots of overlaps/clipped text and requested a wider UI/UX correction pass.
+They also explicitly approved animated, scroll-away/return glow across roughly the top 20% of Stream and
+Library; this supersedes the old static-glow target for those screens. This is planned work, not shipped behavior.

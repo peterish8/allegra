@@ -3,3 +3,4 @@ __pycache__/
 *-lint.json
 preview-*.html
 ci-launch-*/
+ci-smoke-*/

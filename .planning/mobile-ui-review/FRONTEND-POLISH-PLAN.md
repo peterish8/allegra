@@ -1,3 +1,8 @@
+> New correction/verification work order: [PLAN-V6-VERIFICATION.md](PLAN-V6-VERIFICATION.md),
+> [detailed handoff](HANDOFF-2026-11-06-v6-verification.md) and [starter](STARTER-PROMPT-v6-verification.md).
+> Includes owner screenshots, overlapping UI/title clipping, interaction polish, animated scroll-linked Stream/Library
+> headers, compact mini-player clearance and restored horizontal song swipes. These corrections are pending.
+
 > 2026-11-06 continuation: the owner approved all V6 defaults and requested the complete source
 > migration, tests, GitHub APK build and merge. The target is now 1.37.1, combining pending polish
 > and V6. See [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for implemented scope and exact

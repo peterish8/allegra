@@ -1,5 +1,15 @@
 # V6 implementation and release ledger
 
+> Current continuation, 2026-11-06: **1.37.1 is merged and published** via PR 58, main
+> `473c4d8806144619a19b9bb414d1dce31ad4d48c`; main APK run 42126270090 passed and the public manifest
+> matches that version/commit. The broader smoke run 42126270194 failed 15 player-probe assertions.
+> New owner screenshots identify UI overlaps, spacing and title-lane problems, plus a requested wider UX pass.
+> Mini-player excess top space and missing horizontal song swipes are also pending owner-requested corrections.
+> Animated scroll-linked top-20% header glow for Stream/Library is newly approved and still pending.
+> Follow [the new handoff](HANDOFF-2026-11-06-v6-verification.md) and [plan](PLAN-V6-VERIFICATION.md).
+> Earlier pending-publication statements below are historical, not the current release status.
+
+
 Updated 2026-11-06. Checkout: `C:\dev\allegra`, branch `feat/mobile-frontend-polish`.
 Base: `1b72928`, matched freshly fetched `origin/main` before preparing the PR.
 Target version: **1.37.1**. Publication is pending; a source version is not a shipped APK.
