@@ -67,7 +67,8 @@ import { useStreamHistoryStore } from '../store/streamHistoryStore';
 import { useUpdateStore } from '../store/updateStore';
 import { TabParamList, type MixParams } from '../types/navigation';
 import { UnifiedSong } from '../types/song';
-import { CollectionCard, HeaderGlow, IconButton, Sheet, SheetOption, Text as UiText } from '../ui';
+import { Button, CollectionCard, HeaderGlow, IconButton, identityMeta, Sheet, SheetDivider, SheetIdentity, SheetOption, Text as UiText } from '../ui';
+import { countOf } from '../utils/formatters';
 import { libraryKeys, matchKey } from '../utils/downloadState';
 import * as Haptics from '../utils/haptics';
 import { shuffled } from '../utils/shuffle';
@@ -361,6 +362,13 @@ const StreamScreen: React.FC = () => {
 
 
 
+  // One song's Download button (Round 7 item 9 restores it beside the ⋮ on Stream and Search rows).
+  const save = useCallback((song: UnifiedSong) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    addToDownloads([song]);
+    setToast(`Saving \u201c${song.title}\u201d to your library`);
+  }, [addToDownloads]);
+
   // Save all: every result that is not already on the phone. (Ones already queued are skipped by the queue.)
   const unsavedResults = useMemo(() => {
     const have = libraryKeys(localSongs);
@@ -535,7 +543,7 @@ const StreamScreen: React.FC = () => {
     const listenAgain = feed?.keepListening.slice(0, 6) ?? [];
     if (listenAgain.length) add('jump-back-in', <><SectionHeading title="Jump back in" /><ShortcutGrid items={listenAgain.map(track)} onPress={i => play(listenAgain, i)} onLongPress={i => queueNext(listenAgain[i])} /></>);
     const quick = accountPicks.length ? accountPicks : feed?.quickPicks ?? [];
-    if (quick.length) add('quick-picks', <><SectionHeading title="Quick picks" action="Play all" onAction={() => play(quick, 0)} /><QuickPicks items={quick.map(track)} onPress={i => play(quick, i)} onLongPress={i => queueNext(quick[i])} /></>);
+    if (quick.length) add('quick-picks', <><SectionHeading title="Quick picks" action="Play all" onAction={() => play(quick, 0)} /><QuickPicks items={quick.map(track)} onPress={i => play(quick, i)} onLongPress={i => queueNext(quick[i])} onSave={i => save(quick[i])} /></>);
     const mixes: MixParams[] = [];
     if (feed?.dailyDiscover.length) mixes.push({ title: 'Daily discover', kind: 'stream', songs: feed.dailyDiscover.map(item => item.recommendation) });
     for (const related of feed?.similar ?? []) if (related.songs.length) mixes.push({ title: `More like ${related.artist}`, kind: 'stream', songs: related.songs });
@@ -546,9 +554,9 @@ const StreamScreen: React.FC = () => {
     if (followedShelf) add('your-artists', <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} />);
     (ytHome?.shelves ?? []).forEach((shelf, index) => add(`catalog:${index}:${shelf.title}`, <BrowseShelf shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />));
     if (loading && !quick.length && !ytHome?.shelves.length) add('loading', <View style={styles.skeleton}>{[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="100%" height={64} />)}</View>);
-    if (!loading && !quick.length && !ytHome?.shelves.length) add('catalog-unavailable', <View style={styles.emptyCard}><UiText variant="lead">Can?t reach the catalog</UiText><UiText tone="secondary">Pull down to try again. Your saved songs still play.</UiText><PrimaryButton label="Open Library" icon="library-outline" onPress={openDownloads} /></View>);
+    if (!loading && !quick.length && !ytHome?.shelves.length) add('catalog-unavailable', <View style={styles.emptyCard}><UiText variant="lead">Can\u2019t reach the catalog</UiText><UiText tone="secondary">Pull down to try again. Your saved songs still play.</UiText><PrimaryButton label="Open Library" icon="library-outline" onPress={openDownloads} /></View>);
     return sections;
-  }, [feed, track, play, queueNext, accountPicks, openMix, followedShelf, openItem, playYT, ytHome, pendingSong, loading, openDownloads]);
+  }, [feed, track, play, queueNext, accountPicks, save, openMix, followedShelf, openItem, playYT, ytHome, pendingSong, loading, openDownloads]);
 
   const chipSections = useMemo(() => {
     if (!ytChip || searchActive) return [];
@@ -627,13 +635,14 @@ const StreamScreen: React.FC = () => {
           // A search hit plays with its own song radio after it, not the rest of the results.
           onPress={() => (mood ? play(results ?? [], item.index) : playHit(item.song))}
           onLongPress={() => queueNext(item.song)}
+          onSave={() => save(item.song)}
         />
       </View>;
     }
     // No Reanimated `entering` here: a layout animation inside a recycled FlashList cell can hand FlashList a stale
     // size, which left a tall blank gap under a short "Jump back in" (owner report, 2026-11-06).
     return <View>{item.content}</View>;
-  }, [mood, play, playHit, queueNext, results, track]);
+  }, [mood, play, playHit, queueNext, results, save, track]);
 
   return (
     <AppScreen style={styles.screen} staticGlow={false}>
@@ -682,10 +691,18 @@ const StreamScreen: React.FC = () => {
         colors={['rgba(10, 11, 14, 0.4)', 'rgba(10, 11, 14, 0)']}
         style={[styles.statusScrim, { height: insets.top + 16 }]}
       />
-      <Sheet visible={mixActions !== null} onClose={() => setMixActions(null)} title={mixActions?.title}>
-        <SheetOption icon="play" label="Play mix" onPress={() => { if (mixActions) playMix(mixActions); }} />
-        <SheetOption icon="shuffle" label="Shuffle mix" onPress={() => { if (mixActions) playMix(mixActions, true); }} />
-        <SheetOption icon="open-outline" label="Open mix" onPress={() => { if (mixActions) { openMix(mixActions); setMixActions(null); } }} />
+      {/* Round 7 item 2: identity first, then the mix's one primary pair (Play, smaller Shuffle), then navigation. */}
+      <Sheet visible={mixActions !== null} onClose={() => setMixActions(null)} tintUri={mixCover(mixActions)}>
+        {mixActions ? <>
+          <SheetIdentity title={mixActions.title} meta={identityMeta('Mix', countOf(mixActions.songs.length, 'song'), mixArtists(mixActions))}
+            artwork={{ uri: mixCover(mixActions), title: mixActions.title }} onClose={() => setMixActions(null)} />
+          <View style={styles.mixActions}>
+            <Button label="Play" icon="play" variant="primary" haptic="select" onPress={() => playMix(mixActions)} />
+            <Button label="Shuffle" icon="shuffle" size="compact" haptic="select" onPress={() => playMix(mixActions, true)} />
+          </View>
+          <SheetDivider />
+          <SheetOption icon="albums-outline" label="Open mix" chevron onPress={() => { openMix(mixActions); setMixActions(null); }} />
+        </> : null}
       </Sheet>
       {songActions.element}
       {toast ? <Toast visible message={toast} type="info" duration={2200} onDismiss={() => setToast(null)} /> : null}
@@ -695,7 +712,26 @@ const StreamScreen: React.FC = () => {
   );
 };
 
+/** A mix's cover in its actions sheet: its first song's. */
+const mixCover = (mix: MixParams | null): string | undefined => {
+  const first = mix?.songs[0];
+  if (!first) return undefined;
+  return 'highResArt' in first ? first.highResArt || first.thumbnail : first.coverImageUri;
+};
+
+/** The first two artists a mix leans on, for its identity line. */
+const mixArtists = (mix: MixParams): string | undefined => {
+  const names: string[] = [];
+  for (const song of mix.songs) {
+    const name = song.artist?.split(',')[0]?.trim();
+    if (name && !names.includes(name)) names.push(name);
+    if (names.length === 2) break;
+  }
+  return names.length ? names.join(', ') : undefined;
+};
+
 const styles = StyleSheet.create({
+  mixActions: { flexDirection: 'row', alignItems: 'center', gap: Space.xs, paddingHorizontal: Space.xxs, paddingBottom: Space.xs },
   screen: { flex: 1, backgroundColor: Signal.bg },
   content: {},
   header: { height: HEADER_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: GUTTER },

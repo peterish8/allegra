@@ -25,6 +25,7 @@ import { Glass, Motion, Radius, Signal, Space, Surface, Typography } from '../co
 import { shouldCloseSheet } from '../navigation/sheetClose';
 import * as Haptics from '../utils/haptics';
 import { diag } from '../utils/diag';
+import { CoverGlow } from './Screen';
 
 const { Gesture, GestureDetector, GestureHandlerRootView } = GestureHandler;
 
@@ -90,10 +91,12 @@ export interface SheetProps {
   presentation?: 'modal' | 'inline';
   /** Lift above the keyboard (sheets with a text field). */
   keyboard?: boolean;
+  /** A faint glow of this cover across the top (an actions sheet for a song or a mix). */
+  tintUri?: string;
   children: React.ReactNode;
 }
 
-export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = false, palette, surface = palette ? 'player' : 'deep', presentation = 'modal', keyboard = false, children }) => {
+export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = false, palette, surface = palette ? 'player' : 'deep', presentation = 'modal', keyboard = false, tintUri, children }) => {
   const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
   const reduce = useReducedMotion();
@@ -198,6 +201,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
           {surface === 'player'
             ? <Frosted radius={CORNER} intensity={85} tint={0.3} palette={palette} />
             : <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: surface === 'deep' ? Surface.deep : Surface.raised }]} />}
+          {tintUri && surface !== 'player' ? <View pointerEvents="none" style={styles.tint}><CoverGlow uri={tintUri} /></View> : null}
           <View style={styles.grabber} accessibilityElementsHidden importantForAccessibility="no" />
           {title ? <Text style={styles.title} accessibilityRole="header">{title}</Text> : <View style={styles.untitled} />}
           <SheetScrollContext.Provider value={scrollState}>{children}</SheetScrollContext.Provider>
@@ -234,6 +238,7 @@ const styles = StyleSheet.create({
     paddingTop: Space.sm - 2,
   },
   tall: { maxHeight: '88%' },
+  tint: { ...StyleSheet.absoluteFillObject, opacity: 0.6 },
   untitled: { height: Space.sm },
   grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: Radius.pill, backgroundColor: Glass.grabber },
   title: { ...Typography.title, color: Signal.ink, marginTop: Space.md, marginBottom: Space.xs, marginLeft: Space.xxs },

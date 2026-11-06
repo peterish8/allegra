@@ -4,8 +4,8 @@
  * inside a sheet or menu: an optional icon, a label, a tick when chosen. Both press through `TactileRow`: the row
  * lights a glass step under the finger and sinks 1.5%.
  *
- * Rows are a fixed height (`ROW_HEIGHT`, 64 with artwork; `OPTION_HEIGHT`, 52) so long lists can use
- * `getItemLayout` and every list in the app has the same rhythm.
+ * Rows share one height with every song list (`ROW_HEIGHT`, 56 with a 44 cover; `OPTION_HEIGHT`, 52) so every list in
+ * the app has the same rhythm: title and subtitle one line each, ending in "…". They grow with large text.
  */
 import React from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
@@ -54,14 +54,14 @@ export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, onPress, onLo
   >
     {artwork ? (
       <View style={[styles.art, artwork.round && styles.round]}>
-        <Artwork uri={artwork.uri} title={artwork.title} artist={artwork.artist} size={ROW_ART} style={StyleSheet.absoluteFill} />
+        <Artwork uri={artwork.uri} title={artwork.title} artist={artwork.artist} size={ROW_ART} style={[StyleSheet.absoluteFill, artwork.round ? styles.round : styles.cover]} />
       </View>
     ) : icon ? (
       <View style={styles.iconDisc}><Ionicons name={icon} size={20} color={OnMedia.secondary} /></View>
     ) : null}
     <View style={styles.text}>
-      <Text variant="row" tone="primary" style={active && styles.activeTitle} numberOfLines={2}>{title}</Text>
-      {subtitle ? <Text variant="secondary" tone="muted" numberOfLines={1}>{subtitle}</Text> : null}
+      <Text variant="row" tone="primary" style={active && styles.activeTitle} numberOfLines={1} ellipsizeMode="tail">{title}</Text>
+      {subtitle ? <Text variant="secondary" tone="muted" numberOfLines={1} ellipsizeMode="tail">{subtitle}</Text> : null}
     </View>
     {trailing}
     {chevron ? <Ionicons name="chevron-forward" size={18} color={OnMedia.muted} /> : null}
@@ -80,9 +80,11 @@ export interface SheetOptionProps {
   disabled?: boolean;
   /** Something on the right instead of the tick (a value, a switch). */
   trailing?: React.ReactNode;
+  /** Navigation ("Go to the artist"): a chevron on the right. */
+  chevron?: boolean;
 }
 
-export const SheetOption: React.FC<SheetOptionProps> = ({ label, onPress, icon, selected, hint, destructive, disabled, trailing }) => {
+export const SheetOption: React.FC<SheetOptionProps> = ({ label, onPress, icon, selected, hint, destructive, disabled, trailing, chevron }) => {
   const ink = destructive ? Signal.danger : OnMedia.primary;
   return (
     <TactileRow
@@ -99,7 +101,8 @@ export const SheetOption: React.FC<SheetOptionProps> = ({ label, onPress, icon, 
         <Text variant="body" style={{ color: ink }} numberOfLines={1}>{label}</Text>
         {hint ? <Text variant="caption" tone="muted" numberOfLines={2}>{hint}</Text> : null}
       </View>
-      {trailing ?? (selected ? <Ionicons name="checkmark" size={20} color={OnMedia.primary} /> : null)}
+      {trailing ?? (selected ? <Ionicons name="checkmark" size={20} color={OnMedia.primary} />
+        : chevron ? <Ionicons name="chevron-forward" size={18} color={OnMedia.muted} /> : null)}
     </TactileRow>
   );
 };
@@ -138,11 +141,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Space.sm,
     minHeight: ROW_HEIGHT,
-    paddingVertical: Space.xs,
+    paddingVertical: (ROW_HEIGHT - ROW_ART) / 2,
     paddingHorizontal: Space.sm,
-    borderRadius: Radius.chip,
+    borderRadius: Radius.control,
   },
-  art: { width: ROW_ART, height: ROW_ART, borderRadius: Radius.thumb, overflow: 'hidden' },
+  art: { width: ROW_ART, height: ROW_ART, borderRadius: Radius.cover, overflow: 'hidden' },
+  cover: { borderRadius: Radius.cover },
   round: { borderRadius: ROW_ART / 2 },
   iconDisc: { width: Control.icon.md, height: Control.icon.md, borderRadius: Radius.control, alignItems: 'center', justifyContent: 'center', backgroundColor: Surface.control },
   activeTitle: { fontWeight: '600' },

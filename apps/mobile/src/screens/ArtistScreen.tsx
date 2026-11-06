@@ -30,6 +30,7 @@ import { YTSong } from '../services/ytmusic/parsers';
 import { useFollowedArtistsStore } from '../store/followedArtistsStore';
 import { BrowseStackParamList } from '../types/navigation';
 import * as Haptics from '../utils/haptics';
+import { Button, TextButton } from '../ui';
 
 type Props = NativeStackScreenProps<BrowseStackParamList, 'Artist'>;
 
@@ -126,42 +127,26 @@ const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
         </View>
 
         <RiseIn index={0}>
+          {/* Round 7 item 4: Play is the one filled capsule; Shuffle is a smaller frosted capsule (40 drawn, 48 touch);
+              Radio and Follow stay text. */}
           <View style={styles.actions}>
-            <Tactile
-              wrapperStyle={styles.actionWrap}
-              style={[styles.action, styles.primary]}
+            <Button label="Play" icon="play" variant="primary" haptic="select" disabled={!topSongs.length && !page.radio}
+              onPress={() => { if (topSongs.length) play(topSongs, 0); else if (page.radio) playEndpoint(page.radio); }} />
+            <Button label="Shuffle" icon="shuffle" size="compact" haptic="select"
               onPress={() => {
-                Haptics.selectionAsync().catch(() => {});
                 if (page.shuffle) playEndpoint(page.shuffle, { shuffle: true });
                 else if (topSongs.length) playYTSongs(topSongs, 0, { shuffle: true });
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Shuffle"
-            >
-              <Ionicons name="shuffle" size={19} color={Signal.waveInk} />
-              <Text style={[styles.actionText, { color: Signal.waveInk }]}>Shuffle</Text>
-            </Tactile>
-            <Tactile
-              wrapperStyle={styles.actionWrap}
-              style={[styles.action, styles.glass]}
-              onPress={() => { Haptics.selectionAsync().catch(() => {}); if (page.radio) playEndpoint(page.radio); else if (topSongs.length) play(topSongs, 0); }}
-              accessibilityRole="button"
-              accessibilityLabel="Radio"
-            >
-              <Ionicons name="radio-outline" size={19} color={Signal.ink} />
-              <Text style={styles.actionText}>Radio</Text>
-            </Tactile>
-            <Tactile
-              style={[styles.follow, styles.glass, followed && styles.followOn]}
+              }} />
+          </View>
+          <View style={styles.textActions}>
+            <TextButton label="Radio" icon="radio-outline"
+              onPress={() => { Haptics.selectionAsync().catch(() => {}); if (page.radio) playEndpoint(page.radio); else if (topSongs.length) play(topSongs, 0); }} />
+            <TextButton label={followed ? 'Following' : 'Follow'} icon={followed ? 'checkmark' : 'person-add-outline'}
+              accessibilityLabel={followed ? 'Following, tap to unfollow' : 'Follow'}
               onPress={() => {
                 Haptics.selectionAsync().catch(() => {});
                 useFollowedArtistsStore.getState().toggle({ browseId: page.browseId, name: page.name, thumbnail: page.thumbnail });
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={followed ? 'Following, tap to unfollow' : 'Follow'}
-            >
-              <Ionicons name={followed ? 'checkmark' : 'person-add-outline'} size={19} color={followed ? Signal.wave : Signal.ink} />
-            </Tactile>
+              }} />
           </View>
         </RiseIn>
 
@@ -209,7 +194,8 @@ const styles = StyleSheet.create({
   stat: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   statDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Signal.wave },
   statText: { color: Signal.inkSoft, fontSize: TypeScale.body, fontWeight: '400', fontVariant: ['tabular-nums'] },
-  actions: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginTop: 18 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, marginTop: 18 },
+  textActions: { flexDirection: 'row', gap: 16, paddingHorizontal: 20 },
   actionWrap: { flex: 1 },
   action: { minHeight: 48, borderRadius: Radius.control, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   primary: { backgroundColor: Signal.wave },

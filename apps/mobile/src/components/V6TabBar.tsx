@@ -4,10 +4,10 @@ import { requireNativeView } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Signal, Surface, Space, Tactile, Text, type IconName } from '../ui';
+import { Signal, Space, Tactile, Text, type IconName } from '../ui';
 import { usePlayerStore } from '../store/playerStore';
 import { tabTapParams } from '../navigation/tabs';
-import { NAV_BAR_HEIGHT, shellNavHeight } from '../navigation/v6Shell';
+import { NAV_BAR_HEIGHT, SEEK_BAND_HEIGHT, miniRowHeight, shellNavHeight } from '../navigation/v6Shell';
 import { useTabBarPushStyle } from '../navigation/sheetProgress';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { ShellMaterial } from './ShellMaterial';
@@ -28,7 +28,7 @@ interface NativeProps {
 const NativeBar = (() => { try { return Platform.OS === 'android' ? requireNativeView<NativeProps>('NativeTabBar') : null; } catch { return null; } })();
 
 export function V6TabBar({ state, navigation }: BottomTabBarProps) {
-  const { height } = useWindowDimensions();
+  const { height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const barHeight = shellNavHeight(height, insets.bottom);
   const keyboard = useKeyboardVisible();
@@ -47,12 +47,12 @@ export function V6TabBar({ state, navigation }: BottomTabBarProps) {
   };
   if (keyboard) return null;
   return <View pointerEvents="box-none" style={styles.host}><AnimatedBar height={barHeight} push={push}>
-    <ShellMaterial uri={cover} />
+    <ShellMaterial uri={cover} above={cover ? SEEK_BAND_HEIGHT + miniRowHeight(fontScale) : 0} />
     {NativeBar ? <NativeBar variant="v6" activeTab={active} moreActive={false} moreOpen={false} micEnabled={false} dark glassBackground bottomInset={barHeight - NAV_BAR_HEIGHT} bottomOffset={0}
       activeTint={Signal.ink} inactiveTint={Signal.inkSoft} style={{ height: barHeight }} onTabPress={e => press(e.nativeEvent.route)} onMorePress={() => {}} />
       : <View style={[styles.row, { paddingBottom: barHeight - NAV_BAR_HEIGHT }]}>{TABS.map(tab => <Tactile key={tab.route} onPress={() => press(tab.route)} accessibilityRole="tab" accessibilityLabel={tab.label}
         accessibilityState={{ selected: active === tab.route }} wrapperStyle={styles.target} style={styles.item}>
-        <View style={[styles.indicator, active === tab.route && styles.selected]}><Ionicons name={active === tab.route ? tab.filled : tab.icon} size={24} color={active === tab.route ? Signal.ink : Signal.inkSoft} /></View>
+        <View style={styles.indicator}><Ionicons name={active === tab.route ? tab.filled : tab.icon} size={24} color={active === tab.route ? Signal.ink : Signal.inkSoft} /></View>
         <Text variant="caption" maxFontSizeMultiplier={1.3} style={active === tab.route && styles.bold}>{tab.label}</Text>
       </Tactile>)}</View>}
   </AnimatedBar></View>;
@@ -62,5 +62,6 @@ const AnimatedBar: React.FC<{ height: number; push: ReturnType<typeof useTabBarP
 const styles = StyleSheet.create({
   host: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   row: { flexDirection: 'row', minHeight: NAV_BAR_HEIGHT }, target: { flex: 1 }, item: { alignItems: 'center', justifyContent: 'center', gap: Space.xxs, height: NAV_BAR_HEIGHT },
-  indicator: { width: 56, height: 28, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }, selected: { backgroundColor: Surface.control }, bold: { fontWeight: '600' },
+  // Round 7 item 3: the selected tab is its filled icon and semibold label only; nothing is drawn behind it.
+  indicator: { width: 56, height: 28, alignItems: 'center', justifyContent: 'center' }, bold: { fontWeight: '600' },
 });

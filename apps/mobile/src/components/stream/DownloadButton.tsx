@@ -29,7 +29,7 @@ import Animated, {
   withTiming,
   ZoomIn,
 } from 'react-native-reanimated';
-import { Motion, Signal } from '../../constants/allegraTheme';
+import { Control, Motion, Signal } from '../../constants/allegraTheme';
 import { useDownloadState, DownloadTarget } from '../../hooks/useDownloadState';
 import { useDownloadQueueStore } from '../../store/downloadQueueStore';
 import * as Haptics from '../../utils/haptics';
@@ -138,7 +138,6 @@ export const DownloadButton: React.FC<{
       onPress={press}
       onPressIn={() => { sink.value = withSpring(0.86, Motion.spring.tactile); }}
       onPressOut={() => { sink.value = withSpring(1, Motion.spring.tactile); }}
-      hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={`${LABEL[phase]}: ${song.title}`}
       style={styles.hit}
@@ -193,7 +192,8 @@ export const DownloadButton: React.FC<{
 };
 
 const styles = StyleSheet.create({
-  hit: { paddingHorizontal: 6, paddingVertical: 8 },
+  // Its own 48 x 56 target beside a song row's main target, flush with the ⋮ (Round 7 item 9): no slop over the row.
+  hit: { width: Control.target, minHeight: Control.row, alignItems: 'center', justifyContent: 'center' },
   box: { width: SIZE, height: SIZE },
   center: { alignItems: 'center', justifyContent: 'center' },
   // Start the ring at 12 o'clock.

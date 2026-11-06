@@ -57,7 +57,7 @@ const ReactNativeTrackRow: React.FC<TrackRowProps> = React.memo(({
   progress,
 }) => (
   <View>
-    <SharedSongRow title={title} artist={artist} artwork={artwork} meta={[meta, formatTrackDuration(duration)].filter(Boolean).join(' ? ')} playing={isCurrent}
+    <SharedSongRow title={title} artist={artist} artwork={artwork} meta={[meta, formatTrackDuration(duration)].filter(Boolean).join(' · ')} playing={isCurrent}
       onPress={onPress} onActions={onLongPress} actionIcon={trailingIcon} actionLabel={trailingLabel} onActionPress={onTrailingPress} />
     {progress !== undefined ? <View style={styles.progressTrack}><View style={[styles.progressFill, { transform: [{ scaleX: Math.max(0.02, Math.min(1, progress)) }] }]} /></View> : null}
   </View>

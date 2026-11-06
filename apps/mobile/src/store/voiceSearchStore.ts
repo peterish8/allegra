@@ -12,6 +12,10 @@ import { Song, UnifiedSong } from '../types/song';
 import { rankSongs } from '../utils/voiceIntentParser';
 
 export type VoicePhase = 'idle' | 'listening' | 'searching' | 'results' | 'empty' | 'notice';
+/** Where listening was started: the floating card (older tab bars) or the Search field (Round 7 item 6). */
+export type VoiceOrigin = 'card' | 'field';
+/** How it was started: held (release searches) or tapped (tap stop, or it ends when the speaker goes quiet). */
+export type VoiceGesture = 'hold' | 'tap';
 
 export type VoicePick =
   | { kind: 'local'; song: Song }
@@ -33,8 +37,13 @@ interface VoiceSearchState {
   notice: string | null;
   /** The request asked to download ("download …"), so lead with that action. */
   wantsDownload: boolean;
+  origin: VoiceOrigin;
+  gesture: VoiceGesture;
 
   listen: () => void;
+  /** Set before listening starts, so the right surface shows it (the card stays hidden for the field). */
+  setOrigin: (origin: VoiceOrigin) => void;
+  setGesture: (gesture: VoiceGesture) => void;
   hear: (partial: string, catalog: CatalogSearch, queryOf: (t: string) => string) => void;
   setLevel: (level: number) => void;
   search: (query: string, opts: { songs: Song[]; catalog: CatalogSearch; wantsDownload?: boolean; transcript?: string }) => Promise<void>;
@@ -79,12 +88,18 @@ export const useVoiceSearchStore = create<VoiceSearchState>((set, get) => ({
   selected: 0,
   notice: null,
   wantsDownload: false,
+  origin: 'card',
+  gesture: 'hold',
 
   listen: () => {
     clearTimers();
     searchSeq++;
-    set({ phase: 'listening', transcript: '', query: '', level: 0, picks: [], selected: 0, notice: null, wantsDownload: false });
+    // Every start is a hold until the finger lifts without stopping it (then it is a tap).
+    set({ phase: 'listening', transcript: '', query: '', level: 0, picks: [], selected: 0, notice: null, wantsDownload: false, gesture: 'hold' });
   },
+
+  setOrigin: origin => set({ origin }),
+  setGesture: gesture => { if (get().phase === 'listening') set({ gesture }); },
 
   hear: (partial, catalog, queryOf) => {
     if (get().phase !== 'listening') return;
@@ -134,6 +149,8 @@ export const useVoiceSearchStore = create<VoiceSearchState>((set, get) => ({
     clearTimers();
     searchSeq++;
     set({ phase: 'notice', notice: message, level: 0, picks: [] });
+    // In the Search field a problem stays until the listener answers it (Try again, Not now); the card's fades.
+    if (get().origin === 'field') return;
     noticeTimer = setTimeout(() => {
       if (get().phase === 'notice') set({ phase: 'idle', notice: null });
     }, 1400);
@@ -142,6 +159,6 @@ export const useVoiceSearchStore = create<VoiceSearchState>((set, get) => ({
   dismiss: () => {
     clearTimers();
     searchSeq++;
-    set({ phase: 'idle', transcript: '', query: '', level: 0, picks: [], selected: 0, notice: null });
+    set({ phase: 'idle', transcript: '', query: '', level: 0, picks: [], selected: 0, notice: null, origin: 'card', gesture: 'hold' });
   },
 }));

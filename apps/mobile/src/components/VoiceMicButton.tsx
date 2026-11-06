@@ -156,6 +156,7 @@ export const VoiceMicButton: React.FC<Props> = ({ style, variant = 'floating' })
   // registered, so most releases kept listening for seconds.
   const onPressIn = useCallback(() => {
     press.value = withSpring(0.86, Motion.spring.tactile);
+    if (!isListening) useVoiceSearchStore.getState().setOrigin('card');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     pressedAtRef.current = Date.now();
     wasListeningOnPressRef.current = isListening;
@@ -172,7 +173,10 @@ export const VoiceMicButton: React.FC<Props> = ({ style, variant = 'floating' })
     if (!isTapMode && isHoldRelease(pressedAtRef.current, Date.now())) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       stopListening();
+      return;
     }
+    // Still listening after the finger lifted: it was a tap, and the card's copy says so.
+    useVoiceSearchStore.getState().setGesture('tap');
   }, [isTapMode, stopListening, press]);
 
   // Rings are larger than the disc but never change the layout: they sit

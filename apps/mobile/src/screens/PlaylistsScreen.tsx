@@ -128,8 +128,11 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
 
   const selectedName = selectedPlaylist ? displayPlaylistName(selectedPlaylist.name) : '';
 
+  // Embedded in Library, the page behind (its background and header glow) shows through: a screen of its own here
+  // drew an opaque box and a second glow that cut the Library's background off at this view's top edge.
+  const Frame = embedded ? View : AppScreen;
   return (
-    <AppScreen style={styles.container}>
+    <Frame style={embedded ? styles.embedded : styles.container}>
       <SafeAreaView style={styles.safeArea} edges={embedded ? [] : ['top']}>
         <View style={styles.header}>
           {embedded ? <Text variant="meta" tone="secondary" style={styles.titleFlex}>{playlists.length} playlists</Text> : <>
@@ -213,12 +216,13 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
         onConfirm={handleDelete}
         onClose={() => setConfirmDelete(false)}
       />
-    </AppScreen>
+    </Frame>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Signal.bgDeep },
+  embedded: { flex: 1, backgroundColor: 'transparent' },
   safeArea: { flex: 1 },
   header: {
     flexDirection: 'row',

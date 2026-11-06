@@ -60,7 +60,7 @@ const CollectionScreen: React.FC<Props> = ({ navigation, route }) => {
       {page?.subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{page.subtitle}</Text> : null}
       <View style={styles.buttons}>
         <Button label="Play" icon="play" variant="primary" onPress={() => songs.length && play(songs, 0)} />
-        <Button label="Shuffle" icon="shuffle" onPress={() => songs.length && play(songs, 0, true)} />
+        <Button label="Shuffle" icon="shuffle" size="compact" onPress={() => songs.length && play(songs, 0, true)} />
       </View>
       {!page ? (failed ? <Text style={styles.empty}>This could not be loaded.</Text> : <ActivityIndicator color="#fff" style={styles.loading} />) : null}
     </View>

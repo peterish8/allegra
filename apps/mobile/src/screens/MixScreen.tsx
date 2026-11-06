@@ -23,7 +23,7 @@ export default function MixScreen({ route, navigation }: NativeStackScreenProps<
     : mix.songs.map((song, index) => ({ key: song.id, title: song.title, artist: song.artist, artwork: song.coverImageUri, onPress: () => play(index), onActions: () => localActions.open(song) }));
   return <AppScreen style={{ paddingTop: insets.top }}>
     <PageHeader title="Mix" leading={<IconButton icon="arrow-back" label="Back" onPress={() => navigation.goBack()} />} />
-    <View style={styles.cover}><Artwork size={184} uri={rows[0]?.artwork} title={mix.title} style={{ width: 184, height: 184, borderRadius: 12, overflow: 'hidden' }} /><Text variant="detail" align="center">{mix.title}</Text><Text variant="meta" tone="secondary">{rows.length} songs ? Made for you</Text></View>
+    <View style={styles.cover}><Artwork size={184} uri={rows[0]?.artwork} title={mix.title} style={{ width: 184, height: 184, borderRadius: 12, overflow: 'hidden' }} /><Text variant="detail" align="center">{mix.title}</Text><Text variant="meta" tone="secondary">{rows.length} songs · Made for you</Text></View>
     <View style={styles.actions}><Button label="Play mix" icon="play" variant="primary" disabled={!rows.length} onPress={() => play(0)} /></View>
     <FlashList data={rows} keyExtractor={row => row.key} renderItem={({ item }) => <SongRow {...item} />} contentContainerStyle={{ paddingBottom: bottom }} />
     {localActions.element}{streamActions.element}

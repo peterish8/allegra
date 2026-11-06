@@ -3,10 +3,10 @@ import { useWindowDimensions } from 'react-native';
  * Stream home building blocks, modelled on the layouts every major player has
  * settled on rather than on a landing page:
  *
- *   MoodChips      YouTube Music's filter row â€” rounded-rect chips, one selected
+ *   MoodChips      YouTube Music's filter row: frosted capsule chips, one selected
  *   ShortcutGrid   Spotify's two-column "jump back in" grid (up to six)
  *   QuickPicks     YouTube Music's paged columns of four song rows
- *   SongRow        one track: art, title, artist, a single trailing action
+ *   SongRow        one track: art, title, artist, then Download and ⋮ as their own targets
  *   CoverShelf     horizontal shelf of plain square covers with title + artist
  *
  * Flat surfaces, no glass, no numbered ranks, no play disc on every cover â€” the
@@ -21,6 +21,7 @@ import type { DownloadTarget } from '../../hooks/useDownloadState';
 import { Chip, CHIP_ROW_PADDING, Control, SongRow as SharedSongRow } from '../../ui';
 import Artwork from '../allegra/Artwork';
 import { Tactile } from '../allegra/motion';
+import DownloadButton from './DownloadButton';
 import { shortcutCellWidth, shortcutColumns } from './shortcutGrid';
 import SavedBadge from './SavedBadge';
 
@@ -87,7 +88,7 @@ export const ShortcutGrid: React.FC<{
           style={styles.shortcut}
         >
           <View style={styles.shortcutArt}>
-            <Artwork uri={item.artwork} title={item.title} artist={item.artist} size={SHORTCUT_ART} style={StyleSheet.absoluteFill} />
+            <Artwork uri={item.artwork} title={item.title} artist={item.artist} size={SHORTCUT_COVER} style={StyleSheet.absoluteFill} />
             {item.isCurrent ? <PlayingMark size={18} /> : null}
             {item.download ? <SavedBadge song={item.download} small /> : null}
           </View>
@@ -103,21 +104,24 @@ export const ShortcutGrid: React.FC<{
 };
 
 const SHORTCUT_ART = 56;
+/** The tile's cover sits inset with the same 6dp corners as every list cover (Round 7). */
+const SHORTCUT_COVER = 48;
 /** The grid's side inset: the page gutter less each tile's 4dp padding, so tile edges meet the gutter. */
 const GRID_INSET = GUTTER - 4;
 
 // â”€â”€â”€ Song row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// One trailing action, as on the V6 board: the ⋮ opens the song's actions, where "Save to library" lives. A saved
-// song shows its badge on the cover.
-export const SongRow: React.FC<{ item: TrackItem; onPress: () => void; onLongPress?: () => void }> = ({ item, onPress, onLongPress }) => (
-  <SharedSongRow title={item.title} artist={item.artist} artwork={item.artwork} playing={item.isCurrent} onPress={onPress} onActions={onLongPress} />
+// Round 7 item 9: the shared row, with Download and ⋮ as separate controls after the main target. Download shows only
+// for a catalog song the caller can save.
+export const SongRow: React.FC<{ item: TrackItem; onPress: () => void; onLongPress?: () => void; onSave?: () => void }> = ({ item, onPress, onLongPress, onSave }) => (
+  <SharedSongRow title={item.title} artist={item.artist} artwork={item.artwork} playing={item.isCurrent} onPress={onPress} onActions={onLongPress}
+    trailing={onSave && item.download ? <DownloadButton song={item.download} onSave={onSave} /> : undefined} />
 );
 
 // Quick picks: four songs
 
-export const QuickPicks: React.FC<{ items: TrackItem[]; onPress: (index: number) => void; onLongPress?: (index: number) => void }> = ({ items, onPress, onLongPress }) => (
-  <View>{items.slice(0, 4).map((item, index) => <SongRow key={item.key} item={item} onPress={() => onPress(index)} onLongPress={onLongPress ? () => onLongPress(index) : undefined} />)}</View>
+export const QuickPicks: React.FC<{ items: TrackItem[]; onPress: (index: number) => void; onLongPress?: (index: number) => void; onSave?: (index: number) => void }> = ({ items, onPress, onLongPress, onSave }) => (
+  <View>{items.slice(0, 4).map((item, index) => <SongRow key={item.key} item={item} onPress={() => onPress(index)} onLongPress={onLongPress ? () => onLongPress(index) : undefined} onSave={onSave ? () => onSave(index) : undefined} />)}</View>
 );
 
 const COVER = 148;
@@ -161,16 +165,6 @@ const styles = StyleSheet.create({
 
   // The chips' 48dp touch is 36dp drawn plus slop above and below, which has to stay inside this row.
   chips: { paddingHorizontal: GUTTER, gap: Space.xs, paddingVertical: CHIP_ROW_PADDING },
-  chip: {
-    height: 34,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    justifyContent: 'center',
-    backgroundColor: SURFACE,
-  },
-  chipOn: { backgroundColor: Signal.ink },
-  chipText: { fontSize: 14, fontWeight: '600', color: Signal.ink },
-  chipTextOn: { color: Signal.bg },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: GRID_INSET },
   gridCell: { padding: 4 },
@@ -182,7 +176,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: SURFACE,
   },
-  shortcutArt: { width: SHORTCUT_ART, height: SHORTCUT_ART, alignSelf: 'flex-start' },
+  shortcutArt: { width: SHORTCUT_COVER, height: SHORTCUT_COVER, marginLeft: (SHORTCUT_ART - SHORTCUT_COVER) / 2, borderRadius: Radius.cover, overflow: 'hidden', alignSelf: 'center' },
   shortcutCopy: { flex: 1, minWidth: 0, paddingHorizontal: Space.sm - 2, paddingVertical: Space.xxs },
   shortcutTitle: { fontSize: TypeScale.secondary, lineHeight: 17, fontWeight: '600', color: Signal.ink },
   shortcutMeta: { fontSize: TypeScale.caption, lineHeight: 16, color: Signal.inkMuted, marginTop: 1 },
