@@ -3,18 +3,19 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { BackHandler, type NativeScrollEvent, type NativeSyntheticEvent, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppScreen } from '../components/AppScreen';
 import { DownloadQueueModal } from '../components/DownloadQueueModal';
 import { useSongActions } from '../components/library/useSongActions';
+import { useHeaderGlow } from '../hooks/useHeaderGlow';
 import { registerLibraryScrollToTop } from '../navigation/libraryRoot';
 import { playList } from '../services/sync/onlineSongs';
 import { usePlayerStore } from '../store/playerStore';
 import { useSongsStore } from '../store/songsStore';
 import { LibraryStackParamList, RootStackParamList, TabParamList } from '../types/navigation';
 import type { Song } from '../types/song';
-import { CollectionCard, Control, EmptyState, IconButton, ListRow, PageHeader, Radius, Sheet, SheetOption, Signal, SongRow, Space, Surface, Tactile, Text, TextButton, Typography, useBottomClearance } from '../ui';
+import { CollectionCard, Control, EmptyState, HeaderGlow, IconButton, ListRow, PageHeader, Radius, Sheet, SheetOption, Signal, SongRow, Space, Surface, Tactile, Text, TextButton, Typography, useBottomClearance } from '../ui';
 import PlaylistsScreen from './PlaylistsScreen';
 
 type Nav = NativeStackNavigationProp<LibraryStackParamList & RootStackParamList & TabParamList>;
@@ -69,11 +70,15 @@ export default function LibraryScreen() {
     return Array.from(map, ([name, items]) => ({ name, items })).sort((a, b) => a.name.localeCompare(b.name));
   }, [tab, visible, query]);
   const openPhone = () => navigation.navigate('Settings', { action: 'import-phone' });
-  const selectTab = (next: Tab) => { setTab(next); setQuery(''); setSearching(false); setCollection(null); };
+  // Title, tabs and sort stay pinned; the header glow leaves and returns with whichever list is scrolling.
+  const glow = useHeaderGlow();
+  const glowScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => glow.onScroll(e.nativeEvent.contentOffset.y);
+  const selectTab = (next: Tab) => { setTab(next); setQuery(''); setSearching(false); setCollection(null); glow.onScroll(0); };
   const showSongs = tab === 'Songs' || collection !== null;
   const changeSort = (value: Sort) => { setSort(value); setSortOpen(false); AsyncStorage.setItem(SORT_KEY, value).catch(() => undefined); };
   return (
-    <AppScreen style={{ paddingTop: insets.top }}>
+    <AppScreen style={{ paddingTop: insets.top }} staticGlow={false}>
+      <HeaderGlow {...glow.props} />
       <PageHeader title={collection?.name ?? 'Library'} leading={collection ? <IconButton icon="arrow-back" label="Back to Library" onPress={() => setCollection(null)} /> : undefined}
         actions={<><IconButton icon="download-outline" label="Downloads" onPress={() => setDownloads(true)} /><IconButton icon="ellipsis-vertical" label="Library options" onPress={() => setMenuOpen(true)} /></>} />
       {searching ? <View style={styles.search}><IconButton icon="arrow-back" label="Close library search" onPress={() => { setSearching(false); setQuery(''); }} />
@@ -85,12 +90,13 @@ export default function LibraryScreen() {
         </ScrollView><IconButton icon="search" label={`Search in ${tab}`} onPress={() => setSearching(true)} /></View>}
       {showSongs ? <><View style={styles.tools}><TextButton label={LABELS[sort]} icon="chevron-down" onPress={() => setSortOpen(true)} /><Text variant="meta" tone="secondary">{list.length} songs{searching ? ' · Songs only' : ''}</Text></View>
         <FlashList ref={listRef} data={list} keyExtractor={song => song.id} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: bottom }}
+          onScroll={glowScroll} scrollEventThrottle={16}
           renderItem={({ item, index }) => <SongRow title={item.title} artist={item.artist} artwork={item.coverImageUri} downloaded={!!item.audioUri && !item.audioUri.startsWith('http')} playing={item.id === current}
             onPress={() => { playList('library', list, index); }} onActions={() => actions.open(item)} />}
           ListEmptyComponent={<View style={styles.empty}>{query ? <EmptyState icon="search" title="No matches" body="Try another title or artist." />
             : <><EmptyState icon="musical-notes-outline" title="Your next favorite starts here" body="Save songs from Stream, or add music files from this phone." action={{ label: 'Find music on Stream', onPress: () => navigation.navigate('Stream' as never) }} />
               <TextButton label="Add songs from this phone" onPress={openPhone} /></>}</View>} />
-      </> : tab === 'Playlists' ? <PlaylistsScreen embedded query={query} /> : <ScrollView contentContainerStyle={{ paddingBottom: bottom }}>
+      </> : tab === 'Playlists' ? <PlaylistsScreen embedded query={query} /> : <ScrollView contentContainerStyle={{ paddingBottom: bottom }} onScroll={glowScroll} scrollEventThrottle={16}>
         {tab === 'Albums' ? <View style={styles.albumGrid}>{groups.map(({ name, items }) => <CollectionCard key={name} title={name} meta={`${items[0].artist ?? 'Unknown artist'} ? ${items.length} songs`} uri={items[0].coverImageUri} size={cardSize} onPress={() => setCollection({ type: 'Albums', name })} />)}</View> : groups.map(({ name, items }) => <ListRow key={name} title={name} subtitle={`${items.length} songs`} artwork={{ uri: items[0].coverImageUri, title: name, round: tab === 'Artists' }} chevron
           onPress={() => setCollection({ type: tab as 'Artists' | 'Albums', name })} />)}
         {groups.length === 0 ? <EmptyState icon={tab === 'Artists' ? 'person-outline' : 'albums-outline'} title={`No ${tab.toLowerCase()}${query ? ' found' : ' yet'}`} body="Songs saved on this phone appear here." /> : null}

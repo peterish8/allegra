@@ -11,9 +11,13 @@ export const CoverGlow: React.FC<{ uri?: string }> = ({ uri }) => uri ? (
   </View>
 ) : null;
 
-export const Screen: React.FC<ViewProps & { coverUri?: string }> = ({ coverUri, children, style, ...props }) => (
+/**
+ * A page. `staticGlow={false}` for pages that draw their own scroll-linked HeaderGlow (Stream, Library) instead of
+ * the fixed cover glow.
+ */
+export const Screen: React.FC<ViewProps & { coverUri?: string; staticGlow?: boolean }> = ({ coverUri, staticGlow = true, children, style, ...props }) => (
   <View {...props} style={[styles.screen, style]}>
-    <CoverGlow uri={coverUri} />
+    {staticGlow ? <CoverGlow uri={coverUri} /> : null}
     {children}
   </View>
 );

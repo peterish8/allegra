@@ -35,6 +35,7 @@ export const Chip: React.FC<ChipProps> = ({ label, onPress, selected = false, ic
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ selected, disabled: !!disabled }}
+      hitSlop={CHIP_SLOP}
       style={[styles.chip, disabled && styles.disabled]}
     >
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.lit, lit]} />
@@ -44,6 +45,16 @@ export const Chip: React.FC<ChipProps> = ({ label, onPress, selected = false, ic
     </Tactile>
   );
 };
+
+/**
+ * A chip draws 36dp tall (the V6 board's compact filters) and answers a 48dp touch: the slop above and below makes
+ * up the rest. A row of chips pads by the same slop, so the whole target stays inside it and nothing beside it.
+ */
+export const CHIP_HEIGHT = 36;
+const SLOP = (Control.target - CHIP_HEIGHT) / 2;
+const CHIP_SLOP = { top: SLOP, bottom: SLOP, left: 0, right: 0 } as const;
+/** The padding a row of chips needs around them for their full touch target. */
+export const CHIP_ROW_PADDING = SLOP;
 
 export const ChipRow: React.FC<{ children: React.ReactNode; style?: StyleProp<ViewStyle>; gutter?: number }> = ({ children, style, gutter = Control.gutter }) => (
   <ScrollView
@@ -62,8 +73,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Space.xs - 2,
-    minHeight: Control.target,
-    paddingVertical: Space.xs,
+    minHeight: CHIP_HEIGHT,
+    paddingVertical: Space.xxs,
     paddingHorizontal: Space.md - 2,
     borderRadius: Radius.chip,
     overflow: 'hidden',
@@ -72,5 +83,5 @@ const styles = StyleSheet.create({
   lit: { backgroundColor: Signal.wave },
   label: { fontWeight: '600' },
   disabled: { opacity: Control.disabledOpacity },
-  row: { gap: Space.xs, alignItems: 'center' },
+  row: { gap: Space.xs, alignItems: 'center', paddingVertical: SLOP },
 });

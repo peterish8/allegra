@@ -16,12 +16,13 @@ import { useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Signal, Space } from '../../constants/allegraTheme';
+import { Radius, Signal, Space, TypeScale } from '../../constants/allegraTheme';
 import type { DownloadTarget } from '../../hooks/useDownloadState';
-import { Chip, Control, SongRow as SharedSongRow } from '../../ui';
+import { Chip, CHIP_ROW_PADDING, Control, SongRow as SharedSongRow } from '../../ui';
 import Artwork from '../allegra/Artwork';
 import { Tactile } from '../allegra/motion';
 import DownloadButton from './DownloadButton';
+import { shortcutCellWidth, shortcutColumns } from './shortcutGrid';
 import SavedBadge from './SavedBadge';
 
 // Matches SectionHeading's inset so headings and content share an edge.
@@ -69,11 +70,15 @@ export const ShortcutGrid: React.FC<{
   onPress: (index: number) => void;
   onLongPress?: (index: number) => void;
 }> = ({ items, onPress, onLongPress }) => {
-  const { fontScale } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
+  const columns = shortcutColumns(fontScale);
+  // A definite width, not "50%": the feed list measures its cells before it knows its own width, and a percentage of
+  // an unknown width gave the grid a stale, far taller size (the blank gap under "Jump back in").
+  const cellWidth = shortcutCellWidth(width, columns, GRID_INSET);
   return (
   <View style={styles.grid}>
     {items.slice(0, 6).map((item, i) => (
-      <View key={item.key} style={[styles.gridCell, fontScale >= 1.6 && { width: '100%' }]}>
+      <View key={item.key} style={[styles.gridCell, { width: cellWidth }]}>
         <Tactile
           onPress={() => onPress(i)}
           onLongPress={onLongPress ? () => onLongPress(i) : undefined}
@@ -83,17 +88,24 @@ export const ShortcutGrid: React.FC<{
           style={styles.shortcut}
         >
           <View style={styles.shortcutArt}>
-            <Artwork uri={item.artwork} title={item.title} artist={item.artist} size={56} style={StyleSheet.absoluteFill} />
+            <Artwork uri={item.artwork} title={item.title} artist={item.artist} size={SHORTCUT_ART} style={StyleSheet.absoluteFill} />
             {item.isCurrent ? <PlayingMark size={18} /> : null}
             {item.download ? <SavedBadge song={item.download} small /> : null}
           </View>
-          <Text style={[styles.shortcutTitle, item.isCurrent && styles.current]} numberOfLines={2}>{item.title}</Text>
+          <View style={styles.shortcutCopy}>
+            <Text style={[styles.shortcutTitle, item.isCurrent && styles.current]} numberOfLines={2}>{item.title}</Text>
+            {item.artist ? <Text style={styles.shortcutMeta} numberOfLines={1}>{item.artist}</Text> : null}
+          </View>
         </Tactile>
       </View>
     ))}
   </View>
 );
 };
+
+const SHORTCUT_ART = 56;
+/** The grid's side inset: the page gutter less each tile's 4dp padding, so tile edges meet the gutter. */
+const GRID_INSET = GUTTER - 4;
 
 // â”€â”€â”€ Song row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -147,7 +159,8 @@ const styles = StyleSheet.create({
   current: { color: Signal.wave },
   playingMark: { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.45)' },
 
-  chips: { paddingHorizontal: GUTTER, gap: Space.xs },
+  // The chips' 48dp touch is 36dp drawn plus slop above and below, which has to stay inside this row.
+  chips: { paddingHorizontal: GUTTER, gap: Space.xs, paddingVertical: CHIP_ROW_PADDING },
   chip: {
     height: 34,
     paddingHorizontal: 14,
@@ -159,18 +172,20 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 14, fontWeight: '600', color: Signal.ink },
   chipTextOn: { color: Signal.bg },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: GUTTER - 4 },
-  gridCell: { width: '50%', padding: 4 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: GRID_INSET },
+  gridCell: { padding: 4 },
   shortcut: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 64,
-    borderRadius: 8,
+    minHeight: SHORTCUT_ART,
+    borderRadius: Radius.chip,
     overflow: 'hidden',
     backgroundColor: SURFACE,
   },
-  shortcutArt: { width: 56, height: 56 },
-  shortcutTitle: { flex: 1, fontSize: 15, lineHeight: 20, fontWeight: '400', color: Signal.ink, paddingHorizontal: 10 },
+  shortcutArt: { width: SHORTCUT_ART, height: SHORTCUT_ART, alignSelf: 'flex-start' },
+  shortcutCopy: { flex: 1, minWidth: 0, paddingHorizontal: Space.sm - 2, paddingVertical: Space.xxs },
+  shortcutTitle: { fontSize: TypeScale.secondary, lineHeight: 17, fontWeight: '600', color: Signal.ink },
+  shortcutMeta: { fontSize: TypeScale.caption, lineHeight: 16, color: Signal.inkMuted, marginTop: 1 },
 
   columns: { paddingHorizontal: GUTTER, gap: Space.xs },
   row: { flexDirection: 'row', alignItems: 'center' },

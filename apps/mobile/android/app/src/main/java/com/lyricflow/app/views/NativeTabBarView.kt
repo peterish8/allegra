@@ -272,7 +272,7 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     }
 
     private fun slotRects(width: Float, height: Float): List<RectF> {
-        if (variant == "v6") return (0..4).map { i -> RectF(i * width / 5f, 0f, (i + 1) * width / 5f, 64f) }
+        if (variant == "v6") return (0..4).map { i -> RectF(i * width / 5f, 0f, (i + 1) * width / 5f, V6_BAR_DP) }
         return TabBarGeometry.slots(variant == "modern-pill", micEnabled, width, barTop(height))
             .map { RectF(it.left, it.top, it.right, it.bottom) }
     }
@@ -281,20 +281,21 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         v6Tabs.forEachIndexed { index, name ->
             val selected = name == activeTab
             val cx = width * (index + 0.5f) / 5f
+            // The 56dp V6 bar (src/navigation/v6Shell.ts NAV_BAR_HEIGHT): a 28dp indicator around the icon, the label under it.
             if (selected) {
                 iconPaint.color = 0xFF22252C.toInt()
                 iconPaint.style = Paint.Style.FILL
-                canvas.drawRoundRect(RectF(cx - 28f, 5f, cx + 28f, 35f), 10f, 10f, iconPaint)
+                canvas.drawRoundRect(RectF(cx - 28f, 4f, cx + 28f, 32f), 10f, 10f, iconPaint)
             }
             val color = if (selected) activeTint else inactiveTint
             canvas.save()
-            canvas.translate(cx, 20f)
+            canvas.translate(cx, 18f)
             drawTabIcon(canvas, name, ColorUtils.setAlphaComponent(color, (Color.alpha(color) * (1f - pressed[index] * 0.15f)).roundToInt()), selected)
             canvas.restore()
             labelPaint.color = color
             labelPaint.textSize = 12f * resources.configuration.fontScale.coerceAtMost(1.3f)
             labelPaint.typeface = Typeface.create(if (selected) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
-            canvas.drawText(name, cx, 54f, labelPaint)
+            canvas.drawText(name, cx, 48f, labelPaint)
         }
     }
 
@@ -373,6 +374,8 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
 
     private companion object {
         const val TAB_HEIGHT = 64f
+        /** The V6 bar's height above the inset; must match NAV_BAR_HEIGHT in src/navigation/v6Shell.ts. */
+        const val V6_BAR_DP = 56f
         /** Glyph size in dp: Ionicons' 512-unit box drawn at the app's tab icon size. */
         const val GLYPH_SIZE = 24f
         /** Ionicons codepoints (glyphmaps/Ionicons.json in @expo/vector-icons): chosen, resting. */

@@ -13,7 +13,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Glass, Radius, Signal, Space } from '../../constants/allegraTheme';
+import { Glass, Radius, Signal, Space, TypeScale } from '../../constants/allegraTheme';
 import { Tactile } from './motion';
 import Artwork from './Artwork';
 
@@ -102,10 +102,11 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: Space.md,
     paddingHorizontal: Space.lg - 4,
-    marginTop: Space.xl + 4,
+    // The V6 board's section rhythm: a heading sits 24dp under the section before it, 12dp over its own content.
+    marginTop: Space.lg,
     marginBottom: Space.sm,
   },
-  h2: { fontWeight: '700', fontSize: 22, color: Signal.ink },
+  h2: { fontWeight: '700', fontSize: TypeScale.lead, color: Signal.ink },
   sectionSub: { fontWeight: '400', fontSize: 13, color: Signal.inkMuted, marginTop: 2 },
   shelfLink: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingVertical: 6, paddingLeft: 10 },
   shelfLinkText: { fontWeight: '600', fontSize: 13, color: Signal.inkSoft },

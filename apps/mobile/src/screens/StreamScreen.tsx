@@ -31,7 +31,8 @@ import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { AuraMood } from '../components/allegra/MusicFlowField';
 import { PrimaryButton, SectionHeading } from '../components/allegra/home';
 import { STREAM_TOUR, streamScene } from '../components/allegra/infoTours';
-import { RiseIn, Tactile } from '../components/allegra/motion';
+import { Tactile } from '../components/allegra/motion';
+import { useHeaderGlow } from '../hooks/useHeaderGlow';
 import { BrowseShelf } from '../components/browse/BrowseShelf';
 import { ConnectDropdown } from '../components/connect/ConnectDropdown';
 import AddListSheet from '../components/stream/AddListSheet';
@@ -66,7 +67,7 @@ import { useStreamHistoryStore } from '../store/streamHistoryStore';
 import { useUpdateStore } from '../store/updateStore';
 import { TabParamList, type MixParams } from '../types/navigation';
 import { UnifiedSong } from '../types/song';
-import { CollectionCard, IconButton, Sheet, SheetOption, Text as UiText } from '../ui';
+import { CollectionCard, HeaderGlow, IconButton, Sheet, SheetOption, Text as UiText } from '../ui';
 import { libraryKeys, matchKey } from '../utils/downloadState';
 import * as Haptics from '../utils/haptics';
 import { shuffled } from '../utils/shuffle';
@@ -435,11 +436,15 @@ const StreamScreen: React.FC = () => {
       && !chipActiveRef.current
       && queryRef.current.trim().length === 0;
   }, []);
+  // The header glow leaves and returns with the feed's own scroll offset.
+  const glow = useHeaderGlow();
+  const glowScrolled = glow.onScroll;
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     distanceFromEnd.current = Math.max(0, contentSize.height - contentOffset.y - layoutMeasurement.height);
     viewportHeight.current = layoutMeasurement.height;
-  }, []);
+    glowScrolled(contentOffset.y);
+  }, [glowScrolled]);
   const loadMoreHome = useCallback(async () => {
     const current = ytHomeRef.current;
     const continuation = current?.continuation;
@@ -605,7 +610,20 @@ const StreamScreen: React.FC = () => {
     return sections;
   }, [artists, clearSearch, mixSection, mood, openItem, pendingSong, playYT, query, results, saveAll, searching, searchActive, unsavedResults]);
 
-  const sections = chipActive ? chipSections : searchActive ? searchSections : homeSections;
+  // The mood chips are the feed's first item, not a ListHeaderComponent: FlashList places its first item from the
+  // header's measured offset, and a header that settled after that offset was read drew "Jump back in" over the
+  // chips (owner report, 2026-11-06). As an item, the chips are measured like every other section.
+  const moodLabels = ytChips.length > 0 ? ytChips.map(c => c.title) : MOOD_LABELS;
+  const moodKey = moodLabels.join('|');
+  const moodsSection = useMemo<StreamSection>(() => ({
+    id: 'moods',
+    kind: 'content',
+    content: <View style={styles.chips}><MoodChips moods={moodLabels} selected={mood} onSelect={selectMood} /></View>,
+    // moodLabels is described by moodKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [moodKey, mood, selectMood]);
+  const feedSections = chipActive ? chipSections : searchActive ? searchSections : homeSections;
+  const sections = useMemo(() => [moodsSection, ...feedSections], [moodsSection, feedSections]);
   const renderSection = useCallback(({ item }: { item: StreamSection }) => {
     if (item.kind === 'search-result') {
       return <View style={styles.list}>
@@ -618,12 +636,14 @@ const StreamScreen: React.FC = () => {
         />
       </View>;
     }
-    const row = <View>{item.content}</View>;
-    return item.kind === 'home-content' ? <RiseIn>{row}</RiseIn> : row;
+    // No Reanimated `entering` here: a layout animation inside a recycled FlashList cell can hand FlashList a stale
+    // size, which left a tall blank gap under a short "Jump back in" (owner report, 2026-11-06).
+    return <View>{item.content}</View>;
   }, [mood, play, playHit, queueNext, results, save, track]);
 
   return (
-    <AppScreen style={styles.screen}>
+    <AppScreen style={styles.screen} staticGlow={false}>
+      <HeaderGlow {...glow.props} />
       {/* Keep the update entry reachable while feed sections hydrate or scroll. */}
       <View style={{ paddingTop: insets.top + Space.xs }}>
         <View style={styles.header}>
@@ -661,11 +681,6 @@ const StreamScreen: React.FC = () => {
         onEndReachedThreshold={HOME_END_THRESHOLD}
         contentContainerStyle={[styles.content, { paddingTop: Space.xs, paddingBottom: bottomClearance }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Signal.wave} progressViewOffset={0} />}
-        ListHeaderComponent={
-          <View style={styles.chips}>
-              <MoodChips moods={ytChips.length > 0 ? ytChips.map(c => c.title) : MOOD_LABELS} selected={mood} onSelect={selectMood} />
-          </View>
-        }
       />
       {/* Keeps the status bar legible over scrolled content. */}
       <LinearGradient

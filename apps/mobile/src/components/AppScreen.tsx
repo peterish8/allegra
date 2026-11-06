@@ -5,7 +5,7 @@ import { Screen } from '../ui/Screen';
 import { usePlayerStore } from '../store/playerStore';
 
 /** Application binding kept outside the stateless UI library. */
-export const AppScreen: React.FC<ViewProps> = props => {
+export const AppScreen: React.FC<ViewProps & { staticGlow?: boolean }> = props => {
   const coverUri = usePlayerStore(s => s.currentSong?.coverImageUri ?? s.currentSong?.coverRemoteUri);
   return <Screen {...props} coverUri={coverUri} />;
 };

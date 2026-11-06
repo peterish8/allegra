@@ -480,7 +480,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             {/* The dock shift lives on its own view: Tactile's press scale would otherwise replace its transform. */}
             <Animated.View style={titleStyle}>
               <View style={styles.swapLine}>
-                <SwapMarquee style={styles.title} direction={songDirection} active={focused}>{currentSongTitle || 'Not playing'}</SwapMarquee>
+                <SwapMarquee style={styles.title} direction={songDirection} active={focused} lines={2}>{currentSongTitle || 'Not playing'}</SwapMarquee>
               </View>
               <View style={styles.swapLineSmall}>
                 <SwapMarquee style={styles.artist} direction={songDirection} active={focused}>{currentSongArtist || 'Unknown artist'}</SwapMarquee>
@@ -678,8 +678,9 @@ const styles = StyleSheet.create({
   dockThumb: { position: 'absolute', left: 0, top: 0, width: DOCK_THUMB, height: DOCK_THUMB },
   dockArt: { width: DOCK_THUMB, height: DOCK_THUMB, borderRadius: 8, overflow: 'hidden' },
   metaText: { flex: 1 },
-  swapLine: { height: 30, overflow: 'hidden' },
-  swapLineSmall: { height: 24, overflow: 'hidden' },
+  // At least one line tall, growing for a two-line title or large text instead of clipping it.
+  swapLine: { minHeight: 30, overflow: 'hidden' },
+  swapLineSmall: { minHeight: 24, overflow: 'hidden' },
   title: { ...PlayerType.title, color: INK, fontWeight: '700' },
   artist: { ...PlayerType.artist, color: INK_META },
   roundGlass: {
