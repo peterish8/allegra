@@ -70,7 +70,7 @@ Source gate in a cloud session: `npm ci` + `npm run ci` in `apps/mobile` (Jest i
 
 ## 1.41.0 owner requests (2026-11-06)
 
-Source gate in the cloud session: `npm ci` + `npm run ci` in `apps/mobile` (Jest in band): 146 suites, 1,154 tests,
+Source gate in the cloud session: `npm ci` + `npm run ci` in `apps/mobile` (Jest in band): 147 suites, 1,157 tests,
 lint 0 errors. No emulator or phone: every runtime check below is **pending**.
 
 | Request | Source change | Tests | Device / emulator |
@@ -86,3 +86,4 @@ lint 0 errors. No emulator or phone: every runtime check below is **pending**.
 | Mini player: 12dp band, Apple-style scrub, glow background | `MiniScrubber` (UI thread), `MiniPlayerGlow` | `miniScrub.test.ts`, `round7.test.ts`, `v6Shell.test.ts` | Pending: feel on a phone |
 | Luvs closed the app / nothing on return | Native pool capped (3, 1 on low RAM), released on memory pressure, coroutine guard; empty feed retried on every visit | `LuvsWarmPoolTest` (JVM), `luvsLanes.test.ts` | Pending: the original crash had no log; confirm on the phone that showed it |
 | Memory and performance | LRU caches, `getPlaylistSongs` 2 queries (was 2 per song), lighter widget sync | `lruMap.test.ts`, real-SQLite test | Pending: memory profile on a device |
+| Scrolling song lines | Now Playing title full size, slow scroll, 5 s rest; artist 16pt, 3 s rest; mini player one line "Song • Artist" | `nowPlayingTitle.test.ts`, `playerMarquee.test.ts` | Pending: look on a phone |
