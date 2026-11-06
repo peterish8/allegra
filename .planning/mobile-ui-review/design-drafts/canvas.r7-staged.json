@@ -1,0 +1,1082 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "AC-Coral.dc.html": {
+      "h": 844,
+      "page": "v4",
+      "radius": 44,
+      "title": "3 · Soft coral",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "AC-Cover.dc.html": {
+      "h": 844,
+      "page": "v4",
+      "radius": 44,
+      "title": "2 · Taken from the playing cover",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "AC-Lime.dc.html": {
+      "h": 844,
+      "page": "v4",
+      "radius": 44,
+      "title": "Lime (today)",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "AC-White.dc.html": {
+      "h": 844,
+      "page": "v4",
+      "radius": 44,
+      "title": "1 · White, no colour accent",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "Artboard-lzh8.dc.html": {
+      "h": 600,
+      "page": "current",
+      "title": "Artboard 1",
+      "w": 800,
+      "x": 1960,
+      "y": 0
+    },
+    "Artist.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Artist",
+      "w": 390,
+      "x": 1410,
+      "y": 2376
+    },
+    "Blends.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Blends",
+      "w": 390,
+      "x": 940,
+      "y": 2376
+    },
+    "Dj.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Your DJ",
+      "w": 390,
+      "x": 470,
+      "y": 2376
+    },
+    "Luvs.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Luvs",
+      "w": 390,
+      "x": 1410,
+      "y": 1188
+    },
+    "Main.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Library",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "NowPlaying.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Now playing",
+      "w": 390,
+      "x": 940,
+      "y": 1188
+    },
+    "PlaylistDetail.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Playlist",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "Playlists.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Playlists",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "RD-Artist.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Artist",
+      "w": 390,
+      "x": 1880,
+      "y": 2376
+    },
+    "RD-Blends.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Blends",
+      "w": 390,
+      "x": 1410,
+      "y": 2376
+    },
+    "RD-Dj.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Your DJ",
+      "w": 390,
+      "x": 940,
+      "y": 2376
+    },
+    "RD-Library.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Library",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "RD-Luvs.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Luvs",
+      "w": 390,
+      "x": 0,
+      "y": 2376
+    },
+    "RD-Lyrics.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Lyrics fullscreen",
+      "w": 390,
+      "x": 1410,
+      "y": 1188
+    },
+    "RD-NowPlaying.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Now playing",
+      "w": 390,
+      "x": 940,
+      "y": 1188
+    },
+    "RD-Playlist.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Playlist",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "RD-Playlists.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Playlists",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "RD-Search.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Search",
+      "w": 390,
+      "x": 470,
+      "y": 1188
+    },
+    "RD-Settings.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Settings",
+      "w": 390,
+      "x": 470,
+      "y": 2376
+    },
+    "RD-SongActions.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Song actions",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "RD-Stream.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Stream",
+      "w": 390,
+      "x": 0,
+      "y": 1188
+    },
+    "RD-UpNext.dc.html": {
+      "h": 844,
+      "page": "redesign",
+      "radius": 36,
+      "title": "Up next",
+      "w": 390,
+      "x": 1880,
+      "y": 1188
+    },
+    "Search.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Search",
+      "w": 390,
+      "x": 470,
+      "y": 1188
+    },
+    "Settings.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Settings",
+      "w": 390,
+      "x": 0,
+      "y": 2376
+    },
+    "SongActions.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Song actions sheet",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "Stream.dc.html": {
+      "h": 844,
+      "page": "current",
+      "radius": 36,
+      "title": "Stream (home)",
+      "w": 390,
+      "x": 0,
+      "y": 1188
+    },
+    "V2-LibraryA.dc.html": {
+      "h": 844,
+      "page": "v3",
+      "radius": 44,
+      "title": "A · Apple glass",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "V2-LibraryB.dc.html": {
+      "h": 844,
+      "page": "v3",
+      "radius": 44,
+      "title": "B · Glass deck",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "V3-AddToPlaylist.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Add to playlist",
+      "w": 390,
+      "x": 1880,
+      "y": 0
+    },
+    "V3-Artist.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Artist",
+      "w": 390,
+      "x": 1880,
+      "y": 2376
+    },
+    "V3-Blends.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Blends",
+      "w": 390,
+      "x": 1410,
+      "y": 2376
+    },
+    "V3-Dj.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Your DJ",
+      "w": 390,
+      "x": 940,
+      "y": 2376
+    },
+    "V3-LargeText.dc.html": {
+      "h": 800,
+      "page": "v2",
+      "radius": 40,
+      "title": "Small phone + large text",
+      "w": 360,
+      "x": 1880,
+      "y": 3564
+    },
+    "V3-Library.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Library · Songs",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "V3-LibraryEmpty.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "State · empty library",
+      "w": 390,
+      "x": 0,
+      "y": 3564
+    },
+    "V3-LibraryLoading.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "State · loading",
+      "w": 390,
+      "x": 470,
+      "y": 3564
+    },
+    "V3-LibraryPlaylists.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Library · Playlists",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "V3-Luvs.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Luvs",
+      "w": 390,
+      "x": 2350,
+      "y": 1188
+    },
+    "V3-Lyrics.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Lyrics",
+      "w": 390,
+      "x": 1410,
+      "y": 1188
+    },
+    "V3-NowPlaying.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Now playing",
+      "w": 390,
+      "x": 940,
+      "y": 1188
+    },
+    "V3-Playlist.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Playlist",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "V3-PlaylistEmpty.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "State · empty playlist",
+      "w": 390,
+      "x": 1410,
+      "y": 3564
+    },
+    "V3-Search.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Search",
+      "w": 390,
+      "x": 470,
+      "y": 1188
+    },
+    "V3-SearchStates.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "State · no results and offline",
+      "w": 390,
+      "x": 940,
+      "y": 3564
+    },
+    "V3-Settings.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Settings",
+      "w": 390,
+      "x": 470,
+      "y": 2376
+    },
+    "V3-SongActions.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Song actions",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "V3-Stream.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Stream",
+      "w": 390,
+      "x": 0,
+      "y": 1188
+    },
+    "V3-UpNext.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "Up next",
+      "w": 390,
+      "x": 1880,
+      "y": 1188
+    },
+    "V3-You.dc.html": {
+      "h": 844,
+      "page": "v2",
+      "radius": 44,
+      "title": "You",
+      "w": 390,
+      "x": 0,
+      "y": 2376
+    },
+    "V4-Library.dc.html": {
+      "h": 844,
+      "page": "accent",
+      "radius": 40,
+      "title": "Library",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "V4-LibrarySort.dc.html": {
+      "h": 844,
+      "page": "accent",
+      "radius": 40,
+      "title": "Library · sort open",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "V4-NowPlaying.dc.html": {
+      "h": 844,
+      "page": "accent",
+      "radius": 40,
+      "title": "Now playing",
+      "w": 390,
+      "x": 1880,
+      "y": 0
+    },
+    "V4-Playlist.dc.html": {
+      "h": 844,
+      "page": "accent",
+      "radius": 40,
+      "title": "Playlist",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "V4-Search.dc.html": {
+      "h": 844,
+      "page": "accent",
+      "radius": 40,
+      "title": "Search",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "V4-SongActions.dc.html": {
+      "h": 844,
+      "page": "accent",
+      "radius": 40,
+      "title": "Song actions",
+      "w": 390,
+      "x": 2350,
+      "y": 0
+    },
+    "V5-Navigation.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1360,
+      "h": 815,
+      "title": "Navigation map",
+      "radius": 16,
+      "page": "r5"
+    },
+    "V5-System.dc.html": {
+      "x": 1480,
+      "y": 0,
+      "w": 1320,
+      "h": 900,
+      "title": "Design system",
+      "radius": 16,
+      "page": "r5"
+    },
+    "V5-Components.dc.html": {
+      "x": 2920,
+      "y": 0,
+      "w": 1320,
+      "h": 1402,
+      "title": "Components",
+      "radius": 16,
+      "page": "r5"
+    },
+    "V5-Library.dc.html": {
+      "x": 0,
+      "y": 1622,
+      "w": 5184,
+      "h": 1050,
+      "title": "1 · Library",
+      "radius": 16,
+      "page": "r5"
+    },
+    "V5-Playlist.dc.html": {
+      "x": 5304,
+      "y": 1622,
+      "w": 3864,
+      "h": 1050,
+      "title": "2 · Playlist",
+      "radius": 16,
+      "page": "r5"
+    },
+    "V5-Search.dc.html": {
+      "x": 0,
+      "y": 2892,
+      "w": 2174,
+      "h": 1050,
+      "title": "3 · Search",
+      "radius": 16,
+      "page": "r5"
+    },
+    "V5-NowPlaying.dc.html": {
+      "x": 2294,
+      "y": 2892,
+      "w": 3464,
+      "h": 1050,
+      "title": "4 · Now playing",
+      "radius": 16,
+      "page": "r5"
+    },
+    "V5-SongActions.dc.html": {
+      "x": 0,
+      "y": 4162,
+      "w": 2174,
+      "h": 1050,
+      "title": "5 · Song actions",
+      "radius": 16,
+      "page": "r5"
+    },
+    "V5-LibraryMore.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 2604,
+      "h": 1050,
+      "title": "Library: tabs and tools",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-PlaylistFlows.dc.html": {
+      "x": 0,
+      "y": 1270,
+      "w": 3034,
+      "h": 1050,
+      "title": "Playlist: create, rename, delete",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-AddToPlaylist.dc.html": {
+      "x": 0,
+      "y": 2540,
+      "w": 1744,
+      "h": 1050,
+      "title": "Adding songs to playlists",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-Luvs.dc.html": {
+      "x": 1864,
+      "y": 2540,
+      "w": 1314,
+      "h": 1050,
+      "title": "Luvs",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-Stream.dc.html": {
+      "x": 0,
+      "y": 3810,
+      "w": 3864,
+      "h": 1050,
+      "title": "Stream",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-Browse.dc.html": {
+      "x": 0,
+      "y": 5080,
+      "w": 1744,
+      "h": 1050,
+      "title": "Artist and album",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-Overlays.dc.html": {
+      "x": 1864,
+      "y": 5080,
+      "w": 2174,
+      "h": 1050,
+      "title": "Voice, notices, app states",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-PlayerTools.dc.html": {
+      "x": 0,
+      "y": 6350,
+      "w": 3894,
+      "h": 1050,
+      "title": "Player sheets and modes",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-You.dc.html": {
+      "x": 0,
+      "y": 7620,
+      "w": 3464,
+      "h": 1050,
+      "title": "You and Settings",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-Social.dc.html": {
+      "x": 0,
+      "y": 8890,
+      "w": 3034,
+      "h": 1050,
+      "title": "Blends and LuvLink",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-Tools.dc.html": {
+      "x": 0,
+      "y": 10160,
+      "w": 3894,
+      "h": 1050,
+      "title": "DJ, import and editors",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-Responsive.dc.html": {
+      "x": 0,
+      "y": 11430,
+      "w": 2054,
+      "h": 1138,
+      "title": "Sizes and large text",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V5-Coverage.dc.html": {
+      "x": 4100,
+      "y": 0,
+      "w": 1360,
+      "h": 2797,
+      "title": "Coverage matrix",
+      "radius": 16,
+      "page": "r5all"
+    },
+    "V7-1-Chips.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1744,
+      "h": 1050,
+      "title": "1 · Mood chips",
+      "page": "r7"
+    },
+    "V7-2-Menus.dc.html": {
+      "x": 0,
+      "y": 1170,
+      "w": 1314,
+      "h": 1050,
+      "title": "2 · Action menus",
+      "page": "r7"
+    },
+    "V7-3-Navigation.dc.html": {
+      "x": 0,
+      "y": 2340,
+      "w": 2604,
+      "h": 1050,
+      "title": "3 · Navigation",
+      "page": "r7"
+    },
+    "V7-4-Actions.dc.html": {
+      "x": 0,
+      "y": 3510,
+      "w": 1284,
+      "h": 1050,
+      "title": "4 · Play and Shuffle",
+      "page": "r7"
+    },
+    "V7-5-Library.dc.html": {
+      "x": 0,
+      "y": 4680,
+      "w": 2174,
+      "h": 1050,
+      "title": "5 · Library background",
+      "page": "r7"
+    },
+    "V7-6-Voice.dc.html": {
+      "x": 0,
+      "y": 5850,
+      "w": 4324,
+      "h": 1050,
+      "title": "6 · Voice search",
+      "page": "r7"
+    },
+    "V7-7-Consistency.dc.html": {
+      "x": 0,
+      "y": 7020,
+      "w": 1314,
+      "h": 1050,
+      "title": "7 · Consistency",
+      "page": "r7"
+    },
+    "V7-8-Shell.dc.html": {
+      "x": 0,
+      "y": 8190,
+      "w": 2174,
+      "h": 1050,
+      "title": "8 · Bottom surface",
+      "page": "r7"
+    },
+    "V7-9-Rows.dc.html": {
+      "x": 0,
+      "y": 9360,
+      "w": 3004,
+      "h": 1050,
+      "title": "9 · Stream rows",
+      "page": "r7"
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-05T13:36:15.042Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas",
+    "page": "r5"
+  },
+  "notes": {
+    "ac": {
+      "kind": "title1",
+      "maxW": 1800,
+      "page": "v4",
+      "text": "Accent colour: pick one",
+      "w": 240,
+      "x": 0,
+      "y": -260
+    },
+    "f1": {
+      "kind": "title1",
+      "maxW": 2270,
+      "page": "v2",
+      "text": "Library and playlists",
+      "w": 240,
+      "x": 0,
+      "y": -260
+    },
+    "f2": {
+      "kind": "title1",
+      "maxW": 2740,
+      "page": "v2",
+      "text": "Listening",
+      "w": 240,
+      "x": 0,
+      "y": 928
+    },
+    "f3": {
+      "kind": "title1",
+      "maxW": 2270,
+      "page": "v2",
+      "text": "You",
+      "w": 240,
+      "x": 0,
+      "y": 2116
+    },
+    "f4": {
+      "kind": "title1",
+      "maxW": 2240,
+      "page": "v2",
+      "text": "States, small screen, large text",
+      "w": 240,
+      "x": 0,
+      "y": 3304
+    },
+    "r1": {
+      "kind": "title1",
+      "maxW": 1800,
+      "page": "redesign",
+      "text": "Redesign: Library",
+      "w": 240,
+      "x": 0,
+      "y": -260
+    },
+    "r2": {
+      "kind": "title1",
+      "maxW": 2270,
+      "page": "redesign",
+      "text": "Redesign: Listening",
+      "w": 240,
+      "x": 0,
+      "y": 928
+    },
+    "r3": {
+      "kind": "title1",
+      "maxW": 2270,
+      "page": "redesign",
+      "text": "Redesign: More",
+      "w": 240,
+      "x": 0,
+      "y": 2116
+    },
+    "t1": {
+      "kind": "title1",
+      "maxW": 1800,
+      "page": "current",
+      "text": "Library",
+      "w": 240,
+      "x": 0,
+      "y": -260
+    },
+    "t2": {
+      "kind": "title1",
+      "maxW": 1800,
+      "page": "current",
+      "text": "Listening",
+      "w": 240,
+      "x": 0,
+      "y": 928
+    },
+    "t3": {
+      "kind": "title1",
+      "maxW": 1800,
+      "page": "current",
+      "text": "More",
+      "w": 240,
+      "x": 0,
+      "y": 2116
+    },
+    "v1": {
+      "kind": "title1",
+      "maxW": 860,
+      "page": "v3",
+      "text": "Pick a direction: A or B",
+      "w": 240,
+      "x": 0,
+      "y": -260
+    },
+    "r5t": {
+      "x": 0,
+      "y": -200,
+      "text": "Round 5: one system, five screens to validate it",
+      "kind": "title1",
+      "maxW": 2400,
+      "page": "r5",
+      "w": 240
+    },
+    "r5a": {
+      "x": 0,
+      "y": -200,
+      "text": "Round 5: every verified screen, sheet and state",
+      "kind": "title1",
+      "maxW": 2400,
+      "page": "r5all",
+      "w": 240
+    },
+    "r7title": {
+      "x": 0,
+      "y": -300,
+      "kind": "title1",
+      "maxW": 4324,
+      "page": "r7",
+      "text": "Round 7: the revision brief, items 1–9. For approval; nothing here is implemented yet."
+    }
+  },
+  "order": [
+    "V5-Navigation.dc.html",
+    "V5-System.dc.html",
+    "V5-Components.dc.html",
+    "V5-Library.dc.html",
+    "V5-Playlist.dc.html",
+    "V5-Search.dc.html",
+    "V5-NowPlaying.dc.html",
+    "V5-SongActions.dc.html",
+    "V5-LibraryMore.dc.html",
+    "V5-PlaylistFlows.dc.html",
+    "V5-AddToPlaylist.dc.html",
+    "V5-Luvs.dc.html",
+    "V5-Stream.dc.html",
+    "V5-Browse.dc.html",
+    "V5-Overlays.dc.html",
+    "V5-PlayerTools.dc.html",
+    "V5-You.dc.html",
+    "V5-Social.dc.html",
+    "V5-Tools.dc.html",
+    "V5-Responsive.dc.html",
+    "V5-Coverage.dc.html",
+    "V4-Library.dc.html",
+    "V4-LibrarySort.dc.html",
+    "V4-Playlist.dc.html",
+    "V4-Search.dc.html",
+    "V4-NowPlaying.dc.html",
+    "V4-SongActions.dc.html",
+    "AC-Lime.dc.html",
+    "AC-White.dc.html",
+    "AC-Cover.dc.html",
+    "AC-Coral.dc.html",
+    "Artboard-lzh8.dc.html",
+    "Main.dc.html",
+    "Playlists.dc.html",
+    "PlaylistDetail.dc.html",
+    "SongActions.dc.html",
+    "Stream.dc.html",
+    "Search.dc.html",
+    "NowPlaying.dc.html",
+    "Luvs.dc.html",
+    "Settings.dc.html",
+    "Dj.dc.html",
+    "Blends.dc.html",
+    "Artist.dc.html",
+    "RD-Library.dc.html",
+    "RD-Playlists.dc.html",
+    "RD-Playlist.dc.html",
+    "RD-SongActions.dc.html",
+    "RD-Stream.dc.html",
+    "RD-Search.dc.html",
+    "RD-NowPlaying.dc.html",
+    "RD-Lyrics.dc.html",
+    "RD-UpNext.dc.html",
+    "RD-Luvs.dc.html",
+    "RD-Settings.dc.html",
+    "RD-Dj.dc.html",
+    "RD-Blends.dc.html",
+    "RD-Artist.dc.html",
+    "V2-LibraryA.dc.html",
+    "V2-LibraryB.dc.html",
+    "V3-Library.dc.html",
+    "V3-LibraryPlaylists.dc.html",
+    "V3-Playlist.dc.html",
+    "V3-SongActions.dc.html",
+    "V3-AddToPlaylist.dc.html",
+    "V3-Stream.dc.html",
+    "V3-Search.dc.html",
+    "V3-NowPlaying.dc.html",
+    "V3-Lyrics.dc.html",
+    "V3-UpNext.dc.html",
+    "V3-Luvs.dc.html",
+    "V3-You.dc.html",
+    "V3-Settings.dc.html",
+    "V3-Dj.dc.html",
+    "V3-Blends.dc.html",
+    "V3-Artist.dc.html",
+    "V3-LibraryEmpty.dc.html",
+    "V3-LibraryLoading.dc.html",
+    "V3-SearchStates.dc.html",
+    "V3-PlaylistEmpty.dc.html",
+    "V3-LargeText.dc.html",
+    "V7-1-Chips.dc.html",
+    "V7-2-Menus.dc.html",
+    "V7-3-Navigation.dc.html",
+    "V7-4-Actions.dc.html",
+    "V7-5-Library.dc.html",
+    "V7-6-Voice.dc.html",
+    "V7-7-Consistency.dc.html",
+    "V7-8-Shell.dc.html",
+    "V7-9-Rows.dc.html"
+  ],
+  "pages": [
+    {
+      "id": "r7",
+      "name": "Round 7: revision brief (for approval)"
+    },
+    {
+      "id": "r5",
+      "name": "Round 5: system + 5 screens (review)"
+    },
+    {
+      "id": "r5all",
+      "name": "Round 5: every screen and state"
+    },
+    {
+      "id": "accent",
+      "name": "Refined v4 (older)"
+    },
+    {
+      "id": "v2",
+      "name": "Glass deck v3 (21 screens, older)"
+    },
+    {
+      "id": "v4",
+      "name": "Accent options (white chosen)"
+    },
+    {
+      "id": "v3",
+      "name": "Pick a direction (A / B)"
+    },
+    {
+      "id": "current",
+      "name": "Current app"
+    },
+    {
+      "id": "redesign",
+      "name": "Redesign v1 (flat)"
+    }
+  ],
+  "title": "Design"
+}

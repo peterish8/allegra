@@ -349,3 +349,7 @@ fresh branch from current origin/main. Reproduce the player smoke's first failur
 bounds, then take the first bounded corrective slice through tests and runtime evidence. Continue through
 UI-01?UI-10 and the wider interaction/device/performance/install plan; report exactly what is fixed, shipped,
 verified on which surface, and still pending without asking the owner to repeat established decisions.
+
+## Update, 2026-11-06 (later)
+
+1.38.0, 1.38.1 and 1.39.0 shipped (PRs 59-61). The Round 7 design brief is paused for owner approval. Continue from [HANDOFF-2026-11-06-r7-design-brief.md](HANDOFF-2026-11-06-r7-design-brief.md).
