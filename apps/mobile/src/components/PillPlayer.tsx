@@ -19,7 +19,9 @@ import { miniSwipe, swipeFollow } from '../playback/miniSwipe';
 import { durationSV, positionSV } from '../playback/positionBus';
 import { usePlayerStore } from '../store/playerStore';
 import { usePositionStore } from '../store/positionStore';
-import { Control, IconButton, Motion, Radius, Space, Surface, Tactile, Text } from '../ui';
+import { Control, IconButton, Motion, Radius, Signal, Space, Surface, Tactile, Text, Typography } from '../ui';
+import Marquee from './allegra/Marquee';
+import { miniPlayerLine } from './allegra/marqueeMath';
 import Artwork from './allegra/Artwork';
 import { MiniPlayerGlow } from './MiniPlayerGlow';
 import { MiniScrubber } from './MiniScrubber';
@@ -147,7 +149,12 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
           style={[styles.info, { height: rowHeight }]}>
           <Animated.View style={[styles.follow, following]}>
             <View style={styles.cover}><Artwork uri={coverImageUri} title={title} artist={artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></View>
-            <View style={styles.copy}><Text variant="row" style={styles.title} numberOfLines={1}>{title}</Text><Text variant="secondary" tone="secondary" numberOfLines={1}>{status === 'error' ? 'Couldn’t play · tap retry' : artist}</Text></View>
+            {/* 1.41.0 (owner): one line as Spotify shows it, "Song • Artist", scrolling slowly when it doesn't fit. */}
+            <View style={styles.copy}>
+              {status === 'error'
+                ? <Text variant="row" style={styles.title} numberOfLines={1}>{`${title} • Couldn’t play, tap to retry`}</Text>
+                : <Marquee text={miniPlayerLine(title, artist)} style={styles.line} active={!sheetUp} />}
+            </View>
           </Animated.View>
         </Tactile>
       </View></GestureDetector>
@@ -164,4 +171,5 @@ const styles = StyleSheet.create({
   follow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingLeft: Space.xs },
   cover: { width: MINI_COVER_SIZE, height: MINI_COVER_SIZE, borderRadius: Radius.cover, overflow: 'hidden', backgroundColor: Surface.control },
   copy: { flex: 1, minWidth: 0 }, title: { fontWeight: '600' },
+  line: { ...Typography.row, color: Signal.ink, fontWeight: '600' },
 });

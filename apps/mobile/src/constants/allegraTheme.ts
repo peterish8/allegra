@@ -174,7 +174,8 @@ export const Typography = {
 // Weights only — the face (SF Pro) is resolved per platform; see constants/fonts.ts.
 export const PlayerType = {
   title: Typography.playerTitle,
-  artist: { fontWeight: '400', fontSize: 18 },
+  /** Smaller than the title so the song's name leads (1.41.0, was 18). */
+  artist: { fontWeight: '400', fontSize: 16 },
   meta: { fontWeight: '600', fontSize: 11 },
   time: { fontWeight: '600', fontSize: 12, fontVariant: ['tabular-nums' as const] },
 } as const;

@@ -91,8 +91,9 @@ slim mini player and nav), as the owner reviewed it in the canvas rather than th
 - **Feed measurement.** In FlashList feeds keep headers in the data (not `ListHeaderComponent`), give cells
   definite widths (no percentages of an unmeasured parent) and no Reanimated `entering` in recycled cells.
 - **Up next** filters are one `Segmented` control; the native list clips rows to its own frame.
-- **Player title** stays one line that shrinks to fit (to 80%), then ellipsizes; it never scrolls beside the song
-  actions and never grows into the cover (1.38.1).
+- **Player title** (1.41.0, replacing 1.38.1's shrink-to-fit): one line at its full size that, when too long, scrolls
+  slowly right to left and rests 5 seconds between loops; the artist (16, smaller than the title) rests 3 seconds. It
+  never wraps into the cover. The mini player shows one line, "Song • Artist", scrolling the same way (Spotify's).
 - **Rows**: superseded by Round 7 (Download and ⋮ both). The mini player's play glyph has no disc; the header glow uses
   a dark tint of the cover (1.38.1).
 - **Display size** (Settings → Player, 1.39.0): Compact 85%, Small 92%, Default, Large 108%. Android sets the app's
