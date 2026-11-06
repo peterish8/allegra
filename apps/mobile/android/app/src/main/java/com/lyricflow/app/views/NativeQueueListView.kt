@@ -485,6 +485,10 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     override fun onDraw(canvas: Canvas) {
         coverFading = false
         if (rows.isEmpty()) return
+        // React Native's parent views do not clip their children, so a row scrolled half out of the top would be
+        // painted over the All / Familiar / Discover chips above the list (owner report, 2026-11-06). Keep every row,
+        // including the lifted one, inside the list's own frame.
+        canvas.clipRect(0f, 0f, width.toFloat(), height.toFloat())
         val first = max(0, (scrollY / rowH).toInt())
         val last = min(rows.size - 1, ((scrollY + height) / rowH).toInt())
         for (p in first..last) {

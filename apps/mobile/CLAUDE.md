@@ -26,6 +26,15 @@
 
 ## V6 frontend maintenance
 
+- Current continuation is `.planning/mobile-ui-review/HANDOFF-2026-11-06-v6-verification.md` at the repository
+  root, with `PLAN-V6-VERIFICATION.md` and `VERIFICATION-MATRIX.md`. 1.38.0 carries the owner corrections
+  (DESIGN.md "Owner corrections"): animated Stream/Library header glow, slimmer shell, mini-player swipes, the
+  Stream/Up next overlaps and the player title. Preserve pinned update access and the probe's mini-player label.
+- The visual target is the V6 design canvas; the local `design-gallery` HTML renders without its covers and fonts.
+- FlashList feeds: no `ListHeaderComponent` for content that can change size, no percentage widths in cells, no
+  Reanimated `entering` in recycled cells (each produced stale cell sizes and overlaps on Stream).
+
+
 - Read `DESIGN.md` and `src/ui/AGENTS.md` before changing a screen. Tokens live in
   `src/constants/allegraTheme.ts`; reusable controls and layout patterns live in `src/ui`.
 - Bind application state outside the primitive library (`AppScreen`, `AppSafeArea`, screen hooks).
@@ -226,7 +235,9 @@ because a streamed song can arrive before its audio link resolves.
 - Luvs has one native player pool, keyed by URL (`LuvsPlayerModule.byUrl`); each warm player is held to a 10–20s buffer, built 80ms apart, and only the next clip is warmed under Battery Saver. The index-keyed `updateActiveIndex` path is gone from Kotlin (iOS still uses the JS index pool in `LuvsBufferManager`)
 - Now Playing's covers come from `player/coverImages` (`useCoverImage`, `prefetchCover`), never Skia's `useImage`: that hook keeps returning the previous cover until the next one decodes, so a screen keyed on the uri took the old image as the new song's and the backdrop stayed on the last song until the player was reopened. `AppleBackdrop` tracks the decoded image itself, and `prepareNextInQueue` prefetches the next song's cover so a skip finds it ready and the backdrop changes with the title
 - Updates (About → Updates), after Echo Music's update screen: CI publishes `apk-latest` with `changelog.json` beside the APK (`scripts/mobile-release-notes.mjs` builds it from the conventional-commit subjects since the previous build; tests in `tests/infra`), `services/appUpdate` reads size, version, date and notes from the release, `store/updateStore` keeps the auto-check switch, last check and the newer build found, and `services/updateCheck.checkInBackground` (boot job, at most every 6 hours) marks the About button. A failed look is never recorded as a check
-- Opening lyrics must not unmount anything through a layout animation. `NowPlayingControls` keeps the volume row mounted: under lyrics it fades and the rows above slide down by its measured height (`volumeH × compactP`, transforms only). The old `exiting={FadeOut}` row inside a `layout={LinearTransition}` box crashed the app on Android when the lyrics button was tapped (Reanimated 4.1). The CI smoke test opens lyrics with a link that mounts the player already on lyrics, so it never ran that path
+- Opening lyrics must not pair layout and exiting animations. V6 removes the volume row; do not restore it
+  to satisfy historical layout notes. Preserve the regression guard against the Reanimated layout/exiting
+  crash and verify the actual lyrics-toggle path as well as deep-link entry. See the current verification plan.
 - Render errors never close the app: `components/ErrorBoundary` wraps the navigator in `App.tsx` (a "Reopen" screen; the player above keeps playing) and the lyrics list in `NowPlayingLyricsArea` (a "tap to try again" line, reset per song). Both report to Sentry
 - Errors no boundary can catch (a fatal JS error, a UI-thread worklet that throws, a view that fails to mount) go to `ReactHostImpl.handleHostException`. With a host handler registered (Sentry's `SentryExpoPackage`) Expo does not crash: React Native destroys its instance and leaves a dead grey window while `PlaybackService` plays on — the "grey screen, music still playing" report. `recovery/UiRecovery.kt` (`UiRecoveryPackage`, listed after Sentry in `ExpoModulesPackageList`) writes the error to `ui-crash.txt` and restarts `MainActivity` (at most 3 times in 2 minutes); `services/uiCrash` shows it once at the next start with "Copy details". The player probe fails on any `UiRecovery … React instance lost` line. A restart is not a fix: find the error and fix it
 - A build must always open, and a phone must always be able to leave a bad build. The release gate is the `launch-check` job in `.github/workflows/mobile-apk.yml` (`.github/scripts/mobile-launch-check.sh`): the same commit built for x86_64 must open twice from cold on an emulator, stay up, answer `lyricflow://open/settings`, keep its screen layer, and reach About and its Updates panel; `publish` (apk-latest) waits for it. 1.0.3 compiled, was published, and closed on every launch (`UiRecoveryPackage` touched the context while `MainApplication` was still being constructed — Expo builds host handlers there). Never take the gate out of `publish`'s `needs`

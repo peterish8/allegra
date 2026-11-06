@@ -39,6 +39,11 @@ interface MarqueeProps {
   gap?: number;
   /** Width of the soft fade at the right edge, in points. */
   fade?: number;
+  /**
+   * More than one line: the text wraps and ends in an ellipsis and never scrolls. Now Playing's title uses two,
+   * because a scrolling title beside the song actions read as two broken fragments (owner report, 2026-11-06).
+   */
+  lines?: number;
 }
 
 export const Marquee: React.FC<MarqueeProps> = ({
@@ -51,14 +56,16 @@ export const Marquee: React.FC<MarqueeProps> = ({
   startMs = MARQUEE_START_MS,
   gap = MARQUEE_GAP,
   fade = 18,
+  lines = 1,
 }) => {
   const reduce = useReducedMotion();
+  const wraps = lines > 1;
   const [boxW, setBoxW] = useState(0);
   const [textW, setTextW] = useState(0);
   const x = useSharedValue(0);
 
   const { distance, duration } = marqueeLoop(textW, boxW, gap, speed);
-  const overflow = distance > 0;
+  const overflow = distance > 0 && !wraps;
   const run = overflow && active && !reduce;
 
   useEffect(() => {
@@ -85,10 +92,14 @@ export const Marquee: React.FC<MarqueeProps> = ({
   return (
     <View style={[styles.box, containerStyle]} onLayout={e => setBoxW(e.nativeEvent.layout.width)}>
       {/* Natural width of the title, measured off-screen. */}
-      <View style={styles.probe} pointerEvents="none">
-        <Text style={[style, styles.probeText]} numberOfLines={1} onLayout={e => setTextW(e.nativeEvent.layout.width)}>{text}</Text>
-      </View>
-      {overflow && !reduce ? (
+      {wraps ? null : (
+        <View style={styles.probe} pointerEvents="none">
+          <Text style={[style, styles.probeText]} numberOfLines={1} onLayout={e => setTextW(e.nativeEvent.layout.width)}>{text}</Text>
+        </View>
+      )}
+      {wraps ? (
+        <Text style={style} numberOfLines={lines} ellipsizeMode="tail">{text}</Text>
+      ) : overflow && !reduce ? (
         <MaskedView
           style={styles.fill}
           maskElement={(

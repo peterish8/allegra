@@ -1,3 +1,7 @@
+> Superseded for continuation: read `STARTER-PROMPT-v6-verification.md` and
+> `HANDOFF-2026-11-06-v6-verification.md`. The redesign below has shipped as 1.37.1; do not repeat its old
+> release steps. The new owner screenshots, UI/UX corrections and animated header requirement are in the new plan.
+
 # Starter prompt for the next session (copy everything below the line)
 
 ---

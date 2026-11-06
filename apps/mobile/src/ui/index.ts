@@ -19,8 +19,9 @@ export { Text, toneColor, type TextProps, type TextTone, type TextVariant } from
 
 // Actions
 export { Button, ButtonRow, IconButton, TextButton, type ButtonProps, type ButtonVariant, type IconButtonProps, type IconName } from './Button';
-export { Chip, ChipRow, type ChipProps } from './Chip';
+export { Chip, ChipRow, CHIP_HEIGHT, CHIP_ROW_PADDING, type ChipProps } from './Chip';
 export { Segmented, type SegmentedProps } from './Segmented';
+export { HeaderGlow, type HeaderGlowProps, type GlowColors } from './HeaderGlow';
 
 // Lists
 export { ListRow, SheetOption, CheckRow, ROW_HEIGHT, OPTION_HEIGHT, ROW_ART, type ListRowProps, type SheetOptionProps, type CheckRowProps } from './ListRow';

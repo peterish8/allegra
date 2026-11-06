@@ -13,6 +13,35 @@ source_of_truth:
 
 # LuvLyrics design system
 
+## Owner corrections, 2026-11-06 (1.38.0)
+
+The visual target is the V6 design canvas (cover-tinted header light, compact chips, typed Jump back in tiles,
+slim mini player and nav), as the owner reviewed it in the canvas rather than the local static gallery render.
+
+- **Header glow (Stream, Library).** `ui/HeaderGlow` + `hooks/useHeaderGlow`: two soft light pools in the cover's
+  palette over the top ~20% of the window (`ui/headerGlowMath`, from the real window height and status bar),
+  drifting slowly on the UI thread (`Motion.duration.drift`). It moves up and fades with the page's own scroll
+  offset and returns as the page comes back; the drift continues from its phase, never restarts with a jump.
+  It rests (still, lit) off focus, in the background, once scrolled away, and under Reduce Motion, Reduce
+  Transparency (also lighter), Battery Saver and low-end devices. No song: no glow. Pages opt out of the static
+  `CoverGlow` with `staticGlow={false}`. Stream's title, Connect and LuvLyrics/Updates stay pinned outside the feed.
+- **Shell.** 16dp seek band (the 2dp line along its top; the band is the drag target, inside the shell), 48dp
+  mini row with a 40dp cover, 56dp nav: 120dp above the inset, down from 144dp. Large text keeps a 72dp row.
+- **Mini player swipes.** Left on the cover/title plays next, right goes to previous, through the owner callbacks
+  (`playback/miniSwipe`: 56dp or 22% of the lane, or a same-direction flick past 24dp; mostly vertical drags open
+  the player instead). The content follows at half speed, leaves on commit and the new song settles in; Reduce
+  Motion fades only. TalkBack gets Next/Previous actions on the bar. Its label stays
+  `Now playing: <title>. Open player` (`playback/miniPlayerLabel`, read by the player probe).
+- **Chips** draw 36dp with slop to a 48dp target; rows pad by the slop. Section headings: 24dp above, 19pt.
+- **Feed measurement.** In FlashList feeds keep headers in the data (not `ListHeaderComponent`), give cells
+  definite widths (no percentages of an unmeasured parent) and no Reanimated `entering` in recycled cells.
+- **Up next** filters are one `Segmented` control; the native list clips rows to its own frame.
+- **Player title** wraps to two lines with an ellipsis; it never scrolls beside the song actions.
+
+Remaining interaction-audit and device checks are tracked in
+[PLAN-V6-VERIFICATION.md](../../.planning/mobile-ui-review/PLAN-V6-VERIFICATION.md) and the verification matrix.
+
+
 > ## Redesign direction (approved 2026-11-06; runtime migration, release pending)
 >
 > The owner approved the redesign's direction: **neat, minimal, modern, frosted, with depth**. It replaces the
@@ -190,15 +219,16 @@ checks are distinct from a published APK and physical-phone validation. See
 ## 4. Layout and the bottom shell
 
 `AppScreen` binds the current cover to the stateless `Screen`/`CoverGlow` primitives. `AppSafeArea`
-is the equivalent for utility screens. There is no moving shader at rest, and no glow before a song.
+is the equivalent for utility screens. Stream and Library draw the scroll-linked `HeaderGlow` instead
+(`staticGlow={false}`). There is no moving shader, and no glow before a song.
 
 The five tabs are Stream, Luvs, Library, Search and You. Use Ionicons in both the React Native
 fallback and Kotlin V6 tab bar. Search and You are first-class destinations; voice remains available
 through the existing voice flows. The Stream top-right LuvLyrics mark opens About and Updates. Keep that header outside the scrolling
 feed, so hydration, queue restoration and scrolling cannot hide the update entry.
 
-The bottom shell is flush with the edges: a 24dp seek band, a 56dp mini row and 64dp navigation
-plus the safe inset. Below 700dp tall, navigation reserves at least 8dp below its targets. At large
+The bottom shell is flush with the edges: a 16dp seek band, a 48dp mini row (40dp cover) and 56dp
+navigation plus the safe inset (the Kotlin V6 bar's `V6_BAR_DP` matches `NAV_BAR_HEIGHT`). Below 700dp tall, navigation reserves at least 8dp below its targets. At large
 text the mini row grows to 72dp. `v6Shell.ts` is the geometry source; `useBottomClearance()` reserves
 only visible mini-player space, including Connect remote playback. Hide the shell for the keyboard.
 
@@ -208,7 +238,8 @@ App background, Mini player background and Bottom bar style settings are retired
 
 ## 5. Playback surfaces
 
-The mini player uses square artwork and separate metadata, play/retry and next targets. Its seek
+The mini player uses square artwork and separate metadata, play/retry and next targets; a sideways swipe
+on the metadata skips next/previous and an upward one opens the player. Its seek
 band is adjustable by TalkBack in ten-second steps, clamps to known duration, shows a scrub thumb
 and time preview, cancels when the track changes or loading starts, and restores position on failure.
 Unknown duration is a dashed inactive track. Connect remote seek stays inactive until supported.

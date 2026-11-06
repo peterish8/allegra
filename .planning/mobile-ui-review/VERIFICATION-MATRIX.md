@@ -1,0 +1,40 @@
+# V6 verification matrix
+
+Branch `fix/mobile-v6-verification`, PR https://github.com/peterish8/allegra/pull/59, version 1.38.0.
+Baseline reproduced on the `probe` emulator (Android 16 image, 720×1440 px, density 2 = 360×720 dp, font 1.0)
+with the published 1.37.1 APK (manifest commit 473c4d8). Surfaces are kept apart: **source** (code + unit tests),
+**emulator**, **device** (a physical phone), **audible**, **install**. "Pending" means not executed.
+
+## Owner-reported corrections
+
+| ID | Finding (reproduction) | Cause found | Fix | Tests | Retest |
+| --- | --- | --- | --- | --- | --- |
+| UI-01 P0 | 1.37.1 emulator, Stream with a song: chips at y 104–152 dp, "Jump back in" heading from 120 dp, so it overlaps the chips by 32 dp. | FlashList 2.2.2 places item 0 from the header offset it measured; the chip row was `ListHeaderComponent`. | Chips became the feed's first item. | `StreamScreen.layout.test.ts` feed-measurement guards | Emulator on the PR APK: pending |
+| UI-02 P0 | Owner capture: Up next rows over All/Familiar/Discover. | `NativeQueueListView.onDraw` painted rows partly above its own top, and React Native parents don't clip children. | `canvas.clipRect` to the view's own frame; filters are one `Segmented`. | Kotlin compiled by CI; no JVM test for drawing | Emulator: pending |
+| UI-03 P1 | 1.37.1 emulator: a one-row grid (2 items) followed by a 108 dp blank before Quick picks. | Stale cell size: tiles sized as 50% of a cell whose width FlashList doesn't enforce until measured, plus Reanimated `entering` inside recycled cells. | Definite tile widths from the window; no `RiseIn` in feed cells. | `shortcutGrid.test.ts`, layout guards | Emulator: pending |
+| UI-04 P0 | Owner capture "Day Of Sun   An" beside the actions. | Marquee loop in a lane narrowed by three buttons, inside a fixed 30 dp `overflow: hidden` box. | Title wraps to 2 lines with an ellipsis, no marquee; lines use `minHeight`. | `nowPlayingTitle.test.ts` | Emulator, 200% text: pending |
+| UI-05 P1 | Tile titles truncated tightly ("Monica (From "Coolie") (Ta..."). | 15 pt regular, 2 lines, beside a 56 dp cover. | Board layout: 13 pt semibold, 2 lines, plus the artist on 1 line; one column from 130% text. | `shortcutGrid.test.ts` | Emulator: pending |
+| UI-06 P1 | Dropdown/menu review. | Connect dropdown is a `Sheet` (48 dp+ trigger, Back closes, closes on blur/rotation/sign-in change). **F-6a:** a closing modal `Sheet` keeps its native Modal window until the close spring rests, so taps on the page are swallowed for that time. | F-6a not changed yet: measure the close duration on a device first. | None | Pending |
+| UI-07 P1 | Sheet, scroll and gesture review. | `Sheet`: list-at-top drag, flick, settle and reopen-while-closing are all handled; the Up next pan fails on handles and scrolled lists. | No change needed found in source. | Existing sheet tests | Device gestures: pending |
+| UI-08 feature | Requested animated header glow. | — | `ui/HeaderGlow`, `ui/headerGlowMath`, `hooks/useHeaderGlow`; Stream + Library. | `headerGlowMath.test.ts`, Stream binding guard | Emulator clip, frame timing on hardware: pending |
+| UI-09 P1 | Owner: mini player and nav too tall. 1.37.1 emulator: seek 24 + row 56 + nav 64 + inset 24 = 168 dp (23% of 720 dp). | — | 16 + 48 + 56 = 120 dp above the inset (−24 dp of list); 40 dp cover; native bar 56 dp. | `v6Shell.test.ts` | Emulator before/after: pending |
+| UI-10 P1 | Owner: restore left/right song swipes. | `PillPlayer` ignored `onPrevious` and had no horizontal skip gesture. | `playback/miniSwipe` thresholds; Race with the open pan; TalkBack actions. | `miniSwipe.test.ts` | Emulator slow drag/flick/cancel: pending |
+
+## Broader smoke (mobile-smoke.yml)
+
+| Run | Result | Reading |
+| --- | --- | --- |
+| 41306254650 (main 1b72928, pre-V6) | C rounds 2–5 and D failed (12 checks) | Already red before V6. |
+| 42126270194 (main 473c4d8, 1.37.1) | C rounds 2–5, D and E failed (15 checks) | Diag: `register 1 → consume 1 → unregister 1`, then `no focused handler`; round-2 screenshot shows the launcher. The probe reopens by tapping `Now playing:.*`, but V6's label was `<title> by <artist>. Open player`, so no reopen happened and the next Back left the app. E reads the same label. |
+| 42177973408 (this branch) | Running | Decides whether C/D pass with the label restored; D (screen-off media keys) was red pre-V6 too and stays open until this run is read. |
+
+## Device, accessibility, performance, install
+
+| Check | Status |
+| --- | --- |
+| Physical phone playback, media keys, Connect/LuvLink audible ownership | Pending: no phone attached (`adb devices` lists only the emulator) |
+| 200% text at 360/393/430 dp | Pending |
+| TalkBack order, mini-player Next/Previous actions, sheet focus return | Pending |
+| Header glow frame timing (drift + scroll) on representative hardware | Pending |
+| Playlist load timing baseline | Pending; no optimisation made without numbers |
+| Old signed build → in-app download → install 1.38.0, data kept | Pending |

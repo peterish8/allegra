@@ -1,3 +1,8 @@
+> Current correction plan: [V6 verification and UI/UX corrections](../../.planning/mobile-ui-review/PLAN-V6-VERIFICATION.md),
+> with a [detailed handoff](../../.planning/mobile-ui-review/HANDOFF-2026-11-06-v6-verification.md).
+> The published 1.37.1 baseline still needs the listed screenshot/interaction fixes, animated headers,
+> compact mini-player/swipe restoration and outstanding device/performance/install checks.
+
 > V6 frontend: five tabs, a shared frosted playback shell, compact Library and collection layouts,
 > and Updates at the top of the Stream logo sheet. Version and release evidence are tracked in
 > [the release ledger](../../.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md).

@@ -1,5 +1,22 @@
 # V6 implementation and release ledger
 
+> **2026-11-06, 1.38.0 in review:** PR https://github.com/peterish8/allegra/pull/59 (branch
+> `fix/mobile-v6-verification`, from main 473c4d8) carries UI-01 to UI-05 and UI-08 to UI-10 in source, with the
+> broader-smoke label fix. Local gate: 135 suites / 1,074 tests, lint and typecheck clean. PR APK, emulator launch
+> and branch smoke run 42177973408 were running when this was written; emulator visual retest, device,
+> accessibility, performance and install checks are pending. Row-by-row status: [VERIFICATION-MATRIX.md](VERIFICATION-MATRIX.md).
+> The owner reviews the design in the V6 canvas, not in the local gallery render (which lacks covers and fonts).
+
+> Current continuation, 2026-11-06: **1.37.1 is merged and published** via PR 58, main
+> `473c4d8806144619a19b9bb414d1dce31ad4d48c`; main APK run 42126270090 passed and the public manifest
+> matches that version/commit. The broader smoke run 42126270194 failed 15 player-probe assertions.
+> New owner screenshots identify UI overlaps, spacing and title-lane problems, plus a requested wider UX pass.
+> Mini-player excess top space and missing horizontal song swipes are also pending owner-requested corrections.
+> Animated scroll-linked top-20% header glow for Stream/Library is newly approved and still pending.
+> Follow [the new handoff](HANDOFF-2026-11-06-v6-verification.md) and [plan](PLAN-V6-VERIFICATION.md).
+> Earlier pending-publication statements below are historical, not the current release status.
+
+
 Updated 2026-11-06. Checkout: `C:\dev\allegra`, branch `feat/mobile-frontend-polish`.
 Base: `1b72928`, matched freshly fetched `origin/main` before preparing the PR.
 Target version: **1.37.1**. Publication is pending; a source version is not a shipped APK.

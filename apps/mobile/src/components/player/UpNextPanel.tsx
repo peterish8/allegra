@@ -28,7 +28,7 @@ import { prepareNextInQueue, usePlayerStore } from '../../store/playerStore';
 import { usePlaylistStore } from '../../store/playlistStore';
 import { useSongsStore } from '../../store/songsStore';
 import { Song } from '../../types/song';
-import { Chip, EmptyState } from '../../ui';
+import { EmptyState, Segmented } from '../../ui';
 import { diag } from '../../utils/diag';
 import { libraryKeys, matchKey } from '../../utils/downloadState';
 import * as Haptics from '../../utils/haptics';
@@ -354,10 +354,9 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
             <Text style={styles.pillText}>Shuffle</Text>
           </Tactile>
         </View>
-        <View style={styles.chips}>
-          {FILTERS.map(f => (
-            <Chip key={f.value} label={f.label} selected={filter === f.value} onPress={() => setFilter(f.value)} />
-          ))}
+        {/* The V6 board's one segmented control; the list below starts under its whole frame. */}
+        <View style={styles.filters}>
+          <Segmented<UpNextFilter> value={filter} options={FILTERS} onChange={setFilter} label="Show in Up next" />
         </View>
         {shown.length === 0 ? (
           <EmptyState icon="list-outline" title={songs.length === 0 ? 'You?re all caught up' : 'No songs in this view'} body={songs.length === 0 ? 'This song can keep playing. Add songs from Stream or your Library to keep the music going.' : filter === 'familiar' ? 'None of these songs are saved on this phone yet.' : 'Everything here is already on your phone.'} />
@@ -428,7 +427,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.22)',
   },
   pillText: { color: Signal.ink, fontSize: 15, fontWeight: '600' },
-  chips: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginTop: 14, marginBottom: 8 },
+  filters: { paddingHorizontal: 20, marginTop: 12, marginBottom: 8 },
   nativeList: { flex: 1 },
   empty: { color: 'rgba(255,255,255,0.6)', fontSize: 15, paddingVertical: 28, textAlign: 'center' },
   rowWrap: { height: ROW_H, paddingHorizontal: 8 },
