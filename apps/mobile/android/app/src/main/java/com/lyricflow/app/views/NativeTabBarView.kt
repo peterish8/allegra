@@ -188,6 +188,8 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     override fun onDetachedFromWindow() {
         moreAnimator?.cancel()
         animators.forEach { it?.cancel() }
+        // A pending 2 s hold must not fire into a bar that has gone.
+        for (i in 0 until 5) disarmHold(i)
         super.onDetachedFromWindow()
     }
 
@@ -300,11 +302,6 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     private fun disarmHold(index: Int) {
         holdRunnables[index]?.let { removeCallbacks(it) }
         holdRunnables[index] = null
-    }
-
-    override fun onDetachedFromWindow() {
-        for (i in 0 until 5) disarmHold(i)
-        super.onDetachedFromWindow()
     }
 
     private fun activate(index: Int) {
