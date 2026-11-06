@@ -27,6 +27,12 @@ import kotlin.math.roundToInt
 class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
     private val onTabPress by EventDispatcher<Map<String, Any>>()
     private val onMorePress by EventDispatcher<Map<String, Any>>()
+    /** A V6 tab held for [HOLD_MS] (Settings → Hold Library for 2 seconds); the tap that ends the hold is swallowed. */
+    private val onTabLongPress by EventDispatcher<Map<String, Any>>()
+    /** The one V6 route that answers a hold, or null (nothing to open, so a hold stays an ordinary tap). */
+    private var holdTab: String? = null
+    private var heldIndex = -1
+    private val holdRunnables = arrayOfNulls<Runnable>(5)
     private val tabs = listOf("Stream", "Luvs", "Library")
     private val v6Tabs = listOf("Stream", "Luvs", "Library", "Search", "You")
     private val slotViews = ArrayList<View>(5)
@@ -81,15 +87,39 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
                             if (moreOpen) AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_COLLAPSE
                             else AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_EXPAND,
                         )
+                        // TalkBack's double-tap-and-hold reaches the same shortcut as a 2 s hold.
+                        if (holdsAt(index)) info.addAction(AccessibilityNodeInfoCompat.AccessibilityActionCompat(
+                            AccessibilityNodeInfoCompat.ACTION_LONG_CLICK, "Open your shortcut playlist"))
+                    }
+
+                    override fun performAccessibilityAction(host: View, action: Int, args: android.os.Bundle?): Boolean {
+                        if (action == AccessibilityNodeInfoCompat.ACTION_LONG_CLICK && holdsAt(index)) {
+                            onTabLongPress(mapOf("route" to v6Tabs[index]))
+                            return true
+                        }
+                        return super.performAccessibilityAction(host, action, args)
                     }
                 })
-                setOnClickListener { activate(index) }
+                setOnClickListener {
+                    // The finger that held the tab for the shortcut lifts here: that is not also a tap.
+                    if (heldIndex == index) { heldIndex = -1; return@setOnClickListener }
+                    activate(index)
+                }
                 // A keyboard or D-pad focus ring is drawn by the bar itself (drawV6); touch never focuses a slot.
                 setOnFocusChangeListener { _, _ -> this@NativeTabBarView.invalidate() }
                 setOnTouchListener { _, event ->
                     when (event.actionMasked) {
-                        android.view.MotionEvent.ACTION_DOWN -> animatePress(index, true)
-                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> animatePress(index, false)
+                        android.view.MotionEvent.ACTION_DOWN -> {
+                            animatePress(index, true)
+                            heldIndex = -1
+                            if (holdsAt(index)) armHold(index)
+                        }
+                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                            animatePress(index, false)
+                            disarmHold(index)
+                            // A cancelled hold (the finger slid off) never fires a click, so nothing is left to swallow.
+                            if (event.actionMasked == android.view.MotionEvent.ACTION_CANCEL) heldIndex = -1
+                        }
                     }
                     false
                 }
@@ -248,6 +278,35 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         canvas.restore()
     }
 
+    fun setHoldTab(value: String?) {
+        holdTab = value?.takeIf { it.isNotEmpty() }
+        if (holdTab == null) for (i in 0 until 5) disarmHold(i)
+    }
+
+    private fun holdsAt(index: Int): Boolean = variant == "v6" && holdTab != null && v6Tabs.getOrNull(index) == holdTab
+
+    private fun armHold(index: Int) {
+        disarmHold(index)
+        val run = Runnable {
+            holdRunnables[index] = null
+            heldIndex = index
+            slotViews.getOrNull(index)?.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            onTabLongPress(mapOf("route" to v6Tabs[index]))
+        }
+        holdRunnables[index] = run
+        postDelayed(run, HOLD_MS)
+    }
+
+    private fun disarmHold(index: Int) {
+        holdRunnables[index]?.let { removeCallbacks(it) }
+        holdRunnables[index] = null
+    }
+
+    override fun onDetachedFromWindow() {
+        for (i in 0 until 5) disarmHold(i)
+        super.onDetachedFromWindow()
+    }
+
     private fun activate(index: Int) {
         if (variant == "v6") onTabPress(mapOf("route" to v6Tabs[index]))
         else if (index == 3) onMorePress(mapOf("open" to moreOpen))
@@ -382,6 +441,8 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         const val TAB_HEIGHT = 64f
         /** The V6 bar's height above the inset; must match NAV_BAR_HEIGHT in src/navigation/v6Shell.ts. */
         const val V6_BAR_DP = 56f
+        /** How long a tab is held to open its shortcut; must match TAB_HOLD_MS in src/navigation/tabHold.ts. */
+        const val HOLD_MS = 2000L
         /** Glyph size in dp: Ionicons' 512-unit box drawn at the app's tab icon size. */
         const val GLYPH_SIZE = 24f
         /** Ionicons codepoints (glyphmaps/Ionicons.json in @expo/vector-icons): chosen, resting. */

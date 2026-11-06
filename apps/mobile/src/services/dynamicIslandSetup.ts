@@ -81,7 +81,8 @@ export const ISLAND_DISCLOSURE =
   'It does not read or record other apps’ screens, and sends no screen data anywhere.';
 
 /** The size sliders' ranges, in percent (IslandGeometry clamps to the same). */
-export const ISLAND_WIDTH_RANGE = { min: 80, max: 150 } as const;
+/** 1.41.0: the closed island narrows to 40% (was 80%), down to just the cover and bars beside the camera. */
+export const ISLAND_WIDTH_RANGE = { min: 40, max: 150 } as const;
 export const ISLAND_HEIGHT_RANGE = { min: 85, max: 130 } as const;
 
 const percent = (value: unknown, range: { min: number; max: number }): number =>

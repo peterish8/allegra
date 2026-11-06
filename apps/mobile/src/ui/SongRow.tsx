@@ -1,9 +1,10 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withDelay, withSpring } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import Artwork from '../components/allegra/Artwork';
 import { TactileRow } from '../components/allegra/motion';
-import { Control, Radius, Signal, Space } from '../constants/allegraTheme';
+import { Control, Motion, Radius, Signal, Space, Surface } from '../constants/allegraTheme';
 import { IconButton, type IconName } from './Button';
 import { Text } from './Text';
 import { songRowSubtitle } from './round7Rules';
@@ -34,9 +35,20 @@ export { songRowSubtitle };
  */
 export const SongRow: React.FC<SongRowProps> = React.memo(({ title, artist, artwork, meta, playing, downloaded, onPress, onActions, trailing, actionIcon, actionLabel, onActionPress }) => {
   const subtitle = songRowSubtitle(artist, meta, playing);
+  // Pressing the song lights the whole row edge to edge, Download and ⋮ included (owner, 1.41.0), not only the main
+  // target. Held at least 70ms so a quick tap is seen, like every other press.
+  const pressed = useSharedValue(0);
+  const downAt = React.useRef(0);
+  const light = useAnimatedStyle(() => ({ opacity: pressed.value }));
   return (
     <View style={styles.row}>
-      <TactileRow onPress={onPress} onLongPress={onActions} accessibilityRole="button"
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.pressed, light]} />
+      <TactileRow onPress={onPress} onLongPress={onActions} accessibilityRole="button" pressedColor="transparent"
+        onPressIn={() => { downAt.current = Date.now(); pressed.value = withSpring(1, Motion.spring.tactile); }}
+        onPressOut={() => {
+          const held = Date.now() - downAt.current;
+          pressed.value = withDelay(Math.max(0, ROW_PRESS_HOLD_MS - held), withSpring(0, Motion.spring.tactile));
+        }}
         accessibilityLabel={`${title}${artist ? ` by ${artist}` : ''}${playing ? ', playing' : ''}`}
         accessibilityHint={onActions ? 'Long press for song actions' : undefined}
         wrapperStyle={styles.mainTarget} style={styles.main}>
@@ -62,9 +74,12 @@ export const SongRow: React.FC<SongRowProps> = React.memo(({ title, artist, artw
 });
 
 const COVER_INSET = (Control.row - Control.rowArtwork) / 2;
+/** The shortest a press is shown for (the same hold as `Tactile`). */
+const ROW_PRESS_HOLD_MS = 70;
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', minHeight: Control.row, paddingLeft: Space.xs, paddingRight: Space.xxs },
+  pressed: { backgroundColor: Surface.control },
   mainTarget: { flex: 1, minWidth: 0, alignSelf: 'stretch' },
   main: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: Control.row, gap: Space.sm, paddingVertical: COVER_INSET, paddingHorizontal: Space.xs, borderRadius: Radius.control },
   art: { width: Control.rowArtwork, height: Control.rowArtwork, borderRadius: Radius.cover, overflow: 'hidden' },

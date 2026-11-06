@@ -23,8 +23,10 @@ import {
   writeSnapshot,
   WIDGET_PLAYLIST_SONGS,
   WidgetPlaylist,
+  widgetPins,
   WidgetSnapshot,
 } from './widgetData';
+import { useSettingsStore } from '../store/settingsStore';
 
 const PROGRESS_TICK_MS = 20_000;
 
@@ -37,7 +39,7 @@ const pushToWidgets = async (snapshot: WidgetSnapshot) => {
     }),
     requestWidgetUpdate({
       widgetName: WIDGET_PLAYLIST,
-      renderWidget: info => React.createElement(PlaylistWidget, { snapshot, width: info.width }),
+      renderWidget: info => React.createElement(PlaylistWidget, { snapshot, width: info.width, height: info.height }),
     }),
   ]).catch(() => {});
 };
@@ -73,9 +75,10 @@ export const useWidgetSync = (): void => {
   const isPlaying = usePlayerStore(s => s.isPlaying);
   const liked = usePlaylistStore(s => (songId ? s.likedSongIds.has(songId) : false));
   const playlists = usePlaylistStore(s => s.playlists);
+  const pinnedIds = useSettingsStore(s => s.widgetPinnedPlaylistIds);
   const playlistCache = useRef<WidgetPlaylist[]>([]);
 
-  // Playlists: rebuilt only when the playlist set changes.
+  // Playlists and the pinned tiles: rebuilt only when the playlist set or the pins change.
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     let alive = true;
@@ -83,10 +86,11 @@ export const useWidgetSync = (): void => {
       if (!alive) return;
       playlistCache.current = list;
       const prev = await readSnapshot();
-      await pushToWidgets({ ...prev, playlists: list });
+      const { pins, chosen } = widgetPins(pinnedIds, list);
+      await pushToWidgets({ ...prev, playlists: list, pinned: pins, pinnedChosen: chosen });
     }).catch(() => {});
     return () => { alive = false; };
-  }, [playlists]);
+  }, [playlists, pinnedIds]);
 
   // Song / play state / like, plus the slow progress tick while playing.
   useEffect(() => {
@@ -97,6 +101,8 @@ export const useWidgetSync = (): void => {
         ...prev,
         playlists: playlistCache.current.length ? playlistCache.current : prev.playlists,
         song: songId && title ? { id: songId, title, artist: artist ?? '', cover: widgetCover(cover) } : null,
+        // A new song or state answers the last widget tap; its notice has done its job.
+        notice: null,
         isPlaying,
         liked,
         position: positionSV.value,

@@ -83,7 +83,7 @@ class DynamicIslandModule : Module() {
         Function("setSize") { widthPercent: Int, heightPercent: Int ->
             context?.let {
                 val prefs = IslandPrefs(it)
-                prefs.widthPercent = widthPercent.coerceIn(80, 150)
+                prefs.widthPercent = widthPercent.coerceIn(40, 150)
                 prefs.heightPercent = heightPercent.coerceIn(85, 130)
             }
             IslandService.refresh()

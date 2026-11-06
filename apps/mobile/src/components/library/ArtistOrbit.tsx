@@ -1,7 +1,7 @@
 /**
  * Your artists as a row of round covers, each sized by how many of their
  * songs you have. Tap one to see only their songs (tap again to go back);
- * the chosen one wears the chartreuse ring.
+ * the chosen one wears the white ring.
  */
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';

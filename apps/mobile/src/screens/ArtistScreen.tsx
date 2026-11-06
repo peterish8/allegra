@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
   primary: { backgroundColor: Signal.wave },
   glass: { backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)' },
   follow: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
-  followOn: { borderColor: 'rgba(217, 230, 106, 0.5)', backgroundColor: 'rgba(217, 230, 106, 0.1)' },
+  followOn: { borderColor: 'rgba(255, 255, 255, 0.32)', backgroundColor: 'rgba(255, 255, 255, 0.14)' },
   actionText: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '700' },
   about: {
     marginHorizontal: 16,

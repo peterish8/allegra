@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { Glass, Signal } from '../constants/allegraTheme';
 import { useDownloadItem, useQueueShape } from '../store/downloadQueueSelectors';
-import { QueueItem, useDownloadQueueStore } from '../store/downloadQueueStore';
+import { QueueItem, useDownloadQueueStore, visibleDownloads } from '../store/downloadQueueStore';
 import { Button, IconButton, Sheet, SheetScrollable, Text } from '../ui';
 import { Artwork } from './allegra/Artwork';
 import { DownloadButton } from './stream/DownloadButton';
@@ -78,7 +78,8 @@ export const DownloadQueueModal = ({ visible, onClose }: DownloadQueueModalProps
   const shape = useQueueShape();
   const clearCompleted = useDownloadQueueStore(state => state.clearCompleted);
   const { ids, done } = useMemo(() => {
-    const queue = useDownloadQueueStore.getState().queue;
+    // Songs saved only for a downloaded playlist are that playlist's business (1.41.0).
+    const queue = visibleDownloads(useDownloadQueueStore.getState().queue);
     return { ids: queue.map(i => i.id), done: queue.filter(i => i.status === 'completed').length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shape]);

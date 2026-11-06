@@ -35,6 +35,8 @@ export interface Song {
   audioUri?: string; // URI to local audio file
   isLiked?: boolean; // Whether song is liked
   isHidden?: boolean; // Whether song is hidden
+  /** Saved only for a downloaded playlist (offline): on the phone, but not listed in Library's songs. */
+  playlistOnly?: boolean;
   transliteratedLyrics?: LyricLine[]; // Romanized/Colloquial lyrics
   youtubeVideoId?: string; // YouTube video ID for beta video preview feature
   /** The catalog song a download came from (`saavn:<id>`, see packages/shared/songRef). Lets another device play it. */

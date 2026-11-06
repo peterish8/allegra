@@ -6,7 +6,7 @@
  *             edge) with a plain section icon, a title and a one-line lead
  *   Row     — label + plain hint on the left, the control on the right,
  *             hairline dividers between rows
- *   Switch  — chartreuse track when on, the thumb slides by transform
+ *   Switch  — white track when on, the thumb slides by transform
  *   Choice  — a pill segmented control (Allegra's settings-choice)
  *   Action  — a tappable row that opens something, with its current value
  *

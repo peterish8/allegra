@@ -12,7 +12,7 @@ import { useDownloadQueueStore, QueueItem } from './downloadQueueStore';
 
 /** Which items are queued and in what state; progress and stage text do not count. */
 export const queueShape = (queue: readonly QueueItem[]): string =>
-  queue.map(item => `${item.id}:${item.status}`).join('|');
+  queue.map(item => `${item.id}:${item.status}${item.playlistOnly ? ':p' : ''}`).join('|');
 
 /** Re-renders the caller only when the queue's shape changes. Read the items with `getState()`. */
 export const useQueueShape = (): string => useDownloadQueueStore(state => queueShape(state.queue));

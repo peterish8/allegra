@@ -6,8 +6,8 @@ export const insertJob = async (item: QueueItem): Promise<void> => {
   const now = new Date().toISOString();
   await withDbWrite(async (db) => {
     await db.execAsync(`
-      INSERT OR REPLACE INTO download_jobs (id, song_json, status, progress, target_playlist_id, sort_order, error, created_at, updated_at)
-      VALUES ('${item.id}', '${songJson}', '${item.status}', ${item.progress ?? 0}, ${item.targetPlaylistId ? `'${esc(item.targetPlaylistId)}'` : 'NULL'}, ${item.sortOrder ?? 0}, NULL, '${now}', '${now}')
+      INSERT OR REPLACE INTO download_jobs (id, song_json, status, progress, target_playlist_id, sort_order, error, created_at, updated_at, playlist_only)
+      VALUES ('${esc(item.id)}', '${songJson}', '${item.status}', ${item.progress ?? 0}, ${item.targetPlaylistId ? `'${esc(item.targetPlaylistId)}'` : 'NULL'}, ${item.sortOrder ?? 0}, NULL, '${now}', '${now}', ${item.playlistOnly ? 1 : 0})
     `);
   });
 };
@@ -43,7 +43,8 @@ export const loadAllJobs = async (): Promise<QueueItem[]> => {
       target_playlist_id: string | null;
       sort_order: number;
       error: string | null;
-    }>(`SELECT id, song_json, status, progress, target_playlist_id, sort_order, error FROM download_jobs ORDER BY created_at ASC`);
+      playlist_only: number | null;
+    }>(`SELECT id, song_json, status, progress, target_playlist_id, sort_order, error, playlist_only FROM download_jobs ORDER BY created_at ASC`);
 
     return rows.map(row => {
       const wasActive = row.status === 'downloading' || row.status === 'staging';
@@ -57,6 +58,7 @@ export const loadAllJobs = async (): Promise<QueueItem[]> => {
         targetPlaylistId: row.target_playlist_id ?? undefined,
         sortOrder: row.sort_order,
         error: row.error ?? undefined,
+        playlistOnly: row.playlist_only === 1,
       };
     });
   });

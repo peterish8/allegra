@@ -61,10 +61,14 @@ data class IslandGeometry(
         /** The closed pill keeps three quarters of the room it could take beside the camera; Width scales it. */
         const val COMPACT_SHARE = 0.75f
         /** The listener's size settings (Settings → Dynamic island), as fractions of the closed island's own size. */
-        const val MIN_WIDTH_SCALE = 0.8f
+        /** 1.41.0: the closed island can narrow to 40% (it was 80%), down to just the cover and bars beside the camera. */
+        const val MIN_WIDTH_SCALE = 0.4f
         const val MAX_WIDTH_SCALE = 1.5f
         const val MIN_HEIGHT_SCALE = 0.85f
         const val MAX_HEIGHT_SCALE = 1.3f
+
+        /** The camera and, either side, a slot as wide as the pill is tall (the cover; the four level bars). */
+        fun compactFloor(cameraWidth: Float, pillHeight: Float): Float = cameraWidth + 2f * pillHeight
 
         fun compute(screenWidth: Float, statusBarHeight: Float, density: Float, cutout: CameraCutout?,
                     safeInsetTop: Float = 0f, safeInsetLeft: Float = 0f, safeInsetRight: Float = 0f,
@@ -101,12 +105,23 @@ data class IslandGeometry(
             }
 
             val cameraWidth = if (centred) hole!!.width else 0f
-            val idleWidth = max(cameraWidth + dp(56f), dp(80f)).coerceAtMost(centreSlot)
+            val roomyIdle = max(cameraWidth + dp(56f), dp(80f)).coerceAtMost(centreSlot)
             // Leave the clock and the status icons their room either side.
             val widest = centreSlot
-            val baseCompact = max(idleWidth, min(max(idleWidth + dp(44f), (idleWidth + dp(100f)) * COMPACT_SHARE), widest))
-            // The listener's width: the room beside the camera grows or shrinks; the camera is always inside.
-            val compactWidth = (idleWidth + (baseCompact - idleWidth) * ws).coerceIn(min(idleWidth + dp(24f), widest), widest)
+            val baseCompact = max(roomyIdle, min(max(roomyIdle + dp(44f), (roomyIdle + dp(100f)) * COMPACT_SHARE), widest))
+            // The narrowest a playing island can be: the camera plus a cover on one side and the level bars on the
+            // other, each about as wide as the pill is tall (drawCompact sizes the cover from the height).
+            val narrowest = min(compactFloor(cameraWidth, pillHeight), widest)
+            // The listener's width: the room beside the camera grows or shrinks; the camera is always inside. Below
+            // 100% it narrows from the default towards `narrowest`, reached at MIN_WIDTH_SCALE.
+            val compactWidth = if (ws >= 1f) {
+                (roomyIdle + (baseCompact - roomyIdle) * ws).coerceIn(min(roomyIdle + dp(24f), widest), widest)
+            } else {
+                val t = ((ws - MIN_WIDTH_SCALE) / (1f - MIN_WIDTH_SCALE)).coerceIn(0f, 1f)
+                (narrowest + (baseCompact - narrowest) * t).coerceIn(narrowest, widest)
+            }
+            // With nothing playing the island never stands wider than it would while playing.
+            val idleWidth = min(roomyIdle, compactWidth)
             val belowHardware = !centred && hole != null &&
                 hole.right > anchorX - compactWidth / 2f && hole.left < anchorX + compactWidth / 2f
             if (belowHardware) {

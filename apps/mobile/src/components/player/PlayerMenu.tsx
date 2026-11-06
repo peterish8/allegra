@@ -42,11 +42,13 @@ const Top: React.FC<{ icon: IconName; label: string; onPress: () => void }> = ({
 
 const Row: React.FC<{ icon: IconName; title: string; hint?: string; on?: boolean; onPress: () => void }> = ({ icon, title, hint, on, onPress }) => (
   <TactileRow onPress={onPress} style={styles.row} accessibilityRole="button" accessibilityLabel={title}>
-    <MaterialCommunityIcons name={icon} size={23} color={on ? '#d9e66a' : '#fff'} />
+    <MaterialCommunityIcons name={icon} size={23} color="#fff" />
     <View style={styles.rowText}>
-      <Text style={styles.rowTitle}>{title}</Text>
+      <Text style={[styles.rowTitle, on && styles.rowTitleOn]}>{title}</Text>
       {hint ? <Text style={styles.rowHint}>{hint}</Text> : null}
     </View>
+    {/* On is shown by shape and words, not a hue: a tick (the old chartreuse icon is retired). */}
+    {on ? <MaterialCommunityIcons name="check" size={20} color="#fff" accessibilityLabel="On" /> : null}
   </TactileRow>
 );
 
@@ -143,6 +145,7 @@ const styles = StyleSheet.create({
   },
   rowText: { flex: 1 },
   rowTitle: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  rowTitleOn: { fontWeight: '700' },
   rowHint: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 2 },
 });
 

@@ -187,4 +187,20 @@ class IslandGeometryTest {
         assertEquals("1:02:03", islandClock(3_723_000))
         assertEquals("0:00", islandClock(-5))
     }
+
+    @Test
+    fun `the closed island narrows to 40 percent, keeping the camera and a slot either side`() {
+        val density = 2.625f
+        val notch = CameraCutout(486f, 0f, 594f, 79f)
+        val eighty = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f, widthScale = 0.8f)
+        val forty = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f, widthScale = 0.4f)
+        val lower = IslandGeometry.compute(1080f, 79f, density, notch, screenHeight = 2340f, widthScale = 0.1f)
+        assertTrue("40% is narrower than 80%", forty.compactWidth < eighty.compactWidth)
+        assertEquals("below 40% is clamped to 40%", forty.compactWidth, lower.compactWidth, 0.01f)
+        assertEquals(IslandGeometry.compactFloor(notch.width, forty.pillHeight), forty.compactWidth, 0.01f)
+        assertTrue("camera inside", forty.compactWidth > notch.width)
+        assertTrue("idle never wider than playing", forty.idleWidth <= forty.compactWidth)
+        val none = IslandGeometry.compute(1080f, 79f, density, null, screenHeight = 2340f, widthScale = 0.4f)
+        assertTrue("no camera: still room for the cover and bars", none.compactWidth >= 2f * none.pillHeight - 0.01f)
+    }
 }

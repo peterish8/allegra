@@ -35,6 +35,19 @@ export interface WidgetSnapshot {
   playlists: WidgetPlaylist[];
   /** Which playlist the playlist widget shows (cycled from the widget). */
   playlistIndex: number;
+  /** Up to four playlists pinned in Settings (or the first four, until some are pinned). A tap plays one. */
+  pinned: WidgetPin[];
+  /** The listener chose these (false: the widget is showing the first playlists as a suggestion). */
+  pinnedChosen: boolean;
+  /** A short line after a tap that could not play ("Download “Sleep” to play it from here"). */
+  notice: string | null;
+}
+
+export interface WidgetPin {
+  id: string;
+  name: string;
+  cover?: string;
+  songCount: number;
 }
 
 export const EMPTY_SNAPSHOT: WidgetSnapshot = {
@@ -45,6 +58,23 @@ export const EMPTY_SNAPSHOT: WidgetSnapshot = {
   duration: 0,
   playlists: [],
   playlistIndex: 0,
+  pinned: [],
+  pinnedChosen: false,
+  notice: null,
+};
+
+/**
+ * The widget's tiles: the pinned playlists that still exist, in pinned order; with none pinned, the first four
+ * playlists so a new widget is never empty.
+ */
+export const widgetPins = (pinnedIds: readonly string[], playlists: readonly WidgetPlaylist[]): { pins: WidgetPin[]; chosen: boolean } => {
+  const byId = new Map(playlists.map(p => [p.id, p]));
+  const chosen = pinnedIds.flatMap(id => (byId.has(id) ? [byId.get(id) as WidgetPlaylist] : []));
+  const source = chosen.length > 0 ? chosen : playlists.slice(0, 4);
+  return {
+    pins: source.slice(0, 4).map(p => ({ id: p.id, name: p.name, cover: p.cover, songCount: p.songCount })),
+    chosen: chosen.length > 0,
+  };
 };
 
 /** Songs listed per playlist — a widget list is a glance, not the library. */

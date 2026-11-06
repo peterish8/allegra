@@ -14,8 +14,8 @@ export interface AuraPalette {
   tertiary: string;
 }
 
-/** Allegra's "energy" room: coral, sky blue, soft lime. */
-export const DEFAULT_AURA: AuraPalette = { primary: '#ee6b5f', secondary: '#7bafd4', tertiary: '#c4dd74' };
+/** The room with no cover yet: coral, sky blue and a warm sand (the old lime is retired with the green accent). */
+export const DEFAULT_AURA: AuraPalette = { primary: '#ee6b5f', secondary: '#7bafd4', tertiary: '#e3c79a' };
 export const NEUTRAL_AURA: AuraPalette = { primary: '#7d8087', secondary: '#5f6269', tertiary: '#9a9da4' };
 
 /** "#rrggbb" -> [r, g, b] in 0..1. Bad input gives mid-grey, never NaN. */

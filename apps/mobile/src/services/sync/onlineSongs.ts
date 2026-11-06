@@ -79,6 +79,9 @@ async function resolveOne(song: Song): Promise<UnifiedSong | null> {
   return null;
 }
 
+/** The catalog song an online row is, for downloading it (an offline playlist). Null when it cannot be found. */
+export const resolveOnlineRow = (row: OnlineSongRow): Promise<UnifiedSong | null> => resolveOne(onlineRowToSong(row));
+
 /** Resolves songs a few at a time, keeping their order. Songs that cannot be found are left out. */
 async function resolveAll(songs: readonly Song[]): Promise<Song[]> {
   const out: (Song | null)[] = new Array(songs.length).fill(null);

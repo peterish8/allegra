@@ -10,6 +10,10 @@ import { tabTapParams } from '../navigation/tabs';
 import { NAV_BAR_HEIGHT, SEEK_BAND_HEIGHT, miniRowHeight, shellNavHeight } from '../navigation/v6Shell';
 import { useTabBarPushStyle } from '../navigation/sheetProgress';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
+import { useShallow } from 'zustand/react/shallow';
+import { holdTabFor, holdTarget, TAB_HOLD_MS } from '../navigation/tabHold';
+import { usePlaylistStore } from '../store/playlistStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { ShellMaterial } from './ShellMaterial';
 import * as Haptics from '../utils/haptics';
 
@@ -24,6 +28,7 @@ interface NativeProps {
   variant: string; activeTab: string; bottomInset: number; micEnabled: boolean; dark: boolean; glassBackground: boolean;
   activeTint: string; inactiveTint: string; moreActive: boolean; moreOpen: boolean; bottomOffset: number;
   style: { height: number }; onTabPress: (event: { nativeEvent: { route: string } }) => void; onMorePress: () => void;
+  holdTab: string | null; onTabLongPress: (event: { nativeEvent: { route: string } }) => void;
 }
 const NativeBar = (() => { try { return Platform.OS === 'android' ? requireNativeView<NativeProps>('NativeTabBar') : null; } catch { return null; } })();
 
@@ -45,12 +50,24 @@ export function V6TabBar({ state, navigation }: BottomTabBarProps) {
     if (target.key !== state.routes[state.index]?.key && !event.defaultPrevented) navigation.navigate(name, tabTapParams(target.params));
     Haptics.tap();
   };
+  // Settings → Hold Library for 2 seconds: the chosen playlist opens straight away.
+  const holdPlaylistId = useSettingsStore(s => s.libraryHoldPlaylistId);
+  const playlistIds = usePlaylistStore(useShallow(s => s.playlists.map(p => p.id)));
+  const holdTab = holdTabFor(holdPlaylistId, playlistIds);
+  const hold = (name: string) => {
+    const playlistId = holdTarget(name, holdPlaylistId, playlistIds);
+    if (!playlistId) return;
+    Haptics.toggle();
+    navigation.navigate('Library', { screen: 'PlaylistDetail', params: { playlistId } });
+  };
   if (keyboard) return null;
   return <View pointerEvents="box-none" style={styles.host}><AnimatedBar height={barHeight} push={push}>
     <ShellMaterial uri={cover} above={cover ? SEEK_BAND_HEIGHT + miniRowHeight(fontScale) : 0} />
     {NativeBar ? <NativeBar variant="v6" activeTab={active} moreActive={false} moreOpen={false} micEnabled={false} dark glassBackground bottomInset={barHeight - NAV_BAR_HEIGHT} bottomOffset={0}
-      activeTint={Signal.ink} inactiveTint={Signal.inkSoft} style={{ height: barHeight }} onTabPress={e => press(e.nativeEvent.route)} onMorePress={() => {}} />
+      activeTint={Signal.ink} inactiveTint={Signal.inkSoft} style={{ height: barHeight }} onTabPress={e => press(e.nativeEvent.route)} onMorePress={() => {}}
+      holdTab={holdTab} onTabLongPress={e => hold(e.nativeEvent.route)} />
       : <View style={[styles.row, { paddingBottom: barHeight - NAV_BAR_HEIGHT }]}>{TABS.map(tab => <Tactile key={tab.route} onPress={() => press(tab.route)} accessibilityRole="tab" accessibilityLabel={tab.label}
+        onLongPress={holdTab === tab.route ? () => hold(tab.route) : undefined} delayLongPress={TAB_HOLD_MS}
         accessibilityState={{ selected: active === tab.route }} wrapperStyle={styles.target} style={styles.item}>
         <View style={styles.indicator}><Ionicons name={active === tab.route ? tab.filled : tab.icon} size={24} color={active === tab.route ? Signal.ink : Signal.inkSoft} /></View>
         <Text variant="caption" maxFontSizeMultiplier={1.3} style={active === tab.route && styles.bold}>{tab.label}</Text>

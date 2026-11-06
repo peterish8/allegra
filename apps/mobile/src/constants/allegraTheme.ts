@@ -71,6 +71,9 @@ export const Glass = {
   chip: 'rgba(255, 255, 255, 0.09)',
   capsule: 'rgba(255, 255, 255, 0.10)',
   capsulePressed: 'rgba(255, 255, 255, 0.16)',
+  /** A chosen tile or row on glass (the Connect device, a picked playlist): a lit white step, never a hue. */
+  selected: 'rgba(255, 255, 255, 0.14)',
+  selectedRim: 'rgba(255, 255, 255, 0.32)',
   /** The keyboard focus ring: its own ring, never the look of selection. */
   focusRing: 'rgba(255, 255, 255, 0.9)',
   highlight: 'rgba(255, 255, 255, 0.12)',

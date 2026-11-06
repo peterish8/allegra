@@ -9,8 +9,8 @@
  */
 const DUOTONES: [string, string, string][] = [
   ['#2a1b3d', '#ee6b5f', '#ffaaa0'], // plum → coral
-  ['#0f2a3a', '#7bafd4', '#d9e66a'], // ink → sky, lime spark
-  ['#1f2a14', '#9cc15a', '#e8f2a6'], // moss → lime
+  ['#0f2a3a', '#7bafd4', '#d5e6f5'], // ink → sky, pale spark
+  ['#1c2420', '#7f9a8c', '#d3e2da'], // slate green → sage
   ['#2d1030', '#c15fb6', '#ffc6f2'], // aubergine → orchid
   ['#12243b', '#4b6cff', '#9fd3ff'], // navy → cobalt
   ['#3a1a10', '#ff8a4c', '#ffd29c'], // rust → amber

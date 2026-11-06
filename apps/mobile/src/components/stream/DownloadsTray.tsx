@@ -15,7 +15,8 @@ const ACTIVE = ['pending', 'staging', 'downloading'];
 
 export const DownloadsTray: React.FC<{ onPress: () => void }> = ({ onPress }) => {
   // A number, so this re-renders when the count changes and not on every progress tick.
-  const active = useDownloadQueueStore(state => state.queue.filter(item => ACTIVE.includes(item.status)).length);
+  // Songs saved only for a downloaded playlist show their progress on that playlist, not here (1.41.0).
+  const active = useDownloadQueueStore(state => state.queue.filter(item => !item.playlistOnly && ACTIVE.includes(item.status)).length);
   if (active === 0) return null;
   return (
     // Fades in and out on its own; no `layout` transition here — an exiting child under a layout animation

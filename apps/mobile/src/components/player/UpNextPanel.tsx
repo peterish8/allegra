@@ -28,13 +28,13 @@ import { prepareNextInQueue, usePlayerStore } from '../../store/playerStore';
 import { usePlaylistStore } from '../../store/playlistStore';
 import { useSongsStore } from '../../store/songsStore';
 import { Song } from '../../types/song';
-import { EmptyState, Segmented } from '../../ui';
+import { Button, EmptyState, Segmented } from '../../ui';
 import { diag } from '../../utils/diag';
 import { libraryKeys, matchKey } from '../../utils/downloadState';
 import * as Haptics from '../../utils/haptics';
 import Artwork from '../allegra/Artwork';
 import Frosted from '../allegra/Frosted';
-import { Tactile, TactileRow } from '../allegra/motion';
+import { TactileRow } from '../allegra/motion';
 import { useArtworkPalette } from '../allegra/useArtworkPalette';
 import { dropIndex, filterQueue, moveItem, playingFromLabel, rowShift, UpNextFilter } from './coverStage';
 import NativeQueueList, { nativeQueueListAvailable } from './NativeQueueList';
@@ -349,17 +349,15 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
             <Text style={styles.from}>Playing from</Text>
             <Text style={styles.source} numberOfLines={1}>{label}</Text>
           </View>
-          <Tactile onPress={shuffle} style={styles.pill} accessibilityRole="button" accessibilityLabel="Shuffle what plays next">
-            <Ionicons name="shuffle" size={18} color={Signal.ink} />
-            <Text style={styles.pillText}>Shuffle</Text>
-          </Tactile>
+          {/* A frosted glass capsule, like every secondary action (1.41.0). */}
+          <Button label="Shuffle" icon="shuffle" size="compact" haptic="select" accessibilityLabel="Shuffle what plays next" onPress={shuffle} />
         </View>
         {/* The V6 board's one segmented control; the list below starts under its whole frame. */}
         <View style={styles.filters}>
           <Segmented<UpNextFilter> value={filter} options={FILTERS} onChange={setFilter} label="Show in Up next" />
         </View>
         {shown.length === 0 ? (
-          <EmptyState icon="list-outline" title={songs.length === 0 ? 'You?re all caught up' : 'No songs in this view'} body={songs.length === 0 ? 'This song can keep playing. Add songs from Stream or your Library to keep the music going.' : filter === 'familiar' ? 'None of these songs are saved on this phone yet.' : 'Everything here is already on your phone.'} />
+          <EmptyState icon="list-outline" title={songs.length === 0 ? 'You\u2019re all caught up' : 'No songs in this view'} body={songs.length === 0 ? 'This song can keep playing. Add songs from Stream or your Library to keep the music going.' : filter === 'familiar' ? 'None of these songs are saved on this phone yet.' : 'Everything here is already on your phone.'} />
         ) : native ? (
           <NativeQueueList
             style={styles.nativeList}
@@ -415,18 +413,6 @@ const styles = StyleSheet.create({
   headText: { flex: 1, marginRight: 12 },
   from: { color: Signal.inkMuted, fontSize: 13 },
   source: { color: Signal.ink, fontSize: 17, fontWeight: '700', marginTop: 2 },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    height: 40,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.22)',
-  },
-  pillText: { color: Signal.ink, fontSize: 15, fontWeight: '600' },
   filters: { paddingHorizontal: 20, marginTop: 12, marginBottom: 8 },
   nativeList: { flex: 1 },
   empty: { color: 'rgba(255,255,255,0.6)', fontSize: 15, paddingVertical: 28, textAlign: 'center' },
