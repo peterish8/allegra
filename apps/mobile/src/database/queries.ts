@@ -141,43 +141,51 @@ export const getHiddenSongs = async (): Promise<Song[]> => {
   });
 };
 
+/** A `songs` row as stored. */
+export interface SongDbRow {
+  id: string;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  gradient_id: string;
+  duration: number;
+  date_created: string;
+  date_modified: string;
+  play_count: number;
+  last_played: string | null;
+  scroll_speed: number;
+  cover_image_uri: string | null;
+  lyrics_align: string | null;
+  text_case: string | null;
+  audio_uri: string | null;
+  is_liked: number | null;
+  is_hidden: number | null;
+  youtube_video_id: string | null;
+  origin_id: string | null;
+  cover_remote_uri: string | null;
+  playlist_only: number | null;
+}
+
+/** A `lyrics` row as stored. */
+export interface LyricDbRow {
+  id: number;
+  song_id?: string;
+  timestamp: number;
+  text: string;
+  line_order: number;
+  words: string | null;
+}
+
 export const getSongById = async (id: string): Promise<Song | null> => {
   const db = await getDatabase();
-  
-  const songRow = await db.getFirstAsync<{
-    id: string;
-    title: string;
-    artist: string | null;
-    album: string | null;
-    gradient_id: string;
-    duration: number;
-    date_created: string;
-    date_modified: string;
-    play_count: number;
-    last_played: string | null;
-    scroll_speed: number;
-    cover_image_uri: string | null;
-    lyrics_align: string | null;
-    text_case: string | null;
-    audio_uri: string | null;
-    is_liked: number | null;
-    is_hidden: number | null;
-    youtube_video_id: string | null;
-    origin_id: string | null;
-    cover_remote_uri: string | null;
-    playlist_only: number | null;
-  }>('SELECT * FROM songs WHERE id = ?', [id]);
-  
+  const songRow = await db.getFirstAsync<SongDbRow>('SELECT * FROM songs WHERE id = ?', [id]);
   if (!songRow) return null;
-  
-  const lyricsRows = await db.getAllAsync<{
-    id: number;
-    timestamp: number;
-    text: string;
-    line_order: number;
-    words: string | null;
-  }>('SELECT * FROM lyrics WHERE song_id = ? ORDER BY line_order', [id]);
-  
+  const lyricsRows = await db.getAllAsync<LyricDbRow>('SELECT * FROM lyrics WHERE song_id = ? ORDER BY line_order', [id]);
+  return songFromRows(songRow, lyricsRows);
+};
+
+/** One song from its row and its lyric rows (already in line order). */
+export const songFromRows = (songRow: SongDbRow, lyricsRows: readonly LyricDbRow[]): Song => {
   return {
     id: songRow.id,
     title: songRow.title,

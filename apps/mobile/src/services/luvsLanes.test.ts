@@ -1,4 +1,4 @@
-import { creditsArtist, deepenLane, freshSongs, laneSpecs, loadLane, MAX_ARTIST_LANES, needsDeepening, warmAround } from './luvsLanes';
+import { creditsArtist, deepenLane, freshSongs, laneSpecs, loadLane, MAX_ARTIST_LANES, needsDeepening, warmAround, withTimeout } from './luvsLanes';
 import type { UnifiedSong } from '../types/song';
 
 const s = (id: string, title: string, artist: string, url = `https://cdn/${id}`): UnifiedSong => ({
@@ -89,12 +89,29 @@ describe('creditsArtist', () => {
 });
 
 describe('warmAround', () => {
-  it('keeps the next two, the previous one and the neighbouring lanes warm', () => {
+  it('lists what a swipe reaches most likely next first: next, the neighbouring lanes, then further away', () => {
     const lanes = [
       { songs: [s('l0a', 'a', 'x'), s('l0b', 'b', 'x')] },
       { songs: [s('l1a', 'a', 'y'), s('l1b', 'b', 'y'), s('l1c', 'c', 'y'), s('l1d', 'd', 'y')] },
       { songs: [s('l2a', 'a', 'z')] },
     ];
-    expect(warmAround(lanes, 1, [1, 1, 0]).map(x => x.id)).toEqual(['l1c', 'l1d', 'l1a', 'l0b', 'l2a']);
+    // The native pool keeps the first three (1.41.0): the next song and both sideways swipes.
+    expect(warmAround(lanes, 1, [1, 1, 0]).map(x => x.id)).toEqual(['l1c', 'l2a', 'l0b', 'l1d', 'l1a']);
+  });
+});
+
+describe('Luvs feed retries (1.41.0)', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('gives up on a request that hangs, so the next visit can ask again', async () => {
+    const hung = withTimeout(new Promise<never>(() => {}), 15_000);
+    jest.advanceTimersByTime(15_000);
+    await expect(hung).rejects.toThrow('timed out');
+  });
+
+  it('passes an answer straight through', async () => {
+    await expect(withTimeout(Promise.resolve([1, 2]), 15_000)).resolves.toEqual([1, 2]);
+    await expect(withTimeout(Promise.reject(new Error('offline')), 15_000)).rejects.toThrow('offline');
   });
 });

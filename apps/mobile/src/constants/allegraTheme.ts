@@ -99,6 +99,13 @@ export const ShellFrost = {
   tint: 'rgba(13, 15, 19, 0.84)',
   coverOpacity: 0.16,
   solid: '#16181D',
+  /**
+   * The mini player alone (1.41.0): the cover's animated glow (Settings' "Glow animated", Echo's two mini blobs),
+   * softened under a blurred cover and a frosted dark tint so it reads as light behind glass, never as a colour block.
+   */
+  miniGlowOpacity: 0.7,
+  miniCoverOpacity: 0.28,
+  miniTint: 'rgba(11, 13, 16, 0.46)',
 } as const;
 
 /** One corner family everywhere. Artwork is never over-rounded. */

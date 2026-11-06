@@ -28,6 +28,7 @@ import { getRecommendations } from '../MultiSourceSearchService';
 import { lyricaService } from '../LyricaService';
 import { ALLEGRA_API_URL } from '../account/config';
 import { fromMobileId } from '@shared/songRef';
+import { LruMap } from '../../utils/lruMap';
 import {
   dedupeStreamable,
   isStreamSongId,
@@ -35,8 +36,11 @@ import {
   toStreamSong,
 } from './streamSong';
 
-/** Catalog metadata for each stream id, so radio and history can find the source song. */
-const catalog = new Map<string, UnifiedSong>();
+/**
+ * Catalog metadata for each stream id, so radio and history can find the source song. Bounded (1.41.0): every search
+ * result and shelf registers here, so a long session kept thousands. 4000 is well above the longest queue (1500).
+ */
+const catalog = new LruMap<string, UnifiedSong>(4000);
 const remember = (songs: UnifiedSong[]) => {
   for (const s of songs) catalog.set(toStreamSong(s).id, s);
 };

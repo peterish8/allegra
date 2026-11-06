@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Signal, Space, Tactile, Text, type IconName } from '../ui';
 import { usePlayerStore } from '../store/playerStore';
 import { tabTapParams } from '../navigation/tabs';
-import { NAV_BAR_HEIGHT, SEEK_BAND_HEIGHT, miniRowHeight, shellNavHeight } from '../navigation/v6Shell';
+import { NAV_BAR_HEIGHT, shellNavHeight } from '../navigation/v6Shell';
 import { useTabBarPushStyle } from '../navigation/sheetProgress';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { useShallow } from 'zustand/react/shallow';
@@ -33,7 +33,7 @@ interface NativeProps {
 const NativeBar = (() => { try { return Platform.OS === 'android' ? requireNativeView<NativeProps>('NativeTabBar') : null; } catch { return null; } })();
 
 export function V6TabBar({ state, navigation }: BottomTabBarProps) {
-  const { height, fontScale } = useWindowDimensions();
+  const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const barHeight = shellNavHeight(height, insets.bottom);
   const keyboard = useKeyboardVisible();
@@ -62,7 +62,8 @@ export function V6TabBar({ state, navigation }: BottomTabBarProps) {
   };
   if (keyboard) return null;
   return <View pointerEvents="box-none" style={styles.host}><AnimatedBar height={barHeight} push={push}>
-    <ShellMaterial uri={cover} above={cover ? SEEK_BAND_HEIGHT + miniRowHeight(fontScale) : 0} />
+    {/* 1.41.0: the mini player draws its own glow, so the bar's material is its own too. */}
+    <ShellMaterial uri={cover} />
     {NativeBar ? <NativeBar variant="v6" activeTab={active} moreActive={false} moreOpen={false} micEnabled={false} dark glassBackground bottomInset={barHeight - NAV_BAR_HEIGHT} bottomOffset={0}
       activeTint={Signal.ink} inactiveTint={Signal.inkSoft} style={{ height: barHeight }} onTabPress={e => press(e.nativeEvent.route)} onMorePress={() => {}}
       holdTab={holdTab} onTabLongPress={e => hold(e.nativeEvent.route)} />

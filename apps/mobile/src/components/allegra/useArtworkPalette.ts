@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { extractAlbumColors } from '../../services/NativePalette';
 import { AuraPalette, DEFAULT_AURA, paletteFromColors } from './palette';
+import { LruMap } from '../../utils/lruMap';
 
-const cache = new Map<string, AuraPalette>();
+// The covers seen most recently; a long session no longer keeps every palette it ever read (1.41.0).
+const cache = new LruMap<string, AuraPalette>(150);
 const RETRY_MS = 1500;
 
 /**

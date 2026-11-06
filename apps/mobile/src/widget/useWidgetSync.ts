@@ -44,27 +44,31 @@ const pushToWidgets = async (snapshot: WidgetSnapshot) => {
   ]).catch(() => {});
 };
 
-const loadPlaylists = async (): Promise<WidgetPlaylist[]> => {
+/**
+ * The widget's tiles need a name, a count and a cover (1.41.0). It used to read every song of every playlist (one
+ * query per song, lyrics included) on each playlist change; now only the shown tiles without a cover of their own
+ * read their songs, for the first song's cover.
+ */
+const loadPlaylists = async (pinnedIds: readonly string[]): Promise<WidgetPlaylist[]> => {
   const { playlists } = usePlaylistStore.getState();
   if (playlists.length === 0) return [];
+  const base: WidgetPlaylist[] = playlists.map(p => ({
+    id: p.id,
+    name: p.isDefault ? 'Liked songs' : p.name,
+    cover: widgetCover(p.coverImageUri),
+    songCount: p.songCount ?? 0,
+    songs: [],
+  }));
+  const shown = new Set(widgetPins(pinnedIds, base).pins.map(p => p.id));
   const { getPlaylistSongs } = await import('../database/playlistQueries');
-  return Promise.all(
-    playlists.map(async p => {
-      const songs = await getPlaylistSongs(p.id).catch(() => []);
-      return {
-        id: p.id,
-        name: p.isDefault ? 'Liked songs' : p.name,
-        cover: widgetCover(p.coverImageUri) ?? widgetCover(songs[0]?.coverImageUri),
-        songCount: p.songCount ?? songs.length,
-        songs: songs.slice(0, WIDGET_PLAYLIST_SONGS).map(s => ({
-          id: s.id,
-          title: s.title,
-          artist: s.artist ?? '',
-          cover: widgetCover(s.coverImageUri),
-        })),
-      };
-    }),
-  );
+  return Promise.all(base.map(async p => {
+    if (p.cover || !shown.has(p.id)) return p;
+    const songs = await getPlaylistSongs(p.id).catch(() => []);
+    const first = songs.find(s => widgetCover(s.coverImageUri));
+    return { ...p, cover: widgetCover(first?.coverImageUri), songs: songs.slice(0, WIDGET_PLAYLIST_SONGS).map(s => ({
+      id: s.id, title: s.title, artist: s.artist ?? '', cover: widgetCover(s.coverImageUri),
+    })) };
+  }));
 };
 
 export const useWidgetSync = (): void => {
@@ -82,7 +86,7 @@ export const useWidgetSync = (): void => {
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     let alive = true;
-    loadPlaylists().then(async list => {
+    loadPlaylists(pinnedIds).then(async list => {
       if (!alive) return;
       playlistCache.current = list;
       const prev = await readSnapshot();

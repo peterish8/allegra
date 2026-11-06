@@ -40,7 +40,10 @@ import { snapshotOfSong } from '../services/connect/mobilePlayerPort';
 import { luvsBufferManager } from '../services/LuvsBufferManager';
 import { luvsEngine } from '../services/luvsEngine';
 import { hookOffsetSeconds } from '../services/luvsHook';
-import { creditsArtist, deepenLane, FOR_YOU, LaneSources, laneSpecs, loadLane, MAX_ARTIST_LANES, needsDeepening, warmAround } from '../services/luvsLanes';
+import {
+  creditsArtist, deepenLane, FEED_RETRY_TIMEOUT_MS, FOR_YOU, LaneSources, laneSpecs, loadLane, MAX_ARTIST_LANES, needsDeepening,
+  warmAround, withTimeout,
+} from '../services/luvsLanes';
 import { tasteSeeds } from '../services/luvsTaste';
 import { personalMoodMix } from '../services/stream/moodMix';
 import { defaultDeps, recommendFor } from '../services/stream/recommend';
@@ -183,6 +186,12 @@ const LuvsScreen: React.FC = () => {
   useFocusEffect(useCallback(() => {
     StatusBar.setHidden(true);
     setPlaying(true);
+    // Luvs stays mounted between visits, so the mount's one feed request was the only one: if it failed (offline, or
+    // the app was closed mid-way) coming back showed nothing (owner report, 1.41.0). Every visit with an empty feed
+    // asks again, and a request that hangs gives way after a while so the next visit can try.
+    if (useLuvsFeedStore.getState().feedSongs.length === 0) {
+      withTimeout(luvsEngine.refresh(), FEED_RETRY_TIMEOUT_MS).catch(() => {});
+    }
     // The library song stops as Luvs opens, not ducked under it until the
     // first card's audio arrives.
     if (usePlayerStore.getState().isPlaying) usePlayerStore.getState().requestPlayback(false);

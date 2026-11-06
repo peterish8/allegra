@@ -3,11 +3,13 @@
  * Insets are counted once here and shared by the native bar, the mini player and every screen's clearance,
  * so changing a height below moves all of them together.
  *
- * Normal text: a 16dp seek band (the thin progress line along its top, the band itself the drag target), a 48dp
- * transport row with a 40dp cover, and a 56dp nav: 120dp above the inset, down from 144dp (owner, 2026-11-06:
- * "too large height in mini player especially"). Large text (fontScale ≥ 1.6) keeps a taller 72dp row.
+ * Normal text: a 12dp seek band (the rounded progress line along its top, the band itself the drag target), a 48dp
+ * transport row with a 40dp cover, and a 56dp nav: 116dp above the inset, down from 144dp (owner, 2026-11-06:
+ * "too large height in mini player especially"; 1.41.0 took 4dp more off the band). Large text (fontScale ≥ 1.6)
+ * keeps a taller 72dp row.
  */
-export const SEEK_BAND_HEIGHT = 16;
+/** 1.41.0: 12 (was 16). The scrub line sits along its top and thickens under the finger (MiniScrubber). */
+export const SEEK_BAND_HEIGHT = 12;
 export const MINI_ROW_HEIGHT = 48;
 export const MINI_ROW_HEIGHT_LARGE_TEXT = 72;
 export const MINI_COVER_SIZE = 40;
