@@ -41,7 +41,11 @@ import { RiseIn, Tactile, TactileRow } from '../components/allegra/motion';
 import { GUTTER, MoodChips, SongRow, TrackItem } from '../components/stream/StreamHome';
 import { useStreamSongActions } from '../components/stream/useStreamSongActions';
 import { Toast } from '../components/Toast';
-import { Radius, Signal, Space } from '../constants/allegraTheme';
+import { Glass, Radius, Signal, Space } from '../constants/allegraTheme';
+import { useVoiceField } from '../components/search/VoiceField';
+import { playVoicePick } from '../services/voicePlay';
+import { useVoiceSearchStore } from '../store/voiceSearchStore';
+import { Button, SongRow as SharedSongRow } from '../ui';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { openPlayerSheet } from '../navigation/playerSheet';
 import { androidPerformance } from '../services/performanceTrace';
@@ -50,6 +54,7 @@ import { StreamService } from '../services/stream/StreamService';
 import { streamIdFor } from '../services/stream/streamSong';
 import type { YTPageItem } from '../services/ytmusic/browse';
 import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
+import { useDownloadQueueStore } from '../store/downloadQueueStore';
 import { usePlayerStore } from '../store/playerStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSearchHistoryStore } from '../store/searchHistoryStore';
@@ -99,6 +104,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
   const remember = useSearchHistoryStore(s => s.remember);
   const forget = useSearchHistoryStore(s => s.forget);
   const clearRecent = useSearchHistoryStore(s => s.clear);
+  const addToDownloads = useDownloadQueueStore(s => s.addToQueue);
 
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<Scope>('All');
@@ -334,6 +340,12 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     }
   }, [commit]);
 
+  // Round 7 item 9: Download sits beside the ⋮ on every catalog result again.
+  const save = useCallback((song: UnifiedSong) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    addToDownloads([song]);
+    setToast(`Saving \u201c${song.title}\u201d to your library`);
+  }, [addToDownloads]);
 
   const showTraceActions = useCallback(() => {
     const count = androidPerformance.trace.exportRecords().length;
@@ -377,6 +389,20 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     startSearch('', scope);
     inputRef.current?.focus();
   }, [scope, startSearch]);
+
+  // Round 7 item 6: voice search lives in the field. What was heard becomes the query (editable, remembered).
+  const heard = useCallback((text: string) => { startSearch(text, 'All'); remember(text); Keyboard.dismiss(); }, [startSearch, remember]);
+  const typeInstead = useCallback((text: string) => { startSearch(text, scope); inputRef.current?.focus(); }, [scope, startSearch]);
+  const voice = useVoiceField({ onHeard: heard, onType: typeInstead });
+  const voicePicks = useVoiceSearchStore(s => (s.origin === 'field' && s.phase === 'results' ? s.picks : null));
+  const voiceSelected = useVoiceSearchStore(s => s.selected);
+  const topMatch = voicePicks?.[voiceSelected];
+  const playTopMatch = useCallback(() => {
+    if (!voicePicks) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    playVoicePick(voicePicks, voiceSelected);
+    useVoiceSearchStore.getState().dismiss();
+  }, [voicePicks, voiceSelected]);
 
   const localTrack = (s: Song): TrackItem => ({
     key: s.id, title: s.title, artist: s.artist, artwork: s.coverImageUri, isCurrent: currentSongId === s.id,
@@ -532,6 +558,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
                   item={onlineTrack(s)}
                   onPress={() => playOnline(onlineSongs, i)}
                   onLongPress={() => queueNext(s)}
+                  onSave={() => save(s)}
                 />
               ))}
             </View>
@@ -560,6 +587,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
           </InfoTitleRow>
         </View>
 
+        <View style={styles.searchBox} accessibilityRole="search">
         <View style={styles.search}>
           <Ionicons name="search" size={18} color={Signal.inkMuted} />
           <TextInput
@@ -574,12 +602,24 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
             style={styles.searchInput}
             accessibilityLabel="Search your phone and the catalog"
           />
-          {query.length > 0 ? (
+          {query.length > 0 && !voice.busy ? (
             <Tactile onPress={clearField} hitSlop={10} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Clear search">
               <Ionicons name="close-circle" size={18} color={Signal.inkMuted} />
             </Tactile>
           ) : null}
+          {voice.trailing}
         </View>
+        {voice.panel}
+        </View>
+
+        {topMatch ? (
+          <View style={styles.topMatch} accessibilityRole="summary" accessibilityLabel="Top match">
+            <SharedSongRow title={topMatch.song.title} artist={topMatch.song.artist}
+              artwork={topMatch.kind === 'local' ? topMatch.song.coverImageUri : topMatch.song.highResArt}
+              meta={topMatch.kind === 'local' ? 'In your library' : 'Top match'} onPress={playTopMatch}
+              trailing={<Button label="Play" icon="play" variant="primary" size="compact" onPress={playTopMatch} />} />
+          </View>
+        ) : null}
 
         {q ? (
           <View style={styles.chips}>
@@ -587,7 +627,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         ) : null}
 
-        {body}
+        <View style={voice.busy ? styles.dim : undefined} pointerEvents={voice.busy ? 'none' : 'auto'}>{body}</View>
       </ScrollView>
       <LinearGradient
         pointerEvents="none"
@@ -616,19 +656,24 @@ const styles = StyleSheet.create({
   title: { fontSize: TypeScale.page, fontWeight: '700', color: Signal.ink },
   traceButton: { paddingHorizontal: Space.xs, paddingVertical: Space.xs },
   traceButtonLabel: { color: Signal.inkMuted, fontSize: TypeScale.caption, fontWeight: '600' },
+  // The field and its voice panel are one surface: listening opens inside it (Round 7 item 6).
+  searchBox: {
+    marginHorizontal: GUTTER,
+    marginTop: Space.xs,
+    borderRadius: Space.lg,
+    overflow: 'hidden',
+    backgroundColor: Glass.capsule,
+  },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Space.xs,
-    marginHorizontal: GUTTER,
-    marginTop: Space.xs,
-    height: 46,
-    paddingHorizontal: Space.sm,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
+    minHeight: 48,
+    paddingLeft: Space.sm + 2,
+    paddingRight: Space.xxs,
   },
+  topMatch: { marginTop: Space.sm },
+  dim: { opacity: 0.32 },
   searchInput: { flex: 1, color: Signal.ink, fontSize: TypeScale.body, paddingVertical: 0 },
   chips: { marginTop: Space.sm },
   list: { paddingHorizontal: GUTTER },

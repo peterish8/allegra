@@ -30,11 +30,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Glass, Motion, Radius, Signal } from '../constants/allegraTheme';
 import { TAB_BAR_CLEARANCE } from '../navigation/tabs';
 import { voiceLevel } from '../playback/voiceLevel';
-import { routeSongPick } from '../services/connect/playbackIntents';
 import { StreamService } from '../services/stream/StreamService';
 import { useDownloadQueueStore } from '../store/downloadQueueStore';
 import { usePlayerStore } from '../store/playerStore';
 import { useVoiceSearchStore, VoicePick } from '../store/voiceSearchStore';
+import { playVoicePick } from '../services/voicePlay';
+import { cardListeningHint } from '../utils/voiceFieldCopy';
 import { IconButton } from '../ui';
 import * as Haptics from '../utils/haptics';
 import Artwork from './allegra/Artwork';
@@ -64,6 +65,9 @@ const LevelBar: React.FC<{ weight: number }> = ({ weight }) => {
 
 export const VoiceSearchCard: React.FC = () => {
   const phase = useVoiceSearchStore(s => s.phase);
+  const gesture = useVoiceSearchStore(s => s.gesture);
+  // Listening started in the Search field shows there, not in this card (Round 7 item 6).
+  const inField = useVoiceSearchStore(s => s.origin === 'field');
   const transcript = useVoiceSearchStore(s => s.transcript);
   const query = useVoiceSearchStore(s => s.query);
   const picks = useVoiceSearchStore(s => s.picks);
@@ -79,7 +83,7 @@ export const VoiceSearchCard: React.FC = () => {
   const playingArt = usePlayerStore(s => s.currentSong?.coverImageUri);
   const palette = useArtworkPalette(shownArt ?? playingArt);
 
-  const visible = phase !== 'idle';
+  const visible = phase !== 'idle' && !inField;
   const interactive = visible && phase !== 'listening';
   const show = useSharedValue(0);
   // Stays mounted through the close animation — but a close that finishes
@@ -124,20 +128,7 @@ export const VoiceSearchCard: React.FC = () => {
   const play = () => {
     if (!pick) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    if (pick.kind === 'local') {
-      // While another device plays, the song goes there (Connect looks it up or asks first).
-      if (!routeSongPick({ playlistId: 'voice', songs: [pick.song], startIndex: 0 })) {
-        const store = usePlayerStore.getState();
-        store.loadSong(pick.song.id);
-        store.requestPlayback(true);
-      }
-    } else {
-      // The other streamable matches follow it, then radio takes over.
-      const rest = picks
-        .filter((p, i): p is Extract<VoicePick, { kind: 'stream' }> => p.kind === 'stream' && i !== selected)
-        .map(p => p.song);
-      StreamService.play([pick.song, ...rest], 0);
-    }
+    playVoicePick(picks, selected);
     dismiss();
   };
   const playNext = () => {
@@ -161,7 +152,7 @@ export const VoiceSearchCard: React.FC = () => {
         <Text style={[styles.heard, !transcript && styles.hint]} numberOfLines={3}>
           {transcript || 'Say a song or an artist'}
         </Text>
-        <Text style={styles.caption}>Let go when you're done</Text>
+        <Text style={styles.caption}>{cardListeningHint(gesture)}</Text>
       </Animated.View>
     );
   } else if (phase === 'notice') {

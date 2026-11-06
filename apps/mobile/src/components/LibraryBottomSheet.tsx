@@ -5,9 +5,10 @@
  */
 import { Image } from 'expo-image';
 import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { Song } from '../types/song';
-import { Artwork, Glass, Radius, Sheet, SheetOption, SheetScrollView, Space, Tactile, Text } from '../ui';
+import { Glass, identityMeta, Radius, Sheet, SheetIdentity, SheetOption, SheetScrollView, Space, Tactile, Text } from '../ui';
+import { formatTrackDuration } from './stream/trackRowPayload';
 
 interface LibraryBottomSheetProps {
   visible: boolean;
@@ -48,17 +49,11 @@ const LibraryBottomSheet: React.FC<LibraryBottomSheetProps> = ({
   onEditInfo,
   onDelete,
 }) => (
-  <Sheet visible={visible} onClose={onClose} tall>
+  <Sheet visible={visible} onClose={onClose} tall tintUri={selectedSong?.coverImageUri}>
+    {/* Round 7 item 2: identity first (cover, name, what it is), then grouped actions. */}
     {selectedSong ? (
-      <View style={styles.head}>
-        <View style={styles.art}>
-          <Artwork uri={selectedSong.coverImageUri} title={selectedSong.title} artist={selectedSong.artist} size={52} style={StyleSheet.absoluteFill} />
-        </View>
-        <View style={styles.headText}>
-          <Text variant="row" numberOfLines={1}>{selectedSong.title}</Text>
-          {selectedSong.artist ? <Text variant="secondary" tone="muted" numberOfLines={1}>{selectedSong.artist}</Text> : null}
-        </View>
-      </View>
+      <SheetIdentity title={selectedSong.title} meta={identityMeta('Song', selectedSong.artist, formatTrackDuration(selectedSong.duration))}
+        artwork={{ uri: selectedSong.coverImageUri, title: selectedSong.title, artist: selectedSong.artist }} onClose={onClose} />
     ) : null}
 
     <SheetScrollView showsVerticalScrollIndicator={false} style={styles.scroll}>
@@ -91,9 +86,6 @@ const LibraryBottomSheet: React.FC<LibraryBottomSheetProps> = ({
 );
 
 const styles = StyleSheet.create({
-  head: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingHorizontal: Space.xxs, paddingBottom: Space.sm },
-  art: { width: 52, height: 52, borderRadius: Space.xs, overflow: 'hidden' },
-  headText: { flex: 1, minWidth: 0, gap: 2 },
   scroll: { flexGrow: 0 },
   group: { marginTop: Space.md, marginBottom: Space.xxs, marginLeft: Space.xs },
   recent: { gap: Space.xs, paddingHorizontal: Space.xs, paddingVertical: Space.xs },

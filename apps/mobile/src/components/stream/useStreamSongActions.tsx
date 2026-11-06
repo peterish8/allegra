@@ -6,7 +6,6 @@
  *   <ShelfRow onLongPress={song => actions.open(song)} />   …   {actions.element}
  */
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
 import { navigationRef } from '../../utils/navigationService';
 import { StreamService } from '../../services/stream/StreamService';
 import type { UnifiedSong } from '../../types/song';
@@ -15,7 +14,8 @@ import { useDownloadState } from '../../hooks/useDownloadState';
 import { creditedArtists } from '@shared/identity';
 
 const NO_SONG = { id: '', title: '' };
-import { Artwork, Haptics, Sheet, SheetOption, Space, Text } from '../../ui';
+import { Haptics, identityMeta, Sheet, SheetDivider, SheetIdentity, SheetOption } from '../../ui';
+import { formatTrackDuration } from './trackRowPayload';
 
 export const useStreamSongActions = ({ onDone }: { onDone?: (message: string) => void } = {}) => {
   const [song, setSong] = useState<UnifiedSong | null>(null);
@@ -59,16 +59,10 @@ const StreamSongSheet: React.FC<{
   const saved = download.phase === 'saved';
   const saving = download.phase === 'queued' || download.phase === 'downloading';
   return (
-    <Sheet visible={visible} onClose={onClose}>
-      <View style={styles.head}>
-        <View style={styles.art}>
-          <Artwork uri={song.highResArt || song.thumbnail} title={song.title} artist={song.artist} size={52} style={StyleSheet.absoluteFill} />
-        </View>
-        <View style={styles.headText}>
-          <Text variant="row" numberOfLines={1}>{song.title}</Text>
-          {song.artist ? <Text variant="secondary" tone="muted" numberOfLines={1}>{song.artist}</Text> : null}
-        </View>
-      </View>
+    <Sheet visible={visible} onClose={onClose} tintUri={song.highResArt || song.thumbnail}>
+      {/* Round 7 item 2: identity first, then the song's actions, then navigation. Tapping the row already plays it. */}
+      <SheetIdentity title={song.title} meta={identityMeta('Song', song.artist, formatTrackDuration(song.duration))}
+        artwork={{ uri: song.highResArt || song.thumbnail, title: song.title, artist: song.artist }} onClose={onClose} />
       <SheetOption label="Play next" icon="return-down-forward" onPress={() => onPlayNext(song)} />
       <SheetOption
         label={saved ? 'Saved to your library' : saving ? 'Saving to your library' : 'Save to library'}
@@ -76,13 +70,8 @@ const StreamSongSheet: React.FC<{
         disabled={saved || saving}
         onPress={() => onSave(song)}
       />
-      {artist ? <SheetOption label={`Go to ${artist}`} icon="person-outline" onPress={() => onArtist(artist)} /> : null}
+      {artist ? <><SheetDivider /><SheetOption label={`Go to ${artist}`} icon="person-outline" chevron onPress={() => onArtist(artist)} /></> : null}
     </Sheet>
   );
 };
 
-const styles = StyleSheet.create({
-  head: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingHorizontal: Space.xxs, paddingBottom: Space.sm },
-  art: { width: 52, height: 52, borderRadius: Space.xs, overflow: 'hidden' },
-  headText: { flex: 1, minWidth: 0, gap: 2 },
-});

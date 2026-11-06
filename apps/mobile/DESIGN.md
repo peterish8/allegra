@@ -13,6 +13,36 @@ source_of_truth:
 
 # LuvLyrics design system
 
+## Round 7, 2026-11-06 (1.40.0, owner-approved boards on the canvas page "Round 7")
+
+- **Rows, every list.** One row: 56 tall (`Control.row`), a 44 cover (`Control.rowArtwork`) with 6dp corners
+  (`Radius.cover`; artists stay round), the title on one line and the artist on one line, each ending in "…". Library,
+  Stream, Search, playlists, artist and album pages (`BrowseShelf` uses the shared `SongRow`), `ListRow`, and Up next
+  (`NativeQueueListView`). Jump back in tiles and the mini player use the same 6dp cover corners. Rows grow with large
+  text; controls keep their targets.
+- **Row targets.** The main area (cover, text, blank space) is one target that plays the song. Download (Stream and
+  Search, restored from 1.38.1) and ⋮ are their own 48dp targets after it, with no slop over the row.
+- **Bottom surface.** The mini player and the navigation are one frosted surface (`ShellMaterial` with `above`/`below`,
+  so both halves stretch the same cover with no seam): a 16% blurred cover hint under an 84% dark tint
+  (`ShellFrost`); the page shows faintly through. Opaque `#16181D` under Reduce Transparency, Battery Saver, low-end
+  devices or with no cover. Only the cover bitmap is blurred, never the scrolling content.
+- **Navigation.** The selected tab is its foreground only: filled icon and a semibold bright label. No pill, tile or
+  background (Kotlin `drawV6` and the JS fallback). Keyboard/D-pad focus draws its own ring and never looks like selection.
+- **Capsules.** Chips are full capsules with a light frost (`Glass.chip`); chosen is solid white with a check; pressed
+  lightens and sinks 3%; keyboard focus is a separate ring offset 3dp. Buttons are capsules: one filled white primary per
+  screen, secondary a light frosted capsule (`Glass.capsule`), `size="compact"` draws 40 inside a 48 target.
+- **Play / Shuffle.** Artist, playlist and album pages lead with a filled Play and a compact frosted Shuffle; Radio and
+  Follow on the artist page are text.
+- **Action sheets.** Identity first (`SheetIdentity`: cover, one-line name, one-line "Song · Artist · 3:33", ×), then the
+  primary pair where there is one (mixes), grouped actions, a `SheetDivider`, then navigation rows with a chevron. A
+  faint cover tint across the top (`Sheet tintUri`). A bottom sheet, not an anchored menu.
+- **Voice search** lives in the Search field (`components/search/VoiceField`): tap the mic to listen until Stop, or hold
+  and release to search. Listening opens inside the field with status, a live level (still under Reduce Motion) and
+  the transcript; Cancel is always there. Copy follows the gesture (`utils/voiceFieldCopy`). What was heard becomes the
+  editable query with a top match and its Play; no match, didn't-hear and microphone problems stay in the field with
+  Try again / Type instead / Open settings. The floating card (older tab bars) stays hidden for field searches and its
+  copy no longer says "Let go" after a tap.
+
 ## Owner corrections, 2026-11-06 (1.38.0)
 
 The visual target is the V6 design canvas (cover-tinted header light, compact chips, typed Jump back in tiles,
@@ -38,8 +68,8 @@ slim mini player and nav), as the owner reviewed it in the canvas rather than th
 - **Up next** filters are one `Segmented` control; the native list clips rows to its own frame.
 - **Player title** stays one line that shrinks to fit (to 80%), then ellipsizes; it never scrolls beside the song
   actions and never grows into the cover (1.38.1).
-- **Rows** on Stream and Search have one trailing ⋮ (Save to library lives in its sheet); the mini player's play
-  glyph has no disc; the header glow uses a dark tint of the cover (1.38.1).
+- **Rows**: superseded by Round 7 (Download and ⋮ both). The mini player's play glyph has no disc; the header glow uses
+  a dark tint of the cover (1.38.1).
 - **Display size** (Settings → Player, 1.39.0): Compact 85%, Small 92%, Default, Large 108%. Android sets the app's
   density from it before React starts (`startup/DisplayScale.kt`, re-applied on configuration changes), so text,
   icons, spacing, covers and the native bars scale together; saving recreates the activity while playback carries
@@ -109,7 +139,8 @@ the same change.
 | An inline text action ("See all", "Undo") | `<TextButton label onPress>` |
 | A filter, a sort, a mood | `<Chip label selected onPress clearable?>` in a `<ChipRow>`; chosen is lit white glass |
 | 2–4 exclusive options | `<Segmented value options onChange label>`: the lit plate slides |
-| A row in a list | `<ListRow title subtitle artwork·icon onPress onLongPress trailing chevron? active?>`, 64 pt (`ROW_HEIGHT`) |
+| A row in a list | `<ListRow title subtitle artwork·icon onPress onLongPress trailing chevron? active?>`, 56 pt (`ROW_HEIGHT`) |
+| An actions sheet's head | `<SheetIdentity title meta artwork·cover onClose>`, then `<SheetDivider>` between groups |
 | A row in a sheet or menu | `<SheetOption label icon? selected? hint? destructive? onPress>` |
 | Something rising from the bottom | `<Sheet visible onClose title? tall? surface="deep?raised?player" palette? keyboard?>` (§2a) |
 | A question before something final | `<ConfirmSheet title body confirmLabel destructive onConfirm onClose>` |
@@ -161,7 +192,7 @@ minimum touch targets (48), button sizes, glyph sizes, list rhythm and the 16 gu
 Cancel and Not now use plain. The old `glass` variant is an opaque secondary compatibility
 alias. Buttons grow with system text; `sm` changes the label and padding, not the 48 target.
 `IconButton` keeps its 36/40/44 visual inside a real 48 target, rather than overlapping
-neighbours with hit slop. `Chip` is an 8-radius opaque control; selected is white.
+neighbours with hit slop. `Chip` is a frosted capsule; selected is solid white with a check (Round 7).
 `Segmented` uses the same material and target rules, with transform-only indicator movement.
 
 `Panel` is opaque raised by default. Supplying a player artwork palette opts into the

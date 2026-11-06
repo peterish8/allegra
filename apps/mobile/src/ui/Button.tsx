@@ -5,16 +5,19 @@
  *   <IconButton icon="ellipsis-horizontal" label="More" />   a round icon-only control; `label` is its accessible name
  *   <TextButton label="See all" onPress={…} />           quiet inline text action (a shelf link, "Undo")
  *
- * Variants: `primary` (the chartreuse action — one per screen at most), `glass` (default: clear glass with a
- * hairline), `plain` (no surface; icons over artwork), `danger` (destructive). Every one presses through
+ * Round 7 items 4 and 7: every labelled button is a capsule (radius half its height); shape is shared, weight is not.
+ * Variants: `primary` (the one filled white capsule per screen), `secondary` (a light frosted capsule; `glass` is its
+ * compatibility alias), `plain` (no surface; icons over artwork), `danger` (destructive, never the default). Sizes:
+ * `md` and `sm` draw 48; `compact` draws 40 inside a 48dp target (Shuffle beside Play). Every one presses through
  * `Tactile`: it sinks and dims under the finger for at least 70ms.
  */
 import React from 'react';
 import { ActivityIndicator, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Control, Radius, Signal, Space, Surface, TypeScale } from '../constants/allegraTheme';
+import { Control, Glass, Radius, Signal, Space, TypeScale } from '../constants/allegraTheme';
 import { Tactile } from '../components/allegra/motion';
 import { Text } from './Text';
+import { COMPACT_HEIGHT } from './round7Rules';
 
 export type IconName = React.ComponentProps<typeof Ionicons>['name'];
 export type ButtonVariant = 'primary' | 'secondary' | 'glass' | 'plain' | 'danger';
@@ -29,9 +32,9 @@ const INK: Record<ButtonVariant, string> = {
 
 const SURFACE: Record<ButtonVariant, ViewStyle> = {
   primary: { backgroundColor: Signal.wave },
-  secondary: { backgroundColor: Surface.control },
-  // Compatibility alias while callers migrate; controls are opaque in V6.
-  glass: { backgroundColor: Surface.control },
+  secondary: { backgroundColor: Glass.capsule },
+  // Compatibility alias while callers migrate.
+  glass: { backgroundColor: Glass.capsule },
   plain: {},
   danger: { backgroundColor: Signal.danger },
 };
@@ -41,8 +44,8 @@ export interface ButtonProps {
   onPress: () => void;
   icon?: IconName;
   variant?: ButtonVariant;
-  /** Both sizes have a 48dp target; sm uses a quieter label and less padding. */
-  size?: 'md' | 'sm';
+  /** Every size has a 48dp target; sm uses a quieter label and less padding; compact draws 40 inside the 48. */
+  size?: 'md' | 'sm' | 'compact';
   /** Stretch to the container's width. */
   block?: boolean;
   disabled?: boolean;
@@ -56,7 +59,8 @@ export interface ButtonProps {
 
 export const Button: React.FC<ButtonProps> = ({ label, onPress, icon, variant = 'secondary', size = 'md', block, disabled, busy, accessibilityLabel, haptic, style }) => {
   const ink = INK[variant];
-  const iconSize = size === 'sm' ? 16 : 18;
+  const iconSize = size === 'md' ? 18 : 16;
+  const compact = size === 'compact';
   return (
     <Tactile
       onPress={busy ? undefined : onPress}
@@ -65,14 +69,16 @@ export const Button: React.FC<ButtonProps> = ({ label, onPress, icon, variant = 
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: !!disabled || !!busy, busy: !!busy }}
-      wrapperStyle={block ? styles.block : undefined}
-      style={[styles.button, size === 'sm' && styles.small, SURFACE[variant], disabled && styles.disabled, style]}
+      wrapperStyle={[compact && styles.compactTarget, block && styles.block]}
+      style={[styles.button, size === 'sm' && styles.small, compact && styles.compact, SURFACE[variant], disabled && styles.disabled, style]}
     >
       {busy ? <ActivityIndicator size="small" color={ink} /> : icon ? <Ionicons name={icon} size={iconSize} color={ink} /> : null}
-      <Text variant="label" style={[styles.label, { color: ink }, size === 'sm' && styles.smallText]}>{label}</Text>
+      <Text variant="label" style={[styles.label, { color: ink }, size !== 'md' && styles.smallText]}>{label}</Text>
     </Tactile>
   );
 };
+
+export { COMPACT_HEIGHT };
 
 /** Round icon buttons come in three sizes, so the same kind of control is the same size everywhere. */
 const ICON_SIZES = Control.icon;
@@ -95,16 +101,21 @@ export interface IconButtonProps {
   children?: React.ReactNode;
   haptic?: 'select' | 'light';
   onLongPress?: () => void;
+  /** Press-and-hold controls (the voice mic): when the finger lands and lifts. */
+  onPressIn?: () => void;
+  onPressOut?: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
-export const IconButton: React.FC<IconButtonProps> = ({ icon, label, onPress, variant = 'plain', size = 'md', selected, shape = 'control', disabled, children, haptic, onLongPress, style }) => {
+export const IconButton: React.FC<IconButtonProps> = ({ icon, label, onPress, variant = 'plain', size = 'md', selected, shape = 'control', disabled, children, haptic, onLongPress, onPressIn, onPressOut, style }) => {
   const box = ICON_SIZES[size];
   const ink = selected ? Signal.bgDeep : INK[variant];
   return (
     <Tactile
       onPress={onPress}
       onLongPress={onLongPress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
       disabled={disabled}
       haptic={haptic}
       wrapperStyle={styles.iconTarget}
@@ -140,9 +151,11 @@ const styles = StyleSheet.create({
     minHeight: Control.button,
     paddingVertical: Space.sm,
     paddingHorizontal: Space.lg - Space.xxs,
-    borderRadius: Radius.control,
+    borderRadius: Radius.pill,
   },
   small: { minHeight: Control.compactButton, paddingHorizontal: Space.md },
+  compact: { minHeight: COMPACT_HEIGHT, paddingVertical: 0, paddingHorizontal: Space.md, gap: Space.xs - 2 },
+  compactTarget: { minHeight: Control.target, justifyContent: 'center' },
   label: { flexShrink: 1, textAlign: 'center' },
   smallText: { fontSize: TypeScale.secondary },
   disabled: { opacity: Control.disabledOpacity },

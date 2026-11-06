@@ -53,7 +53,7 @@ import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { playerControls, usePlayerStore } from '../store/playerStore';
 import { Song } from '../types/song';
 import {
-  EmptyState, Glass, GUTTER, IconButton, Motion, OnMedia, Radius, RowPlaceholder, Sheet, SheetOption, Signal, SongRow, Space, Text, TextButton, TypeScale, useBottomClearance
+  Button, EmptyState, Glass, GUTTER, IconButton, Motion, OnMedia, Radius, RowPlaceholder, Sheet, SheetOption, Signal, SongRow, Space, Text, TextButton, TypeScale, useBottomClearance
 } from '../ui';
 import { countOf } from '../utils/formatters';
 import { safeGoBack } from '../utils/navigationService';
@@ -349,25 +349,25 @@ export const PlaylistDetailScreen: React.FC = () => {
         </View>
       </View>
 
-      {loadError ? <View><Text variant="secondary" tone="secondary">Couldn?t refresh this playlist. Saved songs are still here.</Text><TextButton label="Try again" onPress={() => { loadData(); }} /></View> : null}
+      {loadError ? <View><Text variant="secondary" tone="secondary">Couldn’t refresh this playlist. Saved songs are still here.</Text><TextButton label="Try again" onPress={() => { loadData(); }} /></View> : null}
       <Text variant="detail" align="center" numberOfLines={2} style={styles.heroTitle} accessibilityRole="header">{playlistName}</Text>
-      <View style={styles.heroActions}>
-      <Text variant="secondary" tone="secondary" style={{ flex: 1 }} tabular>
+      <Text variant="secondary" tone="secondary" tabular>
         {countOf(songs.length, 'song')}{songs.length > 0 ? ` · ${formatTotalDuration()}` : ''}
       </Text>
+      {/* Round 7 item 4: the same pair as the artist page. Play is the one filled capsule, Shuffle the smaller frosted one. */}
+      <View style={styles.heroActions}>
 
       {songs.length > 0 ? (
         <>
-          <IconButton icon="shuffle" label="Shuffle playlist" size="lg" variant="secondary" shape="disc" onPress={shufflePlaylist} haptic="select" />
-          <IconButton
-            label={playingHere ? 'Pause playlist' : activeIsPlaying ? 'Resume playlist' : 'Play playlist'}
+          <Button
+            label={playingHere ? 'Pause' : activeIsPlaying ? 'Resume' : 'Play'}
+            accessibilityLabel={playingHere ? 'Pause playlist' : activeIsPlaying ? 'Resume playlist' : 'Play playlist'}
             icon={playingHere ? 'pause' : 'play'}
             variant="primary"
             onPress={playOrPause}
             haptic="light"
-            style={styles.playDisc}
-            shape="disc"
           />
+          <Button label="Shuffle" accessibilityLabel="Shuffle playlist" icon="shuffle" size="compact" onPress={shufflePlaylist} haptic="select" />
         </>
       ) : null}
       </View>
@@ -522,8 +522,7 @@ const styles = StyleSheet.create({
   },
   coverClip: { ...StyleSheet.absoluteFillObject, borderRadius: Radius.well, overflow: 'hidden' },
   heroTitle: { marginBottom: 2 },
-  heroActions: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: Space.sm, marginTop: Space.sm },
-  playDisc: { width: 56, height: 56, borderRadius: 28 },
+  heroActions: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Space.xs, marginTop: Space.sm },
   playButton: { minWidth: 132 },
   listBar: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Space.md, paddingHorizontal: Space.xxs },
   fab: { position: 'absolute', right: GUTTER },

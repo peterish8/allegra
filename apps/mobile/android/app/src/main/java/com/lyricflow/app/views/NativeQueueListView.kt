@@ -651,12 +651,13 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     }
 
     private companion object {
-        const val ROW_DP = 64f
+        // Round 7: Up next uses every list's row, 56 tall with a 44 cover and 6dp corners.
+        const val ROW_DP = 56f
         const val SIDE_DP = 8f
         const val HANDLE_DP = 52f
-        const val ART_DP = 48f
-        const val ROW_RADIUS_DP = 14f
-        const val ART_RADIUS_DP = 8f
+        const val ART_DP = 44f
+        const val ROW_RADIUS_DP = 12f
+        const val ART_RADIUS_DP = 6f
         const val TITLE_SP = 15f
         const val SUB_SP = 13f
         const val TOP_SLACK_DP = 2f

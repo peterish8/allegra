@@ -130,7 +130,7 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   if (sheetUp || keyboard) return null;
   const rowHeight = miniRowHeight(fontScale);
   return <Animated.View style={[styles.shell, { bottom }, push]}>
-    <ShellMaterial uri={coverImageUri} />
+    <ShellMaterial uri={coverImageUri} below={bottom} />
     <GestureDetector gesture={Gesture.Race(pan, tap)}>
       <View style={styles.seek} onLayout={e => setWidth(e.nativeEvent.layout.width)} accessible accessibilityRole="adjustable" accessibilityLabel="Song position"
         accessibilityState={{ disabled: !enabled }} accessibilityValue={{ min: 0, max: duration || 1, now: drag ?? position, text: `${time(drag ?? position)} of ${time(duration)}` }}
@@ -159,7 +159,8 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   </Animated.View>;
 }
 const styles = StyleSheet.create({
-  shell: { position: 'absolute', left: 0, right: 0, zIndex: 15, backgroundColor: Surface.raised },
+  // No fill of its own: ShellMaterial is the surface, shared with the navigation bar below (Round 7 item 8).
+  shell: { position: 'absolute', left: 0, right: 0, zIndex: 15 },
   // The line runs along the top of the band; the band under it is the drag target, inside the shell, never over songs.
   seek: { height: SEEK_BAND_HEIGHT }, track: { height: 2, backgroundColor: Surface.control },
   unknown: { backgroundColor: 'transparent', borderTopWidth: 2, borderStyle: 'dashed', borderColor: Signal.inkMuted },
@@ -168,7 +169,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Space.xs },
   main: { flex: 1, minWidth: 0 }, info: { justifyContent: 'center' },
   follow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingLeft: Space.xs },
-  cover: { width: MINI_COVER_SIZE, height: MINI_COVER_SIZE, borderRadius: Radius.thumb, overflow: 'hidden', backgroundColor: Surface.control },
+  cover: { width: MINI_COVER_SIZE, height: MINI_COVER_SIZE, borderRadius: Radius.cover, overflow: 'hidden', backgroundColor: Surface.control },
   copy: { flex: 1, minWidth: 0 }, title: { fontWeight: '600' },
   dim: { opacity: Control.disabledOpacity },
   preview: { position: 'absolute', bottom: 20, padding: Space.xs, borderRadius: Radius.thumb, backgroundColor: Surface.deep },

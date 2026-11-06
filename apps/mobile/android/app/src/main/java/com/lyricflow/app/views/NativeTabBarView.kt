@@ -84,6 +84,8 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
                     }
                 })
                 setOnClickListener { activate(index) }
+                // A keyboard or D-pad focus ring is drawn by the bar itself (drawV6); touch never focuses a slot.
+                setOnFocusChangeListener { _, _ -> this@NativeTabBarView.invalidate() }
                 setOnTouchListener { _, event ->
                     when (event.actionMasked) {
                         android.view.MotionEvent.ACTION_DOWN -> animatePress(index, true)
@@ -281,11 +283,15 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         v6Tabs.forEachIndexed { index, name ->
             val selected = name == activeTab
             val cx = width * (index + 0.5f) / 5f
-            // The 56dp V6 bar (src/navigation/v6Shell.ts NAV_BAR_HEIGHT): a 28dp indicator around the icon, the label under it.
-            if (selected) {
-                iconPaint.color = 0xFF22252C.toInt()
+            // The 56dp V6 bar (src/navigation/v6Shell.ts NAV_BAR_HEIGHT). Round 7 item 3: the selected tab is its foreground
+            // only (filled icon, bright semibold label); no pill, tile or background behind it.
+            if (slotViews.getOrNull(index)?.isFocused == true) {
+                // Keyboard focus is its own ring and never looks like selection.
+                iconPaint.color = ColorUtils.setAlphaComponent(Color.WHITE, 230)
+                iconPaint.style = Paint.Style.STROKE
+                iconPaint.strokeWidth = 2f
+                canvas.drawRoundRect(RectF(cx - width / 10f + 4f, 4f, cx + width / 10f - 4f, V6_BAR_DP - 4f), 14f, 14f, iconPaint)
                 iconPaint.style = Paint.Style.FILL
-                canvas.drawRoundRect(RectF(cx - 28f, 4f, cx + 28f, 32f), 10f, 10f, iconPaint)
             }
             val color = if (selected) activeTint else inactiveTint
             canvas.save()

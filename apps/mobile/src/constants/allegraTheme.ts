@@ -41,8 +41,9 @@ export const Control = {
   compactButton: 48,
   icon: { sm: 36, md: 40, lg: 44 },
   glyph: { sm: 18, md: 20, lg: 22 },
-  row: 64,
-  rowArtwork: 48,
+  /** Every list's row (Round 7): 56 tall, a 44 cover, title and artist one line each. Grows with large text. */
+  row: 56,
+  rowArtwork: 44,
   option: 52,
   gutter: 16,
   disabledOpacity: 0.4,
@@ -66,6 +67,12 @@ export const Glass = {
   fillPressed: 'rgba(255, 255, 255, 0.14)',
   hairline: 'rgba(255, 255, 255, 0.10)',
   hairlineStrong: 'rgba(255, 255, 255, 0.18)',
+  /** Round 7 capsules: a chip's and a secondary button's light frost over the page and its glow. */
+  chip: 'rgba(255, 255, 255, 0.09)',
+  capsule: 'rgba(255, 255, 255, 0.10)',
+  capsulePressed: 'rgba(255, 255, 255, 0.16)',
+  /** The keyboard focus ring: its own ring, never the look of selection. */
+  focusRing: 'rgba(255, 255, 255, 0.9)',
   highlight: 'rgba(255, 255, 255, 0.12)',
   grabber: 'rgba(255,255,255,0.35)',
   scrim: 'rgba(7, 8, 11, 0.55)',
@@ -80,6 +87,17 @@ export const BlurIntensity = {
   sheet: 80,
 } as const;
 
+/**
+ * The bottom shell (Round 7 item 8): mini player and navigation are one frosted surface. A faint, blurred hint of the
+ * cover under a dark tint; the page scrolling underneath shows only faintly through it. Opaque `solid` under Reduce
+ * Transparency, Battery Saver, low-end devices or with no cover.
+ */
+export const ShellFrost = {
+  tint: 'rgba(13, 15, 19, 0.84)',
+  coverOpacity: 0.16,
+  solid: '#16181D',
+} as const;
+
 /** One corner family everywhere. Artwork is never over-rounded. */
 export const Radius = {
   pill: 999,
@@ -88,6 +106,8 @@ export const Radius = {
   well: 12,
   art: 12,
   thumb: 8,
+  /** List covers: the same small rounded corners in every list (artists stay round). */
+  cover: 6,
   control: 12,
   chip: 8,
 } as const;

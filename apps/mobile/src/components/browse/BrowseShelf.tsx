@@ -11,7 +11,9 @@ import { Shelf, YTItem } from '../../services/ytmusic/browse';
 import { YTSong } from '../../services/ytmusic/parsers';
 import { sentenceCase } from '../../utils/sentenceCase';
 import Artwork from '../allegra/Artwork';
-import { Tactile, TactileRow } from '../allegra/motion';
+import { Tactile } from '../allegra/motion';
+import { Control, Signal } from '../../constants/allegraTheme';
+import { SongRow as SharedSongRow } from '../../ui/SongRow';
 
 const CARD = 150;
 const ARTIST = 124;
@@ -28,15 +30,10 @@ export interface ShelfActions {
 const songsOf = (items: YTItem[]): YTSong[] =>
   items.flatMap(i => (i.kind === 'song' ? [i.song] : []));
 
+/** The shared song row (56 tall, 44 cover, one-line title and artist), so artist and album pages match every list. */
 export const SongRow: React.FC<{ song: YTSong; onPress: () => void; pending?: boolean; index?: number }> = memo(({ song, onPress, pending }) => (
-  <TactileRow onPress={onPress} style={styles.row} accessibilityRole="button" accessibilityLabel={`Play ${song.title}`}>
-    <Artwork uri={song.thumbnail} title={song.title} artist={song.artists.join(', ')} size={52} style={styles.rowArt} />
-    <View style={styles.rowText}>
-      <Text style={styles.rowTitle} numberOfLines={1}>{song.title}</Text>
-      <Text style={styles.rowSub} numberOfLines={1}>{song.artists.join(', ')}{song.album ? ` · ${song.album}` : ''}</Text>
-    </View>
-    {pending ? <Ionicons name="ellipsis-horizontal" size={18} color="rgba(255,255,255,0.7)" /> : null}
-  </TactileRow>
+  <SharedSongRow title={song.title} artist={song.artists.join(', ')} artwork={song.thumbnail} meta={song.album || undefined} onPress={onPress}
+    trailing={pending ? <View style={styles.pending} accessibilityLabel="Loading"><Ionicons name="ellipsis-horizontal" size={18} color={Signal.inkSoft} /></View> : undefined} />
 ));
 SongRow.displayName = 'SongRow';
 
@@ -122,9 +119,5 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#fff', fontSize: 14, fontWeight: '600', marginTop: 8 },
   cardSub: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 2 },
   center: { textAlign: 'center' },
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 7, gap: 12 },
-  rowArt: { width: 52, height: 52, borderRadius: 8, overflow: 'hidden' },
-  rowText: { flex: 1 },
-  rowTitle: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  rowSub: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 2 },
+  pending: { width: Control.target, minHeight: Control.row, alignItems: 'center', justifyContent: 'center' },
 });
