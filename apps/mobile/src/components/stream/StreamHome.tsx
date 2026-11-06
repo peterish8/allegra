@@ -21,7 +21,6 @@ import type { DownloadTarget } from '../../hooks/useDownloadState';
 import { Chip, CHIP_ROW_PADDING, Control, SongRow as SharedSongRow } from '../../ui';
 import Artwork from '../allegra/Artwork';
 import { Tactile } from '../allegra/motion';
-import DownloadButton from './DownloadButton';
 import { shortcutCellWidth, shortcutColumns } from './shortcutGrid';
 import SavedBadge from './SavedBadge';
 
@@ -109,15 +108,16 @@ const GRID_INSET = GUTTER - 4;
 
 // â”€â”€â”€ Song row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export const SongRow: React.FC<{ item: TrackItem; onPress: () => void; onLongPress?: () => void; onSave?: () => void }> = ({ item, onPress, onLongPress, onSave }) => (
-  <SharedSongRow title={item.title} artist={item.artist} artwork={item.artwork} playing={item.isCurrent} onPress={onPress} onActions={onLongPress}
-    trailing={onSave && item.download ? <DownloadButton song={item.download} onSave={onSave} /> : undefined} />
+// One trailing action, as on the V6 board: the ⋮ opens the song's actions, where "Save to library" lives. A saved
+// song shows its badge on the cover.
+export const SongRow: React.FC<{ item: TrackItem; onPress: () => void; onLongPress?: () => void }> = ({ item, onPress, onLongPress }) => (
+  <SharedSongRow title={item.title} artist={item.artist} artwork={item.artwork} playing={item.isCurrent} onPress={onPress} onActions={onLongPress} />
 );
 
-// â”€â”€â”€ Quick picks: paged columns of four â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Quick picks: four songs
 
-export const QuickPicks: React.FC<{ items: TrackItem[]; onPress: (index: number) => void; onLongPress?: (index: number) => void; onSave?: (index: number) => void }> = ({ items, onPress, onLongPress, onSave }) => (
-  <View>{items.slice(0, 4).map((item, index) => <SongRow key={item.key} item={item} onPress={() => onPress(index)} onLongPress={onLongPress ? () => onLongPress(index) : undefined} onSave={onSave ? () => onSave(index) : undefined} />)}</View>
+export const QuickPicks: React.FC<{ items: TrackItem[]; onPress: (index: number) => void; onLongPress?: (index: number) => void }> = ({ items, onPress, onLongPress }) => (
+  <View>{items.slice(0, 4).map((item, index) => <SongRow key={item.key} item={item} onPress={() => onPress(index)} onLongPress={onLongPress ? () => onLongPress(index) : undefined} />)}</View>
 );
 
 const COVER = 148;

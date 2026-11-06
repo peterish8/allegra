@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { Easing, cancelAnimation, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { NEUTRAL_AURA } from '../components/allegra/palette';
+import { NEUTRAL_AURA, shadePalette } from '../components/allegra/palette';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
 import { Motion } from '../constants/allegraTheme';
 import { usePlayerStore } from '../store/playerStore';
@@ -69,7 +69,9 @@ export const useHeaderGlow = ():{ props: HeaderGlowProps; onScroll: (y: number) 
     return () => cancelAnimation(drift);
   }, [animate, drift, reduceMotion]);
 
-  const colors = cover ? { primary: palette.primary, secondary: palette.secondary } : null;
+  // A dark tint of the cover: the vivid swatch at full strength read as a coloured wash (olive on the emulator).
+  const tint = shadePalette(palette, 0.72);
+  const colors = cover ? { primary: tint.primary, secondary: tint.secondary } : null;
   return {
     props: { colors, frame, scrollY, drift, strength: reduceTransparency ? 0.6 : 1 },
     onScroll,

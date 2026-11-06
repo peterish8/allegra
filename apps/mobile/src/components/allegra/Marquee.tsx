@@ -39,11 +39,14 @@ interface MarqueeProps {
   gap?: number;
   /** Width of the soft fade at the right edge, in points. */
   fade?: number;
-  /**
-   * More than one line: the text wraps and ends in an ellipsis and never scrolls. Now Playing's title uses two,
-   * because a scrolling title beside the song actions read as two broken fragments (owner report, 2026-11-06).
-   */
+  /** More than one line: the text wraps and ends in an ellipsis and never scrolls. */
   lines?: number;
+  /**
+   * Never scroll: the text stands still, shrinks to fit (down to 80%) and then ends in an ellipsis, keeping its
+   * height. Now Playing's title: a scrolling title beside the song actions read as broken fragments, and a wrapped
+   * one grew up into the cover (owner report, 2026-11-06).
+   */
+  still?: boolean;
 }
 
 export const Marquee: React.FC<MarqueeProps> = ({
@@ -57,9 +60,10 @@ export const Marquee: React.FC<MarqueeProps> = ({
   gap = MARQUEE_GAP,
   fade = 18,
   lines = 1,
+  still = false,
 }) => {
   const reduce = useReducedMotion();
-  const wraps = lines > 1;
+  const wraps = lines > 1 || still;
   const [boxW, setBoxW] = useState(0);
   const [textW, setTextW] = useState(0);
   const x = useSharedValue(0);
@@ -98,7 +102,7 @@ export const Marquee: React.FC<MarqueeProps> = ({
         </View>
       )}
       {wraps ? (
-        <Text style={style} numberOfLines={lines} ellipsizeMode="tail">{text}</Text>
+        <Text style={style} numberOfLines={lines} ellipsizeMode="tail" adjustsFontSizeToFit={still} minimumFontScale={0.8}>{text}</Text>
       ) : overflow && !reduce ? (
         <MaskedView
           style={styles.fill}
