@@ -214,7 +214,7 @@ const LyricLine = React.memo(({
     return (
       <View onLayout={handleLayout} style={{ paddingVertical: gap }}>
         <Animated.View style={dimStyle}>
-          <Pressable onPress={handlePress} style={styles.linePressable}>
+          <Pressable onPress={handlePress} style={styles.linePressable} accessibilityRole="button" accessibilityHint="Plays the song from this line">
             {isInstrumental ? (
               <InstrumentalLine activeIndexSV={activeIndexSV} liveSV={liveSV} index={index} />
             ) : (
@@ -228,7 +228,7 @@ const LyricLine = React.memo(({
 
   return (
     <View onLayout={handleLayout} style={{ paddingVertical: gap }}>
-      <Pressable onPress={handlePress} style={styles.linePressable}>
+      <Pressable onPress={handlePress} style={styles.linePressable} accessibilityRole="button" accessibilityHint="Plays the song from this line">
         {/* The sweep sits over exactly the box the resting words fill. */}
         <View>
           <Animated.View style={dimStyle}>

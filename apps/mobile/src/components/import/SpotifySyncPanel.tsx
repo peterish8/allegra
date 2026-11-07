@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import Animated, { FadeInDown, FadeOutUp, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
-import type { SpotifySourcePlaylist, SpotifyStatus } from '@shared/spotify';
+import { spotifyFailureMessage, type SpotifySourcePlaylist, type SpotifyStatus } from '@shared/spotify';
 import type { RowRun } from '@shared/spotifyTransfer';
 import { crateIds, spotifyTickerText } from '@shared/importCrate';
 import { connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync, SpotifyApiError } from '../../services/spotify/spotifyApi';
@@ -183,9 +183,11 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
       if (flowGeneration !== generation.current) return;
       setNeedsReconnect(false); spotifyTransfer.dismiss();
       void refresh(new AbortController()); // clears the message synchronously, so the outcome is set after
-      const outcome = session.type === 'success' ? new URL(session.url).searchParams.get('spotify') : null;
+      const back = session.type === 'success' ? new URL(session.url).searchParams : null;
+      const outcome = back?.get('spotify') ?? null;
       if (outcome === 'cancelled') setMessage('Spotify connection was cancelled.');
-      else if (outcome === 'failed') setMessage('Spotify connection failed. Try connecting again.');
+      // 1.41.2: a failure now comes back to the app (it used to land on the website) and says why.
+      else if (outcome === 'failed') setMessage(spotifyFailureMessage(back?.get('reason')));
     }
     catch (error) { if (flowGeneration === generation.current) { setMessage(apiMessage(error)); if (error instanceof SpotifyApiError && error.status === 401) setNeedsReconnect(true); } }
     finally { if (flowGeneration === generation.current) setBusy(false); }

@@ -55,7 +55,8 @@ export const CustomMenu: React.FC<CustomMenuProps> = ({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <TouchableWithoutFeedback onPress={onClose}>
+      {/* The scrim closes the menu on a tap; TalkBack closes it with Back, so it skips the scrim. */}
+      <TouchableWithoutFeedback onPress={onClose} accessible={false} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
         <Animated.View 
           entering={FadeIn.duration(150)}
           exiting={FadeOut.duration(150)}
@@ -100,6 +101,7 @@ export const CustomMenu: React.FC<CustomMenuProps> = ({
                     styles.option,
                     pressed && styles.optionPressed,
                   ]}
+                  accessibilityRole="button"
                   onPress={(e) => {
                     option.onPress(e);
                     onClose();

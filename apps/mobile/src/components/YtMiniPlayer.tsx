@@ -107,13 +107,13 @@ export const YtMiniPlayer: React.FC<Props> = ({ videoId, songTitle, onClose, onO
         <View style={styles.header}>
           <Ionicons name="logo-youtube" size={14} color="#FF0000" />
           <Text style={styles.title} numberOfLines={1}>{songTitle}</Text>
-          <Pressable onPress={() => setPlaying(p => !p)} hitSlop={8} style={styles.headerBtn}>
+          <Pressable onPress={() => setPlaying(p => !p)} hitSlop={8} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={playing ? 'Pause video' : 'Play video'}>
             <Ionicons name={playing ? 'pause' : 'play'} size={14} color="#aaa" />
           </Pressable>
-          <Pressable onPress={() => setExpanded(e => !e)} hitSlop={8} style={styles.headerBtn}>
+          <Pressable onPress={() => setExpanded(e => !e)} hitSlop={8} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={expanded ? 'Make the video smaller' : 'Make the video bigger'} accessibilityState={{ expanded }}>
             <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={14} color="#aaa" />
           </Pressable>
-          <Pressable onPress={handleClose} hitSlop={8} style={styles.headerBtn}>
+          <Pressable onPress={handleClose} hitSlop={8} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel="Close the video">
             <Ionicons name="close" size={16} color="#aaa" />
           </Pressable>
         </View>

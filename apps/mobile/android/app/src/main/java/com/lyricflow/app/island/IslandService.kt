@@ -1,15 +1,18 @@
 package com.lyricflow.app.island
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import androidx.core.content.ContextCompat
 
 /**
  * Keeps LuvLyrics' island on screen over every app. Android only lets an accessibility service put a window
@@ -22,11 +25,68 @@ import android.view.accessibility.AccessibilityEvent
  */
 class IslandService : AccessibilityService() {
     private var window: IslandWindow? = null
+    private val retryHandler = Handler(Looper.getMainLooper())
+
+    // ── Coming back after a restart (IslandRecovery) ──────────────────────────────────────────────────────
+    private var retryAttempt = 0
+    private val retry = Runnable { refreshNow() }
+    private var screenWatched = false
+
+    /**
+     * Heard by the service itself, not only by a window that exists: after a reboot the window may have been refused
+     * (or never built) before anything listened, and the next unlock or screen-on brings it back.
+     */
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val w = window
+            if (w != null && w.isAdded) {
+                w.recheck()
+            } else {
+                retryAttempt = 0
+                refreshNow()
+            }
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        watchScreen()
+        retryAttempt = 0
         refreshNow()
+    }
+
+    private fun watchScreen() {
+        if (screenWatched) return
+        try {
+            ContextCompat.registerReceiver(
+                this,
+                screenReceiver,
+                IntentFilter().apply {
+                    addAction(Intent.ACTION_USER_PRESENT)
+                    addAction(Intent.ACTION_SCREEN_ON)
+                    addAction(Intent.ACTION_USER_UNLOCKED)
+                },
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            screenWatched = true
+        } catch (e: Exception) {
+            Log.w("LyrFlowIsland", "island could not watch the screen", e)
+        }
+    }
+
+    private fun unwatchScreen() {
+        if (!screenWatched) return
+        screenWatched = false
+        try { unregisterReceiver(screenReceiver) } catch (_: IllegalArgumentException) { /* Never registered. */ }
+    }
+
+    /** The island is wanted but not on screen: try again a little later, backing off (IslandRecovery). */
+    private fun scheduleRetry() {
+        retryHandler.removeCallbacks(retry)
+        val delay = IslandRecovery.retryDelayMs(retryAttempt) ?: return
+        retryAttempt++
+        retryHandler.postDelayed(retry, delay)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
@@ -50,15 +110,19 @@ class IslandService : AccessibilityService() {
 
     private fun tearDown() {
         if (instance === this) instance = null
+        retryHandler.removeCallbacks(retry)
+        unwatchScreen()
         window?.destroy()
         window = null
     }
 
     private fun refreshNow() {
+        retryHandler.removeCallbacks(retry)
+        var wanted = false
         try {
             val prefs = IslandPrefs(this)
             val nativeIsland = NativeIsland.onThisPhone()
-            val wanted = prefs.enabled && (nativeIsland == null || prefs.allowOnNativeIslandPhones)
+            wanted = prefs.enabled && (nativeIsland == null || prefs.allowOnNativeIslandPhones)
             if (wanted) {
                 val w = window ?: IslandWindow(this).also { window = it }
                 w.show(prefs)
@@ -68,8 +132,20 @@ class IslandService : AccessibilityService() {
                 window = null
             }
         } catch (e: Exception) {
-            // A crash here would make Android switch the service off; log and leave the island off instead.
+            // A crash here would make Android switch the service off; log it and try again shortly instead.
             Log.w("LyrFlowIsland", "island refresh failed", e)
+            try { window?.destroy() } catch (_: Exception) { /* Half-built: drop it. */ }
+            window = null
+        }
+        if (IslandRecovery.needsRetry(wanted, window?.isAdded == true)) {
+            // Refused (often right after a reboot, before the overlay is accepted): build it afresh next time.
+            if (window?.isAdded == false) {
+                try { window?.destroy() } catch (_: Exception) { /* Nothing on screen. */ }
+                window = null
+            }
+            scheduleRetry()
+        } else {
+            retryAttempt = 0
         }
     }
 

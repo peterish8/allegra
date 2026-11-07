@@ -72,6 +72,13 @@ window follows the pill, so the status shade remains reachable on either side. E
 only while the card is open or moving. Both windows hide and become non-touchable on lock/rotation.
 Hardware holes themselves cannot receive touch; tap the black area beside/below the camera.
 
+After a restart (1.41.2, `island/IslandRecovery.kt`): Android re-binds the accessibility service on its own,
+often while the keyguard is still leaving. The window reads the lock again 0.3 / 0.9 / 2 / 5 s after it is built
+(an unlock that landed before its receiver listened once left it hidden as "locked"), and the service itself
+listens for unlock, user-unlocked and screen-on, and retries a refused or failed window with backoff (1 s up to
+a minute, about four minutes in all). A refresh from the app also re-reads the lock. Before this, the island
+stayed gone after a reboot until it was switched off and on in the app.
+
 ## Native integration
 
 - `android/app/src/main/java/com/lyricflow/app/island/`: service, window, custom Canvas view,

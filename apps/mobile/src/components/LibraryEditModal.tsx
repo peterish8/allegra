@@ -27,7 +27,7 @@ const LibraryEditModal: React.FC<LibraryEditModalProps> = ({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessible={false} importantForAccessibility="no" accessibilityElementsHidden />
         <View style={styles.container}>
           <Frosted radius={26} intensity={60} tint={0.5} />
           <Text style={styles.heading}>Edit song</Text>

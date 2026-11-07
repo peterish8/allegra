@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { Router, type Response } from 'express';
 import type { AuthService } from '../auth/auth.js';
 import { SpotifyApiError } from '../providers/spotify.js';
-import type { SpotifyTransferService } from '../services/spotifyTransfer.js';
+import { SpotifyCallbackError, spotifyFailureReason, type SpotifyTransferService } from '../services/spotifyTransfer.js';
 import { accountUser } from './imports.js';
 import { asRecord, sendFailure, sendSuccess } from './common.js';
 
@@ -25,12 +25,19 @@ export function spotifyRouter(spotify: SpotifyTransferService, auth: AuthService
 
   router.get('/spotify/callback', async (req, res) => {
     const state = queryText(req.query.state); const code = queryText(req.query.code); const providerError = queryText(req.query.error);
-    if (!state) { res.redirect(303, `${spotify.webReturnUrl}?spotify=failed`); return; }
+    if (!state) { res.redirect(303, `${spotify.webReturnUrl}?spotify=failed&reason=failed`); return; }
     try {
       const returnTo = providerError ? await spotify.cancel(state) : await spotify.callback(code ?? '', state);
       res.redirect(303, `${returnTo === 'mobile' ? MOBILE_RETURN : spotify.webReturnUrl}?spotify=${providerError ? 'cancelled' : 'connected'}`);
-    } catch {
-      res.redirect(303, `${spotify.webReturnUrl}?spotify=failed`);
+    } catch (error) {
+      // Used to be swallowed: every failure read "connection failed" with nothing in the logs to say why.
+      const reason = spotifyFailureReason(error);
+      const returnTo = error instanceof SpotifyCallbackError ? error.returnTo : 'web';
+      const cause = error instanceof SpotifyCallbackError ? error.original : error;
+      const status = cause instanceof SpotifyApiError ? cause.status : undefined;
+      const log = (req as { log?: { warn?: (object: unknown, message: string) => void } }).log;
+      if (log?.warn) log.warn({ reason, status, returnTo }, 'spotify callback failed');
+      res.redirect(303, `${returnTo === 'mobile' ? MOBILE_RETURN : spotify.webReturnUrl}?spotify=failed&reason=${reason}`);
     }
   });
 

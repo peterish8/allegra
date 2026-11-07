@@ -148,6 +148,36 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
 
     val isShowing get() = added && !landscape && !hiddenForLock && power.isInteractive && touchable && !hiddenForApp
 
+    /** The window is on the screen (Android accepted it); false after a refusal, so the service tries again. */
+    val isAdded get() = added
+
+    /**
+     * Reads the lock again on IslandRecovery.LOCK_RECHECK_MS after the window is built. After a reboot the keyguard
+     * often leaves while the window is still being built, before its receiver listens; read once, it stayed "locked"
+     * and the island hidden until rebuilt.
+     */
+    private var lockRecheckStep = 0
+    private val settleLock = object : Runnable {
+        override fun run() {
+            refreshLock()
+            val delays = IslandRecovery.LOCK_RECHECK_MS
+            lockRecheckStep++
+            if (lockRecheckStep < delays.size) main.postDelayed(this, delays[lockRecheckStep] - delays[lockRecheckStep - 1])
+        }
+    }
+
+    private fun settleLockAfterBuild() {
+        main.removeCallbacks(settleLock)
+        lockRecheckStep = 0
+        main.postDelayed(settleLock, IslandRecovery.LOCK_RECHECK_MS[0])
+    }
+
+    /** The screen came on or the phone was unlocked (the service hears it too): read the lock and show again. */
+    fun recheck() {
+        refreshLock()
+        applyVisibility()
+    }
+
     /** The listener chose to keep the island on the lock screen (IslandPrefs.showOnLockScreen). */
     private var showOnLock = false
 
@@ -194,6 +224,8 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
             existing.showWhenIdle = showWhenIdle
             existing.showLyricStrip = showLyricStrip
             if (resized) measure()
+            // A refresh from the app also reads the lock again, so a stale "locked" never needs a rebuild to clear.
+            refreshLock()
             applyVisibility()
             return
         }
@@ -251,6 +283,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         displays.registerDisplayListener(displayListener, android.os.Handler(android.os.Looper.getMainLooper()))
         v.requestApplyInsets()
         applyVisibility()
+        settleLockAfterBuild()
     }
 
     /** LuvLyrics came to the front (true) or left it (false). */
@@ -267,6 +300,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         OutsideMedia.configure(service, false)
         val v = view ?: return
         main.removeCallbacks(recheckLock)
+        main.removeCallbacks(settleLock)
         showSearchInput(null)
         displays.unregisterDisplayListener(displayListener)
         latestInsets = null

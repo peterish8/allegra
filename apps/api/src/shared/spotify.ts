@@ -41,3 +41,23 @@ export interface SpotifySyncStep {
   readonly reviewNeeded: number;
   readonly libraryId: string;
 }
+
+/**
+ * Why a Spotify sign-in failed: the `reason` the API's callback adds to `?spotify=failed` (1.41.2). A fixed word, so
+ * the address never carries a provider message.
+ */
+export type SpotifyFailureReason = 'not_allowed' | 'expired' | 'unavailable' | 'failed';
+
+/** What the website and the app say for a failed sign-in, so the listener knows what to do next. */
+export function spotifyFailureMessage(reason: string | null | undefined): string {
+  switch (reason) {
+    case 'not_allowed':
+      return "Spotify didn't let this account connect yet: the app can only connect a few invited Spotify accounts. Import a Spotify data download or a CSV below instead.";
+    case 'expired':
+      return 'That Spotify sign-in link had already been used or expired. Try connecting again.';
+    case 'unavailable':
+      return 'Spotify is busy right now. Try connecting again in a minute.';
+    default:
+      return 'Spotify connection failed. Try connecting again.';
+  }
+}

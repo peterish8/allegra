@@ -13,7 +13,7 @@ import { ArrowDownToLine, Check, CheckCheck, Link2, Pause, RotateCw } from 'luci
 import Link from 'next/link';
 import { ApiError, connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync } from '../../lib/api';
 import { spotifyTransfer, spotifyTransferDeps, useSpotifyTransfer } from '../../lib/spotifyTransfer';
-import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus } from '@shared/spotify';
+import { SPOTIFY_LIKED_ID, spotifyFailureMessage, type SpotifySourcePlaylist, type SpotifyStatus } from '@shared/spotify';
 import { useCoverFlight } from '../../hooks/useCoverFlight';
 import { useThrottled } from '../../hooks/useThrottled';
 import { crateIds, spotifyTickerText } from '@shared/importCrate';
@@ -124,14 +124,17 @@ export function SpotifySyncPanel({ accountKey }: { readonly accountKey: string |
     const url = new URL(window.location.href);
     const result = url.searchParams.get('spotify');
     if (!result) return;
+    const reason = url.searchParams.get('reason');
     let origin: string | null = null;
     try { origin = window.sessionStorage.getItem(RETURN_KEY); window.sessionStorage.removeItem(RETURN_KEY); } catch { /* storage blocked: stay here */ }
     if (origin && origin.startsWith('/') && !origin.startsWith('//') && origin !== url.pathname) {
-      window.location.replace(`${origin}?spotify=${encodeURIComponent(result)}`);
+      window.location.replace(`${origin}?spotify=${encodeURIComponent(result)}${reason ? `&reason=${encodeURIComponent(reason)}` : ''}`);
       return;
     }
-    setMessage(result === 'connected' ? 'Spotify is connected. Pick what to bring over.' : result === 'cancelled' ? 'Spotify connection was cancelled.' : 'Spotify connection failed. Try connecting again.');
+    // The API says why a sign-in failed (an account Spotify has not allowed yet, a used link, Spotify busy).
+    setMessage(result === 'connected' ? 'Spotify is connected. Pick what to bring over.' : result === 'cancelled' ? 'Spotify connection was cancelled.' : spotifyFailureMessage(reason));
     url.searchParams.delete('spotify');
+    url.searchParams.delete('reason');
     window.history.replaceState(window.history.state, '', url);
   }, [accountKey]);
 

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { SPOTIFY_LIKED_ID, type SpotifySourcePlaylist, type SpotifyStatus, type SpotifySyncStep } from '../shared/spotify.js';
+import { SPOTIFY_LIKED_ID, type SpotifyFailureReason, type SpotifySourcePlaylist, type SpotifyStatus, type SpotifySyncStep } from '../shared/spotify.js';
 import type { LibraryOp } from '../shared/library.js';
 import type { AuthService } from '../auth/auth.js';
 import type { ImportMatcher } from './importMatch.js';
@@ -14,6 +14,28 @@ const BATCH = 50;
 const LEASE_MS = 90_000;
 // ponytail: per-call wall-clock budget; Convex re-calls while `more` is true, so big playlists finish over several calls.
 const DAILY_BUDGET_MS = 45_000;
+
+/** A sign-in that failed after its state was read: carries where it started (app or website) and the real cause. */
+export class SpotifyCallbackError extends Error {
+  public constructor(public readonly original: unknown, public readonly returnTo: 'web' | 'mobile') {
+    super(original instanceof Error ? original.message : 'Spotify connection failed.');
+    this.name = 'SpotifyCallbackError';
+  }
+}
+
+/**
+ * Why a Spotify sign-in failed, as a code the website and app can explain (it travels in the return URL, so it is a
+ * fixed word, never the provider's message). `not_allowed` is Spotify refusing an account that is not on a
+ * development-mode app's allowed list (403 on the profile); `expired` a link used twice or after ten minutes.
+ */
+export function spotifyFailureReason(error: unknown): SpotifyFailureReason {
+  const cause = error instanceof SpotifyCallbackError ? error.original : error;
+  if (!(cause instanceof SpotifyApiError)) return 'failed';
+  if (cause.status === 403) return 'not_allowed';
+  if (cause.status === 400 && /expired/i.test(cause.message)) return 'expired';
+  if (cause.status === 429 || cause.status >= 500) return 'unavailable';
+  return 'failed';
+}
 
 export class SpotifyTransferService {
   private readonly refreshes = new Map<string, Promise<AccessGrant>>();
@@ -48,12 +70,17 @@ export class SpotifyTransferService {
     const stateHash = createHash('sha256').update(rawState).digest('hex');
     const state = await this.store.consumeState(stateHash, Date.now());
     if (!state) throw new SpotifyApiError(400, 'This Spotify connection link expired. Start again.');
-    const token = await this.provider.exchangeCode(code, state.verifier, this.redirectUri);
-    const me = await this.provider.me(token.accessToken);
-    const now = Date.now();
-    const old = await this.store.connection(state.userId);
-    await this.store.saveConnection({ userId: state.userId, spotifyUserId: me.id, refreshToken: token.refreshToken ?? old?.refreshToken ?? '', accessToken: token.accessToken, accessExpiresAt: now + Math.max(30, token.expiresIn) * 1000, dailyEnabled: old?.dailyEnabled ?? false, connectedAt: old?.connectedAt ?? now, updatedAt: now });
-    return state.returnTo;
+    try {
+      const token = await this.provider.exchangeCode(code, state.verifier, this.redirectUri);
+      const me = await this.provider.me(token.accessToken);
+      const now = Date.now();
+      const old = await this.store.connection(state.userId);
+      await this.store.saveConnection({ userId: state.userId, spotifyUserId: me.id, refreshToken: token.refreshToken ?? old?.refreshToken ?? '', accessToken: token.accessToken, accessExpiresAt: now + Math.max(30, token.expiresIn) * 1000, dailyEnabled: old?.dailyEnabled ?? false, connectedAt: old?.connectedAt ?? now, updatedAt: now });
+      return state.returnTo;
+    } catch (error) {
+      // The connect began in the app or on the website: a failure goes back to the same place, not always the website.
+      throw new SpotifyCallbackError(error, state.returnTo);
+    }
   }
 
   public async cancel(rawState: string): Promise<'web'|'mobile'> {
