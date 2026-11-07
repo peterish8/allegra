@@ -10,12 +10,14 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
-import { Motion, Radius, Signal, Space, Surface } from '../constants/allegraTheme';
+import { Motion, Radius, Signal, Surface } from '../constants/allegraTheme';
 import { scrubFraction, SCRUB_REST_SCALE } from '../playback/miniScrub';
 import * as Haptics from '../utils/haptics';
 
 /** The line's full (scrubbing) thickness; at rest it is SCRUB_REST_SCALE of this. */
 export const SCRUB_LINE = 6;
+/** Extra grab room above the band: the line is flush with the shell's top edge. */
+const SCRUB_HIT_SLOP = { top: 10 } as const;
 
 export interface MiniScrubberProps {
   positionSV: SharedValue<number>;
@@ -39,7 +41,8 @@ export const MiniScrubber: React.FC<MiniScrubberProps> = ({ positionSV, duration
   };
   const tick = () => Haptics.tap();
 
-  const pan = Gesture.Pan().enabled(enabled).activeOffsetX([-3, 3]).failOffsetY([-24, 24])
+  // The line sits on the very top edge (1.41.3), so the finger can also land a little above it.
+  const pan = Gesture.Pan().enabled(enabled).hitSlop(SCRUB_HIT_SLOP).activeOffsetX([-3, 3]).failOffsetY([-24, 24])
     .onBegin(e => {
       held.value = scrubFraction(e.x, width.value);
       active.value = withSpring(1, Motion.spring.tactile);
@@ -51,7 +54,7 @@ export const MiniScrubber: React.FC<MiniScrubberProps> = ({ positionSV, duration
       active.value = withSpring(0, Motion.spring.tactile);
       if (!success) held.value = -1;
     });
-  const tap = Gesture.Tap().enabled(enabled).maxDuration(250)
+  const tap = Gesture.Tap().enabled(enabled).hitSlop(SCRUB_HIT_SLOP).maxDuration(250)
     .onEnd((e, success) => {
       if (!success) return;
       held.value = scrubFraction(e.x, width.value);
@@ -79,10 +82,11 @@ export const MiniScrubber: React.FC<MiniScrubberProps> = ({ positionSV, duration
 };
 
 const styles = StyleSheet.create({
-  // The line sits along the top of the band, inset so its rounded ends show; the band is the drag target.
-  band: { justifyContent: 'flex-start', paddingHorizontal: Space.sm, paddingTop: Space.xxs },
+  // 1.41.3 (owner): the line is flush with the top edge and runs edge to edge, with no gap above it; it thickens
+  // downward (transformOrigin top). The band under it is the drag target.
+  band: { justifyContent: 'flex-start', paddingHorizontal: 0, paddingTop: 0 },
   track: {
-    height: SCRUB_LINE, borderRadius: Radius.pill, overflow: 'hidden', backgroundColor: Surface.control,
+    height: SCRUB_LINE, overflow: 'hidden', backgroundColor: Surface.control,
     transformOrigin: 'top',
   },
   fill: { ...StyleSheet.absoluteFillObject, borderRadius: Radius.pill, backgroundColor: Signal.wave },

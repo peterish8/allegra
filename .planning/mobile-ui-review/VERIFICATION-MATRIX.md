@@ -108,3 +108,11 @@ lint 0 errors. No emulator or phone: every runtime check below is **pending**.
 | Widget / island tap with the app closed could do nothing | `awaitEngine` called a bare `startService`, which Android 8+ refuses from the background (IllegalStateException, uncaught) | Falls back to binding the service (allowed from the background); Media3 promotes it to foreground once it plays | `nativeRegressions.test.ts` | Pending: swipe the app away, tap a pinned playlist on the widget |
 | TalkBack read "Button" for the classic mini player's cover, previous, play/pause, next, like, video buttons, the video player's buttons and the lyrics search's close; dialog scrims read as nameless buttons; menu items had no role | No labels / roles | Labels, roles and states; scrims hidden from TalkBack (Back closes) | `accessibilityNames.test.ts` (compiler walk over every screen: fails on any unnamed pressable) | Pending: TalkBack pass |
 | Spotify sign-in "failed" with no reason; a phone sign-in that failed landed on the website | The API callback swallowed every error (no log) and always redirected to the website on failure | Logs status/reason; redirects with `reason=not_allowed\|expired\|unavailable\|failed` back to where it started; website and app explain it (`spotifyFailureMessage`) | `spotifyCallback.test.ts` (API, supertest), `spotifyFailure.test.ts` (shared) | Pending: connect a Spotify account not on the allowed list |
+
+## 1.41.3 mini player and navigation (owner, 2026-11-07)
+
+| Request | Change | Tests (CI) | Device |
+| --- | --- | --- | --- |
+| Mini player background opaque, the cover's glow, not transparent | `MiniPlayerGlow` on an opaque `#050505` base, glow at full strength, soft blurred cover, light scrim; still glow (no animation) on low-end / Battery Saver; plain solid only with no cover (`miniPlayerSurface`) | `miniPlayerSurface.test.ts` | Pending: look over a scrolling page |
+| Scrubber on the top edge, no gap | Band padding removed, line edge to edge on the shell's top edge, thickens downward; 10dp grab room above | `miniPlayerSurface.test.ts` | Pending: drag feel |
+| Controls feel and accessibility | Next tap slides the song like a swipe (light haptic); native nav tabs announce as "Tab" | `miniPlayerSurface.test.ts`, `accessibilityNames.test.ts` | Pending: TalkBack |

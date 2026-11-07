@@ -80,6 +80,8 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
                         super.onInitializeAccessibilityNodeInfo(host, info)
                         info.className = "android.widget.Button"
                         info.isSelected = host.isSelected
+                        // 1.41.3: TalkBack says "Library, Tab, selected", not "Button", for the navigation tabs.
+                        if (variant == "v6") info.roleDescription = "Tab"
                         // TalkBack's double tap performs ACTION_CLICK; say so outright.
                         info.isClickable = true
                         info.addAction(AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK)

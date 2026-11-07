@@ -18,11 +18,14 @@ source_of_truth:
 - **Colour.** White is the only accent. The old Allegra green (`#d9e66a`, `#7ED957`) is gone from every screen,
   sheet, widget and native view; chosen glass is a lit white step (`Glass.selected` / `Glass.selectedRim`), and an "on"
   row in the player menu shows a tick. Generated covers and the no-cover room use no lime either.
-- **Mini player.** The band above it is 12dp (shell 116dp above the inset). Its progress line is Apple Music's:
-  rounded, about 2.4dp at rest, 6dp under the finger, no thumb, no time readout, scrubbed on the UI thread
-  (`MiniScrubber`, `playback/miniScrub`); the row dims while scrubbing. Its background is its own: the cover's
-  "Glow animated" light softened under a blurred cover and a frosted tint (`MiniPlayerGlow`, `ShellFrost.mini*`),
-  opaque under Reduce Transparency, Battery Saver, low-end phones or with no cover. The navigation keeps `ShellMaterial`.
+- **Mini player.** The band above it is 12dp (shell 116dp above the inset). Its progress line is Apple Music's: about
+  2.4dp at rest, 6dp under the finger, no thumb, no time readout, scrubbed on the UI thread (`MiniScrubber`,
+  `playback/miniScrub`); the row dims while scrubbing. 1.41.3 (owner): the line is flush with the shell's top edge and
+  runs edge to edge (no gap above it), thickening downward, and can be grabbed 10dp above the edge. Its background is
+  its own and always opaque: the cover's "Glow animated" light at full strength on a near-black base, a soft blurred
+  cover and a light scrim (`MiniPlayerGlow`, `miniPlayerSurface`, `ShellFrost.mini*`). Low-end phones and Battery
+  Saver keep the glow but hold it still; only a song with no cover gets the plain solid. A tap on Next moves the song
+  across like a swipe. The navigation keeps `ShellMaterial`; its native tabs read as "Tab" to TalkBack.
 - **Rows.** Pressing a song lights the whole row edge to edge, Download and ⋮ included.
 - **Up next.** Its filters (`Segmented`, everywhere) are a frosted capsule with a white capsule plate; Shuffle is a
   compact frosted capsule.
