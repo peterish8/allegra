@@ -63,8 +63,29 @@ describe('mini player scrubber sits on the top edge', () => {
 });
 
 describe('mini player and navigation controls', () => {
-  it('a tap on Next moves the song like a swipe does, with a light haptic', () => {
-    expect(code(read('PillPlayer.tsx'))).toMatch(/<IconButton icon="play-skip-forward" label="Next song" haptic="light" onPress=\{\(\) => skip\('next', -1\)\} \/>/);
+  // 1.43.0 (Spotify's mini player): Devices, the heart, then play, on a floating rounded card. Next is the swipe,
+  // and TalkBack keeps its "Next song" action.
+  it('shows Devices, the heart and play, in that order, and Next stays reachable', () => {
+    const pill = code(read('PillPlayer.tsx'));
+    const devices = pill.indexOf('label="Devices"');
+    const heart = pill.indexOf("'Remove from Liked songs' : 'Add to Liked songs'");
+    const play = pill.indexOf('<PlaybackButton size={48}');
+    expect(devices).toBeGreaterThan(0);
+    expect(heart).toBeGreaterThan(devices);
+    expect(play).toBeGreaterThan(heart);
+    expect(pill).not.toMatch(/label="Next song"/);
+    expect(pill).toMatch(/\{ name: 'next', label: 'Next song' \}/);
+    expect(pill).toMatch(/const which = miniSwipe\(/);
+  });
+
+  it('is a floating rounded card inset from the screen edges', () => {
+    expect(code(read('PillPlayer.tsx'))).toMatch(/shell: \{ position: 'absolute', left: Space\.sm, right: Space\.sm, zIndex: 15, borderRadius: Radius\.panel, overflow: 'hidden' \}/);
+  });
+
+  it('the local mini player passes Devices and the heart; the Connect one passes Devices', () => {
+    const mini = code(read('MiniPlayer.tsx'));
+    expect(mini).toMatch(/onDevices=\{connect\.openDevices\}\s*\n\s*liked=\{isLiked\}\s*\n\s*onToggleLike=/);
+    expect(code(read('connect', 'ConnectMiniPlayer.tsx'))).toMatch(/onDevices=\{connect\.openDevices\}/);
   });
 
   it('the native navigation tabs read as tabs to TalkBack', () => {

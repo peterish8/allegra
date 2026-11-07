@@ -126,3 +126,9 @@ Plan: https://claude.ai/artifact/PUmVFqesXNjCtST8Ntaeqx (built from the owner's 
 | Tabs Stream, Search, Library, Create (native `NativeTabBarView` v6 + JS fallback); Create raises a sheet above the bar (Luvs, Playlist, Blend, LuvLink) and becomes a white close disc | `shellNavigation.test.ts` | Pending: tap Create, pick each row, Back closes |
 | Profile menu from your picture at the top left of Stream, Search, Library (About and updates first, then the You rows); update dot on the picture; You tab and Stream's LuvLyrics mark removed | `shellNavigation.test.ts`, `StreamScreen.layout.test.ts` | Pending: TalkBack order, swipe the menu closed |
 | Release gate reaches About through "Profile and settings" → "About LuvLyrics" | `shellNavigation.test.ts` (script guard); the gate itself runs on the PR | Emulator gate on the PR |
+
+## 1.43.0 Spotify positions, step 2: mini player card
+
+| Change | Tests (CI) | Device |
+| --- | --- | --- |
+| Floating rounded card inset from the edges; Devices, heart, play on the right (Next by swipe and TalkBack action); Connect's mini player gets Devices | `miniPlayerSurface.test.ts` | Pending: look and touch on a phone |

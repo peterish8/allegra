@@ -24,8 +24,10 @@ source_of_truth:
   runs edge to edge (no gap above it), thickening downward, and can be grabbed 10dp above the edge. Its background is
   its own and always opaque: the cover's "Glow animated" light at full strength on a near-black base, a soft blurred
   cover and a light scrim (`MiniPlayerGlow`, `miniPlayerSurface`, `ShellFrost.mini*`). Low-end phones and Battery
-  Saver keep the glow but hold it still; only a song with no cover gets the plain solid. A tap on Next moves the song
-  across like a swipe. The navigation keeps `ShellMaterial`; its native tabs read as "Tab" to TalkBack.
+  Saver keep the glow but hold it still; only a song with no cover gets the plain solid. 1.43.0 (Spotify's): a
+  floating rounded card inset from the screen edges, with Devices, the heart and play on the right; Next is the
+  sideways swipe (and TalkBack's "Next song" action). The navigation keeps `ShellMaterial`; its native tabs read as
+  "Tab" to TalkBack.
 - **Navigation (1.42.0, owner: Spotify's positions, plan https://claude.ai/artifact/PUmVFqesXNjCtST8Ntaeqx).** Tabs
   Stream, Search, Library, Create. Create raises a rounded sheet above the bar over a dimmed page (Luvs, Playlist,
   Blend, LuvLink) and turns into a white close disc. Your picture sits at the top left of Stream, Search and Library

@@ -33,13 +33,17 @@ interface Props {
   onSeek?: (time: number) => Promise<void>;
   onRetry?: () => void;
   remote?: boolean;
+  /** 1.43.0 (Spotify's mini player): Devices, then the heart, then play. Each shows only when its owner passes it. */
+  onDevices?: () => void;
+  liked?: boolean;
+  onToggleLike?: () => void;
 }
 
 /** A skip that never lands (the queue's last song, a rejected remote command) gives the content back after this. */
 const SKIP_SETTLE_MS = 1200;
 
 const time = (value: number) => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
-export default function PillPlayer({ title, artist, coverImageUri, playing, remote, sheetUp, onOpen, onTogglePlay, onNext, onPrevious, onSeek, onRetry }: Props) {
+export default function PillPlayer({ title, artist, coverImageUri, playing, remote, sheetUp, onOpen, onTogglePlay, onNext, onPrevious, onSeek, onRetry, onDevices, liked, onToggleLike }: Props) {
   const { height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
@@ -158,15 +162,19 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
           </Animated.View>
         </Tactile>
       </View></GestureDetector>
+      {/* 1.43.0 (Spotify's mini player): Devices, the heart, then play. Next is the sideways swipe (and TalkBack's
+          "Next song" action above). */}
+      {onDevices ? <IconButton icon="phone-portrait-outline" label="Devices" onPress={onDevices} /> : null}
+      {onToggleLike ? <IconButton icon={liked ? 'heart' : 'heart-outline'} label={liked ? 'Remove from Liked songs' : 'Add to Liked songs'}
+        haptic="select" onPress={onToggleLike} /> : null}
       <PlaybackButton size={48} plain status={status} onPress={() => { if (!remote && status === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
-      {/* A tap on Next moves the song across like a swipe does (1.41.3), so the tap is seen; skip() calls onNext. */}
-      <IconButton icon="play-skip-forward" label="Next song" haptic="light" onPress={() => skip('next', -1)} />
     </Animated.View>
   </Animated.View>;
 }
 const styles = StyleSheet.create({
-  // No fill of its own: MiniPlayerGlow is its surface (1.41.0).
-  shell: { position: 'absolute', left: 0, right: 0, zIndex: 15 },
+  // No fill of its own: MiniPlayerGlow is its surface (1.41.0). 1.43.0 (Spotify's): a floating card, inset from the
+  // screen's edges with rounded corners; the glow and the progress line are clipped to it.
+  shell: { position: 'absolute', left: Space.sm, right: Space.sm, zIndex: 15, borderRadius: Radius.panel, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Space.xs },
   main: { flex: 1, minWidth: 0 }, info: { justifyContent: 'center' },
   follow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingLeft: Space.xs },
