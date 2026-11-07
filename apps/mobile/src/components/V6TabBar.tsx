@@ -71,7 +71,8 @@ export function V6TabBar({ state, navigation }: BottomTabBarProps) {
   };
   const profile = (action: Exclude<ProfileAction, 'about' | 'downloads'>) => {
     if (action === 'devices') { openDevices(); return; }
-    if (action === 'dj') navigation.navigate('Dj');
+    if (action === 'stats') navigation.navigate('ListeningStats');
+    else if (action === 'dj') navigation.navigate('Dj');
     else if (action === 'import') navigation.navigate('Library', { screen: 'Import' });
     else if (action === 'blends') navigation.navigate('Library', { screen: 'Blends' });
     else if (action === 'luvlink') navigation.navigate('LuvLink');

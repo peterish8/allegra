@@ -49,6 +49,12 @@ source_of_truth:
   (48dp touches). The profile menu is true black (`ShellFrost.menuBlack`) with bare icons, opens on a critically damped
   spring, slides fully out before it closes and follows a swipe shut. Liked songs: a two-tone forest wash running
   diagonally (emerald → deep forest → pine → black), a 28pt title, icon-only download and sort, a 48dp Play.
+- **Listening stats (1.45.0).** A range row (This week … All time), then a hero washed in the colour of the song on
+  repeat (minutes counting up, the change on the period before, plays / songs / artists / a day), top artists (your
+  number 1 large and round, 2–5 beside it), top songs with big rank numerals, the On repeat card with the time it
+  played, a 24-hour clock (midnight at the top, the peak hour lit) with the kind of listener you are, the tempo card
+  (average BPM, slow → fast bands in cool → warm `StatsTheme.tempo` with names, fastest and slowest), your week, day
+  by day, and habit tiles. Cards are `StatsTheme.card` with a hairline rim; every chart has a spoken summary.
 - **Sharing (1.44.0).** Share shows what is shared, its LuvLyrics code (white bars on a calm tone of the cover, the
   heart mark on the left, `components/share/LuvCode` from `packages/shared/luvCode`) and Share link / Copy link. The
   scanner (Search → camera, top right as in Spotify) is a camera with a frame shaped like a code, a light switch and

@@ -148,3 +148,12 @@ Plan: https://claude.ai/artifact/PUmVFqesXNjCtST8Ntaeqx (built from the owner's 
 | Scanner (Search → camera): expo-camera stills every ~0.35 s read on the phone, or Choose a photo | `share.test.ts` (source guards), `nativeModuleList.test.ts` | Pending: permission prompt, scan speed |
 | Island after a restart (owner: still gone on their sister's phone): a boot-time service rebuilds its window at 8 s and 30 s, the first unlock or screen-on rebuilds it, a dropped window is rebuilt, every recheck measures the screen again; never while the island is open | `IslandRecoveryTest.kt` (restart, screen off/on, dropped, refused, in hand, switched off, reconnect), `nativeRegressions.test.ts` | Pending: restart that phone with the island on, wait for unlock, check it is there without touching the app |
 | Owner polish: mini player full width, borderless, faint-white track; Devices / saved / play at one size in even slots; profile menu true black, spring open, slide-out close, swipe shut; Liked songs premium diagonal forest wash, smaller title and controls, 48dp Play (also on playlists) | `miniPlayerSurface.test.ts`, `round7.test.ts` | Pending: look and feel on a phone |
+
+## 1.45.0 Listening stats
+
+| Change | Tests (CI) | Device |
+| --- | --- | --- |
+| Every listen (signed in or not) is logged on the phone (`listen_log`), paused by Settings `listeningStats` | `listeningStats.test.ts` (log row), `statsWiring.test.ts` | Pending: play songs signed out, open stats |
+| Stats for This week / 4 weeks / 6 months / This year / All time: minutes and change, plays, songs, artists, daily average, top 5 artists and songs, on repeat with total time, 24-hour clock and persona, week, day by day, streaks, finished / skipped, new songs and artists | `listeningStats.test.ts` | Pending: look and feel, TalkBack |
+| Tempo: Deezer's BPM when it has one, else measured on the phone (`TempoModule` → `TempoMath`), kept per song | `tempo.test.ts`, `TempoMathTest.kt` (click tracks 76–172 BPM, noise, silence, drone) | Pending: tempos for real songs, data use |
+| Profile menu → Listening stats (Spotify's place); Keep counting switch and Clear listening stats | `statsWiring.test.ts` | Pending |

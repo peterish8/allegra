@@ -4,7 +4,7 @@
  */
 import type { IconName } from '../ui';
 
-export type ProfileAction = 'about' | 'dj' | 'downloads' | 'import' | 'devices' | 'blends' | 'luvlink' | 'settings';
+export type ProfileAction = 'about' | 'stats' | 'dj' | 'downloads' | 'import' | 'devices' | 'blends' | 'luvlink' | 'settings';
 
 export interface ProfileItem {
   id: ProfileAction;
@@ -20,6 +20,8 @@ export interface ProfileGroup {
 
 export const PROFILE_GROUPS: readonly ProfileGroup[] = [
   { label: 'Listening', items: [
+    // 1.45.0 (owner): Spotify keeps its stats to a glance; ours are free and full, in the same place.
+    { id: 'stats', title: 'Listening stats', subtitle: 'Your top songs, artists and habits', icon: 'stats-chart-outline' },
     { id: 'dj', title: 'Your DJ', subtitle: 'Ask for a mood, a song, or a set', icon: 'musical-notes-outline' },
     { id: 'downloads', title: 'Downloads', icon: 'download-outline' },
     { id: 'import', title: 'Import from Spotify', icon: 'cloud-download-outline' },

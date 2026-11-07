@@ -131,6 +131,22 @@ export const ShellFrost = {
   miniTint: 'rgba(5, 5, 5, 0.3)',
 } as const;
 
+/**
+ * Listening stats (1.45.0). Cards sit on a lifted black with a hairline; the hero washes in the colour of your most
+ * heard song. Tempo bands run cool to warm so slow and fast read at a glance, always with their names beside them.
+ */
+export const StatsTheme = {
+  card: '#121316',
+  cardRim: 'rgba(255, 255, 255, 0.06)',
+  track: 'rgba(255, 255, 255, 0.08)',
+  bar: 'rgba(255, 255, 255, 0.82)',
+  barQuiet: 'rgba(255, 255, 255, 0.28)',
+  up: '#7EE2A8',
+  down: '#FF8A80',
+  tempo: { slow: '#6C9BFF', steady: '#4FD1B5', upbeat: '#FFC75F', fast: '#FF6B81' },
+  rank: 'rgba(255, 255, 255, 0.42)',
+} as const;
+
 /** One corner family everywhere. Artwork is never over-rounded. */
 export const Radius = {
   pill: 999,

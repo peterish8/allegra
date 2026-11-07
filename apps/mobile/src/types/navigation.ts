@@ -38,6 +38,8 @@ export type TabParamList = {
   // Pushed screens without a tab icon. They live in the tab navigator so the
   // bottom bar stays on screen, as in Spotify and Apple Music (see VISIBLE_TABS).
   Settings: { action?: 'import-phone' | 'hidden-songs' } | undefined;
+  /** Listening stats (1.45.0), from the profile menu. */
+  ListeningStats: undefined;
   /** YouTube Music pages (artists, albums, playlists), stacked so back walks the trail. */
   Browse: NavigatorScreenParams<BrowseStackParamList> | undefined;
 };
