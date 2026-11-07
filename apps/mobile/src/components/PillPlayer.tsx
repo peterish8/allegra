@@ -21,7 +21,6 @@ import { usePlayerStore } from '../store/playerStore';
 import { usePositionStore } from '../store/positionStore';
 import { Control, IconButton, Motion, Radius, Signal, Space, Surface, Tactile, Text, Typography } from '../ui';
 import Marquee from './allegra/Marquee';
-import { miniPlayerLine } from './allegra/marqueeMath';
 import Artwork from './allegra/Artwork';
 import { MiniPlayerGlow } from './MiniPlayerGlow';
 import { MiniScrubber } from './MiniScrubber';
@@ -153,11 +152,13 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
           style={[styles.info, { height: rowHeight }]}>
           <Animated.View style={[styles.follow, following]}>
             <View style={styles.cover}><Artwork uri={coverImageUri} title={title} artist={artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></View>
-            {/* 1.41.0 (owner): one line as Spotify shows it, "Song • Artist", scrolling slowly when it doesn't fit. */}
+            {/* 1.43.0 (owner's Spotify screenshot): the title in bold, scrolling slowly when it doesn't fit, with the
+                artist on its own line under it. */}
             <View style={styles.copy}>
-              {status === 'error'
-                ? <Text variant="row" style={styles.title} numberOfLines={1}>{`${title} • Couldn’t play, tap to retry`}</Text>
-                : <Marquee text={miniPlayerLine(title, artist)} style={styles.line} active={!sheetUp} />}
+              <Marquee text={title} style={styles.line} active={!sheetUp} />
+              <Text variant="secondary" tone="secondary" numberOfLines={1}>
+                {status === 'error' ? 'Couldn’t play, tap to retry' : artist || ' '}
+              </Text>
             </View>
           </Animated.View>
         </Tactile>
@@ -165,7 +166,8 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
       {/* 1.43.0 (Spotify's mini player): Devices, the heart, then play. Next is the sideways swipe (and TalkBack's
           "Next song" action above). */}
       {onDevices ? <IconButton icon="phone-portrait-outline" label="Devices" onPress={onDevices} /> : null}
-      {onToggleLike ? <IconButton icon={liked ? 'heart' : 'heart-outline'} label={liked ? 'Remove from Liked songs' : 'Add to Liked songs'}
+      {/* Spotify's saved mark: a filled tick in a circle once saved, an outlined plus before. */}
+      {onToggleLike ? <IconButton icon={liked ? 'checkmark-circle' : 'add-circle-outline'} label={liked ? 'Remove from Liked songs' : 'Add to Liked songs'}
         haptic="select" onPress={onToggleLike} /> : null}
       <PlaybackButton size={48} plain status={status} onPress={() => { if (!remote && status === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
     </Animated.View>
@@ -179,6 +181,6 @@ const styles = StyleSheet.create({
   main: { flex: 1, minWidth: 0 }, info: { justifyContent: 'center' },
   follow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingLeft: Space.xs },
   cover: { width: MINI_COVER_SIZE, height: MINI_COVER_SIZE, borderRadius: Radius.cover, overflow: 'hidden', backgroundColor: Surface.control },
-  copy: { flex: 1, minWidth: 0 }, title: { fontWeight: '600' },
+  copy: { flex: 1, minWidth: 0 },
   line: { ...Typography.row, color: Signal.ink, fontWeight: '600' },
 });

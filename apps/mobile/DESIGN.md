@@ -33,6 +33,11 @@ source_of_truth:
   Blend, LuvLink) and turns into a white close disc. Your picture sits at the top left of Stream, Search and Library
   and opens the profile menu from the left (About and updates first, then DJ, Downloads, Import, Blends, LuvLink,
   Connect devices, Settings and privacy); it carries the update dot. The You tab and Stream's LuvLyrics mark are gone.
+  1.43.0 (owner's Spotify screenshot): the bar has no slab; the page fades to black under it (`ShellFrost.navFade*`).
+  The mini player shows the title in bold with the artist under it and Spotify's saved mark (✓ / ⊕); its progress
+  line stays on the top edge. Liked songs has no cover: a forest-green wash (`ShellFrost.likedWash*`) runs from the
+  top into black under a big left-aligned title and the count, with download and sort on the left, a round white Play
+  on the right, then "Add to this playlist"; the back arrow sits in a disc.
 - **Rows.** Pressing a song lights the whole row edge to edge, Download and ⋮ included.
 - **Up next.** Its filters (`Segmented`, everywhere) are a frosted capsule with a white capsule plate; Shuffle is a
   compact frosted capsule.

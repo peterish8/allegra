@@ -132,3 +132,6 @@ Plan: https://claude.ai/artifact/PUmVFqesXNjCtST8Ntaeqx (built from the owner's 
 | Change | Tests (CI) | Device |
 | --- | --- | --- |
 | Floating rounded card inset from the edges; Devices, heart, play on the right (Next by swipe and TalkBack action); Connect's mini player gets Devices | `miniPlayerSurface.test.ts` | Pending: look and touch on a phone |
+| Liked songs: no cover, forest-green wash from the top into black, big left title, count, download + sort left, round Play right, "Add to this playlist"; back arrow in a disc | `round7.test.ts` | Pending: look on a phone |
+| Mini player: title bold with the artist under it; saved mark ✓ / ⊕; progress line stays on the top edge (owner) | `round7.test.ts`, `miniPlayerSurface.test.ts` | Pending |
+| Navigation: no slab; the page fades to black under the bar, from 40dp above it | `round7.test.ts` | Pending: rows scrolling under it |

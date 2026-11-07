@@ -72,10 +72,35 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
     expect(read('components/V6TabBar.tsx')).not.toMatch(/styles\.selected/);
   });
 
-  it('gives the mini player its own soft cover glow (1.41.0) and the bar the frosted shell material', () => {
+  // 1.43.0 (owner's Spotify screenshot): the bar has no slab of its own; the page fades to black under it.
+  it('gives the mini player its own cover glow and fades the page to black under the bar', () => {
     expect(read('components/PillPlayer.tsx')).toMatch(/<MiniPlayerGlow uri=\{coverImageUri\} active \/>/);
     expect(read('components/PillPlayer.tsx')).not.toMatch(/shell: \{[^}]*backgroundColor/);
-    expect(read('components/V6TabBar.tsx')).toMatch(/<ShellMaterial uri=\{cover\} \/>/);
+    const bar = read('components/V6TabBar.tsx');
+    expect(bar).not.toMatch(/<ShellMaterial/);
+    expect(bar).toMatch(/<LinearGradient pointerEvents="none" colors=\{ShellFrost\.navFadeColors\} locations=\{ShellFrost\.navFadeStops\}/);
+    expect(bar).toMatch(/top: -ShellFrost\.navFade/);
+  });
+
+  it('shows Liked songs with no cover over a forest-green wash, a big title and a round Play (1.43.0)', () => {
+    const detail = read('screens/PlaylistDetailScreen.tsx');
+    expect(detail).toMatch(/const isLiked = playlistId === LIKED_PLAYLIST_ID;/);
+    expect(detail).toMatch(/const renderHeader = \(\) => isLiked \? renderLikedHeader\(\) : \(/);
+    expect(detail).toMatch(/colors=\{ShellFrost\.likedWashColors\}/);
+    expect(detail).toMatch(/<Text variant="display" numberOfLines=\{2\} accessibilityRole="header">\{playlistName\}<\/Text>/);
+    expect(detail).toMatch(/<ListRow title="Add to this playlist" icon="add"/);
+    expect(detail).toMatch(/paddingTop: isLiked \? 0 : topInset/);
+    const theme = read('constants/allegraTheme.ts');
+    expect(theme).toMatch(/likedWashColors: \['#1F4D33'/);
+  });
+
+  it('shows the mini player title in bold with the artist under it, and Spotify\'s saved mark (1.43.0)', () => {
+    const pill = read('components/PillPlayer.tsx');
+    expect(pill).toMatch(/<Marquee text=\{title\} style=\{styles\.line\}/);
+    expect(pill).toMatch(/\{status === 'error' \? 'Couldn’t play, tap to retry' : artist \|\| ' '\}/);
+    expect(pill).toMatch(/icon=\{liked \? 'checkmark-circle' : 'add-circle-outline'\}/);
+    // The progress line stays on the card's top edge (owner).
+    expect(pill.indexOf('<MiniScrubber ')).toBeLessThan(pill.indexOf('<Animated.View style={[styles.row'));
   });
 
   it('scrubs the mini player on the UI thread with no thumb and no time readout (1.41.0)', () => {

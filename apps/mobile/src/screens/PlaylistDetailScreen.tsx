@@ -55,8 +55,10 @@ import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { playerControls, usePlayerStore } from '../store/playerStore';
 import { Song } from '../types/song';
 import {
-  Button, EmptyState, Glass, GUTTER, IconButton, Motion, OnMedia, Radius, RowPlaceholder, Sheet, SheetOption, Signal, SongRow, Space, Text, TextButton, TypeScale, useBottomClearance
+  Button, Control, EmptyState, Glass, GUTTER, IconButton, ListRow, Motion, OnMedia, Radius, RowPlaceholder, Sheet, SheetOption, Signal, SongRow, Space, Tactile, Text, TextButton, TypeScale, useBottomClearance
 } from '../ui';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ShellFrost } from '../constants/allegraTheme';
 import { countOf } from '../utils/formatters';
 import { safeGoBack } from '../utils/navigationService';
 import { shuffled } from '../utils/shuffle';
@@ -81,6 +83,7 @@ export const PlaylistDetailScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const { playlistId } = route.params;
+  const isLiked = playlistId === LIKED_PLAYLIST_ID;
   // The cover leads the page, about two thirds of the width as on an album page.
   const { width: windowWidth } = useWindowDimensions();
   const coverSize = Math.round(Math.min(windowWidth - GUTTER * 2, 184));
@@ -337,7 +340,36 @@ export const PlaylistDetailScreen: React.FC = () => {
   const topInset = insets.top + HEADER_HEIGHT;
   const playingHere = activeIsPlaying && isPlaying;
 
-  const renderHeader = () => (
+  // 1.43.0 (owner's Spotify screenshot): Liked songs has no cover. A forest-green wash runs from the top of the
+  // screen into the page's black under a big left-aligned title, then download and sort on the left and a big round
+  // Play on the right, then "Add to this playlist". Other playlists keep their cover header.
+  const renderLikedHeader = () => (
+    <View style={styles.likedHero}>
+      <LinearGradient pointerEvents="none" colors={ShellFrost.likedWashColors} locations={ShellFrost.likedWashStops} style={StyleSheet.absoluteFill} />
+      <View style={{ height: topInset }} />
+      {loadError ? <View><Text variant="secondary" tone="secondary">Couldn’t refresh this playlist. Saved songs are still here.</Text><TextButton label="Try again" onPress={() => { loadData(); }} /></View> : null}
+      <Text variant="display" numberOfLines={2} accessibilityRole="header">{playlistName}</Text>
+      <Text variant="secondary" tone="secondary" tabular>{countOf(songs.length, 'song')}</Text>
+      <View style={styles.likedActions}>
+        <View style={styles.likedTools}>
+          <OfflineControl playlistId={playlistId} name={playlistName} songs={songs} onChanged={loadData}
+            onNotice={message => setToast({ visible: true, message, type: 'info' })} />
+          {songs.length > 0 ? <TextButton label={sortLabel} icon="chevron-down" onPress={() => setSortOpen(true)} accessibilityLabel={`Sort liked songs, ${sortLabel}`} /> : null}
+        </View>
+        {songs.length > 0 ? (
+          <Tactile onPress={playOrPause} haptic="light" pressScale={0.94} accessibilityRole="button"
+            accessibilityLabel={playingHere ? 'Pause liked songs' : activeIsPlaying ? 'Resume liked songs' : 'Play liked songs'} style={styles.likedPlay}>
+            <Ionicons name={playingHere ? 'pause' : 'play'} size={26} color={Signal.waveInk} style={playingHere ? undefined : styles.likedPlayGlyph} />
+          </Tactile>
+        ) : null}
+      </View>
+      {isEditMode ? <TextButton label="Done" tone="accent" onPress={() => setIsEditMode(false)} /> : (
+        <ListRow title="Add to this playlist" icon="add" onPress={openAddSongs} style={styles.likedAdd} />
+      )}
+    </View>
+  );
+
+  const renderHeader = () => isLiked ? renderLikedHeader() : (
     <View style={styles.hero}>
       <View style={[styles.cover, { width: coverSize, height: coverSize, shadowColor: palette.primary }]}>
         <View style={styles.coverClip}>
@@ -405,7 +437,8 @@ export const PlaylistDetailScreen: React.FC = () => {
     keyExtractor: (item: Song) => item.id,
     onScroll: scrollHandler,
     scrollEventThrottle: 16,
-    contentContainerStyle: { paddingBottom: bottom, paddingTop: topInset },
+    // Liked songs' wash starts at the very top, so its header carries the top inset itself.
+    contentContainerStyle: { paddingBottom: bottom, paddingTop: isLiked ? 0 : topInset },
     ListHeaderComponent: renderHeader(),
     ListEmptyComponent: renderEmpty(),
   };
@@ -428,7 +461,8 @@ export const PlaylistDetailScreen: React.FC = () => {
         <Animated.View style={[StyleSheet.absoluteFill, styles.headerBacking, headerBacking]} pointerEvents="none" />
         {!isSearchActive ? (
           <>
-            <IconButton icon="chevron-back" label="Back" variant="plain" onPress={() => safeGoBack(navigation)} />
+            {/* Liked songs: Spotify's back arrow in a dark disc over the wash. */}
+            <IconButton icon={isLiked ? 'arrow-back' : 'chevron-back'} label="Back" variant={isLiked ? 'secondary' : 'plain'} shape={isLiked ? 'disc' : undefined} onPress={() => safeGoBack(navigation)} />
             <Animated.View style={[styles.headerTitle, headerTitle]}>
               <Marquee text={playlistName} style={styles.headerTitleText} active={isFocused} containerStyle={styles.headerTitleBox} />
             </Animated.View>
@@ -518,6 +552,13 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, color: OnMedia.primary, fontSize: TypeScale.body, paddingVertical: 0 },
   hero: { alignItems: 'center', paddingHorizontal: GUTTER, paddingTop: Space.xs, paddingBottom: Space.sm, gap: Space.xxs },
+  likedHero: { paddingHorizontal: GUTTER, paddingBottom: Space.sm, gap: Space.xxs },
+  likedActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Space.md },
+  likedTools: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, flexShrink: 1 },
+  likedPlay: { width: Control.target + 8, height: Control.target + 8, borderRadius: (Control.target + 8) / 2, backgroundColor: Signal.wave, alignItems: 'center', justifyContent: 'center' },
+  // The play triangle's visual centre sits right of its box: nudge it so it reads centred in the disc.
+  likedPlayGlyph: { marginLeft: 3 },
+  likedAdd: { marginTop: Space.sm, marginHorizontal: -GUTTER },
   cover: {
     borderRadius: Radius.well,
     backgroundColor: Signal.bgSubtle,
