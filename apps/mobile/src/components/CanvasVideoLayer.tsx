@@ -44,6 +44,7 @@ import type { VideoTrack } from 'expo-video';
 import { CanvasArtwork } from '../services/canvas/types';
 import { Motion } from '../constants/allegraTheme';
 import { diag } from '../utils/diag';
+import { PLAYER_RELEASE_DELAY_MS, canvasSourcePlan } from './canvasPlayerPlan';
 
 // expo-video needs its native module, which Android only gets if it is listed
 // in android/app/src/main/java/expo/modules/ExpoModulesPackageList.kt. A build
@@ -83,6 +84,46 @@ const REVEAL_POLL_MS = 80;
 const ASPECT_TOLERANCE = 0.01;
 const NO_FULLSCREEN = { enable: false };
 
+type CanvasPlayer = ReturnType<ExpoVideo['createVideoPlayer']>;
+
+/**
+ * One player for the layer's whole life, released only after its view has gone.
+ *
+ * Crash fix (1.41.1): `useVideoPlayer(source)` builds a new player whenever the source changes and releases the old
+ * one during render, while the mounted video view still draws it into its TextureView. Tapping the full canvas down to
+ * the card swapped the source to null that way, and on some phones releasing a player whose surface is still attached
+ * closes the app outright (Media3: clear the player before its TextureView goes). Here the player is created once,
+ * clips change with `replaceAsync`, and the release waits until the view has detached.
+ */
+function useCanvasPlayer(lib: ExpoVideo): CanvasPlayer {
+  const ref = useRef<CanvasPlayer | null>(null);
+  const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  if (ref.current === null) {
+    const p = lib.createVideoPlayer(null);
+    p.loop = true;
+    p.muted = true;
+    // The canvas must never duck, pause or steal focus from the music.
+    p.audioMixingMode = 'mixWithOthers';
+    p.showNowPlayingNotification = false;
+    p.staysActiveInBackground = false;
+    ref.current = p;
+  }
+  useEffect(() => {
+    // A dev re-mount (Strict Mode) comes back before the release: keep the player.
+    if (releaseTimer.current) clearTimeout(releaseTimer.current);
+    releaseTimer.current = null;
+    const p = ref.current;
+    return () => {
+      try { p?.pause(); } catch { /* already gone */ }
+      releaseTimer.current = setTimeout(() => {
+        releaseTimer.current = null;
+        try { p?.release(); } catch { /* already gone */ }
+      }, PLAYER_RELEASE_DELAY_MS);
+    };
+  }, []);
+  return ref.current;
+}
+
 const CanvasVideo: React.FC<CanvasVideoLayerProps & { lib: ExpoVideo }> = ({
   lib,
   canvas: incoming,
@@ -115,15 +156,23 @@ const CanvasVideo: React.FC<CanvasVideoLayerProps & { lib: ExpoVideo }> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incoming?.url]);
 
-  const source = canvas ? { uri: canvas.url, contentType: canvas.isHls ? ('hls' as const) : ('auto' as const) } : null;
-  const player = lib.useVideoPlayer(source, p => {
-    p.loop = true;
-    p.muted = true;
-    // The canvas must never duck, pause or steal focus from the music.
-    p.audioMixingMode = 'mixWithOthers';
-    p.showNowPlayingNotification = false;
-    p.staysActiveInBackground = false;
-  });
+  const player = useCanvasPlayer(lib);
+  // Clips change on the one player, in place. Gone (cover tapped to a card, lyrics opened, a song with no canvas):
+  // the view below unmounts first, then the player lets the clip go once the surface has detached.
+  useEffect(() => {
+    const plan = canvasSourcePlan(canvas);
+    if (plan.kind === 'load') {
+      player.replaceAsync(plan.source).catch(() => diag('canvas', `could not load ${plan.source.uri}`));
+      return undefined;
+    }
+    player.pause();
+    const timer = setTimeout(() => {
+      player.replaceAsync(null).catch(() => undefined);
+    }, plan.afterMs);
+    return () => clearTimeout(timer);
+  // The clip's address decides it, not the object carrying it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvas?.url, canvas?.isHls, player]);
 
   const [box, setBox] = useState<{ width: number; height: number } | null>(null);
   const [video, setVideo] = useState<{ width: number; height: number } | null>(null);
