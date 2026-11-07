@@ -85,13 +85,31 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
   it('shows Liked songs with no cover over a forest-green wash, a big title and a round Play (1.43.0)', () => {
     const detail = read('screens/PlaylistDetailScreen.tsx');
     expect(detail).toMatch(/const isLiked = playlistId === LIKED_PLAYLIST_ID;/);
-    expect(detail).toMatch(/const renderHeader = \(\) => isLiked \? renderLikedHeader\(\) : \(/);
+    expect(detail).toMatch(/const renderHeader = \(\) => isLiked \? renderLikedHeader\(\) : renderPlaylistHeader\(\);/);
     expect(detail).toMatch(/colors=\{ShellFrost\.likedWashColors\}/);
     expect(detail).toMatch(/<Text variant="display" numberOfLines=\{2\} accessibilityRole="header">\{playlistName\}<\/Text>/);
     expect(detail).toMatch(/<ListRow title="Add to this playlist" icon="add"/);
-    expect(detail).toMatch(/paddingTop: isLiked \? 0 : topInset/);
+    // Both headers' washes run from the very top of the screen.
+    expect(detail).toMatch(/contentContainerStyle: \{ paddingBottom: bottom \}/);
     const theme = read('constants/allegraTheme.ts');
     expect(theme).toMatch(/likedWashColors: \['#1F4D33'/);
+  });
+
+  it('lays a playlist out like the owner’s Spotify screenshots (1.44.0)', () => {
+    const detail = read('screens/PlaylistDetailScreen.tsx');
+    const header = detail.slice(detail.indexOf('const renderPlaylistHeader'), detail.indexOf('const renderHeader'));
+    // Top to bottom: Find in playlist, the cover (it turns into song cards), the name on the left, its length,
+    // download and share | shuffle and the round Play, then Add / Edit / Name and details / Sort.
+    const order = ['accessibilityLabel="Find in playlist"', '<CoverFlipCard', '<Text variant="page"', 'time-outline',
+      '<OfflineControl', 'label="Share playlist"', 'label="Shuffle playlist"', "renderRoundPlay('playlist')",
+      '<Chip label="Add"', "isEditMode ? 'Done' : 'Edit'", '<Chip label="Name and details"', 'icon="swap-vertical"'];
+    const at = order.map(part => header.indexOf(part));
+    expect(at.every(i => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    // The wash is a calm tone of the cover (playlistPage), and back and ⋮ sit in discs.
+    expect(header).toMatch(/colors=\{wash\} locations=\{PLAYLIST_WASH_STOPS\}/);
+    expect(detail).toMatch(/icon="arrow-back" label="Back" variant="secondary" shape="disc"/);
+    expect(detail).toMatch(/icon="ellipsis-vertical" label="Playlist options" variant="secondary" shape="disc"/);
   });
 
   it('shows the mini player title in bold with the artist under it, and Spotify\'s saved mark (1.43.0)', () => {
@@ -128,8 +146,9 @@ describe('items 1, 4 and 7: capsules', () => {
     expect(COMPACT_HEIGHT).toBeLessThan(Control.target);
   });
 
-  it('pairs a filled Play with a compact Shuffle on artist, playlist and album pages', () => {
-    for (const file of ['screens/ArtistScreen.tsx', 'screens/PlaylistDetailScreen.tsx', 'screens/CollectionScreen.tsx']) {
+  // A playlist moved to Spotify's round Play with a shuffle icon in 1.44.0 (owner's screenshots, tested above).
+  it('pairs a filled Play with a compact Shuffle on artist and album pages', () => {
+    for (const file of ['screens/ArtistScreen.tsx', 'screens/CollectionScreen.tsx']) {
       const source = read(file);
       expect(source).toMatch(/variant="primary"/);
       expect(source).toMatch(/label="Shuffle"[^>]*size="compact"|size="compact"[^>]*label="Shuffle"/);

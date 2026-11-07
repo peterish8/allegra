@@ -65,7 +65,6 @@
     "screens/LuvsScreen.tsx": 2,
     "screens/LyricsEditorScreen.tsx": 1,
     "screens/NowPlayingScreen.tsx": 2,
-    "screens/PlaylistDetailScreen.tsx": 2,
     "screens/SearchScreen.tsx": 2,
     "screens/SettingsScreen.tsx": 12,
     "screens/StreamScreen.tsx": 2

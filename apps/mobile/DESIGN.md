@@ -38,6 +38,16 @@ source_of_truth:
   line stays on the top edge. Liked songs has no cover: a forest-green wash (`ShellFrost.likedWash*`) runs from the
   top into black under a big left-aligned title and the count, with download and sort on the left, a round white Play
   on the right, then "Add to this playlist"; the back arrow sits in a disc.
+- **Playlist page (1.44.0, owner's Spotify screenshots).** Back and ⋮ in discs; "Find in playlist" as a frosted bar;
+  the cover centred at about 62% of the width over a calm, muted tone of its own colour that sinks into black
+  (`components/playlist/playlistPage`); the name large and left-aligned, the length under it; download and share on
+  the left, shuffle and the round white Play on the right; then Add / Edit / Name and details / Sort as chips. A double
+  tap on the cover turns it over into song cards (`CoverFlipCard`): swipe, and the card it rests on plays; it follows
+  the playing song; a double tap turns it back. Under Reduce Motion the turn is a cross-fade.
+- **Sharing (1.44.0).** Share shows what is shared, its LuvLyrics code (white bars on a calm tone of the cover, the
+  heart mark on the left, `components/share/LuvCode` from `packages/shared/luvCode`) and Share link / Copy link. The
+  scanner (Search → camera, top right as in Spotify) is a camera with a frame shaped like a code, a light switch and
+  "Choose a photo".
 - **Rows.** Pressing a song lights the whole row edge to edge, Download and ⋮ included.
 - **Up next.** Its filters (`Segmented`, everywhere) are a frosted capsule with a white capsule plate; Shuffle is a
   compact frosted capsule.

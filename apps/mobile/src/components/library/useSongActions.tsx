@@ -22,6 +22,7 @@ import { ConfirmSheet } from '../../ui';
 import * as Haptics from '../../utils/haptics';
 import { songCanUpgradeToSyncedLyrics } from '../../utils/lyricsState';
 import LibraryBottomSheet from '../LibraryBottomSheet';
+import { ShareSheet } from '../share/ShareSheet';
 import LibraryEditModal from '../LibraryEditModal';
 import { SongVersionSearchModal } from '../SongVersionSearchModal';
 import { Toast } from '../Toast';
@@ -44,6 +45,8 @@ export const useSongActions = () => {
 
   const [song, setSong] = useState<Song | null>(null);
   const [sheet, setSheet] = useState(false);
+  // The song's link and LuvLyrics code (1.44.0).
+  const [shareOpen, setShareOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [coverSearch, setCoverSearch] = useState(false);
   const [versions, setVersions] = useState(false);
@@ -137,6 +140,7 @@ export const useSongActions = () => {
         onFindLyrics={() => { setSheet(false); if (song) findLyrics(song); }}
         onRemoveFromPlaylist={extras.onRemoveFromPlaylist ? () => { setSheet(false); extras.onRemoveFromPlaylist?.(); } : undefined}
         onShare={share}
+        onShareLink={() => later(() => setShareOpen(true))}
         onOpenVersionSearch={() => later(() => setVersions(true))}
         onPickImage={pickImage}
         onOpenCoverSearch={() => { setSheet(false); setCoverSearch(true); }}
@@ -156,6 +160,7 @@ export const useSongActions = () => {
         onEditInfo={() => later(() => { setEditTitle(song?.title ?? ''); setEditArtist(song?.artist ?? ''); setEditing(true); })}
         onDelete={() => later(() => setConfirmDelete(true))}
       />
+      {song ? <ShareSheet visible={shareOpen} onClose={() => setShareOpen(false)} target={{ kind: 'song', song }} /> : null}
       <ConfirmSheet
         visible={confirmDelete}
         title={`Delete “${song?.title ?? ''}”?`}

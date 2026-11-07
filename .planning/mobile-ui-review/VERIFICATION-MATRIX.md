@@ -135,3 +135,15 @@ Plan: https://claude.ai/artifact/PUmVFqesXNjCtST8Ntaeqx (built from the owner's 
 | Liked songs: no cover, forest-green wash from the top into black, big left title, count, download + sort left, round Play right, "Add to this playlist"; back arrow in a disc | `round7.test.ts` | Pending: look on a phone |
 | Mini player: title bold with the artist under it; saved mark ✓ / ⊕; progress line stays on the top edge (owner) | `round7.test.ts`, `miniPlayerSurface.test.ts` | Pending |
 | Navigation: no slab; the page fades to black under the bar, from 40dp above it | `round7.test.ts` | Pending: rows scrolling under it |
+
+## 1.44.0 Playlist page, sharing, LuvLyrics codes, island after a restart
+
+| Change | Tests (CI) | Device |
+| --- | --- | --- |
+| Playlist page in Spotify's layout (owner's three screenshots): back and ⋮ in discs, Find in playlist, 62% cover over a calm wash of its colour, name left, length, download + share left, shuffle + round Play right, chips Add / Edit / Name and details / Sort | `round7.test.ts` (order guard), `share.test.ts` (playlistPage rules) | Pending: look on a phone |
+| Double tap the cover: it turns into song cards; swipe and the card it rests on plays; follows the playing song; double tap turns it back; TalkBack: one stop, swipe up/down steps | `share.test.ts` (deck rules) | Pending: feel of the turn and the swipe |
+| Share links `/song/<source>/<id>?t=&a=`, `/song/find`, `/shared/<code>` open LuvLyrics (Android App Links, `assetlinks.json` with the build's certificate) or the website; pasted in a browser they stay on the website, which offers Open in LuvLyrics on Android | `packages/shared/shareLinks.test.ts`, `share.test.ts` (manifest, app.json, assetlinks), `useDeepLinks.test.ts`, web `routes.test.ts` | Pending: tap a link in a chat with and without the app; Settings → Apps → LuvLyrics → Open by default shows the host verified |
+| Share sheet: song (⋮ → Share) and playlist (page, ⋮) show the LuvLyrics code plus Share link / Copy link; a playlist not on the account shares as a list | `share.test.ts`, `playerMenuActions.test.ts` | Pending |
+| LuvLyrics codes: 25 bars, 8 heights, Gray-coded, whitened, CRC-16, one-bar repair; read from synthetic photos (blur, noise, ±4° tilt, upside down, portrait, dark on light, clutter) | `packages/shared/luvCode.test.ts`, `share.test.ts` | Pending: scan a code on another phone's screen and on paper, in dim light with the torch |
+| Scanner (Search → camera): expo-camera stills every ~0.35 s read on the phone, or Choose a photo | `share.test.ts` (source guards), `nativeModuleList.test.ts` | Pending: permission prompt, scan speed |
+| Island after a restart (owner: still gone on their sister's phone): a boot-time service rebuilds its window at 8 s and 30 s, the first unlock or screen-on rebuilds it, a dropped window is rebuilt, every recheck measures the screen again; never while the island is open | `IslandRecoveryTest.kt` (restart, screen off/on, dropped, refused, in hand, switched off, reconnect), `nativeRegressions.test.ts` | Pending: restart that phone with the island on, wait for unlock, check it is there without touching the app |

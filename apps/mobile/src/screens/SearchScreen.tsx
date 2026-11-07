@@ -45,7 +45,8 @@ import { Glass, Radius, Signal, Space } from '../constants/allegraTheme';
 import { useVoiceField } from '../components/search/VoiceField';
 import { playVoicePick } from '../services/voicePlay';
 import { useVoiceSearchStore } from '../store/voiceSearchStore';
-import { Button, SongRow as SharedSongRow } from '../ui';
+import { Button, IconButton, SongRow as SharedSongRow } from '../ui';
+import { navigationRef } from '../utils/navigationService';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { openPlayerSheet } from '../navigation/playerSheet';
 import { androidPerformance } from '../services/performanceTrace';
@@ -588,6 +589,9 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
               </Tactile>
             ) : null}
           </InfoTitleRow>
+          {/* 1.44.0 (Spotify's place): scan a LuvLyrics code someone shows you. */}
+          <View style={styles.headerSpacer} />
+          <IconButton icon="camera-outline" label="Scan a LuvLyrics code" variant="plain" onPress={() => navigationRef.navigate('ScanCode')} />
         </View>
 
         <View style={styles.searchBox} accessibilityRole="search">
@@ -657,7 +661,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bg },
   header: { height: 52, justifyContent: 'center', paddingHorizontal: GUTTER },
   // The picture's 48dp target starts at the gutter's edge, as on Stream and Library.
-  headerLead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: Space.xs, paddingLeft: GUTTER - Space.sm },
+  headerLead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: Space.xs, paddingLeft: GUTTER - Space.sm, paddingRight: GUTTER - Space.sm },
+  headerSpacer: { flex: 1 },
   title: { fontSize: TypeScale.page, fontWeight: '700', color: Signal.ink },
   traceButton: { paddingHorizontal: Space.xs, paddingVertical: Space.xs },
   traceButtonLabel: { color: Signal.inkMuted, fontSize: TypeScale.caption, fontWeight: '600' },

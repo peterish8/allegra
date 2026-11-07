@@ -38,9 +38,14 @@ describe('player menu actions', () => {
     expect(shuffleUpcoming()).toBe(0);
   });
 
-  it('shares a YouTube Music link when the song is found there', async () => {
+  // 1.44.0: our own link, which opens LuvLyrics where it is installed and the website elsewhere.
+  it('shares the song’s LuvLyrics link: its catalog id when it has one, else its name', async () => {
+    await shareSong(song('stream:saavn:B4-hLCKJ', { title: 'cardigan', artist: 'Taylor Swift' }));
+    expect(Share.share).toHaveBeenLastCalledWith({ message: 'cardigan — Taylor Swift\nhttps://allegravibe.vercel.app/song/saavn/B4-hLCKJ?t=cardigan&a=Taylor%20Swift' });
+    await shareSong(song('x', { title: 'cardigan', artist: 'Taylor Swift', originId: 'saavn:abc' }));
+    expect(Share.share).toHaveBeenLastCalledWith({ message: 'cardigan — Taylor Swift\nhttps://allegravibe.vercel.app/song/saavn/abc?t=cardigan&a=Taylor%20Swift' });
     await shareSong(song('x', { title: 'cardigan', artist: 'Taylor Swift' }));
-    expect(Share.share).toHaveBeenCalledWith({ message: 'cardigan — Taylor Swift\nhttps://music.youtube.com/watch?v=yt123' });
+    expect(Share.share).toHaveBeenLastCalledWith({ message: 'cardigan — Taylor Swift\nhttps://allegravibe.vercel.app/song/find?t=cardigan&a=Taylor%20Swift' });
   });
 
   it('offers ringtones only for songs saved on the phone', async () => {

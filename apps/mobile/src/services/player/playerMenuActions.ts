@@ -9,6 +9,7 @@ import { defaultDeps, findSeedVideoId } from '../stream/recommend';
 import { StreamService } from '../stream/StreamService';
 import { isOnDevice, isStreamSongId } from '../stream/streamSong';
 import { NativeAudioPlayer } from '../NativeAudioPlayer';
+import { shareMessage, songShareTarget } from '../share/shareService';
 import { positionSV } from '../../playback/positionBus';
 
 /** The catalog shape recommend/resolve work with, for any song in the player. */
@@ -28,11 +29,13 @@ export const youtubeIdFor = async (song: Song): Promise<string | null> => {
   return findSeedVideoId(seedFor(song), defaultDeps).catch(() => null);
 };
 
+/**
+ * 1.44.0: the song's own link (packages/shared/shareLinks): it opens LuvLyrics for someone who has it and the website
+ * for everyone else. A song with no catalog id is shared by its title and artist and found again by name.
+ */
 export const shareSong = async (song: Song): Promise<void> => {
-  const id = await youtubeIdFor(song);
   const line = `${song.title}${song.artist ? ` — ${song.artist}` : ''}`;
-  const message = id ? `${line}\nhttps://music.youtube.com/watch?v=${id}` : line;
-  await Share.share({ message }).catch(() => undefined);
+  await Share.share({ message: shareMessage(songShareTarget(song), line) }).catch(() => undefined);
 };
 
 /** Shuffles what's left after the current song. Returns how many moved. */
