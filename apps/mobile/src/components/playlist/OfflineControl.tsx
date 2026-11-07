@@ -9,15 +9,21 @@ import { hasLocalAudio, offlineLabel, offlineState } from '../../services/offlin
 import { useDownloadQueueStore } from '../../store/downloadQueueStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import type { Song } from '../../types/song';
-import { Button, ConfirmSheet, Haptics, Sheet, SheetOption } from '../../ui';
+import { ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Button, ConfirmSheet, Haptics, IconButton, Sheet, SheetOption, Signal } from '../../ui';
 
 /** Playlist-only downloads still waiting or running for this playlist. */
 const useQueuedFor = (playlistId: string): number =>
   useDownloadQueueStore(s => s.queue.filter(q => q.playlistOnly && q.targetPlaylistId === playlistId
     && q.status !== 'completed' && q.status !== 'failed').length);
 
-export const OfflineControl: React.FC<{ playlistId: string; name: string; songs: readonly Song[]; onChanged: () => void; onNotice: (text: string) => void }> = ({
-  playlistId, name, songs, onChanged, onNotice,
+export const OfflineControl: React.FC<{
+  playlistId: string; name: string; songs: readonly Song[]; onChanged: () => void; onNotice: (text: string) => void;
+  /** 1.44.0 (Spotify's playlist header): the download glyph alone, filled once the playlist plays offline. */
+  iconOnly?: boolean;
+}> = ({
+  playlistId, name, songs, onChanged, onNotice, iconOnly,
 }) => {
   const marked = useSettingsStore(s => s.offlinePlaylistIds.includes(playlistId));
   const queued = useQueuedFor(playlistId);
@@ -63,15 +69,23 @@ export const OfflineControl: React.FC<{ playlistId: string; name: string; songs:
 
   if (songs.length === 0) return null;
   const icon = state.kind === 'ready' ? 'checkmark-circle' : state.kind === 'none' ? 'arrow-down-circle-outline' : 'cloud-download-outline';
+  const a11y = state.kind === 'none' ? `Download ${name} to play offline` : `${offlineLabel(state)}. ${name}`;
+  const press = () => {
+    if (state.kind === 'none') download();
+    else if (state.kind === 'ready') setConfirm(true);
+    else if (state.kind === 'partial') setPartialMenu(true);
+  };
+  const working = busy || state.kind === 'downloading';
   return (
     <>
-      <Button label={offlineLabel(state)} icon={icon} size="compact" busy={busy || state.kind === 'downloading'}
-        accessibilityLabel={state.kind === 'none' ? `Download ${name} to play offline` : `${offlineLabel(state)}. ${name}`}
-        onPress={() => {
-          if (state.kind === 'none') download();
-          else if (state.kind === 'ready') setConfirm(true);
-          else if (state.kind === 'partial') setPartialMenu(true);
-        }} />
+      {iconOnly ? (
+        <IconButton icon={icon} label={a11y} variant="plain" size="lg" onPress={press}>
+          {working ? <ActivityIndicator size="small" color={Signal.ink} />
+            : <Ionicons name={state.kind === 'ready' ? 'arrow-down-circle' : 'arrow-down-circle-outline'} size={28} color={Signal.ink} />}
+        </IconButton>
+      ) : (
+        <Button label={offlineLabel(state)} icon={icon} size="compact" busy={working} accessibilityLabel={a11y} onPress={press} />
+      )}
       <ConfirmSheet visible={confirm} title={`Remove “${name}” from offline?`}
         body="Its songs stream again. Songs you saved yourself stay on this phone."
         confirmLabel="Remove download" destructive onConfirm={remove} onClose={() => setConfirm(false)} />

@@ -7,6 +7,7 @@ import { PlaybackButton } from '../ui/PlaybackButton';
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, I18nManager, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,7 +20,7 @@ import { miniSwipe, swipeFollow } from '../playback/miniSwipe';
 import { durationSV, positionSV } from '../playback/positionBus';
 import { usePlayerStore } from '../store/playerStore';
 import { usePositionStore } from '../store/positionStore';
-import { Control, IconButton, Motion, Radius, Signal, Space, Surface, Tactile, Text, Typography } from '../ui';
+import { Control, Motion, Radius, Signal, Space, Surface, Tactile, Text, Typography } from '../ui';
 import Marquee from './allegra/Marquee';
 import Artwork from './allegra/Artwork';
 import { MiniPlayerGlow } from './MiniPlayerGlow';
@@ -165,19 +166,37 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
       </View></GestureDetector>
       {/* 1.43.0 (Spotify's mini player): Devices, the heart, then play. Next is the sideways swipe (and TalkBack's
           "Next song" action above). */}
-      {onDevices ? <IconButton icon="phone-portrait-outline" label="Devices" onPress={onDevices} /> : null}
-      {/* Spotify's saved mark: a filled tick in a circle once saved, an outlined plus before. */}
-      {onToggleLike ? <IconButton icon={liked ? 'checkmark-circle' : 'add-circle-outline'} label={liked ? 'Remove from Liked songs' : 'Add to Liked songs'}
-        haptic="select" onPress={onToggleLike} /> : null}
-      <PlaybackButton size={48} plain status={status} onPress={() => { if (!remote && status === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
+      {/* 1.44.0 (owner: "place neatly like Spotify"): three glyphs of one size on an even rhythm, centred on the row,
+          close to the right edge. Each slot is 44 wide and answers a 48dp touch. */}
+      <View style={styles.actions}>
+        {onDevices ? (
+          <Tactile onPress={onDevices} pressScale={0.9} hitSlop={ACTION_SLOP} accessibilityRole="button" accessibilityLabel="Devices" style={styles.action}>
+            <Ionicons name="phone-portrait-outline" size={ACTION_GLYPH - 2} color={Signal.ink} />
+          </Tactile>
+        ) : null}
+        {/* Spotify's saved mark: a filled tick in a circle once saved, an outlined plus before. */}
+        {onToggleLike ? (
+          <Tactile onPress={onToggleLike} haptic="select" pressScale={0.9} hitSlop={ACTION_SLOP} accessibilityRole="button"
+            accessibilityLabel={liked ? 'Remove from Liked songs' : 'Add to Liked songs'} accessibilityState={{ selected: !!liked }} style={styles.action}>
+            <Ionicons name={liked ? 'checkmark-circle' : 'add-circle-outline'} size={ACTION_GLYPH} color={Signal.ink} />
+          </Tactile>
+        ) : null}
+        <PlaybackButton size={48} plain status={status} onPress={() => { if (!remote && status === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
+      </View>
     </Animated.View>
   </Animated.View>;
 }
+/** The right-hand controls: one glyph size, 44-wide slots (Spotify's rhythm), each answering a 48dp touch. */
+const ACTION_GLYPH = 26;
+const ACTION_SLOT = 44;
+const ACTION_SLOP = { left: 2, right: 2, top: 0, bottom: 0 } as const;
 const styles = StyleSheet.create({
-  // No fill of its own: MiniPlayerGlow is its surface (1.41.0). 1.43.0 (Spotify's): a floating card, inset from the
-  // screen's edges with rounded corners; the glow and the progress line are clipped to it.
-  shell: { position: 'absolute', left: Space.sm, right: Space.sm, zIndex: 15, borderRadius: Radius.panel, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Space.xs },
+  // No fill of its own: MiniPlayerGlow is its surface (1.41.0). 1.44.0 (owner): the full width of the screen, edge to
+  // edge, with no border or outline of its own; the glow and the progress line are clipped to its rounded corners.
+  shell: { position: 'absolute', left: 0, right: 0, zIndex: 15, borderRadius: Radius.panel, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', paddingLeft: Space.xs, paddingRight: Space.xxs },
+  actions: { flexDirection: 'row', alignItems: 'center' },
+  action: { width: ACTION_SLOT, height: Control.target, alignItems: 'center', justifyContent: 'center' },
   main: { flex: 1, minWidth: 0 }, info: { justifyContent: 'center' },
   follow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingLeft: Space.xs },
   cover: { width: MINI_COVER_SIZE, height: MINI_COVER_SIZE, borderRadius: Radius.cover, overflow: 'hidden', backgroundColor: Surface.control },

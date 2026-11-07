@@ -116,8 +116,16 @@ export const ShellFrost = {
    * Liked songs' header (1.43.0, owner): Spotify's layout, but a smooth forest-green wash instead of its blue, from the
    * top of the screen down into the page's black. No cover.
    */
-  likedWashColors: ['#1F4D33', '#163826', '#0B1A12', 'rgba(5, 5, 5, 0)'] as const,
-  likedWashStops: [0, 0.35, 0.75, 1] as const,
+  /**
+   * 1.44.0 (owner: "premium"): a two-tone forest wash, lit emerald at the top left sinking diagonally through deep
+   * forest and a near-black pine into the page, instead of one flat green.
+   */
+  likedWashColors: ['#2F8058', '#1C5C3D', '#0F3424', '#07170F', 'rgba(5, 5, 5, 0)'] as const,
+  likedWashStops: [0, 0.28, 0.58, 0.82, 1] as const,
+  likedWashStart: { x: 0.15, y: 0 } as const,
+  likedWashEnd: { x: 0.55, y: 1 } as const,
+  /** The profile side menu (1.44.0, owner): true black, like Spotify's. */
+  menuBlack: '#000000',
   miniGlowOpacity: 1,
   miniCoverOpacity: 0.22,
   miniTint: 'rgba(5, 5, 5, 0.3)',

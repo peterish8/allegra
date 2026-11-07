@@ -30,6 +30,8 @@ export interface ListRowProps {
   artwork?: { uri?: string; title: string; artist?: string; round?: boolean };
   /** An icon in a glass disc, for rows without artwork. */
   icon?: IconName;
+  /** `plain`: the icon alone, no disc (menus on black, like Spotify's side menu). */
+  iconStyle?: 'disc' | 'plain';
   /** Anything on the right: a duration, a download ring, a ••• IconButton, a chevron (`chevron`). */
   trailing?: React.ReactNode;
   chevron?: boolean;
@@ -40,7 +42,7 @@ export interface ListRowProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, onPress, onLongPress, artwork, icon, trailing, chevron, active, disabled, accessibilityLabel, style }) => (
+export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, onPress, onLongPress, artwork, icon, iconStyle = 'disc', trailing, chevron, active, disabled, accessibilityLabel, style }) => (
   <TactileRow
     onPress={onPress}
     onLongPress={onLongPress}
@@ -57,7 +59,7 @@ export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, onPress, onLo
         <Artwork uri={artwork.uri} title={artwork.title} artist={artwork.artist} size={ROW_ART} style={[StyleSheet.absoluteFill, artwork.round ? styles.round : styles.cover]} />
       </View>
     ) : icon ? (
-      <View style={styles.iconDisc}><Ionicons name={icon} size={20} color={OnMedia.secondary} /></View>
+      <View style={[styles.iconDisc, iconStyle === 'plain' && styles.iconPlain]}><Ionicons name={icon} size={iconStyle === 'plain' ? 24 : 20} color={OnMedia.secondary} /></View>
     ) : null}
     <View style={styles.text}>
       <Text variant="row" tone="primary" style={active && styles.activeTitle} numberOfLines={1} ellipsizeMode="tail">{title}</Text>
@@ -149,6 +151,7 @@ const styles = StyleSheet.create({
   cover: { borderRadius: Radius.cover },
   round: { borderRadius: ROW_ART / 2 },
   iconDisc: { width: Control.icon.md, height: Control.icon.md, borderRadius: Radius.control, alignItems: 'center', justifyContent: 'center', backgroundColor: Surface.control },
+  iconPlain: { backgroundColor: 'transparent' },
   activeTitle: { fontWeight: '600' },
   text: { flex: 1, minWidth: 0, gap: 2 },
   option: {

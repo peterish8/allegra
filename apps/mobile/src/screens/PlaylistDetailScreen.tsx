@@ -353,20 +353,22 @@ export const PlaylistDetailScreen: React.FC = () => {
   // Play on the right, then "Add to this playlist". Other playlists keep their cover header.
   const renderLikedHeader = () => (
     <View style={styles.likedHero}>
-      <LinearGradient pointerEvents="none" colors={ShellFrost.likedWashColors} locations={ShellFrost.likedWashStops} style={StyleSheet.absoluteFill} />
+      <LinearGradient pointerEvents="none" colors={ShellFrost.likedWashColors} locations={ShellFrost.likedWashStops}
+        start={ShellFrost.likedWashStart} end={ShellFrost.likedWashEnd} style={StyleSheet.absoluteFill} />
       <View style={{ height: topInset }} />
       {loadError ? <View><Text variant="secondary" tone="secondary">Couldn’t refresh this playlist. Saved songs are still here.</Text><TextButton label="Try again" onPress={() => { loadData(); }} /></View> : null}
-      <Text variant="display" numberOfLines={2} accessibilityRole="header">{playlistName}</Text>
+      {/* 1.44.0 (owner: "a lil too big"): Spotify's sizes — a 28pt title, icon-sized tools, a 48dp Play. */}
+      <Text variant="page" numberOfLines={2} accessibilityRole="header">{playlistName}</Text>
       <Text variant="secondary" tone="secondary" tabular>{countOf(songs.length, 'song')}</Text>
       <View style={styles.likedActions}>
-        <View style={styles.likedTools}>
-          <OfflineControl playlistId={playlistId} name={playlistName} songs={songs} onChanged={loadData}
+        <View style={styles.tools}>
+          <OfflineControl iconOnly playlistId={playlistId} name={playlistName} songs={songs} onChanged={loadData}
             onNotice={message => setToast({ visible: true, message, type: 'info' })} />
-          {songs.length > 0 ? <TextButton label={sortLabel} icon="chevron-down" onPress={() => setSortOpen(true)} accessibilityLabel={`Sort liked songs, ${sortLabel}`} /> : null}
+          {songs.length > 0 ? <IconButton icon="swap-vertical" label={`Sort liked songs, ${sortLabel}`} variant="plain" onPress={() => setSortOpen(true)} /> : null}
         </View>
         {songs.length > 0 ? (
-          <View style={styles.likedTools}>
-            <IconButton icon="shuffle" label="Shuffle liked songs" variant="plain" size="lg" onPress={shufflePlaylist} haptic="select" />
+          <View style={styles.tools}>
+            <IconButton icon="shuffle" label="Shuffle liked songs" variant="plain" onPress={shufflePlaylist} haptic="select" />
             {renderRoundPlay('liked songs')}
           </View>
         ) : null}
@@ -381,7 +383,7 @@ export const PlaylistDetailScreen: React.FC = () => {
   const renderRoundPlay = (what: string) => (
     <Tactile onPress={playOrPause} haptic="light" pressScale={0.94} accessibilityRole="button"
       accessibilityLabel={playingHere ? `Pause ${what}` : activeIsPlaying ? `Resume ${what}` : `Play ${what}`} style={styles.roundPlay}>
-      <Ionicons name={playingHere ? 'pause' : 'play'} size={26} color={Signal.waveInk} style={playingHere ? undefined : styles.roundPlayGlyph} />
+      <Ionicons name={playingHere ? 'pause' : 'play'} size={22} color={Signal.waveInk} style={playingHere ? undefined : styles.roundPlayGlyph} />
     </Tactile>
   );
 
@@ -417,15 +419,15 @@ export const PlaylistDetailScreen: React.FC = () => {
         <Text variant="secondary" tone="secondary" tabular>{countOf(songs.length, 'song')}{totalLength ? ` · ${totalLength}` : ''}</Text>
       </View>
       <View style={styles.likedActions}>
-        <View style={styles.likedTools}>
-          {/* 1.41.0: download the whole playlist to play it with no connection. */}
-          <OfflineControl playlistId={playlistId} name={playlistName} songs={songs} onChanged={loadData}
+        <View style={styles.tools}>
+          {/* 1.41.0: download the whole playlist to play it with no connection (Spotify's glyph since 1.44.0). */}
+          <OfflineControl iconOnly playlistId={playlistId} name={playlistName} songs={songs} onChanged={loadData}
             onNotice={message => setToast({ visible: true, message, type: 'info' })} />
-          <IconButton icon="share-social-outline" label="Share playlist" variant="plain" size="lg" onPress={() => setShareOpen(true)} />
+          <IconButton icon="share-social-outline" label="Share playlist" variant="plain" onPress={() => setShareOpen(true)} />
         </View>
         {songs.length > 0 ? (
-          <View style={styles.likedTools}>
-            <IconButton icon="shuffle" label="Shuffle playlist" variant="plain" size="lg" onPress={shufflePlaylist} haptic="select" />
+          <View style={styles.tools}>
+            <IconButton icon="shuffle" label="Shuffle playlist" variant="plain" onPress={shufflePlaylist} haptic="select" />
             {renderRoundPlay('playlist')}
           </View>
         ) : null}
@@ -578,10 +580,12 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: OnMedia.primary, fontSize: TypeScale.body, paddingVertical: 0 },
   likedHero: { paddingHorizontal: GUTTER, paddingBottom: Space.sm, gap: Space.xxs },
   likedActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Space.md },
-  likedTools: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, flexShrink: 1 },
-  roundPlay: { width: Control.target + 8, height: Control.target + 8, borderRadius: (Control.target + 8) / 2, backgroundColor: Signal.wave, alignItems: 'center', justifyContent: 'center' },
+  // Icon tools sit close together, Spotify's spacing (each still a 48dp target).
+  tools: { flexDirection: 'row', alignItems: 'center', gap: Space.xxs, flexShrink: 1 },
+  // 1.44.0 (owner: "a lil too big"): a 48dp Play, Spotify's size, not 56.
+  roundPlay: { width: Control.target, height: Control.target, borderRadius: Control.target / 2, backgroundColor: Signal.wave, alignItems: 'center', justifyContent: 'center' },
   // The play triangle's visual centre sits right of its box: nudge it so it reads centred in the disc.
-  roundPlayGlyph: { marginLeft: 3 },
+  roundPlayGlyph: { marginLeft: 2 },
   likedAdd: { marginTop: Space.sm, marginHorizontal: -GUTTER },
   page: { paddingHorizontal: GUTTER, paddingBottom: Space.xs, gap: Space.xxs },
   pageWash: { position: 'absolute', top: 0, left: 0, right: 0 },

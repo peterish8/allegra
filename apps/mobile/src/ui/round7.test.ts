@@ -87,12 +87,37 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
     expect(detail).toMatch(/const isLiked = playlistId === LIKED_PLAYLIST_ID;/);
     expect(detail).toMatch(/const renderHeader = \(\) => isLiked \? renderLikedHeader\(\) : renderPlaylistHeader\(\);/);
     expect(detail).toMatch(/colors=\{ShellFrost\.likedWashColors\}/);
-    expect(detail).toMatch(/<Text variant="display" numberOfLines=\{2\} accessibilityRole="header">\{playlistName\}<\/Text>/);
+    // 1.44.0 (owner: "a lil too big"): a 28pt title, icon-only download and sort, a 48dp Play.
+    expect(detail).toMatch(/<Text variant="page" numberOfLines=\{2\} accessibilityRole="header">\{playlistName\}<\/Text>/);
+    expect(detail).not.toMatch(/variant="display"/);
+    expect(detail).toMatch(/<OfflineControl iconOnly playlistId=\{playlistId\}/);
+    expect(detail).toMatch(/icon="swap-vertical" label=\{`Sort liked songs, \$\{sortLabel\}`\}/);
+    expect(detail).toMatch(/roundPlay: \{ width: Control\.target, height: Control\.target/);
+    const liked = detail.slice(detail.indexOf('const renderLikedHeader'), detail.indexOf('const renderRoundPlay'));
+    expect(liked).not.toMatch(/size="lg"/);
+    // A premium two-tone forest wash running diagonally into the page.
+    expect(detail).toMatch(/start=\{ShellFrost\.likedWashStart\} end=\{ShellFrost\.likedWashEnd\}/);
     expect(detail).toMatch(/<ListRow title="Add to this playlist" icon="add"/);
     // Both headers' washes run from the very top of the screen.
     expect(detail).toMatch(/contentContainerStyle: \{ paddingBottom: bottom \}/);
     const theme = read('constants/allegraTheme.ts');
-    expect(theme).toMatch(/likedWashColors: \['#1F4D33'/);
+    expect(theme).toMatch(/likedWashColors: \['#2F8058', '#1C5C3D', '#0F3424', '#07170F', 'rgba\(5, 5, 5, 0\)'\]/);
+    expect(theme).toMatch(/likedWashStops: \[0, 0\.28, 0\.58, 0\.82, 1\]/);
+  });
+
+  it('opens the profile menu smoothly on true black (1.44.0, owner)', () => {
+    const menu = read('components/nav/ProfileMenu.tsx');
+    // Stays up until it has slid out, opens on a spring, follows a swipe shut.
+    expect(menu).toMatch(/<Modal visible=\{mounted\}/);
+    expect(menu).toMatch(/if \(finished\) runOnJS\(setMounted\)\(false\)/);
+    expect(menu).toMatch(/withSpring\(1, Motion\.spring\.open\)/);
+    expect(menu).toMatch(/<GestureDetector gesture=\{swipe\}>/);
+    expect(menu).toMatch(/<GestureHandlerRootView/);
+    // True black, no grey tiles behind the icons.
+    expect(menu).toMatch(/backgroundColor: ShellFrost\.menuBlack/);
+    expect(menu).not.toMatch(/Surface\.raised|Surface\.control/);
+    expect(menu).toMatch(/iconStyle="plain"/);
+    expect(read('constants/allegraTheme.ts')).toMatch(/menuBlack: '#000000'/);
   });
 
   it('lays a playlist out like the owner’s Spotify screenshots (1.44.0)', () => {
@@ -116,7 +141,7 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
     const pill = read('components/PillPlayer.tsx');
     expect(pill).toMatch(/<Marquee text=\{title\} style=\{styles\.line\}/);
     expect(pill).toMatch(/\{status === 'error' \? 'Couldn’t play, tap to retry' : artist \|\| ' '\}/);
-    expect(pill).toMatch(/icon=\{liked \? 'checkmark-circle' : 'add-circle-outline'\}/);
+    expect(pill).toMatch(/name=\{liked \? 'checkmark-circle' : 'add-circle-outline'\}/);
     // The progress line stays on the card's top edge (owner).
     expect(pill.indexOf('<MiniScrubber ')).toBeLessThan(pill.indexOf('<Animated.View style={[styles.row'));
   });
