@@ -112,6 +112,8 @@ interface SettingsState {
   keepScreenOn: boolean;
   /** Echo Music's "auto load more": a queue running out is topped up with songs like the one playing. */
   autoQueueRefill: boolean;
+  /** Listening stats (1.45.0): keep a log of what is heard on this phone. On by default; never leaves the phone. */
+  listeningStats: boolean;
   hapticsEnabled: boolean;
   showTimeRemaining: boolean;
   playInMiniPlayerOnly: boolean;
@@ -160,6 +162,7 @@ interface SettingsState {
   setSkipDuration: (duration: 10 | 15 | 30) => void;
   setKeepScreenOn: (enabled: boolean) => void;
   setAutoQueueRefill: (enabled: boolean) => void;
+  setListeningStats: (enabled: boolean) => void;
   setHapticsEnabled: (enabled: boolean) => void;
   setShowTimeRemaining: (show: boolean) => void;
   setPlayInMiniPlayerOnly: (enabled: boolean) => void;
@@ -243,6 +246,7 @@ const DEFAULT_SETTINGS = {
   skipDuration: 15 as const,
   keepScreenOn: true,
   autoQueueRefill: true,
+  listeningStats: true,
   hapticsEnabled: true,
   showTimeRemaining: true,
   playInMiniPlayerOnly: false,
@@ -300,6 +304,7 @@ export const useSettingsStore = create<SettingsState>()(
       setSkipDuration: (skipDuration) => set({ skipDuration }),
       setKeepScreenOn: (keepScreenOn) => set({ keepScreenOn }),
       setAutoQueueRefill: (autoQueueRefill) => set({ autoQueueRefill }),
+      setListeningStats: (listeningStats) => set({ listeningStats }),
       setHapticsEnabled: (hapticsEnabled) => set({ hapticsEnabled }),
       setShowTimeRemaining: (showTimeRemaining) => set({ showTimeRemaining }),
       setPlayInMiniPlayerOnly: (playInMiniPlayerOnly) => set({ playInMiniPlayerOnly }),

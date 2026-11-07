@@ -43,8 +43,8 @@ const MAX_POSITION_STEP_SEC = 2.5;
 export function createListenTracker(
   onHeard: (song: HeardSong, seconds: number, startedAt: string, ending: ListenEnding) => void,
   onRecent: (song: HeardSong, startedAt: string) => void = () => undefined,
-  /** Every listen as it ends, however short: a two-second skip is the clearest "not this". */
-  onLeft: (song: HeardSong, ending: ListenEnding) => void = () => undefined,
+  /** Every listen as it ends, however short: a two-second skip is the clearest "not this". `startedAt` is ISO. */
+  onLeft: (song: HeardSong, ending: ListenEnding, startedAt: string) => void = () => undefined,
 ) {
   let current: ListenSession | null = null;
 
@@ -57,7 +57,7 @@ export function createListenTracker(
     const { song, seconds, lastPositionSec, startedAt } = ending;
     const ended = (song.duration ?? 0) > 0 && lastPositionSec >= (song.duration ?? 0) - LISTEN_RULES.endSlackSec;
     const result: ListenEnding = { exit: ended ? 'ended' : exit, heardSeconds: seconds, exitPositionSec: lastPositionSec };
-    onLeft(song, result);
+    onLeft(song, result, startedAt);
     if (seconds >= LISTEN_RULES.historyAfterSec) onHeard(song, seconds, startedAt, result);
   };
 

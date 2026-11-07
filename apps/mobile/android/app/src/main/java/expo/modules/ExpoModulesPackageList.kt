@@ -91,6 +91,7 @@ class ExpoModulesPackageList : ModulesProvider {
         com.lyricflow.app.modules.AppUpdaterModule::class.java,
         com.lyricflow.app.modules.SearchModule::class.java,
         com.lyricflow.app.modules.PaletteModule::class.java,
+        com.lyricflow.app.modules.TempoModule::class.java,
         com.lyricflow.app.modules.VoiceInputModule::class.java,
         com.lyricflow.app.modules.DynamicIslandModule::class.java,
     )

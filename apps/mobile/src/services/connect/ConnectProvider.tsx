@@ -27,6 +27,7 @@ import { runWhenIdle } from '../bootPhases';
 import { recordPlay, recordPlayStarted, refFor } from '../sync/LibrarySync';
 import { backfillCatalogLinks, setCatalogBackfillToken } from '../sync/catalogBackfill';
 import { setShareTokenSource } from '../share/shareService';
+import { logListen } from '../stats/listenLog';
 import { createListenTracker, type HeardSong } from '../sync/listenTracker';
 import { setStreamQueueRouter, StreamService } from '../stream/StreamService';
 import { routeOwnedLuvLinkCatalogPick } from '../luvLink/client';
@@ -351,9 +352,11 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
         return { ref, snapshot };
       }).catch(() => null);
       startWrites.set(song.id, write);
-    }, (song, ending) => {
+    }, (song, ending, startedAt) => {
       // A playing search radio reacts at once, signed in or not.
       StreamService.radioOutcome(song.id, listenVerdict({ ...ending, durationSec: song.duration }));
+      // Listening stats (1.45.0): every listen, signed in or not, kept on this phone.
+      logListen(song, ending, startedAt);
     });
     const observe = (): void => {
       const player = usePlayerStore.getState();

@@ -222,6 +222,31 @@ const initializeTables = async (database: SQLite.SQLiteDatabase): Promise<void> 
       value TEXT NOT NULL
     );
 
+    -- Listening stats (1.45.0): every listen heard on this phone, signed in or not. Stays on the phone.
+    CREATE TABLE IF NOT EXISTS listen_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      song_key TEXT NOT NULL,
+      song_id TEXT NOT NULL,
+      ref TEXT,
+      title TEXT NOT NULL,
+      artist TEXT NOT NULL DEFAULT '',
+      album TEXT,
+      artwork TEXT,
+      duration_sec REAL NOT NULL DEFAULT 0,
+      started_at INTEGER NOT NULL,
+      heard_sec REAL NOT NULL,
+      exit TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_listen_log_started ON listen_log(started_at);
+
+    -- A song's tempo, found once (Deezer's catalogue or measured on the phone) and kept.
+    CREATE TABLE IF NOT EXISTS song_tempo (
+      song_key TEXT PRIMARY KEY,
+      bpm REAL,
+      source TEXT NOT NULL,
+      checked_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title);
     CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist);
     CREATE INDEX IF NOT EXISTS idx_lyrics_song_id ON lyrics(song_id);
