@@ -87,3 +87,9 @@ lint 0 errors. No emulator or phone: every runtime check below is **pending**.
 | Luvs closed the app / nothing on return | Native pool capped (3, 1 on low RAM), released on memory pressure, coroutine guard; empty feed retried on every visit | `LuvsWarmPoolTest` (JVM), `luvsLanes.test.ts` | Pending: the original crash had no log; confirm on the phone that showed it |
 | Memory and performance | LRU caches, `getPlaylistSongs` 2 queries (was 2 per song), lighter widget sync | `lruMap.test.ts`, real-SQLite test | Pending: memory profile on a device |
 | Scrolling song lines | Now Playing title full size, slow scroll, 5 s rest; artist 16pt, 3 s rest; mini player one line "Song • Artist" | `nowPlayingTitle.test.ts`, `playerMarquee.test.ts` | Pending: look on a phone |
+
+## 1.41.1 canvas tap crash (owner report, 2026-11-07)
+
+| Finding | Cause found | Fix | Tests | Device |
+| --- | --- | --- | --- | --- |
+| Apple Music style, song with a canvas: tapping the full canvas down to the card closes the app on some phones | `useVideoPlayer(source)` rebuilds the player when the source changes and releases the old one during render while the mounted VideoView's TextureView still draws it; the tap set the source to null (the same path ran on lyrics open and song changes). No crash log from the phones; the cause is read from expo-video 3.0.16's source, not from a log | `CanvasVideoLayer` keeps one player (`createVideoPlayer(null)`), switches clips with `replaceAsync`, clears a gone clip only after the view unmounted, releases the player 1 s after the layer unmounts | `canvasPlayer.test.ts` | Pending: tap full ↔ card repeatedly with a canvas, open/close lyrics, skip songs, on the phones that crashed |
