@@ -1,10 +1,13 @@
 package com.lyricflow.app.modules
 
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.ServiceConnection
+import android.os.IBinder
 import android.media.AudioManager
 import android.media.MediaRouter2
 import android.media.RingtoneManager
@@ -37,6 +40,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 private const val TAG = "LyrFlow"
 private const val META_MAX = 500
+/** How long a background start keeps the playback service bound, until Media3 holds it in the foreground. */
+private const val BACKGROUND_BIND_HOLD_MS = 15_000L
 
 class MainPlayerModule : Module() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -433,7 +438,7 @@ class MainPlayerModule : Module() {
         // promotes itself to foreground when playback begins. Starting it as a foreground service here would
         // demand a startForeground() call within ~5s that never comes while the user is merely loading a
         // track, which Android kills the process for.
-        context.startService(Intent(context, PlaybackService::class.java))
+        startPlaybackService(context)
         var waited = 0
         while (PlayerBridge.getEngine() == null && waited < 100) {
             Thread.sleep(20)
@@ -441,6 +446,47 @@ class MainPlayerModule : Module() {
         }
         return PlayerBridge.getEngine()
     }
+
+    /**
+     * Starts the playback service, also when the app is not on screen (1.41.2).
+     *
+     * A pinned-playlist tap on the widget or Play on the island can start music with the app closed. There Android
+     * refuses a plain startService (IllegalStateException, background start not allowed) and the tap did nothing.
+     * Binding is allowed from the background and creates the service; once it plays, Media3 starts it as a foreground
+     * service itself, so the binding is let go after [BACKGROUND_BIND_HOLD_MS].
+     */
+    private fun startPlaybackService(context: Context) {
+        val intent = Intent(context, PlaybackService::class.java)
+        try {
+            context.startService(intent)
+            return
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "background start refused; binding the playback service instead")
+        } catch (e: SecurityException) {
+            Log.w(TAG, "playback service start refused: ${e.message}")
+        }
+        if (backgroundBinding != null) return
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) = Unit
+            override fun onServiceDisconnected(name: ComponentName?) = Unit
+        }
+        try {
+            if (context.bindService(intent, connection, Context.BIND_AUTO_CREATE)) {
+                backgroundBinding = connection
+                mainHandler.postDelayed({
+                    backgroundBinding?.let { held ->
+                        backgroundBinding = null
+                        try { context.unbindService(held) } catch (_: IllegalArgumentException) { /* Already gone. */ }
+                    }
+                }, BACKGROUND_BIND_HOLD_MS)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "could not bind the playback service: ${e.message}")
+        }
+    }
+
+    @Volatile
+    private var backgroundBinding: ServiceConnection? = null
 
     /** Runs [block] on the main thread (ExoPlayer's looper) and waits for it. Null if it failed or took too long. */
     private fun <T : Any> onMain(timeoutSeconds: Long = 5, block: () -> T): T? {

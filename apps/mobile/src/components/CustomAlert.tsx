@@ -29,7 +29,7 @@ export const CustomAlert: React.FC<CustomAlertProps> = ({
 }) => {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose} />
+      <Pressable style={styles.overlay} onPress={onClose} accessible={false} importantForAccessibility="no" accessibilityElementsHidden />
 
       <View style={styles.container}>
         <View style={styles.alertBox}>

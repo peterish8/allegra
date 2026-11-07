@@ -31,7 +31,7 @@ export const ModernDeleteModal: React.FC<ModernDeleteModalProps> = ({
       onRequestClose={onCancel}
     >
       <View style={styles.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} accessible={false} importantForAccessibility="no" accessibilityElementsHidden />
         
         <View style={styles.container}>
           <Frosted radius={26} intensity={60} tint={0.5} />

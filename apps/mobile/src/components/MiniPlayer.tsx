@@ -82,7 +82,7 @@ interface TrackInfoProps {
 }
 const TrackInfo = memo(({ title, artist, coverImageUri, onPress, onBodyPress }: TrackInfoProps) => (
   <>
-    <Pressable onPress={(e) => { e.stopPropagation(); onPress(); }}>
+    <Pressable onPress={(e) => { e.stopPropagation(); onPress(); }} accessibilityRole="button" accessibilityLabel={`Open player, ${title || 'Untitled'}`}>
       <Artwork
         uri={coverImageUri}
         title={title || 'Untitled'}
@@ -151,6 +151,10 @@ const PlaybackControls = memo(({
         <Pressable
           onPress={(e) => { e.stopPropagation(); onSkipBack(e); }}
           style={styles.controlButton}
+          accessibilityRole="button"
+          accessibilityLabel="Previous song"
+          accessibilityElementsHidden={!showSkipButtons}
+          importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
         >
           <Ionicons name="play-skip-back" size={24} color="#fff" />
         </Pressable>
@@ -159,6 +163,8 @@ const PlaybackControls = memo(({
         onPress={(e) => { e.stopPropagation(); onToggle(e); }}
         hitSlop={20}
         style={[styles.playButton, { marginHorizontal: showSkipButtons ? 2 : 0 }]}
+        accessibilityRole="button"
+        accessibilityLabel={playing ? 'Pause' : 'Play'}
       >
         <Animated.View style={animatedButtonStyle}>
           <Ionicons name={playing ? 'pause' : 'play'} size={32} color="#fff" />
@@ -168,6 +174,10 @@ const PlaybackControls = memo(({
         <Pressable
           onPress={(e) => { e.stopPropagation(); onSkipForward(e); }}
           style={styles.controlButton}
+          accessibilityRole="button"
+          accessibilityLabel="Next song"
+          accessibilityElementsHidden={!showSkipButtons}
+          importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
         >
           <Ionicons name="play-skip-forward" size={24} color="#fff" />
         </Pressable>
@@ -863,6 +873,9 @@ export const MiniPlayer: React.FC = () => {
                             }}
                             hitSlop={12}
                             style={{ paddingHorizontal: 8 }}
+                            accessibilityRole="button"
+                            accessibilityLabel={isLiked ? 'Remove from liked songs' : 'Add to liked songs'}
+                            accessibilityState={{ selected: isLiked }}
                         >
                             <Ionicons
                                 name={isLiked ? 'checkmark-circle' : 'add-circle-outline'}
@@ -934,6 +947,8 @@ export const MiniPlayer: React.FC = () => {
                                 setShowYtMini(true);
                               }}
                               hitSlop={8}
+                              accessibilityRole="button"
+                              accessibilityLabel="Watch the video"
                             >
                               <View style={[styles.ytPreviewBtnInner, { backgroundColor: Glass.fillLight }]}>
                                 <Ionicons name="logo-youtube" size={18} color={Signal.ink} />

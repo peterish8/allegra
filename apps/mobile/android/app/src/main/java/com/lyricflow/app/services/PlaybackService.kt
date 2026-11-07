@@ -2,6 +2,8 @@ package com.lyricflow.app.services
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -20,6 +22,7 @@ import androidx.media3.session.MediaSessionService
 import com.lyricflow.app.island.IslandPlayback
 import com.lyricflow.app.modules.PlayerBridge
 import com.lyricflow.app.playback.QueueEngine
+import com.lyricflow.app.playback.ResumeOnline
 import java.io.File
 
 private const val TAG = "LyrFlow"
@@ -131,6 +134,8 @@ class PlaybackService : MediaSessionService() {
             } else {
                 Log.w(TAG, "playback error ${error.errorCodeName}; giving up")
                 exoPlayer.playWhenReady = false
+                // A lost connection: play on by itself when it comes back (ResumeOnline), after the pause above.
+                if (network) armResumeOnline()
                 PlayerBridge.emitError(if (network) "network" else "error")
             }
         }
@@ -154,6 +159,8 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // Play pressed (by the listener, a headset, JS's own recovery): the connection's resume is not needed.
+            if (playWhenReady) disarmResumeOnline()
             if (playWhenReady && exoPlayer.playbackState == Player.STATE_BUFFERING) {
                 lastPosition = exoPlayer.currentPosition
                 armWatchdog()
@@ -163,10 +170,58 @@ class PlaybackService : MediaSessionService() {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             retries = 0
             stallReloads = 0
+            disarmResumeOnline()
             retryHandler.removeCallbacksAndMessages(RETRY_TOKEN)
             // Downloaded songs need only the CPU lock; the Wi-Fi lock that
             // WAKE_MODE_NETWORK adds is for streams that would freeze without it.
             exoPlayer.setWakeMode(wakeModeFor(mediaItem))
+        }
+    }
+
+    // ── Resume when the connection comes back (ResumeOnline) ──────────────────────────────────────────────
+    private var resumeArmedAt: Long? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
+    private fun armResumeOnline() {
+        resumeArmedAt = android.os.SystemClock.elapsedRealtime()
+        if (networkCallback != null) return
+        val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                // Android calls this on its own thread; the player lives on the main one.
+                retryHandler.post { resumeIfOnlineAgain() }
+            }
+        }
+        try {
+            connectivity.registerDefaultNetworkCallback(callback)
+            networkCallback = callback
+        } catch (e: Exception) {
+            Log.w(TAG, "could not watch the connection: ${e.message}")
+        }
+    }
+
+    private fun resumeIfOnlineAgain() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val armedAt = resumeArmedAt
+        if (ResumeOnline.shouldResume(armedAt, now, exoPlayer.playWhenReady, exoPlayer.currentMediaItem != null)) {
+            Log.w(TAG, "connection back; resuming where it stopped")
+            disarmResumeOnline()
+            retries = 0
+            if (exoPlayer.playerError != null || exoPlayer.playbackState == Player.STATE_IDLE) exoPlayer.prepare()
+            exoPlayer.play()
+        } else if (armedAt == null || ResumeOnline.expired(armedAt, now)) {
+            disarmResumeOnline()
+        }
+    }
+
+    private fun disarmResumeOnline() {
+        resumeArmedAt = null
+        val callback = networkCallback ?: return
+        networkCallback = null
+        try {
+            getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(callback)
+        } catch (_: Exception) {
+            // Already gone.
         }
     }
 
@@ -268,6 +323,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         Log.d(TAG, "PlaybackService.onDestroy()")
         retryHandler.removeCallbacksAndMessages(null)
+        disarmResumeOnline()
         exoPlayer.removeListener(recovery)
         exoPlayer.removeListener(queueEngine)
         queueEngine.release()
