@@ -3,12 +3,13 @@
  * parseRoute; everything that navigates builds its href through `paths`.
  */
 import { LEGAL_PATHS, type LegalDocument } from '@shared/legal';
+import { songRef } from '@shared/songRef';
 
 import { flags as defaultFlags, type Flags } from './flags';
 
 export type AppView =
   | 'home' | 'discover' | 'dj' | 'library' | 'album' | 'artist' | 'playlist' | 'liked' | 'shared' | 'settings'
-  | 'import' | 'blends' | 'blend' | 'blendJoin' | 'luvLink'
+  | 'import' | 'blends' | 'blend' | 'blendJoin' | 'luvLink' | 'song'
   | LegalDocument;
 
 export function isLegalView(view: AppView): view is LegalDocument {
@@ -111,6 +112,12 @@ export function parseRoute(pathname: string, enabled: Flags = defaultFlags): Rou
     case 'playlist': {
       const playlistId = decode(second);
       return playlistId ? { view: 'playlist', ...NO_PARAMS, playlistId } : { view: 'library', ...NO_PARAMS };
+    }
+    // A shared song (packages/shared/shareLinks.ts): `/song/<source>/<id>` or `/song/find`. The page reads the
+    // rest (the ref, and the title and artist in the query) with parseSharePath.
+    case 'song': {
+      const valid = second === 'find' ? !third : Boolean(second && third && songRef(second, decode(third) ?? ''));
+      return { view: valid ? 'song' : 'home', ...NO_PARAMS };
     }
     case 'shared': {
       const sharedCode = decode(second)?.toLowerCase() ?? null;

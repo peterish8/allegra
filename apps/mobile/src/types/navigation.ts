@@ -23,6 +23,8 @@ export type RootStackParamList = {
   LuvsVault: undefined; // Luvs liked songs vault
   CreatePlaylist: { playlistId?: string, initialName?: string } | undefined; // Create or Edit playlist modal
   AddToPlaylist: { songId?: string; playlistId?: string }; // NEW: Add song to playlist modal
+  /** Scan a LuvLyrics code with the camera (Search → camera; 1.44.0). */
+  ScanCode: undefined;
 };
 
 // Bottom Tab Navigator
@@ -61,6 +63,8 @@ export type LibraryStackParamList = {
   Blend: { blendId: string };
   BlendJoin: { code: string };
   Import: undefined;
+  /** Someone's public playlist, opened from a link or a scanned code (1.44.0). */
+  SharedPlaylist: { code: string };
 };
 
 // Screen Props

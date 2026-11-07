@@ -9,6 +9,7 @@ import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -39,11 +40,34 @@ class IslandService : AccessibilityService() {
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val w = window
-            if (w != null && w.isAdded) {
-                w.recheck()
-            } else {
-                retryAttempt = 0
-                refreshNow()
+            val action = IslandRecovery.onScreenEvent(
+                wanted = isWanted(),
+                windowAdded = w?.isAdded == true,
+                windowHealthy = w?.isHealthy == true,
+                inUse = w?.isInUse == true,
+                firstSinceConnect = !screenEventSeen,
+            )
+            // Only a rebuild "uses up" the first event: one deferred because the island was open waits for the next.
+            if (IslandRecovery.consumesFirstEvent(action)) screenEventSeen = true
+            act(action)
+        }
+    }
+
+    /** A screen-on or unlock has been handled since the service connected (the first one rebuilds the window). */
+    private var screenEventSeen = false
+
+    /** The boot-time rebuilds still to run (IslandRecovery.BOOT_REBUILD_MS), and the one that runs them. */
+    private var bootRebuildStep = 0
+    private var bootConnectedAt = 0L
+    private val bootRebuild = object : Runnable {
+        override fun run() {
+            val w = window
+            act(IslandRecovery.onBootRebuild(wanted = isWanted(), windowAdded = w?.isAdded == true, inUse = w?.isInUse == true))
+            bootRebuildStep++
+            val delays = IslandRecovery.BOOT_REBUILD_MS
+            if (bootRebuildStep < delays.size) {
+                val wait = bootConnectedAt + delays[bootRebuildStep] - SystemClock.elapsedRealtime()
+                retryHandler.postDelayed(this, wait.coerceAtLeast(0L))
             }
         }
     }
@@ -52,6 +76,41 @@ class IslandService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         watchScreen()
+        retryAttempt = 0
+        screenEventSeen = false
+        refreshNow()
+        // Started by a restart: build the window again once the display and lock screen have settled, as switching
+        // the island off and on in the app does (IslandRecovery).
+        val sinceBoot = SystemClock.elapsedRealtime()
+        retryHandler.removeCallbacks(bootRebuild)
+        if (IslandRecovery.connectedAtBoot(sinceBoot)) {
+            bootConnectedAt = sinceBoot
+            bootRebuildStep = 0
+            retryHandler.postDelayed(bootRebuild, IslandRecovery.BOOT_REBUILD_MS[0])
+        }
+    }
+
+    /** The listener wants the island here (IslandPrefs; off by default on phones with their own island). */
+    private fun isWanted(): Boolean = try {
+        val prefs = IslandPrefs(this)
+        prefs.enabled && (NativeIsland.onThisPhone() == null || prefs.allowOnNativeIslandPhones)
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun act(action: IslandRecovery.Action) {
+        when (action) {
+            IslandRecovery.Action.NOTHING -> Unit
+            IslandRecovery.Action.RECHECK -> window?.recheck()
+            IslandRecovery.Action.BUILD -> { retryAttempt = 0; refreshNow() }
+            IslandRecovery.Action.REBUILD -> rebuild()
+        }
+    }
+
+    /** What switching the island off and on in the app does: a new window, measured and read afresh. */
+    private fun rebuild() {
+        try { window?.destroy() } catch (e: Exception) { Log.w("LyrFlowIsland", "island rebuild could not remove the old window", e) }
+        window = null
         retryAttempt = 0
         refreshNow()
     }
@@ -111,6 +170,7 @@ class IslandService : AccessibilityService() {
     private fun tearDown() {
         if (instance === this) instance = null
         retryHandler.removeCallbacks(retry)
+        retryHandler.removeCallbacks(bootRebuild)
         unwatchScreen()
         window?.destroy()
         window = null

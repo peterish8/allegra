@@ -26,6 +26,7 @@ import { useAccount, allegraConvex } from '../account/AccountProvider';
 import { runWhenIdle } from '../bootPhases';
 import { recordPlay, recordPlayStarted, refFor } from '../sync/LibrarySync';
 import { backfillCatalogLinks, setCatalogBackfillToken } from '../sync/catalogBackfill';
+import { setShareTokenSource } from '../share/shareService';
 import { createListenTracker, type HeardSong } from '../sync/listenTracker';
 import { setStreamQueueRouter, StreamService } from '../stream/StreamService';
 import { routeOwnedLuvLinkCatalogPick } from '../luvLink/client';
@@ -135,6 +136,8 @@ export const ConnectProvider: React.FC<{ children: ReactNode }> = ({ children })
   tokenRef.current = account.token;
   // A cover another device could not send is looked up in the account catalog with this token.
   useEffect(() => setSnapshotCoverToken(() => tokenRef.current), []);
+  // Sharing a playlist's link and saving a shared one go through the account (services/share).
+  useEffect(() => setShareTokenSource(() => tokenRef.current), []);
   const signedInRef = useRef(account.signedIn);
   signedInRef.current = account.signedIn;
   const sessionRef = useRef<ConnectSession | null>(null);

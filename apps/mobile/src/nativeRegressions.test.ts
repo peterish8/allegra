@@ -38,6 +38,32 @@ describe('island comes back after the phone restarts', () => {
     expect(window).toMatch(/if \(resized\) measure\(\)\s*\n\s*refreshLock\(\)\s*\n\s*applyVisibility\(\)/);
     expect(window).toMatch(/removeCallbacks\(settleLock\)/);
   });
+
+  // 1.44.0 (owner: still gone after a restart on their sister's phone, on 1.41.2+). Switching the island off and on in
+  // the app fixed it because it builds a new window; the service now does that by itself.
+  it('a service started by a restart rebuilds its window on the boot timer, never while the island is in hand', () => {
+    expect(service).toMatch(/IslandRecovery\.connectedAtBoot\(sinceBoot\)/);
+    expect(service).toMatch(/retryHandler\.postDelayed\(bootRebuild, IslandRecovery\.BOOT_REBUILD_MS\[0\]\)/);
+    expect(service).toMatch(/IslandRecovery\.onBootRebuild\(wanted = isWanted\(\), windowAdded = w\?\.isAdded == true, inUse = w\?\.isInUse == true\)/);
+    expect(service).toMatch(/private fun tearDown\(\)[\s\S]*?removeCallbacks\(bootRebuild\)/);
+  });
+
+  it('the first unlock or screen-on rebuilds, and a window Android dropped is rebuilt on any later one', () => {
+    expect(service).toMatch(/IslandRecovery\.onScreenEvent\(\s*wanted = isWanted\(\),\s*windowAdded = w\?\.isAdded == true,\s*windowHealthy = w\?\.isHealthy == true,\s*inUse = w\?\.isInUse == true,\s*firstSinceConnect = !screenEventSeen,\s*\)/);
+    expect(service).toMatch(/if \(IslandRecovery\.consumesFirstEvent\(action\)\) screenEventSeen = true/);
+    // Every connect starts over: the next screen event rebuilds again.
+    expect(service).toMatch(/override fun onServiceConnected\(\)[\s\S]*?screenEventSeen = false/);
+    // A rebuild is exactly the app's off-and-on: the old window goes, a new one is built.
+    expect(service).toMatch(/private fun rebuild\(\)[\s\S]*?window\?\.destroy\(\)[\s\S]*?window = null[\s\S]*?refreshNow\(\)/);
+  });
+
+  it('the window knows when Android dropped it, and every recheck measures the screen again', () => {
+    expect(window).toMatch(/val isHealthy get\(\) = added && view\?\.isAttachedToWindow == true && view\?\.windowToken != null && geometry != null/);
+    expect(window).toMatch(/val isInUse get\(\) = expandedTouch \|\| searchAdded \|\| launch != null/);
+    expect(window).toMatch(/fun recheck\(\) \{[\s\S]*?measure\(\)\s*\n\s*refreshLock\(\)\s*\n\s*applyVisibility\(\)/);
+    // The settle steps after a build use the full recheck, not only the lock.
+    expect(window).toMatch(/override fun run\(\) \{\s*\n\s*recheck\(\)/);
+  });
 });
 
 describe('music comes back after the connection drops', () => {

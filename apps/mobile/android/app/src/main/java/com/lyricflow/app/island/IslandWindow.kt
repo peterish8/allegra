@@ -152,6 +152,15 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     val isAdded get() = added
 
     /**
+     * Android still holds the window and it has been measured. A window can be "added" and yet dropped later (its
+     * surface gone after the system UI restarted at boot) or never laid out; then only a rebuild brings it back.
+     */
+    val isHealthy get() = added && view?.isAttachedToWindow == true && view?.windowToken != null && geometry != null
+
+    /** The listener is using the island right now (open, searching, or the app growing out of it): never rebuild it. */
+    val isInUse get() = expandedTouch || searchAdded || launch != null
+
+    /**
      * Reads the lock again on IslandRecovery.LOCK_RECHECK_MS after the window is built. After a reboot the keyguard
      * often leaves while the window is still being built, before its receiver listens; read once, it stayed "locked"
      * and the island hidden until rebuilt.
@@ -159,7 +168,7 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
     private var lockRecheckStep = 0
     private val settleLock = object : Runnable {
         override fun run() {
-            refreshLock()
+            recheck()
             val delays = IslandRecovery.LOCK_RECHECK_MS
             lockRecheckStep++
             if (lockRecheckStep < delays.size) main.postDelayed(this, delays[lockRecheckStep] - delays[lockRecheckStep - 1])
@@ -172,8 +181,14 @@ class IslandWindow(private val service: AccessibilityService) : IslandView.Host 
         main.postDelayed(settleLock, IslandRecovery.LOCK_RECHECK_MS[0])
     }
 
-    /** The screen came on or the phone was unlocked (the service hears it too): read the lock and show again. */
+    /**
+     * The screen came on or the phone was unlocked (the service hears it too): measure the screen and read the lock
+     * again, then show. Measuring matters after a restart: a size or rotation read while the display was still starting
+     * up (landscape, or no width yet) hid the island for good (1.44.0).
+     */
     fun recheck() {
+        if (view == null) return
+        measure()
         refreshLock()
         applyVisibility()
     }

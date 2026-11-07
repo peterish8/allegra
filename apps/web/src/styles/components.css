@@ -2193,3 +2193,47 @@ body::before { display: none; }
   .karaoke-mix__range::-webkit-slider-thumb,
   .karaoke-mix__preset { transition: none; }
 }
+
+/* ── Shared songs, LuvLyrics codes, "Open in LuvLyrics" (1.44.0) ─────────────── */
+.share-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 32px 16px 48px;
+  text-align: center;
+}
+.share-page__art { width: min(62vw, 300px); aspect-ratio: 1; border-radius: 6px; overflow: hidden; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5); }
+.share-page__art .artwork { width: 100%; height: 100%; }
+.share-page__art .artwork img { width: 100%; height: 100%; object-fit: cover; }
+.share-page__title { margin: 16px 0 0; color: var(--ink); font-size: 28px; font-weight: 700; line-height: 1.2; }
+.share-page__artist { margin: 0; color: var(--ink-muted); font-size: 15px; }
+.share-page__actions { display: flex; gap: 12px; margin-top: 12px; }
+
+.luv-code { margin: 24px auto 0; width: min(100%, 420px); }
+.luv-code svg { display: block; width: 100%; height: auto; }
+.luv-code figcaption { margin-top: 8px; color: var(--ink-muted); font-size: 13px; text-align: center; }
+
+.open-in-app {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 16px auto 0;
+}
+.open-in-app__primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  font-weight: 600;
+  text-decoration: none;
+}
+.open-in-app__secondary { min-height: 48px; display: inline-flex; align-items: center; color: var(--ink-soft); text-decoration: underline; }

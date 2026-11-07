@@ -19,6 +19,7 @@ import { BlendsScreen } from '../screens/BlendsScreen';
 import CollectionScreen from '../screens/CollectionScreen';
 import DjScreen from '../screens/DjScreen';
 import ImportScreen from '../screens/ImportScreen';
+import { SharedPlaylistScreen } from '../screens/SharedPlaylistScreen';
 import LibraryScreen from '../screens/LibraryScreen';
 import LuvsScreen from '../screens/LuvsScreen';
 import MixScreen from '../screens/MixScreen';
@@ -82,6 +83,7 @@ const LibraryStackScreen: React.FC<BottomTabScreenProps<TabParamList, 'Library'>
       <LibraryStack.Screen name="Blend" component={BlendScreen} options={BLEND_HEADER} />
       <LibraryStack.Screen name="BlendJoin" component={BlendJoinScreen} options={{ ...BLEND_HEADER, title: 'Join a Blend' }} />
       <LibraryStack.Screen name="Import" component={ImportScreen} options={{ ...BLEND_HEADER, title: 'Import Spotify' }} />
+      <LibraryStack.Screen name="SharedPlaylist" component={SharedPlaylistScreen} options={{ animation: 'slide_from_right' }} />
     </LibraryStack.Navigator>
   );
 };
