@@ -17,6 +17,7 @@ import { useSongsStore } from '../store/songsStore';
 import { LibraryStackParamList, RootStackParamList, TabParamList } from '../types/navigation';
 import type { Song } from '../types/song';
 import { CollectionCard, Control, EmptyState, HeaderGlow, IconButton, ListRow, PageHeader, Radius, Sheet, SheetOption, Signal, SongRow, Space, Surface, Tactile, Text, TextButton, Typography, useBottomClearance } from '../ui';
+import { ProfileButton } from '../components/nav/ProfileButton';
 import PlaylistsScreen from './PlaylistsScreen';
 
 type Nav = NativeStackNavigationProp<LibraryStackParamList & RootStackParamList & TabParamList>;
@@ -82,7 +83,7 @@ export default function LibraryScreen() {
   return (
     <AppScreen style={{ paddingTop: insets.top }} staticGlow={false}>
       <HeaderGlow {...glow.props} />
-      <PageHeader title={collection?.name ?? 'Library'} leading={collection ? <IconButton icon="arrow-back" label="Back to Library" onPress={() => setCollection(null)} /> : undefined}
+      <PageHeader title={collection?.name ?? 'Library'} leading={collection ? <IconButton icon="arrow-back" label="Back to Library" onPress={() => setCollection(null)} /> : <ProfileButton />}
         actions={<><IconButton icon="download-outline" label="Downloads" onPress={() => setDownloads(true)} /><IconButton icon="ellipsis-vertical" label="Library options" onPress={() => setMenuOpen(true)} /></>} />
       {searching ? <View style={styles.search}><IconButton icon="arrow-back" label="Close library search" onPress={() => { setSearching(false); setQuery(''); }} />
         <TextInput autoFocus value={query} onChangeText={setQuery} style={styles.input} placeholder={`Search ${tab.toLowerCase()}`} placeholderTextColor={Signal.inkMuted} accessibilityLabel={`Search in ${tab}`} />

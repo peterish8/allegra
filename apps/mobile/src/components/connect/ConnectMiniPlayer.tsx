@@ -57,6 +57,7 @@ export const ConnectMiniPlayer: React.FC = () => {
       onTogglePlay={toggle}
       onNext={next}
       onPrevious={previous}
+      onDevices={connect.openDevices}
     />
   );
 };

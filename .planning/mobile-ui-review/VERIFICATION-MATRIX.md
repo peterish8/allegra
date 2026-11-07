@@ -116,3 +116,22 @@ lint 0 errors. No emulator or phone: every runtime check below is **pending**.
 | Mini player background opaque, the cover's glow, not transparent | `MiniPlayerGlow` on an opaque `#050505` base, glow at full strength, soft blurred cover, light scrim; still glow (no animation) on low-end / Battery Saver; plain solid only with no cover (`miniPlayerSurface`) | `miniPlayerSurface.test.ts` | Pending: look over a scrolling page |
 | Scrubber on the top edge, no gap | Band padding removed, line edge to edge on the shell's top edge, thickens downward; 10dp grab room above | `miniPlayerSurface.test.ts` | Pending: drag feel |
 | Controls feel and accessibility | Next tap slides the song like a swipe (light haptic); native nav tabs announce as "Tab" | `miniPlayerSurface.test.ts`, `accessibilityNames.test.ts` | Pending: TalkBack |
+
+## 1.42.0 Spotify positions, step 1: tabs, Create sheet, profile menu (owner, 2026-11-07)
+
+Plan: https://claude.ai/artifact/PUmVFqesXNjCtST8Ntaeqx (built from the owner's Spotify screenshots).
+
+| Change | Tests (CI) | Device / emulator |
+| --- | --- | --- |
+| Tabs Stream, Search, Library, Create (native `NativeTabBarView` v6 + JS fallback); Create raises a sheet above the bar (Luvs, Playlist, Blend, LuvLink) and becomes a white close disc | `shellNavigation.test.ts` | Pending: tap Create, pick each row, Back closes |
+| Profile menu from your picture at the top left of Stream, Search, Library (About and updates first, then the You rows); update dot on the picture; You tab and Stream's LuvLyrics mark removed | `shellNavigation.test.ts`, `StreamScreen.layout.test.ts` | Pending: TalkBack order, swipe the menu closed |
+| Release gate reaches About through "Profile and settings" → "About LuvLyrics" | `shellNavigation.test.ts` (script guard); the gate itself runs on the PR | Emulator gate on the PR |
+
+## 1.43.0 Spotify positions, step 2: mini player card
+
+| Change | Tests (CI) | Device |
+| --- | --- | --- |
+| Floating rounded card inset from the edges; Devices, heart, play on the right (Next by swipe and TalkBack action); Connect's mini player gets Devices | `miniPlayerSurface.test.ts` | Pending: look and touch on a phone |
+| Liked songs: no cover, forest-green wash from the top into black, big left title, count, download + sort left, round Play right, "Add to this playlist"; back arrow in a disc | `round7.test.ts` | Pending: look on a phone |
+| Mini player: title bold with the artist under it; saved mark ✓ / ⊕; progress line stays on the top edge (owner) | `round7.test.ts`, `miniPlayerSurface.test.ts` | Pending |
+| Navigation: no slab; the page fades to black under the bar, from 40dp above it | `round7.test.ts` | Pending: rows scrolling under it |

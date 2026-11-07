@@ -761,6 +761,9 @@ export const MiniPlayer: React.FC = () => {
         onPrevious={skipBackward}
         onRetry={() => usePlayerStore.getState().requestPlayback(true)}
         onSeek={handleClassicLyricSeek}
+        onDevices={connect.openDevices}
+        liked={isLiked}
+        onToggleLike={() => { void toggleLike(currentSong.id); }}
       />
     );
   }

@@ -63,6 +63,7 @@ import { useSongsStore } from '../store/songsStore';
 import { TabScreenProps } from '../types/navigation';
 import { Playlist, Song, UnifiedSong } from '../types/song';
 import * as Haptics from '../utils/haptics';
+import { ProfileButton } from '../components/nav/ProfileButton';
 
 type YTArtistResult = YTPageItem<'artist'>;
 
@@ -575,7 +576,9 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
         keyboardDismissMode="on-drag"
         contentContainerStyle={{ paddingTop: insets.top + Space.xs, paddingBottom: bottomClearance }}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, styles.headerLead]}>
+          {/* 1.42.0 (Spotify's place): your picture opens the profile menu. */}
+          <ProfileButton />
           <InfoTitleRow>
             <Text style={styles.title} accessibilityRole="header">Search</Text>
             <InfoTour label="About Search" steps={SEARCH_TOUR} scene={searchScene} />
@@ -653,6 +656,8 @@ const MOOD_TONES: readonly [string, string][] = [
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bg },
   header: { height: 52, justifyContent: 'center', paddingHorizontal: GUTTER },
+  // The picture's 48dp target starts at the gutter's edge, as on Stream and Library.
+  headerLead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: Space.xs, paddingLeft: GUTTER - Space.sm },
   title: { fontSize: TypeScale.page, fontWeight: '700', color: Signal.ink },
   traceButton: { paddingHorizontal: Space.xs, paddingVertical: Space.xs },
   traceButtonLabel: { color: Signal.inkMuted, fontSize: TypeScale.caption, fontWeight: '600' },

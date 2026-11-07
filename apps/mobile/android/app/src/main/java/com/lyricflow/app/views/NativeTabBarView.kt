@@ -34,7 +34,11 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     private var heldIndex = -1
     private val holdRunnables = arrayOfNulls<Runnable>(5)
     private val tabs = listOf("Stream", "Luvs", "Library")
-    private val v6Tabs = listOf("Stream", "Luvs", "Library", "Search", "You")
+    /**
+     * 1.42.0 (owner, Spotify's order): Stream, Search, Library and Create. Create is not a page: it opens the Create
+     * sheet (Luvs, Playlist, Blend, LuvLink) through onMorePress and turns into a white close disc while it is open.
+     */
+    private val v6Tabs = listOf("Stream", "Search", "Library", CREATE)
     private val slotViews = ArrayList<View>(5)
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     // Labels in medium weight, not bold: they name the icon above them, they don't compete with it.
@@ -81,7 +85,13 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
                         info.className = "android.widget.Button"
                         info.isSelected = host.isSelected
                         // 1.41.3: TalkBack says "Library, Tab, selected", not "Button", for the navigation tabs.
-                        if (variant == "v6") info.roleDescription = "Tab"
+                        // Create opens a sheet: it stays a button that expands and collapses.
+                        val create = variant == "v6" && v6Tabs.getOrNull(index) == CREATE
+                        if (variant == "v6" && !create) info.roleDescription = "Tab"
+                        if (create) info.addAction(
+                            if (moreOpen) AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_COLLAPSE
+                            else AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_EXPAND,
+                        )
                         // TalkBack's double tap performs ACTION_CLICK; say so outright.
                         info.isClickable = true
                         info.addAction(AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK)
@@ -173,7 +183,7 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
                 addUpdateListener { moreMorph = it.animatedValue as Float; invalidate() }
                 start()
             }
-            slotViews.getOrNull(3)?.contentDescription = if (open) "Close menu" else "More"
+            slotViews.getOrNull(3)?.contentDescription = if (variant == "v6") (if (open) "Close Create" else CREATE) else if (open) "Close menu" else "More"
         }
         syncSelection()
         invalidate()
@@ -182,8 +192,14 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     /** What TalkBack announces: the lit tab is selected, More is selected while it or a menu page is up. */
     private fun syncSelection() {
         slotViews.forEachIndexed { i, view ->
-            view.isSelected = if (variant == "v6") v6Tabs[i] == activeTab else if (i == 3) moreActive else i < tabs.size && !moreActive && tabs[i] == activeTab
-            view.contentDescription = if (variant == "v6") v6Tabs[i] else if (i >= 3) "More" else tabs[i]
+            if (variant == "v6") {
+                val name = v6Tabs.getOrNull(i) ?: return@forEachIndexed
+                view.isSelected = name != CREATE && name == activeTab
+                view.contentDescription = if (name == CREATE && moreOpen) "Close Create" else name
+                return@forEachIndexed
+            }
+            view.isSelected = if (i == 3) moreActive else i < tabs.size && !moreActive && tabs[i] == activeTab
+            view.contentDescription = if (i >= 3) "More" else tabs[i]
         }
     }
 
@@ -307,7 +323,10 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     }
 
     private fun activate(index: Int) {
-        if (variant == "v6") onTabPress(mapOf("route" to v6Tabs[index]))
+        if (variant == "v6") {
+            val name = v6Tabs.getOrNull(index) ?: return
+            if (name == CREATE) onMorePress(mapOf("open" to moreOpen)) else onTabPress(mapOf("route" to name))
+        }
         else if (index == 3) onMorePress(mapOf("open" to moreOpen))
         else onTabPress(mapOf("route" to tabs[index]))
     }
@@ -332,15 +351,19 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     }
 
     private fun slotRects(width: Float, height: Float): List<RectF> {
-        if (variant == "v6") return (0..4).map { i -> RectF(i * width / 5f, 0f, (i + 1) * width / 5f, V6_BAR_DP) }
+        if (variant == "v6") {
+            val n = v6Tabs.size.toFloat()
+            return v6Tabs.indices.map { i -> RectF(i * width / n, 0f, (i + 1) * width / n, V6_BAR_DP) }
+        }
         return TabBarGeometry.slots(variant == "modern-pill", micEnabled, width, barTop(height))
             .map { RectF(it.left, it.top, it.right, it.bottom) }
     }
 
     private fun drawV6(canvas: Canvas, width: Float) {
+        val n = v6Tabs.size.toFloat()
         v6Tabs.forEachIndexed { index, name ->
-            val selected = name == activeTab
-            val cx = width * (index + 0.5f) / 5f
+            val selected = name != CREATE && name == activeTab
+            val cx = width * (index + 0.5f) / n
             // The 56dp V6 bar (src/navigation/v6Shell.ts NAV_BAR_HEIGHT). Round 7 item 3: the selected tab is its foreground
             // only (filled icon, bright semibold label); no pill, tile or background behind it.
             if (slotViews.getOrNull(index)?.isFocused == true) {
@@ -348,10 +371,14 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
                 iconPaint.color = ColorUtils.setAlphaComponent(Color.WHITE, 230)
                 iconPaint.style = Paint.Style.STROKE
                 iconPaint.strokeWidth = 2f
-                canvas.drawRoundRect(RectF(cx - width / 10f + 4f, 4f, cx + width / 10f - 4f, V6_BAR_DP - 4f), 14f, 14f, iconPaint)
+                canvas.drawRoundRect(RectF(cx - width / (2f * n) + 4f, 4f, cx + width / (2f * n) - 4f, V6_BAR_DP - 4f), 14f, 14f, iconPaint)
                 iconPaint.style = Paint.Style.FILL
             }
             val color = if (selected) activeTint else inactiveTint
+            if (name == CREATE) {
+                drawCreate(canvas, cx, color, index)
+                return@forEachIndexed
+            }
             canvas.save()
             canvas.translate(cx, 18f)
             drawTabIcon(canvas, name, ColorUtils.setAlphaComponent(color, (Color.alpha(color) * (1f - pressed[index] * 0.15f)).roundToInt()), selected)
@@ -421,6 +448,35 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
         canvas.restore()
     }
 
+    /**
+     * Create (1.42.0): a "+" over its label at rest. While the Create sheet is open it becomes Spotify's white disc
+     * with a dark close mark, cross-faded and turned in by [moreMorph] (the same 150ms morph More used).
+     */
+    private fun drawCreate(canvas: Canvas, cx: Float, color: Int, index: Int) {
+        val rest = 1f - moreMorph
+        val press = 1f - pressed[index] * 0.15f
+        if (rest > 0f) {
+            canvas.save()
+            canvas.translate(cx, 18f)
+            drawGlyph(canvas, GLYPH_ADD, ColorUtils.setAlphaComponent(color, (Color.alpha(color) * rest * press).roundToInt()))
+            canvas.restore()
+            labelPaint.color = ColorUtils.setAlphaComponent(color, (Color.alpha(color) * rest).roundToInt())
+            labelPaint.textSize = 12f * resources.configuration.fontScale.coerceAtMost(1.3f)
+            labelPaint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+            canvas.drawText(CREATE, cx, 48f, labelPaint)
+        }
+        if (moreMorph > 0f) {
+            iconPaint.style = Paint.Style.FILL
+            iconPaint.color = ColorUtils.setAlphaComponent(Color.WHITE, (255 * moreMorph * press).roundToInt())
+            canvas.drawCircle(cx, V6_BAR_DP / 2f, CREATE_DISC_DP * (0.8f + 0.2f * moreMorph), iconPaint)
+            canvas.save()
+            canvas.translate(cx, V6_BAR_DP / 2f)
+            canvas.rotate((1f - moreMorph) * -45f)
+            drawGlyph(canvas, GLYPH_CLOSE, ColorUtils.setAlphaComponent(Color.BLACK, (255 * moreMorph).roundToInt()))
+            canvas.restore()
+        }
+    }
+
     /** One Ionicons glyph centred on the canvas origin (the canvas is already in dp). */
     private fun drawGlyph(canvas: Canvas, codepoint: Int, color: Int) {
         if (Color.alpha(color) == 0) return
@@ -453,6 +509,11 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
             "Library" to (0xf3b5 to 0xf3b6), // library, library-outline
         )
         const val GLYPH_MORE = 0xf2ce // ellipsis-horizontal
+        const val GLYPH_ADD = 0xf103 // add
+        /** The Create tab's name: the label, TalkBack's name and what JS hears (it opens a sheet, not a page). */
+        const val CREATE = "Create"
+        /** The white close disc's radius while the Create sheet is open. */
+        const val CREATE_DISC_DP = 20f
         const val GLYPH_CLOSE = 0xf24a // close
         @Volatile private var ionicons: Typeface? = null
         /** The font ships in assets/fonts (copied from @expo/vector-icons); loaded once per process. */

@@ -105,6 +105,19 @@ export const ShellFrost = {
    * texture, and a light scrim so white text always reads. Nothing of the page behind shows through.
    */
   miniBase: '#050505',
+  /**
+   * The navigation bar (1.43.0, owner's Spotify screenshot): no slab of its own. The page fades to black under it,
+   * starting `navFade` above the bar, so rows scroll softly out under the icons.
+   */
+  navFadeColors: ['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.82)', '#000000'] as const,
+  navFadeStops: [0, 0.45, 1] as const,
+  navFade: 40,
+  /**
+   * Liked songs' header (1.43.0, owner): Spotify's layout, but a smooth forest-green wash instead of its blue, from the
+   * top of the screen down into the page's black. No cover.
+   */
+  likedWashColors: ['#1F4D33', '#163826', '#0B1A12', 'rgba(5, 5, 5, 0)'] as const,
+  likedWashStops: [0, 0.35, 0.75, 1] as const,
   miniGlowOpacity: 1,
   miniCoverOpacity: 0.22,
   miniTint: 'rgba(5, 5, 5, 0.3)',
