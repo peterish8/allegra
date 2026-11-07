@@ -69,7 +69,7 @@ describe('mini player and navigation controls', () => {
 
   it('the native navigation tabs read as tabs to TalkBack', () => {
     const tabBar = read('..', '..', 'android', 'app', 'src', 'main', 'java', 'com', 'lyricflow', 'app', 'views', 'NativeTabBarView.kt');
-    expect(tabBar).toMatch(/if \(variant == "v6"\) info\.roleDescription = "Tab"/);
+    expect(tabBar).toMatch(/if \(variant == "v6" && !create\) info\.roleDescription = "Tab"/);
     expect(tabBar).toMatch(/info\.isSelected = host\.isSelected/);
   });
 });

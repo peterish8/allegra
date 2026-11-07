@@ -8,8 +8,10 @@ const nodes: ts.Node[] = [];
 const visit = (node: ts.Node) => { nodes.push(node); ts.forEachChild(node, visit); };
 visit(file);
 
+// 1.42.0: the update entry is your picture (ProfileButton: the profile menu holds About and its Updates panel, and the
+// picture carries the update dot). It must stay in the fixed header, never inside the recycled feed.
 it('keeps the Stream update entry outside the scrolling or recycled feed', () => {
-  const about = nodes.find(node => ts.isJsxAttribute(node) && node.name.getText(file) === 'accessibilityLabel' && node.getText(file).includes('About LuvLyrics'));
+  const about = nodes.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === 'ProfileButton');
   expect(about).toBeDefined();
   const ancestors: string[] = [];
   for (let node = about?.parent; node; node = node.parent) {

@@ -84,11 +84,21 @@ check_start() {
   esac
   shot "$ctx-settings"
 
-  # 4. About, from Stream, with its Updates panel.
+  # 4. About, from Stream, with its Updates panel. Since 1.42.0 About lives in the profile menu (the picture at the
+  #    top left, Spotify's place); a build without the menu still has About on Stream itself.
   link "lyricflow://open/stream"
   sleep 4
   xy=""
   ui_dump && xy=$(centre_of 'About LuvLyrics[^"]*')
+  if [ -z "$xy" ]; then
+    menu=""
+    ui_dump && menu=$(centre_of 'Profile and settings[^"]*')
+    if [ -n "$menu" ]; then
+      adb shell input tap $menu
+      sleep 2
+      ui_dump && xy=$(centre_of 'About LuvLyrics[^"]*')
+    fi
+  fi
   if [ -z "$xy" ]; then
     fail "$ctx: no About button on Stream"
     shot "$ctx-no-about"

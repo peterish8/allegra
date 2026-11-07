@@ -26,6 +26,11 @@ source_of_truth:
   cover and a light scrim (`MiniPlayerGlow`, `miniPlayerSurface`, `ShellFrost.mini*`). Low-end phones and Battery
   Saver keep the glow but hold it still; only a song with no cover gets the plain solid. A tap on Next moves the song
   across like a swipe. The navigation keeps `ShellMaterial`; its native tabs read as "Tab" to TalkBack.
+- **Navigation (1.42.0, owner: Spotify's positions, plan https://claude.ai/artifact/PUmVFqesXNjCtST8Ntaeqx).** Tabs
+  Stream, Search, Library, Create. Create raises a rounded sheet above the bar over a dimmed page (Luvs, Playlist,
+  Blend, LuvLink) and turns into a white close disc. Your picture sits at the top left of Stream, Search and Library
+  and opens the profile menu from the left (About and updates first, then DJ, Downloads, Import, Blends, LuvLink,
+  Connect devices, Settings and privacy); it carries the update dot. The You tab and Stream's LuvLyrics mark are gone.
 - **Rows.** Pressing a song lights the whole row edge to edge, Download and ⋮ included.
 - **Up next.** Its filters (`Segmented`, everywhere) are a frosted capsule with a white capsule plate; Shuffle is a
   compact frosted capsule.

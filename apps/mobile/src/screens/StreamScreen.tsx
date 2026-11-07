@@ -13,7 +13,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Keyboard,
   RefreshControl,
   ScrollView,
@@ -26,12 +25,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Toast } from '../components/Toast';
-import AboutSheet from '../components/about/AboutSheet';
+import { ProfileButton } from '../components/nav/ProfileButton';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { AuraMood } from '../components/allegra/MusicFlowField';
 import { PrimaryButton, SectionHeading } from '../components/allegra/home';
 import { STREAM_TOUR, streamScene } from '../components/allegra/infoTours';
-import { Tactile } from '../components/allegra/motion';
 import { useHeaderGlow } from '../hooks/useHeaderGlow';
 import { BrowseShelf } from '../components/browse/BrowseShelf';
 import { ConnectDropdown } from '../components/connect/ConnectDropdown';
@@ -64,7 +62,6 @@ import { useLuvsPreferencesStore } from '../store/luvsPreferencesStore';
 import { usePlayerStore } from '../store/playerStore';
 import { useSongsStore } from '../store/songsStore';
 import { useStreamHistoryStore } from '../store/streamHistoryStore';
-import { useUpdateStore } from '../store/updateStore';
 import { TabParamList, type MixParams } from '../types/navigation';
 import { UnifiedSong } from '../types/song';
 import { Button, CollectionCard, HeaderGlow, IconButton, identityMeta, Sheet, SheetDivider, SheetIdentity, SheetOption, Text as UiText } from '../ui';
@@ -109,9 +106,6 @@ const StreamScreen: React.FC = () => {
   const [feed, setFeed] = useState<HomeFeed | null>(() => preloadedFeedCache()?.feed ?? null);
   const [loading, setLoading] = useState(() => !preloadedFeedCache()?.feed);
   const [refreshing, setRefreshing] = useState(false);
-  const [aboutOpen, setAboutOpen] = useState(false);
-  // A newer build was found in the background: mark About, where the update is.
-  const updateWaiting = useUpdateStore(s => s.available !== null);
   const [query, setQuery] = useState('');
   const queryRef = useRef(query);
   queryRef.current = query;
@@ -650,23 +644,16 @@ const StreamScreen: React.FC = () => {
       {/* Keep the update entry reachable while feed sections hydrate or scroll. */}
       <View style={{ paddingTop: insets.top + Space.xs }}>
         <View style={styles.header}>
-          <InfoTitleRow>
-            <Text style={styles.title} accessibilityRole="header">Stream</Text>
-            <InfoTour label="About Stream" steps={STREAM_TOUR} scene={streamScene} />
-          </InfoTitleRow>
+          {/* 1.42.0 (Spotify's place): your picture opens the profile menu, where About and updates now live. */}
+          <View style={styles.headerLead}>
+            <ProfileButton />
+            <InfoTitleRow>
+              <Text style={styles.title} accessibilityRole="header">Stream</Text>
+              <InfoTour label="About Stream" steps={STREAM_TOUR} scene={streamScene} />
+            </InfoTitleRow>
+          </View>
           <View style={styles.headerActions}>
             <ConnectDropdown />
-            <Tactile
-              onPress={() => { Haptics.selectionAsync().catch(() => {}); setAboutOpen(true); }}
-              hitSlop={8}
-              pressScale={0.9}
-              accessibilityRole="button"
-              accessibilityLabel={updateWaiting ? 'About LuvLyrics, update available' : 'About LuvLyrics'}
-              style={styles.aboutBtn}
-            >
-              <Image source={require('../../assets/luvlyrics-logo-white-mark.png')} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityIgnoresInvertColors />
-              {updateWaiting ? <View style={styles.aboutDot} /> : null}
-            </Tactile>
           </View>
         </View>
       </View>
@@ -706,7 +693,6 @@ const StreamScreen: React.FC = () => {
       </Sheet>
       {songActions.element}
       {toast ? <Toast visible message={toast} type="info" duration={2200} onDismiss={() => setToast(null)} /> : null}
-      <AboutSheet visible={aboutOpen} onClose={() => setAboutOpen(false)} />
       <AddListSheet visible={listOpen} onClose={() => setListOpen(false)} onSaved={setToast} />
     </AppScreen>
   );
@@ -736,17 +722,8 @@ const styles = StyleSheet.create({
   content: {},
   header: { height: HEADER_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: GUTTER },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  aboutBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
-  },
-  aboutDot: { position: 'absolute', top: 5, right: 5, width: 10, height: 10, borderRadius: 5, backgroundColor: Signal.wave, borderWidth: 2, borderColor: Signal.bg },
+  // The picture sits in its 48dp target at the gutter's edge, so the title keeps Spotify's spacing from it.
+  headerLead: { flexDirection: 'row', alignItems: 'center', gap: Space.xs, marginLeft: -Space.sm, flexShrink: 1 },
   title: { fontSize: TypeScale.page, fontWeight: '700', color: Signal.ink },
   search: {
     flexDirection: 'row',

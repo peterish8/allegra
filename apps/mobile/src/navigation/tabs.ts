@@ -2,13 +2,13 @@ import { Platform } from 'react-native';
 import { TAB_BAR_HEIGHT } from '../constants/layout';
 
 /**
- * The everyday tabs — the only routes with an icon in the bottom bar, in bar
- * order: Stream, Luvs, (mic), Library, then •••. Search, Playlists,
- * Settings and the YouTube Music pages are tab routes too (so the
- * bar stays on screen while they're open) but live behind the ••• menu
- * (components/MoreMenu.tsx). Only the full-screen player covers the bar.
+ * The everyday tabs, the only routes with an icon in the bottom bar, in bar order: Stream, Search, Library, then
+ * Create (a sheet, not a route; `navigation/createMenu`). Luvs, the profile menu's pages (Settings, Your DJ) and the
+ * YouTube Music pages are tab routes too, so the bar stays on screen while they're open. Only the full-screen player
+ * covers the bar.
  */
-export const VISIBLE_TABS: ReadonlySet<string> = new Set(['Stream', 'Luvs', 'Library', 'Search', 'You']);
+// 1.42.0: Spotify's tabs. Create is a sheet, not a route; Luvs opens from it and the You rows live in the profile menu.
+export const VISIBLE_TABS: ReadonlySet<string> = new Set(['Stream', 'Search', 'Library']);
 
 /**
  * Height the floating pill bar takes above the safe-area inset, including its
