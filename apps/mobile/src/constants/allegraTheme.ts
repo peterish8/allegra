@@ -100,12 +100,14 @@ export const ShellFrost = {
   coverOpacity: 0.16,
   solid: '#16181D',
   /**
-   * The mini player alone (1.41.0): the cover's animated glow (Settings' "Glow animated", Echo's two mini blobs),
-   * softened under a blurred cover and a frosted dark tint so it reads as light behind glass, never as a colour block.
+   * The mini player alone (1.41.3, owner): opaque, never see-through. The cover's animated glow (Settings' "Glow
+   * animated", Echo's two mini blobs) at full strength on its own near-black base, a soft blurred copy of the cover for
+   * texture, and a light scrim so white text always reads. Nothing of the page behind shows through.
    */
-  miniGlowOpacity: 0.7,
-  miniCoverOpacity: 0.28,
-  miniTint: 'rgba(11, 13, 16, 0.46)',
+  miniBase: '#050505',
+  miniGlowOpacity: 1,
+  miniCoverOpacity: 0.22,
+  miniTint: 'rgba(5, 5, 5, 0.3)',
 } as const;
 
 /** One corner family everywhere. Artwork is never over-rounded. */

@@ -159,7 +159,8 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
         </Tactile>
       </View></GestureDetector>
       <PlaybackButton size={48} plain status={status} onPress={() => { if (!remote && status === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
-      <IconButton icon="play-skip-forward" label="Next song" onPress={onNext} />
+      {/* A tap on Next moves the song across like a swipe does (1.41.3), so the tap is seen; skip() calls onNext. */}
+      <IconButton icon="play-skip-forward" label="Next song" haptic="light" onPress={() => skip('next', -1)} />
     </Animated.View>
   </Animated.View>;
 }
