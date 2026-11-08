@@ -41,6 +41,7 @@ class ExpoModulesPackageList : ModulesProvider {
         expo.modules.asset.AssetModule::class.java,
         expo.modules.audio.AudioModule::class.java,
         expo.modules.blur.BlurModule::class.java,
+        expo.modules.camera.CameraViewModule::class.java,
         expo.modules.clipboard.ClipboardModule::class.java,
         expo.modules.constants.ConstantsModule::class.java,
         expo.modules.devmenu.modules.DevMenuModule::class.java,

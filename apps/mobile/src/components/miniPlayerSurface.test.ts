@@ -67,7 +67,7 @@ describe('mini player and navigation controls', () => {
   // and TalkBack keeps its "Next song" action.
   it('shows Devices, the heart and play, in that order, and Next stays reachable', () => {
     const pill = code(read('PillPlayer.tsx'));
-    const devices = pill.indexOf('label="Devices"');
+    const devices = pill.indexOf('accessibilityLabel="Devices"');
     const heart = pill.indexOf("'Remove from Liked songs' : 'Add to Liked songs'");
     const play = pill.indexOf('<PlaybackButton size={48}');
     expect(devices).toBeGreaterThan(0);
@@ -78,8 +78,26 @@ describe('mini player and navigation controls', () => {
     expect(pill).toMatch(/const which = miniSwipe\(/);
   });
 
-  it('is a floating rounded card inset from the screen edges', () => {
-    expect(code(read('PillPlayer.tsx'))).toMatch(/shell: \{ position: 'absolute', left: Space\.sm, right: Space\.sm, zIndex: 15, borderRadius: Radius\.panel, overflow: 'hidden' \}/);
+  // 1.44.0 (owner): edge to edge, no border and no grey line of its own.
+  it('spans the full width with no border, and its progress track is a faint white, not a grey line', () => {
+    const pill = code(read('PillPlayer.tsx'));
+    expect(pill).toMatch(/shell: \{ position: 'absolute', left: 0, right: 0, zIndex: 15, borderRadius: Radius\.panel, overflow: 'hidden' \}/);
+    expect(pill).not.toMatch(/border(Width|Color)/);
+    const scrubber = code(read('MiniScrubber.tsx'));
+    expect(scrubber).toMatch(/height: SCRUB_LINE, overflow: 'hidden', backgroundColor: Glass\.selected/);
+    expect(scrubber).not.toMatch(/Surface\.control/);
+  });
+
+  // 1.44.0 (owner: "place neatly like Spotify"): one glyph size, even 44dp slots, each a 48dp touch.
+  it('sets Devices, the saved mark and play on one rhythm and one size', () => {
+    const pill = code(read('PillPlayer.tsx'));
+    expect(pill).toMatch(/const ACTION_GLYPH = 26;/);
+    expect(pill).toMatch(/const ACTION_SLOT = 44;/);
+    expect(pill).toMatch(/action: \{ width: ACTION_SLOT, height: Control\.target/);
+    // 44 wide plus 2 + 2 of slop = a 48dp touch.
+    expect(pill).toMatch(/const ACTION_SLOP = \{ left: 2, right: 2, top: 0, bottom: 0 \}/);
+    expect(code(read('..', 'ui', 'PlaybackButton.tsx'))).toMatch(/const glyph = plain \? 26 :/);
+    expect(pill).toMatch(/name=\{liked \? 'checkmark-circle' : 'add-circle-outline'\} size=\{ACTION_GLYPH\}/);
   });
 
   it('the local mini player passes Devices and the heart; the Connect one passes Devices', () => {

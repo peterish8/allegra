@@ -15,6 +15,8 @@
  *       set how the app looks (utils/styleLink: only known values are read)
  *   lyricflow://diagnose
  *       turn on diagnostics (utils/diag) for this run
+ *   https://allegravibe.vercel.app/song/<source>/<id>?t=&a=   and   /shared/<code>
+ *       a shared song plays, a public playlist opens (services/share; the manifest claims these paths)
  *
  * Mounted once in RootNavigator. The emulator smoke test drives the app with
  * these; they are also shareable.
@@ -23,6 +25,9 @@ import { useEffect } from 'react';
 import { Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isBlendInviteCode } from '@shared/blendLimits';
+import { parseShareUrl, type ShareTarget } from '@shared/shareLinks';
+import { parseSongRef } from '@shared/songRef';
+import { openShareTarget } from '../services/share/openShare';
 import { navigationRef, openMainTab } from '../utils/navigationService';
 import { searchOfficial } from '../services/stream/officialSearch';
 import { StreamService } from '../services/stream/StreamService';
@@ -46,6 +51,13 @@ export const parseDeepLink = (url: string): { action: string; params: Record<str
   const webInvite = /^https:\/\/(?:allegravibe\.vercel\.app|allegra\.music)\/blend\/join\/([^/?#]+)(?:[?#].*)?$/i.exec(url.trim());
   if (webInvite) {
     try { const code = decodeURIComponent(webInvite[1]); return isBlendInviteCode(code) ? { action: 'blend/join', params: { code } } : null; } catch { return null; }
+  }
+  // 1.44.0: a shared song or public playlist (packages/shared/shareLinks.ts), opened here by Android App Links.
+  const share = parseShareUrl(url);
+  if (share) {
+    return share.kind === 'song'
+      ? { action: 'share/song', params: { ref: share.ref ?? '', title: share.title, artist: share.artist } }
+      : { action: 'share/playlist', params: { code: share.code } };
   }
   const m = /^lyricflow:\/\/([^?#]*)(?:\?([^#]*))?/i.exec(url.trim());
   if (!m) return null;
@@ -79,6 +91,15 @@ const handle = async (url: string | null) => {
   if (link.action === 'blend/join' && isBlendInviteCode(link.params.code ?? '')) {
     await AsyncStorage.setItem('allegra:pending-blend-invite', link.params.code).catch(() => undefined);
     openMainTab({ screen: 'Library', params: { screen: 'BlendJoin', params: { code: link.params.code } } });
+    return;
+  }
+  if (link.action === 'share/song' || link.action === 'share/playlist') {
+    const parsedRef = link.params.ref ? parseSongRef(link.params.ref) : null;
+    const target: ShareTarget = link.action === 'share/playlist'
+      ? { kind: 'playlist', code: link.params.code ?? '' }
+      : { kind: 'song', ref: parsedRef ? `${parsedRef.source}:${parsedRef.id}` : null, title: link.params.title ?? '', artist: link.params.artist ?? '' };
+    const outcome = await openShareTarget(target).catch(() => 'not-found' as const);
+    diag('link', `${link.action} -> ${outcome}`);
     return;
   }
   if (link.action === 'luvlink/join' && link.params.code) {

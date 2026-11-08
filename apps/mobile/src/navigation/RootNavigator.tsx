@@ -16,6 +16,7 @@ import { navTheme, SCREEN_BG, stackContentStyle } from './theme';
 import TabNavigator from './TabNavigator';
 import NowPlayingScreen from '../screens/NowPlayingScreen';
 import LuvLinkScreen from '../screens/LuvLinkScreen';
+import { ScanCodeScreen } from '../screens/ScanCodeScreen';
 import LyricsEditorScreen from '../screens/LyricsEditorScreen';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { MoreMenuHost } from '../components/MoreMenu';
@@ -103,6 +104,7 @@ export const RootNavigator: React.FC = () => {
             }}
           />
           <Stack.Screen name="LuvLink" component={LuvLinkScreen} />
+          <Stack.Screen name="ScanCode" component={ScanCodeScreen} options={{ animation: 'fade' }} />
           <Stack.Screen
             name="EditLyrics"
             component={LyricsEditorScreen}

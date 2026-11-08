@@ -26,6 +26,10 @@ import { ArtistPage } from './components/ArtistPage';
 import { LegalPage } from './components/LegalPage';
 import { isLegalView } from './lib/routes';
 import { CollectionPage } from './components/CollectionPage';
+import { LuvCodeCard, codeTint } from './components/LuvCodeCard';
+import { OpenInApp } from './components/OpenInApp';
+import { SongSharePage } from './components/SongSharePage';
+import { isShareCode, parseSharePath } from '@shared/shareLinks';
 import { ArtistPreviewCard } from './components/ArtistPreviewCard';
 import type { RelatedArtist } from './components/ArtistPage';
 import { LibraryPage } from './components/LibraryPage';
@@ -180,6 +184,8 @@ export default function App() {
   const router = useRouter();
   const pathname = usePathname();
   const { view, artistName, playlistId, sharedCode, blendId, inviteCode, luvLinkRoomId } = useMemo(() => parseRoute(pathname), [pathname]);
+  // A shared song's ref, title and artist (`/song/…?t=&a=`); the query is read in the browser only.
+  const songShare = useMemo(() => (view === 'song' && typeof window !== 'undefined' ? parseSharePath(`${pathname}${window.location.search}`) : null), [view, pathname]);
   const [shared, setShared] = useState<SharedPlaylist | null>(null);
   const [sharedLoading, setSharedLoading] = useState(false);
   const [sharedError, setSharedError] = useState<string | null>(null);
@@ -1922,7 +1928,7 @@ export default function App() {
           <ImportChip hidden={view === 'import' || view === 'blends'} />
         {view !== 'dj' ? <div className="panel-topbar" data-tone={topbarBright ? 'bright' : undefined}>
             {isDetailView || isCollectionView ? <button type="button" className="topbar-back" onClick={() => goBack(view === 'liked' || view === 'playlist' ? '#library' : view === 'shared' ? '#home' : '#discover')} aria-label="Back"><ArrowLeft size={17} aria-hidden="true" /><span>Back</span></button> : null}
-            <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' || view === 'import' || view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'luvLink' ? 'LuvLink' : view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' ? 'Blends' : view === 'blend' ? 'Blend' : view === 'blendJoin' ? 'Join a Blend' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong>{view === 'discover' ? <InfoTour className="crumbs-info" label="About Browse" steps={BROWSE_TOUR} stage={browseScene} /> : null}</nav>
+            <nav className="crumbs" aria-label="Breadcrumb"><span>{view === 'home' || view === 'shared' || view === 'song' ? 'Home' : view === 'library' || view === 'liked' || view === 'playlist' || view === 'import' || view === 'blends' || view === 'blend' || view === 'blendJoin' ? 'Library' : view === 'settings' || isLegalView(view) ? 'Allegra' : 'Browse'}</span><ChevronRight size={14} aria-hidden="true" /><strong>{view === 'luvLink' ? 'LuvLink' : view === 'home' ? 'For you' : view === 'shared' ? 'Shared playlist' : view === 'song' ? 'Shared song' : view === 'library' ? 'Your music' : view === 'album' ? 'Album' : view === 'artist' ? 'Artist' : view === 'liked' ? 'Liked Songs' : view === 'playlist' ? 'Playlist' : view === 'settings' ? 'Settings' : view === 'import' ? 'Import' : view === 'blends' ? 'Blends' : view === 'blend' ? 'Blend' : view === 'blendJoin' ? 'Join a Blend' : isLegalView(view) ? ({ privacy: 'Privacy policy', terms: 'Terms of use', copyright: 'Copyright and complaints' }[view]) : query.trim() ? 'Search' : 'Made for you'}</strong>{view === 'discover' ? <InfoTour className="crumbs-info" label="About Browse" steps={BROWSE_TOUR} stage={browseScene} /> : null}</nav>
             <div className="mood-pills" role="group" aria-label="Quick picks"><span className="mood-pills-label" aria-hidden="true">Quick picks</span>{moodPrompts.map((prompt) => <button key={prompt} type="button" className="mood-pill" aria-pressed={query === prompt} onClick={() => { if (view !== 'discover') router.push(paths.discover); setQuery(query === prompt ? '' : prompt); }}><span>{prompt.charAt(0).toUpperCase() + prompt.slice(1)}</span></button>)}</div>
             {searchPalette}
         </div> : null}
@@ -1967,10 +1973,23 @@ export default function App() {
             onSeedTaste={(artistNames, languageNames, genreIds) => account.seed(artistNames, languageNames, genreIds)}
             onOpenAuth={() => setAuthOpen(true)}
           />
+        ) : view === 'song' && songShare?.kind === 'song' ? (
+          <SongSharePage
+            songRef={songShare.ref}
+            title={songShare.title}
+            artist={songShare.artist}
+            currentSongId={playerSong?.id ?? null}
+            isPlaying={playerIsPlaying}
+            onPlay={(song) => void playSong(song, [song], false, true)}
+            onToggle={togglePlayer}
+          />
         ) : view === 'shared' ? (
           sharedError ? (
             <EmptyState title="This link is not working" copy={sharedError} action={<TactileButton variant="primary" onClick={() => { router.push(paths.home); }}>Go to Home</TactileButton>} />
           ) : (
+            <>
+            <OpenInApp />
+            {sharedCode && shared && isShareCode(sharedCode) ? <LuvCodeCard payload={{ kind: 'playlist', code: sharedCode }} tint={codeTint(shared.name)} label={shared.name} /> : null}
             <CollectionPage
               kind="shared"
               {...(sharedCode && shared ? { sharedCode } : {})}
@@ -1995,6 +2014,7 @@ export default function App() {
                 router.push(paths.playlist(copy.id));
               }}
             />
+            </>
           )
         ) : isLegalView(view) ? (
           <LegalPage doc={view} />

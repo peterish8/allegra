@@ -24,7 +24,7 @@ import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { Share, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import Animated, {
   Extrapolation,
@@ -50,12 +50,15 @@ import { useSortedSongs, type SortDirection, type SortOption } from '../hooks/us
 import { onlineRowToSong, playList, removeOnlineFromPlaylist } from '../services/sync/onlineSongs';
 import { withoutCopies } from '../services/offlinePlaylistPlan';
 import { OfflineControl } from '../components/playlist/OfflineControl';
+import { CoverFlipCard } from '../components/playlist/CoverFlipCard';
+import { ShareSheet } from '../components/share/ShareSheet';
+import { coverSizeFor, FIND_BAR_HEIGHT, PLAYLIST_WASH_STOPS, playlistLength, playlistShareText, playlistWash } from '../components/playlist/playlistPage';
 import { LIKED_PLAYLIST_ID } from '../services/sync/plan';
 import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { playerControls, usePlayerStore } from '../store/playerStore';
 import { Song } from '../types/song';
 import {
-  Button, Control, EmptyState, Glass, GUTTER, IconButton, ListRow, Motion, OnMedia, Radius, RowPlaceholder, Sheet, SheetOption, Signal, SongRow, Space, Tactile, Text, TextButton, TypeScale, useBottomClearance
+  Chip, ChipRow, Control, EmptyState, Glass, GUTTER, IconButton, ListRow, Motion, OnMedia, Radius, RowPlaceholder, Sheet, SheetOption, Signal, SongRow, Space, Tactile, Text, TextButton, TypeScale, useBottomClearance
 } from '../ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ShellFrost } from '../constants/allegraTheme';
@@ -84,13 +87,15 @@ export const PlaylistDetailScreen: React.FC = () => {
   const isFocused = useIsFocused();
   const { playlistId } = route.params;
   const isLiked = playlistId === LIKED_PLAYLIST_ID;
-  // The cover leads the page, about two thirds of the width as on an album page.
+  // The cover leads the page at about 62% of the width (Spotify's).
   const { width: windowWidth } = useWindowDimensions();
-  const coverSize = Math.round(Math.min(windowWidth - GUTTER * 2, 184));
+  const coverSize = coverSizeFor(windowWidth);
   const bottom = useBottomClearance();
 
   const [songs, setSongs] = useState<Song[]>([]);
   const [playlistName, setPlaylistName] = useState('');
+  // The stored name, for "Name and details" (the page shows it sentence-cased).
+  const [storedName, setStoredName] = useState('');
   const [playlistCover, setPlaylistCover] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -172,6 +177,7 @@ export const PlaylistDetailScreen: React.FC = () => {
       const playlist = playlists.find(p => p.id === playlistId);
       const playlistSongs = await playlistQueries.getPlaylistSongs(playlistId);
       setPlaylistName(playlist?.name ? displayPlaylistName(playlist.name) : 'Playlist');
+      setStoredName(playlist?.name ?? '');
       setPlaylistCover(playlist?.coverImageUri || null);
       const onlineRows = playlistId === LIKED_PLAYLIST_ID
         ? useOnlineLibraryStore.getState().likes
@@ -206,13 +212,9 @@ export const PlaylistDetailScreen: React.FC = () => {
   const activeSongInPlaylist = activeIsPlaying && isSongInPlaylist ? currentSong : null;
   const headerImageUri = playlistCover || activeSongInPlaylist?.coverImageUri || songs[0]?.coverImageUri;
   const palette = useArtworkPalette(headerImageUri ?? undefined);
+  const wash = playlistWash(palette.primary);
 
-  const totalDuration = songs.reduce((acc, song) => acc + (song.duration || 0), 0);
-  const formatTotalDuration = () => {
-    const hours = Math.floor(totalDuration / 3600);
-    const mins = Math.floor((totalDuration % 3600) / 60);
-    return hours > 0 ? `${hours} hr ${mins} min` : `${mins} min`;
-  };
+  const totalLength = playlistLength(songs.reduce((acc, song) => acc + (song.duration || 0), 0));
 
   // ─── Actions ─────────────────────────────────────────────────────────────
   // Play from the top, or pause / resume when this playlist is already the one playing.
@@ -303,7 +305,11 @@ export const PlaylistDetailScreen: React.FC = () => {
     }
   };
 
-  const openAddSongs = () => (navigation as unknown as { navigate: (name: string, params: object) => void }).navigate('AddToPlaylist', { playlistId });
+  const go = (name: string, params: object) => (navigation as unknown as { navigate: (name: string, params: object) => void }).navigate(name, params);
+  const openAddSongs = () => go('AddToPlaylist', { playlistId });
+  // Spotify's "Name and details": the same screen that names a new playlist, opened on this one.
+  const openNameAndDetails = () => go('CreatePlaylist', { playlistId, initialName: storedName });
+  const [shareOpen, setShareOpen] = useState(false);
 
   // ─── Rows ────────────────────────────────────────────────────────────────
   const renderItem = useCallback(({ item, drag, isActive, getIndex }: RenderItemParams<Song>) => (
@@ -325,8 +331,10 @@ export const PlaylistDetailScreen: React.FC = () => {
 
   // ─── Motion ──────────────────────────────────────────────────────────────
   // The header gains a solid backing as the list passes under it, and its title fades in once the big one is gone.
-  const headerBacking = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [coverSize * 0.6, coverSize + 40], [0, 1], Extrapolation.CLAMP) }));
-  const headerTitle = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [coverSize + 20, coverSize + 80], [0, 1], Extrapolation.CLAMP) }));
+  // Where the big title sits: under the Find bar and the cover on a playlist, near the top on Liked songs.
+  const titleAt = isLiked ? 40 : FIND_BAR_HEIGHT + coverSize;
+  const headerBacking = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [titleAt * 0.6, titleAt + 40], [0, 1], Extrapolation.CLAMP) }));
+  const headerTitle = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [titleAt + 20, titleAt + 80], [0, 1], Extrapolation.CLAMP) }));
   // The cover's wash scrolls away with the page.
 
   const fabStyle = useAnimatedStyle(() => {
@@ -345,22 +353,24 @@ export const PlaylistDetailScreen: React.FC = () => {
   // Play on the right, then "Add to this playlist". Other playlists keep their cover header.
   const renderLikedHeader = () => (
     <View style={styles.likedHero}>
-      <LinearGradient pointerEvents="none" colors={ShellFrost.likedWashColors} locations={ShellFrost.likedWashStops} style={StyleSheet.absoluteFill} />
+      <LinearGradient pointerEvents="none" colors={ShellFrost.likedWashColors} locations={ShellFrost.likedWashStops}
+        start={ShellFrost.likedWashStart} end={ShellFrost.likedWashEnd} style={StyleSheet.absoluteFill} />
       <View style={{ height: topInset }} />
       {loadError ? <View><Text variant="secondary" tone="secondary">Couldn’t refresh this playlist. Saved songs are still here.</Text><TextButton label="Try again" onPress={() => { loadData(); }} /></View> : null}
-      <Text variant="display" numberOfLines={2} accessibilityRole="header">{playlistName}</Text>
+      {/* 1.44.0 (owner: "a lil too big"): Spotify's sizes — a 28pt title, icon-sized tools, a 48dp Play. */}
+      <Text variant="page" numberOfLines={2} accessibilityRole="header">{playlistName}</Text>
       <Text variant="secondary" tone="secondary" tabular>{countOf(songs.length, 'song')}</Text>
       <View style={styles.likedActions}>
-        <View style={styles.likedTools}>
-          <OfflineControl playlistId={playlistId} name={playlistName} songs={songs} onChanged={loadData}
+        <View style={styles.tools}>
+          <OfflineControl iconOnly playlistId={playlistId} name={playlistName} songs={songs} onChanged={loadData}
             onNotice={message => setToast({ visible: true, message, type: 'info' })} />
-          {songs.length > 0 ? <TextButton label={sortLabel} icon="chevron-down" onPress={() => setSortOpen(true)} accessibilityLabel={`Sort liked songs, ${sortLabel}`} /> : null}
+          {songs.length > 0 ? <IconButton icon="swap-vertical" label={`Sort liked songs, ${sortLabel}`} variant="plain" onPress={() => setSortOpen(true)} /> : null}
         </View>
         {songs.length > 0 ? (
-          <Tactile onPress={playOrPause} haptic="light" pressScale={0.94} accessibilityRole="button"
-            accessibilityLabel={playingHere ? 'Pause liked songs' : activeIsPlaying ? 'Resume liked songs' : 'Play liked songs'} style={styles.likedPlay}>
-            <Ionicons name={playingHere ? 'pause' : 'play'} size={26} color={Signal.waveInk} style={playingHere ? undefined : styles.likedPlayGlyph} />
-          </Tactile>
+          <View style={styles.tools}>
+            <IconButton icon="shuffle" label="Shuffle liked songs" variant="plain" onPress={shufflePlaylist} haptic="select" />
+            {renderRoundPlay('liked songs')}
+          </View>
         ) : null}
       </View>
       {isEditMode ? <TextButton label="Done" tone="accent" onPress={() => setIsEditMode(false)} /> : (
@@ -369,57 +379,73 @@ export const PlaylistDetailScreen: React.FC = () => {
     </View>
   );
 
-  const renderHeader = () => isLiked ? renderLikedHeader() : (
-    <View style={styles.hero}>
-      <View style={[styles.cover, { width: coverSize, height: coverSize, shadowColor: palette.primary }]}>
-        <View style={styles.coverClip}>
-          {/* The cover leads as on an album: the playlist's own, else a mosaic of four of its songs, as on the website. */}
-          {!playlistCover && songs.length >= 4 ? (
-            <MosaicCover songs={songs.slice(0, 4)} size={coverSize} />
-          ) : headerImageUri ? (
-            <Image source={{ uri: headerImageUri }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={0} />
-          ) : (
-            <Artwork title={playlistName} size={coverSize} style={StyleSheet.absoluteFill} />
-          )}
-        </View>
-      </View>
+  // Spotify's big round Play, white here (the one filled control on the page).
+  const renderRoundPlay = (what: string) => (
+    <Tactile onPress={playOrPause} haptic="light" pressScale={0.94} accessibilityRole="button"
+      accessibilityLabel={playingHere ? `Pause ${what}` : activeIsPlaying ? `Resume ${what}` : `Play ${what}`} style={styles.roundPlay}>
+      <Ionicons name={playingHere ? 'pause' : 'play'} size={22} color={Signal.waveInk} style={playingHere ? undefined : styles.roundPlayGlyph} />
+    </Tactile>
+  );
 
+  // The cover leads as on an album: the playlist's own, else a mosaic of four of its songs, as on the website.
+  const coverFace = !playlistCover && songs.length >= 4 ? (
+    <MosaicCover songs={songs.slice(0, 4)} size={coverSize} />
+  ) : headerImageUri ? (
+    <Image source={{ uri: headerImageUri }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+  ) : (
+    <Artwork title={playlistName} size={coverSize} style={StyleSheet.absoluteFill} />
+  );
+
+  // 1.44.0 (owner's Spotify screenshots): Find in playlist, the cover centred over its own colour, the name on the left,
+  // its length, then download and share on the left with shuffle and a round Play on the right, then Add / Edit /
+  // Name and details / Sort as chips. The cover turns over into song cards on a double tap (CoverFlipCard).
+  const renderPlaylistHeader = () => (
+    <View style={styles.page}>
+      <LinearGradient pointerEvents="none" colors={wash} locations={PLAYLIST_WASH_STOPS}
+        style={[styles.pageWash, { height: topInset + FIND_BAR_HEIGHT + coverSize + Space.xxl * 2 }]} />
+      <View style={{ height: topInset }} />
+      <Tactile onPress={() => setIsSearchActive(true)} accessibilityRole="search" accessibilityLabel="Find in playlist" style={styles.findBar} wrapperStyle={styles.findTarget}>
+        <Ionicons name="search" size={18} color={OnMedia.primary} />
+        <Text variant="label">Find in playlist</Text>
+      </Tactile>
+      <View style={styles.coverRow}>
+        <CoverFlipCard size={coverSize} front={coverFace} name={playlistName} songs={filteredSongs}
+          playingId={currentSongId} playingHere={activeIsPlaying} onPick={index => handleSongPress(filteredSongs[index], index)} />
+      </View>
       {loadError ? <View><Text variant="secondary" tone="secondary">Couldn’t refresh this playlist. Saved songs are still here.</Text><TextButton label="Try again" onPress={() => { loadData(); }} /></View> : null}
-      <Text variant="detail" align="center" numberOfLines={2} style={styles.heroTitle} accessibilityRole="header">{playlistName}</Text>
-      <Text variant="secondary" tone="secondary" tabular>
-        {countOf(songs.length, 'song')}{songs.length > 0 ? ` · ${formatTotalDuration()}` : ''}
-      </Text>
-      {/* Round 7 item 4: the same pair as the artist page. Play is the one filled capsule, Shuffle the smaller frosted one. */}
-      <View style={styles.heroActions}>
-
-      {songs.length > 0 ? (
-        <>
-          <Button
-            label={playingHere ? 'Pause' : activeIsPlaying ? 'Resume' : 'Play'}
-            accessibilityLabel={playingHere ? 'Pause playlist' : activeIsPlaying ? 'Resume playlist' : 'Play playlist'}
-            icon={playingHere ? 'pause' : 'play'}
-            variant="primary"
-            onPress={playOrPause}
-            haptic="light"
-          />
-          <Button label="Shuffle" accessibilityLabel="Shuffle playlist" icon="shuffle" size="compact" onPress={shufflePlaylist} haptic="select" />
-        </>
-      ) : null}
+      <Text variant="page" numberOfLines={2} accessibilityRole="header">{playlistName}</Text>
+      <View style={styles.metaLine}>
+        <Ionicons name="time-outline" size={16} color={OnMedia.muted} />
+        <Text variant="secondary" tone="secondary" tabular>{countOf(songs.length, 'song')}{totalLength ? ` · ${totalLength}` : ''}</Text>
       </View>
-      {/* 1.41.0: download the whole playlist to play it with no connection. */}
-      <View style={styles.offline}>
-        <OfflineControl playlistId={playlistId} name={playlistName} songs={songs} onChanged={loadData}
-          onNotice={message => setToast({ visible: true, message, type: 'info' })} />
-      </View>
-
-      {songs.length > 0 ? (
-        <View style={styles.listBar}>
-          <TextButton label={sortLabel} icon="chevron-down" onPress={() => setSortOpen(true)} accessibilityLabel={`Sort playlist, ${sortLabel}`} />
-          {isEditMode ? <TextButton label="Done" tone="accent" onPress={() => setIsEditMode(false)} /> : <TextButton label="Add songs" icon="add" onPress={openAddSongs} />}
+      <View style={styles.likedActions}>
+        <View style={styles.tools}>
+          {/* 1.41.0: download the whole playlist to play it with no connection (Spotify's glyph since 1.44.0). */}
+          <OfflineControl iconOnly playlistId={playlistId} name={playlistName} songs={songs} onChanged={loadData}
+            onNotice={message => setToast({ visible: true, message, type: 'info' })} />
+          <IconButton icon="share-social-outline" label="Share playlist" variant="plain" onPress={() => setShareOpen(true)} />
         </View>
-      ) : null}
+        {songs.length > 0 ? (
+          <View style={styles.tools}>
+            <IconButton icon="shuffle" label="Shuffle playlist" variant="plain" onPress={shufflePlaylist} haptic="select" />
+            {renderRoundPlay('playlist')}
+          </View>
+        ) : null}
+      </View>
+      <ChipRow gutter={GUTTER} style={styles.chips}>
+        <Chip label="Add" icon="add" onPress={openAddSongs} accessibilityLabel="Add songs" />
+        {songs.length > 1 || isEditMode ? (
+          <Chip label={isEditMode ? 'Done' : 'Edit'} icon={isEditMode ? undefined : 'reorder-three-outline'} selected={isEditMode}
+            onPress={() => setIsEditMode(!isEditMode)} accessibilityLabel={isEditMode ? 'Done editing the order' : 'Edit the order'} />
+        ) : null}
+        <Chip label="Name and details" icon="pencil-outline" onPress={openNameAndDetails} />
+        {songs.length > 0 ? <Chip label={sortOption === 'custom' || sortOption === 'recent' ? 'Sort' : sortLabel} icon="swap-vertical"
+          onPress={() => setSortOpen(true)} accessibilityLabel={`Sort playlist, ${sortLabel}`} /> : null}
+      </ChipRow>
     </View>
   );
+
+  const renderHeader = () => isLiked ? renderLikedHeader() : renderPlaylistHeader();
 
   const renderEmpty = () => (loading ? (
     <View>{[0, 1, 2, 3, 4].map(i => <RowPlaceholder key={i} />)}</View>
@@ -437,8 +463,8 @@ export const PlaylistDetailScreen: React.FC = () => {
     keyExtractor: (item: Song) => item.id,
     onScroll: scrollHandler,
     scrollEventThrottle: 16,
-    // Liked songs' wash starts at the very top, so its header carries the top inset itself.
-    contentContainerStyle: { paddingBottom: bottom, paddingTop: isLiked ? 0 : topInset },
+    // Both headers' washes start at the very top of the screen, so each carries the top inset itself.
+    contentContainerStyle: { paddingBottom: bottom },
     ListHeaderComponent: renderHeader(),
     ListEmptyComponent: renderEmpty(),
   };
@@ -461,13 +487,13 @@ export const PlaylistDetailScreen: React.FC = () => {
         <Animated.View style={[StyleSheet.absoluteFill, styles.headerBacking, headerBacking]} pointerEvents="none" />
         {!isSearchActive ? (
           <>
-            {/* Liked songs: Spotify's back arrow in a dark disc over the wash. */}
-            <IconButton icon={isLiked ? 'arrow-back' : 'chevron-back'} label="Back" variant={isLiked ? 'secondary' : 'plain'} shape={isLiked ? 'disc' : undefined} onPress={() => safeGoBack(navigation)} />
+            {/* Spotify's back arrow and ⋮ in dark discs over the wash. Find lives in the page (and here on Liked songs). */}
+            <IconButton icon="arrow-back" label="Back" variant="secondary" shape="disc" onPress={() => safeGoBack(navigation)} />
             <Animated.View style={[styles.headerTitle, headerTitle]}>
               <Marquee text={playlistName} style={styles.headerTitleText} active={isFocused} containerStyle={styles.headerTitleBox} />
             </Animated.View>
-            <IconButton icon="search" label="Find in playlist" variant="plain" onPress={() => setIsSearchActive(true)} />
-            <IconButton icon="ellipsis-horizontal" label="Playlist options" variant="plain" onPress={() => setActionsOpen(true)} />
+            {isLiked ? <IconButton icon="search" label="Find in playlist" variant="plain" onPress={() => setIsSearchActive(true)} /> : null}
+            <IconButton icon="ellipsis-vertical" label="Playlist options" variant="secondary" shape="disc" onPress={() => setActionsOpen(true)} />
           </>
         ) : (
           <View style={styles.search}>
@@ -493,6 +519,7 @@ export const PlaylistDetailScreen: React.FC = () => {
 
       <Sheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title={playlistName}>
         <SheetOption label="Add songs" icon="add" onPress={() => { setActionsOpen(false); openAddSongs(); }} />
+        {!isLiked ? <SheetOption label="Share" icon="share-social-outline" onPress={() => { setActionsOpen(false); setShareOpen(true); }} /> : null}
         {songs.length > 1 ? <SheetOption label="Edit order" icon="reorder-three-outline" onPress={() => { setActionsOpen(false); setIsEditMode(true); }} /> : null}
         <SheetOption label="Cover from your photos" icon="image-outline" onPress={handlePickCover} />
         {playlistCover ? <SheetOption label="Use the songs’ covers" icon="grid-outline" onPress={handleResetCover} /> : null}
@@ -514,6 +541,9 @@ export const PlaylistDetailScreen: React.FC = () => {
 
       {songActions.element}
 
+      <ShareSheet visible={shareOpen} onClose={() => setShareOpen(false)}
+        target={{ kind: 'playlist', playlistId, name: playlistName, cover: headerImageUri ?? null, tint: palette.primary, songs }} />
+
       <Toast visible={toast?.visible || false} message={toast?.message || ''} type={toast?.type || 'info'} onDismiss={() => setToast(null)} action={toast?.action} duration={8000} />
     </AppScreen>
   );
@@ -521,9 +551,6 @@ export const PlaylistDetailScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Signal.bgDeep },
-  wash: { position: 'absolute', top: 0, left: 0, right: 0 },
-  // Keeps the cover's colours under white text.
-  washShade: { backgroundColor: 'rgba(0,0,0,0.35)' },
   header: {
     position: 'absolute',
     top: 0,
@@ -551,30 +578,23 @@ const styles = StyleSheet.create({
     backgroundColor: Glass.fillLight,
   },
   searchInput: { flex: 1, color: OnMedia.primary, fontSize: TypeScale.body, paddingVertical: 0 },
-  hero: { alignItems: 'center', paddingHorizontal: GUTTER, paddingTop: Space.xs, paddingBottom: Space.sm, gap: Space.xxs },
   likedHero: { paddingHorizontal: GUTTER, paddingBottom: Space.sm, gap: Space.xxs },
   likedActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Space.md },
-  likedTools: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, flexShrink: 1 },
-  likedPlay: { width: Control.target + 8, height: Control.target + 8, borderRadius: (Control.target + 8) / 2, backgroundColor: Signal.wave, alignItems: 'center', justifyContent: 'center' },
+  // Icon tools sit close together, Spotify's spacing (each still a 48dp target).
+  tools: { flexDirection: 'row', alignItems: 'center', gap: Space.xxs, flexShrink: 1 },
+  // 1.44.0 (owner: "a lil too big"): a 48dp Play, Spotify's size, not 56.
+  roundPlay: { width: Control.target, height: Control.target, borderRadius: Control.target / 2, backgroundColor: Signal.wave, alignItems: 'center', justifyContent: 'center' },
   // The play triangle's visual centre sits right of its box: nudge it so it reads centred in the disc.
-  likedPlayGlyph: { marginLeft: 3 },
+  roundPlayGlyph: { marginLeft: 2 },
   likedAdd: { marginTop: Space.sm, marginHorizontal: -GUTTER },
-  cover: {
-    borderRadius: Radius.well,
-    backgroundColor: Signal.bgSubtle,
-    shadowColor: '#000',
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 14,
-    marginBottom: Space.md,
-  },
-  coverClip: { ...StyleSheet.absoluteFillObject, borderRadius: Radius.well, overflow: 'hidden' },
-  heroTitle: { marginBottom: 2 },
-  heroActions: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Space.xs, marginTop: Space.sm },
-  offline: { alignItems: 'center', marginTop: Space.xxs },
-  playButton: { minWidth: 132 },
-  listBar: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Space.md, paddingHorizontal: Space.xxs },
+  page: { paddingHorizontal: GUTTER, paddingBottom: Space.xs, gap: Space.xxs },
+  pageWash: { position: 'absolute', top: 0, left: 0, right: 0 },
+  // Spotify's search field: a light frosted bar, drawn 40 in a 48 touch row.
+  findTarget: { alignSelf: 'stretch', height: FIND_BAR_HEIGHT, justifyContent: 'center' },
+  findBar: { height: 40, flexDirection: 'row', alignItems: 'center', gap: Space.xs, paddingHorizontal: Space.sm, borderRadius: Radius.cover, backgroundColor: Glass.capsule },
+  coverRow: { alignItems: 'center', marginTop: Space.lg, marginBottom: Space.lg },
+  metaLine: { flexDirection: 'row', alignItems: 'center', gap: Space.xs },
+  chips: { marginHorizontal: -GUTTER, marginTop: Space.xs },
   fab: { position: 'absolute', right: GUTTER },
 });
 

@@ -10,7 +10,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
-import { Motion, Radius, Signal, Surface } from '../constants/allegraTheme';
+import { Glass, Motion, Radius, Signal } from '../constants/allegraTheme';
 import { scrubFraction, SCRUB_REST_SCALE } from '../playback/miniScrub';
 import * as Haptics from '../utils/haptics';
 
@@ -86,7 +86,8 @@ const styles = StyleSheet.create({
   // downward (transformOrigin top). The band under it is the drag target.
   band: { justifyContent: 'flex-start', paddingHorizontal: 0, paddingTop: 0 },
   track: {
-    height: SCRUB_LINE, overflow: 'hidden', backgroundColor: Surface.control,
+    // 1.44.0 (owner): no grey line of its own across the card; the unplayed part is a faint white over the glow.
+    height: SCRUB_LINE, overflow: 'hidden', backgroundColor: Glass.selected,
     transformOrigin: 'top',
   },
   fill: { ...StyleSheet.absoluteFillObject, borderRadius: Radius.pill, backgroundColor: Signal.wave },

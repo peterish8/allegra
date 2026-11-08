@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+  <!-- Scanning LuvLyrics codes (Search → camera). Asked only when the scanner opens. -->
+  <uses-permission android:name="android.permission.CAMERA"/>
+  <uses-feature android:name="android.hardware.camera" android:required="false"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
   <uses-permission android:name="android.permission.INTERNET"/>
@@ -43,6 +46,20 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="lyricflow"/>
         <data android:scheme="exp+lyricflow"/>
+      </intent-filter>
+      <!-- Share links (1.44.0, packages/shared/shareLinks.ts): a tapped link to a shared song, public playlist, Blend or
+           LuvLink invite opens here when the app is installed, the website otherwise. autoVerify checks
+           apps/web/public/.well-known/assetlinks.json, which lists this build's signing certificate. -->
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="https"/>
+        <data android:host="allegravibe.vercel.app"/>
+        <data android:pathPrefix="/song/"/>
+        <data android:pathPrefix="/shared/"/>
+        <data android:pathPrefix="/blend/join/"/>
+        <data android:pathPrefix="/luvlink/join/"/>
       </intent-filter>
     </activity>
 

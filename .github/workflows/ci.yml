@@ -29,6 +29,10 @@ jobs:
       # so a dependency declared in the wrong place fails here and not in production.
       - name: Install
         run: npm ci
+        env:
+          # onnxruntime-node's postinstall only downloads the CUDA 12 GPU add-on on Linux (the CPU binaries ship in the
+          # package). CI has no GPU, and that download from Microsoft's feed kept timing out and failing the install.
+          ONNXRUNTIME_NODE_INSTALL: skip
 
       - name: Typecheck
         run: npm run typecheck

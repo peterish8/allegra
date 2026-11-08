@@ -18,6 +18,11 @@ test('artist, playlist and shared routes round-trip awkward names', () => {
   });
   assert.equal(parseRoute(paths.playlist('lib 42')).playlistId, 'lib 42');
   assert.equal(parseRoute(paths.shared('AbC123')).sharedCode, 'abc123');
+  // Shared songs (1.44.0): a catalog ref or a find-by-name link; anything else falls back to home.
+  assert.equal(parseRoute('/song/saavn/B4-hLCKJ').view, 'song');
+  assert.equal(parseRoute('/song/find').view, 'song');
+  assert.equal(parseRoute('/song/spotify/abc').view, 'home');
+  assert.equal(parseRoute('/song').view, 'home');
 });
 
 test('missing or malformed params fall back to a safe view', () => {

@@ -12,7 +12,8 @@ export function PlaybackButton({ status, onPress, size = 84, plain = false }: { 
   const reduceMotion = useReducedMotion();
   const loading = status === 'loading';
   const label = status === 'error' ? 'Could not play. Try again' : loading ? 'Loading. Pause' : status === 'playing' ? 'Pause' : 'Play';
-  const glyph = plain ? 28 : size > 48 ? 36 : 22;
+  // Plain (the mini player): 26, the same size as the glyphs beside it (1.44.0).
+  const glyph = plain ? 26 : size > 48 ? 36 : 22;
   return <Tactile onPress={onPress} accessibilityRole="button" accessibilityLabel={label}
     style={[styles.disc, { width: size, height: size, borderRadius: size / 2 }, plain && styles.plain]}>
     {loading && !reduceMotion ? <ActivityIndicator size={size > 48 ? 'large' : 'small'} color={Signal.ink} />

@@ -2,7 +2,7 @@
   "expo": {
     "name": "LuvLyrics",
     "slug": "lyricflow",
-    "version": "1.43.0",
+    "version": "1.44.0",
     "orientation": "portrait",
     "icon": "./assets/luvlyrics-icon-white.png",
     "userInterfaceStyle": "dark",
@@ -43,7 +43,21 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.ACCESS_WIFI_STATE",
-        "android.permission.WRITE_SETTINGS"
+        "android.permission.WRITE_SETTINGS",
+        "android.permission.CAMERA"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "category": ["BROWSABLE", "DEFAULT"],
+          "data": [
+            { "scheme": "https", "host": "allegravibe.vercel.app", "pathPrefix": "/song/" },
+            { "scheme": "https", "host": "allegravibe.vercel.app", "pathPrefix": "/shared/" },
+            { "scheme": "https", "host": "allegravibe.vercel.app", "pathPrefix": "/blend/join/" },
+            { "scheme": "https", "host": "allegravibe.vercel.app", "pathPrefix": "/luvlink/join/" }
+          ]
+        }
       ]
     },
     "plugins": [

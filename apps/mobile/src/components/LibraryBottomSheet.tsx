@@ -20,6 +20,8 @@ interface LibraryBottomSheetProps {
   /** Shown when the sheet was opened from a playlist. */
   onRemoveFromPlaylist?: () => void;
   onShare: () => void;
+  /** 1.44.0: the song's link and LuvLyrics code (ShareSheet). */
+  onShareLink?: () => void;
   onOpenVersionSearch: () => void;
   onPickImage: () => void;
   onOpenCoverSearch: () => void;
@@ -39,6 +41,7 @@ const LibraryBottomSheet: React.FC<LibraryBottomSheetProps> = ({
   onFindLyrics,
   onRemoveFromPlaylist,
   onShare,
+  onShareLink,
   onOpenVersionSearch,
   onPickImage,
   onOpenCoverSearch,
@@ -60,7 +63,8 @@ const LibraryBottomSheet: React.FC<LibraryBottomSheetProps> = ({
       {onPlayNext ? <SheetOption label="Play next" icon="return-down-forward" onPress={onPlayNext} /> : null}
       <SheetOption label="Find lyrics" icon="text-outline" onPress={onFindLyrics} />
       <SheetOption label="Another language or version" icon="language-outline" onPress={onOpenVersionSearch} />
-      <SheetOption label="Share the audio" icon="share-social-outline" onPress={onShare} />
+      {onShareLink ? <SheetOption label="Share" icon="share-social-outline" onPress={onShareLink} /> : null}
+      <SheetOption label="Share the audio file" icon="document-outline" onPress={onShare} />
 
       <Text variant="meta" tone="muted" style={styles.group}>Cover</Text>
       <SheetOption label="Cover from your photos" icon="image-outline" onPress={onPickImage} />

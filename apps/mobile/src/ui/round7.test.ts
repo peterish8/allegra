@@ -85,20 +85,63 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
   it('shows Liked songs with no cover over a forest-green wash, a big title and a round Play (1.43.0)', () => {
     const detail = read('screens/PlaylistDetailScreen.tsx');
     expect(detail).toMatch(/const isLiked = playlistId === LIKED_PLAYLIST_ID;/);
-    expect(detail).toMatch(/const renderHeader = \(\) => isLiked \? renderLikedHeader\(\) : \(/);
+    expect(detail).toMatch(/const renderHeader = \(\) => isLiked \? renderLikedHeader\(\) : renderPlaylistHeader\(\);/);
     expect(detail).toMatch(/colors=\{ShellFrost\.likedWashColors\}/);
-    expect(detail).toMatch(/<Text variant="display" numberOfLines=\{2\} accessibilityRole="header">\{playlistName\}<\/Text>/);
+    // 1.44.0 (owner: "a lil too big"): a 28pt title, icon-only download and sort, a 48dp Play.
+    expect(detail).toMatch(/<Text variant="page" numberOfLines=\{2\} accessibilityRole="header">\{playlistName\}<\/Text>/);
+    expect(detail).not.toMatch(/variant="display"/);
+    expect(detail).toMatch(/<OfflineControl iconOnly playlistId=\{playlistId\}/);
+    expect(detail).toMatch(/icon="swap-vertical" label=\{`Sort liked songs, \$\{sortLabel\}`\}/);
+    expect(detail).toMatch(/roundPlay: \{ width: Control\.target, height: Control\.target/);
+    const liked = detail.slice(detail.indexOf('const renderLikedHeader'), detail.indexOf('const renderRoundPlay'));
+    expect(liked).not.toMatch(/size="lg"/);
+    // A premium two-tone forest wash running diagonally into the page.
+    expect(detail).toMatch(/start=\{ShellFrost\.likedWashStart\} end=\{ShellFrost\.likedWashEnd\}/);
     expect(detail).toMatch(/<ListRow title="Add to this playlist" icon="add"/);
-    expect(detail).toMatch(/paddingTop: isLiked \? 0 : topInset/);
+    // Both headers' washes run from the very top of the screen.
+    expect(detail).toMatch(/contentContainerStyle: \{ paddingBottom: bottom \}/);
     const theme = read('constants/allegraTheme.ts');
-    expect(theme).toMatch(/likedWashColors: \['#1F4D33'/);
+    expect(theme).toMatch(/likedWashColors: \['#2F8058', '#1C5C3D', '#0F3424', '#07170F', 'rgba\(5, 5, 5, 0\)'\]/);
+    expect(theme).toMatch(/likedWashStops: \[0, 0\.28, 0\.58, 0\.82, 1\]/);
+  });
+
+  it('opens the profile menu smoothly on true black (1.44.0, owner)', () => {
+    const menu = read('components/nav/ProfileMenu.tsx');
+    // Stays up until it has slid out, opens on a spring, follows a swipe shut.
+    expect(menu).toMatch(/<Modal visible=\{mounted\}/);
+    expect(menu).toMatch(/if \(finished\) runOnJS\(setMounted\)\(false\)/);
+    expect(menu).toMatch(/withSpring\(1, Motion\.spring\.open\)/);
+    expect(menu).toMatch(/<GestureDetector gesture=\{swipe\}>/);
+    expect(menu).toMatch(/<GestureHandlerRootView/);
+    // True black, no grey tiles behind the icons.
+    expect(menu).toMatch(/backgroundColor: ShellFrost\.menuBlack/);
+    expect(menu).not.toMatch(/Surface\.raised|Surface\.control/);
+    expect(menu).toMatch(/iconStyle="plain"/);
+    expect(read('constants/allegraTheme.ts')).toMatch(/menuBlack: '#000000'/);
+  });
+
+  it('lays a playlist out like the owner’s Spotify screenshots (1.44.0)', () => {
+    const detail = read('screens/PlaylistDetailScreen.tsx');
+    const header = detail.slice(detail.indexOf('const renderPlaylistHeader'), detail.indexOf('const renderHeader'));
+    // Top to bottom: Find in playlist, the cover (it turns into song cards), the name on the left, its length,
+    // download and share | shuffle and the round Play, then Add / Edit / Name and details / Sort.
+    const order = ['accessibilityLabel="Find in playlist"', '<CoverFlipCard', '<Text variant="page"', 'time-outline',
+      '<OfflineControl', 'label="Share playlist"', 'label="Shuffle playlist"', "renderRoundPlay('playlist')",
+      '<Chip label="Add"', "isEditMode ? 'Done' : 'Edit'", '<Chip label="Name and details"', 'icon="swap-vertical"'];
+    const at = order.map(part => header.indexOf(part));
+    expect(at.every(i => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    // The wash is a calm tone of the cover (playlistPage), and back and ⋮ sit in discs.
+    expect(header).toMatch(/colors=\{wash\} locations=\{PLAYLIST_WASH_STOPS\}/);
+    expect(detail).toMatch(/icon="arrow-back" label="Back" variant="secondary" shape="disc"/);
+    expect(detail).toMatch(/icon="ellipsis-vertical" label="Playlist options" variant="secondary" shape="disc"/);
   });
 
   it('shows the mini player title in bold with the artist under it, and Spotify\'s saved mark (1.43.0)', () => {
     const pill = read('components/PillPlayer.tsx');
     expect(pill).toMatch(/<Marquee text=\{title\} style=\{styles\.line\}/);
     expect(pill).toMatch(/\{status === 'error' \? 'Couldn’t play, tap to retry' : artist \|\| ' '\}/);
-    expect(pill).toMatch(/icon=\{liked \? 'checkmark-circle' : 'add-circle-outline'\}/);
+    expect(pill).toMatch(/name=\{liked \? 'checkmark-circle' : 'add-circle-outline'\}/);
     // The progress line stays on the card's top edge (owner).
     expect(pill.indexOf('<MiniScrubber ')).toBeLessThan(pill.indexOf('<Animated.View style={[styles.row'));
   });
@@ -128,8 +171,9 @@ describe('items 1, 4 and 7: capsules', () => {
     expect(COMPACT_HEIGHT).toBeLessThan(Control.target);
   });
 
-  it('pairs a filled Play with a compact Shuffle on artist, playlist and album pages', () => {
-    for (const file of ['screens/ArtistScreen.tsx', 'screens/PlaylistDetailScreen.tsx', 'screens/CollectionScreen.tsx']) {
+  // A playlist moved to Spotify's round Play with a shuffle icon in 1.44.0 (owner's screenshots, tested above).
+  it('pairs a filled Play with a compact Shuffle on artist and album pages', () => {
+    for (const file of ['screens/ArtistScreen.tsx', 'screens/CollectionScreen.tsx']) {
       const source = read(file);
       expect(source).toMatch(/variant="primary"/);
       expect(source).toMatch(/label="Shuffle"[^>]*size="compact"|size="compact"[^>]*label="Shuffle"/);

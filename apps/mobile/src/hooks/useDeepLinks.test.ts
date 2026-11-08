@@ -19,6 +19,21 @@ describe('parseDeepLink', () => {
   });
 });
 
+describe('share links (1.44.0)', () => {
+  it('reads shared songs and playlists from our links, and leaves other links alone', () => {
+    expect(parseDeepLink('https://allegravibe.vercel.app/song/saavn/B4-hLCKJ?t=Mozhiye&a=Sai')).toEqual({
+      action: 'share/song', params: { ref: 'saavn:B4-hLCKJ', title: 'Mozhiye', artist: 'Sai' },
+    });
+    expect(parseDeepLink('https://allegravibe.vercel.app/song/find?t=Tarantino&a=LISA')).toEqual({
+      action: 'share/song', params: { ref: '', title: 'Tarantino', artist: 'LISA' },
+    });
+    expect(parseDeepLink('https://allegravibe.vercel.app/shared/ABCD2345')).toEqual({ action: 'share/playlist', params: { code: 'abcd2345' } });
+    expect(parseDeepLink('https://example.com/song/saavn/x')).toBeNull();
+    // Invites keep their own handling.
+    expect(parseDeepLink('https://allegravibe.vercel.app/luvlink/join/ABCD')?.action).toBe('luvlink/join');
+  });
+});
+
 describe('player and invite links', () => {
   it('accepts trusted Blend invites and ignores malformed or unrelated links', () => {
     expect(parseDeepLink('https://allegravibe.vercel.app/blend/join/abcdefghjkmn')).toEqual({ action: 'blend/join', params: { code: 'abcdefghjkmn' } });
