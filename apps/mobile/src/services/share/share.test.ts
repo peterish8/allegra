@@ -138,7 +138,7 @@ describe('the scanner', () => {
     // Stills are taken quietly and read on the phone; nothing is uploaded.
     const scanner = read('src/screens/ScanCodeScreen.tsx');
     expect(scanner).toMatch(/takePictureAsync\(\{ quality: 0\.4, skipProcessing: true, shutterSound: false \}\)/);
-    expect(scanner).toMatch(/readCodeFromPhoto\(/);
+    expect(scanner).toMatch(/readCodeFromPhoto\(still\.uri, SCAN_BUDGET_MS\)/);
     expect(scanner).not.toMatch(/fetch\(/);
   });
 
