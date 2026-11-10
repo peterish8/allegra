@@ -139,13 +139,40 @@ export function streaks(dayStarts: readonly number[], now: number): { current: n
   return { current, longest };
 }
 
+/** A pause longer than this is a new sitting with the song, not the same listen carried on. */
+export const RESUME_GAP_MS = 30 * 60_000;
+
+/**
+ * The tracker closes a listen at every pause, so one sitting with a song reaches the log as several rows, each too
+ * short to be a play and the early ones counted as neither finished nor skipped. A row that ended in a pause and is
+ * followed by the same song soon after is the same listen: joined, its time summed and its ending the last one's.
+ */
+export function joinResumed(entries: readonly ListenEntry[]): ListenEntry[] {
+  const sorted = [...entries].sort((a, b) => a.startedAt - b.startedAt);
+  const out: ListenEntry[] = [];
+  for (const e of sorted) {
+    const prev = out[out.length - 1];
+    const resumed = prev !== undefined && prev.exit === 'paused' && prev.songKey === e.songKey
+      && e.startedAt - prev.startedAt <= prev.heardSec * 1000 + RESUME_GAP_MS;
+    if (!resumed) { out.push(e); continue; }
+    out[out.length - 1] = {
+      ...prev,
+      heardSec: Math.round((prev.heardSec + e.heardSec) * 10) / 10,
+      exit: e.exit,
+      artwork: e.artwork ?? prev.artwork,
+    };
+  }
+  return out;
+}
+
 export function computeStats(
-  all: readonly ListenEntry[],
+  raw: readonly ListenEntry[],
   range: StatsRange,
   now: number,
   /** When each song was first heard ever (song key -> ms), for "new to you". */
   firstHeard: ReadonlyMap<string, { at: number; artist: string }> = new Map(),
 ): ListeningStats {
+  const all = joinResumed(raw);
   // A loop, not Math.min(...all): a long history would overflow the argument list.
   let firstListen: number | null = null;
   for (const e of all) if (firstListen === null || e.startedAt < firstListen) firstListen = e.startedAt;

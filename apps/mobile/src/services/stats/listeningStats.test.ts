@@ -7,8 +7,8 @@ jest.mock('../../database/listenLogQueries', () => ({ insertListen: jest.fn(asyn
 import type { ListenEntry } from '../../database/listenLogQueries';
 import { insertListen } from '../../database/listenLogQueries';
 import {
-  bandOf, changeWords, computeStats, durationWords, hourWords, personaFor, rangeBounds, startOfDay, streaks, tempoSummary,
-  PLAY_SECONDS,
+  bandOf, changeWords, computeStats, durationWords, hourWords, joinResumed, personaFor, rangeBounds, startOfDay, streaks,
+  tempoSummary, PLAY_SECONDS,
 } from './listeningStats';
 import { listenEntryFor, logListen } from './listenLog';
 
@@ -117,6 +117,43 @@ describe('the numbers', () => {
   it('an empty log is an empty page, not a crash', () => {
     const none = computeStats([], 'all', NOW);
     expect(none).toMatchObject({ empty: true, seconds: 0, onRepeat: null, peakHour: null, persona: null, change: null });
+  });
+});
+
+describe('a song paused and played on', () => {
+  // The tracker closes a listen at every pause, so one sitting with a song arrives as several rows.
+  const t0 = at(1, 21);
+  const rows = [
+    listen('Kesariya', 'Arijit Singh', t0, 25, 'paused'),
+    listen('Kesariya', 'Arijit Singh', t0 + 60_000, 22, 'paused'),
+    listen('Kesariya', 'Arijit Singh', t0 + 120_000, 100, 'ended'),
+    // Another song in between, then a different sitting an hour later: not joined.
+    listen('Other', 'Someone', t0 + 400_000, 60, 'ended'),
+    listen('Kesariya', 'Arijit Singh', t0 + 3_600_000, 40, 'ended'),
+  ];
+  const stats = computeStats(rows, 'week', NOW);
+
+  it('counts one play for the sitting, not a skipped-looking fragment each', () => {
+    expect(joinResumed(rows)).toHaveLength(3);
+    expect(stats.onRepeat).toMatchObject({ title: 'Kesariya', seconds: 25 + 22 + 100 + 40, plays: 2 });
+  });
+
+  it('reads the sitting as finished once, and not as skips or lost finishes', () => {
+    expect(stats.finishedShare).toBeCloseTo(3 / 3);
+    expect(stats.skipShare).toBe(0);
+  });
+
+  it('keeps the time heard the same and leaves unrelated rows alone', () => {
+    expect(stats.seconds).toBe(25 + 22 + 100 + 60 + 40);
+    const apart = [listen('A', 'X', t0, 10, 'paused'), listen('B', 'X', t0 + 20_000, 10, 'paused'), listen('A', 'X', t0 + 40_000, 10, 'ended')];
+    expect(joinResumed(apart)).toHaveLength(3);
+  });
+
+  it('joins a pause that was followed by a skip into one short skip', () => {
+    const firstRow = listen('A', 'X', t0, 8, 'paused');
+    const joined = joinResumed([firstRow, listen('A', 'X', t0 + 30_000, 9, 'skipped')]);
+    expect(joined).toHaveLength(1);
+    expect(joined[0]).toMatchObject({ heardSec: 17, exit: 'skipped', startedAt: firstRow.startedAt });
   });
 });
 

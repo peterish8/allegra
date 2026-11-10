@@ -320,20 +320,69 @@ const readLine = (on: (x: number, y: number) => boolean, img: GreyImage, y0: num
   return null;
 };
 
+type Lit = (x: number, y: number) => boolean;
+
+/**
+ * "On" against the light right around each pixel instead of against the whole frame. A code on another phone's screen
+ * is a lit card in a dark room: one threshold for the frame lands between room and card, so every bar and every gap
+ * of the card falls on the same side of it. Against its own neighbourhood a bar is brighter (or darker) than the gaps
+ * beside it however bright the card is, and a shadow or glare across the frame no longer matters.
+ */
+const localMask = (img: GreyImage, window: number, bright: boolean): Uint8Array => {
+  const { width, height, data } = img;
+  const mask = new Uint8Array(width * height);
+  const sums = new Float64Array(width + 1);
+  const half = Math.max(2, window >> 1);
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    for (let x = 0; x < width; x++) sums[x + 1] = sums[x] + data[row + x];
+    for (let x = 0; x < width; x++) {
+      const from = x - half < 0 ? 0 : x - half;
+      const to = x + half + 1 > width ? width : x + half + 1;
+      const mean = (sums[to] - sums[from]) / (to - from);
+      const grey = data[row + x];
+      mask[row + x] = (bright ? grey > mean + LOCAL_MARGIN : grey < mean - LOCAL_MARGIN) ? 1 : 0;
+    }
+  }
+  return mask;
+};
+
+/** Pixels above (or at most) a single threshold for the whole frame. */
+const globalMask = (img: GreyImage, threshold: number, bright: boolean): Uint8Array => {
+  const mask = new Uint8Array(img.width * img.height);
+  for (let i = 0; i < mask.length; i++) mask[i] = (img.data[i] > threshold) === bright ? 1 : 0;
+  return mask;
+};
+
+/** How far past its neighbourhood's average a pixel must be to count, so sensor noise on flat ground does not. */
+const LOCAL_MARGIN = 6;
+
 /**
  * Find and read a LuvLyrics code in a greyscale image: light bars on a darker card or dark bars on a light one, level
- * or upside down, across or along the frame. Null when no code reads.
+ * or upside down, across or along the frame, in a dark room or under uneven light. Null when no code reads.
  */
-export function decodeLuvCodeImage(img: GreyImage): LuvCodePayload | null {
+export function decodeLuvCodeImage(img: GreyImage, budgetMs?: number): LuvCodePayload | null {
   if (img.width < BAR_COUNT * 3 || img.height < 8) return null;
+  // A live scanner reads frame after frame on the JavaScript thread: a frame with no code in it must not hold it long.
+  const until = budgetMs === undefined ? Infinity : Date.now() + budgetMs;
   for (const view of [img, transpose(img)]) {
     const threshold = otsu(view.data);
-    for (const bright of [true, false]) {
-      const on = (x: number, y: number): boolean => (view.data[y * view.width + x] > threshold) === bright;
-      const step = Math.max(1, Math.round(view.height / 120));
-      // Scan from the middle outwards: a framed code usually sits near the centre.
-      const mid = Math.floor(view.height / 2);
+    const windows = [Math.max(15, Math.round(view.width / 20)), Math.max(31, Math.round(view.width / 9))];
+    // The whole-frame threshold is right for a card filling the frame; the local ones are for the rest. Each mask is
+    // built only when the ones before it found nothing.
+    const sources: (() => Uint8Array)[] = [
+      () => globalMask(view, threshold, true),
+      () => globalMask(view, threshold, false),
+      ...windows.flatMap(w => [() => localMask(view, w, true), () => localMask(view, w, false)]),
+    ];
+    const step = Math.max(1, Math.round(view.height / 120));
+    // Scan from the middle outwards: a framed code usually sits near the centre.
+    const mid = Math.floor(view.height / 2);
+    for (const build of sources) {
+      const mask = build();
+      const on: Lit = (x, y) => mask[y * view.width + x] === 1;
       for (const slope of SLOPES) {
+        if (Date.now() > until) return null;
         for (let k = 0; k <= view.height; k += step) {
           for (const y of k === 0 ? [mid] : [mid - k, mid + k]) {
             if (y < 0 || y >= view.height) continue;

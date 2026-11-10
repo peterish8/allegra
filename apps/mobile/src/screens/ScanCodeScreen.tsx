@@ -12,7 +12,7 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { LuvCodePayload } from '@shared/luvCode';
 import { CODE_HEIGHT, CODE_WIDTH } from '@shared/luvCode';
-import { readCodeFromPhoto } from '../services/share/scanImage';
+import { readCodeFromPhoto, SCAN_BUDGET_MS } from '../services/share/scanImage';
 import { openShareTarget } from '../services/share/openShare';
 import { targetForPayload } from '../services/share/shareService';
 import { Button, EmptyState, Glass, GUTTER, Haptics, IconButton, Radius, Signal, Space, Text } from '../ui';
@@ -48,14 +48,18 @@ export const ScanCodeScreen: React.FC = () => {
     if (!focused || !ready || !permission?.granted) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let refused = 0;
     const look = async () => {
       if (!live || done.current) return;
       try {
         const still = await camera.current?.takePictureAsync({ quality: 0.4, skipProcessing: true, shutterSound: false });
-        const found = still?.uri ? await readCodeFromPhoto(still.uri) : null;
+        refused = 0;
+        const found = still?.uri ? await readCodeFromPhoto(still.uri, SCAN_BUDGET_MS) : null;
         if (found && live) { void open(found); return; }
       } catch {
-        // The camera can refuse a still while it refocuses; the next one usually works.
+        // The camera can refuse a still while it refocuses; the next one usually works. Said aloud only if it keeps
+        // refusing, so a dead camera does not look like a scanner that cannot see.
+        if (++refused === 6 && live) setStatus('The camera is not giving pictures. Try Choose a photo.');
       }
       if (live) timer = setTimeout(() => { void look(); }, SCAN_GAP_MS);
     };

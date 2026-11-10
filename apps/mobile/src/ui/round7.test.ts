@@ -11,7 +11,8 @@ import { Control, Radius } from '../constants/allegraTheme';
 import { chipLeadingIcon, COMPACT_HEIGHT, identityMeta, songRowSubtitle } from './round7Rules';
 
 const SRC = path.resolve(__dirname, '..');
-const read = (file: string) => fs.readFileSync(path.join(SRC, file), 'utf8');
+// Line endings normalised: a Windows checkout has CRLF and the patterns below match on \n.
+const read = (file: string) => fs.readFileSync(path.join(SRC, file), 'utf8').replace(/\r\n/g, '\n');
 const ANDROID = path.resolve(SRC, '../android/app/src/main/java/com/lyricflow/app/views');
 
 describe('item 9 and the lists rule: one song row everywhere', () => {

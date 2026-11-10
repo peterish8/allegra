@@ -21,6 +21,8 @@ interface Scene {
   clutter?: boolean;
   upsideDown?: boolean;
   portrait?: boolean;
+  /** Light falling off across the frame: 0.5 makes one side half as bright as the other. */
+  shade?: number;
 }
 
 /** Draws the code like a phone camera sees it: a card on a page, optionally tilted, blurred and noisy. */
@@ -52,6 +54,7 @@ function photograph(levels: number[], scene: Scene): GreyImage {
     let grey = page;
     if (clutter && (Math.floor(x / 9) + Math.floor(y / 13)) % 5 === 0) grey = 200;
     if (u >= 0 && u <= CODE_WIDTH && v >= 0 && v <= CODE_HEIGHT) grey = inBar(u, v) || inMark(u, v) ? bar : card;
+    if (scene.shade) grey = Math.round(grey * (1 - scene.shade * (x / width)));
     data[y * width + x] = grey;
   }
   let out: Uint8Array = data;
@@ -136,6 +139,12 @@ test('reads a code from a photo: sharp, blurred and noisy, tilted, upside down, 
     ['portrait', { scale: 1.5, portrait: true, blur: true }],
     ['dark bars on a light card', { scale: 1.6, bar: 20, card: 230, page: 120, blur: true }],
     ['busy background', { scale: 1.7, clutter: true, blur: true, noise: 12 }],
+    // A code on another phone's screen: the lit card is far brighter than the room, so a threshold for the whole
+    // frame falls between room and card and every bar (card-coloured or brighter) reads as "on".
+    ['a lit card in a dark room', { scale: 1.2, bar: 250, card: 120, page: 12, margin: 220, blur: true, noise: 6 }],
+    ['a pale card in a dark room', { scale: 1.2, bar: 255, card: 190, page: 10, margin: 220, blur: true, noise: 6 }],
+    ['uneven light', { scale: 1.6, shade: 0.55, blur: true, noise: 10 }],
+    ['uneven light, dark room', { scale: 1.3, bar: 250, card: 110, page: 15, margin: 180, shade: 0.5, blur: true, noise: 8 }],
   ];
   for (const [name, scene] of scenes) assert.deepEqual(decodeLuvCodeImage(photograph(levels, scene)), SONG, name);
   assert.deepEqual(decodeLuvCodeImage(photograph(encodeLuvCode(PLAYLIST)!, { scale: 1.6, blur: true, noise: 15 })), PLAYLIST);

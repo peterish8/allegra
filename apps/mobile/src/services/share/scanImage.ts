@@ -9,6 +9,9 @@ import { decodeLuvCodeImage, type GreyImage, type LuvCodePayload } from '@shared
 /** The longest side a frame is read at: enough for a code across half the frame, quick to scan. */
 export const SCAN_MAX = 640;
 
+/** The longest one frame may hold the JavaScript thread; the next frame is read a moment later. */
+export const SCAN_BUDGET_MS = 450;
+
 /** RGBA bytes -> one luma byte a pixel (Rec. 601 weights). */
 export function toGrey(rgba: ArrayLike<number>, width: number, height: number): GreyImage {
   const data = new Uint8Array(width * height);
@@ -23,7 +26,7 @@ export function scanSize(width: number, height: number, max = SCAN_MAX): { width
 }
 
 /** A photo on the phone -> the code in it, or null (no code, or the file could not be read). */
-export async function readCodeFromPhoto(uri: string): Promise<LuvCodePayload | null> {
+export async function readCodeFromPhoto(uri: string, budgetMs?: number): Promise<LuvCodePayload | null> {
   try {
     const data = await Skia.Data.fromURI(uri);
     const image = Skia.Image.MakeImageFromEncoded(data);
@@ -35,7 +38,7 @@ export async function readCodeFromPhoto(uri: string): Promise<LuvCodePayload | n
     surface.flush();
     const pixels = surface.makeImageSnapshot().readPixels(0, 0, { width: size.width, height: size.height, colorType: ColorType.RGBA_8888, alphaType: AlphaType.Unpremul });
     if (!pixels) return null;
-    return decodeLuvCodeImage(toGrey(pixels, size.width, size.height));
+    return decodeLuvCodeImage(toGrey(pixels, size.width, size.height), budgetMs);
   } catch {
     return null;
   }
