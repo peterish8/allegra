@@ -2,7 +2,6 @@ import { lookup } from 'node:dns/promises';
 import net from 'node:net';
 
 import type { CacheStore } from '../lib/cache.js';
-import { fetchWithTimeout } from '../lib/fetchWithTimeout.js';
 import { isPrivateHostname } from '../lib/publicUrl.js';
 import { newJti, type OAuthSigner } from './tokens.js';
 
@@ -71,7 +70,8 @@ export class OAuthClients {
     private readonly signer: OAuthSigner,
     private readonly cache: CacheStore,
     private readonly fetchImpl: typeof fetch = fetch,
-    private readonly resolveHost: (host: string) => Promise<readonly string[]> = defaultResolve
+    private readonly resolveHost: (host: string) => Promise<readonly string[]> = defaultResolve,
+    private readonly metadataTimeoutMs = METADATA_TIMEOUT_MS
   ) {}
 
   /** RFC 7591 registration. Returns the client or a reason it was refused. */
@@ -117,17 +117,56 @@ export class OAuthClients {
   }
 
   private async fetchMetadata(url: URL, clientId: string): Promise<OAuthClient | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.metadataTimeoutMs);
+    const aborted = new Promise<never>((_resolve, reject) => {
+      if (controller.signal.aborted) reject(new Error('Metadata request deadline exceeded'));
+      else controller.signal.addEventListener('abort', () => reject(new Error('Metadata request deadline exceeded')), { once: true });
+    });
+    const withinDeadline = <T>(promise: Promise<T>): Promise<T> => Promise.race([promise, aborted]);
+    let response: Response | undefined;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
       // SSRF: the host must resolve only to public addresses. (Checked here; the fetch re-resolves,
       // but a redirect is refused outright and the answer is size- and time-bounded.)
-      const addresses = await this.resolveHost(url.hostname);
+      const addresses = await withinDeadline(Promise.resolve().then(() => this.resolveHost(url.hostname)));
       if (addresses.length === 0 || addresses.some(isPrivateAddress)) return null;
-      const response = await fetchWithTimeout(url, { headers: { Accept: 'application/json' }, redirect: 'error' }, METADATA_TIMEOUT_MS, this.fetchImpl);
-      if (!response.ok) return null;
-      const declared = Number(response.headers.get('content-length') ?? 0);
-      if (declared > MAX_METADATA_BYTES) return null;
-      const text = await response.text();
-      if (Buffer.byteLength(text, 'utf8') > MAX_METADATA_BYTES) return null;
+      const request = this.fetchImpl(url, { headers: { Accept: 'application/json' }, redirect: 'error', signal: controller.signal })
+        .then((value) => {
+          if (controller.signal.aborted) {
+            void value.body?.cancel().catch(() => undefined);
+            throw new Error('Metadata request deadline exceeded');
+          }
+          return value;
+        });
+      response = await withinDeadline(request);
+      if (!response.ok || response.redirected) {
+        void response.body?.cancel().catch(() => undefined);
+        return null;
+      }
+      const contentLength = response.headers.get('content-length');
+      const declared = contentLength && /^\d+$/.test(contentLength) ? Number(contentLength) : null;
+      if (declared !== null && declared > MAX_METADATA_BYTES) {
+        void response.body?.cancel().catch(() => undefined);
+        return null;
+      }
+      if (!response.body) return null;
+      reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      const parts: string[] = [];
+      let bytes = 0;
+      for (;;) {
+        const chunk = await withinDeadline(reader.read());
+        if (chunk.done) break;
+        bytes += chunk.value.byteLength;
+        if (bytes > MAX_METADATA_BYTES) {
+          void reader.cancel().catch(() => undefined);
+          return null;
+        }
+        parts.push(decoder.decode(chunk.value, { stream: true }));
+      }
+      parts.push(decoder.decode());
+      const text = parts.join('');
       const document = JSON.parse(text) as Record<string, unknown>;
       if (document.client_id !== clientId) return null;
       const uris = document.redirect_uris;
@@ -135,7 +174,11 @@ export class OAuthClients {
       if (document.token_endpoint_auth_method !== undefined && document.token_endpoint_auth_method !== 'none') return null;
       return { clientId, name: cleanName(document.client_name, url.hostname), redirectUris: uris as string[], kind: 'metadata-document' };
     } catch {
+      if (reader) void reader.cancel().catch(() => undefined);
+      else void response?.body?.cancel().catch(() => undefined);
       return null;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 }

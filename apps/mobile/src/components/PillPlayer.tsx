@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, I18nManager, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { usePlaybackStatus } from '../hooks/usePlaybackStatus';
@@ -83,50 +83,84 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   // ── Sideways skip on the cover and title ───────────────────────────────
   const shift = useSharedValue(0);
   const fade = useSharedValue(1);
+  const skipInFlight = useSharedValue(false);
+  const [displayed, setDisplayed] = useState(() => ({ songId, title, artist, coverImageUri }));
   /** The song a committed swipe is waiting to leave; null when no skip is in flight. */
-  const skipping = useRef<{ from: string; dir: -1 | 1; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const skipping = useRef<{ from: string; dir: -1 | 1; timer: ReturnType<typeof setTimeout>; swapTimer?: ReturnType<typeof setTimeout> } | null>(null);
   const settle = () => {
+    skipInFlight.value = false;
     shift.value = withTiming(0, { duration: Motion.duration.fast, easing: Motion.ease.decelerate });
     fade.value = withTiming(1, { duration: Motion.duration.fast });
   };
   const cancelSkip = () => {
-    if (skipping.current) clearTimeout(skipping.current.timer);
+    if (skipping.current) {
+      clearTimeout(skipping.current.timer);
+      if (skipping.current.swapTimer) clearTimeout(skipping.current.swapTimer);
+    }
     skipping.current = null;
   };
   // What is showing: a remote (Connect) song changes its title, not the local song id.
   const showing = `${songId ?? ''}|${title}`;
   const shownRef = useRef(showing); shownRef.current = showing;
-  // A new song arrives: it slides in from the side the swipe sent the old one, or simply settles if the song changed
-  // some other way (a media key, the queue ending, remote ownership moving) mid-swipe.
+  // Hold the outgoing row until its 100 ms slide finishes. A restart leaves `showing` unchanged and uses the fallback.
   useEffect(() => {
     const pending = skipping.current;
+    const next = { songId, title, artist, coverImageUri };
+    if (pending && pending.from === showing) {
+      setDisplayed(next);
+      return;
+    }
+    if (pending && pending.from !== showing && !reduceMotion) {
+      clearTimeout(pending.timer);
+      if (pending.swapTimer) clearTimeout(pending.swapTimer);
+      pending.swapTimer = setTimeout(() => {
+        setDisplayed(next);
+        skipping.current = null;
+        shift.value = -pending.dir * 16;
+        settle();
+      }, Motion.duration.instant);
+      skipping.current = pending;
+      return;
+    }
     cancelSkip();
-    if (pending && pending.from !== showing && !reduceMotion) shift.value = -pending.dir * 16;
+    setDisplayed(next);
     settle();
     // Only the song identity drives this; shared values are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showing]);
+  }, [showing, songId, title, artist, coverImageUri]);
   useEffect(() => () => cancelSkip(), []);
   const skip = (which: 'next' | 'previous', dx: number) => {
     cancelSkip();
     const dir: -1 | 1 = dx < 0 ? -1 : 1;
+    skipInFlight.value = true;
     if (!reduceMotion) shift.value = withTiming(dir * 32, { duration: Motion.duration.instant, easing: Motion.ease.accelerate });
     fade.value = withTiming(0.2, { duration: Motion.duration.instant });
     skipping.current = { from: shownRef.current, dir, timer: setTimeout(() => { skipping.current = null; settle(); }, SKIP_SETTLE_MS) };
     (which === 'next' ? onNext : onPrevious)();
   };
-  const swipe = Gesture.Pan().activeOffsetX([-16, 16]).failOffsetY([-14, 14]).runOnJS(true)
+  const resetGesture = () => {
+    'worklet';
+    skipInFlight.value = false;
+    shift.value = withTiming(0, { duration: Motion.duration.fast, easing: Motion.ease.decelerate });
+    fade.value = withTiming(1, { duration: Motion.duration.fast });
+  };
+  const rtl = I18nManager.isRTL;
+  const swipe = Gesture.Pan().activeOffsetX([-16, 16]).failOffsetY([-14, 14])
     .onUpdate(e => {
-      if (skipping.current) return;
+      'worklet';
+      if (skipInFlight.value) return;
       if (!reduceMotion) shift.value = swipeFollow(e.translationX);
       fade.value = 1 - Math.min(0.5, Math.abs(e.translationX) / 240);
     })
     .onEnd(e => {
-      const which = miniSwipe(e.translationX, e.translationY, e.velocityX, infoWidth, I18nManager.isRTL);
-      if (which) skip(which, e.translationX);
-      else settle();
+      'worklet';
+      const which = miniSwipe(e.translationX, e.translationY, e.velocityX, infoWidth, rtl);
+      if (which) {
+        skipInFlight.value = true;
+        runOnJS(skip)(which, e.translationX);
+      } else resetGesture();
     })
-    .onFinalize((_e, success) => { if (!success && !skipping.current) settle(); });
+    .onFinalize((_e, success) => { 'worklet'; if (!success && !skipInFlight.value) resetGesture(); });
   const open = Gesture.Pan().activeOffsetY(-20).failOffsetX([-20, 20]).runOnJS(true).onEnd(e => { if (e.translationY < -24) onOpen(e.velocityY); });
   const infoGesture = Gesture.Race(open, swipe);
   const following = useAnimatedStyle(() => ({ opacity: fade.value, transform: [{ translateX: shift.value }] }));
@@ -147,18 +181,18 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
       }} />
     <Animated.View style={[styles.row, { height: rowHeight }, rowDim]}>
       <GestureDetector gesture={infoGesture}><View style={styles.main} onLayout={e => setInfoWidth(e.nativeEvent.layout.width)}>
-        <Tactile onPress={() => onOpen()} pressScale={0.985} accessibilityRole="button" accessibilityLabel={miniPlayerLabel(title)} accessibilityHint={artist ? `By ${artist}` : undefined}
+        <Tactile onPress={() => onOpen()} pressScale={0.985} accessibilityRole="button" accessibilityLabel={miniPlayerLabel(displayed.title)} accessibilityHint={displayed.artist ? `By ${displayed.artist}` : undefined}
           accessibilityActions={[{ name: 'activate' }, { name: 'next', label: 'Next song' }, { name: 'previous', label: 'Previous song' }]}
           onAccessibilityAction={e => { const a = e.nativeEvent.actionName; if (a === 'next') onNext(); else if (a === 'previous') onPrevious(); else onOpen(); }}
           style={[styles.info, { height: rowHeight }]}>
           <Animated.View style={[styles.follow, following]}>
-            <View style={styles.cover}><Artwork uri={coverImageUri} title={title} artist={artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></View>
+            <View style={styles.cover}><Artwork uri={displayed.coverImageUri} title={displayed.title} artist={displayed.artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></View>
             {/* 1.43.0 (owner's Spotify screenshot): the title in bold, scrolling slowly when it doesn't fit, with the
                 artist on its own line under it. */}
             <View style={styles.copy}>
-              <Marquee text={title} style={styles.line} active={!sheetUp} />
+              <Marquee text={displayed.title} style={styles.line} active={!sheetUp} />
               <Text variant="secondary" tone="secondary" numberOfLines={1}>
-                {status === 'error' ? 'Couldn’t play, tap to retry' : artist || ' '}
+                {status === 'error' ? 'Couldn’t play, tap to retry' : displayed.artist || ' '}
               </Text>
             </View>
           </Animated.View>

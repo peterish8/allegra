@@ -140,8 +140,8 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
 
   it('shows the mini player title in bold with the artist under it, and Spotify\'s saved mark (1.43.0)', () => {
     const pill = read('components/PillPlayer.tsx');
-    expect(pill).toMatch(/<Marquee text=\{title\} style=\{styles\.line\}/);
-    expect(pill).toMatch(/\{status === 'error' \? 'Couldn’t play, tap to retry' : artist \|\| ' '\}/);
+    expect(pill).toMatch(/<Marquee text=\{displayed\.title\} style=\{styles\.line\}/);
+    expect(pill).toMatch(/\{status === 'error' \? 'Couldn’t play, tap to retry' : displayed\.artist \|\| ' '\}/);
     expect(pill).toMatch(/name=\{liked \? 'checkmark-circle' : 'add-circle-outline'\}/);
     // The progress line stays on the card's top edge (owner).
     expect(pill.indexOf('<MiniScrubber ')).toBeLessThan(pill.indexOf('<Animated.View style={[styles.row'));

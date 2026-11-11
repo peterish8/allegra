@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -181,15 +182,26 @@ class PlaybackService : MediaSessionService() {
     // ── Resume when the connection comes back (ResumeOnline) ──────────────────────────────────────────────
     private var resumeArmedAt: Long? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    /** The connection was really gone during this episode (see [ResumeOnline.shouldResume]). */
+    private var resumeSawLoss = false
 
     private fun armResumeOnline() {
         resumeArmedAt = android.os.SystemClock.elapsedRealtime()
         if (networkCallback != null) return
         val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
+        // Gave up with no network at all: the loss already happened. Otherwise (still online) wait for one.
+        resumeSawLoss = connectivity.activeNetwork == null
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                // Android calls this on its own thread; the player lives on the main one.
-                retryHandler.post { resumeIfOnlineAgain() }
+            // Android calls these on its own thread; the player lives on the main one.
+            override fun onLost(network: Network) {
+                retryHandler.post { if (resumeArmedAt != null) resumeSawLoss = true }
+            }
+
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                // The network already up when the watch starts arrives here too; only a loss first lets it resume.
+                val usable = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                retryHandler.post { resumeIfOnlineAgain(usable) }
             }
         }
         try {
@@ -200,10 +212,10 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun resumeIfOnlineAgain() {
+    private fun resumeIfOnlineAgain(usable: Boolean) {
         val now = android.os.SystemClock.elapsedRealtime()
         val armedAt = resumeArmedAt
-        if (ResumeOnline.shouldResume(armedAt, now, exoPlayer.playWhenReady, exoPlayer.currentMediaItem != null)) {
+        if (ResumeOnline.shouldResume(armedAt, now, exoPlayer.playWhenReady, exoPlayer.currentMediaItem != null, resumeSawLoss, usable)) {
             Log.w(TAG, "connection back; resuming where it stopped")
             disarmResumeOnline()
             retries = 0
@@ -216,6 +228,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun disarmResumeOnline() {
         resumeArmedAt = null
+        resumeSawLoss = false
         val callback = networkCallback ?: return
         networkCallback = null
         try {

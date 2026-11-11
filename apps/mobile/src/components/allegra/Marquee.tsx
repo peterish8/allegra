@@ -14,7 +14,7 @@ import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-n
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSwapAnimations } from './motion';
-import { MARQUEE_GAP, MARQUEE_REST_MS, MARQUEE_SPEED, MARQUEE_START_MS, marqueeLoop } from './marqueeMath';
+import { MARQUEE_GAP, MARQUEE_REST_MS, MARQUEE_SPEED, MARQUEE_START_MS, marqueeLoop, swapMarqueeKey } from './marqueeMath';
 import Animated, {
   Easing,
   cancelAnimation,
@@ -143,10 +143,10 @@ const styles = StyleSheet.create({
  * like SwapText, and when it is too long for its space it scrolls (Marquee).
  * Keyed by the text, so each new song starts its title from the beginning.
  */
-export const SwapMarquee: React.FC<Omit<MarqueeProps, 'text'> & { children: string; direction?: number }> = ({ children, direction = 0, ...rest }) => {
+export const SwapMarquee: React.FC<Omit<MarqueeProps, 'text'> & { children: string; direction?: number; songId?: string }> = ({ children, direction = 0, songId, ...rest }) => {
   const { entering, exiting } = useSwapAnimations(direction);
   return (
-    <Animated.View key={children} entering={entering} exiting={exiting} style={styles.swap}>
+    <Animated.View key={swapMarqueeKey(songId, children)} entering={entering} exiting={exiting} style={styles.swap}>
       <Marquee text={children} {...rest} />
     </Animated.View>
   );

@@ -74,8 +74,8 @@ interface PlayerPanelProps {
   readonly onOpenWorkspace: () => void;
   readonly onOpenImmersive: () => void;
   readonly onToggle: () => void;
-  readonly onNext: () => void;
-  readonly onPrevious: () => void;
+  readonly onNext: () => UnifiedSong | null | undefined;
+  readonly onPrevious: () => UnifiedSong | null | undefined;
   /** Off → all → one, the same cycle as the player bar. */
   readonly repeat?: RepeatMode;
   readonly onCycleRepeat?: () => void;
@@ -163,8 +163,14 @@ export function PlayerPanel({
     coverIntent.current = null;
     coverPrev.current = { id: coverId, index };
   }
-  const goNext = (): void => { coverIntent.current = 1; onNext(); };
-  const goPrevious = (): void => { coverIntent.current = -1; onPrevious(); };
+  const goNext = (): void => {
+    const next = onNext();
+    coverIntent.current = next && next.id !== song?.id ? 1 : null;
+  };
+  const goPrevious = (): void => {
+    const previous = onPrevious();
+    coverIntent.current = previous && previous.id !== song?.id ? -1 : null;
+  };
   const [tab, setTab] = useState<ListeningTab>(mode === 'workspace' ? 'lyrics' : 'lyrics');
   const upNext = queue.filter((item) => item.id !== song?.id).slice(0, 8);
   const related = (suggestions.length > 0 ? suggestions : upNext).slice(0, 6);
@@ -307,7 +313,7 @@ export function PlayerPanel({
   // Rise from bottom on open; sink fully off-screen on close (YT Music reveal).
   const sheetTransition = reduced
     ? { duration: motionTokens.duration.instant }
-    : { type: 'spring' as const, stiffness: 260, damping: 36, mass: 0.95 };
+    : spring.sheet;
 
   return (
     <AnimatePresence>
@@ -509,8 +515,8 @@ export function PlayerPanel({
                 <motion.div
                   key={`meta-${song.id}`}
                   className="np-meta"
-                  initial={reduced ? { opacity: 0 } : { opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={reduced ? { opacity: 0 } : { opacity: 0, x: coverDir.current * 8 }}
+                  animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: motionTokens.duration.base, ease: motionTokens.ease.decelerate, delay: reduced ? 0 : motionTokens.duration.fast }}
                 >
                   <h2 id="player-title" className="np-title">

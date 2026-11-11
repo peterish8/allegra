@@ -1,6 +1,8 @@
 # 🎵 LuvLyrics (LyricFlow): The Deep Dive
 
-> **A Premium, Privacy-First, Local Lyrics Experience.**
+> Earlier implementation notes. Start with the [current codebase map](../../docs/current-codebase.md),
+> [mobile rules](CLAUDE.md), and [design system](DESIGN.md) for current ownership, features, and checks.
+> The performance figures and older feature inventory below describe earlier work.
 
 LuvLyrics isn't just a lyrics storage app; it's a visual instrument designed to turn your lyric-reading into a cinematic experience. This document provides a comprehensive breakdown of the project's architecture, technical decisions, and file-by-file organization.
 

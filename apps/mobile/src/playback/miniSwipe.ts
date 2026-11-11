@@ -16,10 +16,12 @@ export const SWIPE_FLICK_DISTANCE = 24;
 export const SWIPE_FOLLOW_MAX = 48;
 
 export function swipeThreshold(width: number): number {
+  'worklet';
   return Math.max(SWIPE_MIN_DISTANCE, width * 0.22);
 }
 
 export function miniSwipe(dx: number, dy: number, vx: number, width: number, rtl = false): MiniSwipe {
+  'worklet';
   if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.abs(dy) >= Math.abs(dx)) return null;
   const far = Math.abs(dx) >= swipeThreshold(width);
   const flick = Math.abs(vx) >= SWIPE_FLICK_VELOCITY && Math.abs(dx) >= SWIPE_FLICK_DISTANCE && Math.sign(vx) === Math.sign(dx);
@@ -30,6 +32,7 @@ export function miniSwipe(dx: number, dy: number, vx: number, width: number, rtl
 
 /** How far the content follows a drag: half the finger's travel, damped to SWIPE_FOLLOW_MAX. */
 export function swipeFollow(dx: number): number {
+  'worklet';
   const half = dx / 2;
   return Math.max(-SWIPE_FOLLOW_MAX, Math.min(SWIPE_FOLLOW_MAX, half));
 }

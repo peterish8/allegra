@@ -565,6 +565,11 @@ It pauses while the tab is hidden and while the DJ is speaking. A mic error turn
 
 ### Microphone permission
 
+The current [Next headers](../apps/web/next.config.ts) serve `microphone=()`. This blocks the
+`getUserMedia` recorder path before a listener can grant site permission. The states below
+describe the UI behavior when the document policy permits recording. The [audit backlog](../audit/FIX-BACKLOG.md)
+tracks the header and recorder mismatch.
+
 `micState` is one of:
 
 | State | Meaning |

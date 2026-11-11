@@ -3,6 +3,8 @@ import type { Transition, Variants } from 'motion/react';
 export const motionTokens = {
   marquee: { pixelsPerSecond: 36, gap: 48, minimumDuration: 8 },
   duration: {
+    none: 0,
+    micro: 0.01,
     instant: 0.1,
     fast: 0.16,
     base: 0.24,
@@ -12,14 +14,58 @@ export const motionTokens = {
     /** A cover flying from its row into the transfer crate. */
     flight: 0.28,
     /** A finished sleeve dealt out of the crate. */
-    deal: 0.32
+    deal: 0.32,
+    catch: 0.5,
+    catchRipple: 0.6,
+    blink: 0.9,
+    wave: 1.1,
+    waveSteps: [1.1, 1.3, 1.5] as const,
+    heartLoop: 1.4,
+    heartBeat: 1.3,
+    stream: 1.5,
+    ripple: 1.6,
+    orbiting: 1.8,
+    focusPulse: 2.1,
+    chipLoop: 2.2,
+    float: 2.4,
+    cardFlow: 2.6,
+    compass: 4.2,
+    ringSweep: 4,
+    breathing: 6,
+    orbit: 16
+  },
+  delay: {
+    none: 0,
+    micro: 0.04,
+    short: 0.05,
+    quick: 0.06,
+    type: 0.07,
+    cover: 0.08,
+    heartChain: 0.36,
+    line: 0.09,
+    row: 0.1,
+    part: 0.12,
+    scene: 0.15,
+    word: 0.2,
+    fold: 0.24,
+    loop: 0.3,
+    typeStart: 0.35,
+    catch: 0.45,
+    stack: 0.5,
+    heart: 0.55,
+    chips: 0.6,
+    orbit: 0.7,
+    ripple: 0.8,
+    hover: 0.9
   },
   ease: {
     standard: [0.4, 0, 0.2, 1] as const,
     decelerate: [0, 0, 0.2, 1] as const,
     accelerate: [0.4, 0, 1, 1] as const,
     emphasis: [0.2, 0, 0, 1] as const,
-    tactile: [0.2, 0, 0, 1] as const
+    tactile: [0.2, 0, 0, 1] as const,
+    linear: 'linear' as const,
+    fold: [0.4, 0, 0.9, 0.55] as const
   },
   stagger: 0.04
 } as const;
@@ -44,7 +90,9 @@ export const spring = {
   /** Artwork breathe while playing (1 → 1.015). */
   breathe: { type: 'spring', stiffness: 120, damping: 28, mass: 1 } as const,
   /** A ball landing: stiff and under-damped, so it squashes, overshoots and wobbles back. */
-  bounce: { type: 'spring', stiffness: 700, damping: 12, mass: 1 } as const
+  bounce: { type: 'spring', stiffness: 700, damping: 12, mass: 1 } as const,
+  heart: { type: 'spring', stiffness: 520, damping: 14 } as const,
+  artist: { type: 'spring', stiffness: 320, damping: 28 } as const
 };
 
 export const pageVariants: Variants = {

@@ -47,6 +47,7 @@ import { shouldCloseSheet } from '../navigation/sheetClose';
 import { playerSheetProgress } from '../navigation/sheetProgress';
 import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
+import { nextSwipeIndex, previousSwipeAction } from '../playback/swipeRule';
 import { useConnect } from '../services/connect/ConnectProvider';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { notifyIslandAppShownAfterDraw } from '../services/NativeDynamicIsland';
@@ -460,10 +461,13 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     const { playlistQueue, currentQueueIndex } = usePlayerStore.getState();
     if (!playlistQueue || playlistQueue.length < 2 || currentQueueIndex < 0) return null;
     const repeat = usePlaybackModesStore.getState().repeatMode;
-    if (dir < 0 && repeat === 'off' && currentQueueIndex >= playlistQueue.length - 1) return null;
-    // Echo/Media3 restarts a track once it is past three seconds, so there is no incoming cover for that swipe.
-    if (dir > 0 && (currentQueueIndex === 0 && repeat === 'off' || playerControls.getPosition() > 3)) return null;
-    const index = (currentQueueIndex + dir + playlistQueue.length) % playlistQueue.length;
+    const index = dir < 0
+      ? nextSwipeIndex(playlistQueue.length, currentQueueIndex)
+      : (() => {
+        const action = previousSwipeAction(playerControls.getPosition(), playlistQueue.length, currentQueueIndex, repeat);
+        return action?.kind === 'back' ? action.index : null;
+      })();
+    if (index === null) return null;
     return playlistQueue[index] ?? null;
   }, []);
 
@@ -540,7 +544,16 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const canSwipe = useCallback((dir: 1 | -1): boolean => {
     const player = usePlayerStore.getState();
     const queued = player.playlistQueue?.length ?? 0;
-    return Boolean(adjacentSong(dir)) || (dir < 0 && (queued > 1 || player.currentPlaylistId === 'library'));
+    if (dir < 0) return Boolean(adjacentSong(dir)) || player.currentPlaylistId === 'library';
+    if (player.playlistQueue && player.currentQueueIndex >= 0) {
+      return previousSwipeAction(
+        playerControls.getPosition(),
+        player.playlistQueue.length,
+        player.currentQueueIndex,
+        usePlaybackModesStore.getState().repeatMode,
+      ) !== null;
+    }
+    return queued > 0 || player.currentPlaylistId === 'library';
   }, [adjacentSong]);
 
   /** The direction the cover is being pulled with nothing there (0 when it can go): it stretches instead of following. */
@@ -566,17 +579,38 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     }
     if (preview && swipePreviewRef.current?.id !== preview.id) previewAdjacentSong(dir);
     Haptics.commit();
-    if (dir < 0) skipForward().catch(() => {});
-    else player.previousInPlaylist();
+    if (dir < 0) {
+      skipForward().catch(() => {});
+    } else {
+      const action = player.playlistQueue
+        ? previousSwipeAction(
+          playerControls.getPosition(),
+          player.playlistQueue.length,
+          player.currentQueueIndex,
+          usePlaybackModesStore.getState().repeatMode,
+        )
+        : null;
+      if (action?.kind === 'restart') {
+        setSeekPulse(p => ({ side: -1, seconds: 0, n: (p?.n ?? 0) + 1 }));
+        skipBackward().catch(() => {});
+      } else if (action?.kind === 'back') {
+        player.skipToQueueIndex(action.index);
+      } else {
+        skipBackward().catch(() => {});
+      }
+    }
     // Off the edge at the finger's speed: a spring that starts where the flick was going, never an ease-in from rest.
     const outward = dir * Math.max(0, dir * velocity);
     stageX.value = withSpring(dir * windowW, { ...FLING_SPRING, velocity: outward }, done => {
       'worklet';
       if (!done) return;
       if (swipePreviewAvailable.value) runOnJS(settleSwipePreview)();
-      else stageX.value = withSpring(0, SOFT_SPRING);
+      else {
+        stageX.value = -dir * windowW;
+        stageX.value = withSpring(0, SOFT_SPRING);
+      }
     });
-  }, [skipForward, stageX, windowW, adjacentSong, canSwipe, clearSwipePreview, previewAdjacentSong, settleSwipePreview, swipePreviewAvailable]);
+  }, [skipBackward, skipForward, stageX, windowW, adjacentSong, canSwipe, clearSwipePreview, previewAdjacentSong, settleSwipePreview, swipePreviewAvailable]);
 
   const stagePan = Gesture.Pan()
     .enabled(stageEnabled)
@@ -904,6 +938,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           storePlaying={storePlaying}
           currentSongTitle={swipePreview?.title ?? currentSong?.title}
           currentSongArtist={swipePreview?.artist ?? currentSong?.artist}
+          songId={swipePreview?.id ?? currentSong?.id}
           isCurrentSongLiked={isCurrentSongLiked}
           isLikeSaving={isCurrentSongSaving}
           onRetry={() => usePlayerStore.getState().requestPlayback(true)}

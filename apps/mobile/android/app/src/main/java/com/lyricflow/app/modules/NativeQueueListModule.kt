@@ -10,7 +10,7 @@ class NativeQueueListModule : Module() {
         Name("NativeQueueList")
 
         View(NativeQueueListView::class) {
-            Events("onPick", "onMove", "onAtTop", "onLift")
+            Events("onPick", "onMove", "onAtTop", "onScrollActivity", "onLift")
 
             Prop("rows") { view: NativeQueueListView, rows: String? -> view.setRows(rows) }
             Prop("currentIndex") { view: NativeQueueListView, index: Int? -> view.setCurrentIndex(index) }

@@ -40,6 +40,7 @@ class QueueEngine(
 
     private val main = Handler(Looper.getMainLooper())
     private val writer = Executors.newSingleThreadExecutor()
+    private val store = QueueStore(storeFile, writer) { Log.w(TAG, it) }
 
     /** An opaque label from JavaScript (which list this queue came from), kept with the queue and saved with it. */
     var tag: String? = null
@@ -48,6 +49,8 @@ class QueueEngine(
     private var changePosted = false
     private var askedForSize = -1
     private var released = false
+    /** Whether this engine has held a non-empty queue since it last saved an empty one (see [saveNow]). */
+    private var heldQueue = false
 
     private val flushChange = Runnable {
         changePosted = false
@@ -230,7 +233,10 @@ class QueueEngine(
         tag = null
         player.stop()
         player.clearMediaItems()
-        storeFile.delete()
+        // Through the writer, behind any save already queued, so that save cannot bring the queue back.
+        main.removeCallbacks(saveRun)
+        store.erase()
+        heldQueue = false
         afterEdit()
     }
 
@@ -409,7 +415,14 @@ class QueueEngine(
      */
     fun saveNow() {
         main.removeCallbacks(saveRun)
-        if (player.mediaItemCount == 0) return
+        if (player.mediaItemCount == 0) {
+            // A queue emptied while this engine held it (its last song removed) is saved as no queue, so the old one
+            // is not restored. An engine that never held one (a start torn down before restore) keeps the file.
+            if (heldQueue) store.erase()
+            heldQueue = false
+            return
+        }
+        heldQueue = true
         val text = try {
             val order = playOrder()
             QueueSnapshot(
@@ -424,22 +437,7 @@ class QueueEngine(
             Log.w(TAG, "queue not saved: ${e.message}")
             return
         }
-        try {
-            writer.execute {
-                try {
-                    val temp = File(storeFile.parentFile, storeFile.name + ".tmp")
-                    temp.writeText(text)
-                    if (!temp.renameTo(storeFile)) {
-                        temp.delete()
-                        Log.w(TAG, "queue not saved: could not replace the saved file")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "queue not saved: ${e.message}")
-                }
-            }
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
-            // The service is going away and the writer is already shut down: the last save went out.
-        }
+        store.save(text)
     }
 
     /**

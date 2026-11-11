@@ -37,6 +37,7 @@ import Frosted from '../allegra/Frosted';
 import { TactileRow } from '../allegra/motion';
 import { useArtworkPalette } from '../allegra/useArtworkPalette';
 import { dropIndex, filterQueue, moveItem, playingFromLabel, rowShift, UpNextFilter } from './coverStage';
+import { QUEUE_FOLLOW_QUIET_MS, shouldFollowQueueIndex } from './queueFollow';
 import NativeQueueList, { nativeQueueListAvailable } from './NativeQueueList';
 import { queueClock as clock, queueRowsJson } from './nativeQueuePayload';
 
@@ -204,10 +205,34 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
   // ── The panel's own swipe down, alongside the list's scroll ─────────────
   const scrolled = useSharedValue(0);
   const dragging = useSharedValue(false);
+  const [listDragging, setListDragging] = useState(false);
+  const lastListInteractionAt = useRef(0);
+  const [followIdleTick, setFollowIdleTick] = useState(0);
+  const followIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noteListInteraction = useCallback(() => {
+    lastListInteractionAt.current = Date.now();
+    if (followIdleTimer.current) clearTimeout(followIdleTimer.current);
+    followIdleTimer.current = setTimeout(() => {
+      followIdleTimer.current = null;
+      setFollowIdleTick(tick => tick + 1);
+    }, QUEUE_FOLLOW_QUIET_MS);
+  }, []);
+  useEffect(() => () => {
+    if (followIdleTimer.current) clearTimeout(followIdleTimer.current);
+  }, []);
   const list = useMemo(() => Gesture.Native(), []);
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrolled.value = e.nativeEvent.contentOffset.y;
-  }, [scrolled]);
+    noteListInteraction();
+  }, [noteListInteraction, scrolled]);
+  const onListDragStart = useCallback(() => {
+    setListDragging(true);
+    noteListInteraction();
+  }, [noteListInteraction]);
+  const onListDragEnd = useCallback(() => {
+    setListDragging(false);
+    noteListInteraction();
+  }, [noteListInteraction]);
   const panelW = useSharedValue(0);
   const panBase = Gesture.Pan()
     .enabled(open)
@@ -307,6 +332,10 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
   const onNativeAtTop = useCallback((atTop: boolean) => {
     scrolled.value = atTop ? 0 : 3;
   }, [scrolled]);
+  const onNativeScrollActivity = useCallback((active: boolean) => {
+    setListDragging(active);
+    noteListInteraction();
+  }, [noteListInteraction]);
 
   const shuffle = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -315,8 +344,10 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
 
   // Opens on the song that's playing, one row of history above it.
   const listRef = useRef<FlatList<number>>(null);
-  const startAt = movable ? Math.max(0, Math.min(index - 1, shown.length - 1)) : 0;
+  const activeRow = shown.indexOf(index);
+  const startAt = movable && activeRow >= 0 ? Math.max(0, Math.min(activeRow - 1, shown.length - 1)) : 0;
   const [scrollToken, setScrollToken] = useState(0);
+  const lastFollowedIndex = useRef(index);
   const rowsJson = useMemo(() => (native ? queueRowsJson(songs, shown) : ''), [native, songs, shown]);
   useEffect(() => {
     if (!open || shown.length === 0) return;
@@ -325,6 +356,26 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
     // Only when it opens or the filter changes, not on every queue change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, filter]);
+  useEffect(() => {
+    const previousIndex = lastFollowedIndex.current;
+    if (previousIndex === index || shown.length === 0) return;
+    if (!shouldFollowQueueIndex({
+      open,
+      panelDragging: dragging.value,
+      listDragging,
+      lastInteractionAt: lastListInteractionAt.current,
+      now: Date.now(),
+      rowVisible: shown.includes(index),
+    })) return;
+    const row = shown.indexOf(index);
+    if (row < 0) return;
+    lastFollowedIndex.current = index;
+    const oldRow = shown.indexOf(previousIndex);
+    const animate = oldRow >= 0 && Math.abs(row - oldRow) === 1;
+    const targetRow = Math.max(0, row - 1);
+    if (native) setScrollToken(token => token + 1);
+    else listRef.current?.scrollToOffset({ offset: targetRow * ROW_H, animated: animate });
+  }, [index, open, shown, native, dragging, listDragging, followIdleTick]);
 
   // The dragged row draws over its neighbours.
   const Cell = useCallback(({ index: cellIndex, style, ...rest }: ViewProps & { index: number }) => (
@@ -370,6 +421,7 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
             onPick={pick}
             onMove={onNativeMove}
             onAtTop={onNativeAtTop}
+            onScrollActivity={onNativeScrollActivity}
             onLift={onNativeLift}
           />
         ) : (
@@ -381,6 +433,10 @@ const UpNextPanel: React.FC<UpNextPanelProps> = ({ progress, top, frameH, open, 
                 getItemLayout={(_d, i) => ({ length: ROW_H, offset: ROW_H * i, index: i })}
                 initialScrollIndex={startAt}
                 onScroll={onScroll}
+                onScrollBeginDrag={onListDragStart}
+                onScrollEndDrag={onListDragEnd}
+                onMomentumScrollBegin={onListDragStart}
+                onMomentumScrollEnd={onListDragEnd}
                 scrollEventThrottle={16}
                 scrollEnabled={lifting < 0}
                 CellRendererComponent={Cell}

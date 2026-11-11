@@ -81,6 +81,15 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def releaseKeyStorePath = System.getenv('ANDROID_RELEASE_KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('ANDROID_RELEASE_STORE_PASSWORD')
+def releaseKeyAlias = System.getenv('ANDROID_RELEASE_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('ANDROID_RELEASE_KEY_PASSWORD')
+def releaseSigningReady = [releaseKeyStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it != null && !it.isEmpty() }
+if (System.getenv('ANDROID_RELEASE_REQUIRED') == 'true' && !releaseSigningReady) {
+    throw new GradleException('A private Android release signing identity is required for main publication.')
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
 
@@ -92,8 +101,15 @@ android {
         applicationId 'com.lyricflow.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName new groovy.json.JsonSlurper().parse(file('../../app.json')).expo.version
+        def appVersion = new groovy.json.JsonSlurper().parse(file('../../app.json')).expo.version
+        def versionParts = appVersion.tokenize('.').collect { it as int }
+        if (versionParts.size() != 3 || versionParts.any { it < 0 || it >= 1000 }) {
+            throw new GradleException("Expected a semantic mobile version with each part below 1000, got ${appVersion}")
+        }
+        // The old release channel used versionCode 1. This monotonic encoding makes the first
+        // migrated APK an installable update and orders later patch/minor/major releases.
+        versionCode versionParts[0] * 1_000_000 + versionParts[1] * 1_000 + versionParts[2]
+        versionName appVersion
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -104,15 +120,23 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (releaseSigningReady) {
+                storeFile file(releaseKeyStorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Feature/PR artifacts stay isolated on the debug key. Main publication sets
+            // ANDROID_RELEASE_REQUIRED and must configure the private release signer above.
+            signingConfig releaseSigningReady ? signingConfigs.release : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

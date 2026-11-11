@@ -170,7 +170,7 @@ export function UndoDelete({ label, seconds = 5, onConfirm }: UndoDeleteProps) {
       className={`undo-delete ${pending ? 'is-pending' : ''}`}
       title={pending ? undefined : label}
       onClick={() => setLeft(pending ? null : seconds)}
-      transition={reduced ? { duration: 0 } : spring.tactile}
+      transition={reduced ? { duration: motionTokens.duration.none } : spring.tactile}
       aria-live="polite"
     >
       <AnimatePresence mode="popLayout" initial={false}>
@@ -179,7 +179,7 @@ export function UndoDelete({ label, seconds = 5, onConfirm }: UndoDeleteProps) {
             <Undo2 size={15} aria-hidden="true" /> Undo
             <span className="undo-delete-count" aria-label={`${left} seconds left`}>
               <AnimatePresence mode="popLayout" initial={false}>
-                <motion.span key={left} initial={{ opacity: 0, y: -10, scale: 0.6 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.6 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>{left}</motion.span>
+                <motion.span key={left} initial={{ opacity: 0, y: -10, scale: 0.6 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.6 }} transition={reduced ? { duration: motionTokens.duration.instant } : spring.tactile}>{left}</motion.span>
               </AnimatePresence>
             </span>
           </motion.span>

@@ -342,6 +342,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
                   storePlaying={playing}
                   currentSongTitle={song.title}
                   currentSongArtist={song.artist}
+                  songId={song.ref}
                   isCurrentSongLiked={like.liked}
                   onTogglePlay={() => control({ kind: playing ? 'pause' : 'play' })}
                   onSkipForward={() => control({ kind: 'next' })}

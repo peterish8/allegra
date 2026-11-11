@@ -281,7 +281,7 @@ function showSkip(direction: 1 | -1): void {
   pausedLoadSongId = null;
   resetPlayheadFor(song);
   usePlayerStore.setState({ currentQueueIndex: index, currentSong: song, currentSongId: song.id, loadedAudioId: song.id });
-  noteTrackChange(song);
+  if (song.id !== state.currentSongId) noteTrackChange(song);
 }
 
 /** Which way a change of place in the queue went (wrapping at the ends counts as forward / back). */
@@ -598,16 +598,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   // Silent Queue Update (for sorting/reordering)
   updateQueue: (newQueue: Song[]) => {
     set((state) => {
-      // Try to find current song in new queue to keep index correct
       const currentId = state.currentSongId;
-      let newIndex = state.currentQueueIndex;
-
-      if (currentId) {
-          const foundIndex = newQueue.findIndex(s => s.id === currentId);
-          if (foundIndex !== -1) {
-              newIndex = foundIndex;
-          }
-      }
+      const newIndex = currentId ? newQueue.findIndex(s => s.id === currentId) : -1;
 
       return {
           playlistQueue: newQueue,
@@ -695,17 +687,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const newQueue = state.playlistQueue.filter(s => s.id !== songId);
     const currentIndex = state.currentQueueIndex;
 
-    // If currently playing song was removed, stop playback
+    // Removing the current item advances to the following row (or the last remaining row) like Media3.
     if (state.currentSong?.id === songId) {
-      if (__DEV__) {
-        console.log('[PLAYER] Currently playing song removed from queue, clearing');
-      }
+      const removedIndex = state.playlistQueue.findIndex(s => s.id === songId);
+      const nextIndex = newQueue.length > 0 ? Math.min(removedIndex, newQueue.length - 1) : -1;
+      const nextSong = nextIndex >= 0 ? newQueue[nextIndex] : null;
+      pausedLoadSongId = null;
+      resetPlayheadFor(nextSong);
       set({
         playlistQueue: newQueue.length > 0 ? newQueue : null,
-        currentSong: null,
-        currentSongId: null,
-        currentQueueIndex: -1
+        currentSong: nextSong,
+        currentSongId: nextSong?.id ?? null,
+        currentQueueIndex: nextIndex,
+        loadedAudioId: null,
+        isPlaying: !!nextSong,
       });
+      if (nextSong) {
+        void get().loadSong(nextSong.id);
+        setPlaybackIntent(true);
+      } else {
+        get().requestPlayback(false);
+      }
       return;
     }
 
@@ -775,6 +777,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const freshState = get();
     if (!freshState.playlistQueue) return;
     if (automatic && usePlaybackModesStore.getState().repeatMode === 'off' && freshState.currentQueueIndex >= freshState.playlistQueue.length - 1) {
+      const firstSong = freshState.playlistQueue[0];
+      if (firstSong) {
+        pausedLoadSongId = firstSong.id;
+        resetPlayheadFor(firstSong);
+        set({ currentQueueIndex: 0, currentSong: firstSong, currentSongId: firstSong.id, loadedAudioId: null, isPlaying: false });
+      }
       freshState.requestPlayback(false);
       return;
     }
@@ -790,16 +798,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentQueueIndex: nextIndex,
       currentSong: nextSong,
       currentSongId: nextSong.id,
-      loadedAudioId: nextSong.id,
+      loadedAudioId: null,
       isPlaying: true,
     });
 
-    // Have the audio loaded (MiniPlayer / NowPlaying see loadedAudioId unset and load it).
-    set({ loadedAudioId: null });
     await get().loadSong(nextSong.id);
     if (get().currentSongId !== nextSong.id) return;
     setPlaybackIntent(true);
-    playerControls.play();
     if (__DEV__) {
       console.log(`[PLAYER] Next in playlist: ${nextSong.title}`);
     }
@@ -825,8 +830,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     if (!state.playlistQueue || state.playlistQueue.length === 0) return;
 
+    const repeat = usePlaybackModesStore.getState().repeatMode;
+    if (previousWillRestart(playerControls.getPosition(), state.currentQueueIndex, repeat)) {
+      resetPlayheadFor(state.currentSong);
+      playerControls.seekTo(0);
+      get().requestPlayback(true);
+      return;
+    }
+
     songDirection = -1;
-    const prevIndex = (state.currentQueueIndex - 1 + state.playlistQueue.length) % state.playlistQueue.length;
+    const prevIndex = state.currentQueueIndex > 0 ? state.currentQueueIndex - 1 : state.playlistQueue.length - 1;
     const prevSong = state.playlistQueue[prevIndex];
     pausedLoadSongId = null;
     resetPlayheadFor(prevSong);
@@ -835,13 +848,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentQueueIndex: prevIndex,
       currentSong: prevSong,
       currentSongId: prevSong.id,
+      loadedAudioId: null,
       isPlaying: true // FORCE PLAY
     });
 
     // Trigger audio load
     get().loadSong(prevSong.id);
     setPlaybackIntent(true);
-    playerControls.play();
     if (__DEV__) {
       console.log(`[PLAYER] Previous in playlist: ${prevSong.title}`);
     }

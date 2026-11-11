@@ -96,6 +96,26 @@ afterAll(async () => {
 });
 
 describe('sync queries against SQLite', () => {
+  it('keeps pending play rows scoped to their account and quarantines legacy unowned rows', async () => {
+    const legacy = { songId: 'legacy', seconds: 12, playedAt: '2026-01-01T00:00:00Z' };
+    await getDatabase().then(db => db.runAsync(
+      'INSERT INTO sync_outbox (kind, body, created_at) VALUES (?, ?, ?)', ['play', JSON.stringify(legacy), 1],
+    ));
+    await syncDb.enqueueOutbox('play', { ...legacy, songId: 'a-play' }, 'account-a');
+    await syncDb.enqueueOutbox('play', { ...legacy, songId: 'b-play' }, 'account-b');
+
+    const aRows = await syncDb.peekOutbox('play', 20, 'account-a');
+    const bRows = await syncDb.peekOutbox('play', 20, 'account-b');
+    expect(aRows.map(row => row.accountUserId)).toEqual(['account-a']);
+    expect(bRows.map(row => row.accountUserId)).toEqual(['account-b']);
+    expect((await syncDb.peekOutbox('play', 20, 'account-a')).map(row => JSON.parse(row.body).songId)).toEqual(['a-play']);
+
+    await syncDb.removeOutbox([aRows[0]!.id], 'account-b');
+    expect(await syncDb.peekOutbox('play', 20, 'account-a')).toHaveLength(1);
+    expect(await syncDb.peekOutbox('play', 20, 'account-b')).toHaveLength(1);
+    expect(await syncDb.peekOutbox('play', 20, 'account-c')).toHaveLength(0);
+  });
+
   it('persists staged play progress so a retry resumes at the taste signal', async () => {
     const pending = {
       songRef: 'gaana:g1' as SongRef,

@@ -94,4 +94,10 @@ describe('design guards', () => {
       .map(rel);
     expect(pairs).toEqual([]);
   });
+
+  it('keeps MiniPlayer skip controls off layout animation and names its motion values', () => {
+    const text = fs.readFileSync(path.join(SRC, 'components', 'MiniPlayer.tsx'), 'utf8');
+    expect(text.match(/(?:duration|stiffness)\s*[:=]\s*(?:\d+(?:\.\d*)?|\.\d+)/g)).toEqual(null);
+    expect(text).not.toMatch(/width:\s*skipProgress\.value/);
+  });
 });

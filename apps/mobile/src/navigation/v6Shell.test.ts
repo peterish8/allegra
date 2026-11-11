@@ -1,4 +1,4 @@
-import { MINI_COVER_SIZE, MINI_ROW_HEIGHT, NAV_BAR_HEIGHT, SEEK_BAND_HEIGHT, miniRowHeight, shellHeight, shellNavHeight } from './v6Shell';
+import { MINI_COVER_SIZE, MINI_ROW_HEIGHT, NAV_BAR_HEIGHT, SEEK_BAND_HEIGHT, miniRowHeight, navBarHeight, shellHeight, shellNavHeight } from './v6Shell';
 
 it('uses the compact navigation below 700 while preserving larger safe areas', () => {
   expect(shellNavHeight(699, 0)).toBe(64);
@@ -9,7 +9,9 @@ it('uses the compact navigation below 700 while preserving larger safe areas', (
 it('reserves seek, mini row and navigation, with room for large text', () => {
   expect(shellHeight(800, 16, false, 1)).toBe(72);
   expect(shellHeight(800, 16, true, 1)).toBe(132);
-  expect(shellHeight(800, 16, true, 2)).toBe(156);
+  // At 200% text the navigation target grows too (navBarHeight), on top of the large-text mini row.
+  expect(shellHeight(800, 16, true, 2)).toBe(navBarHeight(2) + 16 + SEEK_BAND_HEIGHT + miniRowHeight(2));
+  expect(shellHeight(800, 16, true, 2)).toBe(170);
 });
 
 // Owner, 2026-11-06: the mini player and nav were too tall and left too little list. The shell gives 24dp
@@ -24,4 +26,12 @@ it('keeps the slimmer shell above the minimum control target', () => {
   expect(MINI_COVER_SIZE).toBeLessThan(MINI_ROW_HEIGHT);
   expect(miniRowHeight(1.3)).toBe(MINI_ROW_HEIGHT);
   expect(miniRowHeight(1.6)).toBeGreaterThan(MINI_ROW_HEIGHT);
+});
+
+it('grows the navigation target with system text and reserves the same height above the gesture inset', () => {
+  expect(navBarHeight(1)).toBe(56);
+  expect(navBarHeight(1.3)).toBeGreaterThan(NAV_BAR_HEIGHT);
+  expect(navBarHeight(2)).toBeGreaterThanOrEqual(68);
+  expect(shellNavHeight(800, 24, 2)).toBe(navBarHeight(2) + 24);
+  expect(shellHeight(800, 24, false, 2)).toBe(navBarHeight(2) + 24);
 });

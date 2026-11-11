@@ -4,7 +4,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { Heart } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-import { motionTokens } from '../motion';
+import { motionTokens, spring } from '../motion';
 import { usePress } from '../hooks/usePress';
 import { titleAccent } from '../lib/utils';
 import type { UnifiedSong } from '@shared/types';
@@ -79,7 +79,7 @@ function HeartGlyph({ active }: { readonly active: boolean }) {
         key={active ? 'on' : 'off'}
         initial={justLiked && !reduced ? { scale: 0.55 } : false}
         animate={{ scale: 1 }}
-        transition={{ type: 'spring', stiffness: 520, damping: 14 }}
+        transition={spring.heart}
       >
         <Heart size={18} strokeWidth={1.8} aria-hidden="true" />
       </motion.span>

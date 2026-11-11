@@ -58,7 +58,7 @@ const SLEEVES = [
 ] as const;
 
 function SleeveStage({ step, reduced }: { readonly step: TourStep; readonly reduced: boolean }) {
-  const travel = reduced ? { duration: 0 } : spring.hero;
+  const travel = reduced ? { duration: motionTokens.duration.none } : spring.hero;
   const Icon = step.icon;
   return (
     <div className="info-tour__stage" aria-hidden="true">
@@ -128,8 +128,8 @@ export function InfoTour({ label, steps, stage, className }: {
   // The "i" catches the folded card: a quick bounce and a ring of light.
   const caught = (): void => {
     if (reduced || !fold || !button.current) return;
-    void animateButton(button.current, { scale: [1, 1.32, 0.94, 1] }, { duration: 0.5, ease: motionTokens.ease.emphasis });
-    void animateButton('.info-tour__catch', { opacity: [0.9, 0], scale: [0.6, 2.1] }, { duration: 0.6, ease: motionTokens.ease.decelerate });
+    void animateButton(button.current, { scale: [1, 1.32, 0.94, 1] }, { duration: motionTokens.duration.catch, ease: motionTokens.ease.emphasis });
+    void animateButton('.info-tour__catch', { opacity: [0.9, 0], scale: [0.6, 2.1] }, { duration: motionTokens.duration.catchRipple, ease: motionTokens.ease.decelerate });
   };
 
   const count = steps.length;
@@ -161,7 +161,7 @@ export function InfoTour({ label, steps, stage, className }: {
   // Words: the count and title rise first, the line follows a beat later; leaving, they lift away together.
   const word = (order: number) => ({
     initial: { opacity: 0, y: lift * direction },
-    animate: { opacity: 1, y: 0, transition: { duration: motionTokens.duration.slow, ease: motionTokens.ease.decelerate, delay: reduced ? 0 : 0.08 + order * 0.09 } },
+    animate: { opacity: 1, y: 0, transition: { duration: motionTokens.duration.slow, ease: motionTokens.ease.decelerate, delay: reduced ? motionTokens.delay.none : motionTokens.delay.cover + order * motionTokens.stagger + motionTokens.delay.micro } },
     exit: { opacity: 0, y: -lift * 0.6 * direction, transition: { duration: motionTokens.duration.fast, ease: motionTokens.ease.accelerate } }
   });
 
@@ -187,8 +187,8 @@ export function InfoTour({ label, steps, stage, className }: {
               fold: (to: Fold) => reduced
                 ? { opacity: 0, transition: { duration: motionTokens.duration.base } }
                 : to
-                  ? { x: to.x, y: to.y, scale: 0.06, opacity: [1, 1, 0], transition: { duration: 0.34, delay: 0.24, ease: [0.4, 0, 0.9, 0.55], opacity: { duration: 0.34, delay: 0.24, times: [0, 0.7, 1] } } }
-                  : { opacity: 0, y: 12, scale: 0.96, transition: { duration: motionTokens.duration.base, delay: 0.2, ease: motionTokens.ease.accelerate } }
+                  ? { x: to.x, y: to.y, scale: 0.06, opacity: [1, 1, 0], transition: { duration: motionTokens.duration.deal + motionTokens.duration.micro * 2, delay: motionTokens.delay.fold, ease: motionTokens.ease.fold, opacity: { duration: motionTokens.duration.deal + motionTokens.duration.micro * 2, delay: motionTokens.delay.fold, times: [0, 0.7, 1] } } }
+                  : { opacity: 0, y: 12, scale: 0.96, transition: { duration: motionTokens.duration.base, delay: motionTokens.delay.word, ease: motionTokens.ease.accelerate } }
             }}
             exit="fold"
             transition={reduced ? { duration: motionTokens.duration.base } : spring.sheet}
@@ -196,7 +196,7 @@ export function InfoTour({ label, steps, stage, className }: {
             <motion.button type="button" className="info-tour__close" aria-label="Close" onClick={close} exit={{ opacity: 0, transition: { duration: motionTokens.duration.fast } }}><X size={18} aria-hidden="true" /></motion.button>
             {/* The scene's finishing beat: everything on the stage draws in to its centre (lights merge into one
                 glow, sleeves stack, cards gather) and stays lit while the card carries it into the "i". */}
-            <motion.div className="info-tour__stage-wrap" exit={reduced ? { opacity: 0 } : { scale: 0.6, transition: { duration: 0.26, ease: motionTokens.ease.emphasis } }}>
+            <motion.div className="info-tour__stage-wrap" exit={reduced ? { opacity: 0 } : { scale: 0.6, transition: { duration: motionTokens.duration.panel + motionTokens.duration.micro * 2, ease: motionTokens.ease.emphasis } }}>
               {stage ? stage(index, reduced) : <SleeveStage step={step} reduced={reduced} />}
             </motion.div>
             {/* Words and buttons step aside quickly so the beat reads on its own. */}
@@ -219,7 +219,7 @@ export function InfoTour({ label, steps, stage, className }: {
               <div className="info-tour__dots" role="tablist" aria-label="Steps">
                 {steps.map((item, at) => (
                   <button key={item.title} type="button" role="tab" aria-selected={at === index} aria-label={`Step ${at + 1}: ${item.title}`} className="info-tour__dot" onClick={() => go(at)}>
-                    {at === index ? <motion.span layoutId={`${titleId}-dot`} className="info-tour__dot-on" transition={reduced ? { duration: 0 } : spring.tactile} /> : null}
+                    {at === index ? <motion.span layoutId={`${titleId}-dot`} className="info-tour__dot-on" transition={reduced ? { duration: motionTokens.duration.none } : spring.tactile} /> : null}
                   </button>
                 ))}
               </div>

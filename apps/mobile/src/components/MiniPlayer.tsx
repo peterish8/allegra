@@ -9,6 +9,7 @@ import Animated, {
   interpolate,
   runOnJS,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withSequence,
   withSpring,
@@ -121,31 +122,27 @@ const SKIP_BUTTON_WIDTH = 32;
 const PlaybackControls = memo(({
   playing, onToggle, onSkipBack, onSkipForward, animatedButtonStyle, showSkipButtons = true,
 }: PlaybackControlsProps) => {
-  // Skip buttons unfurl from behind the play button as the classic bar expands.
-  // Width is animated alongside opacity so the row re-centres instead of the
-  // buttons snapping into reserved space. Hooks stay above every early return.
+  const reduceMotion = useReducedMotion();
+  // Keep transport geometry fixed while the controls appear. Animating width
+  // moved the play button and title row on every expand/collapse.
   const skipProgress = useSharedValue(showSkipButtons ? 1 : 0);
   useEffect(() => {
-    skipProgress.value = withSpring(showSkipButtons ? 1 : 0, {
-      damping: 18,
-      stiffness: 190,
-      mass: 0.6,
-    });
-  }, [showSkipButtons, skipProgress]);
+    skipProgress.value = reduceMotion
+      ? withTiming(showSkipButtons ? 1 : 0, { duration: Motion.duration.fast })
+      : withSpring(showSkipButtons ? 1 : 0, Motion.spring.tactile);
+  }, [reduceMotion, showSkipButtons, skipProgress]);
 
   const skipBackStyle = useAnimatedStyle(() => ({
-    width: skipProgress.value * SKIP_BUTTON_WIDTH,
     opacity: skipProgress.value,
-    transform: [
+    transform: reduceMotion ? [] : [
       { scale: 0.55 + skipProgress.value * 0.45 },
       { translateX: (1 - skipProgress.value) * 14 },
     ],
   } as ViewStyle));
 
   const skipForwardStyle = useAnimatedStyle(() => ({
-    width: skipProgress.value * SKIP_BUTTON_WIDTH,
     opacity: skipProgress.value,
-    transform: [
+    transform: reduceMotion ? [] : [
       { scale: 0.55 + skipProgress.value * 0.45 },
       { translateX: (1 - skipProgress.value) * -14 },
     ],
@@ -153,7 +150,7 @@ const PlaybackControls = memo(({
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <Animated.View style={[styles.skipWrap, skipBackStyle]}>
+      <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipBackStyle]}>
         <Pressable
           onPress={(e) => { e.stopPropagation(); onSkipBack(e); }}
           style={styles.controlButton}
@@ -168,7 +165,7 @@ const PlaybackControls = memo(({
       <Pressable
         onPress={(e) => { e.stopPropagation(); onToggle(e); }}
         hitSlop={20}
-        style={[styles.playButton, { marginHorizontal: showSkipButtons ? 2 : 0 }]}
+        style={styles.playButton}
         accessibilityRole="button"
         accessibilityLabel={playing ? 'Pause' : 'Play'}
       >
@@ -176,7 +173,7 @@ const PlaybackControls = memo(({
           <Ionicons name={playing ? 'pause' : 'play'} size={32} color="#fff" />
         </Animated.View>
       </Pressable>
-      <Animated.View style={[styles.skipWrap, skipForwardStyle]}>
+      <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipForwardStyle]}>
         <Pressable
           onPress={(e) => { e.stopPropagation(); onSkipForward(e); }}
           style={styles.controlButton}
@@ -196,6 +193,7 @@ PlaybackControls.displayName = 'PlaybackControls';
 // UIManager.setLayoutAnimationEnabledExperimental removed to avoid New Architecture warning
 
 export const MiniPlayer: React.FC = () => {
+  const reduceMotion = useReducedMotion();
   const connect = useConnect();
   const player = usePlayer();
   const currentSong = usePlayerStore(state => state.currentSong);
@@ -236,8 +234,8 @@ export const MiniPlayer: React.FC = () => {
       if (!currentSong) return;
 
       playButtonScale.value = withSequence(
-          withTiming(0.82, { duration: 55 }),
-          withSpring(1, { damping: 18, stiffness: 380 })
+          withTiming(0.82, { duration: Motion.duration.instant }),
+          withSpring(1, Motion.spring.tactile)
       );
 
       requestPlayback(!usePlayerStore.getState().isPlaying);
@@ -399,23 +397,25 @@ export const MiniPlayer: React.FC = () => {
   useEffect(() => {
     if (expanded && ytVideoPreview && currentSong?.youtubeVideoId) {
       setShowYtButton(true);
-      ytButtonOpacity.value = withSpring(1, { damping: 14, stiffness: 120 });
-      ytButtonScale.value = withSpring(1, { damping: 12, stiffness: 140 });
+      ytButtonOpacity.value = reduceMotion
+        ? withTiming(1, { duration: Motion.duration.fast })
+        : withSpring(1, Motion.spring.breathe);
+      ytButtonScale.value = reduceMotion ? 1 : withSpring(1, Motion.spring.breathe);
       if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current);
       ytButtonTimer.current = setTimeout(() => {
-        ytButtonOpacity.value = withTiming(0, { duration: 400 });
-        ytButtonScale.value = withTiming(0.6, { duration: 400 });
-        setTimeout(() => setShowYtButton(false), 420);
+        ytButtonOpacity.value = withTiming(0, { duration: Motion.duration.fast });
+        if (!reduceMotion) ytButtonScale.value = withTiming(0.6, { duration: Motion.duration.fast });
+        setTimeout(() => setShowYtButton(false), Motion.duration.fast);
       }, 5000);
     } else {
       if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current);
-      ytButtonOpacity.value = withTiming(0, { duration: 200 });
-      ytButtonScale.value = withTiming(0.6, { duration: 200 });
+      ytButtonOpacity.value = withTiming(0, { duration: Motion.duration.fast });
+      if (!reduceMotion) ytButtonScale.value = withTiming(0.6, { duration: Motion.duration.fast });
       setShowYtButton(false);
     }
     return () => { if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded, ytVideoPreview, currentSong?.youtubeVideoId]);
+  }, [expanded, reduceMotion, ytVideoPreview, currentSong?.youtubeVideoId]);
 
   // Classic Height Animation — three stages: collapsed → half → full (95%).
   // Height lives on the SHELL (not only content) so overflow clips cleanly and
@@ -1112,9 +1112,9 @@ const styles = StyleSheet.create({
   controlButton: {
     padding: 4,
   },
-  // Clips the skip button while its width animates to zero on collapse.
+  // Always reserves transport space; visibility changes use opacity and transform.
   skipWrap: {
-    overflow: 'hidden',
+    width: SKIP_BUTTON_WIDTH,
     alignItems: 'center',
     justifyContent: 'center',
   },

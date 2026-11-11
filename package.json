@@ -43,5 +43,8 @@
     "convex-test": "^0.0.60",
     "vitest": "^5.0.2"
   },
-  "license": "GPL-3.0-only"
+  "license": "GPL-3.0-only",
+  "overrides": {
+    "body-parser": "2.4.0"
+  }
 }

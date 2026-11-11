@@ -1,5 +1,14 @@
 # LuvLyrics — Project Reference
 
+## Current source
+
+Use the [codebase map](../../docs/current-codebase.md#recent-changes-in-source) for the current
+version and ownership. The 1.45.2 branch commit routes both mini and full-player skip controls
+through `services/player/skipControls.ts`, resets the playhead through `playback/playheadReset.ts`,
+and swaps classic player lyrics through `components/player/lyricsSwap.ts`. Preserve LuvLink and
+Connect routing before local playback. Additional working-tree playback changes require their own
+verification before a release claim.
+
 ## Where this app lives
 - `apps/mobile` in the **Allegra monorepo** (repo rules: `../../CLAUDE.md`). Not a root workspace:
   `npm ci` here, own lockfile, own React pin. From the root: `npm run dev:mobile`, `npm run mobile:check`.
@@ -18,9 +27,10 @@
   native `AppUpdaterModule` and `AppUpdateWorker` persist downloads in WorkManager, validate the
   app package/signing key, and open Android's installer through the scoped update FileProvider.
   Android requires the listener's install permission and confirmation. The updater never opens Chrome.
-  Every build is versionCode 1, so Android installs an older APK over a newer one silently: CI stamps
-  `EXPO_PUBLIC_BUILD_COMMIT`/`EXPO_PUBLIC_BUILD_TIME`, and `standingOf` offers the `apk-latest`
-  release only when it is newer (never this build again, never an older main build over a feature build).
+  Gradle currently uses versionCode 1 for every build. CI stamps `EXPO_PUBLIC_BUILD_COMMIT` and
+  `EXPO_PUBLIC_BUILD_TIME`, and `standingOf` compares that evidence when checking `apk-latest`.
+  Keep the release eligibility check separate from package and signer checks. The
+  [audit backlog](../../audit/FIX-BACKLOG.md) records known retry and staged-install gaps.
   Feature-branch APKs are downloaded by hand from the Actions run; only `main` publishes `apk-latest`.
 - Connect and library sync with Allegra web: `../../.planning/connect-and-sync/PLAN.md`.
 

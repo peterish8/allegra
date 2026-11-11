@@ -4,10 +4,11 @@ import type { UnifiedSong } from '@shared/types';
 
 import { resolveApiUrl } from '../lib/api';
 import { PlayheadStore, type Playhead } from '../lib/playhead';
-import { withUpcoming } from '../../../../packages/connect/src/index';
+import { nextInOrder, orderWithAppended, previousAction, previousInOrder, shuffledOrder, withUpcoming } from '../../../../packages/connect/src/index';
 import { songIdentity, uniqueByIdentity } from '../lib/songIdentity';
 import { clamp } from '../lib/utils';
 import { activeWebSearchAttempt, hasSelectedPlaybackProgress, matchesSelectedPlaybackSource, webPerformanceTrace } from '../lib/performanceTrace';
+import { isCurrentMediaGeneration, playbackRejectionMessage, shouldHandlePlayerShortcut, takeNextUnvisited, type RecoveryCursor } from '../lib/audioPlayerRules';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
@@ -24,6 +25,7 @@ export interface AudioPlayerState {
   /** 0-1. Persisted per browser. */
   readonly volume: number;
   readonly shuffle: boolean;
+  readonly shuffleOrder: readonly string[];
   readonly repeat: RepeatMode;
   readonly error: string | null;
   readonly selectSong: (song: UnifiedSong, queue?: UnifiedSong[]) => void;
@@ -39,7 +41,7 @@ export interface AudioPlayerState {
   readonly seek: (seconds: number) => Promise<void>;
   /** The song now playing, or null when nowhere distinct to go. */
   readonly skipNext: () => UnifiedSong | null;
-  readonly skipPrevious: () => void;
+  readonly skipPrevious: () => UnifiedSong | null;
   readonly toggleMute: () => void;
   readonly setVolume: (value: number) => void;
   readonly toggleShuffle: () => void;
@@ -60,9 +62,14 @@ export function useAudioPlayer(): AudioPlayerState {
   const pendingPlaybackRef = useRef(false);
   const playbackIntentRef = useRef(false);
   const playbackGenerationRef = useRef(0);
+  const loadedGenerationRef = useRef(0);
+  const loadedSongIdRef = useRef<string | null>(null);
+  const expectedSourceRef = useRef<string | null>(null);
   const pendingCanPlayRef = useRef<(() => void) | null>(null);
   const autoAdvancedRef = useRef(false);
+  const automaticRecoveryRef = useRef<RecoveryCursor | null>(null);
   const shuffleRef = useRef(false);
+  const shuffleOrderRef = useRef<string[]>([]);
   const repeatRef = useRef<RepeatMode>('off');
   /** When set, the element plays this URL instead of currentSong.streamUrl. */
   const sourceOverrideRef = useRef<string | null>(null);
@@ -87,6 +94,7 @@ export function useAudioPlayer(): AudioPlayerState {
     }
   });
   const [shuffle, setShuffle] = useState(false);
+  const [shuffleOrder, setShuffleOrder] = useState<string[]>([]);
   const [repeat, setRepeat] = useState<RepeatMode>('off');
   const [error, setError] = useState<string | null>(null);
 
@@ -106,19 +114,24 @@ export function useAudioPlayer(): AudioPlayerState {
         return;
       }
       setError(null);
-    } catch {
+    } catch (error: unknown) {
       if (generation !== playbackGenerationRef.current || !playbackIntentRef.current) return;
       const attempt = activeWebSearchAttempt();
       if (attempt && matchesSelectedPlaybackSource(attempt, currentSongRef.current?.id ?? '')) {
         webPerformanceTrace?.finish(attempt, 'playback-failure');
       }
-      setError('Playback needs a tap to begin. Try the play button again.');
+      const name = typeof error === 'object' && error !== null && 'name' in error ? String(error.name) : '';
+      setError(playbackRejectionMessage(name));
       setIsPlaying(false);
       setIsBuffering(false);
     }
   }, []);
 
-  const selectSongWithIntent = useCallback((song: UnifiedSong, nextQueue: UnifiedSong[], shouldPlay: boolean): void => {
+  const selectSongWithIntent = useCallback((song: UnifiedSong, nextQueue: UnifiedSong[], shouldPlay: boolean, automatic = false): void => {
+    if (!automatic) {
+      automaticRecoveryRef.current = null;
+      autoAdvancedRef.current = false;
+    }
     const audio = audioRef.current;
     if (currentSongRef.current?.id === song.id && audio) {
       const next = uniqueByIdentity(nextQueue.length > 0 ? nextQueue : [song]);
@@ -138,12 +151,20 @@ export function useAudioPlayer(): AudioPlayerState {
     const next = uniqueByIdentity(withCurrent);
     const playable = next.find((item) => item.id === song.id) ?? next.find((item) => songIdentity(item) === songIdentity(song)) ?? song;
     const ordered = next.some((item) => item.id === playable.id) ? next : [playable, ...next];
+    if (shuffleRef.current) {
+      const ids = ordered.map((item) => item.id);
+      const prior = shuffleOrderRef.current.filter((id) => ids.includes(id));
+      const missing = ids.filter((id) => !prior.includes(id));
+      shuffleOrderRef.current = prior.length === 0 || !prior.includes(playable.id)
+        ? shuffledOrder(ids, playable.id)
+        : orderWithAppended(prior, missing);
+      setShuffleOrder([...shuffleOrderRef.current]);
+    }
     playbackGenerationRef.current += 1;
     currentSongRef.current = playable;
     queueRef.current = ordered;
     pendingPlaybackRef.current = shouldPlay;
     playbackIntentRef.current = shouldPlay;
-    autoAdvancedRef.current = false;
     setCurrentSong(playable);
     setQueue(ordered);
     setCurrentTime(0);
@@ -158,6 +179,17 @@ export function useAudioPlayer(): AudioPlayerState {
   const loadForConnect = useCallback((song: UnifiedSong, nextQueue: UnifiedSong[], play: boolean): void => {
     selectSongWithIntent(song, nextQueue, play);
   }, [selectSongWithIntent]);
+
+  const seek = useCallback(async (seconds: number): Promise<void> => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const nextTime = clamp(seconds, 0, Number.isFinite(audio.duration) ? audio.duration : duration);
+    const wasPlaying = !audio.paused;
+    audio.pause();
+    audio.currentTime = nextTime;
+    setCurrentTime(nextTime);
+    if (wasPlaying) await requestPlayback(true);
+  }, [duration, requestPlayback]);
 
   const appendQueue = useCallback((songs: readonly UnifiedSong[]): number => {
     if (songs.length === 0) return 0;
@@ -174,6 +206,16 @@ export function useAudioPlayer(): AudioPlayerState {
     }
     if (added.length === 0) return 0;
     const next = [...current, ...added];
+    if (shuffleRef.current) {
+      shuffleOrderRef.current = orderWithAppended(shuffleOrderRef.current, added.map((item) => item.id));
+      setShuffleOrder([...shuffleOrderRef.current]);
+    }
+    if (automaticRecoveryRef.current) {
+      automaticRecoveryRef.current = {
+        ...automaticRecoveryRef.current,
+        remaining: automaticRecoveryRef.current.remaining + added.length,
+      };
+    }
     queueRef.current = next;
     setQueue(next);
     return added.length;
@@ -183,62 +225,112 @@ export function useAudioPlayer(): AudioPlayerState {
     const current = currentSongRef.current;
     if (!current) return;
     const next = withUpcoming(queueRef.current, current, songs);
+    if (shuffleRef.current) {
+      const ids = next.map((item) => item.id);
+      const retained = shuffleOrderRef.current.filter((id) => ids.includes(id));
+      shuffleOrderRef.current = orderWithAppended(retained, ids.filter((id) => !retained.includes(id)));
+      setShuffleOrder([...shuffleOrderRef.current]);
+    }
     queueRef.current = next;
     setQueue(next);
   }, []);
 
-  const advanceToNext = useCallback((): void => {
+  const advanceToNext = useCallback((afterLoadFailure = false): void => {
     const song = currentSongRef.current;
     const list = queueRef.current;
-    if (!song || autoAdvancedRef.current) return;
+    if (!song || (autoAdvancedRef.current && !afterLoadFailure)) return;
     const audio = audioRef.current;
     if (repeatRef.current === 'one' && audio) {
       // Same song again, through the one playback funnel.
+      automaticRecoveryRef.current = null;
       audio.currentTime = 0;
       void requestPlayback(true);
       return;
     }
     const index = list.findIndex((item) => item.id === song.id);
-    let next: UnifiedSong | undefined;
-    if (shuffleRef.current && list.length > 1) next = pickDistinct(list, song);
-    else if (index >= 0) next = nextDistinct(list, index, song, repeatRef.current === 'all');
-    if (!next) {
+    const flow = automaticRecoveryRef.current ?? (afterLoadFailure ? null : {
+      remaining: list.length - 1,
+      visited: new Set([song.id]),
+    });
+    if (!flow || flow.remaining <= 0) {
+      automaticRecoveryRef.current = null;
       autoAdvancedRef.current = true;
       setIsPlaying(false);
+      if (afterLoadFailure) setError('This track could not be loaded. Try another song.');
       return;
     }
+    const candidates: UnifiedSong[] = [];
+    const wrap = repeatRef.current === 'all';
+    if (shuffleRef.current && list.length > 1) {
+      const order = shuffleOrderRef.current;
+      const orderAt = order.indexOf(song.id);
+      const limit = wrap ? order.length - 1 : Math.max(0, order.length - orderAt - 1);
+      for (let step = 1; step <= limit; step += 1) {
+        const id = orderAt >= 0 ? order[(orderAt + step) % order.length] : null;
+        const candidate = id ? list.find((item) => item.id === id) : undefined;
+        if (candidate && songIdentity(candidate) !== songIdentity(song)) candidates.push(candidate);
+      }
+    } else if (index >= 0) {
+      const limit = wrap ? list.length - 1 : list.length - index - 1;
+      for (let step = 1; step <= limit; step += 1) {
+        const candidate = list[(index + step) % list.length];
+        if (candidate && songIdentity(candidate) !== songIdentity(song)) candidates.push(candidate);
+      }
+    }
+    const selection = takeNextUnvisited(candidates, flow);
+    const next = selection.candidate;
+    if (!next) {
+      automaticRecoveryRef.current = null;
+      autoAdvancedRef.current = true;
+      setIsPlaying(false);
+      if (afterLoadFailure) setError('This track could not be loaded. Try another song.');
+      return;
+    }
+    automaticRecoveryRef.current = selection.cursor;
     autoAdvancedRef.current = true;
-    selectSong(next, list);
-  }, [selectSong, requestPlayback]);
+    selectSongWithIntent(next, list, true, true);
+  }, [selectSongWithIntent, requestPlayback]);
 
   const skipNext = useCallback((): UnifiedSong | null => {
     const song = currentSongRef.current;
     const list = queueRef.current;
     if (!song) return null;
+    automaticRecoveryRef.current = null;
     autoAdvancedRef.current = false;
     const index = list.findIndex((item) => item.id === song.id);
     const next = shuffleRef.current
-      ? pickDistinct(list, song)
+      ? list.find((item) => item.id === nextInOrder(shuffleOrderRef.current, song.id, true))
       : nextDistinct(list, index, song, true);
     if (!next) return null;
     selectSong(next, list);
     return next;
   }, [selectSong]);
 
-  const skipPrevious = useCallback((): void => {
+  const skipPrevious = useCallback((): UnifiedSong | null => {
     const song = currentSongRef.current;
     const audio = audioRef.current;
     const list = queueRef.current;
-    if (!song || !audio) return;
-    if (audio.currentTime > 4) {
-      void seek(0);
-      return;
-    }
+    if (!song || !audio) return null;
     const index = list.findIndex((item) => item.id === song.id);
-    if (list.length < 2) return;
-    const previous = previousDistinct(list, index, song);
-    if (previous) selectSong(previous, list);
-  }, [selectSong]);
+    const repeatAll = repeatRef.current === 'all';
+    const hasPrevious = shuffleRef.current
+      ? previousInOrder(shuffleOrderRef.current, song.id, repeatAll) !== null
+      : previousDistinct(list, index, song, repeatAll) !== undefined;
+    if (previousAction(audio.currentTime, hasPrevious) === 'restart') {
+      automaticRecoveryRef.current = null;
+      autoAdvancedRef.current = false;
+      void seek(0);
+      return null;
+    }
+    const previousId = shuffleRef.current ? previousInOrder(shuffleOrderRef.current, song.id, repeatAll) : null;
+    const previous = (previousId ? list.find((item) => item.id === previousId) : undefined)
+      ?? previousDistinct(list, index, song, repeatAll);
+    if (!previous) return null;
+    automaticRecoveryRef.current = null;
+    autoAdvancedRef.current = false;
+    selectSong(previous, list);
+    return previous;
+  }, [selectSong, seek]);
 
   const stop = useCallback((): void => {
     playbackGenerationRef.current += 1;
@@ -249,6 +341,8 @@ export function useAudioPlayer(): AudioPlayerState {
     currentSongRef.current = null;
     queueRef.current = [];
     isPlayingRef.current = false;
+    automaticRecoveryRef.current = null;
+    shuffleOrderRef.current = [];
 
     const audio = audioRef.current;
     if (audio) {
@@ -268,18 +362,8 @@ export function useAudioPlayer(): AudioPlayerState {
     setIsPlaying(false);
     setIsBuffering(false);
     setError(null);
+    setShuffleOrder([]);
   }, []);
-
-  const seek = useCallback(async (seconds: number): Promise<void> => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const nextTime = clamp(seconds, 0, Number.isFinite(audio.duration) ? audio.duration : duration);
-    const wasPlaying = !audio.paused;
-    audio.pause();
-    audio.currentTime = nextTime;
-    setCurrentTime(nextTime);
-    if (wasPlaying) await requestPlayback(true);
-  }, [duration, requestPlayback]);
 
   const swapAudioSource = useCallback(async (streamUrl: string): Promise<boolean> => {
     const audio = audioRef.current;
@@ -297,6 +381,8 @@ export function useAudioPlayer(): AudioPlayerState {
     audio.pause();
     setIsBuffering(true);
     audio.src = nextSrc;
+    loadedSongIdRef.current = song.id;
+    expectedSourceRef.current = audio.src;
     audio.load();
 
     await new Promise<void>((resolve) => {
@@ -333,6 +419,10 @@ export function useAudioPlayer(): AudioPlayerState {
 
   const toggleShuffle = useCallback((): void => {
     shuffleRef.current = !shuffleRef.current;
+    shuffleOrderRef.current = shuffleRef.current
+      ? shuffledOrder(queueRef.current.map((item) => item.id), currentSongRef.current?.id ?? null)
+      : [];
+    setShuffleOrder([...shuffleOrderRef.current]);
     setShuffle(shuffleRef.current);
   }, []);
 
@@ -352,8 +442,25 @@ export function useAudioPlayer(): AudioPlayerState {
     const audio = audioRef.current;
     if (!audio) return;
 
+    const sourceIsSelected = (): boolean => {
+      const expected = expectedSourceRef.current;
+      return currentSongRef.current?.id === loadedSongIdRef.current
+        && expected !== null
+        && expected === audio.src
+        && (!audio.currentSrc || audio.currentSrc === expected);
+    };
+    const sourceIsLoaded = (): boolean => isCurrentMediaGeneration({
+      activeGeneration: playbackGenerationRef.current,
+      loadedGeneration: loadedGenerationRef.current,
+      activeSongId: currentSongRef.current?.id ?? null,
+      loadedSongId: loadedSongIdRef.current,
+      expectedSource: expectedSourceRef.current,
+      currentSource: audio.currentSrc,
+    });
+
     audio.volume = volume;
     const onTimeUpdate = (): void => {
+      if (!sourceIsLoaded()) return;
       const time = audio.currentTime;
       setCurrentTime(time);
       if (webPerformanceTrace && !audio.paused && !audio.seeking
@@ -373,10 +480,14 @@ export function useAudioPlayer(): AudioPlayerState {
       if (length > 0 && length - time <= 0.35 && isPlayingRef.current && !autoAdvancedRef.current) advanceToNext();
     };
     const onLoadedMetadata = (): void => {
+      if (!sourceIsSelected()) return;
+      loadedGenerationRef.current = playbackGenerationRef.current;
+      autoAdvancedRef.current = false;
       const nextDuration = Number.isFinite(audio.duration) ? audio.duration : currentSongRef.current?.duration ?? 0;
       setDuration(nextDuration);
     };
     const onPlay = (): void => {
+      if (!sourceIsLoaded()) return;
       isPlayingRef.current = true;
       setIsPlaying(true);
       if (webPerformanceTrace) {
@@ -386,12 +497,14 @@ export function useAudioPlayer(): AudioPlayerState {
       }
     };
     const onPause = (): void => {
+      if (!sourceIsLoaded()) return;
       isPlayingRef.current = false;
       setIsPlaying(false);
       setIsBuffering(false);
     };
-    const onEnded = (): void => advanceToNext();
+    const onEnded = (): void => { if (sourceIsLoaded()) advanceToNext(); };
     const onError = (): void => {
+      if (!sourceIsSelected()) return;
       setIsBuffering(false);
       if (!currentSongRef.current) return;
       if (webPerformanceTrace) {
@@ -401,11 +514,16 @@ export function useAudioPlayer(): AudioPlayerState {
           webPerformanceTrace.finish(attempt, 'playback-failure');
         }
       }
+      if (automaticRecoveryRef.current) {
+        advanceToNext(true);
+        return;
+      }
       setError('This track could not be loaded. Try another song.');
       setIsPlaying(false);
     };
     // `waiting` is the only honest signal that sound has stopped for lack of data.
     const onWaiting = (): void => {
+      if (!sourceIsLoaded()) return;
       if (playbackIntentRef.current) setIsBuffering(true);
       if (webPerformanceTrace) {
         const attempt = activeWebSearchAttempt();
@@ -414,6 +532,8 @@ export function useAudioPlayer(): AudioPlayerState {
       }
     };
     const onPlaying = (): void => {
+      if (!sourceIsLoaded()) return;
+      automaticRecoveryRef.current = null;
       setIsBuffering(false);
       if (webPerformanceTrace) {
         const attempt = activeWebSearchAttempt();
@@ -422,6 +542,7 @@ export function useAudioPlayer(): AudioPlayerState {
       }
     };
     const onCanPlay = (): void => {
+      if (!sourceIsLoaded()) return;
       setIsBuffering(false);
       if (webPerformanceTrace) {
         const attempt = activeWebSearchAttempt();
@@ -464,6 +585,8 @@ export function useAudioPlayer(): AudioPlayerState {
     let onCanPlay: (() => void) | null = null;
     audio.pause();
     audio.src = resolveApiUrl(sourceOverrideRef.current ?? currentSong.streamUrl);
+    loadedSongIdRef.current = songId;
+    expectedSourceRef.current = audio.src;
     audio.load();
     const shouldPlay = pendingPlaybackRef.current;
     pendingPlaybackRef.current = false;
@@ -497,7 +620,7 @@ export function useAudioPlayer(): AudioPlayerState {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
-      if (target?.matches('input, textarea, button, [contenteditable="true"]')) return;
+      if (!shouldHandlePlayerShortcut(target, event.code === 'Space' ? ' ' : event.key)) return;
       if (event.code === 'Space') {
         event.preventDefault();
         void requestPlayback(!isPlayingRef.current);
@@ -519,6 +642,7 @@ export function useAudioPlayer(): AudioPlayerState {
     isMuted,
     volume,
     shuffle,
+    shuffleOrder,
     repeat,
     error,
     selectSong,
@@ -549,9 +673,17 @@ export function upcomingSong(
   list: readonly UnifiedSong[],
   current: UnifiedSong | null,
   shuffle: boolean,
-  repeat: RepeatMode
+  repeat: RepeatMode,
+  currentShuffleOrder?: readonly string[]
 ): UnifiedSong | null {
-  if (!current || shuffle || repeat === 'one') return null;
+  if (!current || repeat === 'one') return null;
+  if (shuffle) {
+    if (!currentShuffleOrder?.length) return null;
+    const ids = list.map((item) => item.id);
+    const order = currentShuffleOrder.filter((id) => ids.includes(id));
+    const nextId = nextInOrder(order, current.id, repeat === 'all');
+    return list.find((item) => item.id === nextId) ?? null;
+  }
   return nextDistinct(list, list.findIndex((item) => item.id === current.id), current, repeat === 'all') ?? null;
 }
 
@@ -585,23 +717,19 @@ function nextDistinct(
 function previousDistinct(
   list: readonly UnifiedSong[],
   index: number,
-  current: UnifiedSong
+  current: UnifiedSong,
+  wrap: boolean
 ): UnifiedSong | undefined {
   if (list.length < 2) return undefined;
   const seedKey = songIdentity(current);
   const start = index >= 0 ? index : 0;
-  for (let step = 1; step < list.length; step += 1) {
-    const candidate = list[(start - step + list.length) % list.length];
+  const limit = wrap ? list.length - 1 : start;
+  for (let step = 1; step <= limit; step += 1) {
+    const at = wrap ? (start - step + list.length) % list.length : start - step;
+    const candidate = list[at];
     if (!candidate || candidate.id === current.id) continue;
     if (songIdentity(candidate) === seedKey) continue;
     return candidate;
   }
   return undefined;
-}
-
-/** A random song that is not the same recording as the one currently playing. */
-function pickDistinct(list: readonly UnifiedSong[], current: UnifiedSong): UnifiedSong | undefined {
-  const seedKey = songIdentity(current);
-  const others = list.filter((item) => item.id !== current.id && songIdentity(item) !== seedKey);
-  return others[Math.floor(Math.random() * others.length)];
 }

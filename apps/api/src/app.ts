@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 
 import { createServices, type AppServices, type ServiceOptions } from './services.js';
-import { createLogger, REDACTED_PATHS } from './lib/logger.js';
+import { createLogger, REDACTED_PATHS, serializeRequest } from './lib/logger.js';
 import { artworkRouter } from './routes/artwork.js';
 import { chartsRouter } from './routes/charts.js';
 import { authRouter } from './routes/auth.js';
@@ -106,7 +106,8 @@ export function createApp(options: AppOptions): Express {
     app.use(
       pinoHttp({
         logger: createLogger(true),
-        redact: [...REDACTED_PATHS]
+        redact: [...REDACTED_PATHS],
+        serializers: { req: serializeRequest }
       })
     );
   }
@@ -115,11 +116,11 @@ export function createApp(options: AppOptions): Express {
   const services = options.services ?? createServices({ ...options, jwtSecret });
 
   // A spoken request (a few seconds of WAV) is bigger than any other body; only this route takes it.
-  app.use('/api/ai/dj/transcribe', express.json({ limit: '1mb' }));
-  app.use('/api/lyrics/sync', express.json({ limit: '512kb' }));
+  app.use('/api/ai/dj/transcribe', express.json({ limit: '1mb', inflate: false }));
+  app.use('/api/lyrics/sync', express.json({ limit: '512kb', inflate: false }));
   // 24,000 characters of pasted words, some of them several bytes long.
-  app.use('/api/lyrics/paste', express.json({ limit: '128kb' }));
-  app.use(express.json({ limit: '32kb' }));
+  app.use('/api/lyrics/paste', express.json({ limit: '128kb', inflate: false }));
+  app.use(express.json({ limit: '32kb', inflate: false }));
 
   app.get('/api/health', (_request, response) => {
     response.json({ ok: true, version: options.version });
@@ -325,6 +326,10 @@ const errorHandler: ErrorRequestHandler = (error, _request, response, next) => {
   const type = typeof error === 'object' && error !== null && 'type' in error ? error.type : undefined;
   if (type === 'entity.too.large' || type === 'entity.parse.failed') {
     response.status(400).json({ success: false, data: null, error: "Something's missing from that request." });
+    return;
+  }
+  if (type === 'encoding.unsupported') {
+    response.status(415).json({ success: false, data: null, error: 'Compressed request bodies are not supported.' });
     return;
   }
   sendFailure(response, error);

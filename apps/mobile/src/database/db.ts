@@ -214,7 +214,8 @@ const initializeTables = async (database: SQLite.SQLiteDatabase): Promise<void> 
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       kind TEXT NOT NULL,
       body TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      account_user_id TEXT
     );
 
     CREATE TABLE IF NOT EXISTS sync_meta (
@@ -260,6 +261,15 @@ const initializeTables = async (database: SQLite.SQLiteDatabase): Promise<void> 
   
   // Migration: Add lyrics_align if missing
   try {
+    const outboxColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(sync_outbox)');
+    if (!outboxColumns.some(c => c.name === 'account_user_id')) {
+      // Existing rows cannot be attributed safely after the fact. NULL means quarantined:
+      // they remain on-device but never sync to whichever account signs in next.
+      await database.execAsync('ALTER TABLE sync_outbox ADD COLUMN account_user_id TEXT');
+    }
+    // Single quotes: a double-quoted "play" is an identifier, and builds without DQS reject it.
+    await database.execAsync("CREATE INDEX IF NOT EXISTS idx_sync_outbox_play_owner ON sync_outbox(account_user_id, id) WHERE kind = 'play'");
+
     const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(songs)');
     if (!columns.some(c => c.name === 'lyrics_align')) {
       log('Adding lyrics_align column...');

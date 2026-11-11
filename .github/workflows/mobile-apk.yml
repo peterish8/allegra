@@ -32,7 +32,8 @@ permissions:
 
 concurrency:
   group: mobile-apk-${{ github.ref }}
-  cancel-in-progress: true
+  # A publication must finish or roll back; cancelling it can strand the stable release alias.
+  cancel-in-progress: false
 
 defaults:
   run:
@@ -65,27 +66,40 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Release builds are signed with android/app/debug.keystore (gitignored).
-      # Android only installs an update over an app signed with the same key, so:
-      #   1. the repo secret ANDROID_DEBUG_KEYSTORE_BASE64 (base64 of the local
-      #      apps/mobile/android/app/debug.keystore) wins if set;
-      #   2. otherwise the keystore from Expo's SDK 54 template — the one
-      #      `expo prebuild` puts in every project, so it matches local builds.
-      - name: Signing key
+      # Main publication requires the existing private signing identity. The public
+      # Expo template debug keystore is never used for a main APK.
+      - name: Require the production signing identity
+        if: github.ref == 'refs/heads/main'
         env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 }}
+        run: |
+          for name in KEYSTORE_B64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD EXPECTED_CERT_SHA256; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Main APK publication requires the private Android signer and its configured public SHA-256 fingerprint ($name is missing)."
+              exit 1
+            fi
+          done
+          KEY="$GITHUB_WORKSPACE/apps/mobile/android/app/release.keystore"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEY"
+          chmod 600 "$KEY"
+          ACTUAL_CERT_SHA256="$(keytool -list -v -keystore "$KEY" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | awk -F': ' '/SHA256: / { gsub(":", "", $2); print toupper($2); exit }')"
+          node ../../scripts/mobile-signing-policy.mjs "$EXPECTED_CERT_SHA256" "$ACTUAL_CERT_SHA256"
+          echo "ANDROID_RELEASE_KEYSTORE_PATH=$KEY" >> "$GITHUB_ENV"
+
+      # Pull-request artifacts use only the public Expo debug identity. They cannot replace
+      # or masquerade as the private signer used for main publication.
+      - name: Signing key for non-production builds
+        if: github.ref != 'refs/heads/main'
         run: |
           KEY="$GITHUB_WORKSPACE/apps/mobile/android/app/debug.keystore"
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 --decode > "$KEY"
-            echo "Using the keystore from the ANDROID_DEBUG_KEYSTORE_BASE64 secret"
-          else
-            mkdir -p /tmp/tpl && cd /tmp/tpl
-            npm pack expo-template-bare-minimum@sdk-54 --silent
-            tar -xzf expo-template-bare-minimum-*.tgz package/android/app/debug.keystore
-            cp package/android/app/debug.keystore "$KEY"
-            echo "Using the Expo SDK 54 template keystore"
-          fi
+          mkdir -p /tmp/tpl && cd /tmp/tpl
+          npm pack expo-template-bare-minimum@sdk-54 --silent
+          tar -xzf expo-template-bare-minimum-*.tgz package/android/app/debug.keystore
+          cp package/android/app/debug.keystore "$KEY"
 
       - name: Build release APK
         working-directory: apps/mobile/android
@@ -93,10 +107,13 @@ jobs:
           # No Sentry auth token in CI: skip the source-map upload step.
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
-          EXPO_PUBLIC_GENIUS_ACCESS_TOKEN: ${{ secrets.EXPO_PUBLIC_GENIUS_ACCESS_TOKEN }}
-          # The in-app updater (services/appUpdate.ts) compares these with the apk-latest
-          # release, so it never offers this build again or an older one. Every build is
-          # versionCode 1, and Android would install an older APK over a newer one.
+          ANDROID_RELEASE_REQUIRED: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
+          ANDROID_RELEASE_KEYSTORE_PATH: ${{ github.workspace }}/apps/mobile/android/app/release.keystore
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+          # The in-app updater uses the commit and semantic version; Android versionCode is
+          # derived monotonically from that same semantic version in app/build.gradle.
           EXPO_PUBLIC_BUILD_COMMIT: ${{ github.sha }}
         # gradlew was committed without the executable bit. gradle.properties caps
         # the JVM at 2 GB, which leaves R8 thrashing; runners have 16 GB. arm64
@@ -110,6 +127,16 @@ jobs:
 
       - name: Collect APK
         run: cp android/app/build/outputs/apk/release/app-release.apk LuvLyrics.apk
+
+      - name: Verify production APK certificate
+        if: github.ref == 'refs/heads/main'
+        env:
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 }}
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          ACTUAL_CERT_SHA256="$("$APKSIGNER" verify --print-certs LuvLyrics.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ { print toupper($2); exit }')"
+          node ../../scripts/mobile-signing-policy.mjs "$EXPECTED_CERT_SHA256" "$ACTUAL_CERT_SHA256"
 
       - uses: actions/upload-artifact@v4
         with:

@@ -1,5 +1,6 @@
 import {
   MARQUEE_SPEED, PLAYER_ARTIST_REST_MS, PLAYER_TITLE_REST_MS, PLAYER_TITLE_SPEED, marqueeLoop, miniPlayerLine,
+  swapMarqueeDirection, swapMarqueeKey,
 } from './marqueeMath';
 
 describe('scrolling song lines (1.41.0)', () => {
@@ -21,5 +22,12 @@ describe('scrolling song lines (1.41.0)', () => {
     expect(miniPlayerLine('Low Tide', '')).toBe('Low Tide');
     expect(miniPlayerLine('Low Tide', undefined)).toBe('Low Tide');
     expect(miniPlayerLine('  ', 'Someone')).toBe('Not playing • Someone');
+  });
+
+  it('keys title swaps by song and text, while same-song metadata changes settle neutrally', () => {
+    expect(swapMarqueeKey('song-a', 'Intro')).not.toBe(swapMarqueeKey('song-b', 'Intro'));
+    expect(swapMarqueeKey('song-a', 'Old title')).not.toBe(swapMarqueeKey('song-a', 'New title'));
+    expect(swapMarqueeDirection('song-a', 'song-a', -1)).toBe(0);
+    expect(swapMarqueeDirection('song-a', 'song-b', -1)).toBe(-1);
   });
 });

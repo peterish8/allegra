@@ -236,3 +236,63 @@ test('client metadata documents: fetched safely and must name themselves', async
   assert.equal(await new OAuthClients(signer, new MemoryCacheStore(), serve({ ...document, client_id: 'https://other.example/x' }), publicHost).resolve(id), null);
   assert.equal(await new OAuthClients(signer, new MemoryCacheStore(), serve(document), async () => ['10.1.2.3']).resolve(id), null);
 });
+
+test('metadata deadline covers DNS and a stalled response body, then cancels the stream', async () => {
+  const id = 'https://slow.example/oauth/meta.json';
+  const signer = new OAuthSigner('s');
+  const pendingDns = new OAuthClients(signer, new MemoryCacheStore(), fetch, () => new Promise(() => undefined), 25);
+  const dnsStarted = Date.now();
+  assert.equal(await pendingDns.resolve(id), null);
+  assert.ok(Date.now() - dnsStarted < 500);
+
+  let signal: AbortSignal | undefined;
+  let cancelled = false;
+  const stalledFetch: typeof fetch = async (_input, init) => {
+    signal = init?.signal as AbortSignal;
+    return new Response(new ReadableStream<Uint8Array>({
+      pull: () => new Promise(() => undefined),
+      cancel: () => { cancelled = true; }
+    }));
+  };
+  const client = new OAuthClients(signer, new MemoryCacheStore(), stalledFetch, async () => ['93.184.216.34'], 25);
+  const bodyStarted = Date.now();
+  assert.equal(await client.resolve(id), null);
+  assert.ok(Date.now() - bodyStarted < 500);
+  assert.equal(signal?.aborted, true);
+  assert.equal(cancelled, true);
+});
+
+test('metadata byte cap is enforced on streamed bytes when Content-Length is absent or false', async () => {
+  const id = 'https://size.example/oauth/meta.json';
+  const signer = new OAuthSigner('s');
+  const document = JSON.stringify({ client_id: id, redirect_uris: [REDIRECT] });
+  for (const contentLength of [undefined, '0', 'not-a-number']) {
+    const headers = new Headers({ 'content-type': 'application/json' });
+    if (contentLength !== undefined) headers.set('content-length', contentLength);
+    const client = new OAuthClients(signer, new MemoryCacheStore(), async () => new Response(document, { headers }), async () => ['93.184.216.34']);
+    assert.equal((await client.resolve(id))?.clientId, id);
+  }
+
+  let cancelled = false;
+  // The stream stays open (an endless sender) so the cap must cancel it rather than wait for the end.
+  const oversized = new OAuthClients(signer, new MemoryCacheStore(), async () => new Response(new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new Uint8Array(8_000));
+    },
+    cancel() { cancelled = true; }
+  })), async () => ['93.184.216.34']);
+  assert.equal(await oversized.resolve(id), null);
+  assert.equal(cancelled, true);
+});
+
+test('metadata fetch rejects redirects and requests the fetch implementation to reject them', async () => {
+  const id = 'https://redirect.example/oauth/meta.json';
+  const signer = new OAuthSigner('s');
+  let redirectMode = '';
+  const client = new OAuthClients(signer, new MemoryCacheStore(), async (_input, init) => {
+    redirectMode = String(init?.redirect);
+    throw new TypeError('redirect rejected');
+  }, async () => ['93.184.216.34']);
+  assert.equal(await client.resolve(id), null);
+  assert.equal(redirectMode, 'error');
+});

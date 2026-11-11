@@ -65,10 +65,14 @@ import { ShellFrost } from '../constants/allegraTheme';
 import { countOf } from '../utils/formatters';
 import { safeGoBack } from '../utils/navigationService';
 import { shuffled } from '../utils/shuffle';
+import * as Haptics from '../utils/haptics';
+import { EDIT_ENTRY, PLAYLIST_DRAG, saveDraggedOrder } from '../components/playlist/playlistReorder';
 
 type PlaylistDetailRouteProp = RouteProp<{ PlaylistDetail: { playlistId: string } }, 'PlaylistDetail'>;
 
-const AnimatedDraggableFlatList = Animated.createAnimatedComponent(DraggableFlatList) as unknown as typeof DraggableFlatList;
+// The drag list is never wrapped in createAnimatedComponent: the wrapper hands it a callback ref, and
+// react-native-draggable-flatlist only autoscrolls through an object ref ("current" in ref), so a held
+// row could not move past the first screen. It reports its scroll offset through onScrollOffsetChange.
 // FlashList's generic props don't survive createAnimatedComponent; the one cast the project allows (CLAUDE.md).
 const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as unknown as React.FC<any>;
 
@@ -276,13 +280,29 @@ export const PlaylistDetailScreen: React.FC = () => {
 
   const handleDragEnd = useCallback(async ({ data }: { data: Song[] }) => {
     setSongs(data);
-    if (searchQuery) return; // A filtered order isn't the playlist's order
-    try {
-      await playlistQueries.updateSongOrder(playlistId, data.map(s => s.id));
-    } catch (e) {
-      if (__DEV__) console.log('Reorder failed', e);
+    const result = await saveDraggedOrder(data.map(s => s.id), searchQuery.length > 0, {
+      persist: ids => playlistQueries.updateSongOrder(playlistId, [...ids]),
+      reload: loadData,
+    });
+    if (result === 'restored') {
+      setToast({ visible: true, message: 'Could not save the new order. The saved order was restored.', type: 'error' });
     }
-  }, [playlistId, searchQuery]);
+  }, [playlistId, searchQuery, loadData]);
+
+  const enterEditMode = () => {
+    // A drag edits the saved order, never a title sort or filtered subset.
+    setSearchQuery(EDIT_ENTRY.searchQuery);
+    setIsSearchActive(EDIT_ENTRY.searchActive);
+    setSortOption(EDIT_ENTRY.sortOption);
+    setSortDirection(EDIT_ENTRY.sortDirection);
+    void saveSort(EDIT_ENTRY.sortOption, EDIT_ENTRY.sortDirection);
+    setIsEditMode(true);
+  };
+
+  const onDragBegin = useCallback(() => { Haptics.toggle(); }, []);
+  const onDragRelease = useCallback(() => { Haptics.tap(); }, []);
+  // The drag list reports its offset on the JS thread; the header fade and the top button read scrollY.
+  const onDragListScroll = useCallback((offset: number) => { scrollY.value = offset; }, [scrollY]);
 
   const handleResetCover = async () => {
     setActionsOpen(false);
@@ -436,7 +456,7 @@ export const PlaylistDetailScreen: React.FC = () => {
         <Chip label="Add" icon="add" onPress={openAddSongs} accessibilityLabel="Add songs" />
         {songs.length > 1 || isEditMode ? (
           <Chip label={isEditMode ? 'Done' : 'Edit'} icon={isEditMode ? undefined : 'reorder-three-outline'} selected={isEditMode}
-            onPress={() => setIsEditMode(!isEditMode)} accessibilityLabel={isEditMode ? 'Done editing the order' : 'Edit the order'} />
+            onPress={isEditMode ? () => setIsEditMode(false) : enterEditMode} accessibilityLabel={isEditMode ? 'Done editing the order' : 'Edit the order'} />
         ) : null}
         <Chip label="Name and details" icon="pencil-outline" onPress={openNameAndDetails} />
         {songs.length > 0 ? <Chip label={sortOption === 'custom' || sortOption === 'recent' ? 'Sort' : sortLabel} icon="swap-vertical"
@@ -468,6 +488,8 @@ export const PlaylistDetailScreen: React.FC = () => {
     ListHeaderComponent: renderHeader(),
     ListEmptyComponent: renderEmpty(),
   };
+  // The drag list owns its onScroll (its autoscroll reads it) and needs the object ref itself.
+  const dragListProps = { ...listProps, onScroll: undefined };
 
   return (
     <AppScreen style={styles.container}>
@@ -479,7 +501,18 @@ export const PlaylistDetailScreen: React.FC = () => {
           renderItem={({ item, index }: { item: Song; index: number }) => renderItem({ item, getIndex: () => index, drag: () => undefined, isActive: false } as unknown as RenderItemParams<Song>)}
         />
       ) : (
-        <AnimatedDraggableFlatList {...listProps} onDragEnd={handleDragEnd} renderItem={renderItem} />
+        <DraggableFlatList
+          {...dragListProps}
+          activationDistance={PLAYLIST_DRAG.activationDistance}
+          autoscrollThreshold={PLAYLIST_DRAG.autoscrollThreshold}
+          autoscrollSpeed={PLAYLIST_DRAG.autoscrollSpeed}
+          onScrollOffsetChange={onDragListScroll}
+          dragItemOverflow
+          onDragBegin={onDragBegin}
+          onRelease={onDragRelease}
+          onDragEnd={handleDragEnd}
+          renderItem={renderItem}
+        />
       )}
 
       {/* The header: clear at rest, a solid backing once the list passes under it. */}
@@ -520,7 +553,7 @@ export const PlaylistDetailScreen: React.FC = () => {
       <Sheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title={playlistName}>
         <SheetOption label="Add songs" icon="add" onPress={() => { setActionsOpen(false); openAddSongs(); }} />
         {!isLiked ? <SheetOption label="Share" icon="share-social-outline" onPress={() => { setActionsOpen(false); setShareOpen(true); }} /> : null}
-        {songs.length > 1 ? <SheetOption label="Edit order" icon="reorder-three-outline" onPress={() => { setActionsOpen(false); setIsEditMode(true); }} /> : null}
+        {songs.length > 1 ? <SheetOption label="Edit order" icon="reorder-three-outline" onPress={() => { setActionsOpen(false); enterEditMode(); }} /> : null}
         <SheetOption label="Cover from your photos" icon="image-outline" onPress={handlePickCover} />
         {playlistCover ? <SheetOption label="Use the songs’ covers" icon="grid-outline" onPress={handleResetCover} /> : null}
       </Sheet>

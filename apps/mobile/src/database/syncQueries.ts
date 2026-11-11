@@ -468,39 +468,47 @@ export interface OutboxEntry {
   readonly kind: OutboxKind;
   readonly body: string;
   readonly createdAt: number;
+  readonly accountUserId: string | null;
 }
 
-export const enqueueOutbox = (kind: OutboxKind, body: unknown): Promise<void> =>
+export const enqueueOutbox = (kind: OutboxKind, body: unknown, accountUserId?: string): Promise<void> =>
   withDbWrite(async db => {
-    await db.runAsync('INSERT INTO sync_outbox (kind, body, created_at) VALUES (?, ?, ?)', [kind, JSON.stringify(body), Date.now()]);
+    await db.runAsync('INSERT INTO sync_outbox (kind, body, created_at, account_user_id) VALUES (?, ?, ?, ?)',
+      [kind, JSON.stringify(body), Date.now(), kind === 'play' ? accountUserId ?? null : null]);
   });
 
-export const peekOutbox = (kind: OutboxKind, limit: number): Promise<OutboxEntry[]> =>
+export const peekOutbox = (kind: OutboxKind, limit: number, accountUserId?: string): Promise<OutboxEntry[]> =>
   withDbRead(async db =>
-    (await db.getAllAsync<{ id: number; kind: OutboxKind; body: string; created_at: number }>(
-      'SELECT id, kind, body, created_at FROM sync_outbox WHERE kind = ? ORDER BY id ASC LIMIT ?',
-      [kind, limit],
-    )).map(row => ({ id: row.id, kind: row.kind, body: row.body, createdAt: row.created_at })),
+    (await db.getAllAsync<{ id: number; kind: OutboxKind; body: string; created_at: number; account_user_id: string | null }>(
+      accountUserId === undefined
+        ? 'SELECT id, kind, body, created_at, account_user_id FROM sync_outbox WHERE kind = ? ORDER BY id ASC LIMIT ?'
+        : 'SELECT id, kind, body, created_at, account_user_id FROM sync_outbox WHERE kind = ? AND account_user_id = ? ORDER BY id ASC LIMIT ?',
+      accountUserId === undefined ? [kind, limit] : [kind, accountUserId, limit],
+    )).map(row => ({ id: row.id, kind: row.kind, body: row.body, createdAt: row.created_at, accountUserId: row.account_user_id })),
   );
 
 /** Snapshot every queued entry of one kind without changing or settling it. */
 export const readOutbox = (kind: OutboxKind): Promise<OutboxEntry[]> =>
   withDbRead(async db =>
-    (await db.getAllAsync<{ id: number; kind: OutboxKind; body: string; created_at: number }>(
-      'SELECT id, kind, body, created_at FROM sync_outbox WHERE kind = ? ORDER BY id ASC',
+    (await db.getAllAsync<{ id: number; kind: OutboxKind; body: string; created_at: number; account_user_id: string | null }>(
+      'SELECT id, kind, body, created_at, account_user_id FROM sync_outbox WHERE kind = ? ORDER BY id ASC',
       [kind],
-    )).map(row => ({ id: row.id, kind: row.kind, body: row.body, createdAt: row.created_at })),
+    )).map(row => ({ id: row.id, kind: row.kind, body: row.body, createdAt: row.created_at, accountUserId: row.account_user_id })),
   );
 
-export const removeOutbox = (ids: readonly number[]): Promise<void> =>
+export const removeOutbox = (ids: readonly number[], accountUserId?: string): Promise<void> =>
   withDbWrite(async db => {
-    for (const id of ids) await db.runAsync('DELETE FROM sync_outbox WHERE id = ?', [id]);
+    for (const id of ids) {
+      if (accountUserId === undefined) await db.runAsync('DELETE FROM sync_outbox WHERE id = ?', [id]);
+      else await db.runAsync('DELETE FROM sync_outbox WHERE id = ? AND account_user_id = ?', [id, accountUserId]);
+    }
   });
 
 /** Persist progress for a retried event without resending a side effect that already succeeded. */
-export const updateOutboxBody = (id: number, body: unknown): Promise<void> =>
+export const updateOutboxBody = (id: number, body: unknown, accountUserId?: string): Promise<void> =>
   withDbWrite(async db => {
-    await db.runAsync('UPDATE sync_outbox SET body = ? WHERE id = ?', [JSON.stringify(body), id]);
+    if (accountUserId === undefined) await db.runAsync('UPDATE sync_outbox SET body = ? WHERE id = ?', [JSON.stringify(body), id]);
+    else await db.runAsync('UPDATE sync_outbox SET body = ? WHERE id = ? AND account_user_id = ?', [JSON.stringify(body), id, accountUserId]);
   });
 
 export const clearOutbox = (kind?: OutboxKind): Promise<void> =>

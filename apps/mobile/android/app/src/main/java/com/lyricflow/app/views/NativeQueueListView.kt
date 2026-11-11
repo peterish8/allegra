@@ -50,6 +50,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     private val onPick by EventDispatcher<Map<String, Any>>()
     private val onMove by EventDispatcher<Map<String, Any>>()
     private val onAtTop by EventDispatcher<Map<String, Any>>()
+    private val onScrollActivity by EventDispatcher<Map<String, Any>>()
     private val onLift by EventDispatcher<Map<String, Any>>()
 
     private val density = resources.displayMetrics.density
@@ -87,6 +88,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
     private var downY = 0f
     private var lastY = 0f
     private var scrolling = false
+    private var scrollActive = false
     private var yielded = false
     private var grabbedFling = false
     private var flinging = false
@@ -323,6 +325,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
                         invalidate()
                     } else {
                         scrolling = true
+                        setScrollActive(true)
                         lastY = QueueMath.scrollOrigin(downY, event.y, configuration.scaledTouchSlop.toFloat())
                         parent?.requestDisallowInterceptTouchEvent(true)
                     }
@@ -344,6 +347,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
                     onPick(mapOf("index" to rows[pressedPos].index))
                 }
                 pressedPos = -1
+                if (!flinging) setScrollActive(false)
                 scrolling = false
                 yielded = false
                 recycleVelocity()
@@ -353,6 +357,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
                 if (handleDownPos >= 0 && dragPos >= 0) endDrag()
                 handleDownPos = -1
                 pressedPos = -1
+                setScrollActive(false)
                 scrolling = false
                 yielded = false
                 recycleVelocity()
@@ -374,6 +379,12 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
         }
     }
 
+    private fun setScrollActive(active: Boolean) {
+        if (scrollActive == active) return
+        scrollActive = active
+        onScrollActivity(mapOf("active" to active))
+    }
+
     private fun recycleVelocity() {
         velocity?.recycle()
         velocity = null
@@ -386,6 +397,7 @@ class NativeQueueListView(context: Context, appContext: AppContext) : ExpoView(c
             postInvalidateOnAnimation()
         } else if (flinging) {
             flinging = false
+            setScrollActive(false)
         }
     }
 

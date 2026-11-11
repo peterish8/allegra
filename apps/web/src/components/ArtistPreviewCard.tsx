@@ -9,7 +9,7 @@ import type { ArtistProfile, UnifiedSong } from '@shared/types';
 import { Artwork } from './ui';
 import { fetchArtist } from '../lib/api';
 import { formatTime } from '../lib/utils';
-import { motionTokens } from '../motion';
+import { motionTokens, spring } from '../motion';
 
 /*
  * Portrait card that expands into a side-by-side artist sheet. The morph (shared layoutId on card,
@@ -45,7 +45,7 @@ export function ArtistPreviewCard({ name, image = null, photoPending = false, cu
   const cardRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const layoutId = `artist-card-${name}`;
-  const transition = reduced ? { duration: motionTokens.duration.instant } : { type: 'spring' as const, duration: 0.45, bounce: 0.12 };
+  const transition = reduced ? { duration: motionTokens.duration.instant } : spring.artist;
 
   // Load the profile only once the sheet is opened; the API caches it, so a second open is instant.
   useEffect(() => {

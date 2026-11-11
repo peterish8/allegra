@@ -295,9 +295,10 @@ export default function App() {
     if (remotePlayback) connect.control({ kind: 'seek', sec: seconds });
     else void audio.seek(seconds);
   };
-  const previousPlayer = (): void => {
+  const previousPlayer = (): UnifiedSong | null | undefined => {
     if (remotePlayback) connect.control({ kind: 'prev' });
-    else audio.skipPrevious();
+    else return audio.skipPrevious();
+    return undefined;
   };
   const changePlayerVolume = (volume: number): void => {
     if (remotePlayback) connect.control({ kind: 'volume', v: volume });
@@ -331,8 +332,8 @@ export default function App() {
   }, [audio.requestPlayback, remotePlayback]);
   // Karaoke separates the opening of the next song ahead of time, so it stays on across the change.
   const karaokeUpNext = useMemo(
-    () => (remotePlayback ? null : upcomingSong(audio.queue, audio.currentSong, audio.shuffle, audio.repeat)),
-    [remotePlayback, audio.queue, audio.currentSong, audio.shuffle, audio.repeat]
+    () => (remotePlayback ? null : upcomingSong(audio.queue, audio.currentSong, audio.shuffle, audio.repeat, audio.shuffleOrder)),
+    [remotePlayback, audio.queue, audio.currentSong, audio.shuffle, audio.repeat, audio.shuffleOrder]
   );
   const liveKaraoke = useLiveKaraoke(
     remotePlayback ? null : audio.currentSong,
@@ -383,26 +384,28 @@ export default function App() {
     return radio.fill(signal);
   }, [radio]);
 
-  const skipNextSmart = useCallback((): void => {
+  const skipNextSmart = useCallback((): UnifiedSong | null | undefined => {
     if (remotePlayback) {
       connect.control({ kind: 'next' });
-      return;
+      return undefined;
     }
     const player = transportRef.current;
     const song = player.currentSong;
-    if (!song) return;
+    if (!song) return null;
     const next = player.skipNext();
     if (!next && radioActiveRef.current) {
       void fillRadioQueue().then(() => {
         if (radioActiveRef.current && transportRef.current.currentSong?.id === song.id) transportRef.current.skipNext();
       });
-      return;
+      return null;
     }
-    if (!next || !radioActiveRef.current) return;
+    if (!next) return null;
+    if (!radioActiveRef.current) return next;
     const live = player.queue;
     const index = live.findIndex((item) => item.id === next.id);
     const remaining = index >= 0 ? live.length - index - 1 : 0;
     if (remaining < 3) void fillRadioQueue();
+    return next;
   }, [connect.control, fillRadioQueue, remotePlayback]);
 
   useMediaSession({

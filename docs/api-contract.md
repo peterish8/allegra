@@ -1,20 +1,22 @@
-# API CONTRACT — frozen at T+1
+# Allegra API contract
 
 > **The single most important document on this project.**
 > Frontend builds against a mock of this. Backend builds toward it. Neither is ever blocked on the other.
 >
 > **To change it:** propose in the channel → update this file → both sides adapt. **Never a silent shape change.** A renamed field at hour 20 costs a night.
 
-Base URL: same-origin `/api`. `NEXT_PUBLIC_API_BASE_URL` is blank everywhere — in dev Next rewrites `/api` to the Express server, and on Vercel it is the Express function.
+The web defaults to same-origin `/api`. Next rewrites it to Express in development and Vercel routes it to the function. `NEXT_PUBLIC_API_BASE_URL` is an optional public override. Android uses the configured Allegra API origin.
 
-## Envelope — every response
+## Envelope for JSON data routes
 
 ```ts
 type ApiResponse<T> =
   | { success: true;  data: T }
   | { success: false; data: null; error: string };   // error is USER-FACING copy
 ```
-Never leak provider errors. Map network / timeout / 404 / 429 / 5xx to friendly text server-side.
+Map provider and persistence failures to user-facing errors server-side. Health has its own
+shape, streams preserve upstream media status and headers, OAuth and MCP use their protocol
+formats, and 204 responses have an empty body.
 
 ## Shared types — `packages/shared/types.ts`
 
@@ -60,7 +62,7 @@ export interface LyricsPayload {
 ## Endpoints
 
 ### `GET /api/health`
-`→ { ok: true, version: string }` — Render health check.
+`→ { ok: true, version: string }`. Express health endpoint for local development and Vercel.
 
 ### `GET /api/search`
 `q` (required) · `limit`=20 · `page`=0
@@ -68,7 +70,7 @@ export interface LyricsPayload {
 Empty results → `success: true` with `results: []`, **not** an error.
 Cache 1 h. Budget: <800 ms cold, <200 ms cached.
 
-### Proposed change — `POST /api/ai/dj/turn`
+### `POST /api/ai/dj/turn`
 The cloud BYOK providers are `openai`, `openrouter`, and `gemini`. The caller sends the selected
 provider's `apiKey`, `model`, task `goal` (`mix` or `playlist`), a bounded `songLimit` (1–30), the
 current `message`, up to 8 prior `{role, content}` messages, and small session context: the active
@@ -248,7 +250,11 @@ with their own ids. `limit` 1–20. Empty → `success: true` with `results: []`
 `title`, `artist`, `limit`=5 → `ApiResponse<{ urls: string[] }>` · cache 30 d
 Index 0 is the best guess; the array exists for a future "fix artwork" picker.
 
-### `GET /api/canvas` — additive
+### `GET /api/canvas` — historical proposal
+
+Current Express has no mounted route for this request. The remaining description records the
+proposed shape. Mobile Canvas follows [its own provider path](../apps/mobile/docs/canvas-and-providers.md).
+
 `title` (req), `artist` (req), `album`?, `duration`? (seconds)
 `→ ApiResponse<MotionArtwork | null>` · cache 24 h on hit, 6 h on miss
 
@@ -661,7 +667,7 @@ than 10 tracks. Writes use the writes bucket. `GET /api/me/export` adds
 marks the listener's memberships `learning: false`; deleting the account leaves every Blend (the
 longest-standing member becomes owner; a Blend left empty is deleted).
 
-Blend creation accepts optional `Idempotency-Key` (6–128 characters). New clients retain one key
+Blend creation accepts optional `Idempotency-Key` (8–128 characters from `[A-Za-z0-9._:-]`). New clients retain one key
 for the same create attempt across response-loss retries. Replaying that account/key returns the
 original Blend; reusing it with different creation input is rejected. Legacy requests without a
 key still work. Creation result retention is bounded. Other members cannot retrieve its result.
@@ -714,9 +720,10 @@ explicit unavailable state.
 | HTTP | When | `error` copy |
 |---|---|---|
 | 400 | Bad params | "Something's missing from that request." |
-| 401 | Wrong email/password, or no session | "That email and password did not match." / "Please start a guest session first." |
+| 401 | Missing or invalid session | Start or renew the guest session, or sign in for an account route. |
+| 403 | The caller lacks permission or the route requires an account | Use the route-specific message. |
 | 404 | Not found | "We couldn't find that." |
-| 409 | Email already registered | "That email already has an account. Try signing in instead." |
+| 409 | Route-specific conflict | Use the route-specific message. |
 | 429 | Rate limited | "Too many requests — give it a moment." |
 | 502 | All providers down | "Music service is having a moment. Try again shortly." |
 | 504 | Timeout | "That took too long. Check your connection and retry." |
@@ -731,15 +738,22 @@ A `429` carries `Retry-After` / `RateLimit` headers and the envelope above.
 | Song changes | different songs started via `GET /api/stream/:songId` (seeks within a song are free) | 30 |
 | Stream | every `/api/stream` request, Range requests included | 300 |
 | Plays | `POST /api/me/recently-played` | 30 |
-| Writes | non-GET `/api/me/*`, `/api/libraries*`, `/api/shared*` | 60 |
-| Lookup | `/api/search`, `/api/lyrics*`, `/api/artists*` | 90 |
+| Writes | Mutations under `/api/me`, libraries, shares, Blends and Blend invites, after the specific buckets | 60 |
+| Lookup | `/api/search`, general lyrics, artists, albums and read-only Blend invites | 90 |
+| Lyrics sources | `/api/lyrics/sources` | 10 |
+| Lyrics sync / paste | `/api/lyrics/sync` and `/api/lyrics/paste` share a bucket | 6 |
+| Lyrics reports | `/api/lyrics/report` | 20 |
 | Typeahead | `GET /api/search/suggest` | 240 |
-| Discovery | `/api/ai/*`, `/api/lyrics/translate`, `/api/recommendations`, `/api/radio/*` | 20 |
+| Discovery | Other `/api/ai/*`, translation, recommendations and radio | 20 |
+| DJ | `/api/ai/dj/turn`, `/api/ai/dj/transcribe` and `/api/ai/dj/speak` each have their own bucket | 20 / 30 / 30 |
+| Imports | `/api/import/*` and Spotify mutations | 30 |
 | Uploads | `/api/uploads/*` | 10 |
 | Guests | `POST /api/auth/guest`, `POST /api/auth/anon` (each creates a profile) | 10 |
-| Auth / OAuth | `/api/auth/*`, `/api/oauth/*` | 30 |
+| Auth / OAuth | `/api/auth/*` and `/api/oauth/*` use separate buckets. Guest issuance also uses the Auth bucket. | 30 each |
 | MCP | `/api/mcp` | 120 |
-| Everything else | | 240 |
+| Everything else | Health, discovery metadata and internal routes bypass this limiter | 240 |
 
 ## Mock server
-P3 stands this up at T+2 from this document. P2 develops against it and **flips one env var** when the real API is live. That's the whole integration.
+Run `npm run mock` at the root to serve fixture responses on port 9090. The mock covers a subset
+of routes. Use the mounted Express tests for authentication, streaming, and full route behavior.
+See [the workflows guide](workflows.md) for the normal local ports.

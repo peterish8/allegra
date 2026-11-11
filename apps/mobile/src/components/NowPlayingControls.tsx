@@ -38,6 +38,7 @@ import { PlayerType, Signal } from '../constants/allegraTheme';
 import { formatTimeSV, isSeeking } from '../playback/positionBus';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { lastSongDirection } from '../store/playerStore';
+import { swapMarqueeDirection, swapMarqueeKey } from './allegra/marqueeMath';
 import { useSettingsStore } from '../store/settingsStore';
 import * as Haptics from '../utils/haptics';
 import Artwork from './allegra/Artwork';
@@ -62,6 +63,8 @@ interface NowPlayingControlsProps {
   storePlaying: boolean;
   currentSongTitle?: string;
   currentSongArtist?: string;
+  /** Identity for title swaps, including remote Connect playback. */
+  songId?: string;
   isCurrentSongLiked: boolean;
   /** Liked, but a streamed song is still downloading into Liked songs. */
   isLikeSaving?: boolean;
@@ -193,6 +196,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   storePlaying,
   currentSongTitle,
   currentSongArtist,
+  songId,
   isCurrentSongLiked,
   isLikeSaving = false,
   onTogglePlay,
@@ -283,7 +287,9 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   // Long titles scroll only while this screen is the one in front.
   const focused = useIsFocused();
   // Read at render: when the title changes this is the way the skip went.
-  const songDirection = lastSongDirection();
+  const previousMarqueeSongId = useRef(songId);
+  const songDirection = swapMarqueeDirection(previousMarqueeSongId.current, songId, lastSongDirection());
+  useEffect(() => { previousMarqueeSongId.current = songId; }, [songId]);
   const localPlaybackStatus = usePlaybackStatus();
   const playbackStatus = remoteVolume ? (storePlaying ? 'playing' : 'paused') : localPlaybackStatus;
 
@@ -482,11 +488,11 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             <Animated.View style={titleStyle}>
               <View style={styles.swapLine}>
                 {/* 1.41.0 (owner): full size, scrolling slowly right to left with a 5 s rest; never shrunk to fit. */}
-                <SwapMarquee style={styles.title} direction={songDirection} active={focused} speed={PLAYER_TITLE_SPEED}
+                <SwapMarquee style={styles.title} key={swapMarqueeKey(songId, currentSongTitle || 'Not playing')} songId={songId} direction={songDirection} active={focused} speed={PLAYER_TITLE_SPEED}
                   restMs={PLAYER_TITLE_REST_MS}>{currentSongTitle || 'Not playing'}</SwapMarquee>
               </View>
               <View style={styles.swapLineSmall}>
-                <SwapMarquee style={styles.artist} direction={songDirection} active={focused} speed={PLAYER_TITLE_SPEED}
+                <SwapMarquee style={styles.artist} key={swapMarqueeKey(songId, currentSongArtist || 'Unknown artist')} songId={songId} direction={songDirection} active={focused} speed={PLAYER_TITLE_SPEED}
                   restMs={PLAYER_ARTIST_REST_MS}>{currentSongArtist || 'Unknown artist'}</SwapMarquee>
               </View>
             </Animated.View>

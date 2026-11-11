@@ -16,6 +16,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useSongsStore } from '../store/songsStore';
 import { LibraryStackParamList, RootStackParamList, TabParamList } from '../types/navigation';
 import type { Song } from '../types/song';
+import { filterLibraryCollections, indexLibraryCollections } from './libraryCollections';
 import { CollectionCard, Control, EmptyState, HeaderGlow, IconButton, ListRow, PageHeader, Radius, Sheet, SheetOption, Signal, SongRow, Space, Surface, Tactile, Text, TextButton, Typography, useBottomClearance } from '../ui';
 import { ProfileButton } from '../components/nav/ProfileButton';
 import PlaylistsScreen from './PlaylistsScreen';
@@ -64,15 +65,9 @@ export default function LibraryScreen() {
   const list = useMemo(() => visible.filter(song => (!collection || (collection.type === 'Artists' ? song.artist : song.album) === collection.name)
     && (!query || `${song.title} ${song.artist ?? ''}`.toLowerCase().includes(query.toLowerCase())))
     .sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title) : sort === 'artist' ? (a.artist ?? '').localeCompare(b.artist ?? '') : Date.parse(b.dateCreated) - Date.parse(a.dateCreated)), [visible, collection, query, sort]);
-  const groups = useMemo(() => {
-    const map = new Map<string, Song[]>();
-    for (const song of visible) {
-      const key = tab === 'Artists' ? song.artist : song.album;
-      if (!key || (query && !key.toLowerCase().includes(query.toLowerCase()))) continue;
-      const group = map.get(key) ?? []; group.push(song); map.set(key, group);
-    }
-    return Array.from(map, ([name, items]) => ({ name, items })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [tab, visible, query]);
+  const collectionIndex = useMemo(() => indexLibraryCollections(visible), [visible]);
+  const groups = useMemo(() => filterLibraryCollections(tab === 'Artists' ? collectionIndex.artists : collectionIndex.albums, query),
+    [tab, collectionIndex, query]);
   const openPhone = () => navigation.navigate('Settings', { action: 'import-phone' });
   // Title, tabs and sort stay pinned; the header glow leaves and returns with whichever list is scrolling.
   const glow = useHeaderGlow();
@@ -100,11 +95,26 @@ export default function LibraryScreen() {
           ListEmptyComponent={<View style={styles.empty}>{query ? <EmptyState icon="search" title="No matches" body="Try another title or artist." />
             : <><EmptyState icon="musical-notes-outline" title="Your next favorite starts here" body="Save songs from Stream, or add music files from this phone." action={{ label: 'Find music on Stream', onPress: () => navigation.navigate('Stream' as never) }} />
               <TextButton label="Add songs from this phone" onPress={openPhone} /></>}</View>} />
-      </> : tab === 'Playlists' ? <PlaylistsScreen embedded query={query} /> : <ScrollView contentContainerStyle={{ paddingBottom: bottom }} onScroll={glowScroll} scrollEventThrottle={16}>
-        {tab === 'Albums' ? <View style={styles.albumGrid}>{groups.map(({ name, items }) => <CollectionCard key={name} title={name} meta={`${items[0].artist ?? 'Unknown artist'} · ${items.length} songs`} uri={items[0].coverImageUri} size={cardSize} onPress={() => setCollection({ type: 'Albums', name })} />)}</View> : groups.map(({ name, items }) => <ListRow key={name} title={name} subtitle={`${items.length} songs`} artwork={{ uri: items[0].coverImageUri, title: name, round: tab === 'Artists' }} chevron
-          onPress={() => setCollection({ type: tab as 'Artists' | 'Albums', name })} />)}
-        {groups.length === 0 ? <EmptyState icon={tab === 'Artists' ? 'person-outline' : 'albums-outline'} title={`No ${tab.toLowerCase()}${query ? ' found' : ' yet'}`} body="Songs saved on this phone appear here." /> : null}
-      </ScrollView>}
+      </> : tab === 'Playlists' ? <PlaylistsScreen embedded query={query} /> : <FlashList
+        key={tab}
+        data={groups}
+        keyExtractor={group => group.name}
+        numColumns={tab === 'Albums' ? columns : 1}
+        contentContainerStyle={{ paddingBottom: bottom, paddingHorizontal: tab === 'Albums' ? Control.gutter : 0 }}
+        onScroll={glowScroll}
+        scrollEventThrottle={16}
+        renderItem={({ item: group }) => tab === 'Albums' ? (
+          <View style={styles.albumCell}>
+            <CollectionCard title={group.name} meta={`${group.songs[0]?.artist ?? 'Unknown artist'} · ${group.songs.length} songs`}
+              uri={group.songs[0]?.coverImageUri} size={cardSize} onPress={() => setCollection({ type: 'Albums', name: group.name })} />
+          </View>
+        ) : (
+          <ListRow title={group.name} subtitle={`${group.songs.length} songs`}
+            artwork={{ uri: group.songs[0]?.coverImageUri, title: group.name, round: true }} chevron
+            onPress={() => setCollection({ type: 'Artists', name: group.name })} />
+        )}
+        ListEmptyComponent={<EmptyState icon={tab === 'Artists' ? 'person-outline' : 'albums-outline'} title={`No ${tab.toLowerCase()}${query ? ' found' : ' yet'}`} body="Songs saved on this phone appear here." />}
+      />}
       <Sheet visible={sortOpen} onClose={() => setSortOpen(false)} title="Sort songs by">{(Object.keys(LABELS) as Sort[]).map(value => <SheetOption key={value} label={LABELS[value]} selected={sort === value} onPress={() => changeSort(value)} />)}<Text variant="meta" tone="secondary">Kept for next time.</Text></Sheet>
       <Sheet visible={menuOpen} onClose={() => setMenuOpen(false)} title="Library">
         <SheetOption icon="cloud-download-outline" label="Import from Spotify" onPress={() => { setMenuOpen(false); navigation.navigate('Import'); }} />
@@ -118,7 +128,7 @@ export default function LibraryScreen() {
   );
 }
 const styles = StyleSheet.create({
-  albumGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.sm, paddingHorizontal: Control.gutter },
+  albumCell: { flex: 1, alignItems: 'center', marginBottom: Space.sm },
   tabs: { flexDirection: 'row', alignItems: 'center', paddingLeft: Control.gutter, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Surface.divider },
   tabContent: { gap: Space.md },
   tab: { minHeight: Control.target, minWidth: Control.target, justifyContent: 'center', paddingVertical: Space.sm },

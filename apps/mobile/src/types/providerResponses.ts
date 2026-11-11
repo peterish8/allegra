@@ -15,28 +15,6 @@ export interface LrcLibTrackResponse {
   syncedLyrics: string;
 }
 
-export interface GeniusArtistResponse {
-  name: string;
-}
-
-export interface GeniusSongResponse {
-  id: number;
-  title: string;
-  url: string;
-  primary_artist: GeniusArtistResponse;
-  song_art_image_thumbnail_url: string;
-}
-
-export interface GeniusHitResponse {
-  result: GeniusSongResponse;
-}
-
-export interface GeniusSearchResponse {
-  response?: {
-    hits?: GeniusHitResponse[];
-  };
-}
-
 export interface ProviderImageResponse {
   quality?: string;
   url?: string;

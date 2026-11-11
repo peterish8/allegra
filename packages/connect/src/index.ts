@@ -8,6 +8,15 @@ export { connectError, errorCode, errorData, isUncertainFailure, isFailureCode }
 export { FakePlayerPort } from './testing.ts';
 export { applyQueueEdit, isQueueEdit, QUEUE_LIMIT } from './queueEdit.ts';
 export { createQueueStager, reportable, upcomingOf, withUpcoming } from './queueStager.ts';
+export {
+  nextInOrder,
+  orderWithAppended,
+  PREVIOUS_RESTART_S,
+  previousAction,
+  previousInOrder,
+  shuffledOrder
+} from './queueRules.ts';
+export type { PreviousAction } from './queueRules.ts';
 export type { QueuePlayer, QueueSong, QueueStager, QueueStagerOptions } from './queueStager.ts';
 export { CONNECT_PROTOCOL_VERSION, QUEUE_EDIT_PROTOCOL_VERSION } from './types.ts';
 export { decidePlaybackRoute, isControllingAnotherDevice, ownerOfflineMessage, ROUTE_READY_WAIT_MS, whenRouteReady } from './routing.ts';

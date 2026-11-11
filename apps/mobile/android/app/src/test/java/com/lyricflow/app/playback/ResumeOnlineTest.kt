@@ -7,21 +7,43 @@ import org.junit.Test
 class ResumeOnlineTest {
     private val armed = 1_000_000L
 
+    private fun resume(
+        now: Long,
+        armedAt: Long? = armed,
+        wantsToPlay: Boolean = false,
+        hasSong: Boolean = true,
+        sawLoss: Boolean = true,
+        usable: Boolean = true,
+    ) = ResumeOnline.shouldResume(armedAt, now, wantsToPlay, hasSong, sawLoss, usable)
+
     @Test
     fun resumesWhenTheConnectionComesBackInTime() {
-        assertTrue(ResumeOnline.shouldResume(armed, armed + 30_000L, wantsToPlay = false, hasSong = true))
-        assertTrue(ResumeOnline.shouldResume(armed, armed + ResumeOnline.WINDOW_MS, wantsToPlay = false, hasSong = true))
+        assertTrue(resume(armed + 30_000L))
+        assertTrue(resume(armed + ResumeOnline.WINDOW_MS))
     }
 
     @Test
     fun leavesItAloneWhenNotArmedLateOrAlreadyPlaying() {
-        assertFalse(ResumeOnline.shouldResume(null, armed, wantsToPlay = false, hasSong = true))
-        assertFalse(ResumeOnline.shouldResume(armed, armed + ResumeOnline.WINDOW_MS + 1, wantsToPlay = false, hasSong = true))
+        assertFalse(resume(armed, armedAt = null))
+        assertFalse(resume(armed + ResumeOnline.WINDOW_MS + 1))
         // The listener pressed play meanwhile: nothing to do.
-        assertFalse(ResumeOnline.shouldResume(armed, armed + 5_000L, wantsToPlay = true, hasSong = true))
-        assertFalse(ResumeOnline.shouldResume(armed, armed + 5_000L, wantsToPlay = false, hasSong = false))
+        assertFalse(resume(armed + 5_000L, wantsToPlay = true))
+        assertFalse(resume(armed + 5_000L, hasSong = false))
         // A clock that went backwards never resumes.
-        assertFalse(ResumeOnline.shouldResume(armed, armed - 1, wantsToPlay = false, hasSong = true))
+        assertFalse(resume(armed - 1))
+    }
+
+    @Test
+    fun aStreamThatFailedWhileStillOnlineIsNotAConnectionComingBack() {
+        // Android reports the network already up as soon as the watch starts: no loss, so no resume.
+        assertFalse(resume(armed + 10L, sawLoss = false))
+    }
+
+    @Test
+    fun onlyAUsableNetworkResumes() {
+        // Connected to Wi-Fi with no internet yet (captive portal, not validated): keep waiting.
+        assertFalse(resume(armed + 20_000L, usable = false))
+        assertTrue(resume(armed + 25_000L, usable = true))
     }
 
     @Test

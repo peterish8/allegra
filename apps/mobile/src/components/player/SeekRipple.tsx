@@ -57,7 +57,7 @@ const Half: React.FC<{ side: -1 | 1; pulse: SeekPulse | null; width: number; hei
       />
       <Animated.View style={[styles.mark, mark]}>
         <Ionicons name={side < 0 ? 'play-back' : 'play-forward'} size={26} color="#fff" />
-        <Text style={styles.label}>{mine ? `${mine.seconds} seconds` : ''}</Text>
+        <Text style={styles.label}>{mine ? (mine.seconds === 0 ? '0:00' : `${mine.seconds} seconds`) : ''}</Text>
       </Animated.View>
     </View>
   );

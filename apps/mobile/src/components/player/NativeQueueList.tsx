@@ -17,6 +17,7 @@ interface NativeQueueListViewProps {
   onPick: (event: { nativeEvent: { index: number } }) => void;
   onMove: (event: { nativeEvent: { from: number; to: number } }) => void;
   onAtTop: (event: { nativeEvent: { atTop: boolean } }) => void;
+  onScrollActivity: (event: { nativeEvent: { active: boolean } }) => void;
   onLift: (event: { nativeEvent: { index: number } }) => void;
   style?: StyleProp<ViewStyle>;
 }
@@ -50,12 +51,13 @@ interface NativeQueueListProps {
   onMove: (from: number, to: number) => void;
   /** False once the list is scrolled away from its top: the panel's swipe down must then leave it alone. */
   onAtTop: (atTop: boolean) => void;
+  onScrollActivity: (active: boolean) => void;
   /** A row was picked up by its handle (JavaScript gives the haptic: the Settings switch applies). */
   onLift: (index: number) => void;
   style?: StyleProp<ViewStyle>;
 }
 
-const NativeQueueList: React.FC<NativeQueueListProps> = ({ onPick, onMove, onAtTop, onLift, ...rest }) => {
+const NativeQueueList: React.FC<NativeQueueListProps> = ({ onPick, onMove, onAtTop, onScrollActivity, onLift, ...rest }) => {
   if (!NativeView) return null;
   return (
     <NativeView
@@ -63,6 +65,7 @@ const NativeQueueList: React.FC<NativeQueueListProps> = ({ onPick, onMove, onAtT
       onPick={e => onPick(e.nativeEvent.index)}
       onMove={e => onMove(e.nativeEvent.from, e.nativeEvent.to)}
       onAtTop={e => onAtTop(e.nativeEvent.atTop)}
+      onScrollActivity={e => onScrollActivity(e.nativeEvent.active)}
       onLift={e => onLift(e.nativeEvent.index)}
     />
   );

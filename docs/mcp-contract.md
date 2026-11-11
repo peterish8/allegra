@@ -90,16 +90,17 @@ is never listed as a tool argument.
 
 ## Rate limiting
 
-`/api/mcp` currently falls into the default `api` rate-limit bucket (120 req/min, see `createRateLimiter`
-in `src/app.ts`) — there is no MCP-specific bucket yet (plan work item 8).
+`/api/mcp` uses its own per-instance bucket, 120 requests per minute by default.
+The limiter lives in [the Express app](../apps/api/src/app.ts). OAuth registration and token
+routes use the separate auth/OAuth bucket.
 
-## DNS rebinding protection — reviewed, not applicable
+## Origin and outbound metadata
 
-The SDK's transport supports `allowedHosts`/`allowedOrigins`/`enableDnsRebindingProtection`. That
-guards a server listening on `localhost` from a malicious webpage rebinding DNS to reach it through
-a victim's browser. `/api/mcp` is a public HTTPS endpoint called server-to-server (by
-ChatGPT's backend, not from inside a user's browser tab), so that attack doesn't apply here — noted
-so this isn't mistaken for an oversight.
+MCP resource validation binds bearer tokens to the resource. The OAuth client metadata resolver
+also makes an outbound HTTPS request for eligible URL client IDs. It refuses redirects and checks
+resolved addresses before fetch. That DNS check is separate from the connection, and the body read
+occurs after the current headers deadline. See [the OAuth client resolver](../apps/api/src/oauth/clients.ts)
+and [the audit backlog](../audit/FIX-BACKLOG.md) for remaining work.
 
 ## Token lifetime
 

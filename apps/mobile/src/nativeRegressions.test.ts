@@ -72,7 +72,17 @@ describe('music comes back after the connection drops', () => {
   it('a network give-up arms the resume, and the returning network plays on', () => {
     expect(service).toMatch(/exoPlayer\.playWhenReady = false\s*\n\s*if \(network\) armResumeOnline\(\)/);
     expect(service).toMatch(/registerDefaultNetworkCallback\(callback\)/);
-    expect(service).toMatch(/ResumeOnline\.shouldResume\(armedAt, now, exoPlayer\.playWhenReady, exoPlayer\.currentMediaItem != null\)/);
+    expect(service).toMatch(/ResumeOnline\.shouldResume\(armedAt, now, exoPlayer\.playWhenReady, exoPlayer\.currentMediaItem != null, resumeSawLoss, usable\)/);
+  });
+
+  // 2026-11-11: Android reports the network already up when the watch starts, so a stream that failed while the
+  // phone stayed online resumed at once. Only a real loss and then a validated network resume it.
+  it('resumes only after a real loss and a usable network, not the network already up', () => {
+    expect(service).toMatch(/resumeSawLoss = connectivity\.activeNetwork == null/);
+    expect(service).toMatch(/override fun onLost\(network: Network\)[\s\S]*?resumeSawLoss = true/);
+    expect(service).toMatch(/NET_CAPABILITY_VALIDATED/);
+    expect(service).not.toMatch(/override fun onAvailable/);
+    expect(service).toMatch(/private fun disarmResumeOnline\(\) \{\s*resumeArmedAt = null\s*resumeSawLoss = false/);
   });
 
   it('the listener pressing play, a new song or the service ending cancels it', () => {

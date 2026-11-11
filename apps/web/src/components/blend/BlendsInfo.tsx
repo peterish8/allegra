@@ -64,7 +64,7 @@ function OrbitLight({ colour, pose, apart, reduced }: { readonly colour: string;
   const size = useMotionValue(apart.scale);
   const opacity = useMotionValue(0);
   useEffect(() => {
-    const settle = reduced ? { duration: 0 } : spring.hero;
+    const settle = reduced ? { duration: motionTokens.duration.none } : spring.hero;
     const runs = [
       animate(r, target.r, settle), animate(phase, target.phase, settle), animate(lift, target.y, settle), animate(size, target.scale, settle),
       animate(opacity, pose ? 0.92 : 0, reduced ? { duration: motionTokens.duration.fast } : { duration: motionTokens.duration.slow, ease: motionTokens.ease.decelerate })
@@ -133,7 +133,7 @@ function Stage({ step, reduced }: { readonly step: number; readonly reduced: boo
               scale: [0.4, 1, 0.85, 0.2]
             }}
             exit={{ opacity: 0, transition: { duration: motionTokens.duration.fast } }}
-            transition={{ duration: 1.5, ease: motionTokens.ease.standard, times: [0, 0.3, 0.72, 1], delay: 0.35 + index * 0.22, repeat: Infinity, repeatDelay: 0.5 }}
+            transition={{ duration: motionTokens.duration.stream, ease: motionTokens.ease.standard, times: [0, 0.3, 0.72, 1], delay: motionTokens.delay.typeStart + index * (motionTokens.delay.part + motionTokens.delay.word), repeat: Infinity, repeatDelay: motionTokens.delay.stack }}
           />
         )) : null}
       </AnimatePresence>

@@ -46,6 +46,11 @@ console and log commands, the song and the storage grant.
 
 ## Releases and updates
 
+The [current codebase map](../../docs/current-codebase.md) points to the bridge, native entry and
+release workflow. The current updater fetches the version and executable from `desktop-latest`,
+then checks file size and the Windows executable marker before swapping it. Publisher signature
+and version-to-file binding are tracked in [the fix backlog](../../audit/FIX-BACKLOG.md).
+
 - **Most changes need no desktop release.** The window shows the live site, so a website deploy
   reaches every installed app the next time a page loads.
 - **A shell change** (anything under `apps/desktop/`) is built by `.github/workflows/desktop.yml` on

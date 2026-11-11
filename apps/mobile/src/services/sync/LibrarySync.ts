@@ -52,7 +52,14 @@ interface Session {
   readonly getToken: () => string | null;
 }
 
+interface SyncRun extends Session {
+  readonly generation: number;
+  readonly token: string;
+  getToken: () => string;
+}
+
 let session: Session | null = null;
+let sessionGeneration = 0;
 /** True once this phone's library is bound to the signed-in account (first-sync choice made). */
 let active = false;
 let running: Promise<void> | null = null;
@@ -62,6 +69,9 @@ let unwatch: (() => void) | null = null;
 let appState: NativeEventSubscription | null = null;
 let observedLibraryRevision: number | undefined;
 const playReportedListeners = new Set<() => void>();
+
+const isCurrentRun = (run: SyncRun): boolean =>
+  sessionGeneration === run.generation && session?.userId === run.userId;
 
 const revKey = (userId: string) => `rev:${userId}`;
 const log = (...args: unknown[]) => {
@@ -128,6 +138,7 @@ export async function attach(next: Session, convex: ConvexReactClient): Promise<
 
 /** Called on sign-out. The phone keeps its library; nothing is deleted. */
 export function detach(): void {
+  sessionGeneration += 1;
   unwatch?.();
   unwatch = null;
   appState?.remove();
@@ -176,7 +187,8 @@ export async function refFor(song: { id: string; title: string; artist?: string;
 
 /** Publish a valid play to shared history after five seconds of real playback. */
 export function recordPlayStarted(ref: SongRef, song: SongSnapshot, playedAt: string): Promise<void> {
-  if (!session || song.ref !== ref) return Promise.resolve();
+  const owner = session;
+  if (!active || !owner || song.ref !== ref) return Promise.resolve();
   return db.enqueueOutbox('play', {
     songRef: ref,
     song,
@@ -184,14 +196,15 @@ export function recordPlayStarted(ref: SongRef, song: SongSnapshot, playedAt: st
     seconds: 0,
     playedAt,
     recentOnly: true,
-  })
+  }, owner.userId)
     .then(() => syncSoon(FLUSH_DELAY_MS))
     .catch(error => log('play start record failed', error));
 }
 
 /** A completed listen: update shared history and teach Quick picks the final heard duration. */
 export function recordPlay(ref: SongRef, seconds: number, song: SongSnapshot, playedAt = new Date().toISOString(), ending?: { readonly exit: ListenExit; readonly exitPositionSec: number }): void {
-  if (!session) return;
+  const owner = session;
+  if (!active || !owner) return;
   const songId = toAllegraId(ref);
   if (song.ref !== ref || seconds < 5) return;
   db.enqueueOutbox('play', {
@@ -201,7 +214,7 @@ export function recordPlay(ref: SongRef, seconds: number, song: SongSnapshot, pl
     seconds: Math.round(seconds),
     playedAt,
     ...(ending ? { exit: ending.exit, exitPositionSec: Math.round(ending.exitPositionSec) } : {}),
-  })
+  }, owner.userId)
     .then(() => syncSoon(FLUSH_DELAY_MS))
     .catch(error => log('play record failed', error));
 }
@@ -258,8 +271,11 @@ async function runOnce(): Promise<void> {
   running = (async () => {
     do {
       rerun = false;
-      const current = session;
-      if (!current) break;
+      const attached = session;
+      const token = attached?.getToken();
+      if (!attached || !token) break;
+      // A flush is permanently bound to this account, token, and attachment generation.
+      const current: SyncRun = { userId: attached.userId, generation: sessionGeneration, token, getToken: () => token };
       useSyncStore.getState().set({ syncing: true });
       let failed = false;
       const includeLibrary = active;
@@ -272,7 +288,7 @@ async function runOnce(): Promise<void> {
         failed = includeLibrary;
         log('sync failed', error);
       } finally {
-        if (includeLibrary && session?.userId === current.userId) {
+        if (includeLibrary && isCurrentRun(current)) {
           await updateSyncHealth(failed).catch(error => log('sync health update failed', error));
         }
         useSyncStore.getState().set({ syncing: false });
@@ -287,7 +303,8 @@ async function runOnce(): Promise<void> {
 }
 
 async function updateSyncHealth(failed: boolean): Promise<void> {
-  const [ops, plays] = await Promise.all([db.peekOutbox('op', 1), db.peekOutbox('play', 1)]);
+  const owner = session?.userId;
+  const [ops, plays] = await Promise.all([db.peekOutbox('op', 1), owner ? db.peekOutbox('play', 1, owner) : Promise.resolve([])]);
   if (ops.length === 0 && plays.length === 0) {
     await db.clearOutboxStuck();
     setStuckSince(null);
@@ -298,11 +315,13 @@ async function updateSyncHealth(failed: boolean): Promise<void> {
 }
 
 /** Sends the outbox. A known contiguous write may advance the cursor without a redundant pull. */
-async function flush(current: Session, includeLibrary: boolean): Promise<{ readonly ok: boolean; readonly skippedPull: boolean }> {
+async function flush(current: SyncRun, includeLibrary: boolean): Promise<{ readonly ok: boolean; readonly skippedPull: boolean }> {
+  if (!includeLibrary || !isCurrentRun(current)) return { ok: true, skippedPull: false };
   let cursor = includeLibrary ? Number((await db.getMeta(revKey(current.userId))) ?? '0') || 0 : 0;
-  let canSkipPull = includeLibrary;
+  let canSkipPull: boolean = includeLibrary;
   let advancedCursor = false;
   if (includeLibrary) for (;;) {
+    if (!isCurrentRun(current)) return { ok: false, skippedPull: false };
     const token = current.getToken();
     if (!token) return { ok: false, skippedPull: false };
     const batch = await db.peekOutbox('op', OPS_PER_BATCH);
@@ -338,18 +357,21 @@ async function flush(current: Session, includeLibrary: boolean): Promise<{ reado
       }
     }
     // Sent, or refused for good (malformed): either way these entries are done.
+    if (!isCurrentRun(current)) return { ok: false, skippedPull: false };
     await db.removeOutbox(batch.map(entry => entry.id));
     if (reply.outcome === 'refused') log('batch refused', ops.length);
   }
   for (;;) {
+    if (!isCurrentRun(current)) return { ok: false, skippedPull: false };
     const token = current.getToken();
     if (!token) return { ok: false, skippedPull: false };
-    const plays = await db.peekOutbox('play', 20);
+    const plays = await db.peekOutbox('play', 20, current.userId);
     if (plays.length === 0) break;
     for (const entry of plays) {
+      if (!isCurrentRun(current)) return { ok: false, skippedPull: false };
       const play = parsePendingPlay(entry.body);
       if (!play || (!play.recentOnly && play.seconds < 5)) {
-        await db.removeOutbox([entry.id]);
+        await db.removeOutbox([entry.id], current.userId);
         continue;
       }
       if (nextPlayOutboxAction(play) === 'recent') {
@@ -360,18 +382,19 @@ async function flush(current: Session, includeLibrary: boolean): Promise<{ reado
           playDuration: play.seconds,
           playedAt: play.playedAt,
         });
+        if (!isCurrentRun(current)) return { ok: false, skippedPull: false };
         if (recent.outcome === 'offline') return { ok: false, skippedPull: false };
         if (recent.outcome === 'refused') {
           log('play refused', play.songId);
-          await db.removeOutbox([entry.id]);
+          await db.removeOutbox([entry.id], current.userId);
           continue;
         }
         // Save the completed side effect before attempting taste; a failed taste
         // request will resume at that stage on the next online sync.
-        await db.updateOutboxBody(entry.id, { ...play, recentPosted: true });
+        await db.updateOutboxBody(entry.id, { ...play, recentPosted: true }, current.userId);
       }
       if (play.recentOnly) {
-        await db.removeOutbox([entry.id]);
+        await db.removeOutbox([entry.id], current.userId);
         continue;
       }
       const taste = await api.postListenSignal(token, {
@@ -384,9 +407,10 @@ async function flush(current: Session, includeLibrary: boolean): Promise<{ reado
         playedAt: play.playedAt,
         ...(play.exit ? { exit: play.exit, exitPositionSec: play.exitPositionSec ?? play.seconds } : {}),
       });
+      if (!isCurrentRun(current)) return { ok: false, skippedPull: false };
       if (taste.outcome === 'offline') return { ok: false, skippedPull: false };
       if (taste.outcome === 'refused') log('taste signal refused', play.songId);
-      await db.removeOutbox([entry.id]);
+      await db.removeOutbox([entry.id], current.userId);
       if (taste.outcome === 'sent') for (const listener of [...playReportedListeners]) listener();
     }
   }
@@ -395,10 +419,11 @@ async function flush(current: Session, includeLibrary: boolean): Promise<{ reado
 }
 
 /** Applies every change after the stored revision. False when offline. */
-async function pull(current: Session): Promise<boolean> {
+async function pull(current: SyncRun): Promise<boolean> {
   let since = Number((await db.getMeta(revKey(current.userId))) ?? '0') || 0;
   let changed = false;
   for (let guard = 0; guard < 100; guard++) {
+    if (!isCurrentRun(current)) return false;
     const token = current.getToken();
     if (!token) return false;
     const reply = await api.getLibraryChanges(token, since);

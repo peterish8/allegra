@@ -295,7 +295,7 @@ function TastePreview({ step, genres, artists, languages, faces, accent, reduced
 
   return (
     <aside className="taste-preview" aria-hidden="true">
-      <motion.div className="taste-preview-glow" style={{ '--preview-tint': accent } as CSSProperties} animate={reduced ? undefined : { scale: [1, 1.08, 1] }} transition={reduced ? undefined : { duration: 6, repeat: Infinity, ease: 'easeInOut' }} />
+      <motion.div className="taste-preview-glow" style={{ '--preview-tint': accent } as CSSProperties} animate={reduced ? undefined : { scale: [1, 1.08, 1] }} transition={reduced ? undefined : { duration: motionTokens.duration.breathing, repeat: Infinity, ease: 'easeInOut' }} />
       <div className="taste-preview-content">
         <span className="eyebrow eyebrow-accent taste-preview-eyebrow">Live preview</span>
         <h3>{heading}</h3>

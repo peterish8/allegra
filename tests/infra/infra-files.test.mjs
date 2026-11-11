@@ -68,6 +68,25 @@ test('the mobile app is built by root workflows, not a nested .github', async ()
   }
 });
 
+test('public Android publication fails closed on signing identity and checks the APK fingerprint', async () => {
+  const workflow = await text('.github/workflows/mobile-apk.yml');
+  assert.match(workflow, /name: Require the production signing identity[\s\S]*?if: github\.ref == 'refs\/heads\/main'/);
+  for (const setting of ['ANDROID_RELEASE_KEYSTORE_BASE64', 'ANDROID_RELEASE_STORE_PASSWORD', 'ANDROID_RELEASE_KEY_ALIAS', 'ANDROID_RELEASE_KEY_PASSWORD', 'ANDROID_RELEASE_CERT_SHA256']) {
+    assert.ok(workflow.includes(setting), `main publication must require ${setting}`);
+  }
+  assert.match(workflow, /name: Signing key for non-production builds[\s\S]*?if: github\.ref != 'refs\/heads\/main'/);
+  // apksigner is not on PATH on the runner; the step finds it under build-tools and then calls it.
+  assert.match(workflow, /name: Verify production APK certificate[\s\S]*?-name apksigner[\s\S]*?"\$APKSIGNER" verify --print-certs/);
+  assert.match(workflow, /cancel-in-progress: false/);
+  assert.doesNotMatch(workflow, /EXPO_PUBLIC_GENIUS_ACCESS_TOKEN/);
+
+  const { matchesExpectedFingerprint } = await import('../../scripts/mobile-signing-policy.mjs');
+  const fingerprint = '0123456789abcdef'.repeat(4);
+  assert.equal(matchesExpectedFingerprint('', fingerprint), false, 'missing expected fingerprint blocks release');
+  assert.equal(matchesExpectedFingerprint(`${fingerprint.slice(0, 2)}:${fingerprint.slice(2)}`, fingerprint.toUpperCase()), true);
+  assert.equal(matchesExpectedFingerprint(fingerprint, 'f'.repeat(64)), false, 'mismatched signer blocks release');
+});
+
 test('the API copies of the shared sync rules match their source', async () => {
   // The API cannot import packages/shared (rootDir + NodeNext), so it gets generated copies. Two
   // diverging copies of the library rules would sync differently in tests than in Convex.

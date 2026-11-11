@@ -4,6 +4,7 @@ import { AppState, Platform } from 'react-native';
 import { forgetEngineQueue, nativeQueue, notifyQueueLow } from '../playback/nativeQueue';
 import { isStalePlayingEcho } from '../playback/playbackIntent';
 import { acceptPositionReport } from '../playback/playheadReset';
+import { extrapolatePosition } from '../playback/positionPrediction';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
 import { PlaybackLoss, recoverPlayback } from '../playback/recovery';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
@@ -19,11 +20,13 @@ const PlayerContext = createContext<any>(null);
 // When a skip last put the playhead back to 0 (see playerControls.resetPlayhead). A report from the old song that
 // lands just after is dropped (acceptPositionReport), so the scrubber and lyrics never jump back to it.
 let playheadResetAt: number | null = null;
+let lastPositionReportAt: number | null = null;
 
 function resetPlayhead(durationSec: number): void {
   if (!isSeeking.value) positionSV.value = 0;
   durationSV.value = durationSec > 0 ? durationSec : 0;
   playheadResetAt = Date.now();
+  lastPositionReportAt = playheadResetAt;
 }
 
 /** Whether a position report from the player may be written to the playhead now. */
@@ -97,7 +100,13 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
     playerControls.setVolume = volume => NativeAudioPlayer.setVolume(volume);
     playerControls.getVolume = () => NativeAudioPlayer.getVolume() ?? 1;
-    playerControls.getPosition = () => positionSV.value;
+    playerControls.getPosition = () => extrapolatePosition(
+      positionSV.value,
+      lastPositionReportAt ?? Date.now(),
+      Date.now(),
+      usePlayerStore.getState().isPlaying,
+      durationSV.value,
+    );
     playerControls.resetPlayhead = resetPlayhead;
   }, [player]);
 
@@ -135,6 +144,7 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       // A report from the song before a skip is dropped whole (its length is the old song's too).
       if (takesPositionReport(position)) {
+        lastPositionReportAt = Date.now();
         if (!isSeeking.value) {
           positionSV.value = position;
         }

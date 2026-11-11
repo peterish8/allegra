@@ -14,11 +14,18 @@ export const MINI_ROW_HEIGHT = 48;
 export const MINI_ROW_HEIGHT_LARGE_TEXT = 72;
 export const MINI_COVER_SIZE = 40;
 export const NAV_BAR_HEIGHT = 56;
+const NAV_LABEL_SP = 12;
+
+/** Grows the shell tab target when system text grows; the normal 56dp geometry stays unchanged. */
+export const navBarHeight = (fontScale = 1): number =>
+  Math.max(NAV_BAR_HEIGHT, Math.ceil(6 + 24 + 4 + NAV_LABEL_SP * Math.max(1, fontScale) * 1.3 + 4));
 
 export const miniRowHeight = (fontScale = 1): number => (fontScale >= 1.6 ? MINI_ROW_HEIGHT_LARGE_TEXT : MINI_ROW_HEIGHT);
 
-export const shellNavHeight = (screenHeight: number, bottomInset: number): number =>
-  screenHeight < 700 ? NAV_BAR_HEIGHT + Math.max(8, bottomInset) : NAV_BAR_HEIGHT + bottomInset;
+export const shellNavHeight = (screenHeight: number, bottomInset: number, fontScale = 1): number => {
+  const navHeight = navBarHeight(fontScale);
+  return screenHeight < 700 ? navHeight + Math.max(8, bottomInset) : navHeight + bottomInset;
+};
 
 export const shellHeight = (screenHeight: number, bottomInset: number, hasSong: boolean, fontScale = 1): number =>
-  shellNavHeight(screenHeight, bottomInset) + (hasSong ? SEEK_BAND_HEIGHT + miniRowHeight(fontScale) : 0);
+  shellNavHeight(screenHeight, bottomInset, fontScale) + (hasSong ? SEEK_BAND_HEIGHT + miniRowHeight(fontScale) : 0);

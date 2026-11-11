@@ -17,6 +17,13 @@ export const PLAYER_TITLE_SPEED = 24;
 export const PLAYER_TITLE_REST_MS = 5000;
 export const PLAYER_ARTIST_REST_MS = 3000;
 
+/** A title swap is a new song even when its text matches the row before it. */
+export const swapMarqueeKey = (songId: string | undefined, text: string): string => `${songId ?? ''}:${text}`;
+
+/** Metadata arriving for the same song should settle neutrally, not reuse a stale skip direction. */
+export const swapMarqueeDirection = (previousSongId: string | undefined, songId: string | undefined, direction: number): number =>
+  previousSongId === songId ? 0 : direction;
+
 /** The mini player's one line, as Spotify shows it: the song, a dot, then the artist. */
 export const miniPlayerLine = (title: string, artist?: string | null): string => {
   const name = title.trim() || 'Not playing';

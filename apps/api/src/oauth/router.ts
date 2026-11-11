@@ -258,7 +258,7 @@ export function oauthRouter(deps: OAuthRouterDeps): Router {
   });
 
   // Step 3: code (+ PKCE verifier) or refresh token → access token. Form-encoded per OAuth.
-  router.post('/api/oauth/token', express.urlencoded({ extended: false, limit: '16kb' }), async (request, response) => {
+  router.post('/api/oauth/token', express.urlencoded({ extended: false, limit: '16kb', inflate: false }), async (request, response) => {
     const origin = publicOrigin(request);
     const body = request.body && typeof request.body === 'object' ? (request.body as Record<string, unknown>) : {};
     const grantType = text(body.grant_type);

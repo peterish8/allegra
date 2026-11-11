@@ -4,75 +4,10 @@
  */
 
 import { LyricLine } from '../types/song';
-import { GeniusHitResponse, GeniusSearchResponse } from '../types/providerResponses';
-
-const GENIUS_API_URL = 'https://api.genius.com';
-const ACCESS_TOKEN = process.env.EXPO_PUBLIC_GENIUS_ACCESS_TOKEN ?? '';
-
-export interface GeniusTrack {
-  id: number;
-  title: string;
-  artist: string;
-  url: string;
-  albumArt: string;
-  plainLyrics: string;
-}
-
-const getErrorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 export const GeniusService = {
   /**
-   * 1. Search Genius API for a song to get its URL
-   */
-  searchGenius: async (query: string): Promise<GeniusTrack[]> => {
-    // No token → skip quietly (optional provider; .env may leave it blank).
-    if (!ACCESS_TOKEN) return [];
-
-    try {
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('TIMEOUT')), 10000)
-      );
-
-      const response = await Promise.race([
-        fetch(`${GENIUS_API_URL}/search?q=${encodeURIComponent(query)}`, {
-            headers: {
-            'Authorization': `Bearer ${ACCESS_TOKEN}`
-            }
-        }),
-        timeoutPromise
-      ]) as Response;
-
-      if (!response.ok) {
-        console.warn(`[GeniusService] Search failed: ${response.status}`);
-        return [];
-      }
-
-      const data = await response.json() as GeniusSearchResponse;
-      const hits = data.response?.hits || [];
-
-      // Map hits to simpler objects
-      return hits.map((hit: GeniusHitResponse) => ({
-        id: hit.result.id,
-        title: hit.result.title,
-        artist: hit.result.primary_artist.name,
-        url: hit.result.url,
-        albumArt: hit.result.song_art_image_thumbnail_url,
-        plainLyrics: '' // To be filled by scraping
-      }));
-
-    } catch (error: unknown) {
-      if (getErrorMessage(error) === 'TIMEOUT') {
-          console.warn('[GeniusService] Search timed out');
-      } else {
-          console.error('[GeniusService] Search error:', error);
-      }
-      return [];
-    }
-  },
-
-  /**
-   * 2. Scrape lyrics from a Genius song URL
+   * Scrape lyrics from a Genius song URL selected from the public lyrics sources.
    * Using Regex to extract text from <div data-lyrics-container="true">
    */
   scrapeGeniusLyrics: async (url: string): Promise<string | null> => {
@@ -169,7 +104,7 @@ export const GeniusService = {
   },
 
   /**
-   * Convert plain text to "fake" LyricLines (without timestamps)
+   * Convert plain text to unsynced LyricLines
    * This allows them to be used in the same UI, just unsynced.
    */
   convertToLyricLines: (text: string): LyricLine[] => {
