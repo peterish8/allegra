@@ -25,8 +25,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { MotionArtwork, UnifiedSong } from '@shared/types';
 
-import { DynamicLyricsBackground } from './DynamicLyricsBackground';
-import { FluidArtBackground } from './FluidArtBackground';
 import { ConnectPicker, type ConnectPickerState } from './ConnectPicker';
 import { KaraokeConsentSheet } from './KaraokeConsentSheet';
 import { KaraokeMixSheet } from './KaraokeMixSheet';
@@ -41,7 +39,9 @@ import { usePress } from '../hooks/usePress';
 import type { KaraokeCoverage, LiveKaraokeController } from '../hooks/useLiveKaraoke';
 import type { RepeatMode } from '../hooks/useAudioPlayer';
 import type { Palette } from '../lib/palette';
+import { playerWash } from '../lib/playerWash';
 import { usePlayhead, type Playhead } from '../lib/playhead';
+import { PlayerTime } from './PlayheadViews';
 import { tapHaptic } from '../lib/haptics';
 import { createDoubleTap } from '../lib/karaokeMix';
 import { coverageGradient, coverageRuns, karaokeButtonAriaLabel, karaokeButtonLabel } from '../lib/karaokeView';
@@ -340,14 +340,19 @@ export function PlayerPanel({
           }}
         >
           <div className="listening-world__atmosphere" aria-hidden="true">
-            {/* Gradient atmosphere, not a blurred cover: two composited layers instead of
-                stacked filter:blur passes, so it stays smooth on a phone. */}
-            {song.artwork ? (
-              <FluidArtBackground artworkUrl={song.artwork} />
-            ) : (
-              <DynamicLyricsBackground artworkUrl={song.artwork} palette={palette} />
-            )}
-            <div className="listening-world__glow" />
+            {/* YouTube Music's background: one calm wash of the cover's colour (lib/playerWash), not
+                moving blobs. A new song's wash fades in over the last one; opacity only. */}
+            <AnimatePresence initial={false}>
+              <motion.div
+                key={`${palette.primary}|${palette.secondary}`}
+                className="listening-world__wash"
+                style={{ background: playerWash(palette) }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: reduced ? motionTokens.duration.base : motionTokens.duration.cinematic, ease: motionTokens.ease.standard }}
+              />
+            </AnimatePresence>
           </div>
 
           <div
@@ -590,6 +595,8 @@ export function PlayerPanel({
                     ) : null}
                   </div>
                   <div className="np-actions">
+                    {/* Desktop bar only (CSS): the time beside the tools, as YouTube Music shows it. */}
+                    <PlayerTime playhead={playhead} duration={duration} />
                     <IconButton
                       icon={Waves}
                       label={isNarrowViewport ? (mode === 'workspace' ? 'Show cover' : 'Show lyrics') : lyricsFull ? 'Show cover' : desktopLyricsVisible ? 'Hide lyrics' : 'Show lyrics'}
