@@ -1,6 +1,6 @@
 # Allegra codebase map
 
-Updated 2026-11-11 against main at `fe5df309`. LuvLyrics source on that revision declares version 1.45.1. Verify release and device status separately.
+Updated 2026-11-11 from `fix/playback-skip-glitches` after merging main (LuvLyrics 1.45.3). This page describes source in the checkout. Check the workflow run, release asset or device before claiming a deployment or release is verified.
 
 ## Start here
 
@@ -25,8 +25,8 @@ Updated 2026-11-11 against main at `fe5df309`. LuvLyrics source on that revision
 | Mobile 1.43–1.44 | Stream, Luvs and Library shell with Create and profile actions, a revised mini player, playlist detail and sharing, LuvLyrics visual codes and scanner. A code resolves through the existing link parser and share/import flow. | [Mobile design](../apps/mobile/DESIGN.md), [ShareSheet](../apps/mobile/src/components/share/ShareSheet.tsx), [ScanCodeScreen](../apps/mobile/src/screens/ScanCodeScreen.tsx), [shared code codec](../packages/shared/luvCode.ts), [deep links](../apps/mobile/src/hooks/useDeepLinks.ts). |
 | Mobile 1.45.0 | Listening Stats in the profile menu. The phone's listening log feeds top songs and artists, repeat activity, time-of-day and tempo views. | [ListeningStatsScreen](../apps/mobile/src/screens/ListeningStatsScreen.tsx), [useListeningStats](../apps/mobile/src/hooks/useListeningStats.ts), [stats calculations](../apps/mobile/src/services/stats/listeningStats.ts). |
 | Mobile 1.45.1 and scanner coverage | The code scanner handles darker images and the stats calculation combines qualifying paused segments. The scanner frame-budget check is on main at `fe5df309`. | [Image decoding](../apps/mobile/src/services/share/scanImage.ts), [code codec tests](../packages/shared/luvCode.test.ts), [listening stats tests](../apps/mobile/src/services/stats/listeningStats.test.ts). |
-
-The [audit](../audit/CODEBASE-KNOWLEDGE.md) also covers a separate local 1.45.2 playback snapshot on the fix/playback-skip-glitches branch at 9081dea8. Its source references follow that snapshot.
+| Mobile 1.45.2 | Explicit skips reset the playhead; mini and full-player controls share previous/next routing; the classic lyrics bar avoids stale rows after rapid skips. | [Playhead reset](../apps/mobile/src/playback/playheadReset.ts), [skip routing](../apps/mobile/src/services/player/skipControls.ts), [lyrics swap](../apps/mobile/src/components/player/lyricsSwap.ts), [PlayerContext](../apps/mobile/src/contexts/PlayerContext.tsx). |
+| Playback audit, version 1.45.3 | Current branch completes mobile gesture, queue, title/cover and Up Next fixes; aligns web skip/shuffle/recovery behavior; adds stale media-event guards and motion checks. The audit continuation resumes after a connection drop only once a real loss is followed by a validated network, saves and erases the native queue in order, and gives long playlists working drag autoscroll. Automated gates are recorded in the handoffs; actual phone playback remains separate verification. | [Implementation handoff](../.planning/playback-glitches/HANDOFF-2026-11-11-skip-glitches.md), [audit continuation](../.planning/playback-glitches/HANDOFF-2026-11-11-mobile-audit-continuation.md), [playlist reorder](../apps/mobile/src/components/playlist/playlistReorder.ts), [web player](../apps/web/src/hooks/useAudioPlayer.ts), [mobile Up Next](../apps/mobile/src/components/player/UpNextPanel.tsx), [shared queue rules](../packages/connect/src/queueRules.ts). |
 
 ## Boundaries that matter
 
@@ -35,3 +35,4 @@ The [audit](../audit/CODEBASE-KNOWLEDGE.md) also covers a separate local 1.45.2 
 - Changes to shared implementation modules copied into the API require `npm run sync:shared` and the infra parity test. `apps/api/src/types.ts` is a separate declaration seam. Review its shape alongside `packages/shared/types.ts`.
 - Vercel production waits for the website build and Convex push to succeed. Mobile and Windows release workflows use separate channels. Check the matching version field and actual release gate.
 - Local tests prove their exercised paths. Credentials, actual deployed routes, release signing, browser playback, Android installation and physical-device performance require their own evidence. Use the [audit baseline](../audit/CODEBASE-KNOWLEDGE.md) for the recorded check results.
+
