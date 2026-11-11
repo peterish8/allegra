@@ -9,7 +9,7 @@ import { flags as defaultFlags, type Flags } from './flags';
 
 export type AppView =
   | 'home' | 'discover' | 'dj' | 'library' | 'album' | 'artist' | 'playlist' | 'liked' | 'shared' | 'settings'
-  | 'import' | 'blends' | 'blend' | 'blendJoin' | 'luvLink' | 'song'
+  | 'import' | 'blends' | 'blend' | 'blendJoin' | 'luvLink' | 'song' | 'quickPicksPreview'
   | LegalDocument;
 
 export function isLegalView(view: AppView): view is LegalDocument {
@@ -123,6 +123,9 @@ export function parseRoute(pathname: string, enabled: Flags = defaultFlags): Rou
       const sharedCode = decode(second)?.toLowerCase() ?? null;
       return sharedCode ? { view: 'shared', ...NO_PARAMS, sharedCode } : { view: 'home', ...NO_PARAMS };
     }
+    // Local LightFM comparison; production builds fall back to home.
+    case 'dev':
+      return { view: second === 'quick-picks' && !third && enabled.quickPicksPreview ? 'quickPicksPreview' : 'home', ...NO_PARAMS };
     default:
       return { view: 'home', ...NO_PARAMS };
   }

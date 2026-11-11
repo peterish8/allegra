@@ -27,6 +27,8 @@ import { songChangeLimiter, type SongChangeLimitConfig } from './lib/songChangeL
 import { accountRouter } from './routes/account.js';
 import { importsRouter } from './routes/imports.js';
 import { blendsRouter } from './routes/blends.js';
+import { recommendationPreviewRouter } from './routes/recommendationPreview.js';
+import type { RecommendationPreviewSource } from './services/recommendationPreview.js';
 import { spotifyRouter } from './routes/spotify.js';
 import { sharedRouter } from './routes/shared.js';
 import { streamRouter } from './routes/stream.js';
@@ -48,6 +50,8 @@ export interface AppOptions extends Omit<ServiceOptions, 'jwtSecret'> {
   readonly additionalOrigins?: readonly string[];
   readonly jwtSecret?: string;
   readonly services?: AppServices;
+  /** Local LightFM preview inputs. Never mounted when NODE_ENV is production. */
+  readonly recommendationPreview?: RecommendationPreviewSource;
   /** Import matching (`IMPORT_ENABLED`); off answers 404. */
   readonly importEnabled?: boolean;
   /** Blends (`BLEND_ENABLED`); off answers 404. */
@@ -153,6 +157,9 @@ export function createApp(options: AppOptions): Express {
   if (options.importEnabled === true) app.use('/api', spotifyRouter(services.spotify, services.auth, options.convexServerSecret));
   app.use('/api', sharedRouter(services.auth, services.catalog, services.actions, services.users));
   app.use('/api', uploadsRouter(services.auth, services.covers));
+  if (options.recommendationPreview && process.env.NODE_ENV !== 'production') {
+    app.use('/api', recommendationPreviewRouter(services.recommendations, options.recommendationPreview));
+  }
   app.use('/api', discoveryRouter(services.translation, services.recommendations, services.auth, services.catalog));
   app.use('/api', djRouter(services.catalog, options.fetchImpl));
   app.use('/api', djVoiceRouter(options.fetchImpl));

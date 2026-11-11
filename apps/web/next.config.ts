@@ -14,14 +14,17 @@ const config: NextConfig = {
   turbopack: { root: monorepoRoot },
   // Local dev only: same-origin /api → the Express dev server. On Vercel the
   // Express app is a function at /api (see vercel.json), so nothing is proxied.
+  // ALLEGRA_DEV_API_PORT lets a second worktree run its own API beside one already on 8080.
   async rewrites() {
     if (process.env.NODE_ENV !== 'development') return [];
+    const port = /^\d{2,5}$/.test(process.env.ALLEGRA_DEV_API_PORT ?? '') ? process.env.ALLEGRA_DEV_API_PORT : '8080';
+    const api = `http://127.0.0.1:${port}`;
     return [
-      { source: '/api/:path*', destination: 'http://127.0.0.1:8080/api/:path*' },
+      { source: '/api/:path*', destination: `${api}/api/:path*` },
       // MCP OAuth discovery lives at the site root (see vercel.json for production).
-      { source: '/.well-known/oauth-protected-resource/:path*', destination: 'http://127.0.0.1:8080/.well-known/oauth-protected-resource/:path*' },
-      { source: '/.well-known/oauth-protected-resource', destination: 'http://127.0.0.1:8080/.well-known/oauth-protected-resource' },
-      { source: '/.well-known/oauth-authorization-server', destination: 'http://127.0.0.1:8080/.well-known/oauth-authorization-server' }
+      { source: '/.well-known/oauth-protected-resource/:path*', destination: `${api}/.well-known/oauth-protected-resource/:path*` },
+      { source: '/.well-known/oauth-protected-resource', destination: `${api}/.well-known/oauth-protected-resource` },
+      { source: '/.well-known/oauth-authorization-server', destination: `${api}/.well-known/oauth-authorization-server` }
     ];
   },
   // No Content-Security-Policy here on purpose: this app leans on WebGL shaders, Convex,
