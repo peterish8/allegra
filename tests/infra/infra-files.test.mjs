@@ -75,6 +75,13 @@ test('public Android publication fails closed on signing identity and checks the
     assert.ok(workflow.includes(setting), `main publication must require ${setting}`);
   }
   assert.match(workflow, /name: Signing key for non-production builds[\s\S]*?if: github\.ref != 'refs\/heads\/main'/);
+  const releaseBuild = workflow.split(/- name: Build release APK\r?\n/)[1]?.split('- name: Collect APK')[0];
+  assert.ok(releaseBuild, 'the phone release build must exist');
+  for (const setting of ['ANDROID_RELEASE_KEYSTORE_PATH', 'ANDROID_RELEASE_STORE_PASSWORD', 'ANDROID_RELEASE_KEY_ALIAS', 'ANDROID_RELEASE_KEY_PASSWORD']) {
+    const assignment = releaseBuild.split('\n').find(line => line.trimStart().startsWith(`${setting}:`));
+    assert.ok(assignment?.includes("github.ref == 'refs/heads/main' &&"), `${setting} must not select the private signer on a PR`);
+    assert.ok(assignment?.includes("|| ''"), `${setting} must be empty outside main`);
+  }
   // apksigner is not on PATH on the runner; the step finds it under build-tools and then calls it.
   assert.match(workflow, /name: Verify production APK certificate[\s\S]*?-name apksigner[\s\S]*?"\$APKSIGNER" verify --print-certs/);
   assert.match(workflow, /cancel-in-progress: false/);

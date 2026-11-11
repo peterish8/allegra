@@ -108,10 +108,10 @@ jobs:
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
           EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
           ANDROID_RELEASE_REQUIRED: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
-          ANDROID_RELEASE_KEYSTORE_PATH: ${{ github.workspace }}/apps/mobile/android/app/release.keystore
-          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
-          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
-          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+          ANDROID_RELEASE_KEYSTORE_PATH: ${{ github.ref == 'refs/heads/main' && format('{0}/apps/mobile/android/app/release.keystore', github.workspace) || '' }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.ANDROID_RELEASE_STORE_PASSWORD || '' }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ github.ref == 'refs/heads/main' && secrets.ANDROID_RELEASE_KEY_ALIAS || '' }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.ANDROID_RELEASE_KEY_PASSWORD || '' }}
           # The in-app updater uses the commit and semantic version; Android versionCode is
           # derived monotonically from that same semantic version in app/build.gradle.
           EXPO_PUBLIC_BUILD_COMMIT: ${{ github.sha }}
