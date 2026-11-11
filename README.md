@@ -4,13 +4,21 @@
 
 **Live:** [allegravibe.vercel.app](https://allegravibe.vercel.app)
 
-LuvLyrics frontend rules live in [the mobile design system](apps/mobile/DESIGN.md), with
-reusable primitives in `apps/mobile/src/ui`. Its [release ledger](.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md)
-separates source checks, GitHub APK/emulator gates and pending phone validation.
+Start with the [current codebase map](docs/current-codebase.md) for feature owners, entry points,
+and recent changes. See the [audit reference](audit/CODEBASE-KNOWLEDGE.md) for deeper traces and
+the [fix backlog](audit/FIX-BACKLOG.md) for known issues. LuvLyrics UI work uses the
+[mobile design system](apps/mobile/DESIGN.md) and shared components in `apps/mobile/src/ui`.
 
 ## What this is
 
 Allegra began as a fully mocked front-end: hardcoded songs, playback faked with a timer, accounts faked in `localStorage`. It is now a working product: live catalog, streaming audio with working seek, artwork, time-synced lyrics with graceful degradation, guest sessions, and persistent likes, recent plays and playlists. Signed-in web and Android clients also sync their libraries and recommendations; Connect can control or transfer playback between online devices on the same account.
+
+## Recent source changes
+
+LuvLyrics supports song and playlist sharing, scannable LuvLyrics codes, a playlist detail page
+and Listening Stats. The 1.45.1 source improves dark-room scanning and joins qualifying paused
+listens in Stats. The APK version and physical-device results are tracked separately.
+[Recent source and test entry points](docs/current-codebase.md#recent-changes-in-source).
 
 ## Three apps, one repository
 
@@ -18,7 +26,7 @@ Allegra began as a fully mocked front-end: hardcoded songs, playback faked with 
 |---|---|---|---|
 | **Website** | `apps/web` + `apps/api` | Vercel, one deployment (site and API) | Every deploy, for everyone |
 | **Allegra for Windows** | `apps/desktop` | `desktop.yml` builds `allegra.exe` into the `desktop-latest` release | The site inside updates with every deploy; the shell (taskbar, hotkeys, mini player) updates itself at its next launch when `apps/desktop/Cargo.toml`'s version goes up |
-| **LuvLyrics for Android** | `apps/mobile` (React Native, native Kotlin for playback, the island and Now Playing) | `mobile-apk.yml` builds the APK into the `apk-latest` release | About → Updates, when `apps/mobile/app.json`'s version goes up |
+| **LuvLyrics for Android** | `apps/mobile` (React Native, native Kotlin for playback, the island and Now Playing) | `mobile-apk.yml` builds the APK into the `apk-latest` release | About → Updates compares release build identity and displays `apps/mobile/app.json`’s version |
 
 The desktop app is deliberately thin: it shows the live site, so almost every feature reaches it with no desktop
 change at all. Only what the browser can't do (taskbar, global shortcuts, jump list, mini player) lives in Rust.
@@ -35,8 +43,9 @@ Browser  (Next.js App Router · React 19 · Motion)
                |-- iTunes Search       artwork
                |-- LRCLIB (+ Lyrica / BetterLyrics)  time-synced lyrics
                |-- Convex              Google sign-in, likes, recents, playlists
-               |                       Connect presence, commands and playback state
-               `-- Browser worker      on-device karaoke separation
+               +                       Connect presence, commands and playback state
+
+Browser worker                      on-device karaoke separation
 ```
 
 The phone syncs likes, playlists and listening history through the Allegra API, with an offline
@@ -108,14 +117,17 @@ commercial music service and is not pitched as one. The `UnifiedSong` normalisat
 
 ## Where things live
 
-[`docs/`](docs/) — architecture, the API contract, setup guides ·
-[`.planning/`](.planning/) — the PRD and roadmap ·
-[`.planning/LEARNING-LOG.md`](.planning/LEARNING-LOG.md) — things that bit us
+- [Current codebase map](docs/current-codebase.md) and [docs index](docs/README.md) for daily work.
+- [Architecture](docs/architecture.md), [API contract](docs/api-contract.md), and [workflows](docs/workflows.md) for integration and delivery.
+- [Audit reference](audit/CODEBASE-KNOWLEDGE.md) and [fix backlog](audit/FIX-BACKLOG.md) for dated evidence.
+- [Planning](.planning/) and the [learning log](.planning/LEARNING-LOG.md) for historical context.
 
 ## Development verification
 
-Run typecheck, lint, tests, and the production build before shipping. Browser-visible changes also
-need a browser check; a successful build alone does not prove playback, OAuth, or on-device Karaoke.
+Run the root typecheck, lint and test commands. Run `npm ci --prefix apps/mobile` and
+`npm run mobile:check` for Android work after Convex tests finish. Follow the
+[verification workflow](docs/workflows.md#verifying-a-change-end-to-end) for browser, device and
+deployment evidence.
 ## Licence and rights
 
 Allegra is a free music player with source code under [GPL-3.0](./LICENSE).

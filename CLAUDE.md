@@ -2,9 +2,11 @@
 
 Music-streaming web app, now a real product rather than a hackathon entry.
 
-**Before doing anything:** read [`docs/architecture.md`](docs/architecture.md) — how the system works
-and the rules that are not negotiable. Then [`.planning/ROADMAP.md`](.planning/ROADMAP.md) for where
-things stand, and the doc for your area from [`docs/README.md`](docs/README.md).
+**Start with [the current codebase map](docs/current-codebase.md).** It links to the current owner,
+entry point, and reference for each task. Use the [audit core brief](audit/CODEBASE-KNOWLEDGE.md)
+to orient, then load the relevant section and verify the cited path before changing it. Use
+[the docs index](docs/README.md) for contracts and [the backlog](audit/FIX-BACKLOG.md) for known
+findings. The audit describes its captured checkout. Recheck the live diff when playback is in progress.
 
 ## Repo
 
@@ -15,11 +17,13 @@ apps/mobile       LuvLyrics — Expo · React Native (Android). NOT a root works
                   lockfile, `npm install` inside it. Rules in apps/mobile/CLAUDE.md
 apps/desktop      Allegra for Windows — Rust + WebView2 window around the live site.
                   NOT a workspace: `cargo build --release` inside it. See its README
-packages/shared   types imported by BOTH — the integration seam
-convex/           auth (Google) + listener data: profiles, shares
-docs/             architecture, contract, workflows, setup guides
-.planning/        PRD and roadmap
-tests/            contract + infra
+packages/shared   DTOs and pure cross-client rules; named API copies via sync:shared
+packages/connect  playback routing, session, transport and queue staging for web/mobile
+convex/           Google auth, listener data, Connect, LuvLink, Blend, Spotify and retention
+docs/             current codebase map, architecture, contracts, workflows and setup
+audit/            dated implementation reference and fix backlog
+.planning/        plans, handoffs and historical verification records
+tests/            contract, infra, Convex, browser e2e and performance
 ```
 
 npm workspaces: **one `npm install` at the root, one lockfile.** Never add a per-app lockfile — Vercel
@@ -67,15 +71,17 @@ npm run mock                    # fake API on :9090 (MOCK_PORT), no upstream pro
 2. **No provider URLs, tokens or secrets in the frontend.** `NEXT_PUBLIC_*` is inlined into the public
    bundle. Everything provider-side is server-side; secrets live in the host's environment.
 3. **Duration is always seconds.** Every provider, every type, every component.
-4. **`{ success, data, error? }` on every API response.** `error` is user-facing copy — never a raw
-   provider error.
+4. **Use `{ success, data, error? }` on normal JSON data routes.** Keep the documented health,
+   media, OAuth, MCP and empty-response shapes. `error` is user-facing copy. Map provider failures
+   server-side before returning them.
 5. **Animate `transform` and `opacity` only.** `width`, `top`, `height`, `box-shadow` are banned in
    transitions.
 6. **Every duration and easing comes from a token** (`apps/web/src/motion/index.ts`). No ad-hoc numbers.
 7. **`prefers-reduced-motion` collapses to opacity.** It never disables a feature.
 8. **TypeScript strict. No `any`.** Provider responses get narrow interfaces covering consumed fields.
-9. **Every outbound call** gets an `AbortController` timeout and its own try/catch returning empty —
-   never throwing. That is what keeps the provider cascade alive.
+9. **Bound outbound work and isolate provider failures.** A deadline for buffered responses must
+   cover the body as well as headers. Preserve the streaming response lifecycle and byte-range rule.
+   Catch provider failures at the cascade boundary so the next provider can still run.
 10. **No `console.log` in production paths.** Use the logger, or guard on `NODE_ENV`.
 
 ## The three playback invariants
@@ -161,11 +167,11 @@ put features in the website, not in `apps/desktop`, unless only a native window 
 Conventional commits: `feat(api):`, `fix(web):`, `chore(infra):`. Short imperative subject; body only
 when the *why* needs explaining. **No AI attribution footers.**
 
-**New phone build = new version number.** Anything reaching `main` that rebuilds the APK (changes
-under `apps/mobile/`, `packages/`, or `convex/_generated/`; see `.github/workflows/mobile-apk.yml`
-`paths`) must bump `expo.version` in `apps/mobile/app.json` in the same change: patch for fixes,
-minor for features. About → Updates shows that number; without a bump a new build appears as the
-version already installed. Details in `apps/mobile/CLAUDE.md`.
+**New phone build = new version number.** Anything reaching `main` that rebuilds the APK
+(see the paths in [mobile-apk.yml](.github/workflows/mobile-apk.yml)) bumps `expo.version` in
+`apps/mobile/app.json` in the same change. Use patch for fixes and minor for features. About → Updates
+displays that version. The updater also uses build commit and timestamp to determine eligibility.
+See [the mobile rules](apps/mobile/CLAUDE.md) for signing and installer behavior.
 
 **New desktop build = new version number.** A change under `apps/desktop/` bumps `version` in
 `apps/desktop/Cargo.toml` (patch for fixes, minor for features). Installed apps update only to a

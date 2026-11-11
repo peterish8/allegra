@@ -1,13 +1,9 @@
-> Current correction plan: [V6 verification and UI/UX corrections](../../.planning/mobile-ui-review/PLAN-V6-VERIFICATION.md),
-> with a [detailed handoff](../../.planning/mobile-ui-review/HANDOFF-2026-11-06-v6-verification.md).
-> The published 1.37.1 baseline still needs the listed screenshot/interaction fixes, animated headers,
-> compact mini-player/swipe restoration and outstanding device/performance/install checks.
-
-> V6 frontend: five tabs, a shared frosted playback shell, compact Library and collection layouts,
-> and Updates at the top of the Stream logo sheet. Version and release evidence are tracked in
-> [the release ledger](../../.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md).
-> Build reusable UI from [DESIGN.md](DESIGN.md) and [src/ui](src/ui/); run `npm run mobile:check`
-> from the repository root. GitHub Actions builds and launch-checks the APK; main publishes `apk-latest`.
+> **Current source:** LuvLyrics includes offline playback and playlists, Connect and account sync,
+> share links and scannable codes, Listening Stats, and native Android playback. Start with the
+> [Allegra codebase map](../../docs/current-codebase.md) for recent changes, then read the
+> [mobile rules](CLAUDE.md) and [design system](DESIGN.md) for the area you are changing.
+> GitHub Actions builds and checks the APK. See [workflows](../../docs/workflows.md) for what
+> each gate proves.
 
 <div align="center">
 
@@ -55,17 +51,18 @@ LuvLyrics is an open-source, **local-first** music library and lyrics app built 
 
 The app is built around one core obsession: a **premium lyrics-reading experience** — perfectly timed synced lyrics, plain lyric auto-scroll, multi-source lyric fetching, local playlist management, cover art tools, and a native Android player that just works.
 
-Recent highlights:
+Current feature entry points:
 
-- **Hybrid Kotlin native architecture** — four Expo Modules API Kotlin modules replace JS-thread bottlenecks:
-  - `StartupModule` preloads songs/playlists in `Application.onCreate()`, cutting cold-start from ~1.5 s to ~500 ms
-  - `MainPlayerModule` uses Media3 ExoPlayer + MediaSessionService — fixes notification buttons (⏮ ⏸/▶ ⏭), lock-screen controls, and Bluetooth headphone skip
-  - `LuvsPlayerModule` manages a 6-slot ExoPlayer pool for instant swipe-to-next on the Luvs reel (zero JS bridge round-trips during gesture)
-  - `DownloaderModule` uses WorkManager `CoroutineWorker` so downloads survive app backgrounding and device restarts
-- Player end-of-song detection is more reliable with a near-end fallback that triggers the next track even when `didJustFinish` misses
-- Download progress UI is smoother with throttled callbacks and concurrent downloads increased to 2
-- Lyrics scrolling is buttery-smooth with `@shopify/flash-list` view recycling, debounced layout measurements, and binary-search active-line detection
-- Desktop bridge is temporarily disabled (code preserved for future re-enablement)
+- [Listening Stats](src/screens/ListeningStatsScreen.tsx) reads the local listening log through
+  [the stats hook](src/hooks/useListeningStats.ts). The 1.45.1 source combines qualifying paused
+  segments in the same listen.
+- [ShareSheet](src/components/share/ShareSheet.tsx) and [ScanCodeScreen](src/screens/ScanCodeScreen.tsx)
+  use share URLs and the shared LuvLyrics code format. The [deep-link parser](src/hooks/useDeepLinks.ts)
+  handles the resulting links.
+- [PlayerContext](src/contexts/PlayerContext.tsx) and [NativeAudioPlayer](src/services/NativeAudioPlayer.ts)
+  route Android playback to Kotlin Media3, which owns the active queue and confirmed play state.
+- Downloads use native WorkManager. The local library works offline, and signed-in sync uses the
+  [SQLite outbox](src/services/sync/LibrarySync.ts) for retry.
 
 ---
 
@@ -143,28 +140,23 @@ _Contribute to a real production app. Earn GSSoC leaderboard points. Build your 
 
 ## 🧠 Architecture
 
-### Player
+On Android, Kotlin Media3 owns confirmed play state and the active queue. JavaScript presents
+player events and routes intent through the existing controls and Connect. The Expo audio fallback
+has separate ownership and event rules. Use [the mobile rules](CLAUDE.md#key-architecture) when
+changing transport, seek, or queue code.
 
-```
-PlayerContext.tsx          →  wraps useAudioPlayer, syncs status to Zustand, handles auto-next
-playerStatusGuard.ts       →  preserves playing state during buffering/seek to prevent UI flicker
-usePlayerStore (Zustand)   →  single source of truth for isPlaying, currentSong, position, queue
-MiniPlayer.tsx             →  expanded player UI (Dynamic Island + Classic styles), handles seek
-```
+### Player and seek
 
-### Scrub/seek pattern (must follow everywhere)
+| Layer | Current responsibility |
+| --- | --- |
+| `PlayerContext` and `NativeAudioPlayer` | Bridge Kotlin player events into UI state and forward local commands. |
+| Android Media3 queue | Owns play intent, auto-next, shuffle/repeat and persisted native queue state. |
+| `playerStore` | Exposes controls and mirrors the confirmed native queue and play state on Android. |
+| Expo audio fallback | Handles its own status guards and near-end auto-next behavior. |
 
-```ts
-const wasPlaying = usePlayerStore.getState().isPlaying;
-await player.seekTo(time);
-if (wasPlaying) player.play();
-```
-
-`seekTo` is async and pauses playback — always resume if the user was playing.
-
-### Auto-next (end of song)
-
-`PlayerContext` uses `didJustFinish` (cross-platform signal) as primary, plus a `isNearEndFallback` (within 0.35 s of end) as secondary. The fallback only triggers when `store.isPlaying` is true — prevents auto-advancing when user manually pauses near end.
+Scrub through the existing transport path so Connect can route remote seeks and the local
+player preserves the listener's play/pause intent. See the
+[player rules and load guard](CLAUDE.md#key-architecture).
 
 ---
 

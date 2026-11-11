@@ -90,8 +90,11 @@ npm run mobile:check            # the app's own gate: secrets, lint, typecheck, 
   `apps/mobile/android/local.properties` pointing at the Android SDK). Keep the checkout on a short
   path without spaces (for example `C:\dev\allegra`): Windows CMake builds of Skia and Reanimated fail
   on long paths.
-- `apps/mobile/android/app/debug.keystore` is gitignored and signs every build. Android only installs
-  an update over an app signed with the same key, so keep a copy of it outside the repo.
+- Gradle's release build uses the signing config named `debug`. The APK workflow provisions the
+  configured signing material when available and can fall back to Expo's template keystore.
+  Verify the actual signer of a candidate APK before publishing. Android requires signing
+  continuity for upgrades. See [the APK workflow](../.github/workflows/mobile-apk.yml) and
+  [the signing finding](../audit/FIX-BACKLOG.md).
 - Shared code comes from `packages/` through the `@shared/*` alias (tsconfig, `metro.config.js`,
   `jest.config.js`). Code in `packages/` imports no npm packages: Metro would otherwise resolve them
   from the root `node_modules` and bundle a second React.
@@ -136,7 +139,9 @@ document.querySelector('audio').__probe === 1 && !document.querySelector('audio'
 
 ## Inspecting a Vercel build without deploying
 
-`vercel build` produces the real deployment output locally. Use it whenever routing changes:
+With local Vercel project settings linked, run a preview-mode `vercel build` to inspect route
+output after routing changes. Production mode invokes the Convex deploy path. Use preview mode
+for a read-only routing investigation.
 
 ```bash
 vercel build
@@ -163,9 +168,9 @@ npx convex deploy        # Convex functions and schema
 node scripts/sync-vercel-env.mjs   # push apps/api/.env to Vercel (prints names only)
 ```
 
-A production Vercel build runs `scripts/vercel-build.mjs`, which deploys Convex first
-(`npx convex deploy --cmd …`) so the website and API never ship ahead of the functions they call.
-It needs `CONVEX_DEPLOY_KEY` (Convex dashboard → Settings → Deploy keys, production) in Vercel's
+A production Vercel build runs `scripts/vercel-build.mjs` with `convex deploy --cmd …`. The
+locked Convex CLI runs the web build command before pushing Convex. Vercel waits for the combined
+command to succeed before publishing. It needs `CONVEX_DEPLOY_KEY` (Convex dashboard → Settings → Deploy keys, production) in Vercel's
 **Production** environment and stops the build without it. Preview builds only build the website,
 against whichever Convex deployment their env points at. Convex changes must stay additive: an
 older phone build keeps calling the same functions after the new ones ship.

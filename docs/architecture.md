@@ -1,6 +1,7 @@
 # Architecture — how Allegra actually works
 
-One deployment, three owners of state. Read this before changing anything structural.
+The [current codebase map](current-codebase.md) points to the active source and recent changes.
+This page explains the stable service boundaries and ownership rules.
 
 ```
                     ┌─────────────────────────────────────────────┐
@@ -32,7 +33,7 @@ One deployment, three owners of state. Read this before changing anything struct
 | Listener data (likes, playlists, recents, taste, play tally, shares) | **Convex** | Durable, and the API reaches it through one `UserStore` seam. |
 | Cross-device library rows | **Convex** | Revisioned likes, playlist metadata/items, and tombstones use provider-qualified song refs; the phone's SQLite outbox retries offline writes. |
 | Active playback session | **Convex Connect** | One authenticated device owns the player lease; other devices send acknowledged commands and can transfer a song, queue, and position. Audio always streams locally. |
-| Song relations (which songs go with which, shared by everyone) | **Convex** `songRelations` | Derived, so allowed to be lost, but kept durable because each one costs several provider calls to work out and every listener reuses it. Reached through `RelationStore`. |
+| Song suggestions and radio | **Express catalog and relation lookup**, with per-instance cache | The active API derives suggestions from the catalog. Convex retains the older `songRelations` schema and secret-gated functions. |
 | Karaoke output | **Browser memory / device storage** | The worker separates audio locally. A model may be cached locally; no stems or track audio are persisted by the API. |
 
 Everything else — search results, lyrics, artwork, recommendations — is cache, and is allowed to be lost.
@@ -104,8 +105,8 @@ Both kinds sit behind one `TokenVerifier` port, so routes never branch on which 
 have. Guest listening works with no Convex deployment at all.
 
 Signing in calls `POST /api/auth/link` once, handing over the old guest token so likes and playlists
-made before signing in follow the listener into their account. Merging is a union, so it is safe to
-repeat.
+made before signing in follow the listener into their account. Guest likes and playlist rows merge through the library operation path. Taste counters and weights
+use additive merging. Preserve acknowledgement handling and test retry behavior before changing this flow.
 
 ## Connect and library sync
 
@@ -195,8 +196,9 @@ The **most-played tally** is separate. It lives in `convex/taste.ts`, behind `Ta
 200 songs per listener with weights that halve every 45 days. Blend and the account export read it;
 Quick Picks do not.
 
-Leftovers from an earlier design: the Convex `songRelations` table with `relations.getMany`/`put`,
-and the `playStats` profile field, are still in the schema. No code reads or writes them. Don't build
+The Convex `songRelations` table and secret-gated `relations.getMany`/`put` functions remain for
+compatibility. The current Express service wiring has no relation-store caller. The `playStats`
+profile field remains in schema and validators. Don't build
 on them; removing them needs a Convex migration.
 
 ## Search and song radio

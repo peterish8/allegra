@@ -312,6 +312,9 @@ Sentence case; no all-caps labels, emoji or decorative tracking.
 
 ## Implementation status
 
+For the active source, see the [current codebase map](../../docs/current-codebase.md#recent-changes-in-source)
+and the 1.44–1.45 notes above. The following V6 baseline describes earlier design and verification work.
+
 Version 1.37.1 combines the pending polish with the approved V6 migration. Source and automated
 checks are distinct from a published APK and physical-phone validation. See
 [the release ledger](../../.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md).

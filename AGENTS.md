@@ -5,11 +5,14 @@ too; everything in it applies here.**
 
 ## Orientation, in order
 
-1. [`docs/architecture.md`](docs/architecture.md) — how the system works end to end
-2. [`docs/api-contract.md`](docs/api-contract.md) — the FE↔BE seam. Change it by proposing first.
-3. [`.planning/ROADMAP.md`](.planning/ROADMAP.md) — current state and what is blocked on credentials
-4. [`docs/workflows.md`](docs/workflows.md) — how to run, verify and ship
-5. [`CLAUDE.md`](CLAUDE.md) — the rules
+1. [Current codebase map](docs/current-codebase.md) — task routing, owners, and recent source changes.
+2. [CLAUDE.md](CLAUDE.md) — project invariants and required checks.
+3. [Codebase knowledge](audit/CODEBASE-KNOWLEDGE.md) — use the core brief and relevant reference section.
+4. [Docs index](docs/README.md) — load the contract or platform guide for the task.
+5. [Fix backlog](audit/FIX-BACKLOG.md) — dated findings. Verify the current path before fixing an item.
+
+Historical plans and handoffs record earlier decisions and evidence. Use the current codebase map
+and Git to establish what is in this checkout.
 
 ## Run it (don't go searching)
 
@@ -53,11 +56,11 @@ same thing — remove it rather than documenting around it.
   renders perfectly and every API call 404s. `vercel build` shows the real route order locally.
 - **The API is serverless.** Instances freeze after responding and share no memory. Background timers,
   polling loops and in-process locks silently do nothing in production. Reconcile on read instead.
-- **One lockfile, at the root.** Vercel resolves function dependencies from the repo root. A
-  per-app lockfile lets a package work locally and be missing in production.
+- **One lockfile for the root workspaces.** Vercel resolves web/API dependencies at the root.
+  LuvLyrics is outside the root workspaces and keeps its own npm lockfile. Windows uses Cargo.lock.
 - **Range requests.** `206` must survive. It is the one bug that looks like success.
-- **`NEXT_PUBLIC_*` is public.** Anything with that prefix is inlined into JavaScript the world can
-  read.
+- **`NEXT_PUBLIC_*` and `EXPO_PUBLIC_*` are public.** Use those prefixes only for values intended
+  to be readable in the corresponding app bundle.
 - **Convex Auth owns the `users` table.** Listener data lives in `profiles`.
 
 ## Testing style
