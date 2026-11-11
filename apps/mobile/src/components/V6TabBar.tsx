@@ -6,7 +6,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Signal, Space, Tactile, Text, type IconName } from '../ui';
 import { tabTapParams } from '../navigation/tabs';
-import { NAV_BAR_HEIGHT, createSheetFrame, shellNavHeight } from '../navigation/v6Shell';
+import { NAV_BAR_HEIGHT, createSheetFrame, navBarHeight, shellNavHeight } from '../navigation/v6Shell';
 import { useMiniPlayerShowing } from '../hooks/useBottomClearance';
 import { useTabBarPushStyle } from '../navigation/sheetProgress';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
@@ -43,7 +43,7 @@ const NativeBar = (() => { try { return Platform.OS === 'android' ? requireNativ
 export function V6TabBar({ state, navigation }: BottomTabBarProps) {
   const { height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const barHeight = shellNavHeight(height, insets.bottom);
+  const barHeight = shellNavHeight(height, insets.bottom, fontScale);
   const keyboard = useKeyboardVisible();
   const route = state.routes[state.index]?.name ?? 'Stream';
   // RootNavigator draws no mini player on Luvs; everywhere else the Create card rests above it.
@@ -101,20 +101,20 @@ export function V6TabBar({ state, navigation }: BottomTabBarProps) {
         ShellFrost.navFade above it; touches on the fade reach the page. */}
     <LinearGradient pointerEvents="none" colors={ShellFrost.navFadeColors} locations={ShellFrost.navFadeStops}
       style={[styles.fade, { top: -ShellFrost.navFade }]} />
-    {NativeBar ? <NativeBar variant="v6" activeTab={active} moreActive={false} moreOpen={createOpen} micEnabled={false} dark glassBackground bottomInset={barHeight - NAV_BAR_HEIGHT} bottomOffset={0}
+    {NativeBar ? <NativeBar variant="v6" activeTab={active} moreActive={false} moreOpen={createOpen} micEnabled={false} dark glassBackground bottomInset={barHeight - navBarHeight(fontScale)} bottomOffset={0}
       activeTint={Signal.ink} inactiveTint={Signal.inkSoft} style={{ height: barHeight }} onTabPress={e => press(e.nativeEvent.route)} onMorePress={() => press(CREATE_TAB)}
       holdTab={holdTab} onTabLongPress={e => hold(e.nativeEvent.route)} />
-      : <View style={[styles.row, { paddingBottom: barHeight - NAV_BAR_HEIGHT }]}>{TABS.map(tab => {
+      : <View style={[styles.row, { paddingBottom: barHeight - navBarHeight(fontScale) }]}>{TABS.map(tab => {
         const isCreate = tab.route === CREATE_TAB;
         const lit = isCreate ? createOpen : active === tab.route;
         return <Tactile key={tab.route} onPress={() => press(tab.route)} accessibilityRole={isCreate ? 'button' : 'tab'}
           accessibilityLabel={isCreate && createOpen ? 'Close Create' : tab.label}
           onLongPress={holdTab === tab.route ? () => hold(tab.route) : undefined} delayLongPress={TAB_HOLD_MS}
-          accessibilityState={isCreate ? { expanded: createOpen } : { selected: lit }} wrapperStyle={styles.target} style={styles.item}>
+          accessibilityState={isCreate ? { expanded: createOpen } : { selected: lit }} wrapperStyle={styles.target} style={[styles.item, { height: navBarHeight(fontScale) }]}>
           <View style={[styles.indicator, isCreate && createOpen && styles.closeDisc]}>
             <Ionicons name={lit ? tab.filled : tab.icon} size={24} color={isCreate && createOpen ? Signal.bgDeep : lit ? Signal.ink : Signal.inkSoft} />
           </View>
-          {isCreate && createOpen ? null : <Text variant="caption" maxFontSizeMultiplier={1.3} style={lit && styles.bold}>{tab.label}</Text>}
+          {isCreate && createOpen ? null : <Text variant="caption" style={lit && styles.bold}>{tab.label}</Text>}
         </Tactile>;
       })}</View>}
   </AnimatedBar>

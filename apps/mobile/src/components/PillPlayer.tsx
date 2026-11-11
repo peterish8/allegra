@@ -49,7 +49,7 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   const { height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
-  const bottom = shellNavHeight(height, insets.bottom);
+  const bottom = shellNavHeight(height, insets.bottom, fontScale);
   const localStatus = usePlaybackStatus();
   const status = remote ? (playing ? 'playing' : 'paused') : localStatus;
   const songId = usePlayerStore(s => s.currentSongId);
