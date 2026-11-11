@@ -4,6 +4,7 @@ import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Dimensions, Image, Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
   Extrapolation,
   interpolate,
   runOnJS,
@@ -24,7 +25,8 @@ import TimelineScrubber from './TimelineScrubber';
 import { YtMiniPlayer } from './YtMiniPlayer';
 const { Gesture, GestureDetector } = GestureHandler;
 
-import { Glass, Signal } from '../constants/allegraTheme';
+import { Glass, Motion, Signal } from '../constants/allegraTheme';
+import { planLyricsSwap } from './player/lyricsSwap';
 import { getGradientColors } from '../constants/gradients';
 import { CLASSIC_MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from '../constants/layout';
 import { usePlayer } from '../contexts/PlayerContext';
@@ -32,7 +34,8 @@ import { useIsSongLiked } from '../hooks/useIsSongLiked';
 import { PILL_STACK_GAP, pillBarInset, pillBarTop } from '../navigation/tabs';
 import { useConnect } from '../services/connect/ConnectProvider';
 import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
-import { handleOwnedLuvLinkNext, handleOwnedLuvLinkPrevious, handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
+import { handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
+import { skipBackward as sharedSkipBackward, skipForward as sharedSkipForward } from '../services/player/skipControls';
 import { beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeRestoredLoad, takeResumePosition, usePlayerStore } from '../store/playerStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSongsStore } from '../store/songsStore';
@@ -66,6 +69,9 @@ const CLASSIC_FULL_RATIO = 0.915;
 // Soft enough to hide hard crop edges, light enough that cover colour still reads.
 const CLASSIC_COVER_BLUR = Platform.OS === 'android' ? 28 : 32;
 const COVER_BLEED = 20; // px the blurred image overshoots the clip on each side
+
+// Each half of the classic bar's lyrics cross-fade on a song change. A plain number, read inside a worklet.
+const LYRICS_SWAP_MS = Motion.duration.base;
 
 // Create Animated Pressable
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -267,27 +273,38 @@ export const MiniPlayer: React.FC = () => {
   const [displayedSong, setDisplayedSong] = useState(currentSong);
   const transitionOpacity = useSharedValue(1);
 
-  // Update displayed song with cross-fade when expanded
+  // The fade-out swaps to the song playing when it ends, not the one playing when it began: a quick next then
+  // previous must not leave the song in between on screen.
+  const latestSongRef = useRef(currentSong);
+  latestSongRef.current = currentSong;
+  const showLatestSong = useCallback(() => setDisplayedSong(latestSongRef.current), []);
+
+  // Update displayed song with cross-fade when expanded (rules in player/lyricsSwap)
   useEffect(() => {
-    // 1. Song Changed (ID mismatch)
-    if (currentSong?.id !== displayedSong?.id) {
-        if (expanded) {
-            // Fade Out -> Update Data -> Fade In
-            transitionOpacity.value = withTiming(0, { duration: 300 }, (finished) => {
-                if (finished) {
-                    runOnJS(setDisplayedSong)(currentSong);
-                    transitionOpacity.value = withTiming(1, { duration: 300 });
-                }
-            });
-        } else {
-            // Instant update when collapsed
-            setDisplayedSong(currentSong);
-            transitionOpacity.value = 1;
+    const swap = planLyricsSwap({
+      shownId: displayedSong?.id,
+      currentId: currentSong?.id,
+      sameObject: currentSong === displayedSong,
+      expanded,
+    });
+    if (swap === 'fade') {
+      // Fade out -> swap -> fade in. A new timing replaces this one (its callback then gets finished=false).
+      transitionOpacity.value = withTiming(0, { duration: LYRICS_SWAP_MS }, (finished) => {
+        if (finished) {
+          runOnJS(showLatestSong)();
+          transitionOpacity.value = withTiming(1, { duration: LYRICS_SWAP_MS });
         }
-    }
-    // 2. Same Song, Updated Data (e.g. Lyrics found)
-    else if (currentSong !== displayedSong) {
-         setDisplayedSong(currentSong);
+      });
+    } else if (swap === 'cut') {
+      cancelAnimation(transitionOpacity);
+      setDisplayedSong(currentSong);
+      transitionOpacity.value = 1;
+    } else if (swap === 'refresh') {
+      // Same song, new object (lyrics landed, or a skip away and back): call off any fade still running and bring
+      // the lines back — even when the shared value still reads 1, so a pending fade-out cannot finish on us.
+      cancelAnimation(transitionOpacity);
+      transitionOpacity.value = withTiming(1, { duration: LYRICS_SWAP_MS });
+      if (currentSong !== displayedSong) setDisplayedSong(currentSong);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSong, expanded]);
@@ -506,31 +523,17 @@ export const MiniPlayer: React.FC = () => {
     ? songForLyrics.transliteratedLyrics
     : songForLyrics?.lyrics;
 
+  // The same next / previous as Now Playing (services/player/skipControls): LuvLink first, then the queue owner,
+  // and a restart past 3 s resumes through requestPlayback.
   const skipForward = useCallback(async (e?: any) => {
     e?.stopPropagation();
-    if (await handleOwnedLuvLinkNext()) return;
-    await usePlayerStore.getState().nextInPlaylist();
+    await sharedSkipForward();
   }, []);
 
   const skipBackward = useCallback(async (e?: any) => {
     e?.stopPropagation();
-    if (await handleOwnedLuvLinkPrevious()) return;
-    if (positionSV.value > 3 && player) {
-        isSeeking.value = true;
-        positionSV.value = 0;
-        // seekTo pauses on iOS — restart-track must not silently stop playback.
-        const wasPlaying = usePlayerStore.getState().isPlaying;
-        player.seekTo(0);
-        if (wasPlaying) playerControls.play();
-
-        if (seekLockTimeout.current) clearTimeout(seekLockTimeout.current);
-        seekLockTimeout.current = setTimeout(() => {
-            isSeeking.value = false;
-        }, 1000);
-    } else {
-        usePlayerStore.getState().previousInPlaylist();
-    }
-  }, [player]);
+    await sharedSkipBackward();
+  }, []);
 
   // -------------------------------------------------------------------------
   // Capture the JS-state flags we need inside the worklet as shared values.

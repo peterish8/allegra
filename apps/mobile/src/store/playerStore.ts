@@ -110,7 +110,19 @@ export const playerControls = {
   getVolume: () => 1,
   /** Seconds into the playing song (written by PlayerContext; the store does not import the UI position bus). */
   getPosition: () => 0,
+  /**
+   * A skip moved to another song (or "previous" started this one over): the playhead goes back to 0 and the length
+   * becomes the new song's at once, instead of showing the old song's until the next position report. Written by
+   * PlayerContext. Only for explicit skips — never for a restored queue or a recovery load, which resume mid-song.
+   * `durationSec` is the song now playing (0 when its length is not known yet).
+   */
+  resetPlayhead: (_durationSec: number) => {},
 };
+
+/** The playhead after a skip to `song`: 0, and the song's own length when it is known. */
+function resetPlayheadFor(song: Song | null | undefined): void {
+  playerControls.resetPlayhead(song?.duration ?? 0);
+}
 
 // When the native player owns playback state (Android, via Media3), it echoes
 // playWhenReady back the instant a command lands, so JS must NOT optimistically
@@ -267,6 +279,7 @@ function showSkip(direction: 1 | -1): void {
   const index = (state.currentQueueIndex + direction + queue.length) % queue.length;
   const song = queue[index];
   pausedLoadSongId = null;
+  resetPlayheadFor(song);
   usePlayerStore.setState({ currentQueueIndex: index, currentSong: song, currentSongId: song.id, loadedAudioId: song.id });
   noteTrackChange(song);
 }
@@ -725,6 +738,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const song = queue[index];
     songDirection = directionOf(state.currentQueueIndex, index, queue.length);
     pausedLoadSongId = null;
+    resetPlayheadFor(song);
     set({ currentQueueIndex: index, currentSong: song, currentSongId: song.id, loadedAudioId: song.id });
     noteTrackChange(song);
   },
@@ -768,6 +782,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const nextIndex = (freshState.currentQueueIndex + 1) % freshState.playlistQueue.length;
     const nextSong = freshState.playlistQueue[nextIndex];
     pausedLoadSongId = null;
+    resetPlayheadFor(nextSong);
 
     // The screen answers first, in this same tick, so a skip shows at once and two quick taps do not both
     // read the same index. (JavaScript-owned queue: iPhone and tests. On Android the engine owns it, above.)
@@ -802,6 +817,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const restart = !queue || queue.length === 0 || previousWillRestart(playerControls.getPosition(), state.currentQueueIndex, repeat);
       fire(nativeQueue.previous().then(() => scheduleReconcile()));
       if (!restart) showSkip(-1);
+      // The engine restarted this song: keep its length, put the playhead back to 0.
+      else playerControls.resetPlayhead(state.currentSong?.duration ?? 0);
       return;
     }
 
@@ -812,6 +829,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const prevIndex = (state.currentQueueIndex - 1 + state.playlistQueue.length) % state.playlistQueue.length;
     const prevSong = state.playlistQueue[prevIndex];
     pausedLoadSongId = null;
+    resetPlayheadFor(prevSong);
 
     set({
       currentQueueIndex: prevIndex,

@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
 import { forgetEngineQueue, nativeQueue, notifyQueueLow } from '../playback/nativeQueue';
 import { isStalePlayingEcho } from '../playback/playbackIntent';
+import { acceptPositionReport } from '../playback/playheadReset';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
 import { PlaybackLoss, recoverPlayback } from '../playback/recovery';
 import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
@@ -14,6 +15,21 @@ import type { Song } from '../types/song';
 import { shouldAdoptNativePlayingState, shouldPreservePlayingStateDuringSeek } from './playerStatusGuard';
 
 const PlayerContext = createContext<any>(null);
+
+// When a skip last put the playhead back to 0 (see playerControls.resetPlayhead). A report from the old song that
+// lands just after is dropped (acceptPositionReport), so the scrubber and lyrics never jump back to it.
+let playheadResetAt: number | null = null;
+
+function resetPlayhead(durationSec: number): void {
+  if (!isSeeking.value) positionSV.value = 0;
+  durationSV.value = durationSec > 0 ? durationSec : 0;
+  playheadResetAt = Date.now();
+}
+
+/** Whether a position report from the player may be written to the playhead now. */
+function takesPositionReport(position: number): boolean {
+  return acceptPositionReport(position, playheadResetAt, Date.now());
+}
 
 // Shared by both providers: reset the "already advanced past the end" latch
 // whenever the active track changes.
@@ -82,6 +98,7 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     playerControls.setVolume = volume => NativeAudioPlayer.setVolume(volume);
     playerControls.getVolume = () => NativeAudioPlayer.getVolume() ?? 1;
     playerControls.getPosition = () => positionSV.value;
+    playerControls.resetPlayhead = resetPlayhead;
   }, [player]);
 
   // Media3 is the source of truth here — see requestPlayback.
@@ -116,10 +133,13 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         );
       }
 
-      if (!isSeeking.value) {
-        positionSV.value = position;
+      // A report from the song before a skip is dropped whole (its length is the old song's too).
+      if (takesPositionReport(position)) {
+        if (!isSeeking.value) {
+          positionSV.value = position;
+        }
+        durationSV.value = duration;
       }
-      durationSV.value = duration;
 
       // Scrubber/lyrics read positionSV. Zustand only needs ~1 Hz for modals / bridge.
       const now = Date.now();
@@ -225,6 +245,8 @@ const IosPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     });
     playerControls.setVolume = volume => { player.volume = Math.max(0, Math.min(1, volume)); };
     playerControls.getVolume = () => player.volume;
+    playerControls.getPosition = () => positionSV.value;
+    playerControls.resetPlayhead = resetPlayhead;
   }, [player]);
 
   useEffect(() => {
@@ -266,17 +288,21 @@ const IosPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     const store = usePlayerStore.getState();
     store.reportPlayback(playing, isBuffering || !isLoaded);
 
-    if (!isSeeking.value) {
-      positionSV.value = currentTime;
-    }
-    durationSV.value = duration;
+    // The status of the song before a skip (expo-audio has not replaced it yet) is dropped whole: its position
+    // and its length. The rest of the tick still runs, so a late `didJustFinish` is not lost.
+    if (takesPositionReport(currentTime)) {
+      if (!isSeeking.value) {
+        positionSV.value = currentTime;
+      }
+      durationSV.value = duration;
 
-    const now = Date.now();
-    if (now - lastZustandUpdateRef.current >= 1000) {
-      lastZustandUpdateRef.current = now;
-      const posStore = usePositionStore.getState();
-      if (posStore.position !== currentTime || posStore.duration !== duration) {
-        posStore.updateProgress(currentTime, duration);
+      const now = Date.now();
+      if (now - lastZustandUpdateRef.current >= 1000) {
+        lastZustandUpdateRef.current = now;
+        const posStore = usePositionStore.getState();
+        if (posStore.position !== currentTime || posStore.duration !== duration) {
+          posStore.updateProgress(currentTime, duration);
+        }
       }
     }
 

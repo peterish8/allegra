@@ -66,6 +66,7 @@ beforeEach(() => {
   mockLibrary.length = 0;
   setNativeOwnsPlaybackState(true);
   playerControls.getPosition = () => 0;
+  playerControls.resetPlayhead = jest.fn();
   playerControls.play = jest.fn();
   playerControls.pause = jest.fn();
   forgetEngineQueue();
@@ -241,6 +242,45 @@ describe('next and previous', () => {
     await usePlayerStore.getState().nextInPlaylist();
     expect(shownWhenAsked).toBe('a');
     expect(usePlayerStore.getState().currentSongId).toBe('b');
+  });
+});
+
+describe('the playhead on a skip', () => {
+  const reset = () => playerControls.resetPlayhead as jest.Mock;
+
+  it('next puts the playhead back to 0 with the new song\'s length at once', async () => {
+    const timed = queue.map((s, i) => ({ ...s, duration: 200 + i }));
+    usePlayerStore.setState({ playlistQueue: timed, currentSong: timed[0] });
+    await usePlayerStore.getState().nextInPlaylist();
+    expect(reset()).toHaveBeenCalledWith(201);
+  });
+
+  it('previous that goes back a song resets to that song', () => {
+    const timed = queue.map((s, i) => ({ ...s, duration: 200 + i }));
+    usePlayerStore.setState({ playlistQueue: timed, currentQueueIndex: 2, currentSong: timed[2], currentSongId: 'c', loadedAudioId: 'c' });
+    playerControls.getPosition = () => 1;
+    usePlayerStore.getState().previousInPlaylist();
+    expect(reset()).toHaveBeenCalledWith(201);
+  });
+
+  it('previous that starts the song over resets the playhead and keeps its own length', () => {
+    const timed = queue.map((s, i) => ({ ...s, duration: 200 + i }));
+    usePlayerStore.setState({ playlistQueue: timed, currentQueueIndex: 2, currentSong: timed[2], currentSongId: 'c', loadedAudioId: 'c' });
+    playerControls.getPosition = () => 45;
+    usePlayerStore.getState().previousInPlaylist();
+    expect(reset()).toHaveBeenCalledWith(202);
+  });
+
+  it('a tap on Up next resets to the song tapped', () => {
+    usePlayerStore.getState().skipToQueueIndex(3);
+    expect(reset()).toHaveBeenCalledTimes(1);
+  });
+
+  it('a song change the engine reports by itself leaves the playhead to the engine', () => {
+    usePlayerStore.getState().adoptPreparedTrack('b', 1);
+    usePlayerStore.getState().adoptNativeQueue({ ids: ids(queue), index: 2, shuffle: false, repeat: 'all', tag: 'library#1' } as never);
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
+    expect(reset()).not.toHaveBeenCalled();
   });
 });
 
@@ -426,6 +466,8 @@ describe('a saved queue', () => {
     expect(usePlaybackModesStore.getState()).toMatchObject({ shuffle: true, repeatMode: 'off' });
     expect(native.load).not.toHaveBeenCalled();
     expect(native.setQueue).not.toHaveBeenCalled();
+    // It resumes paused 42 s in: the playhead is the engine's to report, never reset to 0.
+    expect(playerControls.resetPlayhead).not.toHaveBeenCalled();
   });
 
   it('reports false when there is nothing saved', async () => {

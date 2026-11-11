@@ -21,6 +21,7 @@ const PLAYER_PARTS: Record<string, string> = {
   'services/connect/mobilePlayerPort.ts': 'Connect driving this phone when it is the device that plays',
   'components/MiniPlayer.tsx': "this phone's mini player, hidden while another device plays",
   'hooks/useNowPlayingLogic.ts': "this phone's Now Playing, replaced by the remote player while another device plays",
+  'services/player/skipControls.ts': "the mini player and Now Playing's own next / previous, both replaced by the remote player while another device plays",
   'screens/NowPlayingScreen.tsx': "this phone's Now Playing, replaced by the remote player while another device plays",
   'components/player/UpNextPanel.tsx': "the queue under this phone's own player",
   'contexts/PlayerContext.tsx': "this phone's player events, and its lock-screen and headset buttons",

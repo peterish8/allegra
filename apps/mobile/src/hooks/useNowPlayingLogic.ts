@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert } from 'react-native';
 import { usePlayer } from '../contexts/PlayerContext';
 import { diag } from '../utils/diag';
-import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeResumePosition, usesNativeQueue } from '../store/playerStore';
-import { handleOwnedLuvLinkNext, handleOwnedLuvLinkPrevious, handleOwnedLuvLinkSeek, handleOwnedLuvLinkToggle, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
+import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeResumePosition } from '../store/playerStore';
+import { handleOwnedLuvLinkSeek, handleOwnedLuvLinkToggle, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
+import { skipBackward as sharedSkipBackward, skipForward as sharedSkipForward } from '../services/player/skipControls';
 import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
 import { positionSV, durationSV, isSeeking } from '../playback/positionBus';
 import { useSongsStore } from '../store/songsStore';
@@ -156,30 +157,9 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
     });
   };
 
-  const skipForward = async () => {
-    if (await handleOwnedLuvLinkNext()) return;
-    await usePlayerStore.getState().nextInPlaylist();
-  };
-
-  const skipBackward = async () => {
-    if (await handleOwnedLuvLinkPrevious()) return;
-    if (!player) return;
-    // On Android the engine applies the rule (past 3 s a song starts over); the store's previous handles both.
-    if (!usesNativeQueue() && positionSV.value > 3) {
-      if (await handleOwnedLuvLinkSeek(0)) return;
-      isSeeking.value = true;
-      positionSV.value = 0;
-      // seekTo pauses on iOS — restart-track must not silently stop playback.
-      const wasPlaying = usePlayerStore.getState().isPlaying;
-      await player.seekTo(0);
-      await notifyOwnedLuvLinkUserSeek(0);
-      notifyLuvLinkUserSeek(0);
-      if (wasPlaying) requestPlayback(true);
-      isSeeking.value = false;
-    } else {
-      usePlayerStore.getState().previousInPlaylist();
-    }
-  };
+  // The same next / previous as the mini player (LuvLink first, then the queue owner's rules).
+  const skipForward = sharedSkipForward;
+  const skipBackward = sharedSkipBackward;
 
   const handleScrub = useCallback(async (seconds: number) => {
     if (player) {

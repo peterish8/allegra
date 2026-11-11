@@ -269,6 +269,31 @@ describe('skipping to the next song (JavaScript-owned queue)', () => {
     expect(s.currentSongId).toBe('b');
     expect(s.loadedAudioId).toBeNull();
   });
+
+  describe('the playhead', () => {
+    let original: typeof playerControls.resetPlayhead;
+    const reset = jest.fn();
+    beforeEach(() => {
+      original = playerControls.resetPlayhead;
+      playerControls.resetPlayhead = reset;
+      reset.mockClear();
+    });
+    afterEach(() => { playerControls.resetPlayhead = original; });
+
+    it('goes back to 0 with the new song\'s length as soon as next is tapped', () => {
+      const timed = queue.map((s, i) => ({ ...s, duration: 180 + i }));
+      usePlayerStore.setState({ playlistQueue: timed, currentSong: timed[0] });
+      usePlayerStore.getState().nextInPlaylist().catch(() => undefined);
+      expect(reset).toHaveBeenCalledWith(181);
+    });
+
+    it('goes back to 0 for previous too', () => {
+      const timed = queue.map((s, i) => ({ ...s, duration: 180 + i }));
+      usePlayerStore.setState({ playlistQueue: timed, currentQueueIndex: 2, currentSong: timed[2], currentSongId: 'c' });
+      usePlayerStore.getState().previousInPlaylist();
+      expect(reset).toHaveBeenCalledWith(181);
+    });
+  });
 });
 
 describe('stale mini player hides', () => {
