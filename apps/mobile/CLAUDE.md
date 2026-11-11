@@ -3,11 +3,8 @@
 ## Current source
 
 Use the [codebase map](../../docs/current-codebase.md#recent-changes-in-source) for the current
-version and ownership. The 1.45.2 branch commit routes both mini and full-player skip controls
-through `services/player/skipControls.ts`, resets the playhead through `playback/playheadReset.ts`,
-and swaps classic player lyrics through `components/player/lyricsSwap.ts`. Preserve LuvLink and
-Connect routing before local playback. Additional working-tree playback changes require their own
-verification before a release claim.
+version and ownership. Preserve LuvLink and Connect routing before local playback. For changes
+that affect skip or seek, check the active queue owner and track transitions.
 
 ## Where this app lives
 - `apps/mobile` in the **Allegra monorepo** (repo rules: `../../CLAUDE.md`). Not a root workspace:

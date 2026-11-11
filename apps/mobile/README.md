@@ -60,8 +60,7 @@ Current feature entry points:
   use share URLs and the shared LuvLyrics code format. The [deep-link parser](src/hooks/useDeepLinks.ts)
   handles the resulting links.
 - [PlayerContext](src/contexts/PlayerContext.tsx) and [NativeAudioPlayer](src/services/NativeAudioPlayer.ts)
-  route Android playback to Kotlin Media3. The 1.45.2 source shares skip routing and resets the playhead
-  and classic lyrics at track changes.
+  route Android playback to Kotlin Media3, which owns the active queue and confirmed play state.
 - Downloads use native WorkManager. The local library works offline, and signed-in sync uses the
   [SQLite outbox](src/services/sync/LibrarySync.ts) for retry.
 
@@ -242,6 +241,7 @@ Most features work without API keys — several services have public or fallback
 | Variable | Required | Used by | Notes |
 | --- | --- | --- | --- |
 | `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | Optional | `AuthService` | Needed for Google sign-in flows |
+| `EXPO_PUBLIC_GENIUS_ACCESS_TOKEN` | Optional | `GeniusService` | Improves Genius lyric search reliability |
 | `EXPO_PUBLIC_SAAVN_API_URL` | Optional | `SpotifyBridgeService` | Primary Saavn-compatible API base URL |
 | `EXPO_PUBLIC_SAAVN_SECONDARY_API_URL` | Optional | `MultiSourceSearchService` | Secondary fallback API base URL |
 | `EXPO_PUBLIC_GAANA_API_URL` | Optional | `MultiSourceSearchService` | Gaana-compatible fallback API base URL |

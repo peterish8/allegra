@@ -17,12 +17,8 @@ Allegra began as a fully mocked front-end: hardcoded songs, playback faked with 
 
 LuvLyrics supports song and playlist sharing, scannable LuvLyrics codes, a playlist detail page
 and Listening Stats. The 1.45.1 source improves dark-room scanning and joins qualifying paused
-listens in Stats. Version 1.45.2 reset the playhead on skip, shared previous/next routing across the
-mini and full players, and cleared stale lines from the classic lyrics bar. The 1.45.3 playback
-audit adds queue-edge and swipe consistency, smooth title/cover changes, Up Next follow behavior,
-stale web media-event guards, bounded failed-stream recovery, and motion-token cleanup. This source
-change does not by itself verify a built APK or a physical phone. See the [current codebase map](docs/current-codebase.md#recent-changes-in-source)
-for source and test entry points.
+listens in Stats. The APK version and physical-device results are tracked separately.
+[Recent source and test entry points](docs/current-codebase.md#recent-changes-in-source).
 
 ## Three apps, one repository
 
