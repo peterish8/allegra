@@ -29,3 +29,15 @@ export const shellNavHeight = (screenHeight: number, bottomInset: number, fontSc
 
 export const shellHeight = (screenHeight: number, bottomInset: number, hasSong: boolean, fontScale = 1): number =>
   shellNavHeight(screenHeight, bottomInset, fontScale) + (hasSong ? SEEK_BAND_HEIGHT + miniRowHeight(fontScale) : 0);
+
+/**
+ * The Create sheet's card: it rests `gap` above the mini player when one is showing (the pill is drawn over the tab
+ * bar's host, so a card at the bar's top had its last row hidden under it), else `gap` above the bar. Its height is
+ * capped so every row stays reachable under the status bar; past the cap the rows scroll.
+ */
+export const createSheetFrame = (
+  screenHeight: number, insets: { top: number; bottom: number }, pillShowing: boolean, fontScale: number, gap: number,
+): { bottom: number; maxHeight: number } => {
+  const bottom = shellHeight(screenHeight, insets.bottom, pillShowing, fontScale) + gap;
+  return { bottom, maxHeight: Math.max(0, screenHeight - bottom - insets.top - gap) };
+};

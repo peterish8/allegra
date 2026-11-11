@@ -7,8 +7,8 @@ jest.mock('../../database/listenLogQueries', () => ({ insertListen: jest.fn(asyn
 import type { ListenEntry } from '../../database/listenLogQueries';
 import { insertListen } from '../../database/listenLogQueries';
 import {
-  bandOf, changeWords, computeStats, durationWords, hourWords, joinResumed, personaFor, rangeBounds, startOfDay, streaks,
-  tempoSummary, PLAY_SECONDS,
+  bandOf, changeWords, computeStats, durationWords, hourWords, joinResumed, personaFor, pickHighlight, rangeBounds,
+  rangeWords, rankMove, rankMoveWords, startOfDay, statsShareText, streaks, tempoSummary, PLAY_SECONDS, type TopSong,
 } from './listeningStats';
 import { listenEntryFor, logListen } from './listenLog';
 
@@ -163,6 +163,75 @@ describe('streaks', () => {
     expect(streaks(days, NOW)).toEqual({ current: 2, longest: 3 });
     expect(streaks([startOfDay(at(3, 12))], NOW).current).toBe(0);
     expect(streaks([], NOW)).toEqual({ current: 0, longest: 0 });
+  });
+});
+
+// The page's Spotify-style first glance: rank chips against the period before, the highlight card, the dates line and
+// what Share sends.
+describe('places, the highlight, the dates and sharing', () => {
+  const log: ListenEntry[] = [
+    // This 4 weeks: Tarantino first, Mozhiye second.
+    ...[1, 2, 3, 4].map(d => listen('Tarantino', 'LISA', at(d, 22), 180)),
+    ...[1, 2].map(d => listen('Mozhiye', 'Sid Sriram', at(d, 8), 200)),
+    // The 4 weeks before: Mozhiye first, then Old, then Tarantino third.
+    listen('Mozhiye', 'Sid Sriram', at(35, 8), 900),
+    listen('Old', 'Someone', at(36, 12), 600),
+    listen('Tarantino', 'LISA', at(37, 22), 100),
+  ];
+  const first = new Map(log.map(e => [e.songKey, { at: at(60, 9), artist: e.artist }]));
+  const stats = computeStats(log, 'month', NOW, first);
+
+  it('remembers each song and artist\'s place in the period before', () => {
+    expect(stats.ranked).toBe(true);
+    expect(stats.topSongs.map(s => [s.title, s.previousRank])).toEqual([['Tarantino', 3], ['Mozhiye', 1]]);
+    expect(stats.topArtists.map(a => [a.name, a.previousRank])).toEqual([['LISA', 3], ['Sid Sriram', 1]]);
+  });
+
+  it('turns places into Spotify\'s chips: up, down, new, and nothing to compare for all time', () => {
+    expect(rankMove(1, 3, true)).toEqual({ kind: 'up', by: 2 });
+    expect(rankMove(2, 1, true)).toEqual({ kind: 'down', by: 1 });
+    expect(rankMove(2, 2, true)).toEqual({ kind: 'same', by: 0 });
+    expect(rankMove(4, null, true)).toEqual({ kind: 'new', by: 0 });
+    expect(rankMove(1, 3, false)).toBeNull();
+    expect(computeStats(log, 'all', NOW, first).ranked).toBe(false);
+    expect(rankMoveWords({ kind: 'up', by: 1 })).toBe('Up 1 place');
+    expect(rankMoveWords({ kind: 'down', by: 3 })).toBe('Down 3 places');
+    expect(rankMoveWords(null)).toBe('');
+  });
+
+  it('a quiet period before has nothing to rank against, so no chip claims a move', () => {
+    const quiet = computeStats([listen('Solo', 'One', at(1, 9), 200), listen('Blip', 'Two', at(30, 9), 20)], 'month', NOW);
+    expect(quiet.ranked).toBe(false);
+  });
+
+  const song = (title: string, plays: number, seconds = plays * 200): TopSong => ({
+    key: title, title, artist: 'A', artwork: null, ref: null, songId: title, seconds, plays, firstAt: 0, lastAt: 0, previousRank: null,
+  });
+
+  it('never makes the top song the highlight: a new find first, else the most replayed of the rest', () => {
+    const ranked = [song('Top', 9), song('Known', 6), song('Fresh', 2), song('Once', 1)];
+    expect(pickHighlight(ranked, s => s.title === 'Fresh' || s.title === 'Top')).toEqual({ kind: 'new', song: ranked[2] });
+    expect(pickHighlight(ranked, () => false)).toEqual({ kind: 'repeat', song: ranked[1] });
+    // One stray listen is never a highlight, and neither is a song played only twice.
+    expect(pickHighlight([song('Top', 9), song('Twice', 2)], () => false)).toBeNull();
+    expect(pickHighlight([song('Top', 9), song('Stray', 1)], () => true)).toBeNull();
+    expect(pickHighlight([], () => true)).toBeNull();
+  });
+
+  it('picks the page\'s highlight from the log: nothing here is new, and Mozhiye has only 2 plays', () => {
+    expect(stats.highlight).toBeNull();
+    const withFind = computeStats([...log, ...[1, 2].map(d => listen('Fresh', 'New', at(d, 10), 150))], 'month', NOW, first);
+    expect(withFind.highlight).toMatchObject({ kind: 'new', song: { title: 'Fresh' } });
+  });
+
+  it('writes the dates the way the title line shows them', () => {
+    expect(rangeWords(stats.bounds)).toBe('11 Oct – 7 Nov');
+    expect(rangeWords(rangeBounds('all', NOW, NOW))).toBe('Today, 7 Nov');
+    expect(rangeWords(rangeBounds('all', NOW, new Date(2025, 2, 3).getTime()))).toBe('3 Mar 2025 – 7 Nov 2026');
+  });
+
+  it('shares the dates, the minutes, the top artist and the top song', () => {
+    expect(statsShareText(stats)).toBe('My listening, 11 Oct – 7 Nov\n18 minutes\nTop artist: LISA\nTop song: Tarantino by LISA\nOn LuvLyrics');
   });
 });
 

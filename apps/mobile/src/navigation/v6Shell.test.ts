@@ -1,4 +1,4 @@
-import { MINI_COVER_SIZE, MINI_ROW_HEIGHT, NAV_BAR_HEIGHT, SEEK_BAND_HEIGHT, miniRowHeight, navBarHeight, shellHeight, shellNavHeight } from './v6Shell';
+import { MINI_COVER_SIZE, createSheetFrame, MINI_ROW_HEIGHT, NAV_BAR_HEIGHT, SEEK_BAND_HEIGHT, miniRowHeight, navBarHeight, shellHeight, shellNavHeight } from './v6Shell';
 
 it('uses the compact navigation below 700 while preserving larger safe areas', () => {
   expect(shellNavHeight(699, 0)).toBe(64);
@@ -34,4 +34,17 @@ it('grows the navigation target with system text and reserves the same height ab
   expect(navBarHeight(2)).toBeGreaterThanOrEqual(68);
   expect(shellNavHeight(800, 24, 2)).toBe(navBarHeight(2) + 24);
   expect(shellHeight(800, 24, false, 2)).toBe(navBarHeight(2) + 24);
+});
+// The Create sheet is drawn in the tab bar's host and the mini player over it: resting on the bar hid its last row.
+it('rests the Create card above the mini player when one is showing, and on the bar when none is', () => {
+  const insets = { top: 24, bottom: 16 };
+  expect(createSheetFrame(800, insets, true, 1, 8).bottom).toBe(shellHeight(800, 16, true, 1) + 8);
+  expect(createSheetFrame(800, insets, false, 1, 8).bottom).toBe(shellNavHeight(800, 16) + 8);
+  expect(createSheetFrame(800, insets, true, 2, 8).bottom).toBe(shellHeight(800, 16, true, 2) + 8);
+});
+
+it('caps the Create card under the status bar so every row stays reachable (it scrolls past the cap)', () => {
+  const { bottom, maxHeight } = createSheetFrame(640, { top: 24, bottom: 0 }, true, 2, 8);
+  expect(bottom + maxHeight).toBe(640 - 24 - 8);
+  expect(createSheetFrame(100, { top: 24, bottom: 0 }, true, 2, 8).maxHeight).toBe(0);
 });

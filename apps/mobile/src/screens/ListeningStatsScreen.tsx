@@ -1,28 +1,32 @@
 /**
  * Listening stats (1.45.0, owner): Spotify keeps its listening stats to a four-week glance of top artists and songs;
  * LuvLyrics is free, so everyone gets everything, for any range: minutes heard and the change on the period before,
- * top 5 artists and songs, the song on repeat and how long it played, when you listen (a 24-hour clock and the kind
- * of listener that makes you), your week, day by day, the tempo of what you play, streaks, finishing and skipping,
- * and what was new to you.
+ * top 5 artists and songs, when you listen (a 24-hour clock and the kind of listener that makes you), your week, day
+ * by day, the tempo of what you play, streaks, finishing and skipping, and what was new to you.
+ *
+ * 1.46.0 (owner: "neat, like Spotify"): the page opens the way Spotify's does (newsroom, 2025-11-06): a plain back
+ * chevron, the big title, the dates with Share beside them, then two tiles (top artist, top song) with Spotify's rank
+ * chips against the period before, then one highlight card (a new find, or another song on repeat; never the top
+ * song again). The rest of the page follows below.
  *
  * Counted from what this phone heard (services/stats), kept only on this phone; collecting can be paused and the
  * history cleared at the bottom of the page.
  */
 import React, { useState } from 'react';
 import { parseSongRef } from '@shared/songRef';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppScreen } from '../components/AppScreen';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
 import { Switch } from '../components/settings/SettingsKit';
 import {
-  Card, DailyBars, EmptyRing, Habits, Hero, ListeningClock, OnRepeat, TempoCard, TopArtists, TopSongs, WeekBars,
+  Card, DailyBars, EmptyRing, Habits, Hero, Highlight, ListeningClock, Spotlight, TempoCard, TopArtists, TopSongs, WeekBars,
 } from '../components/stats/StatsParts';
 import { clearListens } from '../database/listenLogQueries';
 import { useListeningStats } from '../hooks/useListeningStats';
 import { openShareTarget } from '../services/share/openShare';
-import { changeWords, STATS_RANGES, type StatsRange, type TopSong } from '../services/stats/listeningStats';
+import { changeWords, rangeWords, statsShareText, STATS_RANGES, type StatsRange, type TopSong } from '../services/stats/listeningStats';
 import { useSettingsStore } from '../store/settingsStore';
 import { Chip, ChipRow, ConfirmSheet, GUTTER, IconButton, Signal, Space, Text, TextButton, useBottomClearance } from '../ui';
 import { navigationRef, safeGoBack } from '../utils/navigationService';
@@ -38,6 +42,9 @@ export const ListeningStatsScreen: React.FC = () => {
   const setCollecting = useSettingsStore(s => s.setListeningStats);
   const [confirmClear, setConfirmClear] = useState(false);
   const palette = useArtworkPalette(stats?.onRepeat?.artwork ?? undefined);
+  const { width } = useWindowDimensions();
+  const cardWidth = width - GUTTER * 2;
+  const tileWidth = (cardWidth - Space.sm) / 2;
 
   // A song with a catalog id plays by it; any other is found again by its title and artist.
   const play = (song: TopSong) => {
@@ -53,14 +60,27 @@ export const ListeningStatsScreen: React.FC = () => {
     reload();
   };
 
+  const share = () => {
+    if (!stats || stats.empty) return;
+    Share.share({ message: statsShareText(stats) }).catch(() => undefined);
+  };
+  const shareable = !!stats && !stats.empty;
+
   return (
     <AppScreen style={styles.screen}>
       <ScrollView contentContainerStyle={{ paddingTop: insets.top, paddingBottom: bottom }}>
-        <View style={styles.header}>
-          <IconButton icon="arrow-back" label="Back" variant="secondary" shape="disc" onPress={() => safeGoBack(navigation)} />
-          <View style={styles.headerText}>
-            <Text variant="page" accessibilityRole="header">Listening stats</Text>
-            <Text variant="secondary" tone="secondary">Free for everyone. Kept on this phone.</Text>
+        {/* Spotify's listening stats: a plain back chevron, the big title, then the dates with Share beside them. */}
+        <View style={styles.bar}>
+          <IconButton icon="chevron-back" label="Back" onPress={() => safeGoBack(navigation)} />
+        </View>
+        <View style={styles.titleBlock}>
+          <Text variant="display" accessibilityRole="header">Listening stats</Text>
+          <View style={styles.dateRow}>
+            <View style={styles.dateText}>
+              <Text variant="lead" numberOfLines={1}>{stats ? rangeWords(stats.bounds) : ' '}</Text>
+              <Text variant="caption" tone="secondary">Free for everyone. Kept on this phone.</Text>
+            </View>
+            {shareable ? <IconButton icon="share-outline" label="Share your listening stats" onPress={share} /> : null}
           </View>
         </View>
 
@@ -80,10 +100,13 @@ export const ListeningStatsScreen: React.FC = () => {
           </View>
         ) : (
           <>
+            {/* The first glance, Spotify's order: top artist and top song side by side, then the highlight. */}
+            <Spotlight artist={stats.topArtists[0]} song={stats.topSongs[0]} ranked={stats.ranked} tileWidth={tileWidth}
+              onOpenArtist={openArtist} onPlay={play} />
+            {stats.highlight ? <Highlight highlight={stats.highlight} width={cardWidth} onPlay={() => play(stats.highlight!.song)} /> : null}
             <Hero stats={stats} tint={palette.primary} change={changeWords(stats.change, range)} />
-            <TopArtists artists={stats.topArtists} onOpen={openArtist} />
-            <TopSongs songs={stats.topSongs} onPlay={play} />
-            {stats.onRepeat ? <OnRepeat song={stats.onRepeat} tint={palette.secondary} onPlay={() => play(stats.onRepeat!)} /> : null}
+            <TopArtists artists={stats.topArtists} ranked={stats.ranked} onOpen={openArtist} />
+            <TopSongs songs={stats.topSongs} ranked={stats.ranked} onPlay={play} />
             <ListeningClock stats={stats} />
             <TempoCard tempo={tempo} busy={tempoBusy} />
             <WeekBars stats={stats} />
@@ -107,8 +130,10 @@ export const ListeningStatsScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bgDeep },
-  header: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingHorizontal: Space.xs, paddingVertical: Space.sm },
-  headerText: { flex: 1, minWidth: 0 },
+  bar: { paddingHorizontal: Space.xs, paddingTop: Space.xs },
+  titleBlock: { paddingHorizontal: GUTTER, paddingBottom: Space.sm, gap: Space.xs },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
+  dateText: { flex: 1, minWidth: 0 },
   empty: { alignItems: 'center', gap: Space.sm, paddingHorizontal: GUTTER * 2, paddingVertical: Space.xxl },
   sectionTitle: { marginHorizontal: GUTTER, marginTop: Space.lg },
 });

@@ -1,21 +1,28 @@
 /**
- * The Create (+) tab's sheet (1.42.0), Spotify's: a rounded card that rises just above the tab bar over a dimmed
- * page, while the Create tab turns into a white close disc (drawn by the native bar). Luvs first, then Playlist,
+ * The Create (+) tab's sheet (1.42.0), Spotify's: a rounded card that rises over a dimmed page, while the Create tab
+ * turns into a white close disc (drawn by the native bar). 1.46.0: the card rests above the mini player, not on the
+ * bar: the pill is drawn after the tab navigator (RootNavigator), so it covered the card's last row ("LuvLink"). The
+ * pill dims with the page while the card is up. Luvs first, then Playlist,
  * Blend and LuvLink (`navigation/createMenu`). Back, a tap on the dimmed page or the close disc puts it away.
  *
  * Drawn inside the tab bar's host, not a Modal, so the bar and its close disc stay on top and tappable. Moves by
  * transform and opacity only; under Reduce Motion it only fades.
  */
 import React, { useEffect } from 'react';
-import { BackHandler, StyleSheet, View } from 'react-native';
+import { BackHandler, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { ListRow, Motion, Radius, Space, Surface, Tactile } from '../../ui';
 import { CREATE_ITEMS, type CreateAction } from '../../navigation/createMenu';
 
-/** How far the page dims under the sheet. */
-const SCRIM_OPACITY = 0.62;
+/** How far the page dims under the sheet. The mini player dims by the same amount (PillPlayer), as part of the page. */
+export const CREATE_SCRIM_OPACITY = 0.62;
+const SCRIM_OPACITY = CREATE_SCRIM_OPACITY;
 
-export const CreateSheet: React.FC<{ open: boolean; bottom: number; onClose: () => void; onPick: (action: CreateAction) => void }> = ({ open, bottom, onClose, onPick }) => {
+/**
+ * `bottom` and `maxHeight` come from `createSheetFrame`: the card rests above the mini player when one is showing, and
+ * scrolls when large text makes it taller than the room left.
+ */
+export const CreateSheet: React.FC<{ open: boolean; bottom: number; maxHeight: number; onClose: () => void; onPick: (action: CreateAction) => void }> = ({ open, bottom, maxHeight, onClose, onPick }) => {
   const reduce = useReducedMotion();
   const shown = useSharedValue(open ? 1 : 0);
   useEffect(() => {
@@ -37,10 +44,12 @@ export const CreateSheet: React.FC<{ open: boolean; bottom: number; onClose: () 
     <Tactile style={StyleSheet.absoluteFill} wrapperStyle={StyleSheet.absoluteFill} pressScale={1} onPress={onClose} accessible={false} importantForAccessibility="no" accessibilityElementsHidden>
       <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, scrim]} />
     </Tactile>
-    <Animated.View style={[styles.card, { bottom: bottom + Space.sm }, card]} accessibilityViewIsModal accessibilityLabel="Create">
-      {CREATE_ITEMS.map(item => (
-        <ListRow key={item.id} title={item.title} subtitle={item.subtitle} icon={item.icon} onPress={() => onPick(item.id)} />
-      ))}
+    <Animated.View style={[styles.card, { bottom, maxHeight }, card]} accessibilityViewIsModal accessibilityLabel="Create">
+      <ScrollView bounces={false} overScrollMode="never" showsVerticalScrollIndicator={false} contentContainerStyle={styles.rows}>
+        {CREATE_ITEMS.map(item => (
+          <ListRow key={item.id} title={item.title} subtitle={item.subtitle} icon={item.icon} onPress={() => onPick(item.id)} />
+        ))}
+      </ScrollView>
     </Animated.View>
   </View>;
 };
@@ -48,7 +57,8 @@ export const CreateSheet: React.FC<{ open: boolean; bottom: number; onClose: () 
 const styles = StyleSheet.create({
   scrim: { backgroundColor: Surface.scrim },
   card: {
-    position: 'absolute', left: Space.md, right: Space.md, paddingVertical: Space.sm,
+    position: 'absolute', left: Space.md, right: Space.md,
     borderRadius: Radius.sheet, backgroundColor: Surface.raised, overflow: 'hidden',
   },
+  rows: { paddingVertical: Space.sm },
 });
