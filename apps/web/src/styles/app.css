@@ -7792,3 +7792,73 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .lyric-sync-paste textarea, .lyric-sync-paste input { box-sizing: border-box; width: 100%; border: 1px solid rgb(255 255 255 / 22%); border-radius: 10px; background: rgb(0 0 0 / 20%); color: inherit; padding: 12px; font: inherit; }
 .lyric-sync-paste textarea { resize: vertical; min-height: 160px; }
 .lyric-sync-paste :focus-visible { outline: 2px solid #f5eee4; outline-offset: 3px; }
+
+/* ---------- Desktop player bar, YouTube Music's ----------
+ * The dock is a flat bar across the whole window, not a floating glass card: the progress is a thin line
+ * along its top edge (a little thicker, with its thumb, under the pointer), track info on the left, the
+ * transport centred, then the time ("3:36 / 3:45") and the tools on the right. One karaoke control (the
+ * bar's mic), so the top-right Karaoke pin is dropped here. The lyric timing pill (−/0.0s/+, source info)
+ * waits until the pointer is over the lyrics. The background is lib/playerWash's single wash. */
+.np-dock-time { display: none; }
+.listening-world__wash { position: absolute; inset: 0; }
+@media (min-width: 901px) {
+  .listening-world .listening-body {
+    grid-template-rows: minmax(0, 1fr) 18px 4px auto 6px;
+    padding: 4px 0 0;
+  }
+  .listening-world .listening-body::before {
+    grid-row: 3 / -1;
+    border: 0;
+    border-radius: 0;
+    background: color-mix(in srgb, var(--art-primary, #5b9dff) 8%, rgba(8, 8, 12, 0.74));
+    box-shadow: none;
+  }
+  .listening-world .np-controls > :first-child {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    align-self: start;
+    justify-self: stretch;
+    width: 100%;
+    margin: -6px 0 0;
+  }
+  .listening-world .listening-progress { display: block; }
+  .listening-world .listening-progress .progress-time { display: none; }
+  .listening-world .listening-progress .progress-range {
+    display: block;
+    height: 14px;
+    --track-height: 3px;
+    --thumb-size: 12px;
+    --track-rest: rgba(255, 255, 255, 0.22);
+    --track-done: color-mix(in srgb, var(--art-primary, #5b9dff) 35%, #fff);
+    border-radius: 0;
+  }
+  .listening-world .listening-progress .progress-range::-webkit-slider-runnable-track { border-radius: 0; }
+  .listening-world .listening-progress .progress-range::-moz-range-track { border-radius: 0; }
+  .listening-world .listening-progress .progress-range::-webkit-slider-thumb { transform: scale(0); }
+  .listening-world .listening-progress .progress-range::-moz-range-thumb { transform: scale(0); }
+  .listening-world .listening-progress:is(:hover, :focus-within) .progress-range { --track-height: 5px; }
+  .listening-world .listening-progress .progress-range:is(:hover, :focus-visible, .is-dragging)::-webkit-slider-thumb { transform: scale(1); }
+  .listening-world .listening-progress .progress-range:is(:hover, :focus-visible, .is-dragging)::-moz-range-thumb { transform: scale(1); }
+  .listening-world :is(.np-meta, .np-dock-cover, .np-btns, .np-actions) { grid-row: 4; }
+  .listening-world .np-btns { padding-block: 12px; }
+  .listening-world .np-dock-time {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 12px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .listening-world .ytm-lyrics__karaoke-pin { display: none; }
+}
+@media (min-width: 901px) and (max-width: 1240px) {
+  .listening-world .listening-body { grid-template-rows: minmax(0, 1fr) 18px 4px auto auto 6px; }
+  .listening-world :is(.np-meta, .np-dock-cover, .np-actions) { grid-row: 4; margin-top: 10px; }
+  .listening-world .np-btns { grid-row: 5; padding-block: 2px 8px; }
+  .listening-world .np-controls > :first-child { grid-column: 1 / -1; grid-row: 3; width: 100%; }
+}
+@media (hover: hover) and (min-width: 901px) {
+  .listening-world .player-sidepanel .lyrics-dock { opacity: 0; transition: opacity var(--d-base) var(--ease-standard); }
+  .listening-world .player-sidepanel:is(:hover, :focus-within) .lyrics-dock { opacity: 1; }
+}
