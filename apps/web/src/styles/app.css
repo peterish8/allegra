@@ -3064,9 +3064,27 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   .is-detail .panel-topbar .search-box { order: 0; min-width: 0; margin-left: 0; flex: 1 1 auto; width: auto; }
   .is-detail .topbar-back { padding: 0 14px; }}
 
-/* =====================================================================
+/* }
+}
+}
+}
+}
+}
+}
+}
+}
+======
  * Round 3: one material (glass), one primary action, one motion language
- * ===================================================================== */
+ * }
+}
+}
+}
+}
+}
+}
+}
+}
+====== */
 
 /* ---------- Glass tokens ----------
  * Cards, rows, fields and sheets all read the same translucent surface, so every page sits on the
@@ -3443,9 +3461,27 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
     width: min(1120px, calc(100% - var(--rail-w) - 48px));
   }}
 
-/* =====================================================================
+/* }
+}
+}
+}
+}
+}
+}
+}
+}
+======
  * Round 4: Home (the personal dashboard), accounts, taste onboarding, sharing
- * ===================================================================== */
+ * }
+}
+}
+}
+}
+}
+}
+}
+}
+====== */
 
 /* ---------- Home ---------- */
 .home-page { display: flex; min-width: 0; flex-direction: column; gap: 38px; container: browse / inline-size; animation: page-in 0.4s var(--ease-decelerate) both; }
@@ -7792,3 +7828,112 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .lyric-sync-paste textarea, .lyric-sync-paste input { box-sizing: border-box; width: 100%; border: 1px solid rgb(255 255 255 / 22%); border-radius: 10px; background: rgb(0 0 0 / 20%); color: inherit; padding: 12px; font: inherit; }
 .lyric-sync-paste textarea { resize: vertical; min-height: 160px; }
 .lyric-sync-paste :focus-visible { outline: 2px solid #f5eee4; outline-offset: 3px; }
+
+
+/* ---------- Desktop player bar, YouTube Music's ----------
+ * The dock is a flat bar across the whole window, not a floating glass card: the progress is a thin line
+ * along its top edge (a little thicker, with its thumb, under the pointer), track info on the left, the
+ * transport centred, then the time ("3:36 / 3:45") and the tools on the right. One karaoke control (the
+ * bar's mic), so the top-right Karaoke pin is dropped here. The lyric timing pill (−/0.0s/+, source info)
+ * waits until the pointer is over the lyrics. The background is lib/playerWash's single wash. */
+.np-dock-time { display: none; }
+.listening-world__wash { position: absolute; inset: 0; }
+@media (min-width: 901px) {
+  .listening-world .listening-body {
+    grid-template-rows: minmax(0, 1fr) 18px 4px auto 6px;
+    padding: 4px 0 0;
+  }
+  .listening-world .listening-body::before {
+    grid-row: 3 / -1;
+    border: 0;
+    border-radius: 0;
+    background: color-mix(in srgb, var(--art-primary, #5b9dff) 8%, rgba(8, 8, 12, 0.74));
+    box-shadow: none;
+  }
+  .listening-world .np-controls > :first-child {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    align-self: start;
+    justify-self: stretch;
+    width: 100%;
+    margin: -6px 0 0;
+  }
+  .listening-world .listening-progress { display: block; }
+  .listening-world .listening-progress .progress-time { display: none; }
+  .listening-world .listening-progress .progress-range {
+    display: block;
+    height: 14px;
+    --track-height: 3px;
+    --thumb-size: 12px;
+    --track-rest: rgba(255, 255, 255, 0.22);
+    --track-done: color-mix(in srgb, var(--art-primary, #5b9dff) 35%, #fff);
+    border-radius: 0;
+  }
+  .listening-world .listening-progress .progress-range::-webkit-slider-runnable-track { border-radius: 0; }
+  .listening-world .listening-progress .progress-range::-moz-range-track { border-radius: 0; }
+  .listening-world .listening-progress .progress-range::-webkit-slider-thumb { transform: scale(0); }
+  .listening-world .listening-progress .progress-range::-moz-range-thumb { transform: scale(0); }
+  .listening-world .listening-progress:is(:hover, :focus-within) .progress-range { --track-height: 5px; }
+  .listening-world .listening-progress .progress-range:is(:hover, :focus-visible, .is-dragging)::-webkit-slider-thumb { transform: scale(1); }
+  .listening-world .listening-progress .progress-range:is(:hover, :focus-visible, .is-dragging)::-moz-range-thumb { transform: scale(1); }
+  .listening-world :is(.np-meta, .np-dock-cover, .np-btns, .np-actions) { grid-row: 4; }
+  .listening-world .np-btns { padding-block: 12px; }
+  .listening-world .np-dock-time {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 12px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .listening-world .ytm-lyrics__karaoke-pin { display: none; }
+}
+@media (min-width: 901px) and (max-width: 1240px) {
+  .listening-world .listening-body { grid-template-rows: minmax(0, 1fr) 18px 4px auto auto 6px; }
+  .listening-world :is(.np-meta, .np-dock-cover, .np-actions) { grid-row: 4; margin-top: 10px; }
+  .listening-world .np-btns { grid-row: 5; padding-block: 2px 8px; }
+  .listening-world .np-controls > :first-child { grid-column: 1 / -1; grid-row: 3; width: 100%; }
+}
+@media (hover: hover) and (min-width: 901px) {
+  .listening-world .player-sidepanel .lyrics-dock { opacity: 0; transition: opacity var(--d-base) var(--ease-standard); }
+  .listening-world .player-sidepanel:is(:hover, :focus-within) .lyrics-dock { opacity: 1; }
+}
+
+/* Local LightFM Quick Picks preview (/dev/quick-picks, development builds only). */
+.picks-preview { display: flex; min-width: 0; flex-direction: column; gap: 20px; padding: 8px 0 48px; }
+.picks-preview__intro { display: flex; max-width: 760px; flex-direction: column; gap: 10px; }
+.picks-preview__intro h1 { margin: 0; color: var(--ink); font-size: 28px; font-weight: 600; letter-spacing: -0.03em; }
+.picks-preview__intro p { margin: 0; color: var(--ink-muted); line-height: 1.5; }
+.picks-preview__badge { align-self: flex-start; padding: 4px 10px; border: 1px solid var(--accent-line); border-radius: var(--radius-pill); background: var(--accent-wash); color: var(--accent-bright); font-size: 12px; font-weight: 600; }
+.picks-preview__select { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--ink-soft); font-size: 14px; }
+.picks-preview__select select { min-width: 0; max-width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--glass-surface); color: var(--ink); font: inherit; }
+.picks-preview__status { color: var(--ink-soft); font-size: 13px; }
+.picks-preview__status[data-status='unavailable'], .picks-preview__status[data-status='no-profile-vector'], .picks-preview__error { color: var(--accent-bright); }
+.picks-preview__columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.picks-preview__columns[aria-busy='true'] { opacity: 0.6; }
+.picks-preview__column { min-width: 0; padding: 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-panel); background: var(--glass-surface); backdrop-filter: blur(var(--blur-md)); }
+.picks-preview__column header { margin-bottom: 10px; }
+.picks-preview__column h2 { margin: 0; color: var(--ink); font-size: 18px; font-weight: 600; }
+.picks-preview__column header p { margin: 4px 0 0; color: var(--ink-soft); font-size: 13px; }
+.picks-preview__column ol { margin: 0; padding: 0; list-style: none; }
+.picks-preview__column li button { display: flex; width: 100%; min-width: 0; align-items: center; gap: 12px; padding: 8px; border: 0; border-radius: var(--radius-control); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.picks-preview__column li button:hover, .picks-preview__column li.is-current button { background: var(--glass-highlight); }
+.picks-preview__column li img, .picks-preview__art { width: 40px; height: 40px; flex: none; border-radius: 10px; background: var(--bg-subtle); object-fit: cover; }
+.picks-preview__rank { width: 20px; flex: none; color: var(--ink-faint); font-family: var(--font-mono); font-size: 12px; text-align: right; }
+.picks-preview__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.picks-preview__copy strong, .picks-preview__copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picks-preview__copy strong { color: var(--ink); font-size: 14px; font-weight: 600; }
+.picks-preview__copy span { color: var(--ink-muted); font-size: 13px; }
+.picks-preview__meta { display: flex; flex: none; flex-direction: column; align-items: flex-end; color: var(--ink-faint); font-family: var(--font-mono); font-size: 11px; }
+.picks-preview__meta em { color: var(--accent-bright); font-style: normal; }
+.picks-preview__meta em.is-down { color: var(--ink-soft); }
+.picks-preview__play { display: grid; width: 28px; height: 28px; flex: none; place-items: center; color: var(--ink-soft); }
+.picks-preview__pool { color: var(--ink-muted); font-size: 13px; }
+.picks-preview__pool summary { cursor: pointer; }
+.picks-preview__pool table { width: 100%; margin-top: 10px; border-collapse: collapse; }
+.picks-preview__pool th, .picks-preview__pool td { padding: 4px 8px; border-bottom: 1px solid var(--border-subtle); text-align: left; }
+.picks-preview__pool td:nth-child(-n+3) { font-family: var(--font-mono); white-space: nowrap; }
+@media (max-width: 767px) {
+  .picks-preview__columns { grid-template-columns: minmax(0, 1fr); }
+}

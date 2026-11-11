@@ -68,6 +68,19 @@ export function BarScrubber({
   );
 }
 
+/**
+ * The desktop player bar's time, YouTube Music's "3:36 / 3:45" beside the tools. It reads the playhead itself so
+ * the time reports re-render only this text. Hidden from screen readers: the progress slider already says it.
+ */
+export function PlayerTime({ playhead, duration }: { readonly playhead: Playhead; readonly duration: number }) {
+  const at = usePlayhead(playhead);
+  return (
+    <span className="np-dock-time" aria-hidden="true">
+      {formatTime(Math.min(at, Math.max(duration, 0)))} / {formatTime(duration)}
+    </span>
+  );
+}
+
 /** Home's Now Playing card: a thin progress line and the time left. */
 export function FeatureProgress({
   playhead,

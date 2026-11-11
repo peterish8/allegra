@@ -431,6 +431,18 @@ invented model result. Excludes already-liked or
 recently played recordings. `404` means there is no listening context yet. The legacy
 `/api/ai/recommendations` path is an alias for compatibility.
 
+**Development only, 2026-11-11.** `GET /api/recommendations/preview/profiles` and
+`GET /api/recommendations/preview?profile=<id>` compare today's ranking with a LightFM blend for a
+public JioSaavn benchmark playlist. They are mounted only when `NODE_ENV` is not `production` and
+`RECOMMENDATIONS_PREVIEW_DIR` names a local benchmark output directory. They read no account, take no
+auth, and change nothing above: both public URLs and MCP `get_recommendations` keep the shape and
+ranking described here. The preview returns `{ profile, provider, reasoning, model: { status:
+'ready' | 'unavailable' | 'no-profile-vector', seed, collectedAt, detail? }, current: UnifiedSong[],
+lightfm: UnifiedSong[], candidates: { id, title, artist, currentRank, lightfmRank, score | null }[],
+coverage: { candidates, withVectors } }`. Both lists come from one candidate pool after the same
+exclusions, language filter and artist cap. Without a usable model or profile vector, `lightfm`
+repeats `current`. Missing inputs answer `503`.
+
 ## Library sync — additive, 2026-10-05
 
 Likes and playlists are the same on Allegra web and LuvLyrics (`apps/mobile`). No existing shape changed:

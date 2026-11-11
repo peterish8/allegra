@@ -65,3 +65,10 @@ test('LuvLink invite and room routes retain their path state', () => {
   assert.equal(parseRoute(paths.luvLinkRoom('room 42')).luvLinkRoomId, 'room 42');
   assert.equal(parseRoute(paths.luvLink).view, 'luvLink');
 });
+
+test('the LightFM Quick Picks preview route exists only when its development flag is on', () => {
+  assert.equal(parseRoute('/dev/quick-picks', { import: false, blend: false, quickPicksPreview: true }).view, 'quickPicksPreview');
+  assert.equal(parseRoute('/dev/quick-picks', { import: false, blend: false, quickPicksPreview: false }).view, 'home');
+  assert.equal(parseRoute('/dev/quick-picks', { import: false, blend: false }).view, 'home');
+  assert.equal(parseRoute('/dev/other', { import: false, blend: false, quickPicksPreview: true }).view, 'home');
+});

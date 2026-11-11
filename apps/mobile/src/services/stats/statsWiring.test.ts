@@ -38,9 +38,13 @@ describe('listening stats wiring', () => {
 
   it('shows everything the owner asked for, and lets the listener pause and clear it', () => {
     const screen = read('src/screens/ListeningStatsScreen.tsx');
-    for (const part of ['<Hero ', '<TopArtists ', '<TopSongs ', '<OnRepeat ', '<ListeningClock ', '<TempoCard ', '<WeekBars ', '<DailyBars ', '<Habits ']) {
+    // 1.46.0 (owner: "like Spotify"): Spotify's first glance (two tiles, then a highlight) replaced the On repeat card.
+    for (const part of ['<Spotlight ', '<Highlight ', '<Hero ', '<TopArtists ', '<TopSongs ', '<ListeningClock ', '<TempoCard ', '<WeekBars ', '<DailyBars ', '<Habits ']) {
       expect(screen).toContain(part);
     }
+    // The dates under the title and a Share button, as on Spotify's page.
+    expect(screen).toMatch(/rangeWords\(stats\.bounds\)/);
+    expect(screen).toMatch(/Share\.share\(\{ message: statsShareText\(stats\) \}\)\.catch/);
     expect(screen).toMatch(/<Switch label="Keep counting"/);
     expect(screen).toMatch(/<ConfirmSheet visible=\{confirmClear\} title="Clear listening stats\?"/);
     expect(screen).toMatch(/STATS_RANGES\.map/);

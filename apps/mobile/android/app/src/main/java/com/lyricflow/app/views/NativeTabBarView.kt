@@ -353,11 +353,13 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     private fun slotRects(width: Float, height: Float): List<RectF> {
         if (variant == "v6") {
             val n = v6Tabs.size.toFloat()
-            return v6Tabs.indices.map { i -> RectF(i * width / n, 0f, (i + 1) * width / n, V6_BAR_DP) }
+            return v6Tabs.indices.map { i -> RectF(i * width / n, 0f, (i + 1) * width / n, v6BarHeight()) }
         }
         return TabBarGeometry.slots(variant == "modern-pill", micEnabled, width, barTop(height))
             .map { RectF(it.left, it.top, it.right, it.bottom) }
     }
+
+    private fun v6BarHeight(): Float = maxOf(V6_BAR_DP, kotlin.math.ceil(38f + 12f * resources.configuration.fontScale.coerceAtLeast(1f) * 1.3f))
 
     private fun drawV6(canvas: Canvas, width: Float) {
         val n = v6Tabs.size.toFloat()
@@ -371,7 +373,7 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
                 iconPaint.color = ColorUtils.setAlphaComponent(Color.WHITE, 230)
                 iconPaint.style = Paint.Style.STROKE
                 iconPaint.strokeWidth = 2f
-                canvas.drawRoundRect(RectF(cx - width / (2f * n) + 4f, 4f, cx + width / (2f * n) - 4f, V6_BAR_DP - 4f), 14f, 14f, iconPaint)
+                canvas.drawRoundRect(RectF(cx - width / (2f * n) + 4f, 4f, cx + width / (2f * n) - 4f, v6BarHeight() - 4f), 14f, 14f, iconPaint)
                 iconPaint.style = Paint.Style.FILL
             }
             val color = if (selected) activeTint else inactiveTint
@@ -384,9 +386,9 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
             drawTabIcon(canvas, name, ColorUtils.setAlphaComponent(color, (Color.alpha(color) * (1f - pressed[index] * 0.15f)).roundToInt()), selected)
             canvas.restore()
             labelPaint.color = color
-            labelPaint.textSize = 12f * resources.configuration.fontScale.coerceAtMost(1.3f)
+            labelPaint.textSize = 12f * resources.configuration.fontScale.coerceAtLeast(1f)
             labelPaint.typeface = Typeface.create(if (selected) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
-            canvas.drawText(name, cx, 48f, labelPaint)
+            canvas.drawText(name, cx, maxOf(48f, 34f - labelPaint.fontMetrics.top), labelPaint)
         }
     }
 
@@ -461,7 +463,7 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
             drawGlyph(canvas, GLYPH_ADD, ColorUtils.setAlphaComponent(color, (Color.alpha(color) * rest * press).roundToInt()))
             canvas.restore()
             labelPaint.color = ColorUtils.setAlphaComponent(color, (Color.alpha(color) * rest).roundToInt())
-            labelPaint.textSize = 12f * resources.configuration.fontScale.coerceAtMost(1.3f)
+            labelPaint.textSize = 12f * resources.configuration.fontScale.coerceAtLeast(1f)
             labelPaint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
             canvas.drawText(CREATE, cx, 48f, labelPaint)
         }

@@ -145,6 +145,11 @@ export const StatsTheme = {
   down: '#FF8A80',
   tempo: { slow: '#6C9BFF', steady: '#4FD1B5', upbeat: '#FFC75F', fast: '#FF6B81' },
   rank: 'rgba(255, 255, 255, 0.42)',
+  /** Spotify's rank chips: a dark lozenge on the artwork with a coloured arrow. */
+  chip: 'rgba(0, 0, 0, 0.62)',
+  /** The highlight card's shade: clear over the cover, deep at the bottom where its words sit. */
+  shade: ['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.18)', 'rgba(0, 0, 0, 0.86)'] as const,
+  shadeStops: [0, 0.45, 1] as const,
 } as const;
 
 /** One corner family everywhere. Artwork is never over-rounded. */

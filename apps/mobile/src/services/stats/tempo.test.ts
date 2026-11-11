@@ -11,7 +11,7 @@ import type { TempoRow } from '../../database/listenLogQueries';
 
 const song = (key: string, extra: Partial<TopSong> = {}): TopSong => ({
   key, title: key, artist: 'Anirudh Ravichander, Arivu', artwork: null, ref: `saavn:${key}`, songId: `stream:saavn:${key}`,
-  seconds: 100, plays: 1, firstAt: 0, lastAt: 0, ...extra,
+  seconds: 100, plays: 1, firstAt: 0, lastAt: 0, previousRank: null, ...extra,
 });
 
 describe('asking Deezer', () => {

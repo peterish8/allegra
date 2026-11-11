@@ -565,6 +565,42 @@ export async function fetchAiRecommendations(currentSongId?: string, signal?: Ab
   return request(`/api/ai/recommendations${query}`, { signal });
 }
 
+/** Development-only LightFM preview (`RECOMMENDATIONS_PREVIEW_DIR` on the API). */
+export interface QuickPicksPreviewProfile {
+  readonly id: string;
+  readonly title: string;
+  readonly language: string;
+  readonly genre: string | null;
+  readonly seeds: number;
+  readonly hasVector: boolean;
+}
+
+export interface QuickPicksPreviewModel {
+  readonly status: 'ready' | 'unavailable' | 'no-profile-vector';
+  readonly seed?: number | null;
+  readonly collectedAt?: string | null;
+  readonly detail?: string;
+}
+
+export interface QuickPicksPreview {
+  readonly profile: { readonly id: string; readonly title: string; readonly language: string; readonly genre: string | null; readonly seeds: number; readonly hidden: number };
+  readonly provider: string;
+  readonly reasoning: string;
+  readonly model: QuickPicksPreviewModel;
+  readonly current: UnifiedSong[];
+  readonly lightfm: UnifiedSong[];
+  readonly candidates: readonly { readonly id: string; readonly title: string; readonly artist: string; readonly currentRank: number; readonly lightfmRank: number; readonly score: number | null }[];
+  readonly coverage: { readonly candidates: number; readonly withVectors: number };
+}
+
+export async function fetchQuickPicksPreviewProfiles(signal?: AbortSignal): Promise<{ model: QuickPicksPreviewModel; profiles: QuickPicksPreviewProfile[] }> {
+  return request('/api/recommendations/preview/profiles', { signal });
+}
+
+export async function fetchQuickPicksPreview(profileId: string, signal?: AbortSignal): Promise<QuickPicksPreview> {
+  return request(`/api/recommendations/preview?profile=${encodeURIComponent(profileId)}`, { signal });
+}
+
 export async function requestDjTurn(input: DjTurnRequest, signal?: AbortSignal): Promise<DjTurnResponse> {
   return request('/api/ai/dj/turn', {
     method: 'POST',

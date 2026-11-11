@@ -58,14 +58,39 @@ export interface TopSong {
   readonly key: string; readonly title: string; readonly artist: string; readonly artwork: string | null;
   readonly ref: string | null; readonly songId: string;
   readonly seconds: number; readonly plays: number; readonly firstAt: number; readonly lastAt: number;
+  /** Its place in the period before (1 = top), null when it was not heard then. See `rankMove`. */
+  readonly previousRank: number | null;
 }
 export interface TopArtist {
   readonly name: string; readonly seconds: number; readonly plays: number; readonly songs: number;
   /** The cover of their most-heard song, for their tile. */
   readonly artwork: string | null;
+  /** Their place in the period before (1 = top), null when they were not heard then. See `rankMove`. */
+  readonly previousRank: number | null;
 }
 
 export type Persona = 'early bird' | 'daytime' | 'evening' | 'night owl';
+
+/** "new": the song new to you this period that you played most. "repeat": another song you kept coming back to. */
+export interface StatsHighlight { readonly kind: 'new' | 'repeat'; readonly song: TopSong }
+
+/** A new find needs two plays and a repeat three, so one stray listen never becomes the page's highlight. */
+export const HIGHLIGHT_NEW_PLAYS = 2;
+export const HIGHLIGHT_REPEAT_PLAYS = 3;
+
+/**
+ * The highlight, from the songs ranked by time heard (`ranked[0]` is the top song, already on its tile): the
+ * longest-heard song first heard in this range, else the most-replayed of the others. Null when neither qualifies.
+ * `isNew` is false for every song in the all-time range, where everything is new.
+ */
+export function pickHighlight(ranked: readonly TopSong[], isNew: (song: TopSong) => boolean): StatsHighlight | null {
+  const others = ranked.slice(1);
+  const found = others.find(s => isNew(s) && s.plays >= HIGHLIGHT_NEW_PLAYS);
+  if (found) return { kind: 'new', song: found };
+  const repeat = others.filter(s => s.plays >= HIGHLIGHT_REPEAT_PLAYS)
+    .sort((a, b) => b.plays - a.plays || b.seconds - a.seconds)[0];
+  return repeat ? { kind: 'repeat', song: repeat } : null;
+}
 
 export interface ListeningStats {
   readonly range: StatsRange;
@@ -77,8 +102,12 @@ export interface ListeningStats {
   readonly artists: number;
   /** Change in minutes against the previous period, as a fraction (0.12 = up 12%); null when there is none. */
   readonly change: number | null;
+  /** The period before had listening to rank against (a minute or more), so places can move. False for all time. */
+  readonly ranked: boolean;
   readonly dailyAverageSeconds: number;
   readonly topSongs: readonly TopSong[];
+  /** The card under the two tiles (Spotify's weekly highlight). Never the top song itself, which a tile already shows. */
+  readonly highlight: StatsHighlight | null;
   /** The 25 songs heard longest: what the tempo card is measured over. */
   readonly heavyRotation: readonly TopSong[];
   readonly topArtists: readonly TopArtist[];
@@ -105,6 +134,20 @@ export interface ListeningStats {
 }
 
 const add = <K>(map: Map<K, number>, key: K, value: number) => map.set(key, (map.get(key) ?? 0) + value);
+
+/** Places by time heard (1 = most), for songs (by song key) and artists (by lower-case name), over `entries`. */
+function placesOf(entries: readonly ListenEntry[]): { songs: Map<string, number>; artists: Map<string, number> } {
+  const songSeconds = new Map<string, number>();
+  const artistSeconds = new Map<string, number>();
+  for (const e of entries) {
+    if (e.heardSec <= 0) continue;
+    add(songSeconds, e.songKey, e.heardSec);
+    for (const name of creditedArtists(e.artist)) add(artistSeconds, name.toLowerCase(), e.heardSec);
+  }
+  const places = (m: Map<string, number>) =>
+    new Map([...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([key], i) => [key, i + 1] as const));
+  return { songs: places(songSeconds), artists: places(artistSeconds) };
+}
 
 /** Monday = 0 … Sunday = 6. */
 const weekdayOf = (ms: number): number => (new Date(ms).getDay() + 6) % 7;
@@ -217,9 +260,10 @@ export function computeStats(
     add(perDay, startOfDay(e.startedAt), e.heardSec);
   }
 
+  const before = placesOf(previous);
   const topSongsAll: TopSong[] = [...songs.entries()].map(([key, s]) => ({
     key, title: s.entry.title, artist: s.entry.artist, artwork: s.entry.artwork, ref: s.entry.ref, songId: s.entry.songId,
-    seconds: s.seconds, plays: s.plays, firstAt: s.firstAt, lastAt: s.lastAt,
+    seconds: s.seconds, plays: s.plays, firstAt: s.firstAt, lastAt: s.lastAt, previousRank: before.songs.get(key) ?? null,
   })).sort((a, b) => b.seconds - a.seconds || b.plays - a.plays || a.title.localeCompare(b.title));
 
   const artworkFor = (artistKey: string): string | null =>
@@ -229,7 +273,7 @@ export function computeStats(
     .slice(0, 5)
     .map(([key, secs]) => ({
       name: artistNames.get(key) ?? key, seconds: secs, plays: artistPlays.get(key) ?? 0,
-      songs: artistSongs.get(key)?.size ?? 0, artwork: artworkFor(key),
+      songs: artistSongs.get(key)?.size ?? 0, artwork: artworkFor(key), previousRank: before.artists.get(key) ?? null,
     }));
 
   const previousSeconds = previous.reduce((a, e) => a + e.heardSec, 0);
@@ -263,9 +307,11 @@ export function computeStats(
 
   return {
     range, bounds, empty: inRange.length === 0, seconds, plays, songs: songs.size, artists: artistSeconds.size, change,
+    ranked: bounds.previousFrom !== null && previousSeconds >= 60,
     // Averaged over every day of the range so far, quiet days included (Spotify's "daily average").
     dailyAverageSeconds: seconds / Math.max(1, bounds.days),
     topSongs: topSongsAll.slice(0, 5), heavyRotation: topSongsAll.slice(0, 25), topArtists, onRepeat: topSongsAll[0] ?? null,
+    highlight: pickHighlight(topSongsAll, s => range !== 'all' && (firstHeard.get(s.key)?.at ?? Infinity) >= bounds.from),
     clock, peakHour: peak, persona: personaFor(clock), weekdays, topWeekday, daily,
     currentStreak: run.current, longestStreak: run.longest,
     finishedShare: listens ? finished / listens : 0, skipShare: listens ? skipped / listens : 0,
@@ -299,6 +345,53 @@ export function changeWords(change: number | null, range: StatsRange): string | 
   const what = range === 'week' ? 'last week' : range === 'month' ? 'the 4 weeks before' : range === 'half' ? 'the 6 months before' : 'last year';
   if (pct === 0) return `Same as ${what}`;
   return `${change > 0 ? 'Up' : 'Down'} ${pct}% on ${what}`;
+}
+
+/** How a place moved against the period before (Spotify's little green arrow on a top artist or song). */
+export type RankMove = { readonly kind: 'up' | 'down' | 'same' | 'new'; readonly by: number };
+
+/** `rank` is 1-based. Null when there is nothing to compare with (all time, or a quiet period before). */
+export function rankMove(rank: number, previousRank: number | null, ranked: boolean): RankMove | null {
+  if (!ranked) return null;
+  if (previousRank === null) return { kind: 'new', by: 0 };
+  const by = previousRank - rank;
+  if (by > 0) return { kind: 'up', by };
+  if (by < 0) return { kind: 'down', by: -by };
+  return { kind: 'same', by: 0 };
+}
+
+/** What TalkBack reads for a move: "Up 2 places", "New this period". */
+export function rankMoveWords(move: RankMove | null): string {
+  if (!move) return '';
+  if (move.kind === 'new') return 'New this period';
+  if (move.kind === 'same') return 'Same place as before';
+  return `${move.kind === 'up' ? 'Up' : 'Down'} ${move.by} ${move.by === 1 ? 'place' : 'places'}`;
+}
+
+const dayMonth = (ms: number): string => {
+  const d = new Date(ms);
+  return `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })}`;
+};
+
+/** The dates under the title (Spotify's "Oct 30 - Nov 4"): "15 Oct – 11 Nov", with years when they differ. */
+export function rangeWords(bounds: RangeBounds): string {
+  const from = new Date(bounds.from), to = new Date(bounds.to);
+  if (startOfDay(bounds.from) === startOfDay(bounds.to)) return `Today, ${dayMonth(bounds.to)}`;
+  if (from.getFullYear() !== to.getFullYear()) return `${dayMonth(bounds.from)} ${from.getFullYear()} – ${dayMonth(bounds.to)} ${to.getFullYear()}`;
+  return `${dayMonth(bounds.from)} – ${dayMonth(bounds.to)}`;
+}
+
+/** The text the Share button sends: the dates, the minutes, the top artist and the top song. */
+export function statsShareText(stats: ListeningStats): string {
+  // Grouped by hand ("12,340"), so it reads the same on every Android version.
+  const minutes = String(minutesOf(stats.seconds)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const lines = [`My listening, ${rangeWords(stats.bounds)}`, `${minutes} minutes`];
+  const artist = stats.topArtists[0];
+  const song = stats.topSongs[0];
+  if (artist) lines.push(`Top artist: ${artist.name}`);
+  if (song) lines.push(`Top song: ${song.title} by ${song.artist}`);
+  lines.push('On LuvLyrics');
+  return lines.join('\n');
 }
 
 export const PERSONA_WORDS: Record<Persona, { title: string; body: string }> = {
