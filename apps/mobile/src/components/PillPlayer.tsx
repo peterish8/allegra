@@ -25,6 +25,8 @@ import Marquee from './allegra/Marquee';
 import Artwork from './allegra/Artwork';
 import { MiniPlayerGlow } from './MiniPlayerGlow';
 import { MiniScrubber } from './MiniScrubber';
+import { CREATE_SCRIM_OPACITY } from './nav/CreateSheet';
+import { useShellMenuStore } from '../store/shellMenuStore';
 import { scrubSeconds } from '../playback/miniScrub';
 
 interface Props {
@@ -130,10 +132,18 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   const open = Gesture.Pan().activeOffsetY(-20).failOffsetX([-20, 20]).runOnJS(true).onEnd(e => { if (e.translationY < -24) onOpen(e.velocityY); });
   const infoGesture = Gesture.Race(open, swipe);
   const following = useAnimatedStyle(() => ({ opacity: fade.value, transform: [{ translateX: shift.value }] }));
+  const createOpen = useShellMenuStore(s => s.createOpen);
+  const dimmed = useSharedValue(createOpen ? 1 : 0);
+  useEffect(() => {
+    dimmed.value = withTiming(createOpen ? 1 : 0, { duration: createOpen ? Motion.duration.base : Motion.duration.fast, easing: createOpen ? Motion.ease.decelerate : Motion.ease.accelerate });
+  }, [createOpen, dimmed]);
+  const createDim = useAnimatedStyle(() => ({ opacity: 1 - CREATE_SCRIM_OPACITY * dimmed.value }));
 
   if (sheetUp || keyboard) return null;
   const rowHeight = miniRowHeight(fontScale);
-  return <Animated.View style={[styles.shell, { bottom }, push]}>
+  // The Create sheet is up: the pill is part of the dimmed page under it, and a tap on it reaches the page's scrim
+  // (which closes the sheet) instead of opening the player.
+  return <Animated.View pointerEvents={createOpen ? 'none' : 'auto'} style={[styles.shell, { bottom }, push, createDim]}>
     {/* 1.41.0: the mini player has its own soft, frosted cover glow; the navigation keeps the shell material. */}
     <MiniPlayerGlow uri={coverImageUri} active />
     <MiniScrubber positionSV={positionSV} durationSV={durationSV} enabled={enabled} active={scrubbing} height={SEEK_BAND_HEIGHT}
