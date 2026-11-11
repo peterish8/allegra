@@ -28,6 +28,15 @@ export interface RecommendationResult {
   readonly reasoning: string;
 }
 
+export interface RecommendationComparison {
+  readonly provider: string;
+  readonly reasoning: string;
+  /** The cached pool after exclusions, in today's order and before the artist cap. */
+  readonly candidates: readonly UnifiedSong[];
+  readonly current: readonly UnifiedSong[];
+  readonly reranked: readonly UnifiedSong[];
+}
+
 const HIT_TTL_SECONDS = 1_800;
 const MISS_TTL_SECONDS = 300;
 const MAX_SEEDS = 4;
@@ -75,6 +84,38 @@ export class RecommendationService {
     excludeSongs: readonly UnifiedSong[] = [],
     limit = 12
   ): Promise<RecommendationResult | null> {
+    const pool = await this.pool(context, limit);
+    if (!pool) return null;
+    const songs = diversify(eligible(pool.songs, excludeIds, excludeSongs), limit);
+    return songs.length > 0 ? { ...pool, songs } : null;
+  }
+
+  /**
+   * Development preview: today's shelf and an alternative order drawn from the same cached
+   * candidates after the same exclusions, then held to the same artist cap and length. The
+   * public routes and MCP keep calling `recommend`.
+   */
+  public async compare(
+    context: TasteContext,
+    excludeIds: ReadonlySet<string>,
+    excludeSongs: readonly UnifiedSong[],
+    rerank: (candidates: readonly UnifiedSong[]) => readonly UnifiedSong[],
+    limit = 12
+  ): Promise<RecommendationComparison | null> {
+    const pool = await this.pool(context, limit);
+    if (!pool) return null;
+    const candidates = eligible(pool.songs, excludeIds, excludeSongs);
+    if (candidates.length === 0) return null;
+    return {
+      provider: pool.provider,
+      reasoning: pool.reasoning,
+      candidates,
+      current: diversify(candidates, limit),
+      reranked: diversify(rerank(candidates), limit)
+    };
+  }
+
+  private async pool(context: TasteContext, limit: number): Promise<RecommendationResult | null> {
     if (context.seeds.length === 0 && context.favoriteArtists.length === 0 && context.favoriteLanguages.length === 0 && context.languages.length === 0) {
       return null;
     }
@@ -89,19 +130,12 @@ export class RecommendationService {
     );
     // Cache the ranked pool; per-request excludes apply on the way out, so a shelf stays reusable
     // while the listener's history grows by a song or two.
-    const pool = await cachedLookup(this.cache, {
+    return cachedLookup(this.cache, {
       key,
       hitTtlSeconds: HIT_TTL_SECONDS,
       missTtlSeconds: MISS_TTL_SECONDS,
       load: () => this.build(context, limit * 3)
     });
-    if (!pool) return null;
-    const excluded = new Set(excludeSongs.map(songIdentity));
-    const songs = diversify(
-      pool.songs.filter((song) => !excludeIds.has(song.id) && !excluded.has(songIdentity(song))),
-      limit
-    );
-    return songs.length > 0 ? { ...pool, songs } : null;
   }
 
   private async build(context: TasteContext, poolSize: number): Promise<RecommendationResult | null> {
@@ -162,6 +196,11 @@ async function safe<T>(load: () => Promise<readonly T[]>): Promise<readonly T[]>
     // One slow artist page or a suggestions miss must not sink the whole shelf.
     return [];
   }
+}
+
+function eligible(songs: readonly UnifiedSong[], excludeIds: ReadonlySet<string>, excludeSongs: readonly UnifiedSong[]): UnifiedSong[] {
+  const excluded = new Set(excludeSongs.map(songIdentity));
+  return songs.filter((song) => !excludeIds.has(song.id) && !excluded.has(songIdentity(song)));
 }
 
 function uniqueSongs(songs: readonly UnifiedSong[]): UnifiedSong[] {

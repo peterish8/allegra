@@ -101,4 +101,4 @@ The API already shares recommendation input between `GET /api/recommendations`, 
 | Live feedback window | Up to 10 usable events in 30 minutes initially. Refresh after successful writes and on shelf focus. |
 | When it becomes the default | LightFM must beat today’s ranking and the feature ranker. Live reranking must improve on static LightFM. |
 
-**First implementation slice:** On a clean branch from current `origin/main`, run the real JioSaavn benchmark and verify exported LightFM scores. Use a small fixture to check API integration and replay confirmed feedback against a fixed model. Run the eligible-account pilot only after the offline and serving checks support it.
+**Next implementation slice.** Use the saved JioSaavn benchmark and verified model export to build a local side-by-side preview through the existing API. Use a fixture or a labelled playlist profile, then replay confirmed feedback against a fixed model in the next slice. The handoff records the remaining pilot and hosting decisions. [Handoff](HANDOFF-2026-11-11-lightfm-quick-picks.md)

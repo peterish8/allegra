@@ -43,6 +43,11 @@ export interface AppConfig {
   readonly importEnabled: boolean;
   /** `BLEND_ENABLED=true` turns on Blends. Off by default (PLAN.md D18). */
   readonly blendEnabled: boolean;
+  /**
+   * `RECOMMENDATIONS_PREVIEW_DIR`: a local LightFM benchmark output directory. Development only;
+   * production ignores it, so the preview route never ships.
+   */
+  readonly recommendationPreviewDir?: string;
 }
 
 /** Both hosts are free and keyless; the contact goes in the User-Agent they require. */
@@ -161,6 +166,8 @@ export function loadConfig(env: NodeJS.Dict<string>): AppConfig {
   } catch { throw new Error('SPOTIFY_REDIRECT_URI must be a trusted https URL (http is allowed in development).'); }
 
 
+  const recommendationPreviewDir = production ? undefined : env.RECOMMENDATIONS_PREVIEW_DIR?.trim() || undefined;
+
   const config: AppConfig = {
     nodeEnv,
     port,
@@ -186,7 +193,8 @@ export function loadConfig(env: NodeJS.Dict<string>): AppConfig {
     importEnabled: env.IMPORT_ENABLED?.trim() === 'true',
     blendEnabled: env.BLEND_ENABLED?.trim() === 'true',
     ...(translation ? { translation } : {}),
-    ...(musicBrainz ? { musicBrainz } : {})
+    ...(musicBrainz ? { musicBrainz } : {}),
+    ...(recommendationPreviewDir ? { recommendationPreviewDir } : {})
   };
 
   const withOrigin = allowedOrigin ? { ...config, allowedOrigin } : config;

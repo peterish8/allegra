@@ -71,4 +71,16 @@ BPM improved the standalone LightFM score in all three seeds. The blend's primar
 
 Use `--seed 2027 --report-only` and `--seed 2028 --report-only` on `benchmark.py` to reproduce the two additional reports. The default run exports the seed 2026 model. All 16 sampled TypeScript scores matched Python.
 
+## Local side-by-side preview
+
+The development API can show today's Quick Picks next to the LightFM blend for any of the 48 benchmark playlists. Write the preview profiles from the saved catalog and baseline, then start the API with the output directory. The page lives at `/dev/quick-picks` in development builds of the web app.
+
+```bash
+node --import tsx tools/recommendations/preview-profiles.ts
+RECOMMENDATIONS_PREVIEW_DIR=output/recommendations/enriched npm run dev
+# open http://localhost:5173/dev/quick-picks?profile=1566837
+```
+
+Each profile reuses the baseline's seeds and exclusions, so the current ranker gets the same input it had in the benchmark, and the API asks the live JioSaavn provider for candidates. The LightFM column blends today's order and the playlist's LightFM scores by reciprocal rank (k = 10), as `blend_same_pool` does. A candidate without a vector gets no LightFM credit. If the model file is invalid or the profile has no vector, the LightFM column repeats today's order and the page says why. When another checkout already serves port 8080, start this API with `PORT=8090` and the web app with `ALLEGRA_DEV_API_PORT=8090`.
+
 Before changing Quick Picks, test the API scorer with fixture factors and replay acknowledged feedback on a fixed model version. Measure the effect of live reranking in an account-level comparison with static LightFM. Use subsequent substantial listens and saves as outcomes, and watch early skips, empty shelves and latency. The public playlist benchmark supplies an offline comparison and a way to detect candidate retrieval bottlenecks.
