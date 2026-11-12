@@ -11,7 +11,7 @@ import type { RadioTaste } from '@shared/radio';
 import { TYPEAHEAD_LIMIT } from '@shared/typeahead';
 import type { LyricsSourcesResponse, LyricsSyncRequest, LyricsSyncResult } from '@shared/lyricSync';
 import { readLocalTiming } from './lyricAlign/localTiming';
-import { linkGuest, type GuestLinkResult } from './guestLink';
+import { guestIsGone, linkGuest, type GuestLinkResult } from './guestLink';
 
 export function getLyricsSources(ref: string, signal?: AbortSignal): Promise<LyricsSourcesResponse> {
   return request(`/api/lyrics/sources?ref=${encodeURIComponent(ref)}`, { signal });
@@ -770,8 +770,9 @@ export async function startGuestSession(): Promise<AccountProfile> {
   if (hasStoredSession()) {
     try {
       return await fetchProfile();
-    } catch {
-      // The guest is gone on the server: fall through to a fresh one.
+    } catch (error: unknown) {
+      // Only a guest the server no longer knows is replaced. Offline or an outage keeps the token.
+      if (!(error instanceof ApiError && guestIsGone(error.status))) throw error;
     }
   }
   try {

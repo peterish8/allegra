@@ -1,7 +1,20 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { guestLinkBackoffMs, linkGuest, type GuestLinkStorage } from './guestLink';
+import { guestIsGone, guestLinkBackoffMs, linkGuest, type GuestLinkStorage } from './guestLink';
+
+describe('guestIsGone', () => {
+  it('replaces the stored guest only when the server says it does not know it', () => {
+    assert.equal(guestIsGone(401), true);
+    assert.equal(guestIsGone(404), true);
+  });
+
+  it('keeps an unmerged guest through an outage or a lost connection', () => {
+    assert.equal(guestIsGone(500), false);
+    assert.equal(guestIsGone(503), false);
+    assert.equal(guestIsGone(undefined), false);
+  });
+});
 
 function memory(initial: Record<string, string> = {}): GuestLinkStorage & { data: Record<string, string> } {
   const data = { ...initial };
