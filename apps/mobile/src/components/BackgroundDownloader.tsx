@@ -1,9 +1,7 @@
 import { useEffect, useRef } from 'react';
-import * as FileSystem from 'expo-file-system/legacy';
 import { useDownloadQueueStore, type QueueItem } from '../store/downloadQueueStore';
 import { useSongsStore } from '../store/songsStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { lyricaService } from '../services/LyricaService';
 import { useLyricsScanQueueStore } from '../store/lyricsScanQueueStore';
 import { processLyricsScanQueue } from '../services/lyricsScanWorker';
 import { usePlaylistStore } from '../store/playlistStore';
@@ -143,25 +141,13 @@ export const BackgroundDownloader = () => {
                     progress: 0
                 };
 
-                // 2. Start Download (Phase 1: Audio & Cover - 0% to 80%)
+                // Download audio and cover; lyrics run independently after the row is saved.
                 updateItem(item.id, { status: 'downloading', stageStatus: 'Downloading audio...', progress: 0 });
                 
-                // 🔥 Parallel Optimization: Start Searching Lyrics WHILE audio is downloading
-                if (__DEV__) console.log(`[BackgroundDownloader] ⚡ Starting parallel lyrics search (synced preferred) for: ${item.song.title}`);
-                const lyricsPromise = lyricaService.fetchLyrics(
-                    item.song.title,
-                    item.song.artist,
-                    true, // Prefer synced lyrics
-                    item.song.duration
-                ).catch((_e: unknown) => {
-                    if (__DEV__) console.warn(`[BackgroundDownloader] Parallel lyrics search failed`);
-                    return null;
-                });
-
                 const newSong = await downloadManager.finalizeDownload(
                     stagingPayload,
                     (progress) => {
-                        const scaledProgress = progress * 0.8;
+                        const scaledProgress = progress;
                         if (mounted.current) updateItem(item.id, { progress: scaledProgress });
                     },
                     useSettingsStore.getState().downloadDirectoryUri,
@@ -170,42 +156,6 @@ export const BackgroundDownloader = () => {
                         coverRemoteUri: shareableArtwork(item.song.highResArt, item.song.thumbnail) || undefined,
                     },
                 );
-
-                if (__DEV__) console.log(`[BackgroundDownloader] Audio download completed. Checking parallel lyrics search results...`);
-
-                // 3. Process Lyrics (Phase 2: Lyrics - 80% to 100%)
-                if (mounted.current) {
-                    updateItem(item.id, { progress: 0.85, stageStatus: 'Processing lyrics...' });
-                    
-                    try {
-                        // Await the promise we started earlier
-                        const res = await lyricsPromise;
-                        
-                        if (res && res.lyrics) {
-                            const isSynced = lyricaService.hasTimestamps(res.lyrics);
-                            const type = isSynced ? 'Synced' : 'Plain';
-                            if (__DEV__) console.log(`[BackgroundDownloader] ✅ Found lyrics (${type}) via ${res.source}`);
-                            updateItem(item.id, { progress: 0.95, stageStatus: 'Saving lyrics...' });
-                            
-                            // Write to file
-                            const songDir = newSong.audioUri?.substring(0, newSong.audioUri.lastIndexOf('/'));
-                            if (songDir) {
-                               const lyricsPath = `${songDir}/lyrics.lrc`;
-                               await FileSystem.writeAsStringAsync(lyricsPath, res.lyrics);
-                               if (__DEV__) console.log(`[BackgroundDownloader] Wrote lyrics to: ${lyricsPath}`);
-                               
-                               // Update song object
-                               newSong.lyrics = lyricaService.parseLrc(res.lyrics, newSong.duration);
-                               newSong.lyricSource = res.source as never; 
-                            }
-                        } else {
-                            if (__DEV__) console.log(`[BackgroundDownloader] ❌ No lyrics found for ${item.song.title}`);
-                            updateItem(item.id, { stageStatus: 'No lyrics found' });
-                        }
-                } catch {
-                     if (__DEV__) console.warn(`[BackgroundDownloader] Lyrics processing failed`);
-                    }
-                }
 
                 // 4. Complete
                 if (__DEV__) console.log(`[BackgroundDownloader] ✅ Completed: ${item.song.title}`);
@@ -223,7 +173,6 @@ export const BackgroundDownloader = () => {
                 }
 
                 if (__DEV__) console.log(`[BackgroundDownloader] Calling updateItem with status=completed...`);
-                updateItem(item.id, { status: 'completed', progress: 1, stageStatus: 'Done' });
                 
                 if (__DEV__) console.log(`[BackgroundDownloader] Calling addSong...`);
                 // Remember which catalog song this was, so another device can play it (Connect, sync),
@@ -233,6 +182,7 @@ export const BackgroundDownloader = () => {
                 // Saved for a downloaded playlist only: on the phone, out of the Library list (1.41.0).
                 newSong.playlistOnly = item.playlistOnly === true;
                 await addSong(newSong);
+                updateItem(item.id, { status: 'completed', progress: 1, stageStatus: 'Done' });
                 // The row is in: the worker's receipt for a killed app is not needed.
                 clearDownloadReceipt(newSong.id);
 
