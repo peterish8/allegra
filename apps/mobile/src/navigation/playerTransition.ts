@@ -44,7 +44,9 @@ export const lerp = (from: number, to: number, t: number): number => {
 /** The cover's rectangle `progress` of the way from the mini player's cover to its place in the player. */
 export function coverFrame(progress: number, from: Rect, to: Rect): Rect {
   'worklet';
-  const t = clamp01(progress);
+  const u = 1 - clamp01(progress);
+  // Ease-out: the cover is already most of the way up while the surface is still rising (the reference's 35% and 70%).
+  const t = 1 - u * u;
   return { x: lerp(from.x, to.x, t), y: lerp(from.y, to.y, t), width: lerp(from.width, to.width, t), height: lerp(from.height, to.height, t) };
 }
 
@@ -65,12 +67,12 @@ export const miniContentOpacity = (progress: number): number => {
 };
 
 /**
- * The player's own contents (title, controls) fade in late, after the cover has arrived: 0 until 52%, 1 at 88%.
+ * The player's own contents (title, controls) fade in late, after the cover has arrived: 0 until 34%, 1 at 72%.
  * Both tap expansion and fluid dragging use this choreography.
  */
 export const playerContentOpacity = (progress: number): number => {
   'worklet';
-  return clamp01((progress - 0.52) / 0.36);
+  return clamp01((progress - 0.34) / 0.38);
 };
 
 /** The moving cover shows while the sheet is between the ends; at either end the real cover (or the mini one) is. */

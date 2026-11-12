@@ -36,7 +36,7 @@ import { PlayerSheet, SleepTimerList } from '../components/player/PlayerSheet';
 import SeekRipple, { SeekPulse } from '../components/player/SeekRipple';
 import UpNextPanel from '../components/player/UpNextPanel';
 import { Toast } from '../components/Toast';
-import { Motion, Radius } from '../constants/allegraTheme';
+import { Glass, Motion, Radius } from '../constants/allegraTheme';
 import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
 import { useNowPlayingLogic } from '../hooks/useNowPlayingLogic';
 import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
@@ -331,6 +331,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const coverLanding = useSettingsStore(s => (!isCardPlayerBackground(s.playerBackground) && s.appleMusicInspired ? 'hero' : isCoverFull(s.playerBackground, s.appleMusicInspired, s.playerCoverFull) ? 'full' : 'card'));
   const movingCover = !reduceMotion && playerCoverFrom.value.width > 0;
   const miniSurfaceStyle = useAnimatedStyle(() => ({ opacity: 1 - playerContentOpacity(progress.value) }));
+  // The rising surface's glass: a soft sheen from its top edge and a hairline rim, gone once the player has arrived.
+  const sheenStyle = useAnimatedStyle(() => ({ opacity: reduceMotion ? 0 : 1 - Math.min(1, Math.max(0, (progress.value - 0.3) / 0.45)) }));
   const playerFadeStyle = useAnimatedStyle(() => ({
     opacity: reduceMotion ? 1 : movingCover ? playerContentOpacity(progress.value) : interpolate(progress.value, [0.15, 0.4], [0, 1], Extrapolation.CLAMP),
   }));
@@ -855,6 +857,10 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
         }}
       >
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, miniSurfaceStyle]}><MiniPlayerGlow uri={currentSong?.coverImageUri} active={false} /></Animated.View>
+        <Animated.View pointerEvents="none" style={[styles.surfaceSheen, sheenStyle]}>
+          <LinearGradient colors={Glass.sheen} style={StyleSheet.absoluteFill} />
+          <View style={styles.surfaceRim} />
+        </Animated.View>
         <Animated.View style={[styles.playerLayer, playerFadeStyle]}>
         <NowPlayingBackground
           coverImageUri={swipeSource?.coverImageUri ?? currentSong?.coverImageUri}
@@ -1058,6 +1064,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderTopLeftRadius: Radius.panel,
     borderTopRightRadius: Radius.panel,
+  },
+  surfaceSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 240,
+  },
+  surfaceRim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth * 2,
+    backgroundColor: Glass.sheenRim,
   },
   playerLayer: {
     ...StyleSheet.absoluteFillObject,
