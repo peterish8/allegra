@@ -97,7 +97,7 @@ test('public Android publication fails closed on signing identity and checks the
 test('APK certificate verification accepts signer labels and excludes source stamps', async () => {
   const { apkSignerFingerprints } = await import('../../scripts/mobile-signing-policy.mjs');
   const digest = 'ab'.repeat(32);
-  for (const label of ['Signer #1', 'Signer (minSdkVersion=24, maxSdkVersion=32) #1', 'Signer #1 (minSdkVersion=33)']) {
+  for (const label of ['Signer #1', 'Signer (minSdkVersion=24, maxSdkVersion=32) #1', 'Signer #1 (minSdkVersion=33)', 'V2 Signer:', 'V3 Signer:', 'V3.1 Signer:']) {
     assert.deepEqual(apkSignerFingerprints(`${label} certificate SHA-256 digest: ${digest}\r\n`), [digest.toUpperCase()]);
   }
   assert.deepEqual(apkSignerFingerprints(`Source Stamp Signer certificate SHA-256 digest: ${digest}`), []);

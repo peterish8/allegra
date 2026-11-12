@@ -20,7 +20,7 @@ export function matchesExpectedFingerprint(expected, actual) {
 /** apksigner can label signers with an index or SDK range. Source stamps are not APK signers. */
 export function apkSignerFingerprints(output) {
   return output.split(/\r?\n/).filter(line => !/source\s*stamp/i.test(line)).flatMap(line => {
-    const match = line.match(/^\s*Signer\b.*?certificate SHA-256 digest:\s*([a-f0-9]{64})\s*$/i);
+    const match = line.match(/^\s*(?:V\d+(?:\.\d+)?\s+)?Signer\b.*?certificate SHA-256 digest:\s*([a-f0-9]{64})\s*$/i);
     return match ? [match[1].toUpperCase()] : [];
   });
 }
