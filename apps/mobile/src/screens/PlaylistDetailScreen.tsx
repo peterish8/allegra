@@ -24,7 +24,7 @@ import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Share, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { Share, StyleSheet, TextInput, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import Animated, {
   Extrapolation,
@@ -52,7 +52,7 @@ import { withoutCopies } from '../services/offlinePlaylistPlan';
 import { OfflineControl } from '../components/playlist/OfflineControl';
 import { CoverFlipCard } from '../components/playlist/CoverFlipCard';
 import { ShareSheet } from '../components/share/ShareSheet';
-import { coverSizeFor, FIND_BAR_HEIGHT, PLAYLIST_WASH_STOPS, playlistLength, playlistShareText, playlistWash } from '../components/playlist/playlistPage';
+import { coverSizeFor, FIND_BAR_HEIGHT, findFiller, PLAYLIST_WASH_STOPS, playlistLength, playlistShareText, playlistWash, settleFind } from '../components/playlist/playlistPage';
 import { LIKED_PLAYLIST_ID } from '../services/sync/plan';
 import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { playerControls, usePlayerStore } from '../store/playerStore';
@@ -172,6 +172,14 @@ export const PlaylistDetailScreen: React.FC = () => {
     scrollY.value = event.contentOffset.y;
   });
   const flatListRef = React.useRef<any>(null);
+
+  // ─── Find in playlist: hidden until you pull down ───────────────────────────
+  // The list rests scrolled past the bar; a pull down scrolls it into view under the finger (the list's own scroll,
+  // so it is tracked, interruptible and flings), and letting go on it opens the search with the keyboard up.
+  const [listHeight, setListHeight] = useState(0);
+  const [filler, setFiller] = useState(0);
+  const fillerRef = React.useRef(0);
+  const restedRef = React.useRef(false);
 
   // ─── Data ────────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -353,7 +361,7 @@ export const PlaylistDetailScreen: React.FC = () => {
   // ─── Motion ──────────────────────────────────────────────────────────────
   // The header gains a solid backing as the list passes under it, and its title fades in once the big one is gone.
   // Where the big title sits: under the Find bar and the cover on a playlist, near the top on Liked songs.
-  const titleAt = isLiked ? 40 : FIND_BAR_HEIGHT + coverSize;
+  const titleAt = isLiked ? 40 : coverSize;
   const headerBacking = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [titleAt * 0.6, titleAt + 40], [0, 1], Extrapolation.CLAMP) }));
   const headerTitle = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [titleAt + 20, titleAt + 80], [0, 1], Extrapolation.CLAMP) }));
   // The cover's wash scrolls away with the page.
@@ -425,10 +433,12 @@ export const PlaylistDetailScreen: React.FC = () => {
       <LinearGradient pointerEvents="none" colors={wash} locations={PLAYLIST_WASH_STOPS}
         style={[styles.pageWash, { height: topInset + FIND_BAR_HEIGHT + coverSize + Space.xxl * 2 }]} />
       <View style={{ height: topInset }} />
-      <Tactile onPress={() => setIsSearchActive(true)} accessibilityRole="search" accessibilityLabel="Find in playlist" style={styles.findBar} wrapperStyle={styles.findTarget}>
-        <Ionicons name="search" size={18} color={OnMedia.primary} />
-        <Text variant="label">Find in playlist</Text>
-      </Tactile>
+      {!isEditMode ? (
+        <Tactile onPress={() => setIsSearchActive(true)} accessibilityRole="search" accessibilityLabel="Find in playlist" style={styles.findBar} wrapperStyle={styles.findTarget}>
+          <Ionicons name="search" size={18} color={OnMedia.primary} />
+          <Text variant="label">Find in playlist</Text>
+        </Tactile>
+      ) : null}
       <View style={styles.coverRow}>
         <CoverFlipCard size={coverSize} front={coverFace} name={playlistName} songs={filteredSongs}
           playingId={currentSongId} playingHere={activeIsPlaying} onPick={index => handleSongPress(filteredSongs[index], index)} />
@@ -478,8 +488,30 @@ export const PlaylistDetailScreen: React.FC = () => {
     <EmptyState icon="musical-notes-outline" title="No songs yet" body="Add songs you saved or streamed." action={{ label: 'Add songs', icon: 'add', onPress: openAddSongs }} />
   ));
 
+  const hasFindBar = !isLiked && !isEditMode;
+  const onListContent = useCallback((_w: number, h: number) => {
+    const next = hasFindBar ? findFiller(listHeight, h - fillerRef.current) : 0;
+    if (next !== fillerRef.current) { fillerRef.current = next; setFiller(next); }
+    if (!restedRef.current && hasFindBar && listHeight > 0 && h - listHeight >= FIND_BAR_HEIGHT) {
+      restedRef.current = true;
+      flatListRef.current?.scrollToOffset({ offset: FIND_BAR_HEIGHT, animated: false });
+    }
+  }, [hasFindBar, listHeight]);
+  const settleList = useCallback((offset: number, velocity: number) => {
+    if (!hasFindBar) return;
+    const action = settleFind(offset, velocity);
+    if (action === 'rest') return;
+    if (action === 'reveal' && !isSearchActive) { Haptics.tap(); setIsSearchActive(true); }
+    flatListRef.current?.scrollToOffset({ offset: FIND_BAR_HEIGHT, animated: true });
+  }, [hasFindBar, isSearchActive]);
+
   const listProps = {
     ref: flatListRef,
+    onLayout: (e: LayoutChangeEvent) => setListHeight(e.nativeEvent.layout.height),
+    onContentSizeChange: onListContent,
+    onScrollEndDrag: (e: NativeSyntheticEvent<NativeScrollEvent>) => settleList(e.nativeEvent.contentOffset.y, e.nativeEvent.velocity?.y ?? 0),
+    onMomentumScrollEnd: (e: NativeSyntheticEvent<NativeScrollEvent>) => settleList(e.nativeEvent.contentOffset.y, 0),
+    ListFooterComponent: filler > 0 ? <View style={{ height: filler }} /> : null,
     data: filteredSongs,
     keyExtractor: (item: Song) => item.id,
     onScroll: scrollHandler,
@@ -521,13 +553,13 @@ export const PlaylistDetailScreen: React.FC = () => {
         <Animated.View style={[StyleSheet.absoluteFill, styles.headerBacking, headerBacking]} pointerEvents="none" />
         {!isSearchActive ? (
           <>
-            {/* Spotify's back arrow and ⋮ in dark discs over the wash. Find lives in the page (and here on Liked songs). */}
-            <IconButton icon="arrow-back" label="Back" variant="secondary" shape="disc" onPress={() => safeGoBack(navigation)} />
+            {/* Plain back arrow and ⋮ over the wash (owner, 2026-11-13: no round disc). Find sits above the cover, hidden until you pull down (and here on Liked songs). */}
+            <IconButton icon="arrow-back" label="Back" variant="plain" onPress={() => safeGoBack(navigation)} />
             <Animated.View style={[styles.headerTitle, headerTitle]}>
               <Marquee text={playlistName} style={styles.headerTitleText} active={isFocused} containerStyle={styles.headerTitleBox} />
             </Animated.View>
             {isLiked ? <IconButton icon="search" label="Find in playlist" variant="plain" onPress={() => setIsSearchActive(true)} /> : null}
-            <IconButton icon="ellipsis-vertical" label="Playlist options" variant="secondary" shape="disc" onPress={() => setActionsOpen(true)} />
+            <IconButton icon="ellipsis-vertical" label="Playlist options" variant="plain" onPress={() => setActionsOpen(true)} />
           </>
         ) : (
           <View style={styles.search}>

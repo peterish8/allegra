@@ -66,3 +66,30 @@ export const settledCard = (offsetX: number, cardWidth: number, count: number): 
  */
 export const swipeChangesSong = (cardId: string | undefined, playingId: string | null | undefined, playingHere: boolean): boolean =>
   !!cardId && !(playingHere && cardId === playingId);
+
+/**
+ * The find bar hides above the cover: the list rests scrolled past it (offset = the bar's height) and a pull down
+ * scrolls it into view under the finger, the way iOS lists reveal their search. The pull is the list's own scroll,
+ * so it is finger-tracked, interruptible and flings like any scroll.
+ */
+export type FindSettle = 'reveal' | 'hide' | 'rest';
+
+/**
+ * What to do when the list stops (or the finger lifts) at `offset`. `velocity` is the scroll velocity in px/ms:
+ * negative while the content moves down (a pull). Inside the bar's height the nearer end wins, a fling decides.
+ */
+export const settleFind = (offset: number, velocity: number, slot: number = FIND_BAR_HEIGHT): FindSettle => {
+  if (!Number.isFinite(offset) || offset >= slot) return 'rest';
+  if (offset <= 0) return 'reveal';
+  if (velocity <= -FIND_FLING) return 'reveal';
+  if (velocity >= FIND_FLING) return 'hide';
+  return offset < slot / 2 ? 'reveal' : 'hide';
+};
+const FIND_FLING = 0.3;
+
+/**
+ * Empty space under a short playlist so the page can still rest scrolled past the bar: the content must be at least
+ * `slot` taller than the viewport. `content` is the height without this filler.
+ */
+export const findFiller = (viewport: number, content: number, slot: number = FIND_BAR_HEIGHT): number =>
+  Number.isFinite(viewport) && Number.isFinite(content) && viewport > 0 ? Math.max(0, Math.ceil(viewport + slot - content)) : 0;

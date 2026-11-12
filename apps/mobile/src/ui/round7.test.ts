@@ -132,10 +132,10 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
     const at = order.map(part => header.indexOf(part));
     expect(at.every(i => i >= 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
-    // The wash is a calm tone of the cover (playlistPage), and back and ⋮ sit in discs.
+    // The wash is a calm tone of the cover (playlistPage); back and ⋮ are plain icons, no disc (owner, 2026-11-13).
     expect(header).toMatch(/colors=\{wash\} locations=\{PLAYLIST_WASH_STOPS\}/);
-    expect(detail).toMatch(/icon="arrow-back" label="Back" variant="secondary" shape="disc"/);
-    expect(detail).toMatch(/icon="ellipsis-vertical" label="Playlist options" variant="secondary" shape="disc"/);
+    expect(detail).toMatch(/icon="arrow-back" label="Back" variant="plain"/);
+    expect(detail).toMatch(/icon="ellipsis-vertical" label="Playlist options" variant="plain"/);
   });
 
   it('shows the mini player title in bold with the artist under it, and Spotify\'s saved mark (1.43.0)', () => {
