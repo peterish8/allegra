@@ -10,7 +10,7 @@ describe('moreMenuPayload', () => {
     const items = JSON.parse(json as string) as { key: string; tile: boolean; hint: string | null }[];
     expect(items.map(i => i.key)).toEqual([...MORE_TILES, ...MORE_ROWS].map(i => i.key));
     expect(items.filter(i => i.tile)).toHaveLength(3);
-    expect(items[items.length - 1].hint).toBe('Playback, lyrics, look');
+    expect(items.map(i => i.key)).not.toContain('Dj');
     expect(items[0].hint).toBeNull();
   });
 

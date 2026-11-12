@@ -21,7 +21,6 @@ export default function YouScreen() {
     <PageHeader title="You" />
     <ScrollView contentContainerStyle={{ paddingBottom: bottom }}>
       <Text variant="meta" tone="secondary" style={styles.group}>Listening</Text>
-      <ListRow title="Your DJ" subtitle="Ask for a mood, a song, or a set" icon="musical-notes-outline" chevron onPress={() => navigation.navigate('Dj')} />
       <ListRow title="Blends" subtitle="Mix your taste with a friend" icon="git-merge-outline" chevron onPress={() => navigation.navigate('Library', { screen: 'Blends' })} />
       <ListRow title="LuvLink" subtitle="Listen with friends in sync" icon="people-outline" chevron onPress={() => navigation.getParent()?.navigate('LuvLink')} />
       <Text variant="meta" tone="secondary" style={styles.group}>Library</Text>

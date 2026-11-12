@@ -1,6 +1,6 @@
 /**
  * The profile menu (1.42.0): Spotify's side menu, opened from your picture at the top left of Stream, Search and
- * Library. It holds what the You tab did: About and updates first, then your DJ, Downloads, Import, Blends, LuvLink,
+ * Library. It holds what the You tab did: About and updates first, then Downloads, Import, Blends, LuvLink,
  * Connect devices and Settings (`navigation/profileMenu`).
  *
  * A panel slides in from the left over a dimmed app (transform and opacity only; a fade under Reduce Motion). Back,

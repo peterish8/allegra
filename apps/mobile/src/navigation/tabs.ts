@@ -3,7 +3,7 @@ import { TAB_BAR_HEIGHT } from '../constants/layout';
 
 /**
  * The everyday tabs, the only routes with an icon in the bottom bar, in bar order: Stream, Search, Library, then
- * Create (a sheet, not a route; `navigation/createMenu`). Luvs, the profile menu's pages (Settings, Your DJ) and the
+ * Create (a sheet, not a route; `navigation/createMenu`). Luvs, the profile menu's pages (Settings) and the
  * YouTube Music pages are tab routes too, so the bar stays on screen while they're open. Only the full-screen player
  * covers the bar.
  */

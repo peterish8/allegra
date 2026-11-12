@@ -50,19 +50,7 @@ const RADIUS = 26;
 const NATIVE_ITEMS = nativeMoreItemsAvailable() ? moreItemsPayload(MORE_TILES, MORE_ROWS) : null;
 const NATIVE_PALETTE = morePalette(Signal);
 
-function DjMascotIcon({ active }: { readonly active: boolean }) {
-  return (
-    <View style={styles.djMascotIcon} accessible={false}>
-      <View style={[styles.djMascotAura, active && styles.djMascotAuraActive]} />
-      <View style={[styles.djMascotCore, active && styles.djMascotCoreActive]} />
-      <View style={[styles.djMascotEye, styles.djMascotEyeLeft]} />
-      <View style={[styles.djMascotEye, styles.djMascotEyeRight]} />
-    </View>
-  );
-}
-
-function MoreMenuIcon({ item, size, color, active }: { readonly item: MoreItem; readonly size: number; readonly color: string; readonly active: boolean }) {
-  if (item.icon === 'dj-mascot') return <DjMascotIcon active={active} />;
+function MoreMenuIcon({ item, size, color }: { readonly item: MoreItem; readonly size: number; readonly color: string }) {
   return <Ionicons name={item.icon} size={size} color={color} />;
 }
 
@@ -184,7 +172,7 @@ export const MoreMenu: React.FC<MoreMenuProps> = ({ open, activeKey, anchorBotto
                       accessibilityLabel={item.label}
                       style={[styles.tile, on && styles.tileOn]}
                     >
-                      <MoreMenuIcon item={item} size={24} color={on ? Signal.wave : Signal.ink} active={on} />
+                      <MoreMenuIcon item={item} size={24} color={on ? Signal.wave : Signal.ink} />
                       <Text style={[styles.tileLabel, on && styles.labelOn]} numberOfLines={1}>{item.label}</Text>
                     </Tactile>
                   </Animated.View>
@@ -205,7 +193,7 @@ export const MoreMenu: React.FC<MoreMenuProps> = ({ open, activeKey, anchorBotto
                       accessibilityState={{ selected: on }}
                       style={styles.row}
                     >
-                      <MoreMenuIcon item={item} size={22} color={on ? Signal.wave : Signal.inkSoft} active={on} />
+                      <MoreMenuIcon item={item} size={22} color={on ? Signal.wave : Signal.inkSoft} />
                       <View style={styles.rowText}>
                         <Text style={[styles.rowLabel, on && styles.labelOn]}>{item.label}</Text>
                         {item.hint ? <Text style={styles.rowHint} numberOfLines={1}>{item.hint}</Text> : null}
@@ -243,14 +231,6 @@ const styles = StyleSheet.create({
   },
   tiles: { flexDirection: 'row', gap: 8 },
   tileCell: { flex: 1 },
-  djMascotIcon: { position: 'relative', width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
-  djMascotAura: { position: 'absolute', top: 1, left: 1, right: 1, bottom: 0, borderRadius: 14, backgroundColor: 'rgba(255, 207, 126, 0.56)', shadowColor: '#ff9b35', shadowOpacity: 0.55, shadowRadius: 7, shadowOffset: { width: 0, height: 1 } },
-  djMascotAuraActive: { backgroundColor: 'rgba(255, 187, 92, 0.8)', shadowOpacity: 0.85, shadowRadius: 9 },
-  djMascotCore: { position: 'absolute', top: 6, left: 5, right: 5, bottom: 3, borderRadius: 12, backgroundColor: 'rgba(255, 145, 47, 0.68)' },
-  djMascotCoreActive: { backgroundColor: 'rgba(255, 128, 40, 0.82)' },
-  djMascotEye: { position: 'absolute', width: 5, height: 9, borderRadius: 6, backgroundColor: '#fff', shadowColor: '#b45c14', shadowOpacity: 0.18, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } },
-  djMascotEyeLeft: { top: 7, left: 7, transform: [{ rotate: '-9deg' }] },
-  djMascotEyeRight: { top: 9, right: 6, height: 8, transform: [{ rotate: '8deg' }] },
   tile: {
     height: 78,
     borderRadius: 18,

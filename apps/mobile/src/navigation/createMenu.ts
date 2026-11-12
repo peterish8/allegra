@@ -29,7 +29,7 @@ export const CREATE_TAB: NavTab = 'Create';
 
 /**
  * Which tab is lit for a route. Pages that are not tabs keep the tab they were opened from (Luvs from Create, an
- * artist from Search); Settings and the DJ come from the profile menu, so they keep it too.
+ * artist from Search); Settings comes from the profile menu, so they keep it too.
  */
 export const litTab = (route: string, previous: NavTab): NavTab =>
   route === 'Stream' || route === 'Search' || route === 'Library' ? route : previous === CREATE_TAB ? 'Stream' : previous;

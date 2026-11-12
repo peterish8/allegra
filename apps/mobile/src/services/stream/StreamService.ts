@@ -112,7 +112,7 @@ export const StreamService = {
     usePlayerStore.getState().setPlaylistQueue(STREAM_QUEUE_ID, queue, startIndex, autoplay);
   },
 
-  /** Starts a validated AI DJ catalog set only after the listener presses Play. */
+  /** DJ archived in the phone app (apps/mobile/archive/dj), kept for restore. Starts a validated AI DJ catalog set only after the listener presses Play. */
   startDjCatalog(songs: CatalogSong[]): number {
     const playable = dedupeStreamable(songs.map(fromCatalog));
     if (playable.length === 0) return 0;
@@ -120,7 +120,7 @@ export const StreamService = {
     return playable.length;
   },
 
-  /** Applies a catalog-backed AI DJ plan without replacing or starting the current track. */
+  /** DJ archived (kept for restore). Applies a catalog-backed AI DJ plan without replacing or starting the current track. */
   applyDjUpcoming(songs: CatalogSong[], operation: 'replace_upcoming' | 'insert', insertAfter: number | null = null): boolean {
     const state = usePlayerStore.getState();
     if (!state.currentSong) return false;
@@ -236,7 +236,7 @@ export const StreamService = {
     rerank(session);
   },
 
-  /** Starts the full DJ flow from a recent catalog listen, even if autoplay is turned off. */
+  /** DJ archived (kept for restore). Starts the full DJ flow from a recent catalog listen, even if autoplay is turned off. */
   async startDj(seed: UnifiedSong): Promise<number> {
     const playable = dedupeStreamable([seed])[0];
     if (!playable) return 0;
