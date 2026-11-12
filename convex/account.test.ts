@@ -189,6 +189,32 @@ describe('account erase', () => {
     expect(extras.shares).toHaveLength(100);
   });
 
+  it('refuses direct writes from an erased account\'s still-valid token and creates nothing', async () => {
+    const t = backend();
+    const userId = await seedAccount(t, 'erased-token');
+    const stale = t.withIdentity({ subject: `${userId}|stale-session` });
+    await t.mutation(api.account.erase, { secret, userId });
+
+    await expect(stale.mutation(api.connect.register, { deviceId: 'ghost-device', name: 'Ghost', kind: 'web', appVersion: 'test', canPlay: true }))
+      .rejects.toThrow(/unauthenticated/);
+    await expect(stale.mutation(api.luvLink.createRoom, { displayName: 'Ghost' })).rejects.toThrow(/unauthenticated/);
+    expect(await stale.query(api.library.myRev, {})).toBeNull();
+
+    const left = await t.run(async (ctx) => ({
+      devices: (await ctx.db.query('devices').collect()).length,
+      rooms: (await ctx.db.query('luvLinkRooms').collect()).length
+    }));
+    expect(left).toEqual({ devices: 0, rooms: 0 });
+  });
+
+  it('still lets a live account use the same functions', async () => {
+    const t = backend();
+    const userId = await seedAccount(t, 'live-token');
+    const live = t.withIdentity({ subject: `${userId}|live-session` });
+    expect(await live.query(api.library.myRev, {})).toEqual(expect.any(Number));
+    await expect(live.mutation(api.luvLink.createRoom, { displayName: 'Live' })).resolves.toEqual(expect.objectContaining({ roomId: expect.anything() }));
+  });
+
   it('exports LuvLink membership and removes the hosted room and authored queue on account erasure', async () => {
     const t = backend();
     const userId = await seedAccount(t, 'luvlink-erasure');

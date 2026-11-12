@@ -12,7 +12,7 @@
  * A listener's library moves from the profile into rows on their first change
  * (seedFromProfile). From then on `profiles.save` leaves likedSongIds/libraries alone.
  */
-import { getAuthUserId } from '@convex-dev/auth/server';
+import { liveAuthUserId } from './liveUser';
 import { v, type Infer } from 'convex/values';
 
 import {
@@ -427,7 +427,7 @@ export const myRev = query({
   args: {},
   returns: v.union(v.null(), v.number()),
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+    const userId = await liveAuthUserId(ctx);
     if (!userId) return null;
     return (await stateOf(ctx, userId))?.rev ?? 0;
   }

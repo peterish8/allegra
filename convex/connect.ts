@@ -14,7 +14,7 @@
  * the failure. The record is written by whichever transaction does commit: the claim that ended
  * the epoch, the job scheduled for the command's deadline, a completion, or the sweep.
  */
-import { getAuthUserId } from '@convex-dev/auth/server';
+import { liveAuthUserId } from './liveUser';
 import { Presence } from '@convex-dev/presence';
 import { MINUTE, RateLimiter } from '@convex-dev/rate-limiter';
 import { ConvexError, v, type Infer } from 'convex/values';
@@ -200,9 +200,9 @@ const isFailureCode = (code: string): code is FailureCode => code in failureText
 export const roomOf = (userId: string): string => `connect:${userId}`;
 
 async function requireUser(ctx: QueryCtx | MutationCtx): Promise<string> {
-  const authUserId = await getAuthUserId(ctx);
+  const authUserId = await liveAuthUserId(ctx);
   if (!authUserId) fail('unauthenticated');
-  return String(authUserId);
+  return authUserId;
 }
 
 async function requireOwnedDevice(ctx: QueryCtx | MutationCtx, userId: string, deviceId: string): Promise<Doc<'devices'>> {

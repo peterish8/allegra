@@ -1,4 +1,4 @@
-import { getAuthUserId } from '@convex-dev/auth/server';
+import { liveAuthUserId } from './liveUser';
 import { Presence } from '@convex-dev/presence';
 import { RateLimiter } from '@convex-dev/rate-limiter';
 import { ConvexError, v, type Infer } from 'convex/values';
@@ -68,9 +68,9 @@ function fail(code: string, message: string): never {
 }
 
 async function requireUser(ctx: QueryCtx | MutationCtx): Promise<string> {
-  const id = await getAuthUserId(ctx);
+  const id = await liveAuthUserId(ctx);
   if (!id) fail('unauthenticated', 'Sign in to use LuvLink.');
-  return String(id);
+  return id;
 }
 
 async function limit(ctx: MutationCtx, name: 'roomCreate' | 'roomJoin' | 'queueWrite' | 'playbackWrite' | 'inviteWrite' | 'clockSample' | 'suggestionBuild', userId: string): Promise<void> {
