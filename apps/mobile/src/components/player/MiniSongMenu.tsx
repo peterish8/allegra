@@ -4,7 +4,7 @@ import type { SongSnapshot } from '@shared/songRef';
 import { creditedArtists } from '@shared/identity';
 import { Button, Sheet, SheetIdentity, SheetScrollView, SheetOption, SheetDivider, Space, Control, Text, identityMeta } from '../../ui';
 import type { Song } from '../../types/song';
-import type { PlayerMenuAction } from './PlayerMenu';
+import type { PlayerMenuAction, PlayerRequest } from './playerMenuAction';
 import { useDownloadState } from '../../hooks/useDownloadState';
 import { useSongLikeState } from '../../hooks/useIsSongLiked';
 import { StreamService } from '../../services/stream/StreamService';
@@ -19,7 +19,32 @@ import { toggleOnlineLike } from '../../services/sync/onlineLike';
 import { navigationRef } from '../../utils/navigationService';
 import type { UnifiedSong } from '../../types/song';
 import { usePlayerStore } from '../../store/playerStore';
-import { songActionRows } from './songActionRows';
+import { songActionGroups, songActionRows, type SongActionRow } from './songActionRows';
+import { RecentCovers } from './RecentCovers';
+
+/**
+ * What only the library can do to a song file on this phone. Present for a song opened from Library, a playlist,
+ * the mini player or Now Playing; the sheet then adds the lyrics search, version, cover, edit, hide and delete rows.
+ * Each handler opens its own modal after the sheet has closed (see `useSongActions`).
+ */
+export interface LibrarySongHandlers {
+  /** Present only while this phone has a queue the song can join. */
+  readonly playNext?: () => void;
+  readonly findLyrics: () => void;
+  readonly version: () => void;
+  readonly shareLink: () => void;
+  readonly shareFile: () => void;
+  readonly pickCover: () => void;
+  readonly findCover: () => void;
+  readonly recentArts: readonly string[];
+  readonly useRecentArt: (uri: string) => void;
+  readonly removeCover: () => void;
+  readonly edit: () => void;
+  /** Present only when the sheet was opened from a playlist. */
+  readonly removeFromPlaylist?: () => void;
+  readonly hide: () => void;
+  readonly remove: () => void;
+}
 
 interface Props {
   song: Song;
@@ -30,14 +55,20 @@ interface Props {
   current?: boolean;
   /** The catalog song behind a stream `song` that is not playing (needed to queue it). */
   catalog?: UnifiedSong;
+  /** A song file on this phone: adds the library rows. */
+  library?: LibrarySongHandlers;
+  /** Now Playing handles its own sheets; elsewhere the request opens Now Playing. */
+  onPlayer?: (request: PlayerRequest) => void;
 }
 
+type Item = { icon: string; label: string; onPress: () => void; selected?: boolean; chevron?: boolean; destructive?: boolean };
+
 /**
- * The one song actions sheet (owner, 2026-11-13): long press on the mini player, on Stream's shelves, in Search
- * and on mixes. Everything that applies to the song; the playing song also gets Now Playing's playback, lyrics
- * and sound rows. Rows come from `songActionRows`. Playback remains with its current owner.
+ * The one song sheet (owner, 2026-11-13): a long press on any song row, in the mini player and Now Playing's
+ * ••• open it. Download comes first and large, then Like and Share, then the rows from `songActionGroups` in their
+ * categories. What shows is decided by `songActionRows`; playback stays with its current owner.
  */
-export function MiniSongMenu({ song, visible, onClose, remote, current = true, catalog }: Props) {
+export function MiniSongMenu({ song, visible, onClose, remote, current = true, catalog, library, onPlayer }: Props) {
   const [notice, setNotice] = useState('');
   const [resolving, setResolving] = useState(false);
   const stream = isStreamSongId(song.id);
@@ -51,17 +82,25 @@ export function MiniSongMenu({ song, visible, onClose, remote, current = true, c
   const saving = resolving || download.phase === 'queued' || download.phase === 'downloading';
   const native = !remote && Platform.OS === 'android' && NativeAudioPlayer.isAvailable();
   const appendable = usePlayerStore.getState().currentPlaylistId === STREAM_QUEUE_ID;
-  const rows = songActionRows({ current, remote: !!remote, stream, native, ringtone: canSetRingtone(song), artist: !!artist, appendable });
+  const rows = songActionRows({
+    current, remote: !!remote, stream, native, ringtone: canSetRingtone(song), artist: !!artist, appendable,
+    library: !!library, fromPlaylist: !!library?.removeFromPlaylist, canPlayNext: library ? !!library.playNext : true,
+  });
   const queue = (where: 'next' | 'end') => {
+    if (library?.playNext && where === 'next') { library.playNext(); return; }
     if (!catalog) return;
     if (where === 'next') StreamService.playNext(catalog);
     else StreamService.append([catalog]);
     setNotice(where === 'next' ? 'Playing next' : 'Added to the queue');
   };
-  const playerAction = (action: PlayerMenuAction) => {
+  const toPlayer = (request: PlayerRequest) => {
     onClose();
-    if (navigationRef.isReady()) navigationRef.navigate('NowPlaying', { songId: song.id, action });
+    if (onPlayer) onPlayer(request);
+    else if (navigationRef.isReady()) navigationRef.navigate('NowPlaying', { songId: song.id, ...request });
   };
+  const playerAction = (action: PlayerMenuAction) => toPlayer({ action });
+  /** A library action that opens something else: the sheet closes first. */
+  const leave = (fn?: () => void) => () => { onClose(); fn?.(); };
   const save = async () => {
     try {
       setResolving(true);
@@ -84,6 +123,46 @@ export function MiniSongMenu({ song, visible, onClose, remote, current = true, c
     onClose();
     if (artist && navigationRef.isReady()) navigationRef.navigate('Main', { screen: 'Browse', params: { screen: 'Artist', params: { name: artist } } });
   };
+
+  /** One entry per row the model can return; a row the host cannot do has no entry and is skipped. */
+  const spec = (row: SongActionRow): Item | null => {
+    switch (row) {
+      case 'playNext': return { icon: 'return-down-forward', label: 'Play next', onPress: () => queue('next') };
+      case 'addToQueue': return { icon: 'list-outline', label: 'Add to queue', onPress: () => queue('end') };
+      case 'addToPlaylist': return { icon: 'add-outline', label: 'Add to playlist', onPress: () => {
+        if (stream) { void save(); setNotice('Download this song first, then add it to a playlist from your library.'); }
+        else { onClose(); if (navigationRef.isReady()) navigationRef.navigate('AddToPlaylist', { songId: song.id }); }
+      } };
+      case 'radio': return { icon: 'radio-outline', label: 'Start song radio', onPress: () => { void StreamService.startRadio(song).then(n => setNotice(n ? 'Song radio started' : 'Could not start radio')).catch(() => setNotice('Could not start radio')); } };
+      case 'artist': return { icon: 'person-outline', label: `Go to ${artist}`, chevron: true, onPress: artistPage };
+      case 'upNext': return { icon: 'list-outline', label: 'Up next', onPress: () => toPlayer({ sheet: 'queue' }) };
+      case 'sleepTimer': return { icon: 'moon-outline', label: 'Sleep timer', onPress: () => toPlayer({ sheet: 'timer' }) };
+      case 'shuffleUpcoming': return { icon: 'shuffle-outline', label: 'Shuffle upcoming songs', onPress: () => setNotice(shuffleUpcoming() ? 'Shuffled upcoming songs' : 'Nothing queued to shuffle') };
+      case 'repeat': return { icon: 'repeat-outline', label: repeat ? 'Turn off repeat song' : 'Repeat this song', selected: repeat, onPress: () => usePlaybackModesStore.getState().setRepeatOne(!repeat) };
+      case 'reload': return { icon: 'refresh-outline', label: 'Reload audio', onPress: () => { void refetchCurrent().then(ok => setNotice(ok ? 'Audio reloaded' : 'Could not reload audio')).catch(() => setNotice('Could not reload audio')); } };
+      case 'findLyrics': return library ? { icon: 'text-outline', label: 'Find lyrics', onPress: leave(library.findLyrics) } : null;
+      case 'lyrics': return { icon: 'text-outline', label: 'Find or change lyrics', onPress: () => playerAction('lyrics') };
+      case 'version': return library ? { icon: 'language-outline', label: 'Another language or version', onPress: leave(library.version) } : null;
+      case 'details': return { icon: 'information-circle-outline', label: 'Song details and cover', onPress: () => playerAction('details') };
+      case 'ambient': return { icon: 'expand-outline', label: 'Ambient player', onPress: () => playerAction('ambient') };
+      case 'ringtone': return { icon: 'notifications-outline', label: 'Set as ringtone', onPress: () => { void setAsRingtone(song).then(setNotice).catch(() => setNotice('Could not set ringtone')); } };
+      case 'shareFile': return library ? { icon: 'document-outline', label: 'Share the audio file', onPress: leave(library.shareFile) } : null;
+      case 'coverPhoto': return library ? { icon: 'image-outline', label: 'Cover from your photos', onPress: leave(library.pickCover) } : null;
+      case 'coverOnline': return library ? { icon: 'globe-outline', label: 'Find a cover online', onPress: leave(library.findCover) } : null;
+      case 'coverRemove': return library ? { icon: 'close-circle-outline', label: 'Remove the cover', onPress: leave(library.removeCover) } : null;
+      case 'luvLink': return { icon: 'people-outline', label: 'LuvLink', onPress: () => playerAction('together') };
+      case 'devices': return { icon: 'laptop-outline', label: 'Connect devices', onPress: () => { onClose(); connect.openDevices(); } };
+      case 'output': return { icon: 'volume-high-outline', label: 'Audio output', onPress: () => { if (!NativeAudioPlayer.openOutputSwitcher()) setNotice('No other devices found'); } };
+      case 'equalizer': return { icon: 'options-outline', label: 'Equalizer', onPress: () => { if (!NativeAudioPlayer.openEqualizer()) setNotice('No equalizer on this phone'); } };
+      case 'tempo': return { icon: 'speedometer-outline', label: 'Tempo and pitch', onPress: () => playerAction('advanced') };
+      case 'editInfo': return library ? { icon: 'create-outline', label: 'Edit title and artist', onPress: leave(library.edit) } : null;
+      case 'removeFromPlaylist': return library?.removeFromPlaylist ? { icon: 'remove-circle-outline', label: 'Remove from this playlist', onPress: leave(library.removeFromPlaylist) } : null;
+      case 'hide': return library ? { icon: 'eye-off-outline', label: 'Hide this song', onPress: leave(library.hide) } : null;
+      case 'delete': return library ? { icon: 'trash-outline', label: 'Delete song', destructive: true, onPress: leave(library.remove) } : null;
+      default: return null;
+    }
+  };
+
   return (
     <Sheet visible={visible} onClose={onClose} tall tintUri={song.coverImageUri}>
       <SheetIdentity title={song.title} meta={identityMeta(remote ? 'Playing on another device' : 'Song', song.artist)}
@@ -95,37 +174,23 @@ export function MiniSongMenu({ song, visible, onClose, remote, current = true, c
         {notice ? <Text variant="meta" tone="muted" accessibilityLiveRegion="polite">{notice}</Text> : null}
         <View style={styles.quick}>
           <Button style={styles.quickButton} icon={like.liked ? 'heart' : 'heart-outline'} label={like.liked ? 'Liked' : 'Like'} onPress={() => { void toggleLike(); }} />
-          <Button style={styles.quickButton} icon="share-outline" label="Share" onPress={() => { void shareSong(song); }} />
+          <Button style={styles.quickButton} icon="share-outline" label="Share" onPress={() => { if (library) leave(library.shareLink)(); else void shareSong(song); }} />
         </View>
-        {rows.has('playNext') ? <SheetOption icon="return-down-forward" label="Play next" onPress={() => queue('next')} /> : null}
-        {rows.has('addToQueue') ? <SheetOption icon="list-outline" label="Add to queue" onPress={() => queue('end')} /> : null}
-        <SheetOption icon="add-outline" label="Add to playlist" onPress={() => {
-          if (stream) { void save(); setNotice('Download this song first, then add it to a playlist from your library.'); }
-          else { onClose(); if (navigationRef.isReady()) navigationRef.navigate('AddToPlaylist', { songId: song.id }); }
-        }} />
-        {rows.has('radio') ? <SheetOption icon="radio-outline" label="Start song radio" onPress={() => { void StreamService.startRadio(song).then(n => setNotice(n ? 'Song radio started' : 'Could not start radio')).catch(() => setNotice('Could not start radio')); }} /> : null}
-        {rows.has('artist') ? <SheetOption icon="person-outline" label={`Go to ${artist}`} chevron onPress={artistPage} /> : null}
-        {rows.has('upNext') ? <>
-          <SheetDivider /><Text variant="meta" tone="muted">Playback</Text>
-          <SheetOption icon="list-outline" label="Up next" onPress={() => { onClose(); if (navigationRef.isReady()) navigationRef.navigate('NowPlaying', { songId: song.id, sheet: 'queue' }); }} />
-          <SheetOption icon="moon-outline" label="Sleep timer" onPress={() => { onClose(); if (navigationRef.isReady()) navigationRef.navigate('NowPlaying', { songId: song.id, sheet: 'timer' }); }} />
-          <SheetOption icon="shuffle-outline" label="Shuffle upcoming songs" onPress={() => setNotice(shuffleUpcoming() ? 'Shuffled upcoming songs' : 'Nothing queued to shuffle')} />
-          <SheetOption icon="repeat-outline" label={repeat ? 'Turn off repeat song' : 'Repeat this song'} selected={repeat} onPress={() => usePlaybackModesStore.getState().setRepeatOne(!repeat)} />
-          <SheetOption icon="refresh-outline" label="Reload audio" onPress={() => { void refetchCurrent().then(ok => setNotice(ok ? 'Audio reloaded' : 'Could not reload audio')).catch(() => setNotice('Could not reload audio')); }} />
-          <SheetDivider /><Text variant="meta" tone="muted">Lyrics and song</Text>
-          <SheetOption icon="text-outline" label="Find or change lyrics" onPress={() => playerAction('lyrics')} />
-          <SheetOption icon="information-circle-outline" label="Song details and cover" onPress={() => playerAction('details')} />
-          <SheetOption icon="expand-outline" label="Ambient player" onPress={() => playerAction('ambient')} />
-          {rows.has('ringtone') ? <SheetOption icon="notifications-outline" label="Set as ringtone" onPress={() => { void setAsRingtone(song).then(setNotice).catch(() => setNotice('Could not set ringtone')); }} /> : null}
-        </> : null}
-        {rows.has('devices') ? <><SheetDivider /><Text variant="meta" tone="muted">Listen together and sound</Text></> : null}
-        {rows.has('luvLink') ? <SheetOption icon="people-outline" label="LuvLink" onPress={() => playerAction('together')} /> : null}
-        {rows.has('devices') ? <SheetOption icon="laptop-outline" label="Connect devices" onPress={() => { onClose(); connect.openDevices(); }} /> : null}
-        {rows.has('output') ? <>
-          <SheetOption icon="volume-high-outline" label="Audio output" onPress={() => { if (!NativeAudioPlayer.openOutputSwitcher()) setNotice('No other devices found'); }} />
-          <SheetOption icon="options-outline" label="Equalizer" onPress={() => { if (!NativeAudioPlayer.openEqualizer()) setNotice('No equalizer on this phone'); }} />
-          <SheetOption icon="speedometer-outline" label="Tempo and pitch" onPress={() => playerAction('advanced')} />
-        </> : null}
+        {songActionGroups(rows).map(group => (
+          <React.Fragment key={group.id}>
+            {group.title ? <><SheetDivider /><Text variant="meta" tone="muted">{group.title}</Text></> : null}
+            {group.rows.map(row => {
+              const item = spec(row);
+              if (!item) return null;
+              return (
+                <React.Fragment key={row}>
+                  <SheetOption icon={item.icon as never} label={item.label} selected={item.selected} chevron={item.chevron} destructive={item.destructive} onPress={item.onPress} />
+                  {row === 'coverOnline' && library && library.recentArts.length > 0 ? <RecentCovers uris={library.recentArts} onSelect={uri => leave(() => library.useRecentArt(uri))()} /> : null}
+                </React.Fragment>
+              );
+            })}
+          </React.Fragment>
+        ))}
       </SheetScrollView>
     </Sheet>
   );

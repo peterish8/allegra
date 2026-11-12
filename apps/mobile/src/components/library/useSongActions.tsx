@@ -21,7 +21,9 @@ import { Song } from '../../types/song';
 import { ConfirmSheet } from '../../ui';
 import * as Haptics from '../../utils/haptics';
 import { songCanUpgradeToSyncedLyrics } from '../../utils/lyricsState';
-import LibraryBottomSheet from '../LibraryBottomSheet';
+import { isStreamSongId } from '../../services/stream/streamSong';
+import { MiniSongMenu, type LibrarySongHandlers } from '../player/MiniSongMenu';
+import type { PlayerRequest } from '../player/playerMenuAction';
 import { ShareSheet } from '../share/ShareSheet';
 import LibraryEditModal from '../LibraryEditModal';
 import { SongVersionSearchModal } from '../SongVersionSearchModal';
@@ -30,6 +32,10 @@ import { Toast } from '../Toast';
 export interface SongActionExtras {
   /** Opened from a playlist: offer "Remove from this playlist". */
   onRemoveFromPlaylist?: () => void;
+  /** The song is the one playing (the mini player, Now Playing): it also gets the playback and sound rows. */
+  current?: boolean;
+  /** Now Playing answers the sheet's player requests itself; elsewhere they open Now Playing. */
+  onPlayer?: (request: PlayerRequest) => void;
 }
 
 type ToastState = { message: string; type: 'success' | 'error' | 'info' } | null;
@@ -124,42 +130,38 @@ export const useSongActions = () => {
 
   const later = (fn: () => void) => { setSheet(false); setTimeout(fn, 300); };
 
+  /** The library rows of the one song sheet. The sheet closes itself first; each opens its own modal or toast. */
+  const library: LibrarySongHandlers = {
+    playNext: song && canQueueNext(song) ? () => {
+      if (queueNext(song)) {
+        Haptics.success();
+        setToast({ message: 'Playing next', type: 'success' });
+      }
+    } : undefined,
+    findLyrics: () => { if (song) findLyrics(song); },
+    version: () => later(() => setVersions(true)),
+    shareLink: () => later(() => setShareOpen(true)),
+    shareFile: () => { void share(); },
+    pickCover: () => { void pickImage(); },
+    findCover: () => setCoverSearch(true),
+    recentArts,
+    useRecentArt: uri => { void setCover(uri); },
+    removeCover: () => { void setCover(undefined, 'Cover removed'); },
+    edit: () => later(() => { setEditTitle(song?.title ?? ''); setEditArtist(song?.artist ?? ''); setEditing(true); }),
+    removeFromPlaylist: extras.onRemoveFromPlaylist,
+    hide: () => {
+      if (!song) return;
+      hideSong(song.id, true)
+        .then(() => setToast({ message: 'Hidden from your library', type: 'success' }))
+        .catch(() => setToast({ message: 'Could not hide the song', type: 'error' }));
+    },
+    remove: () => later(() => setConfirmDelete(true)),
+  };
+
   const element = (
     <>
-      <LibraryBottomSheet
-        visible={sheet}
-        onClose={() => setSheet(false)}
-        selectedSong={song}
-        onPlayNext={song && canQueueNext(song) ? () => {
-          setSheet(false);
-          if (queueNext(song)) {
-            Haptics.success();
-            setToast({ message: 'Playing next', type: 'success' });
-          }
-        } : undefined}
-        onFindLyrics={() => { setSheet(false); if (song) findLyrics(song); }}
-        onRemoveFromPlaylist={extras.onRemoveFromPlaylist ? () => { setSheet(false); extras.onRemoveFromPlaylist?.(); } : undefined}
-        onShare={share}
-        onShareLink={() => later(() => setShareOpen(true))}
-        onOpenVersionSearch={() => later(() => setVersions(true))}
-        onPickImage={pickImage}
-        onOpenCoverSearch={() => { setSheet(false); setCoverSearch(true); }}
-        recentArts={recentArts}
-        onSelectRecentArt={uri => { setSheet(false); setCover(uri); }}
-        onRemoveCover={() => { setSheet(false); setCover(undefined, 'Cover removed'); }}
-        onHideSong={async () => {
-          setSheet(false);
-          if (!song) return;
-          try {
-            await hideSong(song.id, true);
-            setToast({ message: 'Hidden from your library', type: 'success' });
-          } catch {
-            setToast({ message: 'Could not hide the song', type: 'error' });
-          }
-        }}
-        onEditInfo={() => later(() => { setEditTitle(song?.title ?? ''); setEditArtist(song?.artist ?? ''); setEditing(true); })}
-        onDelete={() => later(() => setConfirmDelete(true))}
-      />
+      {song ? <MiniSongMenu key={song.id} song={song} visible={sheet} onClose={() => setSheet(false)} current={extras.current ?? false}
+        onPlayer={extras.onPlayer} library={isStreamSongId(song.id) ? undefined : library} /> : null}
       {song ? <ShareSheet visible={shareOpen} onClose={() => setShareOpen(false)} target={{ kind: 'song', song }} /> : null}
       <ConfirmSheet
         visible={confirmDelete}

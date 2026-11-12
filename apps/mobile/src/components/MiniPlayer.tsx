@@ -24,7 +24,7 @@ import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
 import CanvasVideoLayer from './CanvasVideoLayer';
 import PillPlayer from './PillPlayer';
 import { NativePlaybackControl } from './NativePlaybackControl';
-import { MiniSongMenu } from './player/MiniSongMenu';
+import { useSongActions } from './library/useSongActions';
 import SynchronizedLyrics from './SynchronizedLyrics';
 import TimelineScrubber from './TimelineScrubber';
 import { YtMiniPlayer } from './YtMiniPlayer';
@@ -240,7 +240,7 @@ export const MiniPlayer: React.FC = () => {
   }, [currentSong, requestPlayback, playButtonScale]);
 
 
-  const [songMenuOpen, setSongMenuOpen] = useState(false);
+  const songActions = useSongActions();
   const [expanded, setExpanded] = useState(false);
   const [classicFullExpanded, setClassicFullExpanded] = useState(false);
   const [lyricExpandedAt, setLyricExpandedAt] = useState(0);
@@ -768,11 +768,11 @@ export const MiniPlayer: React.FC = () => {
         onPrevious={skipBackward}
         onRetry={() => usePlayerStore.getState().requestPlayback(true)}
         onSeek={handleClassicLyricSeek}
-        onMore={() => setSongMenuOpen(true)}
+        onMore={() => songActions.open(currentSong, { current: true })}
         liked={isLiked}
         onToggleLike={() => { void toggleLike(currentSong.id); }}
       />
-      <MiniSongMenu key={currentSong.id} song={currentSong} visible={songMenuOpen} onClose={() => setSongMenuOpen(false)} />
+      {songActions.element}
       </>
     );
   }

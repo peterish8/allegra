@@ -31,7 +31,8 @@ import { isCoverFull, SEEK_STEP_S, seekSide, seekTarget } from '../components/pl
 import LyricsPicker from '../components/player/LyricsPicker';
 import { PlaybackFailureNotice } from '../components/player/PlaybackFailureNotice';
 import { SongDetails, TempoPitch } from '../components/player/PlayerExtras';
-import PlayerMenu, { PlayerMenuAction } from '../components/player/PlayerMenu';
+import type { PlayerMenuAction, PlayerRequest } from '../components/player/playerMenuAction';
+import { useSongActions } from '../components/library/useSongActions';
 import { PlayerSheet, SleepTimerList } from '../components/player/PlayerSheet';
 import SeekRipple, { SeekPulse } from '../components/player/SeekRipple';
 import UpNextPanel from '../components/player/UpNextPanel';
@@ -692,6 +693,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     else if (linkSheet) setSheet(linkSheet);
   }, [linkSheet, openUpNext]);
   const closeSheet = useCallback(() => setSheet(null), []);
+  const songActions = useSongActions();
   const enterLyricsFullscreen = useCallback(() => {
     setShowLyrics(true);
     setLyricsFullscreen(true);
@@ -823,6 +825,22 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
         return;
     }
   }, [currentSong, navigation, say, showLyrics, setShowLyrics, onToggleLike, repeatOne, setRepeatOne, openArtist, openConnectDevices]);
+
+  // The ••• button, the deep link and the mini player all open the app's one song sheet (owner, 2026-11-13).
+  const answerPlayer = useCallback((request: PlayerRequest) => {
+    if ('sheet' in request) {
+      if (request.sheet === 'queue') openUpNext(0);
+      else setSheet('timer');
+    } else if (request.action === 'lyrics') setSheet('lyrics');
+    else void onMenuAction(request.action);
+  }, [onMenuAction, openUpNext]);
+  useEffect(() => {
+    if (sheet !== 'menu') return;
+    setSheet(null);
+    if (currentSong) songActions.open(currentSong, { current: true, onPlayer: answerPlayer });
+    // songActions.open is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheet, currentSong, answerPlayer]);
 
   const appliedMenuAction = useRef(false);
   useEffect(() => {
@@ -990,11 +1008,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
         <PlayerSheet visible={sheet === 'timer'} title="Sleep timer" onClose={closeSheet}>
           <SleepTimerList onPicked={closeSheet} />
         </PlayerSheet>
-        <PlayerSheet visible={sheet === 'menu'} tall onClose={closeSheet}>
-          {currentSong ? (
-            <PlayerMenu song={currentSong} liked={isCurrentSongLiked} showLyrics={showLyrics} onAction={onMenuAction} />
-          ) : null}
-        </PlayerSheet>
+        {songActions.element}
         <PlayerSheet visible={sheet === 'details'} title="Details" onClose={closeSheet}>
           {currentSong ? (
             <SongDetails

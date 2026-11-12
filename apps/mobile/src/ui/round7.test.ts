@@ -192,7 +192,8 @@ describe('item 2: action sheets open on their identity', () => {
     // Stream's long press opens the one song actions sheet (2026-11-13), which carries the identity header.
     expect(read('components/stream/useStreamSongActions.tsx')).toMatch(/<MiniSongMenu /);
     expect(read('components/player/MiniSongMenu.tsx')).toMatch(/<SheetIdentity /);
-    expect(read('components/LibraryBottomSheet.tsx')).toMatch(/<SheetIdentity /);
+    // Library and playlist rows open the same sheet through useSongActions.
+    expect(read('components/library/useSongActions.tsx')).toMatch(/<MiniSongMenu /);
     expect(read('screens/StreamScreen.tsx')).toMatch(/<SheetIdentity title=\{mixActions\.title\}/);
   });
 });

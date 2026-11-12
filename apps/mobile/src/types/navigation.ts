@@ -5,7 +5,7 @@
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { PlayerMenuAction } from '../components/player/PlayerMenu';
+import type { PlayerMenuAction } from '../components/player/playerMenuAction';
 import type { StatsRange } from '../services/stats/listeningStats';
 import type { Song, UnifiedSong } from './song';
 export type MixParams = { title: string } & ({ kind: 'stream'; songs: UnifiedSong[] } | { kind: 'local'; songs: Song[] });

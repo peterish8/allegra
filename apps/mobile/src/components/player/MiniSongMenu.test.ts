@@ -2,6 +2,7 @@ import React from 'react';
 import type { Song } from '../../types/song';
 jest.mock('react', () => ({ ...jest.requireActual('react'), useState: (value: unknown) => [value, jest.fn()] }));
 jest.mock('react-native', () => ({ Platform: { OS: 'android' }, StyleSheet: { create: (s: unknown) => s }, View: 'View' }));
+jest.mock('./RecentCovers', () => ({ RecentCovers: 'RecentCovers' }));
 jest.mock('../../ui', () => ({
   Button: 'Button', Sheet: 'Sheet', SheetIdentity: 'Identity', SheetScrollView: 'Scroll', SheetOption: 'Option', SheetDivider: 'Divider', Text: 'Text',
   Space: { sm: 8, md: 16, lg: 24 }, Control: { target: 48 }, identityMeta: (...parts: string[]) => parts.join(' · '),
@@ -91,4 +92,59 @@ test('Remote playback keeps local audio controls out of its song sheet', () => {
   expect(labels).toContain('Connect devices');
   expect(labels).not.toContain('Reload audio');
   expect(labels).not.toContain('Shuffle upcoming songs');
+});
+
+// A song file on this phone, long-pressed in Library or a playlist (owner, 2026-11-13: the same sheet as everywhere).
+const fileSong: Song = { ...song, id: 'file-1' };
+const handlers = () => ({
+  playNext: jest.fn(), findLyrics: jest.fn(), version: jest.fn(), shareLink: jest.fn(), shareFile: jest.fn(),
+  pickCover: jest.fn(), findCover: jest.fn(), recentArts: ['file:///a.jpg'], useRecentArt: jest.fn(), removeCover: jest.fn(),
+  edit: jest.fn(), removeFromPlaylist: jest.fn(), hide: jest.fn(), remove: jest.fn(),
+});
+const renderFile = (library = handlers(), onClose = jest.fn()) => ({ library, onClose, nodes: nodes(MiniSongMenu({ song: fileSong, visible: true, onClose, current: false, library })) });
+
+test('a library song gets the global rows and the library rows in one sheet', () => {
+  const labels = renderFile().nodes.map(n => n.label);
+  expect(labels).toEqual(expect.arrayContaining([
+    'Downloaded on this phone', 'Play next', 'Add to playlist', 'Find lyrics', 'Another language or version', 'Share the audio file',
+    'Cover from your photos', 'Find a cover online', 'Remove the cover', 'Edit title and artist', 'Remove from this playlist', 'Hide this song', 'Delete song',
+  ]));
+  expect(labels).not.toContain('Download song');
+});
+
+test('Delete is the last row and the library rows close the sheet before they act', () => {
+  const { nodes: rendered, library, onClose } = renderFile();
+  const rows = rendered.filter(n => n.label && n.onPress);
+  expect(rows.at(-1)?.label).toBe('Delete song');
+  rows.at(-1)?.onPress?.();
+  expect(onClose).toHaveBeenCalled();
+  expect(library.remove).toHaveBeenCalled();
+});
+
+test('Remove from this playlist only shows when the host passes it, and Play next only when it can queue', () => {
+  const bare = { ...handlers(), removeFromPlaylist: undefined, playNext: undefined };
+  const labels = renderFile(bare).nodes.map(n => n.label);
+  expect(labels).not.toContain('Remove from this playlist');
+  expect(labels).not.toContain('Play next');
+});
+
+test('Play next on a library song uses the library queue, not the stream queue', () => {
+  const { nodes: rendered, library } = renderFile();
+  rendered.find(n => n.label === 'Play next')?.onPress?.();
+  expect(library.playNext).toHaveBeenCalled();
+  expect(mockPlayNext).not.toHaveBeenCalled();
+});
+
+test('the playing library song keeps the picker and gets the player rows too', () => {
+  const library = handlers();
+  const labels = nodes(MiniSongMenu({ song: fileSong, visible: true, onClose: jest.fn(), current: true, library })).map(n => n.label);
+  expect(labels).toEqual(expect.arrayContaining(['Find or change lyrics', 'Up next', 'Edit title and artist']));
+  expect(labels).not.toContain('Find lyrics');
+});
+
+test('Now Playing answers the sheet’s player requests itself', () => {
+  const onPlayer = jest.fn();
+  nodes(MiniSongMenu({ song, visible: true, onClose: jest.fn(), onPlayer })).find(n => n.label === 'Up next')?.onPress?.();
+  expect(onPlayer).toHaveBeenCalledWith({ sheet: 'queue' });
+  expect(mockNavigate).not.toHaveBeenCalled();
 });

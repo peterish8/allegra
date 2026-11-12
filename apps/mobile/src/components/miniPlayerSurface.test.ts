@@ -104,7 +104,7 @@ describe('mini player and navigation controls', () => {
 
   it('the local mini player passes song options and the heart; the Connect one passes song options', () => {
     const mini = code(read('MiniPlayer.tsx'));
-    expect(mini).toMatch(/onMore=\{\(\) => setSongMenuOpen\(true\)\}\s*\n\s*liked=\{isLiked\}\s*\n\s*onToggleLike=/);
+    expect(mini).toMatch(/onMore=\{\(\) => songActions\.open\(currentSong, \{ current: true \}\)\}\s*\n\s*liked=\{isLiked\}\s*\n\s*onToggleLike=/);
     expect(code(read('connect', 'ConnectMiniPlayer.tsx'))).toMatch(/onMore=\{\(\) => setMenuOpen\(true\)\}/);
   });
 
