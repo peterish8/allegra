@@ -1,6 +1,62 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { isCurrentMediaGeneration, playbackRejectionMessage, shouldHandlePlayerShortcut, takeNextUnvisited, type RecoveryCursor } from './audioPlayerRules';
+import { readFileSync } from 'node:fs';
+
+import { afterSourceSwap, isCurrentMediaGeneration, playbackRejectionMessage, reopensQueueEnd, shouldHandlePlayerShortcut, shownAsPlaying, takeNextUnvisited, type RecoveryCursor } from './audioPlayerRules';
+
+describe('afterSourceSwap', () => {
+  it('a swap where neither source opened leaves nothing playing or waiting to play', () => {
+    assert.equal(afterSourceSwap({ opened: false, wasPlaying: true, wantsPlay: true }), 'dead');
+    assert.equal(afterSourceSwap({ opened: false, wasPlaying: false, wantsPlay: false }), 'dead');
+  });
+
+  it('resumes only when it was playing and nobody paused during the switch', () => {
+    assert.equal(afterSourceSwap({ opened: true, wasPlaying: true, wantsPlay: true }), 'resume');
+    assert.equal(afterSourceSwap({ opened: true, wasPlaying: true, wantsPlay: false }), 'stay');
+    assert.equal(afterSourceSwap({ opened: true, wasPlaying: false, wantsPlay: true }), 'stay');
+  });
+});
+
+describe('reopensQueueEnd', () => {
+  it('reopens a queue that ended once the listener gives it somewhere to go', () => {
+    // The last song ended with repeat off: the latch is set and no new song is loading.
+    assert.equal(reopensQueueEnd({ latched: true, activeGeneration: 7, loadedGeneration: 7 }), true);
+  });
+
+  it('keeps the latch while a move to the next song is still loading', () => {
+    // The near-end check already picked the next song; the old source must not advance twice.
+    assert.equal(reopensQueueEnd({ latched: true, activeGeneration: 8, loadedGeneration: 7 }), false);
+  });
+
+  it('has nothing to reopen when the latch is not set', () => {
+    assert.equal(reopensQueueEnd({ latched: false, activeGeneration: 7, loadedGeneration: 7 }), false);
+  });
+
+  it('is applied by every edit that can give an ended queue a next song', () => {
+    const hook = readFileSync(new URL('../hooks/useAudioPlayer.ts', import.meta.url), 'utf8');
+    for (const name of ['appendQueue', 'replaceUpcoming', 'cycleRepeat', 'toggleShuffle']) {
+      const start = hook.indexOf(`const ${name} = useCallback(`);
+      assert.ok(start >= 0, `${name} exists`);
+      const body = hook.slice(start, hook.indexOf('\n  }, [', start));
+      assert.match(body, /reopenQueueEnd\(\)/, `${name} reopens an ended queue`);
+    }
+  });
+});
+
+describe('shownAsPlaying', () => {
+  it('an element that plays is shown as playing, even if its early play event was ignored', () => {
+    assert.equal(shownAsPlaying({ paused: false, wantsPlay: true, shown: false }), true);
+  });
+
+  it('a paused element with a play request in flight keeps what is shown', () => {
+    assert.equal(shownAsPlaying({ paused: true, wantsPlay: true, shown: true }), true);
+    assert.equal(shownAsPlaying({ paused: true, wantsPlay: true, shown: false }), false);
+  });
+
+  it('a paused element with no play request is paused', () => {
+    assert.equal(shownAsPlaying({ paused: true, wantsPlay: false, shown: true }), false);
+  });
+});
 
 describe('audio player media event generations', () => {
   const current = {

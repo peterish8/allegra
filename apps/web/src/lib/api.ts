@@ -11,6 +11,7 @@ import type { RadioTaste } from '@shared/radio';
 import { TYPEAHEAD_LIMIT } from '@shared/typeahead';
 import type { LyricsSourcesResponse, LyricsSyncRequest, LyricsSyncResult } from '@shared/lyricSync';
 import { readLocalTiming } from './lyricAlign/localTiming';
+import { guestIsGone, linkGuest, type GuestLinkResult } from './guestLink';
 
 export function getLyricsSources(ref: string, signal?: AbortSignal): Promise<LyricsSourcesResponse> {
   return request(`/api/lyrics/sources?ref=${encodeURIComponent(ref)}`, { signal });
@@ -748,34 +749,32 @@ export async function fetchProfile(signal?: AbortSignal): Promise<AccountProfile
 /**
  * Hands this browser's guest token to the account that just signed in, so the likes
  * and playlists built before signing in are not stranded. Safe to call more than
- * once — merging is a union — and a no-op when there was never a guest session.
+ * once — merging is a union — and a no-op when there was never a guest session. The guest token
+ * is kept until the server has taken it (see guestLink.ts), so a failed request can be tried again.
  */
-export async function linkGuestSession(): Promise<AccountProfile | null> {
-  let guestToken: string | null = null;
-  try {
-    guestToken = window.localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-  if (!guestToken) return null;
-  try {
-    const profile = await request<AccountProfile>('/api/auth/link', {
+export async function linkGuestSession(): Promise<GuestLinkResult> {
+  return linkGuest(window.localStorage, TOKEN_KEY, (guestToken) =>
+    request<AccountProfile>('/api/auth/link', {
       method: 'POST',
       headers: JSON_HEADERS,
       body: JSON.stringify({ guestToken })
-    });
-    // The guest is now part of the account; keeping the token around would let a
-    // sign-out silently land back in the old half-populated guest session.
-    window.localStorage.removeItem(TOKEN_KEY);
-    return profile;
-  } catch {
-    return null;
-  }
+    })
+  );
 }
 
 /** Starts a fresh guest session after signing out, so the app is never token-less. */
 export async function startGuestSession(): Promise<AccountProfile> {
   setAccountToken(null);
+  // A guest token still in storage was never merged (a merge removes it), so it holds this browser's
+  // likes and playlists. Go back to that guest instead of replacing it, or sign-out would strand them.
+  if (hasStoredSession()) {
+    try {
+      return await fetchProfile();
+    } catch (error: unknown) {
+      // Only a guest the server no longer knows is replaced. Offline or an outage keeps the token.
+      if (!(error instanceof ApiError && guestIsGone(error.status))) throw error;
+    }
+  }
   try {
     window.localStorage.removeItem(TOKEN_KEY);
   } catch {

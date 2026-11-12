@@ -14,6 +14,42 @@ export function isCurrentMediaGeneration(input: {
     && input.expectedSource === input.currentSource;
 }
 
+/**
+ * Whether the player should show "playing", read from the element once its source has loaded.
+ *
+ * The `play` event of a fresh pick fires before the source's metadata, while its events are still
+ * ignored as belonging to the previous song, so it can never be relied on to flip the state. The
+ * element itself can: playing means playing. A paused element with a pending request to play
+ * (a source switch in flight) keeps what is shown; with no such request it is simply paused.
+ */
+export function shownAsPlaying(input: { paused: boolean; wantsPlay: boolean; shown: boolean }): boolean {
+  if (!input.paused) return true;
+  return input.wantsPlay ? input.shown : false;
+}
+
+/** A source switch (karaoke) that has not opened by now has failed. */
+/**
+ * Whether the "already moved on" latch is a queue that ended and may move on again. The latch is
+ * set when a song advances and when the queue runs out; an edit that adds songs or changes repeat
+ * or shuffle gives an ended queue a next song, so it clears it. While a move to the next song is
+ * still loading (the generations differ) the latch stays: it stops the old source advancing twice.
+ */
+export function reopensQueueEnd(input: { latched: boolean; activeGeneration: number; loadedGeneration: number }): boolean {
+  return input.latched && input.activeGeneration === input.loadedGeneration;
+}
+
+export const SOURCE_SWAP_TIMEOUT_MS = 15_000;
+
+/**
+ * What the player does once a source switch settles. `dead`: neither the new source nor the original
+ * opened, so nothing can play and nothing may stay waiting to (the button must not keep showing Pause).
+ * `resume` only when it was playing and nobody paused during the switch.
+ */
+export function afterSourceSwap(input: { opened: boolean; wasPlaying: boolean; wantsPlay: boolean }): 'dead' | 'resume' | 'stay' {
+  if (!input.opened) return 'dead';
+  return input.wasPlaying && input.wantsPlay ? 'resume' : 'stay';
+}
+
 export function playbackRejectionMessage(errorName: string): string {
   return errorName === 'NotAllowedError'
     ? 'Playback needs a tap to begin. Try the play button again.'

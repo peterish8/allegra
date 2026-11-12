@@ -347,3 +347,22 @@ export const parseArtistSearch = (json: unknown): YTPageItem<'artist'>[] =>
 /** First artist name of a byline ("A, B & C" -> "A"). */
 export const leadArtist = (artist: string): string => artist.split(/,|&| feat\.? | ft\.? | x /i)[0].trim();
 
+
+
+export interface ArtistReleasesPage { items: YTItem[]; continuation?: string }
+export const releaseKey = (item: YTItem): string => item.kind === 'song' ? `song:${item.song.videoId}` : `${item.kind}:${item.browseId}`;
+export function appendReleases(previous: readonly YTItem[], incoming: readonly YTItem[]): YTItem[] {
+  const unique = new Map(previous.map(item => [releaseKey(item), item]));
+  for (const item of incoming) if (!unique.has(releaseKey(item))) unique.set(releaseKey(item), item);
+  return [...unique.values()];
+}
+/** Artist release grids use the shelf's browseId AND params; later pages contain only grid items. */
+export function parseArtistReleases(json: unknown): ArtistReleasesPage {
+  const items = [
+    ...collect<TwoRowItem>(json, 'musicTwoRowItemRenderer').map(itemFromTwoRow),
+    ...collect<ResponsiveItem>(json, 'musicResponsiveListItemRenderer').map(itemFromResponsive),
+  ].filter((item): item is YTItem => item !== null);
+  const continuation = collect<{ continuation?: string }>(json, 'nextContinuationData').find(row => row.continuation)?.continuation
+    ?? collect<{ token?: string }>(json, 'continuationCommand').find(row => row.token)?.token;
+  return { items: appendReleases([], items), continuation };
+}

@@ -4,11 +4,12 @@ import type { UnifiedSong } from '@shared/types';
 
 import { resolveApiUrl } from '../lib/api';
 import { PlayheadStore, type Playhead } from '../lib/playhead';
-import { nextInOrder, orderWithAppended, previousAction, previousInOrder, shuffledOrder, withUpcoming } from '../../../../packages/connect/src/index';
+import { nextInOrder, orderWithAppended, shuffledOrder, withUpcoming } from '../../../../packages/connect/src/index';
 import { songIdentity, uniqueByIdentity } from '../lib/songIdentity';
 import { clamp } from '../lib/utils';
 import { activeWebSearchAttempt, hasSelectedPlaybackProgress, matchesSelectedPlaybackSource, webPerformanceTrace } from '../lib/performanceTrace';
-import { isCurrentMediaGeneration, playbackRejectionMessage, shouldHandlePlayerShortcut, takeNextUnvisited, type RecoveryCursor } from '../lib/audioPlayerRules';
+import { afterSourceSwap, isCurrentMediaGeneration, playbackRejectionMessage, reopensQueueEnd, shownAsPlaying, SOURCE_SWAP_TIMEOUT_MS, takeNextUnvisited, type RecoveryCursor } from '../lib/audioPlayerRules';
+import { decidePrevious, manualNext, nextDistinct, reshuffleOrder, shufflePlayOrder } from '../lib/skipRules';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
@@ -104,6 +105,12 @@ export function useAudioPlayer(): AudioPlayerState {
     if (!audio || !currentSongRef.current) return;
     if (!playing) {
       audio.pause();
+      // A pause asked for here is final. Its `pause` event may never come (nothing was playing yet)
+      // or may be ignored as belonging to a source that has not loaded, so the state follows the
+      // request instead of waiting for it.
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      setIsBuffering(false);
       return;
     }
     const generation = playbackGenerationRef.current;
@@ -116,15 +123,29 @@ export function useAudioPlayer(): AudioPlayerState {
       setError(null);
     } catch (error: unknown) {
       if (generation !== playbackGenerationRef.current || !playbackIntentRef.current) return;
+      const name = typeof error === 'object' && error !== null && 'name' in error ? String(error.name) : '';
+      // A newer pause, seek or load interrupted this request. That is not a failure, and the call
+      // that interrupted it has its own outcome (a seek asks to play again straight away).
+      if (name === 'AbortError') return;
       const attempt = activeWebSearchAttempt();
       if (attempt && matchesSelectedPlaybackSource(attempt, currentSongRef.current?.id ?? '')) {
         webPerformanceTrace?.finish(attempt, 'playback-failure');
       }
-      const name = typeof error === 'object' && error !== null && 'name' in error ? String(error.name) : '';
       setError(playbackRejectionMessage(name));
+      // The browser refused: nothing is playing and nothing is waiting to, so the next tap plays
+      // (and a later source switch does not start sound the listener never heard).
+      playbackIntentRef.current = false;
+      isPlayingRef.current = false;
       setIsPlaying(false);
       setIsBuffering(false);
     }
+  }, []);
+
+  /** Brings the shuffle order in line with a queue that was just replaced, so Next never points at a song that left it. */
+  const syncShuffleOrder = useCallback((list: readonly UnifiedSong[], currentId: string): void => {
+    if (!shuffleRef.current) return;
+    shuffleOrderRef.current = reshuffleOrder(list.map((item) => item.id), currentId, shuffleOrderRef.current);
+    setShuffleOrder([...shuffleOrderRef.current]);
   }, []);
 
   const selectSongWithIntent = useCallback((song: UnifiedSong, nextQueue: UnifiedSong[], shouldPlay: boolean, automatic = false): void => {
@@ -138,6 +159,9 @@ export function useAudioPlayer(): AudioPlayerState {
       const withCurrent = next.some((item) => item.id === song.id) ? next : [song, ...next];
       queueRef.current = withCurrent;
       setQueue(withCurrent);
+      // The same song picked inside another list (a playlist that holds it) replaces the queue but
+      // not the shuffle order, which would then name songs that are gone.
+      syncShuffleOrder(withCurrent, song.id);
       pendingPlaybackRef.current = shouldPlay;
       playbackIntentRef.current = shouldPlay;
       if (shouldPlay) void requestPlayback(true);
@@ -151,15 +175,7 @@ export function useAudioPlayer(): AudioPlayerState {
     const next = uniqueByIdentity(withCurrent);
     const playable = next.find((item) => item.id === song.id) ?? next.find((item) => songIdentity(item) === songIdentity(song)) ?? song;
     const ordered = next.some((item) => item.id === playable.id) ? next : [playable, ...next];
-    if (shuffleRef.current) {
-      const ids = ordered.map((item) => item.id);
-      const prior = shuffleOrderRef.current.filter((id) => ids.includes(id));
-      const missing = ids.filter((id) => !prior.includes(id));
-      shuffleOrderRef.current = prior.length === 0 || !prior.includes(playable.id)
-        ? shuffledOrder(ids, playable.id)
-        : orderWithAppended(prior, missing);
-      setShuffleOrder([...shuffleOrderRef.current]);
-    }
+    syncShuffleOrder(ordered, playable.id);
     playbackGenerationRef.current += 1;
     currentSongRef.current = playable;
     queueRef.current = ordered;
@@ -170,7 +186,7 @@ export function useAudioPlayer(): AudioPlayerState {
     setCurrentTime(0);
     setDuration(playable.duration);
     setError(null);
-  }, [requestPlayback]);
+  }, [requestPlayback, syncShuffleOrder]);
 
   const selectSong = useCallback((song: UnifiedSong, nextQueue: UnifiedSong[] = []): void => {
     selectSongWithIntent(song, nextQueue, true);
@@ -190,6 +206,15 @@ export function useAudioPlayer(): AudioPlayerState {
     setCurrentTime(nextTime);
     if (wasPlaying) await requestPlayback(true);
   }, [duration, requestPlayback]);
+
+  /** A queue that ran out may move on again once an edit gives it a next song. */
+  const reopenQueueEnd = useCallback((): void => {
+    if (reopensQueueEnd({
+      latched: autoAdvancedRef.current,
+      activeGeneration: playbackGenerationRef.current,
+      loadedGeneration: loadedGenerationRef.current,
+    })) autoAdvancedRef.current = false;
+  }, []);
 
   const appendQueue = useCallback((songs: readonly UnifiedSong[]): number => {
     if (songs.length === 0) return 0;
@@ -218,8 +243,9 @@ export function useAudioPlayer(): AudioPlayerState {
     }
     queueRef.current = next;
     setQueue(next);
+    reopenQueueEnd();
     return added.length;
-  }, []);
+  }, [reopenQueueEnd]);
 
   const replaceUpcoming = useCallback((songs: readonly UnifiedSong[]): void => {
     const current = currentSongRef.current;
@@ -233,7 +259,8 @@ export function useAudioPlayer(): AudioPlayerState {
     }
     queueRef.current = next;
     setQueue(next);
-  }, []);
+    reopenQueueEnd();
+  }, [reopenQueueEnd]);
 
   const advanceToNext = useCallback((afterLoadFailure = false): void => {
     const song = currentSongRef.current;
@@ -262,7 +289,7 @@ export function useAudioPlayer(): AudioPlayerState {
     const candidates: UnifiedSong[] = [];
     const wrap = repeatRef.current === 'all';
     if (shuffleRef.current && list.length > 1) {
-      const order = shuffleOrderRef.current;
+      const order = shufflePlayOrder(list, shuffleOrderRef.current);
       const orderAt = order.indexOf(song.id);
       const limit = wrap ? order.length - 1 : Math.max(0, order.length - orderAt - 1);
       for (let step = 1; step <= limit; step += 1) {
@@ -297,10 +324,7 @@ export function useAudioPlayer(): AudioPlayerState {
     if (!song) return null;
     automaticRecoveryRef.current = null;
     autoAdvancedRef.current = false;
-    const index = list.findIndex((item) => item.id === song.id);
-    const next = shuffleRef.current
-      ? list.find((item) => item.id === nextInOrder(shuffleOrderRef.current, song.id, true))
-      : nextDistinct(list, index, song, true);
+    const next = manualNext({ list, current: song, shuffle: shuffleRef.current, shuffleOrder: shuffleOrderRef.current });
     if (!next) return null;
     selectSong(next, list);
     return next;
@@ -308,29 +332,28 @@ export function useAudioPlayer(): AudioPlayerState {
 
   const skipPrevious = useCallback((): UnifiedSong | null => {
     const song = currentSongRef.current;
-    const audio = audioRef.current;
+    if (!song || !audioRef.current) return null;
     const list = queueRef.current;
-    if (!song || !audio) return null;
-    const index = list.findIndex((item) => item.id === song.id);
-    const repeatAll = repeatRef.current === 'all';
-    const hasPrevious = shuffleRef.current
-      ? previousInOrder(shuffleOrderRef.current, song.id, repeatAll) !== null
-      : previousDistinct(list, index, song, repeatAll) !== undefined;
-    if (previousAction(audio.currentTime, hasPrevious) === 'restart') {
-      automaticRecoveryRef.current = null;
-      autoAdvancedRef.current = false;
+    // Where the selected song is, from the playhead: a song picked a moment ago is at 0 even while
+    // the element still holds the previous source at its old position (a second press of
+    // Previous from a media key must go back again, not restart a song that is not playing).
+    const decision = decidePrevious({
+      list,
+      current: song,
+      shuffle: shuffleRef.current,
+      shuffleOrder: shuffleOrderRef.current,
+      repeatAll: repeatRef.current === 'all',
+      positionSec: playhead.get(),
+    });
+    automaticRecoveryRef.current = null;
+    autoAdvancedRef.current = false;
+    if (decision.kind === 'restart') {
       void seek(0);
       return null;
     }
-    const previousId = shuffleRef.current ? previousInOrder(shuffleOrderRef.current, song.id, repeatAll) : null;
-    const previous = (previousId ? list.find((item) => item.id === previousId) : undefined)
-      ?? previousDistinct(list, index, song, repeatAll);
-    if (!previous) return null;
-    automaticRecoveryRef.current = null;
-    autoAdvancedRef.current = false;
-    selectSong(previous, list);
-    return previous;
-  }, [selectSong, seek]);
+    selectSong(decision.song, list);
+    return decision.song;
+  }, [playhead, selectSong, seek]);
 
   const stop = useCallback((): void => {
     playbackGenerationRef.current += 1;
@@ -374,33 +397,50 @@ export function useAudioPlayer(): AudioPlayerState {
 
     const wasPlaying = playbackIntentRef.current;
     const resumeAt = audio.currentTime;
-    sourceOverrideRef.current = streamUrl;
-    playbackGenerationRef.current += 1;
-    const generation = playbackGenerationRef.current;
 
-    audio.pause();
-    setIsBuffering(true);
-    audio.src = nextSrc;
-    loadedSongIdRef.current = song.id;
-    expectedSourceRef.current = audio.src;
-    audio.load();
+    /** Points the element at one source and waits for it. Each switch is its own generation. */
+    const switchTo = async (url: string): Promise<'ready' | 'failed' | 'superseded'> => {
+      playbackGenerationRef.current += 1;
+      const generation = playbackGenerationRef.current;
+      sourceOverrideRef.current = url === song.streamUrl ? null : url;
+      audio.pause();
+      setIsBuffering(true);
+      audio.src = resolveApiUrl(url);
+      loadedSongIdRef.current = song.id;
+      expectedSourceRef.current = audio.src;
+      audio.load();
+      const ready = await waitForSourceReady(audio, SOURCE_SWAP_TIMEOUT_MS);
+      if (generation !== playbackGenerationRef.current || currentSongRef.current?.id !== song.id) return 'superseded';
+      return ready ? 'ready' : 'failed';
+    };
 
-    await new Promise<void>((resolve) => {
-      const onReady = (): void => {
-        audio.removeEventListener('loadedmetadata', onReady);
-        audio.removeEventListener('error', onReady);
-        resolve();
-      };
-      audio.addEventListener('loadedmetadata', onReady, { once: true });
-      audio.addEventListener('error', onReady, { once: true });
-    });
-
-    if (generation !== playbackGenerationRef.current || currentSongRef.current?.id !== song.id) return false;
-    audio.currentTime = resumeAt;
-    setCurrentTime(resumeAt);
+    let outcome = await switchTo(streamUrl);
+    if (outcome === 'superseded') return false;
+    const switched = outcome === 'ready';
+    if (!switched && streamUrl !== song.streamUrl) {
+      // The new source would not open. Put the original back rather than leave a dead element.
+      outcome = await switchTo(song.streamUrl);
+      if (outcome === 'superseded') return false;
+    }
+    if (outcome === 'ready') {
+      audio.currentTime = resumeAt;
+      setCurrentTime(resumeAt);
+      // The source that failed reported an error on its way out; the original is playable again.
+      if (!switched) setError(null);
+    }
     setIsBuffering(false);
-    if (wasPlaying) await requestPlayback(true);
-    return true;
+    // The intent is read again here: a pause during the switch (it can take a while) must stay paused.
+    const next = afterSourceSwap({ opened: outcome === 'ready', wasPlaying, wantsPlay: playbackIntentRef.current });
+    if (next === 'dead') {
+      audio.pause();
+      playbackIntentRef.current = false;
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      setError('This track could not be loaded. Try another song.');
+      return false;
+    }
+    if (next === 'resume') await requestPlayback(true);
+    return switched;
   }, [requestPlayback]);
 
   const setVolume = useCallback((value: number): void => {
@@ -424,12 +464,14 @@ export function useAudioPlayer(): AudioPlayerState {
       : [];
     setShuffleOrder([...shuffleOrderRef.current]);
     setShuffle(shuffleRef.current);
-  }, []);
+    reopenQueueEnd();
+  }, [reopenQueueEnd]);
 
   const cycleRepeat = useCallback((): void => {
     repeatRef.current = repeatRef.current === 'off' ? 'all' : repeatRef.current === 'all' ? 'one' : 'off';
     setRepeat(repeatRef.current);
-  }, []);
+    reopenQueueEnd();
+  }, [reopenQueueEnd]);
 
   const toggleMute = useCallback((): void => {
     const audio = audioRef.current;
@@ -458,6 +500,19 @@ export function useAudioPlayer(): AudioPlayerState {
       currentSource: audio.currentSrc,
     });
 
+    /**
+     * The `play` and `pause` events of a fresh pick arrive before its metadata, while they are still
+     * ignored as the previous source's, and are never repeated. Once the source is current the
+     * element is asked what it is doing, so "playing" can never stay false over audible sound
+     * (which left the button on Play and made Pause start the song again).
+     */
+    const syncPlaying = (): void => {
+      const playing = shownAsPlaying({ paused: audio.paused, wantsPlay: playbackIntentRef.current, shown: isPlayingRef.current });
+      if (playing === isPlayingRef.current) return;
+      isPlayingRef.current = playing;
+      setIsPlaying(playing);
+    };
+
     audio.volume = volume;
     const onTimeUpdate = (): void => {
       if (!sourceIsLoaded()) return;
@@ -485,6 +540,7 @@ export function useAudioPlayer(): AudioPlayerState {
       autoAdvancedRef.current = false;
       const nextDuration = Number.isFinite(audio.duration) ? audio.duration : currentSongRef.current?.duration ?? 0;
       setDuration(nextDuration);
+      syncPlaying();
     };
     const onPlay = (): void => {
       if (!sourceIsLoaded()) return;
@@ -498,9 +554,16 @@ export function useAudioPlayer(): AudioPlayerState {
     };
     const onPause = (): void => {
       if (!sourceIsLoaded()) return;
+      // A seek pauses and plays again in one go, queueing both events: by the time this one runs
+      // the element is playing again, and showing Pause -> Play for it would flicker the button,
+      // the lock screen and Connect on every seek.
+      if (!audio.paused) return;
       isPlayingRef.current = false;
       setIsPlaying(false);
       setIsBuffering(false);
+      // The element stopped without the funnel asking (headset, system, end of the queue): nothing
+      // is left wanting to play, so a later source switch does not start it again.
+      playbackIntentRef.current = false;
     };
     const onEnded = (): void => { if (sourceIsLoaded()) advanceToNext(); };
     const onError = (): void => {
@@ -519,6 +582,7 @@ export function useAudioPlayer(): AudioPlayerState {
         return;
       }
       setError('This track could not be loaded. Try another song.');
+      isPlayingRef.current = false;
       setIsPlaying(false);
     };
     // `waiting` is the only honest signal that sound has stopped for lack of data.
@@ -535,6 +599,7 @@ export function useAudioPlayer(): AudioPlayerState {
       if (!sourceIsLoaded()) return;
       automaticRecoveryRef.current = null;
       setIsBuffering(false);
+      syncPlaying();
       if (webPerformanceTrace) {
         const attempt = activeWebSearchAttempt();
         const songId = currentSongRef.current?.id ?? '';
@@ -599,6 +664,12 @@ export function useAudioPlayer(): AudioPlayerState {
       pendingCanPlayRef.current = onCanPlay;
       audio.addEventListener('canplay', onCanPlay, { once: true });
       void requestPlayback(true);
+    } else {
+      // Loaded to stay paused (a transfer or room that decides when it starts). The previous song's
+      // `pause` event is ignored as stale, so say here that nothing plays.
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      setIsBuffering(false);
     }
     return () => {
       if (onCanPlay) audio.removeEventListener('canplay', onCanPlay);
@@ -617,20 +688,14 @@ export function useAudioPlayer(): AudioPlayerState {
     };
   }, [stop]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      const target = event.target as HTMLElement | null;
-      if (!shouldHandlePlayerShortcut(target, event.code === 'Space' ? ' ' : event.key)) return;
-      if (event.code === 'Space') {
-        event.preventDefault();
-        void requestPlayback(!isPlayingRef.current);
-      }
-      if (event.key === 'ArrowRight') void seek((audioRef.current?.currentTime ?? 0) + 5);
-      if (event.key === 'ArrowLeft') void seek((audioRef.current?.currentTime ?? 0) - 5);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [requestPlayback, seek]);
+  // No keyboard handler lives here. Space and the arrows are App's: it knows when another device
+  // owns playback and sends the command there. A handler on the local element answered the same
+  // keys a second time (arrows seeked 10 s, not 5) and, while another device played, started the
+  // stale local song beside it.
+
+  const togglePlayback = useCallback((): void => {
+    void requestPlayback(!isPlayingRef.current);
+  }, [requestPlayback]);
 
   return {
     currentSong,
@@ -649,7 +714,7 @@ export function useAudioPlayer(): AudioPlayerState {
     loadForConnect,
     appendQueue,
     replaceUpcoming,
-    togglePlayback: () => void requestPlayback(!isPlayingRef.current),
+    togglePlayback,
     requestPlayback,
     stop,
     seek,
@@ -664,10 +729,9 @@ export function useAudioPlayer(): AudioPlayerState {
   };
 }
 
-/** Next track that is not a remaster of the current song. */
 /**
- * The song that plays after `current` when it ends on its own, or null when that cannot be
- * known ahead (shuffle picks at random) or is the same song (repeat one).
+ * The song that plays after `current` when it ends on its own, or null when it is the same song
+ * (repeat one) or nothing follows.
  */
 export function upcomingSong(
   list: readonly UnifiedSong[],
@@ -679,57 +743,26 @@ export function upcomingSong(
   if (!current || repeat === 'one') return null;
   if (shuffle) {
     if (!currentShuffleOrder?.length) return null;
-    const ids = list.map((item) => item.id);
-    const order = currentShuffleOrder.filter((id) => ids.includes(id));
-    const nextId = nextInOrder(order, current.id, repeat === 'all');
+    const nextId = nextInOrder(shufflePlayOrder(list, currentShuffleOrder), current.id, repeat === 'all');
     return list.find((item) => item.id === nextId) ?? null;
   }
   return nextDistinct(list, list.findIndex((item) => item.id === current.id), current, repeat === 'all') ?? null;
 }
 
-function nextDistinct(
-  list: readonly UnifiedSong[],
-  index: number,
-  current: UnifiedSong,
-  wrap: boolean
-): UnifiedSong | undefined {
-  if (list.length === 0) return undefined;
-  const seedKey = songIdentity(current);
-  const start = index >= 0 ? index : -1;
-  const limit = wrap ? list.length - 1 : list.length - start - 1;
-  for (let step = 1; step <= limit; step += 1) {
-    const candidate = list[start + step];
-    if (!candidate) break;
-    if (candidate.id === current.id) continue;
-    if (songIdentity(candidate) === seedKey) continue;
-    return candidate;
-  }
-  if (!wrap || list.length < 2) return undefined;
-  for (let i = 0; i < start; i += 1) {
-    const candidate = list[i];
-    if (!candidate || candidate.id === current.id) continue;
-    if (songIdentity(candidate) === seedKey) continue;
-    return candidate;
-  }
-  return undefined;
-}
-
-function previousDistinct(
-  list: readonly UnifiedSong[],
-  index: number,
-  current: UnifiedSong,
-  wrap: boolean
-): UnifiedSong | undefined {
-  if (list.length < 2) return undefined;
-  const seedKey = songIdentity(current);
-  const start = index >= 0 ? index : 0;
-  const limit = wrap ? list.length - 1 : start;
-  for (let step = 1; step <= limit; step += 1) {
-    const at = wrap ? (start - step + list.length) % list.length : start - step;
-    const candidate = list[at];
-    if (!candidate || candidate.id === current.id) continue;
-    if (songIdentity(candidate) === seedKey) continue;
-    return candidate;
-  }
-  return undefined;
+/** Resolves true once the element has the metadata of the source it was just pointed at; false on an error or after `timeoutMs`. */
+function waitForSourceReady(audio: HTMLAudioElement, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    let timer = 0;
+    const finish = (ready: boolean): void => {
+      window.clearTimeout(timer);
+      audio.removeEventListener('loadedmetadata', onReady);
+      audio.removeEventListener('error', onFail);
+      resolve(ready);
+    };
+    const onReady = (): void => finish(true);
+    const onFail = (): void => finish(false);
+    audio.addEventListener('loadedmetadata', onReady, { once: true });
+    audio.addEventListener('error', onFail, { once: true });
+    timer = window.setTimeout(() => finish(false), timeoutMs);
+  });
 }

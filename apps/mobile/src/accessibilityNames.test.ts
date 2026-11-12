@@ -58,9 +58,15 @@ it('every pressable control has a name TalkBack can read, or is deliberately hid
   expect(missing).toEqual([]);
 });
 
+it('the play button names itself Play or Pause, in React Native and in Kotlin', () => {
+  expect(fs.readFileSync(path.join(SRC, 'ui', 'PlaybackButton.tsx'), 'utf8')).toContain("status === 'playing' ? 'Pause' : 'Play'");
+  const kotlin = path.join(SRC, '..', 'android', 'app', 'src', 'main', 'java', 'com', 'lyricflow', 'app', 'views', 'NativeTransportView.kt');
+  expect(fs.readFileSync(kotlin, 'utf8')).toContain('if (playing) "Pause" else "Play"');
+});
+
 it('the classic mini player names its transport and like buttons', () => {
   const mini = fs.readFileSync(path.join(SRC, 'components', 'MiniPlayer.tsx'), 'utf8');
-  for (const label of ['"Previous song"', '"Next song"', "playing ? 'Pause' : 'Play'", "'Remove from liked songs' : 'Add to liked songs'", '"Watch the video"']) {
+  for (const label of ['"Previous song"', '"Next song"',"'Remove from liked songs' : 'Add to liked songs'", '"Watch the video"']) {
     expect(mini).toContain(label);
   }
 });

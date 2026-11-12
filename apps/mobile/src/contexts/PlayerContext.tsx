@@ -1,9 +1,12 @@
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
+import { publishLockScreenMetadata } from '../playback/lockScreenMetadata';
 import { forgetEngineQueue, nativeQueue, notifyQueueLow } from '../playback/nativeQueue';
 import { isStalePlayingEcho } from '../playback/playbackIntent';
 import { acceptPositionReport } from '../playback/playheadReset';
+import { playheadIsMoving } from '../playback/playbackStatus';
 import { extrapolatePosition } from '../playback/positionPrediction';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
 import { PlaybackLoss, recoverPlayback } from '../playback/recovery';
@@ -56,7 +59,11 @@ function useEndOfTrackLatch() {
 
 const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const lastZustandUpdateRef = useRef(0);
-  const currentSong = usePlayerStore(state => state.currentSong);
+  // Only what the notification shows: a new song object with the same title and cover (the lyrics landing, a like)
+  // used to rewrite the playing item's metadata in the engine each time.
+  const lockScreenSong = usePlayerStore(useShallow(state => state.currentSong
+    ? { title: state.currentSong.title, artist: state.currentSong.artist, album: state.currentSong.album, coverImageUri: state.currentSong.coverImageUri }
+    : null));
 
   const player = useRef({
     // No player means the playback service was torn down: reload the song
@@ -77,16 +84,6 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (!target) return;
       return nativeQueue.load(target, uri, store.playlistQueue, store.currentPlaylistId);
     },
-    setActiveForLockScreen: (active: boolean, metadata?: any, _options?: any) => {
-      if (active && metadata) {
-        NativeAudioPlayer.updateMetadata({
-          title: metadata.title || 'Unknown Title',
-          artist: metadata.artist || 'Unknown Artist',
-          album: metadata.albumTitle || '',
-          artworkUri: metadata.artworkUrl || '',
-        });
-      }
-    },
   }).current;
 
   useEffect(() => {
@@ -100,11 +97,14 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
     playerControls.setVolume = volume => NativeAudioPlayer.setVolume(volume);
     playerControls.getVolume = () => NativeAudioPlayer.getVolume() ?? 1;
+    // Counts on from the last report only while audio is coming out. isPlaying (playWhenReady) is already true while
+    // the next song loads, and counting through a 4 s buffer made "previous" think it was past 3 s: the screen stayed
+    // on the song while the engine, at 0:00, went back one.
     playerControls.getPosition = () => extrapolatePosition(
       positionSV.value,
       lastPositionReportAt ?? Date.now(),
       Date.now(),
-      usePlayerStore.getState().isPlaying,
+      playheadIsMoving(usePlayerStore.getState()),
       durationSV.value,
     );
     playerControls.resetPlayhead = resetPlayhead;
@@ -117,17 +117,10 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   useEffect(() => {
-    if (currentSong) {
-      player.setActiveForLockScreen(true, {
-        title: currentSong.title,
-        artist: currentSong.artist || 'Unknown Artist',
-        artworkUrl: currentSong.coverImageUri,
-        albumTitle: currentSong.album || '',
-      });
-    } else {
-      setTimeout(() => player.pause(), 0);
-    }
-  }, [currentSong, player]);
+    if (lockScreenSong) return publishLockScreenMetadata(lockScreenSong);
+    setTimeout(() => player.pause(), 0);
+    return undefined;
+  }, [lockScreenSong, player]);
 
   useEffect(() => {
     const statusSub = NativeAudioPlayer.addListener('onPlaybackStatus', (event: any) => {

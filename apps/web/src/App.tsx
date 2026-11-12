@@ -91,6 +91,8 @@ import { pickTopResult } from './lib/topResult';
 import { activeWebSearchAttempt, associateSelectedPlaybackSource, webPerformanceTrace } from './lib/performanceTrace';
 import { formatTime, titleAccent } from './lib/utils';
 import { PlayheadStore, type Playhead } from './lib/playhead';
+import { createPlayIntent } from './lib/playIntent';
+import { hasUpcoming } from './lib/skipRules';
 import { itemVariants, motionTokens, pageVariants, spring } from './motion';
 import { InfoTour } from './components/InfoTour';
 import { BROWSE_TOUR } from './components/pageTours';
@@ -393,7 +395,11 @@ export default function App() {
     const player = transportRef.current;
     const song = player.currentSong;
     if (!song) return null;
-    const next = player.skipNext();
+    // On the last song of a radio, Next brings in similar songs first. Skipping straight away would
+    // carry on round to the top of the queue, which is not what "keep playing similar songs" means.
+    const atEndOfRadio = radioActiveRef.current
+      && !hasUpcoming({ list: player.queue, current: song, shuffle: player.shuffle, shuffleOrder: player.shuffleOrder });
+    const next = atEndOfRadio ? null : player.skipNext();
     if (!next && radioActiveRef.current) {
       void fillRadioQueue().then(() => {
         if (radioActiveRef.current && transportRef.current.currentSong?.id === song.id) transportRef.current.skipNext();
@@ -762,6 +768,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', onShortcut);
   }, []);
 
+  // The key handlers read the latest transport through a ref: `togglePlayer` and `seekPlayer` are new
+  // functions on every render, and listing them as deps tore the window listener down and back up
+  // each time the shell rendered.
+  const transportKeysRef = useRef({ togglePlayer, seekPlayer });
+  transportKeysRef.current = { togglePlayer, seekPlayer };
+  const stableTogglePlayer = useCallback((): void => transportKeysRef.current.togglePlayer(), []);
   useEffect(() => {
     if (!hasSongLoaded) return undefined;
     // Space toggles playback and the arrows seek 5 s, unless a control that
@@ -772,15 +784,15 @@ export default function App() {
       if (target?.closest('input, textarea, select, button, a, [role="slider"], [role="checkbox"], [contenteditable="true"]')) return;
       if (event.key === ' ') {
         event.preventDefault();
-        togglePlayer();
+        transportKeysRef.current.togglePlayer();
       } else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
         event.preventDefault();
-        seekPlayer(playhead.get() + (event.key === 'ArrowRight' ? 5 : -5));
+        transportKeysRef.current.seekPlayer(playhead.get() + (event.key === 'ArrowRight' ? 5 : -5));
       }
     };
     window.addEventListener('keydown', onTransportKey);
     return () => window.removeEventListener('keydown', onTransportKey);
-  }, [hasSongLoaded, playhead, seekPlayer, togglePlayer]);
+  }, [hasSongLoaded, playhead]);
 
   useEffect(() => {
     setTranslatedLyrics(null);
@@ -1222,7 +1234,10 @@ export default function App() {
    * `fromSearch`: a search hit plays its song radio (Spotify's rule), never the rest of the
    * results; with "keep playing similar songs" off it plays that one song.
    */
+  // The newest pick wins: one that waited on routing or a catalog lookup must not land after it.
+  const [playIntent] = useState(createPlayIntent);
   const playSong = async (song: UnifiedSong, queue: UnifiedSong[] = displaySongs, fromSearch = Boolean(query.trim()) && queue === displaySongs, forceRadio = false): Promise<void> => {
+    const intent = playIntent.begin();
     const attempt = activeWebSearchAttempt();
     if (attempt) webPerformanceTrace?.record(attempt, 'result.selected');
     if (await connect.playRemote(song, fromSearch ? [song] : queue)) {
@@ -1231,10 +1246,13 @@ export default function App() {
       tapHaptic();
       return;
     }
+    if (!playIntent.isCurrent(intent)) return;
     let playable = song;
     if (!playable.streamUrl) {
       const snapshot = snapshotForSong(playable);
       const matched = snapshot ? await resolveSnapshotForPlayback(snapshot).catch(() => null) : null;
+      // Neither the song nor its failure matters once another pick has begun.
+      if (!playIntent.isCurrent(intent)) return;
       if (!matched) {
         if (attempt) webPerformanceTrace?.finish(attempt, 'playback-failure');
         setPersonalActionError('Couldn’t find this song online, so it can’t play on this device.');
@@ -1356,6 +1374,7 @@ export default function App() {
     const songs = turn.queue.map(({ song }) => song).filter((song) => Boolean(song.streamUrl));
     const first = (fromId ? songs.find((song) => song.id === fromId) : undefined) ?? songs[0];
     if (!first) return;
+    playIntent.begin();
     radioActiveRef.current = false;
     radio.stop();
     setDjLive(true);
@@ -1874,6 +1893,8 @@ export default function App() {
       radio.stop();
       // Loaded without autoplay: the room decides when it starts. The element only points at the new
       // stream after React renders, so a seek made now would land on the previous track.
+      // The room's song is the newest pick: a slower pick made before it must not land on top.
+      playIntent.begin();
       audio.loadForConnect(match, [match], false);
       const element = audio.audioRef.current;
       if (!element || !(await waitForAudioSource(element, resolveApiUrl(match.streamUrl)))) return false;
@@ -2387,7 +2408,7 @@ export default function App() {
         onCollapse={collapsePlayer}
         onOpenWorkspace={() => setPlayerMode('workspace')}
         onOpenImmersive={() => setPlayerMode('immersive')}
-        onToggle={togglePlayer}
+        onToggle={stableTogglePlayer}
         onNext={skipNextSmart}
         onPrevious={previousPlayer}
         repeat={playerRepeat}

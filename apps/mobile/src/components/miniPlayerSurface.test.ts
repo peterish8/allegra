@@ -63,15 +63,17 @@ describe('mini player scrubber sits on the top edge', () => {
 });
 
 describe('mini player and navigation controls', () => {
-  // The mini player: song options, the heart, then play, on a floating rounded card. Next is the swipe,
-  // and TalkBack keeps its "Next song" action.
-  it('shows song options, the heart and play, in that order, and Next stays reachable', () => {
+  // The mini player: the heart, then play, on a floating rounded card. Song options are a long press on the song
+  // (owner, 2026-11-13: no ••• on the mini player), also a TalkBack action. Next is the swipe, and TalkBack keeps
+  // its "Next song" action.
+  it('shows the heart and play, opens song options on a long press, and Next stays reachable', () => {
     const pill = code(read('PillPlayer.tsx'));
-    const options = pill.indexOf('accessibilityLabel="Song options"');
     const heart = pill.indexOf("'Remove from Liked songs' : 'Add to Liked songs'");
     const play = pill.indexOf('<PlaybackButton size={48}');
-    expect(options).toBeGreaterThan(0);
-    expect(heart).toBeGreaterThan(options);
+    expect(pill).not.toMatch(/ellipsis-horizontal/);
+    expect(pill).toMatch(/onLongPress=\{onMore\}/);
+    expect(pill).toMatch(/\{ name: 'longpress', label: 'Song options' \}/);
+    expect(heart).toBeGreaterThan(0);
     expect(play).toBeGreaterThan(heart);
     expect(pill).not.toMatch(/label="Next song"/);
     expect(pill).toMatch(/\{ name: 'next', label: 'Next song' \}/);

@@ -66,7 +66,7 @@ import { countOf } from '../utils/formatters';
 import { safeGoBack } from '../utils/navigationService';
 import { shuffled } from '../utils/shuffle';
 import * as Haptics from '../utils/haptics';
-import { EDIT_ENTRY, PLAYLIST_DRAG, saveDraggedOrder } from '../components/playlist/playlistReorder';
+import { applySavedOrder, EDIT_ENTRY, PLAYLIST_DRAG, saveDraggedOrder } from '../components/playlist/playlistReorder';
 
 type PlaylistDetailRouteProp = RouteProp<{ PlaylistDetail: { playlistId: string } }, 'PlaylistDetail'>;
 
@@ -189,7 +189,8 @@ export const PlaylistDetailScreen: React.FC = () => {
       // A streaming entry the phone holds a copy of (a downloaded playlist, or the same song saved) shows once: as
       // the copy. Ids never match across the two (a stream id vs a file's), so compare the catalog song and the key.
       const onlineSongs = withoutCopies(playlistSongs, onlineRows).map(onlineRowToSong);
-      setSongs([...playlistSongs, ...onlineSongs]);
+      const savedOrder = await playlistQueries.getPlaylistItemOrder(playlistId);
+      setSongs(applySavedOrder([...playlistSongs, ...onlineSongs], savedOrder));
     } catch (e) {
       setLoadError(true);
       if (__DEV__) console.log('Failed to load playlist', e);
