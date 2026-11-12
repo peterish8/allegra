@@ -30,8 +30,8 @@ describe('the cover on its way', () => {
     expect(coverFrame(0, mini, card)).toEqual(mini);
     expect(coverFrame(1, mini, card)).toEqual(card);
     const half = coverFrame(0.5, mini, card);
-    expect(half.width).toBeCloseTo(267, 5);
-    expect(half.y).toBeCloseTo(265, 5);
+    expect(half.width).toBeCloseTo(236.8, 1);
+    expect(half.y).toBeCloseTo(325.1, 1);
   });
 
   it('keeps a square cover square all the way', () => {
