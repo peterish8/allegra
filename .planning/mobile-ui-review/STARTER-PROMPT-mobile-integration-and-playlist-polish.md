@@ -20,6 +20,12 @@ Method (Theo's T3 Stack principles, applied to this repo's existing stack; see "
 - Do not bolt on a second stack (no tRPC, no second auth or database) just to match a name. Convex, Express and Expo stay.
 - Ship small and often: one vertical slice per PR, tests with it, deploy-ready at every merge.
 
+Cook (for every animation slice: scan flow, cover flip, playlist header pull-down, unified menu sheet):
+- Use the Cook Loop (`/cook` skill if you have it): write a `cook/BRIEF.md` with a numeric bar (9/10 per dimension: composition, light and glow, color, glass and materials, detail, motion), capture stills of each state, have fresh zero-context critic subagents score them (Sonnet, medium effort, at least two per round), fix the weakest dimension, log every round in `cook/ROUNDS.md`, repeat until the bar holds. Do the building yourself; give the cooking and critique to the subagents.
+- The previous run (player transition, rounds 1 to 3) is copied to `.planning/mobile-ui-review/cook-2026-11-13/` (BRIEF, SHOTS, ROUNDS) because the real `cook/` folder is git-ignored and exists only on the owner's laptop. Read it for the bar, the rules, the critic setup and the lessons (for example: a quadratic ease let the cover escape the sheet; keep moving parts clamped inside their container). Its working branch was `feat/mobile-player-cook`.
+- Rebuilds need a CI APK (about 15 minutes), so batch several fixes per round. A local Android build is broken; rely on CI.
+- Cook state lives in `cook/` (git-ignored). Commit nothing from it except summaries under `.planning/`.
+
 Merge authority: you may merge each PR yourself when you are satisfied, meaning typecheck, lint, tests and `mobile:check` pass, CI is green, the APK launches, and you have emulator or phone evidence for the change. Squash-merge, then continue to the next slice. If you cannot prove a slice (for example no emulator), do not merge it; say what is unproved and ask the owner to test the CI APK.
 
 Work order:
