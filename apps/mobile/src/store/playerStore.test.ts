@@ -302,6 +302,8 @@ describe('stale mini player hides', () => {
   it('keeps the flag the screen in front is entitled to', () => {
     expect([...liveMiniPlayerHides(sources('NowPlaying'), 'NowPlaying')]).toEqual(['NowPlaying']);
     expect([...liveMiniPlayerHides(sources('Editor'), 'EditLyrics')]).toEqual(['Editor']);
+    expect([...liveMiniPlayerHides(sources('AddToPlaylist'), 'AddToPlaylist')]).toEqual(['AddToPlaylist']);
+    expect([...liveMiniPlayerHides(sources('AddToPlaylist'), 'Stream')]).toEqual([]);
   });
 
   // The Downloader is a tab and tabs stay mounted: it once hid the pill for good after the first visit.

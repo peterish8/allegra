@@ -22,16 +22,16 @@ export const PROFILE_GROUPS: readonly ProfileGroup[] = [
   { label: 'Listening', items: [
     // 1.45.0 (owner): Spotify keeps its stats to a glance; ours are free and full, in the same place.
     { id: 'stats', title: 'Listening stats', subtitle: 'Your top songs, artists and habits', icon: 'stats-chart-outline' },
-    { id: 'downloads', title: 'Downloads', icon: 'download-outline' },
-    { id: 'import', title: 'Import from Spotify', icon: 'cloud-download-outline' },
+    { id: 'downloads', title: 'Downloads', subtitle: 'Songs saved on this phone for offline', icon: 'download-outline' },
+    { id: 'import', title: 'Import from Spotify', subtitle: 'Bring your playlists and likes here', icon: 'cloud-download-outline' },
   ] },
   { label: 'Together', items: [
     { id: 'blends', title: 'Blends', subtitle: 'Mix your taste with a friend', icon: 'git-merge-outline' },
     { id: 'luvlink', title: 'LuvLink', subtitle: 'Listen with friends in sync', icon: 'people-outline' },
-    { id: 'devices', title: 'Connect devices', icon: 'desktop-outline' },
+    { id: 'devices', title: 'Connect devices', subtitle: 'See and control what plays on your other devices', icon: 'desktop-outline' },
   ] },
   { label: 'App', items: [
-    { id: 'settings', title: 'Settings and privacy', subtitle: 'Playback, lyrics, player background', icon: 'settings-outline' },
+    { id: 'settings', title: 'Settings and privacy', subtitle: 'Playback, lyrics, look, privacy and what is saved', icon: 'settings-outline' },
   ] },
 ];
 

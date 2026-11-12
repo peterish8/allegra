@@ -26,7 +26,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Toast } from '../components/Toast';
 import { ProfileButton } from '../components/nav/ProfileButton';
-import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
+import { InfoTour } from '../components/allegra/InfoTour';
 import { AuraMood } from '../components/allegra/MusicFlowField';
 import { PrimaryButton, SectionHeading } from '../components/allegra/home';
 import { STREAM_TOUR, streamScene } from '../components/allegra/infoTours';
@@ -35,7 +35,10 @@ import { BrowseShelf } from '../components/browse/BrowseShelf';
 import { ConnectDropdown } from '../components/connect/ConnectDropdown';
 import AddListSheet from '../components/stream/AddListSheet';
 import { GUTTER, MoodChips, QuickPicks, ShortcutGrid, SongRow, TrackItem } from '../components/stream/StreamHome';
+import { RecentShelf, RecentSwitch } from '../components/stream/RecentShelf';
 import { ShimmerBlock } from '../components/stream/StreamItems';
+import { playlistMeta, recentPlaylists, type RecentView } from '../services/stream/recentItems';
+import { usePlaylistStore } from '../store/playlistStore';
 import { useStreamSongActions } from '../components/stream/useStreamSongActions';
 import { Radius, Signal, Space } from '../constants/allegraTheme';
 import { useBottomClearance } from '../hooks/useBottomClearance';
@@ -107,6 +110,8 @@ const StreamScreen: React.FC = () => {
   const [loading, setLoading] = useState(() => !preloadedFeedCache()?.feed);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
+  const [recentView, setRecentView] = useState<RecentView>('songs');
+  const playlists = usePlaylistStore(s => s.playlists);
   const queryRef = useRef(query);
   queryRef.current = query;
   const [results, setResults] = useState<UnifiedSong[] | null>(null);
@@ -535,7 +540,20 @@ const StreamScreen: React.FC = () => {
     const sections: StreamSection[] = [];
     const add = (id: string, content: React.ReactNode) => sections.push({ id, kind: 'home-content', content });
     const listenAgain = feed?.keepListening.slice(0, 6) ?? [];
-    if (listenAgain.length) add('jump-back-in', <><SectionHeading title="Jump back in" /><ShortcutGrid items={listenAgain.map(track)} onPress={i => play(listenAgain, i)} onLongPress={i => queueNext(listenAgain[i])} /></>);
+    const recentLists = recentPlaylists(playlists);
+    if (listenAgain.length || recentLists.length) {
+      add('jump-back-in', <>
+        <SectionHeading title="Jump back in" />
+        <RecentShelf
+          view={recentView}
+          songs={listenAgain.map(track)}
+          playlists={recentLists.map(list => ({ key: `playlist:${list.id}`, title: list.name, artist: playlistMeta(list.songCount), artwork: list.coverImageUri, isCurrent: false }))}
+          onPressSong={i => play(listenAgain, i)}
+          onLongPressSong={i => queueNext(listenAgain[i])}
+          onPressPlaylist={i => navigation.navigate('Library', { screen: 'PlaylistDetail', params: { playlistId: recentLists[i].id } })}
+        />
+      </>);
+    }
     const quick = accountPicks.length ? accountPicks : feed?.quickPicks ?? [];
     if (quick.length) add('quick-picks', <><SectionHeading title="Quick picks" action="Play all" onAction={() => play(quick, 0)} /><QuickPicks items={quick.map(track)} onPress={i => play(quick, i)} onLongPress={i => queueNext(quick[i])} onSave={i => save(quick[i])} /></>);
     const mixes: MixParams[] = [];
@@ -550,7 +568,7 @@ const StreamScreen: React.FC = () => {
     if (loading && !quick.length && !ytHome?.shelves.length) add('loading', <View style={styles.skeleton}>{[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="100%" height={64} />)}</View>);
     if (!loading && !quick.length && !ytHome?.shelves.length) add('catalog-unavailable', <View style={styles.emptyCard}><UiText variant="lead">Can\u2019t reach the catalog</UiText><UiText tone="secondary">Pull down to try again. Your saved songs still play.</UiText><PrimaryButton label="Open Library" icon="library-outline" onPress={openDownloads} /></View>);
     return sections;
-  }, [feed, track, play, queueNext, accountPicks, save, openMix, followedShelf, openItem, playYT, ytHome, pendingSong, loading, openDownloads]);
+  }, [feed, track, play, queueNext, accountPicks, save, openMix, followedShelf, openItem, playYT, ytHome, pendingSong, loading, openDownloads, playlists, recentView, navigation]);
 
   const chipSections = useMemo(() => {
     if (!ytChip || searchActive) return [];
@@ -647,12 +665,10 @@ const StreamScreen: React.FC = () => {
           {/* 1.42.0 (Spotify's place): your picture opens the profile menu, where About and updates now live. */}
           <View style={styles.headerLead}>
             <ProfileButton />
-            <InfoTitleRow>
-              <Text style={styles.title} accessibilityRole="header">Stream</Text>
-              <InfoTour label="About Stream" steps={STREAM_TOUR} scene={streamScene} />
-            </InfoTitleRow>
+            <RecentSwitch view={recentView} onChange={setRecentView} />
           </View>
           <View style={styles.headerActions}>
+            <InfoTour label="About Stream" steps={STREAM_TOUR} scene={streamScene} />
             <ConnectDropdown />
           </View>
         </View>
@@ -724,7 +740,6 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   // The picture sits in its 48dp target at the gutter's edge, so the title keeps Spotify's spacing from it.
   headerLead: { flexDirection: 'row', alignItems: 'center', gap: Space.xs, marginLeft: -Space.sm, flexShrink: 1 },
-  title: { fontSize: TypeScale.page, fontWeight: '700', color: Signal.ink },
   search: {
     flexDirection: 'row',
     alignItems: 'center',

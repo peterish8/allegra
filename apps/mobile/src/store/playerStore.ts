@@ -67,6 +67,8 @@ export function setPlaylistSelectionRouter(router: PlaylistSelectionRouter | nul
 const MINI_PLAYER_HIDES_ON: Readonly<Record<string, readonly string[]>> = {
   NowPlaying: ['NowPlaying'],
   EditLyrics: ['Editor'],
+  // The Add songs / Add to playlist sheet: the pill was drawn over its Add button and last row.
+  AddToPlaylist: ['AddToPlaylist'],
 };
 
 /** The flags that are still earned with `routeName` in front. Unknown (`undefined`) leaves them alone. */

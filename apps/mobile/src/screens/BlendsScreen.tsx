@@ -6,6 +6,7 @@ import { AppSafeArea } from '../components/AppScreen';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { FlatList, Share, Text, View } from 'react-native';
 import { generateId } from '../utils/formatters';
 
@@ -16,7 +17,7 @@ import type { BlendSummary } from '@shared/blendView';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { BLENDS_TOUR, blendsLights, blendsScene } from '../components/allegra/infoTours';
 import { ConsentSheet, MemberDiscs, blendStyles as s } from '../components/blend/BlendParts';
-import { Space } from '../constants/allegraTheme';
+import { Signal, Space } from '../constants/allegraTheme';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { useAccount } from '../services/account/AccountProvider';
 import { createBlend, inviteUrl, listBlends } from '../services/blend/blendApi';
@@ -109,8 +110,10 @@ export const BlendsScreen: React.FC = () => {
               <Text style={s.rowTitle} numberOfLines={1}>{item.name}</Text>
               <Text style={s.rowMeta}>{item.memberCount < 2 ? 'Waiting for a friend' : item.builtFor === today ? 'Updated today' : 'Opens fresh today'}</Text>
             </View>
+            <Ionicons name="chevron-forward" size={16} color={Signal.inkFaint} />
           </TactileRow>
         )}
+        ListEmptyComponent={error ? null : <Text style={s.note}>A Blend mixes your taste with a friend's into one playlist that refreshes every day. Create one and send them the invite.</Text>}
         contentContainerStyle={{ paddingBottom: bottom }}
       />
       <ConsentSheet visible={consent} mode="create" busy={busy} error={createError} onConfirm={() => void create()} onCancel={() => { setConsent(false); setCreateError(null); }} />

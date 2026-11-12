@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -19,6 +19,7 @@ import { Glass, Radius, Signal } from '../constants/allegraTheme';
 import * as playlistQueries from '../database/playlistQueries';
 import { getOnlinePlaylistSongs } from '../database/syncQueries';
 import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
+import { usePlayerStore } from '../store/playerStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSongsStore } from '../store/songsStore';
 import { RootStackParamList } from '../types/navigation';
@@ -51,6 +52,12 @@ export const AddToPlaylistModal = () => {
   const navigation = useNavigation<AddToPlaylistNavigationProp>();
   const route = useRoute<AddToPlaylistRouteProp>();
   const params = route.params || {};
+  // The mini player pill floats over this sheet's button and last row; hide it while the sheet is in front.
+  const setMiniPlayerHiddenSource = usePlayerStore(state => state.setMiniPlayerHiddenSource);
+  useFocusEffect(useCallback(() => {
+    setMiniPlayerHiddenSource('AddToPlaylist', true);
+    return () => setMiniPlayerHiddenSource('AddToPlaylist', false);
+  }, [setMiniPlayerHiddenSource]));
 
   const mode: AddToPlaylistMode = params.playlistId ? 'ADD_SONGS_TO_PLAYLIST' : 'ADD_SONG_TO_PLAYLISTS';
   const targetPlaylistId = params.playlistId;
