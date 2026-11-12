@@ -36,6 +36,7 @@ import { blendTrackSong, getBlend, getInvite, inviteUrl, leaveBlend } from '../s
 import { watchStaleBlend } from '../services/blend/staleRefresh';
 import { StreamService } from '../services/stream/StreamService';
 import type { LibraryStackParamList } from '../types/navigation';
+import { Button } from '../ui';
 import { shuffled } from '../utils/shuffle';
 
 const revealKey = (detail: BlendDetail): string => `blend-revealed:${detail.members.find(member => member.isYou)?.userId ?? 'guest'}:${detail.id}:${detail.builtFor}:${detail.buildVersion ?? 0}`;
@@ -158,7 +159,7 @@ export const BlendScreen: React.FC = () => {
     else StreamService.play([blendTrackSong({ song, for: [], kind: 'pick' })], 0);
   };
   const meta = [
-    match !== undefined && detail.members.length >= 2 ? `${match}% ${group ? 'group match' : 'taste match'}` : 'Waiting for your friend',
+    match === undefined || detail.members.length < 2 ? 'Waiting for your friend' : null,
     !group && pair?.confidence === 'low' ? BLEND_TEXT.lowconfidence : null,
     ready ? `${detail.tracks.length} songs` : null,
     !detail.stale && detail.builtFor === utcDay(Date.now()) ? 'Updated today' : null,
@@ -185,14 +186,26 @@ export const BlendScreen: React.FC = () => {
                 pulse={pulse}
               />
               <InfoTitleRow style={{ justifyContent: 'center', marginTop: Space.sm }}><Text style={[styles.name, { marginTop: 0 }]} numberOfLines={2} accessibilityRole="header">{detail.name}</Text><InfoTour label="How this Blend works" steps={BLEND_TOUR} scene={blendScene} /></InfoTitleRow>
+              {match !== undefined && detail.members.length >= 2 ? (
+                <View style={styles.matchRow} accessible accessibilityLabel={`${match} percent ${group ? 'group' : 'taste'} match`}>
+                  <Text style={styles.matchFigure}>{match}%</Text>
+                  <Text style={styles.matchLabel}>{group ? 'group match' : 'taste match'}</Text>
+                </View>
+              ) : null}
               <Text style={styles.meta}>{meta}</Text>
-              <View style={styles.actions}>
-                <Tactile onPress={() => void invite()} haptic="select" accessibilityRole="button" accessibilityLabel="Invite someone" style={styles.round}><Ionicons name="person-add-outline" size={20} color={Signal.ink} /></Tactile>
-                <Tactile onPress={() => setWatching(true)} disabled={!ready} haptic="select" accessibilityRole="button" accessibilityLabel="Watch your Blend story" style={[styles.round, !ready && styles.dim]}><Ionicons name="film-outline" size={20} color={Signal.ink} /></Tactile>
-                <Tactile onPress={() => { if (songs.length) StreamService.play(songs, 0); }} disabled={songs.length === 0} haptic="light" accessibilityRole="button" accessibilityLabel={`Play ${detail.name}`} style={[styles.play, songs.length === 0 && styles.dim]}><Ionicons name="play" size={28} color={Signal.waveInk} /></Tactile>
-                <Tactile onPress={() => { if (songs.length) StreamService.play(shuffled(songs), 0); }} disabled={songs.length === 0} haptic="select" accessibilityRole="button" accessibilityLabel="Shuffle" style={[styles.round, songs.length === 0 && styles.dim]}><Ionicons name="shuffle" size={20} color={Signal.ink} /></Tactile>
-                <Tactile onPress={leave} haptic="select" accessibilityRole="button" accessibilityLabel="Leave this Blend" style={styles.round}><Ionicons name="exit-outline" size={20} color={Signal.ink} /></Tactile>
+              <View style={styles.primary}>
+                {ready ? (
+                  <Button label="Play Blend" icon="play" variant="primary" block disabled={songs.length === 0} onPress={() => { if (songs.length) StreamService.play(songs, 0); }} accessibilityLabel={`Play ${detail.name}`} />
+                ) : (
+                  <Button label="Invite a friend" icon="person-add-outline" variant="primary" block onPress={() => void invite()} />
+                )}
               </View>
+              {ready ? (
+                <View style={styles.secondary}>
+                  <Button label="Shuffle" icon="shuffle" variant="glass" size="compact" disabled={songs.length === 0} onPress={() => { if (songs.length) StreamService.play(shuffled(songs), 0); }} />
+                  <Button label="Invite" icon="person-add-outline" variant="glass" size="compact" onPress={() => void invite()} accessibilityLabel="Invite someone to this Blend" />
+                </View>
+              ) : null}
             </RiseIn>
             {detail.change ? <Text style={styles.note}>{changeText(detail.change, artistName(detail.change.artist, detail.tracks))}</Text> : null}
             {refreshFailed ? <Tactile accessibilityRole="button" onPress={() => void load()}><Text style={styles.note}>Couldn’t refresh just now. Tap to try again.</Text></Tactile>
@@ -247,6 +260,7 @@ export const BlendScreen: React.FC = () => {
             </Animated.View>
           );
         }}
+        ListFooterComponent={<View style={styles.footer}><Button label="Leave this Blend" icon="exit-outline" variant="plain" size="sm" onPress={leave} /></View>}
         contentContainerStyle={{ paddingBottom: bottom }}
       />
       <BlendStoryPlayer detail={detail} visible={watching} onClose={closeStory} onPlay={playFromStory} />
@@ -260,10 +274,12 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', paddingHorizontal: Space.md, paddingBottom: Space.sm },
   name: { color: Signal.ink, fontSize: TypeScale.detail, fontWeight: '700', textAlign: 'center', marginTop: Space.sm },
   meta: { color: Signal.inkMuted, fontSize: TypeScale.meta, textAlign: 'center', marginTop: 4 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, marginTop: Space.md },
-  round: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
-  play: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
-  dim: { opacity: 0.45 },
+  matchRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: Space.xs, marginTop: Space.sm },
+  matchFigure: { color: Signal.ink, fontSize: TypeScale.display, fontWeight: '700' },
+  matchLabel: { color: Signal.inkSoft, fontSize: TypeScale.body, fontWeight: '600' },
+  primary: { alignSelf: 'stretch', marginTop: Space.md },
+  secondary: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Space.sm, marginTop: Space.sm },
+  footer: { alignItems: 'center', paddingTop: Space.lg },
   note: { color: Signal.inkMuted, fontSize: TypeScale.meta, paddingHorizontal: Space.md, textAlign: 'center', marginTop: 4 },
   storyTile: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, marginHorizontal: Space.md, marginTop: Space.md, padding: Space.sm, paddingLeft: Space.md, borderRadius: Radius.panel, backgroundColor: Glass.fill, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairlineStrong },
   storyStack: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
