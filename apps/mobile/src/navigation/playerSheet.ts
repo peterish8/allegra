@@ -13,13 +13,15 @@
 import { navigationRef } from '../utils/navigationService';
 
 let pendingOpenVelocity = 0;
+let pendingTracking = false;
 
 /** Opens the player. `velocity` is the finger's upward speed in px/s (positive). */
-export const openPlayerSheet = (songId: string, velocity = 0): void => {
+export const openPlayerSheet = (songId: string, velocity = 0, tracking = false): void => {
   if (!navigationRef.isReady()) return;
   const current = navigationRef.getCurrentRoute();
   if (current?.name === 'NowPlaying') return;
   pendingOpenVelocity = Math.max(0, velocity);
+  pendingTracking = tracking;
   navigationRef.navigate('NowPlaying', { songId });
 };
 
@@ -28,6 +30,13 @@ export const takeOpenVelocity = (): number => {
   const v = pendingOpenVelocity;
   pendingOpenVelocity = 0;
   return v;
+};
+
+/** Read once by the sheet as it mounts: true when it opens under a finger that is still dragging (fluid player). */
+export const takeOpenTracking = (): boolean => {
+  const t = pendingTracking;
+  pendingTracking = false;
+  return t;
 };
 
 /** Drag distance (fraction of screen height) past which a release dismisses. */

@@ -697,6 +697,10 @@ export const MiniPlayer: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSong]);
   openNowPlayingRef.current = openNowPlaying;
+  // Fluid player: the sheet opens at the start of a drag from the pill and follows the finger (PillPlayer).
+  const openNowPlayingTracking = useCallback(() => {
+    if (currentSong) openPlayerSheet(currentSong.id, 0, true);
+  }, [currentSong]);
 
   // Classic bar: tapping a lyric seeks straight to it. Stable identity matters —
   // an inline arrow here invalidated SynchronizedLyrics' renderItem callback, so
@@ -759,6 +763,7 @@ export const MiniPlayer: React.FC = () => {
         bottom={tabChromeH}
         sheetUp={hiddenOnlyBySheet}
         onOpen={openNowPlaying}
+        onOpenTracking={openNowPlayingTracking}
         onTogglePlay={togglePlay}
         onNext={skipForward}
         onPrevious={skipBackward}

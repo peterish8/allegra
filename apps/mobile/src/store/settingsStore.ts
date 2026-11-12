@@ -207,6 +207,9 @@ interface SettingsState {
   appleMusicInspired: boolean;
   /** Echo's "Hide volume slider" (Apple Music player only). */
   hidePlayerVolume: boolean;
+  /** Experimental (1.49.0): the player follows the finger from the mini player and the cover glides into place. Off by default. */
+  fluidPlayer: boolean;
+  setFluidPlayer: (v: boolean) => void;
   /** 'blend' = Apple Music for the cover, Glow animated once lyrics open; 'youtube' = YouTube Music's colour wash with an artwork card; 'aura' = Cover glow, black with the cover's two tones drifting in from the top and bottom edges. */
   playerBackground: PlayerBackground;
   setMiniPlayerBackground: (v: MiniPlayerBackground) => void;
@@ -275,6 +278,7 @@ const DEFAULT_SETTINGS = {
   appBackground: 'shader' as AppBackground,
   miniPlayerBackground: 'glow' as MiniPlayerBackground,
   appleMusicInspired: false,
+  fluidPlayer: false,
   hidePlayerVolume: true,
   playerBackground: 'blend' as PlayerBackground,
   playerCoverFull: false,
@@ -369,6 +373,8 @@ export const useSettingsStore = create<SettingsState>()(
       setAppleMusicInspired: (appleMusicInspired) => set(s => (appleMusicInspired && isCardPlayerBackground(s.playerBackground) ? { appleMusicInspired, playerBackground: 'blend' } : { appleMusicInspired })),
       hidePlayerVolume: true,
       setHidePlayerVolume: (hidePlayerVolume) => set({ hidePlayerVolume }),
+      fluidPlayer: false,
+      setFluidPlayer: (fluidPlayer) => set({ fluidPlayer }),
       playerBackground: 'blend',
       setPlayerBackground: (playerBackground) => set(playerBackgroundChange(playerBackground)),
       playerCoverFull: false,

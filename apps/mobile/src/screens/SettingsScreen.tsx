@@ -304,6 +304,12 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
             value={settings.appleMusicInspired}
             onChange={settings.setAppleMusicInspired}
           />
+          <Kit.Switch
+            label="Fluid player (experimental)"
+            hint="The player follows your finger from the mini player, and the cover glides between them. Off keeps the classic open."
+            value={settings.fluidPlayer}
+            onChange={settings.setFluidPlayer}
+          />
           {isCardPlayerBackground(settings.playerBackground) ? (
             <Kit.Switch
               label="Full-size cover"

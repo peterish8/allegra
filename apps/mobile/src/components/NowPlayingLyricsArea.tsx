@@ -17,6 +17,7 @@ import { NativeSynchronizedLyrics, canUseNativeLyrics } from './NativeSynchroniz
 import { isCoverFull } from './player/coverStage';
 import { DOCK_THUMB, LYRICS_MORPH_MS } from './player/lyricsMorph';
 import SynchronizedLyrics, { SynchronizedLyricsRef } from './SynchronizedLyrics';
+import { cardSize } from '../navigation/playerTransition';
 
 type ProcessedLyric = { timestamp: number; text: string };
 
@@ -25,7 +26,6 @@ export const HEADER_CLEARANCE = 28;
 export const CONTROLS_CLEARANCE = 372;
 
 /** Height the controls take from the title down (full layout, with volume), plus a clear gap above the title. */
-const CONTROLS_ROOM = 360;
 
 export { LYRICS_MORPH_MS };
 /**
@@ -173,8 +173,7 @@ const Stage: React.FC<{
   const palette = useArtworkPalette(uri);
   // Short screens: the card also fits the height above the title, which used
   // to run over the card's bottom edge.
-  const room = Math.max(160, screenH - paddingTop - CONTROLS_ROOM);
-  const card = Math.min(width - 48, 342, room);
+  const card = cardSize(width, screenH, paddingTop);
 
   // Swipe-follow, and the flight into the title's thumbnail.
   const centreX = width / 2;
