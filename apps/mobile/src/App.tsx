@@ -186,6 +186,10 @@ const App: React.FC = () => {
           // marks About; nothing downloads or interrupts. Late, after the music and the feed.
           runWhenIdle('update check', () => import('./services/updateCheck').then(m => m.checkInBackground()), 6000);
 
+          // While the app is open, notice a new build within about a minute by watching the release's small changelog.json
+          // (a CDN download, no server of ours). It only updates the update store; nothing downloads by itself.
+          runWhenIdle('update watcher', () => import('./services/updateWatcher').then(m => m.startUpdateWatcher()), 8000);
+
           // Downloaded (offline) playlists pick up songs added since, and playlist-only copies nothing uses are
           // deleted. After the download queue is back, so nothing queued twice; late, it can use the network.
           runWhenIdle('offline playlists', () => import('./services/offlinePlaylist').then(m => m.refreshOfflinePlaylists()), 5000);
