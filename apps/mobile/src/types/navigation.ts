@@ -5,6 +5,7 @@
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { StatsRange } from '../services/stats/listeningStats';
 import type { Song, UnifiedSong } from './song';
 export type MixParams = { title: string } & ({ kind: 'stream'; songs: UnifiedSong[] } | { kind: 'local'; songs: Song[] });
 
@@ -39,6 +40,10 @@ export type TabParamList = {
   Settings: { action?: 'import-phone' | 'hidden-songs' } | undefined;
   /** Listening stats (1.45.0), from the profile menu. */
   ListeningStats: undefined;
+  /** Full Top artists / Top songs (1.48.0), from Listening stats; `weekStart` is the Monday of a finished week. */
+  StatsTop: { kind: 'artists' | 'songs'; range: StatsRange; weekStart?: number };
+  /** Swipeable insight cards (1.48.0), from Listening stats and Past weeks. */
+  StatsInsights: { range: StatsRange; weekStart?: number };
   /** YouTube Music pages (artists, albums, playlists), stacked so back walks the trail. */
   Browse: NavigatorScreenParams<BrowseStackParamList> | undefined;
 };

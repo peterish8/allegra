@@ -15,6 +15,8 @@ import type { ListenEntry } from '../../database/listenLogQueries';
 export const PLAY_SECONDS = 30;
 export const SKIP_SECONDS = 30;
 const DAY_MS = 86_400_000;
+/** How long the full Top artists / Top songs lists get. */
+export const RANKED_LIST_MAX = 50;
 
 export type StatsRange = 'week' | 'month' | 'half' | 'year' | 'all';
 export const STATS_RANGES: readonly { id: StatsRange; label: string }[] = [
@@ -111,6 +113,9 @@ export interface ListeningStats {
   /** The 25 songs heard longest: what the tempo card is measured over. */
   readonly heavyRotation: readonly TopSong[];
   readonly topArtists: readonly TopArtist[];
+  /** The full ranked lists behind the Top artists and Top songs pages (at most RANKED_LIST_MAX each). */
+  readonly rankedSongs: readonly TopSong[];
+  readonly rankedArtists: readonly TopArtist[];
   /** The one song heard the longest: the "on repeat" card. */
   readonly onRepeat: TopSong | null;
   /** Seconds heard in each hour of the day, 0..23 (local time). */
@@ -268,13 +273,14 @@ export function computeStats(
 
   const artworkFor = (artistKey: string): string | null =>
     topSongsAll.find(s => creditedArtists(s.artist).some(n => n.toLowerCase() === artistKey) && s.artwork)?.artwork ?? null;
-  const topArtists: TopArtist[] = [...artistSeconds.entries()]
+  const rankedArtists: TopArtist[] = [...artistSeconds.entries()]
     .sort((a, b) => b[1] - a[1] || (artistPlays.get(b[0]) ?? 0) - (artistPlays.get(a[0]) ?? 0) || a[0].localeCompare(b[0]))
-    .slice(0, 5)
+    .slice(0, RANKED_LIST_MAX)
     .map(([key, secs]) => ({
       name: artistNames.get(key) ?? key, seconds: secs, plays: artistPlays.get(key) ?? 0,
       songs: artistSongs.get(key)?.size ?? 0, artwork: artworkFor(key), previousRank: before.artists.get(key) ?? null,
     }));
+  const topArtists = rankedArtists.slice(0, 5);
 
   const previousSeconds = previous.reduce((a, e) => a + e.heardSec, 0);
   const change = bounds.previousFrom === null || previousSeconds < 60 ? null : (seconds - previousSeconds) / previousSeconds;
@@ -311,6 +317,7 @@ export function computeStats(
     // Averaged over every day of the range so far, quiet days included (Spotify's "daily average").
     dailyAverageSeconds: seconds / Math.max(1, bounds.days),
     topSongs: topSongsAll.slice(0, 5), heavyRotation: topSongsAll.slice(0, 25), topArtists, onRepeat: topSongsAll[0] ?? null,
+    rankedSongs: topSongsAll.slice(0, RANKED_LIST_MAX), rankedArtists,
     highlight: pickHighlight(topSongsAll, s => range !== 'all' && (firstHeard.get(s.key)?.at ?? Infinity) >= bounds.from),
     clock, peakHour: peak, persona: personaFor(clock), weekdays, topWeekday, daily,
     currentStreak: run.current, longestStreak: run.longest,

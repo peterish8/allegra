@@ -16,11 +16,16 @@ export interface ListeningStatsState {
   /** Tempos are still being looked up for this range. */
   readonly tempoBusy: boolean;
   readonly reload: () => void;
+  /** The whole log the stats were computed from (the insight cards read albums from it). */
+  readonly log: readonly ListenEntry[];
+  /** The phone's log could not be read. */
+  readonly failed: boolean;
 }
 
 export function useListeningStats(range: StatsRange, active: boolean): ListeningStatsState {
   const [log, setLog] = useState<ListenEntry[] | null>(null);
   const [first, setFirst] = useState<Map<string, { at: number; artist: string }>>(new Map());
+  const [failed, setFailed] = useState(false);
   const [version, setVersion] = useState(0);
   const reload = useCallback(() => setVersion(v => v + 1), []);
 
@@ -31,7 +36,8 @@ export function useListeningStats(range: StatsRange, active: boolean): Listening
       if (!live) return;
       setLog(entries);
       setFirst(firsts);
-    }).catch(() => { if (live) setLog([]); });
+      setFailed(false);
+    }).catch(() => { if (live) setFailed(true); });
     return () => { live = false; };
   }, [active, version]);
 
@@ -59,5 +65,5 @@ export function useListeningStats(range: StatsRange, active: boolean): Listening
   }, [active, rotationKey]);
 
   const tempo = useMemo(() => (stats ? tempoSummary(stats.heavyRotation, tempos) : null), [stats, tempos]);
-  return { loading: log === null, stats, tempo, tempoBusy, reload };
+  return { loading: log === null && !failed, stats, tempo, tempoBusy, reload, log: log ?? [], failed };
 }

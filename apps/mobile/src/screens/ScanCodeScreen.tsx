@@ -5,15 +5,15 @@
  * The camera is asked for when this opens, and only for this; nothing is saved or uploaded.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Linking, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { LuvCodePayload } from '@shared/luvCode';
 import { CODE_HEIGHT, CODE_WIDTH } from '@shared/luvCode';
-import { readCodeFromPhoto, SCAN_BUDGET_MS } from '../services/share/scanImage';
-import { openShareTarget } from '../services/share/openShare';
+import { PHOTO_SIDES, readCodeFromPhoto, SCAN_BUDGET_MS } from '../services/share/scanImage';
+import { checkShareTarget, openShareTarget } from '../services/share/openShare';
 import { targetForPayload } from '../services/share/shareService';
 import { Button, EmptyState, Glass, GUTTER, Haptics, IconButton, Radius, Signal, Space, Text } from '../ui';
 import { safeGoBack } from '../utils/navigationService';
@@ -32,14 +32,32 @@ export const ScanCodeScreen: React.FC = () => {
   const [torch, setTorch] = useState(false);
   const [status, setStatus] = useState('Point at a LuvLyrics code');
   const done = useRef(false);
+  const rearm = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A rejected code is read again after a pause; the pause must not outlive the screen.
+  useEffect(() => () => { if (rearm.current) clearTimeout(rearm.current); }, []);
 
   const open = useCallback(async (payload: LuvCodePayload) => {
     if (done.current) return;
     done.current = true;
+    setStatus('Checking the code…');
+    // Ask first, so a dead code is said on this screen instead of leaving an empty page behind.
+    const target = targetForPayload(payload);
+    const check = await checkShareTarget(target);
+    if (check !== 'ok') {
+      Haptics.refuse();
+      setStatus(check === 'unreachable'
+        ? 'Could not reach LuvLyrics. Check your connection and try again.'
+        : payload.kind === 'playlist'
+          ? 'That playlist is no longer shared. Ask for a new code.'
+          : 'That song could not be found. Ask for a new code.');
+      // Let the same code be read again after a pause, so the message stays up long enough to read.
+      rearm.current = setTimeout(() => { done.current = false; }, 2500);
+      return;
+    }
     Haptics.success();
     setStatus(payload.kind === 'playlist' ? 'Opening the playlist…' : 'Playing…');
     safeGoBack(navigation);
-    const outcome = await openShareTarget(targetForPayload(payload));
+    const outcome = await openShareTarget(target);
     if (outcome === 'not-found') done.current = false;
   }, [navigation]);
 
@@ -52,7 +70,7 @@ export const ScanCodeScreen: React.FC = () => {
     const look = async () => {
       if (!live || done.current) return;
       try {
-        const still = await camera.current?.takePictureAsync({ quality: 0.4, skipProcessing: true, shutterSound: false });
+        const still = await camera.current?.takePictureAsync({ quality: 0.55, skipProcessing: true, shutterSound: false });
         refused = 0;
         const found = still?.uri ? await readCodeFromPhoto(still.uri, SCAN_BUDGET_MS) : null;
         if (found && live) { void open(found); return; }
@@ -71,7 +89,7 @@ export const ScanCodeScreen: React.FC = () => {
     const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
     if (picked.canceled || !picked.assets?.[0]?.uri) return;
     setStatus('Reading the photo…');
-    const found = await readCodeFromPhoto(picked.assets[0].uri);
+    const found = await readCodeFromPhoto(picked.assets[0].uri, undefined, PHOTO_SIDES);
     if (found) void open(found);
     else { Haptics.refuse(); setStatus('No LuvLyrics code in that photo. Try one with the whole code in it.'); }
   };
@@ -85,7 +103,7 @@ export const ScanCodeScreen: React.FC = () => {
       <View style={[styles.container, styles.centre, { paddingTop: insets.top }]}>
         <EmptyState icon="camera-outline" title="Scan LuvLyrics codes"
           body="Allow the camera to read a code on another phone or a poster. Nothing is recorded or saved."
-          action={{ label: permission.canAskAgain ? 'Allow camera' : 'Open settings', onPress: () => { void requestPermission(); } }} />
+          action={{ label: permission.canAskAgain ? 'Allow camera' : 'Open settings', onPress: () => { if (permission.canAskAgain) void requestPermission(); else void Linking.openSettings(); } }} />
         <Button label="Choose a photo instead" icon="image-outline" onPress={() => { void fromPhoto(); }} />
         <View style={[styles.top, { paddingTop: insets.top }]}>
           <IconButton icon="close" label="Close" variant="secondary" shape="disc" onPress={() => safeGoBack(navigation)} />

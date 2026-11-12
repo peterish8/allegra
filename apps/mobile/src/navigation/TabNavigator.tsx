@@ -20,6 +20,8 @@ import CollectionScreen from '../screens/CollectionScreen';
 import ImportScreen from '../screens/ImportScreen';
 import { SharedPlaylistScreen } from '../screens/SharedPlaylistScreen';
 import { ListeningStatsScreen } from '../screens/ListeningStatsScreen';
+import { StatsInsightsScreen } from '../screens/StatsInsightsScreen';
+import { StatsTopScreen } from '../screens/StatsTopScreen';
 import LibraryScreen from '../screens/LibraryScreen';
 import LuvsScreen from '../screens/LuvsScreen';
 import MixScreen from '../screens/MixScreen';
@@ -196,6 +198,8 @@ export const TabNavigator: React.FC = () => {
         <Tab.Screen name="You" component={YouScreen} options={{ tabBarLabel: 'You' }} />
         <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: 'Settings' }} />
         <Tab.Screen name="ListeningStats" component={ListeningStatsScreen} options={{ tabBarLabel: 'Listening stats' }} />
+        <Tab.Screen name="StatsTop" component={StatsTopScreen} options={{ tabBarLabel: 'Top artists and songs' }} />
+        <Tab.Screen name="StatsInsights" component={StatsInsightsScreen} options={{ tabBarLabel: 'Insights' }} />
         <Tab.Screen name="Browse" component={BrowseStackScreen} options={{ tabBarLabel: 'Browse' }} />
       </Tab.Navigator>
     </View>

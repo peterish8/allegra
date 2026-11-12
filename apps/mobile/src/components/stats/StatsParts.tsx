@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useReducedMotion } from 'react-native-reanimated';
 import Artwork from '../allegra/Artwork';
 import { Radius, Signal, Space, StatsTheme } from '../../constants/allegraTheme';
-import { GUTTER, Tactile, Text } from '../../ui';
+import { GUTTER, Tactile, Text, TextButton } from '../../ui';
 import {
   TEMPO_BANDS, WEEKDAYS, durationWords, hourWords, minutesOf, PERSONA_WORDS, rankMove, rankMoveWords,
   type ListeningStats, type RankMove, type StatsHighlight, type TempoSummary, type TopArtist, type TopSong,
@@ -188,10 +188,10 @@ export const Highlight: React.FC<{ highlight: StatsHighlight; width: number; onP
 // ── top artists ──────────────────────────────────────────────────────────────
 
 /** Spotify's top list: place, round picture, name with their time, and the rank chip on the right. */
-export const TopArtists: React.FC<{ artists: readonly TopArtist[]; ranked: boolean; onOpen: (name: string) => void }> = ({ artists, ranked, onOpen }) => {
+export const TopArtists: React.FC<{ artists: readonly TopArtist[]; ranked: boolean; onOpen: (name: string) => void; onSeeAll?: () => void }> = ({ artists, ranked, onOpen, onSeeAll }) => {
   if (artists.length === 0) return null;
   return (
-    <Section title="Top artists">
+    <Section title="Top artists" action={onSeeAll ? <TextButton label="See all" onPress={onSeeAll} accessibilityLabel="See all top artists" /> : undefined}>
       {artists.map((artist, i) => {
         const move = rankMove(i + 1, artist.previousRank, ranked);
         return (
@@ -216,10 +216,10 @@ export const TopArtists: React.FC<{ artists: readonly TopArtist[]; ranked: boole
 
 // ── top songs ────────────────────────────────────────────────────────────────
 
-export const TopSongs: React.FC<{ songs: readonly TopSong[]; ranked: boolean; onPlay: (song: TopSong) => void }> = ({ songs, ranked, onPlay }) => {
+export const TopSongs: React.FC<{ songs: readonly TopSong[]; ranked: boolean; onPlay: (song: TopSong) => void; onSeeAll?: () => void }> = ({ songs, ranked, onPlay, onSeeAll }) => {
   if (songs.length === 0) return null;
   return (
-    <Section title="Top songs">
+    <Section title="Top songs" action={onSeeAll ? <TextButton label="See all" onPress={onSeeAll} accessibilityLabel="See all top songs" /> : undefined}>
       {songs.map((song, i) => {
         const move = rankMove(i + 1, song.previousRank, ranked);
         return (
@@ -241,9 +241,12 @@ export const TopSongs: React.FC<{ songs: readonly TopSong[]; ranked: boolean; on
 };
 
 /** A titled list straight on the page (Spotify draws its top lists without a box). */
-const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+const Section: React.FC<{ title: string; children: React.ReactNode; action?: React.ReactNode }> = ({ title, children, action }) => (
   <View style={styles.section}>
-    <Text variant="title" accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>
+    <View style={styles.sectionHead}>
+      <Text variant="title" accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>
+      {action}
+    </View>
     {children}
   </View>
 );
@@ -425,7 +428,8 @@ const styles = StyleSheet.create({
   playGlyph: { marginLeft: 2 },
   // Top lists, straight on the page.
   section: { marginHorizontal: GUTTER, marginTop: Space.lg },
-  sectionTitle: { marginBottom: Space.xs },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Space.xs },
+  sectionTitle: { flexShrink: 1 },
   listRow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, minHeight: 64 },
   listArt: { width: LIST_ART, height: LIST_ART, borderRadius: Radius.cover, overflow: 'hidden' },
   rank: { width: 24, textAlign: 'center', color: StatsTheme.rank },

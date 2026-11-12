@@ -137,7 +137,7 @@ describe('the scanner', () => {
     expect(read('src/screens/SearchScreen.tsx')).toMatch(/label="Scan a LuvLyrics code" variant="plain" onPress=\{\(\) => navigationRef\.navigate\('ScanCode'\)\}/);
     // Stills are taken quietly and read on the phone; nothing is uploaded.
     const scanner = read('src/screens/ScanCodeScreen.tsx');
-    expect(scanner).toMatch(/takePictureAsync\(\{ quality: 0\.4, skipProcessing: true, shutterSound: false \}\)/);
+    expect(scanner).toMatch(/takePictureAsync\(\{ quality: 0\.55, skipProcessing: true, shutterSound: false \}\)/);
     expect(scanner).toMatch(/readCodeFromPhoto\(still\.uri, SCAN_BUDGET_MS\)/);
     expect(scanner).not.toMatch(/fetch\(/);
   });
