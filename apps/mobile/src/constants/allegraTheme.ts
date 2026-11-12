@@ -249,6 +249,7 @@ export const Motion = {
     deal: 320, // a finished sleeve dealt out of the crate
     morph: 460, // one surface becoming another (lyrics opening, fullscreen)
     drift: 9000, // one leg of the header glow's slow drift (Stream, Library)
+    scan: 1600, // the scanner's light crossing its frame, one way
   },
   ease: {
     standard: Easing.bezier(0.4, 0, 0.2, 1),
