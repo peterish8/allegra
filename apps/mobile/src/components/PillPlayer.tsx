@@ -40,8 +40,8 @@ interface Props {
   onSeek?: (time: number) => Promise<void>;
   onRetry?: () => void;
   remote?: boolean;
-  /** 1.43.0 (Spotify's mini player): Devices, then the heart, then play. Each shows only when its owner passes it. */
-  onDevices?: () => void;
+  /** Song actions, saved mark, then play. Each shows only when its owner passes it. */
+  onMore?: () => void;
   liked?: boolean;
   onToggleLike?: () => void;
 }
@@ -50,7 +50,7 @@ interface Props {
 const SKIP_SETTLE_MS = 1200;
 
 const time = (value: number) => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
-export default function PillPlayer({ title, artist, coverImageUri, playing, remote, sheetUp, onOpen, onOpenTracking, onTogglePlay, onNext, onPrevious, onSeek, onRetry, onDevices, liked, onToggleLike }: Props) {
+export default function PillPlayer({ title, artist, coverImageUri, playing, remote, sheetUp, onOpen, onOpenTracking, onTogglePlay, onNext, onPrevious, onSeek, onRetry, onMore, liked, onToggleLike }: Props) {
   const { height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
@@ -255,14 +255,14 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
           </Animated.View>
         </Tactile>
       </View></GestureDetector>
-      {/* 1.43.0 (Spotify's mini player): Devices, the heart, then play. Next is the sideways swipe (and TalkBack's
+      {/* Song options, the saved mark, then play. Next is the sideways swipe (and TalkBack's
           "Next song" action above). */}
       {/* 1.44.0 (owner: "place neatly like Spotify"): three glyphs of one size on an even rhythm, centred on the row,
           close to the right edge. Each slot is 44 wide and answers a 48dp touch. */}
       <View style={styles.actions}>
-        {onDevices ? (
-          <Tactile onPress={onDevices} pressScale={0.9} hitSlop={ACTION_SLOP} accessibilityRole="button" accessibilityLabel="Devices" style={styles.action}>
-            <Ionicons name="phone-portrait-outline" size={ACTION_GLYPH - 2} color={Signal.ink} />
+        {onMore ? (
+          <Tactile onPress={onMore} pressScale={0.9} hitSlop={ACTION_SLOP} accessibilityRole="button" accessibilityLabel="Song options" style={styles.action}>
+            <Ionicons name="ellipsis-horizontal" size={ACTION_GLYPH - 2} color={Signal.ink} />
           </Tactile>
         ) : null}
         {/* Spotify's saved mark: a filled tick in a circle once saved, an outlined plus before. */}

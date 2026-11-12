@@ -867,6 +867,14 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   }, [currentSong, navigation, say, showLyrics, setShowLyrics, onToggleLike, repeatOne, setRepeatOne, openArtist, openConnectDevices]);
 
+  const appliedMenuAction = useRef(false);
+  useEffect(() => {
+    if (!route.params.action || !currentSong || appliedMenuAction.current) return;
+    appliedMenuAction.current = true;
+    if (route.params.action === 'lyrics') setSheet('lyrics');
+    else void onMenuAction(route.params.action);
+  }, [route.params.action, currentSong, onMenuAction]);
+
   const handleCoverSelect = useCallback(async (uri: string) => {
     setShowCoverSearch(false);
     if (currentSong) {
