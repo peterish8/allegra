@@ -24,6 +24,8 @@ import { StatsInsightsScreen } from '../screens/StatsInsightsScreen';
 import { StatsTopScreen } from '../screens/StatsTopScreen';
 import LibraryScreen from '../screens/LibraryScreen';
 import LuvsScreen from '../screens/LuvsScreen';
+import CatalogAlbumScreen from '../screens/CatalogAlbumScreen';
+import QuickPicksScreen from '../screens/QuickPicksScreen';
 import MixScreen from '../screens/MixScreen';
 import PlaylistDetailScreen from '../screens/PlaylistDetailScreen';
 import PlaylistsScreen from '../screens/PlaylistsScreen';
@@ -130,6 +132,8 @@ const BrowseStack = createNativeStackNavigator<BrowseStackParamList>();
  */
 const BrowseStackScreen: React.FC = () => (
   <BrowseStack.Navigator id="BrowseStack" screenOptions={STACK_OPTIONS}>
+    <BrowseStack.Screen name="QuickPicks" component={QuickPicksScreen} />
+    <BrowseStack.Screen name="CatalogAlbum" component={CatalogAlbumScreen} getId={({ params }) => params.id} />
     <BrowseStack.Screen name="Mix" component={MixScreen} />
     <BrowseStack.Screen name="Artist" component={ArtistScreen} getId={({ params }) => params?.browseId ?? params?.name} />
     <BrowseStack.Screen name="Collection" component={CollectionScreen} getId={({ params }) => params?.browseId} />

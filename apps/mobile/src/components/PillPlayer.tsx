@@ -1,5 +1,5 @@
 import { seekTargetForGesture } from '../playback/seekTarget';
-import { PlaybackButton } from '../ui/PlaybackButton';
+import { NativePlaybackControl as PlaybackButton } from './NativePlaybackControl';
 /**
  * V6 mini player: a thin progress line on a separate seek band, a square cover and stable transport.
  * Sideways on the cover and title skips (left: next, right: previous) through the owner's onNext/onPrevious, so
@@ -272,15 +272,15 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
             <Ionicons name={liked ? 'checkmark-circle' : 'add-circle-outline'} size={ACTION_GLYPH} color={Signal.ink} />
           </Tactile>
         ) : null}
-        <PlaybackButton size={48} plain status={status} onPress={() => { if (!remote && status === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
+        <PlaybackButton size={48} plain remote={remote} status={status} onPress={() => { if (!remote && status === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
       </View>
     </Animated.View>
   </Animated.View>;
 }
 /** The right-hand controls: one glyph size, 44-wide slots (Spotify's rhythm), each answering a 48dp touch. */
 const ACTION_GLYPH = 26;
-const ACTION_SLOT = 44;
-const ACTION_SLOP = { left: 2, right: 2, top: 0, bottom: 0 } as const;
+const ACTION_SLOT = 48;
+const ACTION_SLOP = { left: 0, right: 0, top: 0, bottom: 0 } as const;
 const styles = StyleSheet.create({
   // No fill of its own: MiniPlayerGlow is its surface (1.41.0). 1.44.0 (owner): the full width of the screen, edge to
   // edge, with no border or outline of its own; the glow and the progress line are clipped to its rounded corners.

@@ -1,3 +1,6 @@
+import { SearchCategories } from '../components/search/SearchCategories';
+import { SearchCategoryResults } from '../components/search/SearchCategoryResults';
+import { useSearchSessionStore } from '../store/searchSessionStore';
 import { AppScreen } from '../components/AppScreen';
 import { TypeScale } from '../constants/allegraTheme';
 /**
@@ -24,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Alert,
   Keyboard,
   ScrollView,
@@ -108,8 +112,24 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
   const clearRecent = useSearchHistoryStore(s => s.clear);
   const addToDownloads = useDownloadQueueStore(s => s.addToQueue);
 
-  const [query, setQuery] = useState('');
-  const [scope, setScope] = useState<Scope>('All');
+  const query = useSearchSessionStore(s => s.sessions.search.query);
+  const scope = useSearchSessionStore(s => s.sessions.search.scope);
+  const category = useSearchSessionStore(s => s.sessions.search.category);
+  const patchSearch = useSearchSessionStore(s => s.patch);
+  const setQuery = useCallback((text: string) => patchSearch('search', { query: text }), [patchSearch]);
+  const setScope = useCallback((nextScope: Scope) => patchSearch('search', { scope: nextScope }), [patchSearch]);
+  const scrollRef = useRef<ScrollView>(null);
+  const initialOffset = useRef(useSearchSessionStore.getState().sessions.search.offset);
+  const restoredScroll = useRef(false);
+  const leaveSearch = useCallback(() => {
+    Keyboard.dismiss();
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('Stream');
+  }, [navigation]);
+  useFocusEffect(useCallback(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { leaveSearch(); return true; });
+    return () => sub.remove();
+  }, [leaveSearch]));
   const [local, setLocal] = useState<Song[]>([]);
   const [online, setOnline] = useState<UnifiedSong[] | null>(null);
   const [artists, setArtists] = useState<YTArtistResult[]>([]);
@@ -164,7 +184,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
       androidPerformance.finish(onlineAttempt.current, 'aborted');
       onlineAttempt.current = null;
     }
-  }, [scope]);
+  }, [scope, setQuery, setScope]);
 
   const changeScope = useCallback((nextScope: Scope) => {
     startSearch(query, nextScope);
@@ -374,12 +394,6 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
   const songActions = useStreamSongActions({ onDone: setToast });
   const queueNext = songActions.open;
 
-  const openPlaylist = useCallback((playlist: Playlist) => {
-    commit();
-    Keyboard.dismiss();
-    navigation.navigate('Library', { screen: 'PlaylistDetail', params: { playlistId: playlist.id } });
-  }, [commit, navigation]);
-
   const searchFor = useCallback((text: string, nextScope: Scope = 'All') => {
     Haptics.selectionAsync().catch(() => {});
     startSearch(text, nextScope);
@@ -477,23 +491,6 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
 
     body = (
       <View>
-        {showPhone && matchingPlaylists.length > 0 ? (
-          <>
-            <SectionHeading title="Playlists" subtitle={`${matchingPlaylists.length} on this phone`} />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shelf} keyboardShouldPersistTaps="handled">
-              {matchingPlaylists.map(p => (
-                <Tactile key={p.id} onPress={() => openPlaylist(p)} pressScale={0.96} accessibilityRole="button" accessibilityLabel={`Playlist ${p.name}`} style={styles.playlistCard}>
-                  <View style={styles.playlistArt}>
-                    <Artwork uri={p.coverImageUri} title={p.name} size={120} style={StyleSheet.absoluteFill} />
-                  </View>
-                  <Text style={styles.cardTitle} numberOfLines={1}>{p.name}</Text>
-                  <Text style={styles.cardSub} numberOfLines={1}>{p.songCount ?? 0} {p.songCount === 1 ? 'song' : 'songs'}</Text>
-                </Tactile>
-              ))}
-            </ScrollView>
-          </>
-        ) : null}
-
         {showPhone ? (
           <>
             <SectionHeading
@@ -516,7 +513,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
           </>
         ) : null}
 
-        {showOnline && artists.length > 0 ? (
+        {showOnline && category === 'All' && artists.length > 0 ? (
           <>
             <SectionHeading title="Artists" />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shelf} keyboardShouldPersistTaps="handled">
@@ -570,15 +567,26 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     );
   }
 
+  if (q && category !== 'All' && category !== 'Songs') {
+    body = <SearchCategoryResults query={q} category={category} scope={scope} localSongs={local} />;
+  } else if (q && category === 'All') {
+    body = <>{body}<SearchCategoryResults query={q} category={category} scope={scope} localSongs={local} /></>;
+  }
+
   return (
     <AppScreen style={styles.screen}>
       <ScrollView
+        ref={scrollRef}
+        onScroll={e => patchSearch('search', { offset: e.nativeEvent.contentOffset.y })}
+        scrollEventThrottle={100}
+        onContentSizeChange={() => { if (!restoredScroll.current && initialOffset.current > 0) { scrollRef.current?.scrollTo({ y: initialOffset.current, animated: false }); restoredScroll.current = true; } }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         contentContainerStyle={{ paddingTop: insets.top + Space.xs, paddingBottom: bottomClearance }}
       >
         <View style={[styles.header, styles.headerLead]}>
           {/* 1.42.0 (Spotify's place): your picture opens the profile menu. */}
+          <IconButton icon="arrow-back" label="Back from Search" variant="plain" onPress={leaveSearch} />
           <ProfileButton />
           <InfoTitleRow>
             <Text style={styles.title} accessibilityRole="header">Search</Text>
@@ -602,7 +610,7 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
             value={query}
             onChangeText={text => startSearch(text)}
             onSubmitEditing={commit}
-            placeholder="Songs, artists, playlists"
+            placeholder="Songs, artists, albums, playlists"
             placeholderTextColor={Signal.inkFaint}
             returnKeyType="search"
             autoCorrect={false}
@@ -628,7 +636,8 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         ) : null}
 
-        {q ? (
+        {q ? <SearchCategories selected={category} onSelect={nextCategory => patchSearch('search', { category: nextCategory })} /> : null}
+        {q && category !== 'Playlists' ? (
           <View style={styles.chips}>
             <MoodChips moods={SCOPES} selected={scope} onSelect={s => changeScope((s as Scope | null) ?? 'All')} />
           </View>

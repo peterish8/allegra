@@ -92,10 +92,10 @@ describe('mini player and navigation controls', () => {
   it('sets song options, the saved mark and play on one rhythm and one size', () => {
     const pill = code(read('PillPlayer.tsx'));
     expect(pill).toMatch(/const ACTION_GLYPH = 26;/);
-    expect(pill).toMatch(/const ACTION_SLOT = 44;/);
+    expect(pill).toMatch(/const ACTION_SLOT = 48;/);
     expect(pill).toMatch(/action: \{ width: ACTION_SLOT, height: Control\.target/);
-    // 44 wide plus 2 + 2 of slop = a 48dp touch.
-    expect(pill).toMatch(/const ACTION_SLOP = \{ left: 2, right: 2, top: 0, bottom: 0 \}/);
+    // Every control occupies the same 48dp slot.
+    expect(pill).toMatch(/const ACTION_SLOP = \{ left: 0, right: 0, top: 0, bottom: 0 \}/);
     expect(code(read('..', 'ui', 'PlaybackButton.tsx'))).toMatch(/const glyph = plain \? 26 :/);
     expect(pill).toMatch(/name=\{liked \? 'checkmark-circle' : 'add-circle-outline'\} size=\{ACTION_GLYPH\}/);
   });

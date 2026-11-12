@@ -6,7 +6,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import React, { memo } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Shelf, YTItem } from '../../services/ytmusic/browse';
 import { YTSong } from '../../services/ytmusic/parsers';
 import { sentenceCase } from '../../utils/sentenceCase';
@@ -38,15 +38,16 @@ export const SongRow: React.FC<{ song: YTSong; onPress: () => void; pending?: bo
 SongRow.displayName = 'SongRow';
 
 const Card: React.FC<{ item: YTItem; onPress: () => void }> = memo(({ item, onPress }) => {
+  const { fontScale } = useWindowDimensions();
   const round = item.kind === 'artist';
   const title = item.kind === 'song' ? item.song.title : item.title;
-  const sub = item.kind === 'song' ? item.song.artists.join(', ') : item.subtitle;
+  const sub = item.kind === 'playlist' ? undefined : item.kind === 'song' ? item.song.artists.join(', ') : item.subtitle;
   const art = item.kind === 'song' ? item.song.thumbnail : item.thumbnail;
   const size = round ? ARTIST : CARD;
   return (
     <Tactile onPress={onPress} pressScale={0.98} wrapperStyle={{ width: size }} accessibilityRole="button" accessibilityLabel={title}>
       <Artwork uri={art} title={title} size={size} style={[styles.cardArt, { width: size, height: size, borderRadius: round ? size / 2 : 10 }]} />
-      <Text style={[styles.cardTitle, round && styles.center]} numberOfLines={round ? 1 : 2}>{title}</Text>
+      <Text style={[styles.cardTitle, !round && { minHeight: 40 * fontScale }, round && styles.center]} numberOfLines={round ? 1 : 2}>{title}</Text>
       {sub && !round ? <Text style={styles.cardSub} numberOfLines={1}>{sub}</Text> : null}
     </Tactile>
   );
@@ -116,7 +117,7 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontSize: 22, fontWeight: '700' },
   carousel: { paddingHorizontal: 20, gap: 14 },
   cardArt: { overflow: 'hidden' },
-  cardTitle: { color: '#fff', fontSize: 14, fontWeight: '600', marginTop: 8 },
+  cardTitle: { color: '#fff', fontSize: 14, lineHeight: 20, fontWeight: '600', marginTop: 8 },
   cardSub: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 2 },
   center: { textAlign: 'center' },
   pending: { width: Control.target, minHeight: Control.row, alignItems: 'center', justifyContent: 'center' },

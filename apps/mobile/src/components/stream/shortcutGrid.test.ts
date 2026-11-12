@@ -1,4 +1,4 @@
-import { shortcutCellWidth, shortcutColumns } from './shortcutGrid';
+import { shortcutCellWidth, shortcutColumns, shortcutCellHeight } from './shortcutGrid';
 
 const INSET = 12; // Control.gutter (16) less each tile's 4dp padding, as StreamHome passes it
 
@@ -22,4 +22,9 @@ describe('Jump back in grid', () => {
     expect(shortcutCellWidth(0, 2, INSET)).toBe(0);
     expect(Number.isInteger(shortcutCellWidth(393, 2, INSET))).toBe(true);
   });
+});
+
+it('reserves two title lines and grows every tile equally with system text size', () => {
+  expect(shortcutCellHeight(1)).toBe(72);
+  expect(shortcutCellHeight(2)).toBeGreaterThanOrEqual(58 * 2 + 14);
 });

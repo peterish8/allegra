@@ -50,6 +50,8 @@ export type TabParamList = {
 };
 
 export type BrowseStackParamList = {
+  CatalogAlbum: { id: string };
+  QuickPicks: undefined;
   Mix: MixParams;
   /** By channel id, or by name (looked up on YouTube Music). */
   Artist: { browseId?: string; name?: string };

@@ -21,6 +21,7 @@ import { openPlayerSheet } from '../navigation/playerSheet';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
 import CanvasVideoLayer from './CanvasVideoLayer';
 import PillPlayer from './PillPlayer';
+import { NativePlaybackControl } from './NativePlaybackControl';
 import { MiniSongMenu } from './player/MiniSongMenu';
 import SynchronizedLyrics from './SynchronizedLyrics';
 import TimelineScrubber from './TimelineScrubber';
@@ -163,17 +164,9 @@ const PlaybackControls = memo(({
           <Ionicons name="play-skip-back" size={24} color="#fff" />
         </Pressable>
       </Animated.View>
-      <Pressable
-        onPress={(e) => { e.stopPropagation(); onToggle(e); }}
-        hitSlop={20}
-        style={styles.playButton}
-        accessibilityRole="button"
-        accessibilityLabel={playing ? 'Pause' : 'Play'}
-      >
-        <Animated.View style={animatedButtonStyle}>
-          <Ionicons name={playing ? 'pause' : 'play'} size={32} color="#fff" />
-        </Animated.View>
-      </Pressable>
+      <Animated.View style={animatedButtonStyle}>
+        <NativePlaybackControl plain size={48} status={playing ? 'playing' : 'paused'} onPress={onToggle} />
+      </Animated.View>
       <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipForwardStyle]}>
         <Pressable
           onPress={(e) => { e.stopPropagation(); onSkipForward(e); }}

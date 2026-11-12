@@ -1,5 +1,5 @@
 import { usePlaybackStatus } from '../hooks/usePlaybackStatus';
-import { PlaybackButton } from '../ui/PlaybackButton';
+import { NativePlaybackControl as PlaybackButton } from './NativePlaybackControl';
 /**
  * Now Playing transport — Apple Music's layout.
  *
@@ -583,7 +583,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
                 </NativeSkip>
               </View>
               <View style={styles.transportSlot}>
-                <PlaybackButton status={playbackStatus} onPress={() => { if (!remoteVolume && playbackStatus === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
+                <PlaybackButton remote={!!remoteVolume} status={playbackStatus} onPress={() => { if (!remoteVolume && playbackStatus === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
               </View>
               <View style={styles.transportSlot}>
                 <NativeSkip direction={1} enabled={nativeSkip} slop={12}>

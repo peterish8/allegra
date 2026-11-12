@@ -16,7 +16,7 @@ export function PlaybackButton({ status, onPress, size = 84, plain = false }: { 
   const glyph = plain ? 26 : size > 48 ? 36 : 22;
   return <Tactile onPress={onPress} accessibilityRole="button" accessibilityLabel={label}
     style={[styles.disc, { width: size, height: size, borderRadius: size / 2 }, plain && styles.plain]}>
-    {loading && !reduceMotion ? <ActivityIndicator size={size > 48 ? 'large' : 'small'} color={Signal.ink} />
+    {loading && !plain && !reduceMotion ? <ActivityIndicator size={size > 48 ? 'large' : 'small'} color={Signal.ink} />
       : <Ionicons name={status === 'error' ? 'refresh' : status === 'playing' || loading ? 'pause' : 'play'} size={glyph} color={Signal.ink} />}
   </Tactile>;
 }

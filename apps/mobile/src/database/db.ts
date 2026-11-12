@@ -139,6 +139,11 @@ const initializeTables = async (database: SQLite.SQLiteDatabase): Promise<void> 
       FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE CASCADE
     );
     
+    CREATE TABLE IF NOT EXISTS generated_playlists (
+      scope TEXT PRIMARY KEY,
+      payload TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS playlists (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
