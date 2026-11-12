@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { isCurrentMediaGeneration, playbackRejectionMessage, shouldHandlePlayerShortcut, takeNextUnvisited, type RecoveryCursor } from './audioPlayerRules';
+import { isCurrentMediaGeneration, playbackRejectionMessage, shouldHandlePlayerShortcut, shownAsPlaying, takeNextUnvisited, type RecoveryCursor } from './audioPlayerRules';
+
+describe('shownAsPlaying', () => {
+  it('an element that plays is shown as playing, even if its early play event was ignored', () => {
+    assert.equal(shownAsPlaying({ paused: false, wantsPlay: true, shown: false }), true);
+  });
+
+  it('a paused element with a play request in flight keeps what is shown', () => {
+    assert.equal(shownAsPlaying({ paused: true, wantsPlay: true, shown: true }), true);
+    assert.equal(shownAsPlaying({ paused: true, wantsPlay: true, shown: false }), false);
+  });
+
+  it('a paused element with no play request is paused', () => {
+    assert.equal(shownAsPlaying({ paused: true, wantsPlay: false, shown: true }), false);
+  });
+});
 
 describe('audio player media event generations', () => {
   const current = {
