@@ -16,6 +16,8 @@ import { codePayloadFor, playlistShareCode, shareMessage, songShareTarget } from
 import { playlistShareText } from '../playlist/playlistPage';
 import { LIKED_PLAYLIST_ID } from '../../services/sync/plan';
 import { countOf } from '../../utils/formatters';
+import { exportFailureText, shareCodeImage } from '../../services/share/exportCode';
+import { Signal } from '../../constants/allegraTheme';
 import { LuvCode } from './LuvCode';
 import type { Song } from '../../types/song';
 
@@ -33,11 +35,13 @@ export const ShareSheet: React.FC<{ visible: boolean; onClose: () => void; targe
   const [share, setShare] = useState<ShareTarget | null>(null);
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'list'>('idle');
   const [copied, setCopied] = useState(false);
+  const [imageState, setImageState] = useState<'idle' | 'busy' | 'failed'>('idle');
+  const [imageNote, setImageNote] = useState<string | null>(null);
   const playlistId = target.kind === 'playlist' ? target.playlistId : null;
   const songKey = target.kind === 'song' ? target.song.id : null;
 
   useEffect(() => {
-    if (!visible) { setCopied(false); return; }
+    if (!visible) { setCopied(false); setImageState('idle'); setImageNote(null); return; }
     if (target.kind === 'song') { setShare(songShareTarget(target.song)); setState('ready'); return; }
     if (target.playlistId === LIKED_PLAYLIST_ID) { setShare(null); setState('list'); return; }
     let live = true;
@@ -64,6 +68,17 @@ export const ShareSheet: React.FC<{ visible: boolean; onClose: () => void; targe
     if (!share) return;
     void Clipboard.setStringAsync(shareUrlFor(share)).then(() => { Haptics.success(); setCopied(true); });
   };
+  const cardTint = target.kind === 'playlist' && target.tint ? pillTint(target.tint) : pillTint(palette.primary);
+  const sendImage = () => {
+    if (!payload || imageState === 'busy') return;
+    setImageState('busy');
+    setImageNote(null);
+    void shareCodeImage(payload, { tint: cardTint, ink: Signal.ink, name }).then(result => {
+      if (result.ok === true) { setImageState('idle'); return; }
+      setImageState('failed');
+      setImageNote(exportFailureText(result.reason));
+    });
+  };
   const sendList = () => {
     if (target.kind !== 'playlist') return;
     void Share.share({ message: playlistShareText(target.name, target.songs) }).catch(() => undefined);
@@ -82,6 +97,8 @@ export const ShareSheet: React.FC<{ visible: boolean; onClose: () => void; targe
       {state === 'ready' ? (
         <>
           <SheetOption label="Share link" icon="share-social-outline" onPress={sendLink} />
+          <SheetOption label={imageState === 'busy' ? 'Making the picture…' : 'Share code as a picture'} icon="image-outline" onPress={sendImage} />
+          {imageNote ? <Text variant="secondary" tone="secondary" style={styles.note} accessibilityRole="alert">{imageNote}</Text> : null}
           <SheetOption label={copied ? 'Link copied' : 'Copy link'} icon={copied ? 'checkmark' : 'copy-outline'} onPress={copyLink} />
         </>
       ) : null}

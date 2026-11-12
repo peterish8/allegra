@@ -12,14 +12,16 @@
  * Counted from what this phone heard (services/stats), kept only on this phone; collecting can be paused and the
  * history cleared at the bottom of the page.
  */
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { parseSongRef } from '@shared/songRef';
 import { ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppScreen } from '../components/AppScreen';
 import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
 import { Switch } from '../components/settings/SettingsKit';
+import { PastWeeks } from '../components/stats/PastWeeks';
 import {
   Card, DailyBars, EmptyRing, Habits, Hero, Highlight, ListeningClock, Spotlight, TempoCard, TopArtists, TopSongs, WeekBars,
 } from '../components/stats/StatsParts';
@@ -27,17 +29,22 @@ import { clearListens } from '../database/listenLogQueries';
 import { useListeningStats } from '../hooks/useListeningStats';
 import { openShareTarget } from '../services/share/openShare';
 import { changeWords, rangeWords, statsShareText, STATS_RANGES, type StatsRange, type TopSong } from '../services/stats/listeningStats';
+import { insightCards, pastWeeks } from '../services/stats/statsPages';
 import { useSettingsStore } from '../store/settingsStore';
-import { Chip, ChipRow, ConfirmSheet, GUTTER, IconButton, Signal, Space, Text, TextButton, useBottomClearance } from '../ui';
+import type { TabParamList } from '../types/navigation';
+import { Chip, ChipRow, ConfirmSheet, EmptyState, GUTTER, IconButton, ListRow, Signal, Space, Text, TextButton, useBottomClearance } from '../ui';
 import { navigationRef, safeGoBack } from '../utils/navigationService';
 
 export const ListeningStatsScreen: React.FC = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const bottom = useBottomClearance();
   const [range, setRange] = useState<StatsRange>('month');
-  const { loading, stats, tempo, tempoBusy, reload } = useListeningStats(range, focused);
+  const { loading, stats, tempo, tempoBusy, reload, log, failed } = useListeningStats(range, focused);
+  // The finished weeks and the insight cards come from the same log the numbers do (1.48.0).
+  const weeks = useMemo(() => pastWeeks(log, Date.now()), [log]);
+  const cards = useMemo(() => (stats ? insightCards(log, stats) : []), [log, stats]);
   const collecting = useSettingsStore(s => s.listeningStats);
   const setCollecting = useSettingsStore(s => s.setListeningStats);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -88,7 +95,9 @@ export const ListeningStatsScreen: React.FC = () => {
           {STATS_RANGES.map(r => <Chip key={r.id} label={r.label} selected={r.id === range} onPress={() => setRange(r.id)} />)}
         </ChipRow>
 
-        {loading || !stats ? null : stats.empty ? (
+        {failed && !stats ? (
+          <EmptyState icon="alert-circle-outline" title="Couldn't read your stats" body="Your listening is kept on this phone. Try again." action={{ label: 'Try again', onPress: reload }} />
+        ) : loading || !stats ? null : stats.empty ? (
           <View style={styles.empty}>
             <EmptyRing />
             <Text variant="detail" align="center">Your stats start now</Text>
@@ -105,8 +114,12 @@ export const ListeningStatsScreen: React.FC = () => {
               onOpenArtist={openArtist} onPlay={play} />
             {stats.highlight ? <Highlight highlight={stats.highlight} width={cardWidth} onPlay={() => play(stats.highlight!.song)} /> : null}
             <Hero stats={stats} tint={palette.primary} change={changeWords(stats.change, range)} />
-            <TopArtists artists={stats.topArtists} ranked={stats.ranked} onOpen={openArtist} />
-            <TopSongs songs={stats.topSongs} ranked={stats.ranked} onPlay={play} />
+            <TopArtists artists={stats.topArtists} ranked={stats.ranked} onOpen={openArtist} onSeeAll={() => navigation.navigate('StatsTop', { kind: 'artists', range })} />
+            <TopSongs songs={stats.topSongs} ranked={stats.ranked} onPlay={play} onSeeAll={() => navigation.navigate('StatsTop', { kind: 'songs', range })} />
+            {cards.length > 0 ? (
+              <ListRow title="Insights" subtitle="Cards from your listening, ready to share" icon="sparkles-outline" chevron onPress={() => navigation.navigate('StatsInsights', { range })} />
+            ) : null}
+            <PastWeeks weeks={weeks} onOpen={week => navigation.navigate('StatsInsights', { range: 'week', weekStart: week.weekStart })} />
             <ListeningClock stats={stats} />
             <TempoCard tempo={tempo} busy={tempoBusy} />
             <WeekBars stats={stats} />

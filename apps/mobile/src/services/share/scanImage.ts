@@ -26,12 +26,23 @@ export function scanSize(width: number, height: number, max = SCAN_MAX): { width
 }
 
 /** A photo on the phone -> the code in it, or null (no code, or the file could not be read). */
-export async function readCodeFromPhoto(uri: string, budgetMs?: number): Promise<LuvCodePayload | null> {
+export async function readCodeFromPhoto(uri: string, budgetMs?: number, sides: readonly number[] = [SCAN_MAX]): Promise<LuvCodePayload | null> {
+  for (const side of sides) {
+    const found = await readAtSize(uri, budgetMs, side);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** The sizes a picked photo is tried at: the quick one first, then larger, for a code that is small in the picture. */
+export const PHOTO_SIDES: readonly number[] = [SCAN_MAX, 1280, 1920];
+
+async function readAtSize(uri: string, budgetMs: number | undefined, side: number): Promise<LuvCodePayload | null> {
   try {
     const data = await Skia.Data.fromURI(uri);
     const image = Skia.Image.MakeImageFromEncoded(data);
     if (!image) return null;
-    const size = scanSize(image.width(), image.height());
+    const size = scanSize(image.width(), image.height(), side);
     const surface = Skia.Surface.Make(size.width, size.height);
     if (!surface) return null;
     surface.getCanvas().drawImageRect(image, Skia.XYWHRect(0, 0, image.width(), image.height()), Skia.XYWHRect(0, 0, size.width, size.height), Skia.Paint());

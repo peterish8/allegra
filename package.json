@@ -23,7 +23,8 @@
     "build": "npm run build --workspaces --if-present",
     "e2e": "playwright test -c tests/e2e/playwright.config.ts",
     "e2e:connect-login": "node tests/e2e/connect-login.mjs",
-    "mobile:check": "npm --prefix apps/mobile run ci"
+    "mobile:check": "npm --prefix apps/mobile run ci",
+    "knip:mobile": "knip --directory apps/mobile --include files"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",
@@ -41,6 +42,7 @@
     "@edge-runtime/vm": "^5.0.0",
     "@playwright/test": "^1.63.0",
     "convex-test": "^0.0.60",
+    "knip": "^5.88.1",
     "vitest": "^5.0.2"
   },
   "license": "GPL-3.0-only",

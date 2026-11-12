@@ -32,6 +32,8 @@ export const Surface = {
   deep: '#0D0F12',
   divider: 'rgba(255,255,255,0.06)',
   scrim: '#000000',
+  /** The page behind an immersive cover header's track list: pure black, never tinted by a cover. */
+  immersive: '#000000',
 } as const;
 
 /** Geometry shared by controls; minimum sizes allow system text scaling. */
