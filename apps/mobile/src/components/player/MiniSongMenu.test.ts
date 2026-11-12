@@ -54,4 +54,3 @@ test('Remote playback keeps local audio controls out of its song sheet', () => {
   expect(labels).not.toContain('Reload audio');
   expect(labels).not.toContain('Shuffle upcoming songs');
 });
-
