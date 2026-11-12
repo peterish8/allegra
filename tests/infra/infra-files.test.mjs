@@ -83,7 +83,7 @@ test('public Android publication fails closed on signing identity and checks the
     assert.ok(assignment?.includes("|| ''"), `${setting} must be empty outside main`);
   }
   // apksigner is not on PATH on the runner; the step finds it under build-tools and then calls it.
-  assert.match(workflow, /name: Verify production APK certificate[\s\S]*?-name apksigner[\s\S]*?"\$APKSIGNER" verify --print-certs/);
+  assert.match(workflow, /name: Verify APK certificate\r?\n\s+env:[\s\S]*?-name apksigner[\s\S]*?mobile-signing-policy\.mjs --apk "\$EXPECTED_CERT_SHA256" "\$APKSIGNER" LuvLyrics\.apk/);
   assert.match(workflow, /cancel-in-progress: false/);
   assert.doesNotMatch(workflow, /EXPO_PUBLIC_GENIUS_ACCESS_TOKEN/);
 
@@ -92,6 +92,17 @@ test('public Android publication fails closed on signing identity and checks the
   assert.equal(matchesExpectedFingerprint('', fingerprint), false, 'missing expected fingerprint blocks release');
   assert.equal(matchesExpectedFingerprint(`${fingerprint.slice(0, 2)}:${fingerprint.slice(2)}`, fingerprint.toUpperCase()), true);
   assert.equal(matchesExpectedFingerprint(fingerprint, 'f'.repeat(64)), false, 'mismatched signer blocks release');
+});
+
+test('APK certificate verification accepts signer labels and excludes source stamps', async () => {
+  const { apkSignerFingerprints } = await import('../../scripts/mobile-signing-policy.mjs');
+  const digest = 'ab'.repeat(32);
+  for (const label of ['Signer #1', 'Signer (minSdkVersion=24, maxSdkVersion=32) #1', 'Signer #1 (minSdkVersion=33)']) {
+    assert.deepEqual(apkSignerFingerprints(`${label} certificate SHA-256 digest: ${digest}\r\n`), [digest.toUpperCase()]);
+  }
+  assert.deepEqual(apkSignerFingerprints(`Source Stamp Signer certificate SHA-256 digest: ${digest}`), []);
+  assert.deepEqual(apkSignerFingerprints(`Signer #1 certificate SHA-256 digest: bad`), []);
+  assert.deepEqual(apkSignerFingerprints(`Signer #1 certificate SHA-256 digest: ${digest}\nSigner #2 certificate SHA-256 digest: ${'cd'.repeat(32)}`), [digest.toUpperCase(), 'CD'.repeat(32)]);
 });
 
 test('the API copies of the shared sync rules match their source', async () => {

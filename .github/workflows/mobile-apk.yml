@@ -100,6 +100,8 @@ jobs:
           npm pack expo-template-bare-minimum@sdk-54 --silent
           tar -xzf expo-template-bare-minimum-*.tgz package/android/app/debug.keystore
           cp package/android/app/debug.keystore "$KEY"
+          DEBUG_CERT_SHA256="$(keytool -list -v -keystore "$KEY" -storepass android -alias androiddebugkey | awk -F': ' '/SHA256: / { gsub(":", "", $2); print toupper($2); exit }')"
+          echo "ANDROID_BUILD_CERT_SHA256=$DEBUG_CERT_SHA256" >> "$GITHUB_ENV"
 
       - name: Build release APK
         working-directory: apps/mobile/android
@@ -128,15 +130,13 @@ jobs:
       - name: Collect APK
         run: cp android/app/build/outputs/apk/release/app-release.apk LuvLyrics.apk
 
-      - name: Verify production APK certificate
-        if: github.ref == 'refs/heads/main'
+      - name: Verify APK certificate
         env:
-          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 }}
+          EXPECTED_CERT_SHA256: ${{ github.ref == 'refs/heads/main' && vars.ANDROID_RELEASE_CERT_SHA256 || env.ANDROID_BUILD_CERT_SHA256 }}
         run: |
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$APKSIGNER"
-          ACTUAL_CERT_SHA256="$("$APKSIGNER" verify --print-certs LuvLyrics.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ { print toupper($2); exit }')"
-          node ../../scripts/mobile-signing-policy.mjs "$EXPECTED_CERT_SHA256" "$ACTUAL_CERT_SHA256"
+          node ../../scripts/mobile-signing-policy.mjs --apk "$EXPECTED_CERT_SHA256" "$APKSIGNER" LuvLyrics.apk
 
       - uses: actions/upload-artifact@v4
         with:
