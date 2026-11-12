@@ -16,7 +16,7 @@ import { playlistItemOp } from './plan';
 
 export type AddResult = 'added' | 'exists' | 'error';
 
-/** Add an editable DJ draft to a playlist with a single local refresh after its bounded items are saved. */
+/** Generic playlist add (the archived DJ draft used it first). Add an editable DJ draft to a playlist with a single local refresh after its bounded items are saved. */
 export async function addOnlineSongsToPlaylist(playlistId: string, songs: readonly SongSnapshot[]): Promise<boolean> {
   try {
     const playlists = usePlaylistStore.getState();

@@ -61,7 +61,6 @@
   },
   "color": {
     "screens/ArtistScreen.tsx": 8,
-    "screens/DjScreen.tsx": 1,
     "screens/LuvsScreen.tsx": 2,
     "screens/LyricsEditorScreen.tsx": 1,
     "screens/NowPlayingScreen.tsx": 2,

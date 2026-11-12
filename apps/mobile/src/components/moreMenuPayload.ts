@@ -11,7 +11,7 @@ export interface MoreMenuEntry {
 }
 
 /** The icons the Kotlin view can draw; a menu with any other falls back to the React Native items. */
-export const NATIVE_MORE_ICONS: readonly string[] = ['dj-mascot', 'search', 'albums-outline', 'settings-outline'];
+export const NATIVE_MORE_ICONS: readonly string[] = ['search', 'albums-outline', 'settings-outline'];
 
 /** The view lays out exactly three tiles across the top. */
 export const NATIVE_MORE_TILES = 3;
