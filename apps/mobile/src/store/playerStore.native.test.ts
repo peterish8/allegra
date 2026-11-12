@@ -11,9 +11,11 @@ jest.mock('./settingsStore', () => ({
   useSettingsStore: { getState: () => ({ updatePlaylistHistory: jest.fn() }) },
 }));
 let mockBusy = false;
+let mockIssued = 0;
 const mockIdleWaiters: Array<() => void> = [];
 jest.mock('../services/NativeAudioPlayer', () => ({
   isQueueBusy: () => mockBusy,
+  queueCommandsIssued: () => mockIssued,
   whenQueueIdle: (fn: () => void) => { if (!mockBusy) fn(); else mockIdleWaiters.push(fn); },
   NativeAudioPlayer: {
     isAvailable: () => true,
@@ -62,6 +64,7 @@ beforeEach(() => {
   native.hasSavedQueue.mockReturnValue(false);
   native.restoreQueue.mockResolvedValue(null);
   mockBusy = false;
+  mockIssued = 0;
   mockIdleWaiters.length = 0;
   mockLibrary.length = 0;
   setNativeOwnsPlaybackState(true);
@@ -245,6 +248,91 @@ describe('next and previous', () => {
   });
 });
 
+// The engine wraps at the end whatever the repeat mode (QueueEngine.skipToNext), restarts the first song under
+// repeat off / one, and always plays after a skip (resume()). The mirror has to say the same before the engine reports.
+describe('skipping at the ends of the queue', () => {
+  const atLast = () => usePlayerStore.setState({ currentQueueIndex: 3, currentSong: queue[3], currentSongId: 'd', loadedAudioId: 'd' });
+
+  it.each(['off', 'all', 'one'] as const)('next on the last song goes to the first under repeat %s', async repeatMode => {
+    usePlaybackModesStore.setState({ repeatMode });
+    atLast();
+    await usePlayerStore.getState().nextInPlaylist();
+    const s = usePlayerStore.getState();
+    expect(s.currentSongId).toBe('a');
+    expect(s.currentQueueIndex).toBe(0);
+    expect(native.skipToNext).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['off', 'one'] as const)('previous on the first song starts it over under repeat %s, without leaving it', repeatMode => {
+    usePlaybackModesStore.setState({ repeatMode });
+    playerControls.getPosition = () => 1;
+    usePlayerStore.getState().previousInPlaylist();
+    expect(usePlayerStore.getState().currentSongId).toBe('a');
+    expect(native.skipToPrevious).toHaveBeenCalledTimes(1);
+    expect(playerControls.resetPlayhead).toHaveBeenCalledTimes(1);
+  });
+
+  it('previous on the first song goes to the last under repeat all', () => {
+    usePlaybackModesStore.setState({ repeatMode: 'all' });
+    playerControls.getPosition = () => 1;
+    usePlayerStore.getState().previousInPlaylist();
+    expect(usePlayerStore.getState().currentSongId).toBe('d');
+  });
+
+  it('previous after 3 seconds restarts even when there is a song before', () => {
+    usePlayerStore.setState({ currentQueueIndex: 2, currentSong: queue[2], currentSongId: 'c', loadedAudioId: 'c' });
+    playerControls.getPosition = () => 3.01;
+    usePlayerStore.getState().previousInPlaylist();
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
+    playerControls.getPosition = () => 3;
+    usePlayerStore.getState().previousInPlaylist();
+    expect(usePlayerStore.getState().currentSongId).toBe('b');
+  });
+
+  it('with shuffle on, next and previous follow the play order the engine reported', async () => {
+    usePlayerStore.getState().adoptNativeQueue({ ids: ['c', 'a', 'd', 'b'], index: 0, shuffle: true, repeat: 'off', tag: 'library#1', positionSec: 0 });
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
+    await usePlayerStore.getState().nextInPlaylist();
+    expect(usePlayerStore.getState().currentSongId).toBe('a');
+    playerControls.getPosition = () => 0.5;
+    usePlayerStore.getState().previousInPlaylist();
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
+    // The first song of the play order under repeat off: previous starts it over, the screen stays.
+    usePlayerStore.getState().previousInPlaylist();
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
+    expect(native.skipToPrevious).toHaveBeenCalledTimes(2);
+  });
+
+  it('three taps in a row end three songs on, each told to the engine once and in order', async () => {
+    await Promise.all([1, 2, 3].map(() => usePlayerStore.getState().nextInPlaylist()));
+    expect(usePlayerStore.getState().currentSongId).toBe('d');
+    expect(native.skipToNext).toHaveBeenCalledTimes(3);
+  });
+
+  it('a skip while the next song is still buffering goes on from the song on screen, not from a stale place', async () => {
+    usePlayerStore.setState({ buffering: true, audible: false, playbackSongId: 'a' });
+    await usePlayerStore.getState().nextInPlaylist();
+    await usePlayerStore.getState().nextInPlaylist();
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
+  });
+
+  it('a skip while paused leaves the pausing to the engine: it plays on (resume), and the store is not made to say so', async () => {
+    usePlayerStore.setState({ isPlaying: false });
+    await usePlayerStore.getState().nextInPlaylist();
+    expect(playerControls.play).not.toHaveBeenCalled();
+    expect(playerControls.pause).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().isPlaying).toBe(false);
+  });
+
+  it('a skip with nothing queued on screen still reaches the engine', async () => {
+    usePlayerStore.setState({ playlistQueue: null, currentQueueIndex: -1 });
+    await usePlayerStore.getState().nextInPlaylist();
+    usePlayerStore.getState().previousInPlaylist();
+    expect(native.skipToNext).toHaveBeenCalledTimes(1);
+    expect(native.skipToPrevious).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('the playhead on a skip', () => {
   const reset = () => playerControls.resetPlayhead as jest.Mock;
 
@@ -285,19 +373,72 @@ describe('the playhead on a skip', () => {
 });
 
 describe('a native skip button', () => {
-  it('moves the screen after the engine skipped, without asking the engine again', () => {
+  const engineAt = (index: number) =>
+    native.getQueueState.mockResolvedValue({ ids: ids(queue), index, shuffle: false, repeat: 'all', tag: 'library#1', positionSec: 0 });
+
+  // The engine skips on the main thread and reports the new song itself (onTrackAdvanced) straight away; the
+  // button's own event follows. Stepping the mirror again on that event put the screen a second song on.
+  it('does not move the screen a second song on when the engine\'s own report of the new song came first', async () => {
+    engineAt(1);
+    usePlayerStore.getState().adoptPreparedTrack('b', 1);
     usePlayerStore.getState().adoptNativeSkip(1, true);
+    await flush();
+    const s = usePlayerStore.getState();
+    expect(s.currentSongId).toBe('b');
+    expect(s.currentQueueIndex).toBe(1);
+    expect(s.loadedAudioId).toBe('b');
+  });
+
+  it('ends on the same song when the button\'s event comes first', async () => {
+    engineAt(1);
+    usePlayerStore.getState().adoptNativeSkip(1, true);
+    usePlayerStore.getState().adoptPreparedTrack('b', 1);
+    await flush();
     expect(usePlayerStore.getState().currentSongId).toBe('b');
-    usePlayerStore.getState().adoptNativeSkip(-1, true);
-    usePlayerStore.getState().adoptNativeSkip(-1, true);
-    expect(usePlayerStore.getState().currentSongId).toBe('d');
+    expect(usePlayerStore.getState().currentQueueIndex).toBe(1);
+  });
+
+  it('never shows a song the engine did not play (the one after the new song) while the events arrive', async () => {
+    engineAt(1);
+    const seen: string[] = [];
+    const stop = usePlayerStore.subscribe(s => { if (s.currentSongId && seen[seen.length - 1] !== s.currentSongId) seen.push(s.currentSongId); });
+    usePlayerStore.getState().adoptPreparedTrack('b', 1);
+    usePlayerStore.getState().adoptNativeSkip(1, true);
+    await flush();
+    stop();
+    expect(seen).toEqual(['b']);
+  });
+
+  it('two quick taps end on the second song, whichever event of each comes first', async () => {
+    engineAt(2);
+    usePlayerStore.getState().adoptPreparedTrack('b', 1);
+    usePlayerStore.getState().adoptPreparedTrack('c', 2);
+    usePlayerStore.getState().adoptNativeSkip(1, true);
+    usePlayerStore.getState().adoptNativeSkip(1, true);
+    await flush();
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
     expect(native.skipToNext).not.toHaveBeenCalled();
     expect(native.skipToPrevious).not.toHaveBeenCalled();
   });
 
-  it('keeps the song on screen when back started it over', () => {
+  it('keeps the song on screen when back started it over, and puts the playhead back to 0', async () => {
+    engineAt(0);
     usePlayerStore.getState().adoptNativeSkip(-1, false);
+    await flush();
     expect(usePlayerStore.getState().currentSongId).toBe('a');
+    expect(playerControls.resetPlayhead).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for a command of ours that is in flight before it reads the engine', async () => {
+    engineAt(1);
+    mockBusy = true;
+    usePlayerStore.getState().adoptNativeSkip(1, true);
+    await flush();
+    expect(native.getQueueState).not.toHaveBeenCalled();
+    settle();
+    await flush();
+    expect(native.getQueueState).toHaveBeenCalled();
+    expect(usePlayerStore.getState().currentSongId).toBe('b');
   });
 });
 
@@ -442,6 +583,55 @@ describe('reading the engine', () => {
     await flush();
     expect(native.getQueueState).toHaveBeenCalledTimes(2);
     expect(usePlayerStore.getState().currentSongId).toBe('b');
+  });
+});
+
+describe('a read of the engine that overlaps one of our commands', () => {
+  const state = (index: number) => ({ ids: ids(queue), index, shuffle: false, repeat: 'all' as const, tag: 'library#1', positionSec: 0 });
+  const onSongC = () => usePlayerStore.setState({ currentQueueIndex: 2, currentSong: queue[2], currentSongId: 'c', loadedAudioId: 'c' });
+
+  // Two quick skips: the first command ended and a read of the engine started, then the second tap moved the
+  // screen on. The read's answer (the first song's place) used to be adopted, showing the first song again.
+  it('is not adopted while a command is in flight, so a quick second skip is not shown going back', async () => {
+    onSongC();
+    let answer: (s: unknown) => void = () => undefined;
+    native.getQueueState.mockReturnValueOnce(new Promise(resolve => { answer = resolve; })).mockResolvedValue(state(2));
+    const shown: string[] = ['c'];
+    const stop = usePlayerStore.subscribe(s => { if (s.currentSongId && shown[shown.length - 1] !== s.currentSongId) shown.push(s.currentSongId); });
+
+    const read = usePlayerStore.getState().reconcileNativeQueue();
+    mockBusy = true;
+    mockIssued += 1;
+    answer(state(1));
+    await flush();
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
+
+    settle();
+    await read;
+    await flush();
+    stop();
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
+    expect(shown).toEqual(['c']);
+    expect(native.getQueueState).toHaveBeenCalledTimes(2);
+  });
+
+  it('is not adopted either when the command began and ended while the engine was being read', async () => {
+    onSongC();
+    let answer: (s: unknown) => void = () => undefined;
+    native.getQueueState.mockReturnValueOnce(new Promise(resolve => { answer = resolve; })).mockResolvedValue(state(2));
+    const read = usePlayerStore.getState().reconcileNativeQueue();
+    mockIssued += 1;
+    answer(state(1));
+    await read;
+    await flush();
+    expect(usePlayerStore.getState().currentSongId).toBe('c');
+    expect(native.getQueueState).toHaveBeenCalledTimes(2);
+  });
+
+  it('is adopted when no command overlapped it', async () => {
+    native.getQueueState.mockResolvedValue(state(3));
+    await usePlayerStore.getState().reconcileNativeQueue();
+    expect(usePlayerStore.getState().currentSongId).toBe('d');
   });
 });
 

@@ -5,13 +5,13 @@
  * finger drags. It is only on screen between the ends: at 0 the mini cover is the cover, at 1 the player's own cover is,
  * and by then the player's contents have faded in under it (`playerContentOpacity`), so nothing doubles or jumps.
  *
- * The rectangle uses left, top, width and height (not only transform) so a non-square hero can be cropped, not stretched;
- * it is one small view for a short move, and it is the first thing to look at in a frame-rate check on a real phone.
+ * Fixed layout with a transformed clipping mask keeps the move on the UI thread. The image counter-scales inside
+ * the mask so a rectangular destination crops instead of stretching the artwork.
  */
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, { SharedValue, useAnimatedStyle } from 'react-native-reanimated';
-import { coverFrame, coverRadius, ghostVisible, type Rect } from '../../navigation/playerTransition';
+import { coverFrame, ghostVisible, type Rect } from '../../navigation/playerTransition';
 import { playerCoverFrom } from '../../navigation/sheetProgress';
 import Artwork from '../allegra/Artwork';
 
@@ -36,22 +36,33 @@ export const CoverGhost: React.FC<Props> = ({ progress, to, toRadius, fadeOut = 
     const tail = fadeOut ? 1 - Math.min(1, Math.max(0, (p - 0.9) / 0.1)) : 1;
     return {
       opacity: shown ? tail : 0,
-      left: frame.x,
-      top: frame.y,
-      width: frame.width,
-      height: frame.height,
-      borderRadius: coverRadius(p, from.radius, toRadius),
+      transform: [
+        { translateX: frame.x + (frame.width - to.width) / 2 },
+        { translateY: frame.y + (frame.height - to.height) / 2 },
+        { scaleX: frame.width / to.width },
+        { scaleY: frame.height / to.height },
+      ] as const,
     };
   });
+  // Counter the mask's nonuniform scale: a hero crops the picture instead of stretching it.
+  const pictureStyle = useAnimatedStyle(() => {
+    const frame = coverFrame(progress.value, playerCoverFrom.value, to);
+    const sx = Math.max(0.001, frame.width / to.width);
+    const sy = Math.max(0.001, frame.height / to.height);
+    const scale = Math.max(sx, sy);
+    return { transform: [{ scaleX: scale / sx }, { scaleY: scale / sy }] as const };
+  });
   return (
-    <Animated.View pointerEvents="none" style={[styles.ghost, style]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <Animated.View pointerEvents="none" style={[styles.ghost, { width: to.width, height: to.height, borderRadius: toRadius }, style]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Animated.View style={[StyleSheet.absoluteFill, pictureStyle]}>
       <Artwork uri={uri} title={title} artist={artist} size={to.width} priority="high" quiet style={StyleSheet.absoluteFill} />
+      </Animated.View>
     </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
-  ghost: { position: 'absolute', overflow: 'hidden' },
+  ghost: { position: 'absolute', left: 0, top: 0, overflow: 'hidden' },
 });
 
 export default CoverGhost;

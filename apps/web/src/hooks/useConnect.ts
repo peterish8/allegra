@@ -41,6 +41,10 @@ import { fetchSongsByIds, resolveApiUrl, searchSongs } from '../lib/api';
 import { accountIdFromToken, deviceIdForAccount } from '../lib/connectDeviceId';
 import { browserNameFrom } from '../lib/browserName';
 import { onBeforeSignOut } from '../lib/signOutHooks';
+import { onlyPositionMoved } from '../lib/connectView';
+
+/** How often a tab that plays tells the account's other tabs where it is, between full views. */
+const POSITION_POST_INTERVAL_MS = 1000;
 
 function createWebConnectTransport(client: ConvexReactClient, trace?: DevelopmentTraceBuffer): ConnectTransport {
   const binding: ConvexWireClient = {
@@ -306,6 +310,8 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [tabStatus, setTabStatus] = useState<WebConnectState['tabStatus']>(null);
   const [livePosition, setLivePosition] = useState(0);
+  const lastViewRef = useRef<ConnectView | null>(null);
+  const lastPositionPostRef = useRef(0);
   const [documentVisible, setDocumentVisible] = useState(false);
   const [notice, setNotice] = useState<WebConnectState['notice']>(null);
   const [connectLoads, setConnectLoads] = useState(0);
@@ -429,6 +435,18 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
       setTabStatus(next);
     };
     const updateView = (next: ConnectView): void => {
+      // A position report while this device plays changes nothing anyone reads (see onlyPositionMoved).
+      const moved = onlyPositionMoved(lastViewRef.current, next);
+      lastViewRef.current = next;
+      if (moved) {
+        // Other tabs still follow the position, once a second, as a small message and not the whole view.
+        const now = performance.now();
+        if (channel && now - lastPositionPostRef.current >= POSITION_POST_INTERVAL_MS) {
+          lastPositionPostRef.current = now;
+          channel.postMessage({ type: 'position', deviceId: localDeviceId, positionSec: next.livePosition } satisfies ConnectTabMessage);
+        }
+        return;
+      }
       setView(next);
       setLivePosition(next.livePosition);
       // A "play" that started here because the playing device went offline says so once.
@@ -488,6 +506,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
       if (sessionRef.current === created) sessionRef.current = null;
       setSession(null);
       setView(null);
+      lastViewRef.current = null;
       setLivePosition(0);
     };
 
@@ -573,6 +592,7 @@ export function useConnect(audio: AudioPlayerState): WebConnectState {
       setStatus(null);
       setSession(null);
       setView(null);
+      lastViewRef.current = null;
       setLivePosition(0);
     };
   }, [accountId, convex, player, signIn.available, signIn.signedIn]);

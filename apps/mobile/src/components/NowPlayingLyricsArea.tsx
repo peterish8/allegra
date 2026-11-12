@@ -111,6 +111,8 @@ const FullCover: React.FC<{
 };
 
 interface NowPlayingLyricsAreaProps {
+  /** The shared artwork owns the picture until it reaches this stage. */
+  transitionProgress?: SharedValue<number>;
   showLyrics: boolean;
   processedLyrics: ProcessedLyric[];
   duration?: number;
@@ -215,6 +217,7 @@ const Stage: React.FC<{
 
 const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   showLyrics,
+  transitionProgress,
   processedLyrics,
   duration,
   currentTime,
@@ -305,9 +308,11 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
     return { opacity: t, transform: [{ translateY: 28 * (1 - t) }] };
   });
 
+  const artworkHandoff = useAnimatedStyle(() => ({ opacity: transitionProgress && transitionProgress.value < 0.999 ? 0 : 1 }));
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {!fullscreen ? (
+        <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, artworkHandoff]}>
         <Stage
           mode={mode}
           width={width}
@@ -322,6 +327,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
           dockX={dockX}
           dockY={dockY}
         />
+        </Animated.View>
       ) : null}
       {lyricsMounted ? (
         // Apple Music's lyrics view: the lines own the space between the header

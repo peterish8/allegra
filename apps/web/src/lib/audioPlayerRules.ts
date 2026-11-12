@@ -14,6 +14,22 @@ export function isCurrentMediaGeneration(input: {
     && input.expectedSource === input.currentSource;
 }
 
+/**
+ * Whether the player should show "playing", read from the element once its source has loaded.
+ *
+ * The `play` event of a fresh pick fires before the source's metadata, while its events are still
+ * ignored as belonging to the previous song, so it can never be relied on to flip the state. The
+ * element itself can: playing means playing. A paused element with a pending request to play
+ * (a source switch in flight) keeps what is shown; with no such request it is simply paused.
+ */
+export function shownAsPlaying(input: { paused: boolean; wantsPlay: boolean; shown: boolean }): boolean {
+  if (!input.paused) return true;
+  return input.wantsPlay ? input.shown : false;
+}
+
+/** A source switch (karaoke) that has not opened by now has failed. */
+export const SOURCE_SWAP_TIMEOUT_MS = 15_000;
+
 export function playbackRejectionMessage(errorName: string): string {
   return errorName === 'NotAllowedError'
     ? 'Playback needs a tap to begin. Try the play button again.'

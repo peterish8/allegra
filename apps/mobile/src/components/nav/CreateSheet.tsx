@@ -1,33 +1,30 @@
-/**
- * The Create (+) tab's sheet (1.42.0), Spotify's: a rounded card that rises over a dimmed page, while the Create tab
- * turns into a white close disc (drawn by the native bar). 1.46.0: the card rests above the mini player, not on the
- * bar: the pill is drawn after the tab navigator (RootNavigator), so it covered the card's last row ("LuvLink"). The
- * pill dims with the page while the card is up. Luvs first, then Playlist,
- * Blend and LuvLink (`navigation/createMenu`). Back, a tap on the dimmed page or the close disc puts it away.
- *
- * Drawn inside the tab bar's host, not a Modal, so the bar and its close disc stay on top and tappable. Moves by
- * transform and opacity only; under Reduce Motion it only fades.
- */
+/** Create rises above the navigation; the mini player yields on the same motion clock. */
 import React, { useEffect } from 'react';
 import { BackHandler, ScrollView, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { ListRow, Motion, Radius, Space, Surface, Tactile } from '../../ui';
+import { createSheetProgress } from '../../navigation/sheetProgress';
 import { CREATE_ITEMS, type CreateAction } from '../../navigation/createMenu';
 
-/** How far the page dims under the sheet. The mini player dims by the same amount (PillPlayer), as part of the page. */
+/** How far the page dims under the sheet. The mini player fades away before the card reaches it. */
 export const CREATE_SCRIM_OPACITY = 0.62;
 const SCRIM_OPACITY = CREATE_SCRIM_OPACITY;
 
 /**
- * `bottom` and `maxHeight` come from `createSheetFrame`: the card rests above the mini player when one is showing, and
- * scrolls when large text makes it taller than the room left.
+ * `bottom` and `maxHeight` come from `createSheetFrame`: the card rests above the navigation bar while the mini player is hidden.
+ * Rows scroll when larger system text needs more room.
  */
 export const CreateSheet: React.FC<{ open: boolean; bottom: number; maxHeight: number; onClose: () => void; onPick: (action: CreateAction) => void }> = ({ open, bottom, maxHeight, onClose, onPick }) => {
   const reduce = useReducedMotion();
   const shown = useSharedValue(open ? 1 : 0);
+  const cardHeight = useSharedValue(0);
+  useAnimatedReaction(() => shown.value, p => { createSheetProgress.value = Math.min(1, Math.max(0, p)); });
   useEffect(() => {
-    shown.value = withTiming(open ? 1 : 0, { duration: open ? Motion.duration.base : Motion.duration.fast, easing: open ? Motion.ease.decelerate : Motion.ease.accelerate });
-  }, [open, shown]);
+    shown.value = reduce
+      ? withTiming(open ? 1 : 0, { duration: Motion.duration.fast })
+      : withSpring(open ? 1 : 0, Motion.spring.player);
+  }, [open, shown, reduce]);
+  useEffect(() => () => { createSheetProgress.value = 0; }, []);
   useEffect(() => {
     if (!open) return undefined;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => { onClose(); return true; });
@@ -36,18 +33,17 @@ export const CreateSheet: React.FC<{ open: boolean; bottom: number; maxHeight: n
   const scrim = useAnimatedStyle(() => ({ opacity: SCRIM_OPACITY * shown.value }));
   const card = useAnimatedStyle(() => ({
     opacity: shown.value,
-    transform: [{ translateY: reduce ? 0 : (1 - shown.value) * 24 }, { scale: reduce ? 1 : 0.98 + 0.02 * shown.value }] as const,
+    transform: [{ translateY: reduce ? 0 : (1 - shown.value) * Math.max(Space.xl, cardHeight.value + Space.sm) }, { scale: reduce ? 1 : 0.96 + 0.04 * shown.value }] as const,
   }));
-  if (!open) return null;
-  return <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+  return <View style={StyleSheet.absoluteFill} pointerEvents={open ? "box-none" : "none"} accessibilityElementsHidden={!open} importantForAccessibility={open ? "auto" : "no-hide-descendants"}>
     {/* The dimmed page closes the sheet on a tap; TalkBack closes it with Back or the Create tab. */}
     <Tactile style={StyleSheet.absoluteFill} wrapperStyle={StyleSheet.absoluteFill} pressScale={1} onPress={onClose} accessible={false} importantForAccessibility="no" accessibilityElementsHidden>
       <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, scrim]} />
     </Tactile>
-    <Animated.View style={[styles.card, { bottom, maxHeight }, card]} accessibilityViewIsModal accessibilityLabel="Create">
+    <Animated.View style={[styles.card, { bottom, maxHeight }, card]} onLayout={event => { cardHeight.value = event.nativeEvent.layout.height; }} accessibilityViewIsModal={open} accessibilityLabel="Create">
       <ScrollView bounces={false} overScrollMode="never" showsVerticalScrollIndicator={false} contentContainerStyle={styles.rows}>
         {CREATE_ITEMS.map(item => (
-          <ListRow key={item.id} title={item.title} subtitle={item.subtitle} icon={item.icon} onPress={() => onPick(item.id)} />
+          <ListRow key={item.id} title={item.title} subtitle={item.subtitle} subtitleLines={3} icon={item.icon} onPress={() => onPick(item.id)} style={styles.action} />
         ))}
       </ScrollView>
     </Animated.View>
@@ -57,8 +53,9 @@ export const CreateSheet: React.FC<{ open: boolean; bottom: number; maxHeight: n
 const styles = StyleSheet.create({
   scrim: { backgroundColor: Surface.scrim },
   card: {
-    position: 'absolute', left: Space.md, right: Space.md,
-    borderRadius: Radius.sheet, backgroundColor: Surface.raised, overflow: 'hidden',
+    position: 'absolute', left: 0, right: 0,
+    borderTopLeftRadius: Radius.sheet, borderTopRightRadius: Radius.sheet, backgroundColor: Surface.raised, overflow: 'hidden',
   },
   rows: { paddingVertical: Space.sm },
+  action: { minHeight: Space.xl * 2 + Space.md, paddingVertical: Space.sm },
 });

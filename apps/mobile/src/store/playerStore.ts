@@ -19,7 +19,7 @@ import {
   toNativeItem,
 } from '../playback/nativeQueue';
 import { setPlaybackIntent } from '../playback/playbackIntent';
-import { NativeAudioPlayer, isQueueBusy, whenQueueIdle, type NativeQueueState } from '../services/NativeAudioPlayer';
+import { NativeAudioPlayer, isQueueBusy, queueCommandsIssued, whenQueueIdle, type NativeQueueState } from '../services/NativeAudioPlayer';
 import { Song } from '../types/song';
 import { usePlaybackModesStore } from './playbackModesStore';
 import { useSettingsStore } from './settingsStore';
@@ -169,6 +169,17 @@ export function takeRestoredLoad(songId: string): boolean {
   return true;
 }
 
+/**
+ * Whether the load of `songId` that just finished starts it. The song restored at launch and a song handed over
+ * paused wait for a tap; any other load plays. Asked once per load by the screen that held the load guard
+ * (MiniPlayer or Now Playing), so both follow the same rule. Opening a screen on a song that is already loaded is
+ * not a load and never asks: it must not change play or pause.
+ */
+export function shouldPlayAfterLoad(songId: string): boolean {
+  const restored = takeRestoredLoad(songId);
+  return !restored && shouldAutoPlayLoadedSong(songId);
+}
+
 // Which way the last song change went, so titles and covers can move with it:
 // 1 = forward (next, auto-advance), -1 = back (previous), 0 = a song picked.
 let songDirection: -1 | 0 | 1 = 0;
@@ -238,10 +249,11 @@ interface PlayerState {
   skipToQueueIndex: (index: number) => void;
   previousInPlaylist: () => void;
   /**
-   * A native skip button already skipped in the engine (components/NativeSkip): the screen follows. `moved` is false
-   * when back past 3 s started the song over instead.
+   * A native skip button already skipped in the engine (components/NativeSkip): the screen reads where the engine is
+   * (it never steps from its own mirror; the engine's own track report may already have moved it). `moved` is false
+   * when back past 3 s started the song over instead; both are read from the engine, so neither is needed here.
    */
-  adoptNativeSkip: (direction: 1 | -1, moved: boolean) => void;
+  adoptNativeSkip: (direction?: 1 | -1, moved?: boolean) => void;
   /** The playing song changed under us (the engine advanced): update the queue cursor without reloading audio. */
   adoptPreparedTrack: (mediaId: string, index?: number) => void;
   /** The Kotlin engine reported its queue (Android): the screen's mirror follows it. */
@@ -316,33 +328,46 @@ function resolveMirror(state: NativeQueueState): Song[] | null {
   });
 }
 
-let hydrating = false;
+let hydrating: Promise<void> | null = null;
 let hydrateAgain: { withItems: boolean } | null = null;
 /**
  * Reads the engine's queue and adopts it. Without `withItems` it is only the ids and the cursor. A request made
  * while a read is in flight is not dropped: that read may have started before the change that prompted it, so
- * one more follows it.
+ * one more follows it, and the caller's promise settles after that one.
+ *
+ * A read that overlapped one of our own commands is not adopted: it may describe the queue from before the command,
+ * and adopting it would put the screen back on the song it just left (two quick skips showed the first song again
+ * before the second). The read that follows the command's end settles it.
  */
-async function hydrateFromEngine(withItems: boolean): Promise<void> {
+function hydrateFromEngine(withItems: boolean): Promise<void> {
   if (hydrating) {
     hydrateAgain = { withItems: withItems || (hydrateAgain?.withItems ?? false) };
-    return;
+    return hydrating;
   }
-  hydrating = true;
-  try {
-    const state = await NativeAudioPlayer.getQueueState(withItems);
-    if (state) applyNativeQueue(state);
-  } finally {
-    hydrating = false;
-    const again = hydrateAgain;
-    hydrateAgain = null;
-    if (again) await hydrateFromEngine(again.withItems);
-  }
+  const run = (async () => {
+    try {
+      const issued = queueCommandsIssued();
+      const state = await NativeAudioPlayer.getQueueState(withItems);
+      if (queueCommandsIssued() !== issued || isQueueBusy()) {
+        // Once idle (now, if the command already ended) this asks again; while one is in flight it waits.
+        scheduleReconcile(withItems);
+      } else if (state) {
+        applyNativeQueue(state);
+      }
+    } finally {
+      hydrating = null;
+      const again = hydrateAgain;
+      hydrateAgain = null;
+      if (again) await hydrateFromEngine(again.withItems);
+    }
+  })();
+  hydrating = run;
+  return run;
 }
 
 /** Reads the engine's queue once no command is in flight, in case an event was set aside meanwhile. */
-function scheduleReconcile(): void {
-  whenQueueIdle(() => { fire(hydrateFromEngine(false)); });
+function scheduleReconcile(withItems = false): void {
+  whenQueueIdle(() => { fire(hydrateFromEngine(withItems)); });
 }
 
 /** Makes the screen's mirror match the engine. Does nothing when it already does (so it can never feed back). */
@@ -835,8 +860,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const repeat = usePlaybackModesStore.getState().repeatMode;
     if (previousWillRestart(playerControls.getPosition(), state.currentQueueIndex, repeat)) {
       resetPlayheadFor(state.currentSong);
-      playerControls.seekTo(0);
-      get().requestPlayback(true);
+      // Seek pauses (expo-audio): play only once the seek has landed, or the restart finishes paused with the
+      // button saying playing (playback invariant 3).
+      const resume = () => get().requestPlayback(true);
+      playerControls.seekTo(0).then(resume, resume);
       return;
     }
 
@@ -862,10 +889,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  adoptNativeSkip: (direction: 1 | -1, moved: boolean) => {
+  adoptNativeSkip: () => {
     if (!usesNativeQueue()) return;
-    if (moved) showSkip(direction);
-    scheduleReconcile();
+    // The engine has already skipped. It reports the new song itself (`onTrackAdvanced`), and that report normally
+    // reaches us before this event, so the screen is already there: stepping once more from the mirror here moved it
+    // a second song on (wrong title, cover and "last played" until the settled read put it back). Read where the
+    // engine is instead; that is the same answer whichever of the two arrived first. The playhead goes back to 0
+    // for the song now shown (also when back started the same song over).
+    whenQueueIdle(() => {
+      fire(hydrateFromEngine(false).then(() => resetPlayheadFor(get().currentSong)));
+    });
   },
 
   clearPlaylistQueue: () => {

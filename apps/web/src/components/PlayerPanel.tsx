@@ -287,7 +287,9 @@ export function PlayerPanel({
         target?.tagName === 'INPUT' ||
         target?.tagName === 'TEXTAREA' ||
         target?.isContentEditable === true;
-      if (event.code === 'Space' && !typing && target?.tagName !== 'BUTTON') {
+      // The shell's own Space handler may have taken this press already: toggling twice sends two
+      // commands (or, for a remote device, two of the same).
+      if (event.code === 'Space' && !event.defaultPrevented && !typing && target?.tagName !== 'BUTTON') {
         event.preventDefault();
         onToggle();
       }

@@ -1,4 +1,4 @@
-import { SCRUB_REST_SCALE, scrubFraction, scrubSeconds } from './miniScrub';
+import { SCRUB_REST_SCALE, scrubFraction, scrubSeconds, spokenPosition } from './miniScrub';
 
 describe('mini player scrub (1.41.0)', () => {
   it('follows the finger along the line and never leaves it', () => {
@@ -22,5 +22,19 @@ describe('mini player scrub (1.41.0)', () => {
   it('rests thin and thickens under the finger', () => {
     expect(SCRUB_REST_SCALE).toBeGreaterThan(0);
     expect(SCRUB_REST_SCALE).toBeLessThan(1);
+  });
+});
+
+describe('the position TalkBack speaks on the seek band', () => {
+  it('holds still between five-second steps, so the pill re-renders once in five ticks', () => {
+    const spoken = [10, 11, 12, 13, 14, 15, 16].map(spokenPosition);
+    expect(spoken).toEqual([10, 10, 10, 10, 10, 15, 15]);
+    expect(new Set([0, 1, 2, 3, 4].map(spokenPosition)).size).toBe(1);
+  });
+
+  it('is never ahead of the song and is safe before a position is known', () => {
+    expect(spokenPosition(14.99)).toBeLessThanOrEqual(14.99);
+    expect(spokenPosition(-3)).toBe(0);
+    expect(spokenPosition(Number.NaN)).toBe(0);
   });
 });

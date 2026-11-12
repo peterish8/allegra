@@ -79,6 +79,7 @@ export type PlayerMetadata = {
  */
 let chain: Promise<unknown> = Promise.resolve();
 let inFlight = 0;
+let issued = 0;
 const idleWaiters: Array<() => void> = [];
 
 const startNow = <T>(run: () => Promise<T>): Promise<T> => {
@@ -92,6 +93,7 @@ const startNow = <T>(run: () => Promise<T>): Promise<T> => {
 function serial<T>(run: () => Promise<T>, failed: T): Promise<T> {
   const idle = inFlight === 0;
   inFlight += 1;
+  issued += 1;
   const begun = idle ? startNow(run) : chain.then(run, run);
   const next = begun.catch(() => failed).then(result => {
     inFlight -= 1;
@@ -104,6 +106,12 @@ function serial<T>(run: () => Promise<T>, failed: T): Promise<T> {
 
 /** True while a queue command is still being applied. Native events that arrive meanwhile describe a moving target. */
 export const isQueueBusy = (): boolean => inFlight > 0;
+
+/**
+ * How many queue commands have ever been issued. A read of the engine that began at one count and ended at another
+ * overlapped a command (even one that began and ended inside the read), so what it saw may be the queue before it.
+ */
+export const queueCommandsIssued = (): number => issued;
 
 /** Calls `fn` once, when no queue command is in flight (now, if none is). */
 export const whenQueueIdle = (fn: () => void): void => {

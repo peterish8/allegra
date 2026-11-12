@@ -56,16 +56,16 @@ describe('the cover on its way', () => {
 describe('what fades when', () => {
   it('clears the mini player\'s text before the cover grows over it', () => {
     expect(miniContentOpacity(0)).toBe(1);
-    expect(miniContentOpacity(0.125)).toBeCloseTo(0.5, 5);
-    expect(miniContentOpacity(0.25)).toBe(0);
+    expect(miniContentOpacity(0.09)).toBeCloseTo(0.5, 5);
+    expect(miniContentOpacity(0.18)).toBe(0);
     expect(miniContentOpacity(1)).toBe(0);
   });
 
   it('brings the player\'s text in only once the cover has mostly arrived', () => {
     expect(playerContentOpacity(0.5)).toBe(0);
-    expect(playerContentOpacity(0.6)).toBe(0);
-    expect(playerContentOpacity(0.75)).toBeCloseTo(0.5, 5);
-    expect(playerContentOpacity(0.9)).toBe(1);
+    expect(playerContentOpacity(0.52)).toBe(0);
+    expect(playerContentOpacity(0.70)).toBeCloseTo(0.5, 5);
+    expect(playerContentOpacity(0.88)).toBe(1);
   });
 
   it('shows the moving cover only between the ends', () => {
