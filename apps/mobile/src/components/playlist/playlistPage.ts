@@ -93,3 +93,61 @@ const FIND_FLING = 0.3;
  */
 export const findFiller = (viewport: number, content: number, slot: number = FIND_BAR_HEIGHT): number =>
   Number.isFinite(viewport) && Number.isFinite(content) && viewport > 0 ? Math.max(0, Math.ceil(viewport + slot - content)) : 0;
+
+// ── The finger-driven cover (CoverFlipCard) ─────────────────────────────────────────────────────────────────────
+// These run on the UI thread while a finger is down, so each is a worklet and none touches React or a closure.
+
+/** Dragging across the cover turns it: a whole turn takes this many cover widths. */
+export const FLIP_DRAG = 1.1;
+/** How far ahead (seconds) a release is projected along its velocity to decide where the motion rests. */
+export const PROJECT_S = 0.18;
+/** Past the first or last card the deck follows the finger by this fraction (a rubber band). */
+export const DECK_RESIST = 0.35;
+
+/** The turn (0 cover .. 1 cards) for a drag of `dx` px across a cover `size` px wide; either direction turns it. */
+export const flipFromDrag = (dx: number, size: number): number => {
+  'worklet';
+  if (!(size > 0)) return 0;
+  return Math.min(1, Math.max(0, Math.abs(dx) / (size * FLIP_DRAG)));
+};
+
+/** Which way a lifted finger leaves the cover: turned over (1) or back (0). `vx` is px/s along the drag's direction. */
+export const flipSettle = (progress: number, vx: number, size: number): 0 | 1 => {
+  'worklet';
+  const speed = size > 0 ? vx / (size * FLIP_DRAG) : 0;
+  return progress + speed * PROJECT_S > 0.5 ? 1 : 0;
+};
+
+/** The spring's starting speed in turns per second, from the finger's px/s along the drag. */
+export const flipVelocity = (vx: number, size: number): number => {
+  'worklet';
+  return size > 0 ? vx / (size * FLIP_DRAG) : 0;
+};
+
+/** The deck's position (in cards) while a finger drags it: it follows 1:1 inside the deck and resists beyond the ends. */
+export const deckFollow = (position: number, count: number): number => {
+  'worklet';
+  const last = Math.max(0, count - 1);
+  if (position < 0) return position * DECK_RESIST;
+  if (position > last) return last + (position - last) * DECK_RESIST;
+  return position;
+};
+
+/**
+ * The card a lifted finger settles on. A fling carries at most one card from where the drag stopped; a slow release
+ * goes to the nearest. `vx` is px/s (negative = moving left, towards the next card).
+ */
+export const deckSettle = (position: number, vx: number, size: number, count: number): number => {
+  'worklet';
+  const last = Math.max(0, count - 1);
+  if (!(size > 0) || count <= 1) return 0;
+  const from = Math.min(last, Math.max(0, position));
+  const projected = from - (vx / size) * PROJECT_S;
+  return Math.min(Math.ceil(from), Math.max(Math.floor(from), Math.round(projected)));
+};
+
+/** The deck's spring starting speed in cards per second. */
+export const deckVelocity = (vx: number, size: number): number => {
+  'worklet';
+  return size > 0 ? -vx / size : 0;
+};
