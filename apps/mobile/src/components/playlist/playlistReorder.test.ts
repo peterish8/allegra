@@ -1,6 +1,27 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { EDIT_ENTRY, PLAYLIST_DRAG, saveDraggedOrder } from './playlistReorder';
+import { applySavedOrder, EDIT_ENTRY, PLAYLIST_DRAG, saveDraggedOrder } from './playlistReorder';
+
+describe('a saved order survives the reload', () => {
+  const row = (id: string) => ({ id });
+  // As loaded: downloaded songs first, then songs only in the account (stream ids).
+  const loaded = [row('local:a'), row('local:b'), row('stream:saavn:1'), row('stream:saavn:2')];
+
+  it('puts account-only songs back where they were dragged, not after the downloads', () => {
+    const saved = ['stream:saavn:2', 'local:a', 'stream:saavn:1', 'local:b'];
+    expect(applySavedOrder(loaded, saved).map(r => r.id)).toEqual(saved);
+  });
+
+  it('keeps songs added since the last drag after the ordered ones', () => {
+    const saved = ['local:b', 'local:a'];
+    expect(applySavedOrder(loaded, saved).map(r => r.id)).toEqual(['local:b', 'local:a', 'stream:saavn:1', 'stream:saavn:2']);
+  });
+
+  it('leaves a never-reordered playlist as loaded, and drops ids that are gone', () => {
+    expect(applySavedOrder(loaded, []).map(r => r.id)).toEqual(loaded.map(r => r.id));
+    expect(applySavedOrder(loaded, ['gone', 'local:b']).map(r => r.id)[0]).toBe('local:b');
+  });
+});
 
 const ids = Array.from({ length: 60 }, (_, index) => `song-${index}`);
 

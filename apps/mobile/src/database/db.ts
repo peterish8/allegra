@@ -254,6 +254,15 @@ const initializeTables = async (database: SQLite.SQLiteDatabase): Promise<void> 
     CREATE INDEX IF NOT EXISTS idx_lyrics_timestamp ON lyrics(timestamp);
     CREATE INDEX IF NOT EXISTS idx_playlist_songs_playlist ON playlist_songs(playlist_id, sort_order);
 
+    -- The order a listener dragged a playlist into, for every row it shows: downloaded songs and songs that are
+    -- only in the account (playlist_online_songs has no position, so those snapped back after a reorder).
+    CREATE TABLE IF NOT EXISTS playlist_item_order (
+      playlist_id TEXT NOT NULL,
+      song_id TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      PRIMARY KEY (playlist_id, song_id)
+    );
+
     -- Seed default playlist
     INSERT OR IGNORE INTO playlists (id, name, description, is_default, sort_order, date_created, date_modified)
     VALUES ('default_liked', 'Liked Songs', 'Your favorite tracks', 1, -1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);

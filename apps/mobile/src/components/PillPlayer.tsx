@@ -234,9 +234,10 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
       }} />
     <Animated.View style={[styles.row, { height: rowHeight }, rowDim]}>
       <GestureDetector gesture={infoGesture}><View style={styles.main} onLayout={e => setInfoWidth(e.nativeEvent.layout.width)}>
-        <Tactile onPress={openMeasured} pressScale={0.985} accessibilityRole="button" accessibilityLabel={miniPlayerLabel(displayed.title)} accessibilityHint={displayed.artist ? `By ${displayed.artist}` : undefined}
-          accessibilityActions={[{ name: 'activate' }, { name: 'next', label: 'Next song' }, { name: 'previous', label: 'Previous song' }]}
-          onAccessibilityAction={e => { const a = e.nativeEvent.actionName; if (a === 'next') onNext(); else if (a === 'previous') onPrevious(); else openMeasured(); }}
+        {/* Owner, 2026-11-13: no ••• on the mini player; a long press opens the song's actions instead. */}
+        <Tactile onPress={openMeasured} onLongPress={onMore} delayLongPress={350} pressScale={0.985} accessibilityRole="button" accessibilityLabel={miniPlayerLabel(displayed.title)} accessibilityHint={displayed.artist ? `By ${displayed.artist}` : undefined}
+          accessibilityActions={[{ name: 'activate' }, { name: 'next', label: 'Next song' }, { name: 'previous', label: 'Previous song' }, ...(onMore ? [{ name: 'longpress', label: 'Song options' }] : [])]}
+          onAccessibilityAction={e => { const a = e.nativeEvent.actionName; if (a === 'next') onNext(); else if (a === 'previous') onPrevious(); else if (a === 'longpress') onMore?.(); else openMeasured(); }}
           style={[styles.info, { height: rowHeight }]}>
           <Animated.View style={[styles.follow, following]}>
             <View ref={coverRef} onLayout={() => measureCover()} style={styles.cover}><Artwork uri={displayed.coverImageUri} title={displayed.title} artist={displayed.artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></View>
@@ -256,11 +257,6 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
       {/* 1.44.0 (owner: "place neatly like Spotify"): three glyphs of one size on an even rhythm, centred on the row,
           close to the right edge. Each slot is 44 wide and answers a 48dp touch. */}
       <View style={styles.actions}>
-        {onMore ? (
-          <Tactile onPress={onMore} pressScale={0.9} hitSlop={ACTION_SLOP} accessibilityRole="button" accessibilityLabel="Song options" style={styles.action}>
-            <Ionicons name="ellipsis-horizontal" size={ACTION_GLYPH - 2} color={Signal.ink} />
-          </Tactile>
-        ) : null}
         {/* Spotify's saved mark: a filled tick in a circle once saved, an outlined plus before. */}
         {onToggleLike ? (
           <Tactile onPress={onToggleLike} haptic="select" pressScale={0.9} hitSlop={ACTION_SLOP} accessibilityRole="button"

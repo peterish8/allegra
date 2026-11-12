@@ -25,26 +25,30 @@ export interface ShelfActions {
   onPlay: (songs: YTSong[], index: number) => void;
   /** The song currently being resolved (spinner on its row). */
   pendingId?: string | null;
+  /** A long press on a song: its actions sheet (Play next, Add to queue, …). */
+  onSongActions?: (song: YTSong) => void;
 }
 
 const songsOf = (items: YTItem[]): YTSong[] =>
   items.flatMap(i => (i.kind === 'song' ? [i.song] : []));
 
 /** The shared song row (56 tall, 44 cover, one-line title and artist), so artist and album pages match every list. */
-export const SongRow: React.FC<{ song: YTSong; onPress: () => void; pending?: boolean; index?: number }> = memo(({ song, onPress, pending }) => (
-  <SharedSongRow title={song.title} artist={song.artists.join(', ')} artwork={song.thumbnail} meta={song.album || undefined} onPress={onPress}
+export const SongRow: React.FC<{ song: YTSong; onPress: () => void; onActions?: () => void; pending?: boolean; index?: number }> = memo(({ song, onPress, onActions, pending }) => (
+  <SharedSongRow title={song.title} artist={song.artists.join(', ')} artwork={song.thumbnail} meta={song.album || undefined} onPress={onPress} onActions={onActions}
     trailing={pending ? <View style={styles.pending} accessibilityLabel="Loading"><Ionicons name="ellipsis-horizontal" size={18} color={Signal.inkSoft} /></View> : undefined} />
 ));
 SongRow.displayName = 'SongRow';
 
-const Card: React.FC<{ item: YTItem; onPress: () => void }> = memo(({ item, onPress }) => {
+const Card: React.FC<{ item: YTItem; onPress: () => void; onLongPress?: () => void }> = memo(({ item, onPress, onLongPress }) => {
   const round = item.kind === 'artist';
   const title = item.kind === 'song' ? item.song.title : item.title;
   const sub = item.kind === 'song' ? item.song.artists.join(', ') : item.subtitle;
   const art = item.kind === 'song' ? item.song.thumbnail : item.thumbnail;
   const size = round ? ARTIST : CARD;
   return (
-    <Tactile onPress={onPress} pressScale={0.98} wrapperStyle={{ width: size }} accessibilityRole="button" accessibilityLabel={title}>
+    <Tactile onPress={onPress} onLongPress={onLongPress} pressScale={0.98} wrapperStyle={{ width: size }} accessibilityRole="button" accessibilityLabel={title}
+      accessibilityActions={onLongPress ? [{ name: 'activate' }, { name: 'longpress', label: 'Song options' }] : undefined}
+      onAccessibilityAction={onLongPress ? e => { if (e.nativeEvent.actionName === 'longpress') onLongPress(); else onPress(); } : undefined}>
       <Artwork uri={art} title={title} size={size} style={[styles.cardArt, { width: size, height: size, borderRadius: round ? size / 2 : 10 }]} />
       <Text style={[styles.cardTitle, round && styles.center]} numberOfLines={round ? 1 : 2}>{title}</Text>
       {sub && !round ? <Text style={styles.cardSub} numberOfLines={1}>{sub}</Text> : null}
@@ -69,7 +73,7 @@ export const ShelfHeader: React.FC<{ title: string; strapline?: string; onMore?:
 
 /** One shelf. `rows` draws song lists vertically (an artist's top songs). */
 export const BrowseShelf: React.FC<{ shelf: Shelf; rows?: boolean; maxRows?: number; onMore?: () => void } & ShelfActions> = ({
-  shelf, rows = false, maxRows = 5, onMore, onOpen, onPlay, pendingId,
+  shelf, rows = false, maxRows = 5, onMore, onOpen, onPlay, pendingId, onSongActions,
 }) => {
   const songs = songsOf(shelf.items);
   const allSongs = songs.length === shelf.items.length;
@@ -78,7 +82,8 @@ export const BrowseShelf: React.FC<{ shelf: Shelf; rows?: boolean; maxRows?: num
       <View style={styles.shelf}>
         <ShelfHeader title={shelf.title} strapline={shelf.strapline} onMore={onMore} />
         {songs.slice(0, maxRows).map((song, i) => (
-          <SongRow key={`${song.videoId}-${i}`} song={song} pending={pendingId === song.videoId} onPress={() => onPlay(songs, i)} />
+          <SongRow key={`${song.videoId}-${i}`} song={song} pending={pendingId === song.videoId} onPress={() => onPlay(songs, i)}
+            onActions={onSongActions ? () => onSongActions(song) : undefined} />
         ))}
       </View>
     );
@@ -101,6 +106,7 @@ export const BrowseShelf: React.FC<{ shelf: Shelf; rows?: boolean; maxRows?: num
               if (item.kind === 'song') onPlay(songs, Math.max(0, songs.findIndex(s => s.videoId === item.song.videoId)));
               else onOpen(item);
             }}
+            onLongPress={item.kind === 'song' && onSongActions ? () => onSongActions(item.song) : undefined}
           />
         )}
       />
