@@ -12,25 +12,25 @@ import { Dimensions, Pressable, StyleSheet, Text, View, useWindowDimensions } fr
 import * as GestureHandler from 'react-native-gesture-handler';
 import Animated, {
   Easing,
-  Extrapolation,
   cancelAnimation,
-  interpolate,
-  runOnJS,
-  useAnimatedReaction,
   useAnimatedStyle,
-  useDerivedValue,
   useReducedMotion,
   useSharedValue,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SongSnapshot } from '@shared/songRef';
-import { Motion, Signal } from '../../constants/allegraTheme';
-import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../../navigation/playerSheet';
-import { playerSheetProgress } from '../../navigation/sheetProgress';
+import { Motion, Radius, Signal } from '../../constants/allegraTheme';
+import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from '../../navigation/usePlayerSheetMotion';
+import { playerCoverFrom } from '../../navigation/sheetProgress';
+import { cardCoverRect, heroCoverRect, playerContentOpacity } from '../../navigation/playerTransition';
+import { MiniPlayerGlow } from '../MiniPlayerGlow';
+import CoverGhost from '../player/CoverGhost';
+import { heroHeight } from '../player/AppleBackdrop';
+import { isCoverFull } from '../player/coverStage';
 import { playerSheetRest, tabBarTopFromBottom } from '../../navigation/tabs';
+import { shellNavHeight, SEEK_BAND_HEIGHT, miniRowHeight } from '../../navigation/v6Shell';
 import { isSeeking } from '../../playback/positionBus';
 import { lyricaService } from '../../services/LyricaService';
 import { extractAlbumColors } from '../../services/NativePalette';
@@ -41,7 +41,7 @@ import { toggleOnlineLike } from '../../services/sync/onlineLike';
 import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
 import { usePlayerStore } from '../../store/playerStore';
 import { usePlaylistStore } from '../../store/playlistStore';
-import { useSettingsStore } from '../../store/settingsStore';
+import { isCardPlayerBackground, useSettingsStore } from '../../store/settingsStore';
 import { useSongsStore } from '../../store/songsStore';
 import type { RootStackScreenProps } from '../../types/navigation';
 import { libraryLookup, matchKey } from '../../utils/downloadState';
@@ -50,10 +50,10 @@ import { safeGoBack } from '../../utils/navigationService';
 import NowPlayingBackground from '../NowPlayingBackground';
 import NowPlayingControls from '../NowPlayingControls';
 import NowPlayingHeader from '../NowPlayingHeader';
-import NowPlayingLyricsArea, { CONTROLS_CLEARANCE, HEADER_CLEARANCE, LYRICS_MORPH_MS } from '../NowPlayingLyricsArea';
+import NowPlayingLyricsArea, { fullCoverHeight, CONTROLS_CLEARANCE, HEADER_CLEARANCE, LYRICS_MORPH_MS } from '../NowPlayingLyricsArea';
 import type { SynchronizedLyricsRef } from '../SynchronizedLyrics';
 import Artwork from '../allegra/Artwork';
-import { projectMomentum, rubberBand } from '../allegra/physics';
+import { rubberBand } from '../allegra/physics';
 import { PlayerSheet, SheetScrollView } from '../player/PlayerSheet';
 
 const { Gesture, GestureDetector } = GestureHandler;
@@ -69,12 +69,7 @@ const QueuedCover: React.FC<{ song: SongSnapshot; index: number; style: React.Co
 type Props = RootStackScreenProps<'NowPlaying'>;
 
 // The local player's sheet physics (screens/NowPlayingScreen.tsx), so both feel the same.
-const SOFT_SPRING = Motion.spring.open;
-const FLING_SPRING = Motion.spring.fling;
-const CLOSE_REST = { restDisplacementThreshold: 0.5, restSpeedThreshold: 8 } as const;
-const FLICK = Motion.flingVelocity;
 const PAGE_DIM = 0.5;
-const SHEET_CORNER = 22;
 /** The remote position arrives once a second; the scrubber and lyrics glide between reports. */
 const TICK_MS = 1000;
 const FALLBACK_COLORS = ['#1b1a22', '#2a2833', '#08090d'];
@@ -100,49 +95,17 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
   const playing = view?.isPlaying ?? false;
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
-  const { width: windowW, height: windowH } = useWindowDimensions();
+  const { width: windowW, height: windowH, fontScale } = useWindowDimensions();
   const screenH = Math.max(windowH, Dimensions.get('screen').height);
   const pillNav = useSettingsStore(s => s.navBarStyle) === 'modern-pill';
   const setMiniPlayerHiddenSource = usePlayerStore(state => state.setMiniPlayerHiddenSource);
 
   // ── Sheet: grow out of the pill, follow the finger, shrink back ──────────
-  const { y: restY } = playerSheetRest(windowW, screenH, insets.bottom, pillNav);
-  const openedOpen = route.params.instant === true;
-  const sheetY = useSharedValue(openedOpen ? 0 : restY);
-  const progress = useDerivedValue(() => Math.min(1, Math.max(0, 1 - sheetY.value / restY)));
-  useAnimatedReaction(() => progress.value, p => { playerSheetProgress.value = p; });
-  useEffect(() => () => { playerSheetProgress.value = 0; }, []);
-  const [holdRoute, setHoldRoute] = useState(true);
-  const closing = useSharedValue(false);
-
-  useEffect(() => {
-    const velocity = takeOpenVelocity();
-    if (openedOpen) return;
-    sheetY.value = reduceMotion
-      ? withTiming(0, { duration: 200 })
-      : withSpring(0, { ...(velocity > FLICK ? FLING_SPRING : SOFT_SPRING), velocity: -velocity });
-  // Mount only: the sheet opens once.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const finishClose = useCallback(() => setHoldRoute(false), []);
-  useEffect(() => {
-    if (!holdRoute) safeGoBack(navigation);
-  }, [holdRoute, navigation]);
+  const restY = pillNav ? screenH - shellNavHeight(windowH, insets.bottom, fontScale) - SEEK_BAND_HEIGHT - miniRowHeight(fontScale) : playerSheetRest(windowW, screenH, insets.bottom, pillNav).y;
+  const fluid = useSettingsStore(s => s.fluidPlayer);
   const revealPill = useCallback(() => setMiniPlayerHiddenSource('NowPlaying', false), [setMiniPlayerHiddenSource]);
-  const animateClose = useCallback((velocity = 0) => {
-    'worklet';
-    if (closing.value) return;
-    closing.value = true;
-    runOnJS(revealPill)();
-    const done = (finished?: boolean) => {
-      'worklet';
-      if (finished) runOnJS(finishClose)();
-    };
-    sheetY.value = reduceMotion
-      ? withTiming(restY, { duration: 200, easing: Easing.out(Easing.quad) }, done)
-      : withSpring(restY, { ...(velocity > FLICK ? FLING_SPRING : SOFT_SPRING), ...CLOSE_REST, velocity: Math.max(0, velocity) }, done);
-  }, [restY, reduceMotion, finishClose, revealPill, closing, sheetY]);
+  const { holdRoute, sheetY, progress, animateClose, controls: sheetControls } = usePlayerSheetMotion(restY, route.params.instant === true, fluid, reduceMotion, revealPill);
+  useEffect(() => { if (!holdRoute) safeGoBack(navigation); }, [holdRoute, navigation]);
 
   useFocusEffect(useCallback(() => {
     setMiniPlayerHiddenSource('NowPlaying', true);
@@ -244,6 +207,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
   const grabY = useSharedValue(0);
   const frameH = useSharedValue(screenH);
   const lyricsTop = insets.top + HEADER_CLEARANCE;
+  const dismissActive = useSharedValue(false);
   const dismissGesture = Gesture.Pan()
     .enabled(!queueOpen)
     .activeOffsetY(12)
@@ -251,13 +215,13 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
     .failOffsetX([-24, 24])
     .onTouchesDown((e, state) => {
       'worklet';
-      if (closing.value) { state.fail(); return; }
       const y = e.allTouches[0] ? e.allTouches[0].y : 0;
       if (showLyricsSV.value && lyricsOffset.value > 2 && y > lyricsTop && y < frameH.value - CONTROLS_CLEARANCE) state.fail();
     })
     .onStart(() => {
       'worklet';
-      grabY.value = sheetY.value;
+      dismissActive.value = true;
+      grabY.value = beginSheetDrag(sheetControls);
     })
     .onUpdate(e => {
       'worklet';
@@ -266,35 +230,59 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
     })
     .onEnd(e => {
       'worklet';
-      const landing = sheetY.value + projectMomentum(e.velocityY);
-      if ((landing > screenH * DISMISS_DISTANCE && e.velocityY > -200) || e.velocityY > DISMISS_VELOCITY) {
-        animateClose(e.velocityY);
-      } else {
-        sheetY.value = withSpring(0, { ...(Math.abs(e.velocityY) > FLICK ? FLING_SPRING : SOFT_SPRING), velocity: e.velocityY });
-      }
+      settleSheet(sheetControls, e.velocityY);
+    })
+    .onFinalize((_event, success) => {
+      'worklet';
+      if (!success && dismissActive.value) settleSheet(sheetControls, 0);
+      dismissActive.value = false;
+    });
+
+  const reverseActive = useSharedValue(false);
+  const reverseGesture = Gesture.Pan()
+    .enabled(!queueOpen)
+    .activeOffsetY(-12)
+    .failOffsetX([-24, 24])
+    .onTouchesDown((event, state) => {
+      'worklet';
+      const y = event.allTouches[0]?.y ?? 0;
+      if (sheetY.value < 1 ||  (showLyricsSV.value && y > lyricsTop && y < frameH.value - CONTROLS_CLEARANCE)) state.fail();
+    })
+    .onStart(() => { 'worklet'; reverseActive.value = true; grabY.value = beginSheetDrag(sheetControls); })
+    .onUpdate(event => {
+      'worklet';
+      const y = grabY.value + event.translationY;
+      sheetY.value = y >= 0 ? Math.min(y, restY) : rubberBand(y, 120);
+    })
+    .onEnd(event => { 'worklet'; settleSheet(sheetControls, event.velocityY); })
+    .onFinalize((_event, success) => {
+      'worklet';
+      if (!success && reverseActive.value) settleSheet(sheetControls, 0);
+      reverseActive.value = false;
     });
 
   // As in NowPlayingScreen: the sheet ends at the bottom bar's top while it is closed and reaches the screen's bottom once
   // open, the bar sliding down under that edge (useTabBarPushStyle) — the bar never pops out from
   // under a sheet that covered it. The clip moves up by the gap and the sheet down by it, so the
   // sheet stays where it was and only its bottom edge is cut. Transforms only.
-  const barTop = tabBarTopFromBottom(insets.bottom, pillNav);
-  const sheetClipStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(1 - progress.value) * barTop }] }));
+  const barTop = pillNav ? shellNavHeight(windowH, insets.bottom, fontScale) : tabBarTopFromBottom(insets.bottom, pillNav);
+  const sheetClipStyle = useAnimatedStyle(() => ({ transform: [{ translateY: reduceMotion ? 0 : -(1 - progress.value) * barTop }] }));
   const sheetStyle = useAnimatedStyle(() => {
     const p = progress.value;
-    const corner = SHEET_CORNER * (1 - interpolate(p, [0.9, 1], [0, 1], Extrapolation.CLAMP));
     return {
       opacity: reduceMotion ? p : 1,
-      borderTopLeftRadius: corner,
-      borderTopRightRadius: corner,
-      transform: [{ translateY: sheetY.value + (1 - p) * barTop }] as const,
+      transform: [{ translateY: reduceMotion ? 0 : sheetY.value + (1 - p) * barTop }] as const,
     };
   });
+  const coverLanding = useSettingsStore(s => (!isCardPlayerBackground(s.playerBackground) && s.appleMusicInspired ? 'hero' : isCoverFull(s.playerBackground, s.appleMusicInspired, s.playerCoverFull) ? 'full' : 'card'));
+  const movingCover = !reduceMotion && playerCoverFrom.value.width > 0;
+  const landingRect = coverLanding === 'hero' ? heroCoverRect(windowW, heroHeight(windowW, screenH)) : coverLanding === 'full' ? heroCoverRect(windowW, fullCoverHeight(windowW, screenH)) : cardCoverRect(windowW, screenH, insets.top + HEADER_CLEARANCE + 24);
+  const miniSurfaceStyle = useAnimatedStyle(() => ({ opacity: 1 - playerContentOpacity(progress.value) }));
   const playerFadeStyle = useAnimatedStyle(() => ({
-    opacity: reduceMotion ? 1 : interpolate(progress.value, [0.15, 0.4], [0, 1], Extrapolation.CLAMP),
+    opacity: reduceMotion ? 1 : playerContentOpacity(progress.value),
   }));
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: PAGE_DIM * Math.min(1, 1.4 * Math.sqrt(Math.max(0, progress.value - 0.1))),
+    opacity: (reduceMotion ? 0 : PAGE_DIM) * Math.min(1, 1.4 * Math.sqrt(Math.max(0, progress.value - 0.1))),
   }));
 
   const playingOn = view?.activeDevice ? { name: view.activeDevice.name, kind: view.activeDevice.kind } : null;
@@ -303,9 +291,10 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
     <View style={styles.root}>
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
       <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, styles.sheetClip, sheetClipStyle]}>
-      <GestureDetector gesture={dismissGesture}>
+      <GestureDetector gesture={Gesture.Race(dismissGesture, reverseGesture)}>
         <Animated.View style={[styles.container, sheetStyle]} onLayout={e => { frameH.value = e.nativeEvent.layout.height; }}>
-          <Animated.View style={[styles.playerLayer, playerFadeStyle]}>
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, miniSurfaceStyle]}><MiniPlayerGlow uri={artwork} active={false} /></Animated.View>
+        <Animated.View style={[styles.playerLayer, playerFadeStyle]}>
             <NowPlayingBackground coverImageUri={artwork} gradientColors={colors} showLyrics={showLyrics} playing={playing} />
             <NowPlayingHeader
               animatedStyle={undefined}
@@ -319,6 +308,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
               <>
                 <View style={styles.contentArea}>
                   <NowPlayingLyricsArea
+            transitionProgress={movingCover ? progress : undefined}
                     showLyrics={showLyrics}
                     processedLyrics={lyrics}
                     duration={song.duration}
@@ -455,6 +445,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
         </Animated.View>
       </GestureDetector>
       </Animated.View>
+      {movingCover && song ? <CoverGhost progress={progress} to={landingRect} toRadius={coverLanding === 'card' ? Radius.panel : 0} fadeOut={coverLanding !== 'card'} uri={artwork} title={song.title} artist={song.artist} /> : null}
     </View>
   );
 };
@@ -463,7 +454,7 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   sheetClip: { overflow: 'hidden' },
   backdrop: { backgroundColor: '#000' },
-  container: { flex: 1, backgroundColor: '#0b0b0f', overflow: 'hidden' },
+  container: { flex: 1, backgroundColor: '#0b0b0f', overflow: 'hidden', borderTopLeftRadius: Radius.panel, borderTopRightRadius: Radius.panel },
   playerLayer: { ...StyleSheet.absoluteFillObject },
   contentArea: { flex: 1 },
   modes: { flexDirection: 'row', gap: 8, paddingBottom: 12 },

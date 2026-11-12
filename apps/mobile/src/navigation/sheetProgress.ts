@@ -8,6 +8,9 @@ import { makeMutable, useAnimatedStyle, useReducedMotion } from 'react-native-re
  */
 export const playerSheetProgress = makeMutable(0);
 
+/** Create and the mini player hand over on the same animation clock. */
+export const createSheetProgress = makeMutable(0);
+
 /**
  * The bottom bar's side of the hand-over: pushed down by the sheet as it opens and back up as it
  * closes, `distance` being the bar's top from the screen bottom (`tabBarTopFromBottom`). One

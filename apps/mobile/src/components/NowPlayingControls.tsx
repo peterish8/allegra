@@ -256,6 +256,10 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   // they have closed); the title glides over by transform alone, so the flight
   // costs no layout pass per frame. The thumbnail fades in as the cover lands.
   const [docked, setDocked] = useState(showLyrics);
+  // The title's shift reads this shared value: a style keyed on React state could keep the lyrics-open offset after
+  // the slot was removed, clipping the title's first letters at the left edge.
+  const dockedSV = useSharedValue(showLyrics);
+  useEffect(() => { dockedSV.value = docked; }, [docked, dockedSV]);
   useEffect(() => {
     if (showLyrics) {
       setDocked(true);
@@ -267,8 +271,8 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   const titleShift = DOCK_THUMB + DOCK_GAP;
   const titleStyle = useAnimatedStyle(() => {
     const p = lyricsP ? lyricsP.value : 0;
-    return { transform: [{ translateX: docked ? -titleShift * (1 - p) : 0 }] };
-  }, [docked]);
+    return { transform: [{ translateX: dockedSV.value ? -titleShift * (1 - p) : 0 }] };
+  });
   const thumbStyle = useAnimatedStyle(() => {
     const p = lyricsP ? lyricsP.value : 0;
     const t = Math.min(1, Math.max(0, (p - 0.78) / 0.22));

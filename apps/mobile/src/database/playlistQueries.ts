@@ -299,6 +299,17 @@ export const getDefaultPlaylistId = async (): Promise<string | null> => {
   });
 };
 
+/** The ids of a playlist's rows in the order the listener last dragged them into (empty when never reordered). */
+export const getPlaylistItemOrder = async (playlistId: string): Promise<string[]> => {
+  return withDbRead(async (db) => {
+    const rows = await db.getAllAsync<{ song_id: string }>(
+      'SELECT song_id FROM playlist_item_order WHERE playlist_id = ? ORDER BY position ASC',
+      [playlistId]
+    );
+    return rows.map(row => row.song_id);
+  });
+};
+
 /**
  * Update song order after drag-and-drop reordering
  */
@@ -316,7 +327,15 @@ export const updateSongOrder = async (
           [i, playlistId, reorderedSongIds[i]]
         );
       }
-      
+      // The whole shown order, online-only songs included (they are not in playlist_songs).
+      await db.runAsync('DELETE FROM playlist_item_order WHERE playlist_id = ?', [playlistId]);
+      for (let i = 0; i < reorderedSongIds.length; i++) {
+        await db.runAsync(
+          'INSERT OR REPLACE INTO playlist_item_order (playlist_id, song_id, position) VALUES (?, ?, ?)',
+          [playlistId, reorderedSongIds[i], i]
+        );
+      }
+
       await db.execAsync('COMMIT');
       
       const now = new Date().toISOString();

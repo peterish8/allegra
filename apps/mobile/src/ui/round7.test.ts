@@ -75,7 +75,8 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
 
   // 1.43.0 (owner's Spotify screenshot): the bar has no slab of its own; the page fades to black under it.
   it('gives the mini player its own cover glow and fades the page to black under the bar', () => {
-    expect(read('components/PillPlayer.tsx')).toMatch(/<MiniPlayerGlow uri=\{coverImageUri\} active \/>/);
+    // The pill stays mounted under the player and the Create sheet, so the glow rests there (was: unmounted, 1.43.0).
+    expect(read('components/PillPlayer.tsx')).toMatch(/<MiniPlayerGlow uri=\{coverImageUri\} active=\{!sheetUp && !createOpen\} \/>/);
     expect(read('components/PillPlayer.tsx')).not.toMatch(/shell: \{[^}]*backgroundColor/);
     const bar = read('components/V6TabBar.tsx');
     expect(bar).not.toMatch(/<ShellMaterial/);
@@ -189,7 +190,9 @@ describe('item 2: action sheets open on their identity', () => {
   });
 
   it('uses the identity header on the song and mix sheets', () => {
-    expect(read('components/stream/useStreamSongActions.tsx')).toMatch(/<SheetIdentity /);
+    // Stream's long press opens the one song actions sheet (2026-11-13), which carries the identity header.
+    expect(read('components/stream/useStreamSongActions.tsx')).toMatch(/<MiniSongMenu /);
+    expect(read('components/player/MiniSongMenu.tsx')).toMatch(/<SheetIdentity /);
     expect(read('components/LibraryBottomSheet.tsx')).toMatch(/<SheetIdentity /);
     expect(read('screens/StreamScreen.tsx')).toMatch(/<SheetIdentity title=\{mixActions\.title\}/);
   });

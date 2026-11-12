@@ -17,6 +17,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
+import { createSheetProgress } from '../navigation/sheetProgress';
+import { useShellMenuStore } from '../store/shellMenuStore';
 import { openPlayerSheet } from '../navigation/playerSheet';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
 import CanvasVideoLayer from './CanvasVideoLayer';
@@ -38,7 +40,7 @@ import { useConnect } from '../services/connect/ConnectProvider';
 import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
 import { handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
 import { skipBackward as sharedSkipBackward, skipForward as sharedSkipForward } from '../services/player/skipControls';
-import { beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeRestoredLoad, takeResumePosition, usePlayerStore } from '../store/playerStore';
+import { beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldPlayAfterLoad, takeResumePosition, usePlayerStore } from '../store/playerStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSongsStore } from '../store/songsStore';
 import { diag } from '../utils/diag';
@@ -195,6 +197,8 @@ PlaybackControls.displayName = 'PlaybackControls';
 
 export const MiniPlayer: React.FC = () => {
   const reduceMotion = useReducedMotion();
+  const createOpen = useShellMenuStore(s => s.createOpen);
+  const createDismissStyle = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, createSheetProgress.value * 2) }));
   const connect = useConnect();
   const player = usePlayer();
   const currentSong = usePlayerStore(state => state.currentSong);
@@ -371,10 +375,9 @@ export const MiniPlayer: React.FC = () => {
           // The last-played song restored at launch waits for a tap; anything
           // the listener picked plays. (Keyed to that song: a fresh install
           // used to swallow its first pick because it was the "first load".)
-          const restored = takeRestoredLoad(songId);
-          if (!restored && shouldAutoPlayLoadedSong(songId)) requestPlayback(true);
-          else requestPlayback(false);
-          diag('audio', `pill loaded "${currentSong.title}", ${restored ? 'restored, waits for a tap' : 'play requested'}`);
+          const play = shouldPlayAfterLoad(songId);
+          requestPlayback(play);
+          diag('audio', `pill loaded "${currentSong.title}", ${play ? 'play requested' : 'waits for a tap'}`);
         } catch (error) {
           if (__DEV__) console.error('[MiniPlayer] Failed to sync audio:', error);
         } finally {
@@ -725,7 +728,7 @@ export const MiniPlayer: React.FC = () => {
       await player.seekTo(time);
       await notifyOwnedLuvLinkUserSeek(time);
       notifyLuvLinkUserSeek(time);
-      if (wasPlaying && usePlayerStore.getState().isPlaying && usePlayerStore.getState().currentSongId === seekSongId) player.play();
+      if (wasPlaying && usePlayerStore.getState().isPlaying && usePlayerStore.getState().currentSongId === seekSongId) requestPlayback(true);
     } catch (error) {
       if (usePlayerStore.getState().currentSongId === seekSongId) positionSV.value = previousPosition;
       throw error;
@@ -735,7 +738,7 @@ export const MiniPlayer: React.FC = () => {
         isSeeking.value = false;
       }, 280);
     }
-  }, [player]);
+  }, [player, requestPlayback]);
 
 
 
@@ -793,7 +796,7 @@ export const MiniPlayer: React.FC = () => {
   ];
 
   return (
-    <Animated.View style={[classicShellStyle, animatedClassicShellStyle]}>
+    <Animated.View pointerEvents={createOpen ? "none" : "auto"} accessibilityElementsHidden={createOpen} importantForAccessibility={createOpen ? "no-hide-descendants" : "auto"} style={[classicShellStyle, animatedClassicShellStyle, createDismissStyle]}>
       {/* Classic background — clipped to the player shell only (no bleed into nav). */}
         <View
           pointerEvents="none"

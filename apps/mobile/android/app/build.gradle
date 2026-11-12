@@ -209,7 +209,10 @@ configurations {
 
 dependencies {
     // Media3 ExoPlayer & Session dependencies for Module A. All three move together (one release train).
-    def media3 = "1.11.1"
+    // Must equal the version expo-video and expo-audio are built for: an APK holds one Media3, and
+    // expo-video ships its own LoadControl. Under 1.11.1 that class lacked getAllocator(PlayerId), so the
+    // first canvas video killed the app (AbstractMethodError on ExoPlayer:Playback). media3Version.test.ts.
+    def media3 = "1.8.0"
     implementation "androidx.media3:media3-exoplayer:$media3"
     implementation "androidx.media3:media3-session:$media3"
     implementation "androidx.media3:media3-ui:$media3"

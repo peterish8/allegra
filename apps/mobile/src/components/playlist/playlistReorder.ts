@@ -24,6 +24,19 @@ export const EDIT_ENTRY = {
 
 export type ReorderSaveResult = 'saved' | 'skipped' | 'restored';
 
+/**
+ * A playlist's rows in the order the listener dragged them into (owner, 2026-11-13: a reorder "goes back to the
+ * old order"). The screen lists downloaded songs and then account-only songs, and only the first kind had a saved
+ * position. Rows with a saved place come in that order; rows added since keep their own order after them.
+ */
+export function applySavedOrder<T extends { readonly id: string }>(rows: readonly T[], saved: readonly string[]): T[] {
+  if (saved.length === 0) return [...rows];
+  const place = new Map(saved.map((id, index) => [id, index]));
+  const known = rows.filter(row => place.has(row.id)).sort((a, b) => (place.get(a.id) ?? 0) - (place.get(b.id) ?? 0));
+  const added = rows.filter(row => !place.has(row.id));
+  return [...known, ...added];
+}
+
 export interface ReorderSaveDeps {
   /** Writes the playlist's order. */
   readonly persist: (orderedIds: readonly string[]) => Promise<void>;
