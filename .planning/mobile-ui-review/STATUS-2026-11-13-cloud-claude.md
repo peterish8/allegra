@@ -8,7 +8,7 @@ branch `backup/pre-kotlin-migration-2026-11-12` (= `e2699dc`). Nothing below tou
 | Slice | Version | PR | Evidence in hand | Not proved |
 |---|---|---|---|---|
 | Album and artist screens | 1.53.0 | 89 | tsc 0, eslint 0 errors, jest 187 suites / 1491 tests, CI green incl. Kotlin unit tests, APK build, emulator launch gate | the new screens on a screen |
-| Discovery polish merged onto 89 | 1.54.0 | 90 | jest, tsc, eslint locally; CI | the Kotlin native transport has never been compiled by anyone here (see below); Quick Picks, Daily Discovery, search categories on a screen |
+| Discovery polish merged onto 89 | 1.54.0 | 90 | jest, tsc, eslint locally; CI | the Kotlin native transport compiles in CI (see below) but its behaviour is unseen; Quick Picks, Daily Discovery, search categories on a screen |
 | One song menu | 1.55.0 | 90 | `songActionRows.test` (model, 12), `MiniSongMenu.test` (presenter), jest | the sheet from a playlist row, a search row, the mini player, Now Playing ellipsis |
 | Playlist header | 1.56.0 | 90 | `findReveal.test`, source guards | the pull-down on a device (Android overscroll, FlashList scroll restore, short lists) |
 | Scan result card | 1.57.0 | 90 | `scanFlow.test`, `scanResolve.test`, `sharedCache.test` | a real scan of an app-made code; the animation |
@@ -34,10 +34,10 @@ branch `backup/pre-kotlin-migration-2026-11-12` (= `e2699dc`). Nothing below tou
 
 ## Kotlin: what was and was not verified
 
-A Gradle `:app:compileDebugKotlin` was attempted twice in the cloud container (Android SDK 36 installed). Both stopped
-at dependency resolution with HTTP 429 from Maven Central, before any Kotlin was compiled. That is a resolution
-failure, not a pass. CI's "Kotlin unit tests" job on PR 89 passed (it compiles the module without the discovery
-branch's `NativeTransport*` files); the run on PR 90 is the first CI compile of them.
+Two local Gradle attempts in the cloud container stopped at dependency resolution (HTTP 429 from Maven Central), so
+they proved nothing. CI did compile it: on PR 90 at `93bbdaa` the workflows CI, Mobile CI (Kotlin unit tests) and
+Mobile APK (Build APK, then "Opens on an emulator", the launch gate) all passed. That covers the discovery branch's
+`NativeTransport*` files compiling and the app launching on an emulator. It does not show any screen working.
 
 ## Owner device checklist (CI APK from PR 90, "LuvLyrics-apk" artifact)
 
