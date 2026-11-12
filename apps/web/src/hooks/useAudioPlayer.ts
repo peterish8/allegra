@@ -8,7 +8,7 @@ import { nextInOrder, orderWithAppended, shuffledOrder, withUpcoming } from '../
 import { songIdentity, uniqueByIdentity } from '../lib/songIdentity';
 import { clamp } from '../lib/utils';
 import { activeWebSearchAttempt, hasSelectedPlaybackProgress, matchesSelectedPlaybackSource, webPerformanceTrace } from '../lib/performanceTrace';
-import { isCurrentMediaGeneration, playbackRejectionMessage, reopensQueueEnd, shownAsPlaying, SOURCE_SWAP_TIMEOUT_MS, takeNextUnvisited, type RecoveryCursor } from '../lib/audioPlayerRules';
+import { afterSourceSwap, isCurrentMediaGeneration, playbackRejectionMessage, reopensQueueEnd, shownAsPlaying, SOURCE_SWAP_TIMEOUT_MS, takeNextUnvisited, type RecoveryCursor } from '../lib/audioPlayerRules';
 import { decidePrevious, manualNext, nextDistinct, reshuffleOrder, shufflePlayOrder } from '../lib/skipRules';
 
 export type RepeatMode = 'off' | 'all' | 'one';
@@ -430,7 +430,16 @@ export function useAudioPlayer(): AudioPlayerState {
     }
     setIsBuffering(false);
     // The intent is read again here: a pause during the switch (it can take a while) must stay paused.
-    if (wasPlaying && playbackIntentRef.current) await requestPlayback(true);
+    const next = afterSourceSwap({ opened: outcome === 'ready', wasPlaying, wantsPlay: playbackIntentRef.current });
+    if (next === 'dead') {
+      audio.pause();
+      playbackIntentRef.current = false;
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      setError('This track could not be loaded. Try another song.');
+      return false;
+    }
+    if (next === 'resume') await requestPlayback(true);
     return switched;
   }, [requestPlayback]);
 
