@@ -41,6 +41,11 @@ const defaultDeps: BrowsePlayDeps = {
   append: songs => StreamService.append(songs),
 };
 
+/** The catalog song with the audio for one YouTube Music song (a long press needs it before its actions). */
+export async function resolveYTSong(song: YTSong, deps: Pick<BrowsePlayDeps, 'resolveOne'> = defaultDeps): Promise<UnifiedSong | null> {
+  return deps.resolveOne(song).catch(() => null);
+}
+
 /** Plays `songs` from `index`. Resolves false when nothing near the start has catalog audio. */
 export async function playYTSongs(
   songs: YTSong[],

@@ -47,7 +47,8 @@ import { useAccount } from '../services/account/AccountProvider';
 import { getRecommendations, toPlayableAllegraSong } from '../services/account/allegraApi';
 import { tasteSeeds } from '../services/luvsTaste';
 import { StreamService } from '../services/stream/StreamService';
-import { playYTSongs } from '../services/stream/browsePlay';
+import { playYTSongs, resolveYTSong } from '../services/stream/browsePlay';
+import { catalogShelfTitle } from '../services/stream/shelfTitles';
 import { preloadedFeedCache, preloadFeedCache, writeFeedCache } from '../services/stream/feedCache';
 import { buildHomeFeed, HomeFeed } from '../services/stream/homeFeed';
 import { shouldLoadMoreHome } from '../services/stream/homePagination';
@@ -384,6 +385,15 @@ const StreamScreen: React.FC = () => {
   // A long press opens the song's actions (Play next first), as everywhere in the app.
   const songActions = useStreamSongActions({ onDone: setToast });
   const queueNext = songActions.open;
+  // A long press on a YouTube Music song: its catalog audio first (the same lookup a tap makes), then the sheet.
+  const openSongActions = songActions.open;
+  const ytActions = useCallback(async (song: YTSong) => {
+    setPendingSong(song.videoId);
+    const resolved = await resolveYTSong(song);
+    setPendingSong(null);
+    if (resolved) openSongActions(resolved);
+    else setToast('That one isn’t available to stream');
+  }, [openSongActions]);
   const [mixActions, setMixActions] = useState<MixParams | null>(null);
   const openMix = useCallback((mix: MixParams) => navigation.navigate('Browse', { screen: 'Mix', params: mix }), [navigation]);
   const playMix = useCallback((mix: MixParams, random = false) => {
@@ -561,14 +571,17 @@ const StreamScreen: React.FC = () => {
     for (const related of feed?.similar ?? []) if (related.songs.length) mixes.push({ title: `More like ${related.artist}`, kind: 'stream', songs: related.songs });
     if (feed?.forgottenFavorites.length) mixes.push({ title: 'Forgotten favourites', kind: 'local', songs: feed.forgottenFavorites });
     if (mixes.length) add('made-for-you', <><SectionHeading title="Made for you" /><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: Space.sm }}>
-      {mixes.map(mix => <CollectionCard key={mix.title} title={mix.title} meta={`Mix ? ${mix.songs.length} songs`} uri={mix.kind === 'stream' ? mix.songs[0].highResArt : mix.songs[0].coverImageUri} onPress={() => openMix(mix)} onActions={() => setMixActions(mix)} />)}
+      {mixes.map(mix => <CollectionCard key={mix.title} title={mix.title} meta={`Mix · ${mix.songs.length} songs`} uri={mix.kind === 'stream' ? mix.songs[0].highResArt : mix.songs[0].coverImageUri} onPress={() => openMix(mix)} onActions={() => setMixActions(mix)} />)}
     </ScrollView></>);
-    if (followedShelf) add('your-artists', <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} />);
-    (ytHome?.shelves ?? []).forEach((shelf, index) => add(`catalog:${index}:${shelf.title}`, <BrowseShelf shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />));
+    if (followedShelf) add('your-artists', <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} onSongActions={ytActions} />);
+    // YouTube Music's own "Quick picks" sits under ours: it gets a title of its own (shelfTitles).
+    const ours = ['Jump back in', quick.length ? 'Quick picks' : '', mixes.length ? 'Made for you' : '', followedShelf?.title ?? ''];
+    (ytHome?.shelves ?? []).forEach((shelf, index) => add(`catalog:${index}:${shelf.title}`,
+      <BrowseShelf shelf={{ ...shelf, title: catalogShelfTitle(shelf.title, ours) }} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} onSongActions={ytActions} />));
     if (loading && !quick.length && !ytHome?.shelves.length) add('loading', <View style={styles.skeleton}>{[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="100%" height={64} />)}</View>);
     if (!loading && !quick.length && !ytHome?.shelves.length) add('catalog-unavailable', <View style={styles.emptyCard}><UiText variant="lead">Can\u2019t reach the catalog</UiText><UiText tone="secondary">Pull down to try again. Your saved songs still play.</UiText><PrimaryButton label="Open Library" icon="library-outline" onPress={openDownloads} /></View>);
     return sections;
-  }, [feed, track, play, queueNext, accountPicks, save, openMix, followedShelf, openItem, playYT, ytHome, pendingSong, loading, openDownloads, playlists, recentView, navigation]);
+  }, [feed, track, play, queueNext, accountPicks, save, openMix, followedShelf, openItem, playYT, ytActions, ytHome, pendingSong, loading, openDownloads, playlists, recentView, navigation]);
 
   const chipSections = useMemo(() => {
     if (!ytChip || searchActive) return [];
@@ -581,10 +594,10 @@ const StreamScreen: React.FC = () => {
     (chipShelves ?? []).forEach((shelf, index) => sections.push({
       id: `chip:${index}:${shelf.title}`,
       kind: 'content',
-      content: <BrowseShelf shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />,
+      content: <BrowseShelf shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} onSongActions={ytActions} />,
     }));
     return sections;
-  }, [chipShelves, clearSearch, mixSection, openItem, pendingSong, playYT, searchActive, ytChip]);
+  }, [chipShelves, clearSearch, mixSection, openItem, pendingSong, playYT, ytActions, searchActive, ytChip]);
 
   const searchSections = useMemo(() => {
     if (!searchActive) return [];
