@@ -26,7 +26,7 @@ source_of_truth:
   cover and a light scrim (`MiniPlayerGlow`, `miniPlayerSurface`, `ShellFrost.mini*`). Low-end phones and Battery
   Saver keep the glow but hold it still; only a song with no cover gets the plain solid. 1.43.0 (Spotify's): a
   floating rounded card inset from the screen edges, with Devices, the heart and play on the right; Next is the
-  sideways swipe (and TalkBack's "Next song" action). The navigation keeps `ShellMaterial`; its native tabs read as
+  sideways swipe (and TalkBack's "Next song" action). The navigation keeps `ShellMaterial` (removed in 1.48.0: nothing imported it); its native tabs read as
   "Tab" to TalkBack.
 - **Navigation (1.42.0, owner: Spotify's positions, plan https://claude.ai/artifact/PUmVFqesXNjCtST8Ntaeqx).** Tabs
   Stream, Search, Library, Create. Create raises a rounded sheet above the bar over a dimmed page (Luvs, Playlist,
@@ -82,7 +82,7 @@ source_of_truth:
   text; controls keep their targets.
 - **Row targets.** The main area (cover, text, blank space) is one target that plays the song. Download (Stream and
   Search, restored from 1.38.1) and ⋮ are their own 48dp targets after it, with no slop over the row.
-- **Bottom surface.** The mini player and the navigation are one frosted surface (`ShellMaterial` with `above`/`below`,
+- **Bottom surface.** The mini player and the navigation are one frosted surface (`ShellMaterial` (removed in 1.48.0: nothing imported it) with `above`/`below`,
   so both halves stretch the same cover with no seam): a 16% blurred cover hint under an 84% dark tint
   (`ShellFrost`); the page shows faintly through. Opaque `#16181D` under Reduce Transparency, Battery Saver, low-end
   devices or with no cover. Only the cover bitmap is blurred, never the scrolling content.
@@ -259,7 +259,7 @@ neighbours with hit slop. `Chip` is a frosted capsule; selected is solid white w
 
 `Panel` is opaque raised by default. Supplying a player artwork palette opts into the
 existing frosted material. Never use live list blur on persistent chrome. The bitmap
-shell and top artwork glow are implemented by `ShellMaterial` and `AppScreen`. Reduced-transparency,
+shell and top artwork glow are implemented by `ShellMaterial` (removed in 1.48.0: nothing imported it) and `AppScreen`. Reduced-transparency,
 Battery Saver and low-end devices use the opaque fallback.
 
 ### Sheets (`Sheet`)
@@ -335,7 +335,7 @@ navigation plus the safe inset (the Kotlin V6 bar's `V6_BAR_DP` matches `NAV_BAR
 text the mini row grows to 72dp. `v6Shell.ts` is the geometry source; `useBottomClearance()` reserves
 only visible mini-player space, including Connect remote playback. Hide the shell for the keyboard.
 
-`ShellMaterial` (the navigation) and `MiniPlayerGlow` (the mini player) blur only a tiny copy of the cover. Neither
+`ShellMaterial` (removed in 1.48.0: nothing imported it) (the navigation) and `MiniPlayerGlow` (the mini player) blur only a tiny copy of the cover. Neither
 blurs scrolling content. Both use the opaque fill for reduced transparency, Battery Saver, low-end devices, or missing
 artwork. The old App background, Mini player background and Bottom bar style settings are retired.
 
@@ -457,7 +457,7 @@ to `tap` and `toggle`.
 
 - One gesture per component, worklets on the UI thread, cross to JS only when a
   discrete value changes (the lyric line).
-- `DynamicAura` gets `active={isFocused}` so hidden screens stop their shader.
+- `DynamicAura` (removed in 1.48.0: nothing imported it) gets `active={isFocused}` so hidden screens stop their shader.
 - Lists over ~30 rows use FlashList.
 - Blur thumbnails, not full covers.
 - Rows respond on the first tap — no multi-tap timers in front of the common case.
@@ -504,7 +504,7 @@ can't blur: "frosted" there means a dark translucent fill.
 
 ## 10. Checklist for a new screen
 
-1. Dark room: `Signal.bg`, `DynamicAura` (with `active={isFocused}`) or a
+1. Dark room: `Signal.bg`, `DynamicAura` (removed in 1.48.0: nothing imported it) (with `active={isFocused}`) or a
    cheap-blur backdrop — not flat black.
 2. `PageHeader` title on the gutter (`GUTTER`); `IconButton`s for actions.
 3. Shelves with `SectionHeading`; rows with `ListRow`; menus and pickers in a
