@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert } from 'react-native';
 import { usePlayer } from '../contexts/PlayerContext';
-import { diag } from '../utils/diag';
-import { usePlayerStore, beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeResumePosition } from '../store/playerStore';
+import { loadForNowPlaying } from '../playback/nowPlayingLoad';
+import { usePlayerStore } from '../store/playerStore';
 import { handleOwnedLuvLinkSeek, handleOwnedLuvLinkToggle, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
 import { skipBackward as sharedSkipBackward, skipForward as sharedSkipForward } from '../services/player/skipControls';
 import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
@@ -23,7 +23,6 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
   const showTransliteration = usePlayerStore(state => state.showTransliteration);
   const updateCurrentSong = usePlayerStore(state => state.updateCurrentSong);
   const loadedAudioId = usePlayerStore(state => state.loadedAudioId);
-  const setLoadedAudioId = usePlayerStore(state => state.setLoadedAudioId);
   const storePlaying = usePlayerStore(state => state.isPlaying);
   const requestPlayback = usePlayerStore(state => state.requestPlayback);
 
@@ -31,7 +30,6 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
   const addRecentArt = useArtHistoryStore(state => state.addRecentArt);
 
   const flatListRef = useRef<SynchronizedLyricsRef>(null);
-  const didAutoPlayRef = useRef(false);
   const [showCoverSearch, setShowCoverSearch] = useState(false);
   // Apple Music (and Echo) open on the cover — where the canvas plays —
   // and lyrics are one tap away. Opening on lyrics hid the canvas entirely.
@@ -42,63 +40,26 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
   const controlsVisible = true;
   const animatedStyle = { opacity: 1 } as const;
 
-  // Song loading
+  // Song loading (rules in playback/nowPlayingLoad: a song that is already loaded is left exactly as it is)
   useEffect(() => {
     const load = async () => {
       try {
-        const targetSongId = songId;
-        if (currentSong?.id && currentSong.id !== targetSongId) return;
-
-        let songToPlay = currentSong?.id === targetSongId ? currentSong : null;
-        if (!songToPlay || !songToPlay.audioUri) {
-          if (__DEV__) console.log('[NowPlaying] Fetching song from DB...');
-          songToPlay = await queries.getSongById(targetSongId);
-        }
-
-        if (!songToPlay?.audioUri) {
+        const result = await loadForNowPlaying({ songId, currentSong, loadedAudioId, player, fetchSong: queries.getSongById });
+        if (result.kind === 'no-audio') {
           Alert.alert('No audio', 'This song has no audio file attached.');
           return;
         }
+        if (result.kind !== 'ready') return;
 
-        if (loadedAudioId === targetSongId) {
-          if (__DEV__) console.log('[NowPlaying] Audio already loaded');
-          // Resume only the first time the screen opens on an already-loaded
-          // track. This effect re-runs on every store change, so resuming
-          // unconditionally here fought the user's own pause.
-          if (!didAutoPlayRef.current) {
-            didAutoPlayRef.current = true;
-            if (!shouldAutoPlayLoadedSong(targetSongId)) requestPlayback(false);
-            else if (!usePlayerStore.getState().isPlaying) requestPlayback(true);
-          }
-        } else {
-          if (!beginAudioLoad(targetSongId)) return;
-          if (__DEV__) console.log('[NowPlaying] Loading audio:', songToPlay.title);
-          // The song is named: a load keeps the queue it sits in (and never loads another song's address).
-          await player?.replace(songToPlay.audioUri, songToPlay);
-          // Give up only if another song took over while this one loaded. A
-          // dependency change (the lyrics landing mid-load) re-runs this effect,
-          // and bailing on `cancelled` here left the song loaded but never
-          // started: the re-run couldn't claim the load that was still held.
-          if (usePlayerStore.getState().currentSongId !== targetSongId) { endAudioLoad(targetSongId); return; }
-          setLoadedAudioId(targetSongId);
-          prepareNextInQueue();
-          const resumeAt = takeResumePosition(targetSongId);
-          if (resumeAt !== null) playerControls.seekTo(resumeAt);
-          didAutoPlayRef.current = true;
-          requestPlayback(shouldAutoPlayLoadedSong(targetSongId));
-          diag('audio', `player loaded "${songToPlay.title}", play requested`);
-          endAudioLoad(targetSongId);
-        }
-
+        const songToPlay = result.song;
         if (!songToPlay.lyrics || songToPlay.lyrics.length === 0) {
           if (__DEV__) console.log('[NowPlaying] Hydrating lyrics in background...');
-          const fullSong = await queries.getSongById(targetSongId);
+          const fullSong = await queries.getSongById(songId);
           if (fullSong && fullSong.lyrics.length > 0) {
             updateCurrentSong({ lyrics: fullSong.lyrics, lyricSource: (fullSong.lyricSource || 'plain') as any });
           }
         }
       } catch (error) {
-        endAudioLoad(songId);
         if (__DEV__) console.error('Failed to load song:', error);
         Alert.alert('Error', 'Could not load audio file.');
       }
@@ -107,7 +68,7 @@ export function useNowPlayingLogic(songId: string, initialLyrics = false) {
     // storePlaying is deliberately not a dep — this effect loads audio, it must
     // never react to play/pause state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [songId, currentSong?.id, currentSong?.audioUri, currentSong?.lyrics?.length, loadedAudioId, player, setLoadedAudioId, updateCurrentSong]);
+  }, [songId, currentSong?.id, currentSong?.audioUri, currentSong?.lyrics?.length, loadedAudioId, player, updateCurrentSong]);
 
   // Lyrics processing
   const processedLyrics = React.useMemo(() => {
