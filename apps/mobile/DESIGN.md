@@ -28,6 +28,11 @@ source_of_truth:
   floating rounded card inset from the screen edges, with Devices, the heart and play on the right; Next is the
   sideways swipe (and TalkBack's "Next song" action). The navigation keeps `ShellMaterial` (removed in 1.48.0: nothing imported it); its native tabs read as
   "Tab" to TalkBack.
+- **Mini-player song actions (1.50.0, owner).** Replace the mini player's phone/Devices icon with three dots. They
+  open a dedicated song-actions sheet over the current page: song identity, a larger full-width Download action,
+  Like and Share shortcuts, then grouped playlist, playback, lyrics, song and sound options. Keep download progress
+  and saved state live; player-specific tools open their existing owner. Remote songs show only actions that apply
+  without changing local playback. Device switching remains available from the Stream header and inside this sheet.
 - **Navigation (1.42.0, owner: Spotify's positions, plan https://claude.ai/artifact/PUmVFqesXNjCtST8Ntaeqx).** Tabs
   Stream, Search, Library, Create. Create raises a rounded sheet above the bar over a dimmed page (Luvs, Playlist,
   Blend, LuvLink) and turns into a white close disc. Your picture sits at the top left of Stream, Search and Library
