@@ -42,9 +42,12 @@ import { Motion } from '../constants/allegraTheme';
 import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
 import { useNowPlayingLogic } from '../hooks/useNowPlayingLogic';
 import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
-import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenVelocity } from '../navigation/playerSheet';
+import { DISMISS_DISTANCE, DISMISS_VELOCITY, takeOpenTracking, takeOpenVelocity } from '../navigation/playerSheet';
+import { cardCoverRect, heroCoverRect, playerContentOpacity, settleTarget } from '../navigation/playerTransition';
 import { shouldCloseSheet } from '../navigation/sheetClose';
-import { playerSheetProgress } from '../navigation/sheetProgress';
+import { playerDrag, playerSheetProgress } from '../navigation/sheetProgress';
+import CoverGhost from '../components/player/CoverGhost';
+import { heroHeight as playerHeroHeight } from '../components/player/AppleBackdrop';
 import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
 import { nextSwipeIndex, previousSwipeAction } from '../playback/swipeRule';
@@ -107,10 +110,24 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // Opened out of the system island: its native launch surface grows over the app, so the sheet is
   // already open in the first frame instead of rising a second time inside it.
   const openedOpen = route.params.instant === true;
-  const sheetY = useSharedValue(openedOpen ? 0 : restY);
+  // Fluid player (Settings, off by default): opened under a finger still dragging on the mini player. The sheet then
+  // starts where the finger is and follows it (below), instead of springing open from the pill.
+  const fluid = useSettingsStore(s => s.fluidPlayer);
+  const openedTracking = useRef(takeOpenTracking() && fluid && playerDrag.tracking.value).current;
+  const tracked = useSharedValue(openedTracking);
+  const sheetY = useSharedValue(openedOpen ? 0 : openedTracking ? Math.min(restY, Math.max(0, playerDrag.y.value)) : restY);
   const progress = useDerivedValue(() => Math.min(1, Math.max(0, 1 - sheetY.value / restY)));
   useAnimatedReaction(() => progress.value, p => { playerSheetProgress.value = p; });
   useEffect(() => () => { playerSheetProgress.value = 0; }, []);
+  useEffect(() => {
+    playerDrag.mounted.value = true;
+    return () => { playerDrag.mounted.value = false; };
+  }, []);
+  // The finger's side (PillPlayer writes it while it drags): the sheet's top edge follows it, past the top it resists.
+  useAnimatedReaction(() => playerDrag.y.value, y => {
+    if (!tracked.value) return;
+    sheetY.value = y >= 0 ? Math.min(y, restY) : rubberBand(y, 120);
+  });
 
   // Every way out (grabber, hardware back, a programmatic pop) animates first;
   // the route is only removed once the sheet is back on the pill.
@@ -119,7 +136,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
   useEffect(() => {
     const velocity = takeOpenVelocity();
-    if (openedOpen) return;
+    if (openedOpen || openedTracking) return;
     sheetY.value = reduceMotion
       ? withTiming(0, { duration: 200 })
       : withSpring(0, { ...(velocity > FLICK ? FLING_SPRING : SOFT_SPRING), velocity: -velocity });
@@ -158,6 +175,20 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       ? withTiming(restY, { duration: 200, easing: Easing.out(Easing.quad) }, done)
       : withSpring(restY, { ...(velocity > FLICK ? FLING_SPRING : SOFT_SPRING), ...CLOSE_REST, velocity: Math.max(0, velocity) }, done);
   }, [restY, reduceMotion, finishClose, revealPill, closing, sheetY]);
+
+  // The finger let go on the mini player (fluid player): decide where the sheet was heading, as a drag-down does.
+  useAnimatedReaction(() => playerDrag.ended.value, (count, previous) => {
+    if (previous === null || count === previous || !tracked.value) return;
+    tracked.value = false;
+    const velocity = playerDrag.velocity.value;
+    if (settleTarget(progress.value, velocity, restY) === 'open') {
+      sheetY.value = reduceMotion
+        ? withTiming(0, { duration: 200 })
+        : withSpring(0, { ...(Math.abs(velocity) > FLICK ? FLING_SPRING : SOFT_SPRING), velocity });
+    } else {
+      animateClose(Math.max(0, velocity));
+    }
+  });
 
   // Ambient mode (player menu): back leaves ambient first, then the player.
   const [ambient, setAmbient] = useState(false);
@@ -351,9 +382,16 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       transform: [{ translateY: sheetY.value + (1 - p) * barTop }] as const,
     };
   });
+  // Fluid player: where the moving cover lands. The Apple style's hero, or the artwork card; the full-bleed cover of
+  // the card styles has no moving cover yet (it keeps the classic fade).
+  const coverLanding = useSettingsStore(s => (!isCardPlayerBackground(s.playerBackground) && s.appleMusicInspired ? 'hero' : isCoverFull(s.playerBackground, s.appleMusicInspired, s.playerCoverFull) ? null : 'card'));
+  const movingCover = fluid && !reduceMotion && coverLanding !== null;
   const playerFadeStyle = useAnimatedStyle(() => ({
-    opacity: reduceMotion ? 1 : interpolate(progress.value, [0.15, 0.4], [0, 1], Extrapolation.CLAMP),
+    opacity: reduceMotion ? 1 : movingCover ? playerContentOpacity(progress.value) : interpolate(progress.value, [0.15, 0.4], [0, 1], Extrapolation.CLAMP),
   }));
+  const landingRect = coverLanding === 'hero'
+    ? heroCoverRect(windowW, playerHeroHeight(windowW, screenH))
+    : cardCoverRect(windowW, screenH, insets.top + HEADER_CLEARANCE + 24);
   // The page underneath dims on Echo's curve: nothing for the first tenth, then fast, then easing off.
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: PAGE_DIM * Math.min(1, 1.4 * Math.sqrt(Math.max(0, progress.value - 0.1))),
@@ -1023,6 +1061,17 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       </Animated.View>
       </GestureDetector>
       </Animated.View>
+      {movingCover && currentSong ? (
+        <CoverGhost
+          progress={progress}
+          to={landingRect}
+          toRadius={coverLanding === 'hero' ? 0 : 12}
+          fadeOut={coverLanding === 'hero'}
+          uri={currentSong.coverImageUri}
+          title={currentSong.title}
+          artist={currentSong.artist}
+        />
+      ) : null}
     </View>
   );
 };

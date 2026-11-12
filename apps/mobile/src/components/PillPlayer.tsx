@@ -6,14 +6,16 @@ import { PlaybackButton } from '../ui/PlaybackButton';
  * local playback, Connect and LuvLink keep deciding what a skip means. Up opens the player; a tap opens it too.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, I18nManager, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { AccessibilityInfo, Dimensions, I18nManager, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { usePlaybackStatus } from '../hooks/usePlaybackStatus';
-import { useTabBarPushStyle } from '../navigation/sheetProgress';
+import { playerCoverFrom, playerDrag, useTabBarPushStyle } from '../navigation/sheetProgress';
+import { playerSheetRest } from '../navigation/tabs';
+import { useSettingsStore } from '../store/settingsStore';
 import { MINI_COVER_SIZE, SEEK_BAND_HEIGHT, miniRowHeight, shellNavHeight } from '../navigation/v6Shell';
 import { miniPlayerLabel } from '../playback/miniPlayerLabel';
 import { miniSwipe, swipeFollow } from '../playback/miniSwipe';
@@ -31,7 +33,10 @@ import { scrubSeconds } from '../playback/miniScrub';
 
 interface Props {
   title: string; artist?: string; coverImageUri?: string; playing: boolean; bottom: number; sheetUp?: boolean;
-  onOpen: (velocity?: number) => void; onTogglePlay: () => void; onNext: () => void; onPrevious: () => void;
+  onOpen: (velocity?: number) => void;
+  /** Fluid player: open the sheet under a finger that is still dragging. */
+  onOpenTracking?: () => void;
+  onTogglePlay: () => void; onNext: () => void; onPrevious: () => void;
   onSeek?: (time: number) => Promise<void>;
   onRetry?: () => void;
   remote?: boolean;
@@ -45,7 +50,7 @@ interface Props {
 const SKIP_SETTLE_MS = 1200;
 
 const time = (value: number) => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
-export default function PillPlayer({ title, artist, coverImageUri, playing, remote, sheetUp, onOpen, onTogglePlay, onNext, onPrevious, onSeek, onRetry, onDevices, liked, onToggleLike }: Props) {
+export default function PillPlayer({ title, artist, coverImageUri, playing, remote, sheetUp, onOpen, onOpenTracking, onTogglePlay, onNext, onPrevious, onSeek, onRetry, onDevices, liked, onToggleLike }: Props) {
   const { height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
@@ -65,6 +70,21 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   const track = useRef(songId); track.current = songId;
   const gestureSong = useRef(songId);
   const push = useTabBarPushStyle(bottom);
+  // Fluid player (Settings, off by default): a drag up from here opens the sheet at once and the sheet follows the finger.
+  const fluid = useSettingsStore(s => s.fluidPlayer) && !!onOpenTracking;
+  const pillNav = useSettingsStore(s => s.navBarStyle) === 'modern-pill';
+  const { width: windowW } = useWindowDimensions();
+  const restY = playerSheetRest(windowW, Math.max(height, Dimensions.get('screen').height), insets.bottom, pillNav).y;
+  // The pill stays drawn while the finger is down, even once the sheet is up: its drag is what moves the sheet.
+  const [fingerDown, setFingerDown] = useState(false);
+  useAnimatedReaction(() => playerDrag.tracking.value, (now, before) => { if (now !== before) runOnJS(setFingerDown)(now); });
+  const coverRef = useRef<View>(null);
+  const measureCover = () => {
+    coverRef.current?.measureInWindow((x, y, width, h) => {
+      if (width > 0) playerCoverFrom.value = { x, y, width, height: h, radius: Radius.cover };
+    });
+  };
+  const beginTracking = () => { measureCover(); onOpenTracking?.(); };
   const enabled = !!onSeek && Number.isFinite(duration) && duration > 0 && !loading;
   useEffect(() => { seekGeneration.current++; gestureSong.current = songId; }, [songId, loading]);
   const commit = async (seconds: number, startedOn = track.current) => {
@@ -163,7 +183,34 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
       } else resetGesture();
     })
     .onFinalize((_e, success) => { 'worklet'; if (!success && !skipInFlight.value) resetGesture(); });
-  const open = Gesture.Pan().activeOffsetY(-20).failOffsetX([-20, 20]).runOnJS(true).onEnd(e => { if (e.translationY < -24) onOpen(e.velocityY); });
+  const classicOpen = Gesture.Pan().activeOffsetY(-20).failOffsetX([-20, 20]).runOnJS(true).onEnd(e => { if (e.translationY < -24) onOpen(e.velocityY); });
+  const fluidOpen = Gesture.Pan().activeOffsetY(-10).failOffsetX([-20, 20])
+    .onStart(() => {
+      'worklet';
+      playerDrag.y.value = restY;
+      playerDrag.tracking.value = true;
+      runOnJS(beginTracking)();
+    })
+    .onUpdate(e => {
+      'worklet';
+      playerDrag.y.value = restY + e.translationY;
+    })
+    .onEnd(e => {
+      'worklet';
+      playerDrag.velocity.value = e.velocityY;
+      playerDrag.tracking.value = false;
+      playerDrag.ended.value += 1;
+    })
+    .onFinalize((_e, success) => {
+      'worklet';
+      // Cancelled by the system (a call, another gesture): let the sheet settle from where it is.
+      if (!success && playerDrag.tracking.value) {
+        playerDrag.velocity.value = 0;
+        playerDrag.tracking.value = false;
+        playerDrag.ended.value += 1;
+      }
+    });
+  const open = fluid ? fluidOpen : classicOpen;
   const infoGesture = Gesture.Race(open, swipe);
   const following = useAnimatedStyle(() => ({ opacity: fade.value, transform: [{ translateX: shift.value }] }));
   const createOpen = useShellMenuStore(s => s.createOpen);
@@ -173,7 +220,7 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   }, [createOpen, dimmed]);
   const createDim = useAnimatedStyle(() => ({ opacity: 1 - CREATE_SCRIM_OPACITY * dimmed.value }));
 
-  if (sheetUp || keyboard) return null;
+  if ((sheetUp && !fingerDown) || keyboard) return null;
   const rowHeight = miniRowHeight(fontScale);
   // The Create sheet is up: the pill is part of the dimmed page under it, and a tap on it reaches the page's scrim
   // (which closes the sheet) instead of opening the player.
@@ -196,7 +243,7 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
           onAccessibilityAction={e => { const a = e.nativeEvent.actionName; if (a === 'next') onNext(); else if (a === 'previous') onPrevious(); else onOpen(); }}
           style={[styles.info, { height: rowHeight }]}>
           <Animated.View style={[styles.follow, following]}>
-            <View style={styles.cover}><Artwork uri={displayed.coverImageUri} title={displayed.title} artist={displayed.artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></View>
+            <View ref={coverRef} onLayout={fluid ? measureCover : undefined} style={styles.cover}><Artwork uri={displayed.coverImageUri} title={displayed.title} artist={displayed.artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></View>
             {/* 1.43.0 (owner's Spotify screenshot): the title in bold, scrolling slowly when it doesn't fit, with the
                 artist on its own line under it. */}
             <View style={styles.copy}>
