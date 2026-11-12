@@ -2,6 +2,7 @@
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
 
 /** Normalize and compare public SHA-256 certificate fingerprints. */
 export function normalizeSha256Fingerprint(value) {
@@ -16,10 +17,30 @@ export function matchesExpectedFingerprint(expected, actual) {
   return expectedFingerprint !== null && actualFingerprint !== null && expectedFingerprint === actualFingerprint;
 }
 
+/** apksigner can label signers with an index or SDK range. Source stamps are not APK signers. */
+export function apkSignerFingerprints(output) {
+  return output.split(/\r?\n/).filter(line => !/source\s*stamp/i.test(line)).flatMap(line => {
+    const match = line.match(/^\s*(?:V\d+(?:\.\d+)?\s+)?Signer\b.*?certificate SHA-256 digest:\s*([a-f0-9]{64})\s*$/i);
+    return match ? [match[1].toUpperCase()] : [];
+  });
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const expected = normalizeSha256Fingerprint(process.argv[2]);
-  const actual = normalizeSha256Fingerprint(process.argv[3]);
-  if (!expected || !actual || expected !== actual) {
+  const apkMode = process.argv[2] === '--apk';
+  const expected = normalizeSha256Fingerprint(process.argv[apkMode ? 3 : 2]);
+  let actuals;
+  if (apkMode) {
+    try {
+      const output = execFileSync(process.argv[4], ['verify', '--verbose', '--print-certs', process.argv[5]], { encoding: 'utf8' });
+      actuals = apkSignerFingerprints(output);
+      if (actuals.length === 0) console.error(`apksigner returned no recognized APK signer certificate:\n${output}`);
+    } catch {
+      console.error('apksigner could not verify the APK. Publication is blocked.');
+      process.exit(1);
+    }
+  } else actuals = [normalizeSha256Fingerprint(process.argv[3])];
+  const actual = actuals[0];
+  if (!expected || actuals.length === 0 || actuals.some(value => !value || value !== expected)) {
     console.error('APK signing fingerprint is missing, malformed, or does not match the configured certificate.');
     if (expected) console.error(`Configured SHA-256 fingerprint: ${expected}`);
     if (actual) console.error(`APK SHA-256 fingerprint: ${actual}`);
