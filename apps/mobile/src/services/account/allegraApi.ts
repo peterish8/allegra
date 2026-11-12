@@ -152,6 +152,7 @@ export const toPlayableAllegraSong = (song: AllegraSong): UnifiedSong | null => 
     id: song.id,
     title: song.title,
     artist: song.artist,
+    album: song.album,
     highResArt: song.artwork,
     downloadUrl: streamUrl,
     streamUrl,

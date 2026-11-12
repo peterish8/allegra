@@ -46,7 +46,7 @@ import { useSongsStore } from '../../store/songsStore';
 import type { RootStackScreenProps } from '../../types/navigation';
 import { libraryLookup, matchKey } from '../../utils/downloadState';
 import * as Haptics from '../../utils/haptics';
-import { safeGoBack } from '../../utils/navigationService';
+import { navigationRef, safeGoBack } from '../../utils/navigationService';
 import NowPlayingBackground from '../NowPlayingBackground';
 import NowPlayingControls from '../NowPlayingControls';
 import NowPlayingHeader from '../NowPlayingHeader';
@@ -105,7 +105,12 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
   const fluid = useSettingsStore(s => s.fluidPlayer);
   const revealPill = useCallback(() => setMiniPlayerHiddenSource('NowPlaying', false), [setMiniPlayerHiddenSource]);
   const { holdRoute, sheetY, progress, animateClose, controls: sheetControls } = usePlayerSheetMotion(restY, route.params.instant === true, fluid, reduceMotion, revealPill);
-  useEffect(() => { if (!holdRoute) safeGoBack(navigation); }, [holdRoute, navigation]);
+  const afterClose = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (holdRoute) return;
+    safeGoBack(navigation);
+    const open = afterClose.current; afterClose.current = null; open?.();
+  }, [holdRoute, navigation]);
 
   useFocusEffect(useCallback(() => {
     setMiniPlayerHiddenSource('NowPlaying', true);
@@ -330,6 +335,14 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
                   animatedStyle={undefined}
                   controlsVisible
                   storePlaying={playing}
+                  onAlbumPress={() => {
+                    afterClose.current = () => { if (navigationRef.isReady()) navigationRef.navigate('Main', { screen: 'Browse', params: { screen: 'CatalogAlbum', params: { songRef: song.ref, album: song.album, artist: song.artist, title: song.title } } }); };
+                    animateClose(0);
+                  }}
+                  onArtistPress={() => {
+                    afterClose.current = () => { if (navigationRef.isReady()) navigationRef.navigate('Main', { screen: 'Browse', params: { screen: 'Artist', params: { name: song.artist.split(/,|&/)[0].trim() } } }); };
+                    animateClose(0);
+                  }}
                   currentSongTitle={song.title}
                   currentSongArtist={song.artist}
                   songId={song.ref}

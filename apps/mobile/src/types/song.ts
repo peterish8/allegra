@@ -79,6 +79,7 @@ export type ViewMode = 'grid' | 'list';
  * Both SoundCloud and Audiomack must map to this exact structure
  */
 export interface UnifiedSong {
+  album?: string;
   id: string;
   title: string;
   artist: string;

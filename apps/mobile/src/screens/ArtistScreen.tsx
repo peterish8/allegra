@@ -16,9 +16,10 @@ import { AppScreen } from '../components/AppScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Artwork from '../components/allegra/Artwork';
+import { heroHeight, heroImageUrl } from '../components/playlist/heroFade';
+import { ImmersiveHero, ImmersiveTopBar, useHeroScroll } from '../components/playlist/ImmersiveHero';
 import { RiseIn, Tactile } from '../components/allegra/motion';
 import { BrowseShelf } from '../components/browse/BrowseShelf';
 import { Radius, Signal, TypeScale } from '../constants/allegraTheme';
@@ -30,18 +31,21 @@ import { YTSong } from '../services/ytmusic/parsers';
 import { useFollowedArtistsStore } from '../store/followedArtistsStore';
 import { BrowseStackParamList } from '../types/navigation';
 import * as Haptics from '../utils/haptics';
-import { Button, TextButton } from '../ui';
+import { Button, TextButton, Surface } from '../ui';
 
 type Props = NativeStackScreenProps<BrowseStackParamList, 'Artist'>;
 
 /** The room every part of the page sits in. */
-const ROOM = Signal.bgDeep;
+const ROOM = Surface.immersive;
 
 
 
 const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const bottom = useBottomClearance();
+  const { width, height } = useWindowDimensions();
+  const scroll = useHeroScroll();
+  const hero = heroHeight(width, height);
 
   const [page, setPage] = useState<ArtistPage | null>(null);
   const [failed, setFailed] = useState(false);
@@ -83,10 +87,11 @@ const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
   }, [navigation]);
 
   const openMore = useCallback((shelf: Shelf) => {
-    if (shelf.more?.browseId.startsWith('VL') || shelf.more?.browseId.startsWith('MPRE')) {
-      navigation.push('Collection', { browseId: shelf.more.browseId, title: shelf.title });
-    }
-  }, [navigation]);
+    if (!page) return;
+    const categories = page.sections.filter(section => section.more || section === shelf);
+    navigation.push('ArtistReleases', { artistId: page.browseId, artistName: page.name,
+      selected: Math.max(0, categories.indexOf(shelf)), categories });
+  }, [navigation, page]);
 
 
 
@@ -106,25 +111,10 @@ const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
   }
 
   return (
-    <AppScreen style={[styles.fill, { backgroundColor: ROOM }]}>
-      <ScrollView contentContainerStyle={{ paddingBottom: bottom }} showsVerticalScrollIndicator={false}>
-        <View style={{ paddingTop: insets.top + 64, alignItems: 'center' }}>
-          <Artwork uri={page.thumbnail} title={page.name} size={184} priority="high" style={{ width: 184, height: 184, borderRadius: 92, overflow: 'hidden' }} />
-          <View style={styles.heroText}>
-            <Text style={styles.name} numberOfLines={2} adjustsFontSizeToFit>{page.name}</Text>
-            {page.subscribers || page.monthlyListeners ? (
-              <View style={styles.stats}>
-                {page.monthlyListeners ? (
-                  <View style={styles.stat}>
-                    <View style={styles.statDot} />
-                    <Text style={styles.statText}>{page.monthlyListeners} monthly</Text>
-                  </View>
-                ) : null}
-                {page.subscribers ? <Text style={styles.statText}>{page.subscribers} subscribers</Text> : null}
-              </View>
-            ) : null}
-          </View>
-        </View>
+    <AppScreen staticGlow={false} style={[styles.fill, { backgroundColor: ROOM }]}>
+      <Animated.ScrollView onScroll={scroll.onScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: bottom }} showsVerticalScrollIndicator={false}>
+        <ImmersiveHero uri={heroImageUrl(page.thumbnail)} title={page.name}
+          lines={[page.monthlyListeners ?? '', page.subscribers ?? '']} width={width} height={hero} scrollY={scroll.y} />
 
         <RiseIn index={0}>
           {/* Round 7 item 4: Play is the one filled capsule; Shuffle is a smaller frosted capsule (40 drawn, 48 touch);
@@ -174,11 +164,9 @@ const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
             />
           </RiseIn>
         ))}
-      </ScrollView>
+      </Animated.ScrollView>
 
-      <Tactile onPress={() => navigation.goBack()} wrapperStyle={[styles.backWrap, { top: insets.top + 8 }]} style={styles.back} hitSlop={10} pressScale={0.9} accessibilityRole="button" accessibilityLabel="Back">
-        <Ionicons name="chevron-back" size={22} color={Signal.ink} />
-      </Tactile>
+      <ImmersiveTopBar title={page.name} height={hero} scrollY={scroll.y} topInset={insets.top} onBack={() => navigation.goBack()} />
     </AppScreen>
   );
 };

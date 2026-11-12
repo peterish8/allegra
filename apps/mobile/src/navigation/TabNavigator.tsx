@@ -13,6 +13,8 @@ import { BrowseStackParamList, LibraryStackParamList, TabParamList } from '../ty
 import { V6TabBar } from '../components/V6TabBar';
 import { Motion, Signal } from '../constants/allegraTheme';
 import ArtistScreen from '../screens/ArtistScreen';
+import CatalogAlbumScreen from '../screens/CatalogAlbumScreen';
+import ArtistReleasesScreen from '../screens/ArtistReleasesScreen';
 import BlendJoinScreen from '../screens/BlendJoinScreen';
 import { BlendScreen } from '../screens/BlendScreen';
 import { BlendsScreen } from '../screens/BlendsScreen';
@@ -132,6 +134,8 @@ const BrowseStackScreen: React.FC = () => (
   <BrowseStack.Navigator id="BrowseStack" screenOptions={STACK_OPTIONS}>
     <BrowseStack.Screen name="Mix" component={MixScreen} />
     <BrowseStack.Screen name="Artist" component={ArtistScreen} getId={({ params }) => params?.browseId ?? params?.name} />
+    <BrowseStack.Screen name="CatalogAlbum" component={CatalogAlbumScreen} getId={({ params }) => params?.id ?? params?.songRef ?? params?.album} />
+    <BrowseStack.Screen name="ArtistReleases" component={ArtistReleasesScreen} getId={({ params }) => params?.artistId} />
     <BrowseStack.Screen name="Collection" component={CollectionScreen} getId={({ params }) => params?.browseId} />
   </BrowseStack.Navigator>
 );

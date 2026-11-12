@@ -53,6 +53,8 @@ export type BrowseStackParamList = {
   Mix: MixParams;
   /** By channel id, or by name (looked up on YouTube Music). */
   Artist: { browseId?: string; name?: string };
+  CatalogAlbum: { id?: string; songRef?: string; album?: string; title?: string; artist?: string };
+  ArtistReleases: { artistId: string; artistName: string; selected: number; categories: import('../services/ytmusic/browse').Shelf[] };
   Collection: { browseId: string; title?: string; thumbnail?: string };
 };
 

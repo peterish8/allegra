@@ -63,7 +63,7 @@ import { usePlaybackModesStore } from '../store/playbackModesStore';
 import { playerControls, usePlayerStore } from '../store/playerStore';
 import { isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
 import { sleepLabel, useSleepTimerStore } from '../store/sleepTimerStore';
-import { RootStackScreenProps } from '../types/navigation';
+import { RootStackScreenProps, BrowseStackParamList } from '../types/navigation';
 import { Song } from '../types/song';
 import { diag } from '../utils/diag';
 import * as Haptics from '../utils/haptics';
@@ -110,13 +110,15 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const revealPill = useCallback(() => setMiniPlayerHiddenSource('NowPlaying', false), [setMiniPlayerHiddenSource]);
   const { holdRoute, sheetY, progress, closing, animateClose, controls: sheetControls } = usePlayerSheetMotion(restY, route.params.instant === true, fluid, reduceMotion, revealPill);
   // Where to go once the sheet is gone (the artist line opens their page).
-  const afterClose = useRef<string | null>(null);
+  const afterClose = useRef<{ kind: 'artist'; name: string } | { kind: 'album'; params: BrowseStackParamList['CatalogAlbum'] } | null>(null);
   useEffect(() => {
     if (holdRoute) return;
     safeGoBack(navigation);
-    const artist = afterClose.current;
-    if (artist && navigationRef.isReady()) {
-      navigationRef.navigate('Main', { screen: 'Browse', params: { screen: 'Artist', params: { name: artist } } });
+    const destination = afterClose.current;
+    afterClose.current = null;
+    if (destination && navigationRef.isReady()) {
+      if (destination.kind === 'artist') navigationRef.navigate('Main', { screen: 'Browse', params: { screen: 'Artist', params: { name: destination.name } } });
+      else navigationRef.navigate('Main', { screen: 'Browse', params: { screen: 'CatalogAlbum', params: destination.params } });
     }
   }, [holdRoute, navigation]);
 
@@ -665,10 +667,18 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     if (!artistName || /^unknown artist$/i.test(artistName)) return undefined;
     return () => {
       // First credited artist ("A, B & C" → "A") — that's whose page to open.
-      afterClose.current = artistName.split(/,|&| feat\.? | ft\.? | x /i)[0]?.trim() || artistName;
+      afterClose.current = { kind: 'artist', name: artistName.split(/,|&| feat\.? | ft\.? | x /i)[0]?.trim() || artistName };
       animateClose(0);
     };
   }, [artistName, animateClose]);
+
+  const openAlbum = useCallback(() => {
+    if (!currentSong) return;
+    const origin = currentSong.originId;
+    const ref = fromMobileId(currentSong.id) ?? (origin && parseSongRef(origin) ? origin : undefined);
+    afterClose.current = { kind: 'album', params: { songRef: ref, album: currentSong.album, title: currentSong.title, artist: currentSong.artist } };
+    animateClose(0);
+  }, [currentSong, animateClose]);
 
   // A link can arrive while the player is already open (lyricflow://play?…&lyrics=1,
   // lyricflow://player?sheet=menu, an invite): apply it instead of ignoring it.
@@ -967,6 +977,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           onOpenTimer={() => setSheet('timer')}
           sleepLabel={sleepText}
           onArtistPress={openArtist}
+          onAlbumPress={openAlbum}
           upNext={upNext}
           upNextTop={upNextTop}
           upNextOpen={upNextOpen}

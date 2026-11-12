@@ -8,6 +8,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 import { Space, Surface } from '../../constants/allegraTheme';
 import { IconButton, Text } from '../../ui';
 import Artwork from '../allegra/Artwork';
@@ -33,23 +34,25 @@ interface HeroProps {
 }
 
 export const ImmersiveHero: React.FC<HeroProps> = ({ uri, title, lines, width, height, scrollY, children }) => {
+  const reducedMotion = useReducedMotion();
+  const titleOpacity = scrollY.interpolate({ inputRange: [height * 0.25, height * 0.65], outputRange: [1, 0], extrapolate: 'clamp' });
   // Pulling down stretches the picture from the top; scrolling up moves it at half speed.
   const drift = scrollY.interpolate({ inputRange: [-height, 0, height], outputRange: [-height / 2, 0, height * 0.5], extrapolate: 'clamp' });
   const stretch = scrollY.interpolate({ inputRange: [-height, 0], outputRange: [2, 1], extrapolate: 'clamp' });
   return (
     <View style={styles.wrap}>
-      <View style={{ width, height }}>
-        <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateY: drift }] }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: stretch }] }]}>
+      <View style={[styles.artViewport, { width, height }]}>
+        <Animated.View style={[StyleSheet.absoluteFill, { transform: reducedMotion ? [] : [{ translateY: drift }] }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <Animated.View style={[StyleSheet.absoluteFill, { transform: reducedMotion ? [] : [{ scale: stretch }] }]}>
             <Artwork uri={uri} title={title} size={width} priority="high" style={{ width, height }} />
           </Animated.View>
         </Animated.View>
         <LinearGradient pointerEvents="none" colors={topScrimColors()} locations={topScrimLocations()} style={StyleSheet.absoluteFill} />
         <LinearGradient pointerEvents="none" colors={fadeColors()} locations={fadeLocations()} style={StyleSheet.absoluteFill} />
-        <View style={styles.titleBlock}>
+        <Animated.View style={[styles.titleBlock, { opacity: titleOpacity }]}>
           <Text variant="detail" align="center" numberOfLines={3} accessibilityRole="header">{title}</Text>
           {lines.filter(Boolean).map(line => <Text key={line} variant="secondary" tone="secondary" align="center" numberOfLines={2}>{line}</Text>)}
-        </View>
+        </Animated.View>
       </View>
       {children}
     </View>
@@ -80,6 +83,7 @@ export const ImmersiveTopBar: React.FC<BarProps> = ({ title, height, scrollY, to
 
 const styles = StyleSheet.create({
   wrap: { backgroundColor: Surface.immersive },
+  artViewport: { overflow: 'hidden', backgroundColor: Surface.immersive },
   titleBlock: { position: 'absolute', left: Space.md, right: Space.md, bottom: Space.sm, alignItems: 'center', gap: Space.xs },
   bar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: Space.sm, gap: Space.sm },
   barBacking: { backgroundColor: Surface.immersive },
