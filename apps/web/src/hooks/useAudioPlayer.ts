@@ -8,7 +8,7 @@ import { nextInOrder, orderWithAppended, shuffledOrder, withUpcoming } from '../
 import { songIdentity, uniqueByIdentity } from '../lib/songIdentity';
 import { clamp } from '../lib/utils';
 import { activeWebSearchAttempt, hasSelectedPlaybackProgress, matchesSelectedPlaybackSource, webPerformanceTrace } from '../lib/performanceTrace';
-import { isCurrentMediaGeneration, playbackRejectionMessage, shownAsPlaying, SOURCE_SWAP_TIMEOUT_MS, takeNextUnvisited, type RecoveryCursor } from '../lib/audioPlayerRules';
+import { isCurrentMediaGeneration, playbackRejectionMessage, reopensQueueEnd, shownAsPlaying, SOURCE_SWAP_TIMEOUT_MS, takeNextUnvisited, type RecoveryCursor } from '../lib/audioPlayerRules';
 import { decidePrevious, manualNext, nextDistinct, reshuffleOrder, shufflePlayOrder } from '../lib/skipRules';
 
 export type RepeatMode = 'off' | 'all' | 'one';
@@ -207,6 +207,15 @@ export function useAudioPlayer(): AudioPlayerState {
     if (wasPlaying) await requestPlayback(true);
   }, [duration, requestPlayback]);
 
+  /** A queue that ran out may move on again once an edit gives it a next song. */
+  const reopenQueueEnd = useCallback((): void => {
+    if (reopensQueueEnd({
+      latched: autoAdvancedRef.current,
+      activeGeneration: playbackGenerationRef.current,
+      loadedGeneration: loadedGenerationRef.current,
+    })) autoAdvancedRef.current = false;
+  }, []);
+
   const appendQueue = useCallback((songs: readonly UnifiedSong[]): number => {
     if (songs.length === 0) return 0;
     const current = queueRef.current;
@@ -234,8 +243,9 @@ export function useAudioPlayer(): AudioPlayerState {
     }
     queueRef.current = next;
     setQueue(next);
+    reopenQueueEnd();
     return added.length;
-  }, []);
+  }, [reopenQueueEnd]);
 
   const replaceUpcoming = useCallback((songs: readonly UnifiedSong[]): void => {
     const current = currentSongRef.current;
@@ -249,7 +259,8 @@ export function useAudioPlayer(): AudioPlayerState {
     }
     queueRef.current = next;
     setQueue(next);
-  }, []);
+    reopenQueueEnd();
+  }, [reopenQueueEnd]);
 
   const advanceToNext = useCallback((afterLoadFailure = false): void => {
     const song = currentSongRef.current;
@@ -444,12 +455,14 @@ export function useAudioPlayer(): AudioPlayerState {
       : [];
     setShuffleOrder([...shuffleOrderRef.current]);
     setShuffle(shuffleRef.current);
-  }, []);
+    reopenQueueEnd();
+  }, [reopenQueueEnd]);
 
   const cycleRepeat = useCallback((): void => {
     repeatRef.current = repeatRef.current === 'off' ? 'all' : repeatRef.current === 'all' ? 'one' : 'off';
     setRepeat(repeatRef.current);
-  }, []);
+    reopenQueueEnd();
+  }, [reopenQueueEnd]);
 
   const toggleMute = useCallback((): void => {
     const audio = audioRef.current;

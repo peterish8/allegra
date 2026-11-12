@@ -28,6 +28,16 @@ export function shownAsPlaying(input: { paused: boolean; wantsPlay: boolean; sho
 }
 
 /** A source switch (karaoke) that has not opened by now has failed. */
+/**
+ * Whether the "already moved on" latch is a queue that ended and may move on again. The latch is
+ * set when a song advances and when the queue runs out; an edit that adds songs or changes repeat
+ * or shuffle gives an ended queue a next song, so it clears it. While a move to the next song is
+ * still loading (the generations differ) the latch stays: it stops the old source advancing twice.
+ */
+export function reopensQueueEnd(input: { latched: boolean; activeGeneration: number; loadedGeneration: number }): boolean {
+  return input.latched && input.activeGeneration === input.loadedGeneration;
+}
+
 export const SOURCE_SWAP_TIMEOUT_MS = 15_000;
 
 export function playbackRejectionMessage(errorName: string): string {
