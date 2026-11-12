@@ -141,6 +141,20 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
     finally { checkBusy.current = false; setChecking(false); }
   }, []);
 
+  // The app-wide watcher (services/updateWatcher) looks more often while this panel is open, and when it finds a new
+  // build the store changes: refresh what this panel shows, so an update that lands now appears without a tap.
+  const availableCommit = useUpdateStore(s => s.available?.commit ?? null);
+  useEffect(() => {
+    if (!visible) return undefined;
+    import('../../services/updateWatcher').then(m => m.setUpdateWatchFast(true)).catch(() => {});
+    return () => { import('../../services/updateWatcher').then(m => m.setUpdateWatchFast(false)).catch(() => {}); };
+  }, [visible]);
+  useEffect(() => {
+    if (visible && checked && availableCommit) check().catch(() => {});
+    // Only a changed commit refreshes; check() itself rewrites the store with the same commit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableCommit]);
+
   // Opening About looks for an update by itself, unless the listener turned that off (Echo does the same).
   useEffect(() => {
     if (visible && autoCheck && !checked) check().catch(() => {});
