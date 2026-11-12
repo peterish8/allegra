@@ -8,6 +8,7 @@ import { Component, createContext, useCallback, useContext, useEffect, useMemo, 
 import { SignInContext, type SignInApi } from '../src/auth/SignInContext';
 import { linkGuestSession, setAccountToken, recordConsent } from '../src/lib/api';
 import { hasPendingConsent, clearPendingConsent } from '../src/lib/consent';
+import { GUEST_LINK_MAX_ATTEMPTS, guestLinkBackoffMs } from '../src/lib/guestLink';
 import { runBeforeSignOut } from '../src/lib/signOutHooks';
 
 /** convex/library.ts myRev: the signed-in listener's newest library revision (null signed out). */
@@ -54,21 +55,40 @@ function SignInBridge({ children }: { readonly children: ReactNode }) {
   // here would race that refresh and still hand it the stale guest token.
   setAccountToken(token ?? null);
 
-  // Right after the first sign-in, hand the old guest token over once so the likes
-  // and playlists made before signing in follow the listener into their account.
+  // Right after sign-in, hand the old guest token over so the likes and playlists made before signing
+  // in follow the listener into their account. The token stays until the server has taken it: a failed
+  // request is tried again (2s, 4s, 8s, ... up to GUEST_LINK_MAX_ATTEMPTS tries) instead of being counted as done.
   useEffect(() => {
-    if (!signedIn || linked) return;
-    setLinked(true);
-    void linkGuestSession().then(async () => {
-      if (hasPendingConsent()) {
-        await recordConsent();
-        clearPendingConsent();
+    if (!signedIn) {
+      if (linked) setLinked(false);
+      return undefined;
+    }
+    if (linked) return undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const attempt = async (n: number): Promise<void> => {
+      const result = await linkGuestSession();
+      if (cancelled) return;
+      if (result === 'failed' && n < GUEST_LINK_MAX_ATTEMPTS) {
+        timer = setTimeout(() => { void attempt(n + 1); }, guestLinkBackoffMs(n));
+        return;
       }
-    }).catch(() => {
-      // Preserve the pending agreement: the account panel can retry it.
-    }).finally(() => {
+      setLinked(true);
+      try {
+        if (hasPendingConsent()) {
+          await recordConsent();
+          clearPendingConsent();
+        }
+      } catch {
+        // Preserve the pending agreement: the account panel can retry it.
+      }
       window.dispatchEvent(new CustomEvent('allegra:account'));
-    });
+    };
+    void attempt(1);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [signedIn, linked]);
 
   const signInWithGoogle = useCallback(async () => {
