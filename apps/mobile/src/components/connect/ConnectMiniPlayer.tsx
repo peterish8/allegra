@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TAB_BAR_HEIGHT } from '../../constants/layout';
@@ -10,9 +10,13 @@ import { useSnapshotCover } from '../../services/connect/useSnapshotCover';
 import { usePlayerStore } from '../../store/playerStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import PillPlayer from '../PillPlayer';
+import { MiniSongMenu } from '../player/MiniSongMenu';
+import { toStreamSong } from '../../services/stream/streamSong';
+import { parseSongRef } from '@shared/songRef';
 
 export const ConnectMiniPlayer: React.FC = () => {
   const connect = useConnect();
+  const [menuOpen, setMenuOpen] = useState(false);
   const control = connect.control;
   const insets = useSafeAreaInsets();
   const navBarStyle = useSettingsStore(state => state.navBarStyle);
@@ -45,6 +49,7 @@ export const ConnectMiniPlayer: React.FC = () => {
   if (!connect.remotePlayback || !song || (hideMiniPlayer && !(pillNav && hiddenOnlyBySheet))) return null;
 
   return (
+    <>
     <PillPlayer
       remote
       title={pending ? pending.title : song.title}
@@ -57,8 +62,15 @@ export const ConnectMiniPlayer: React.FC = () => {
       onTogglePlay={toggle}
       onNext={next}
       onPrevious={previous}
-      onDevices={connect.openDevices}
+      onMore={() => setMenuOpen(true)}
     />
+    <MiniSongMenu key={song.ref} remote={song} visible={menuOpen} onClose={() => setMenuOpen(false)} song={toStreamSong({
+      id: parseSongRef(song.ref)?.id ?? song.ref,
+      source: parseSongRef(song.ref)?.source === 'gaana' ? 'Gaana' : 'Saavn',
+      downloadUrl: '',
+      title: song.title, artist: song.artist, highResArt: cover || '', duration: song.duration,
+    })} />
+    </>
   );
 };
 

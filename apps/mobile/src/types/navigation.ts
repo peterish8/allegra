@@ -5,6 +5,7 @@
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { PlayerMenuAction } from '../components/player/PlayerMenu';
 import type { StatsRange } from '../services/stats/listeningStats';
 import type { Song, UnifiedSong } from './song';
 export type MixParams = { title: string } & ({ kind: 'stream'; songs: UnifiedSong[] } | { kind: 'local'; songs: Song[] });
@@ -16,7 +17,7 @@ export type PlayerSheetName = 'menu' | 'together' | 'queue' | 'timer';
 export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
   /** `instant`: mounted already open, no rise (the app is opening out of the system island, which animates it). */
-  NowPlaying: { songId: string; lyrics?: boolean; sheet?: PlayerSheetName; instant?: boolean };
+  NowPlaying: { songId: string; lyrics?: boolean; sheet?: PlayerSheetName; action?: PlayerMenuAction; instant?: boolean };
   /** Create or join a LuvLink room without needing a track in the player. */
   LuvLink: undefined;
   /** Lyrics editor for a song saved on the phone. */

@@ -63,15 +63,15 @@ describe('mini player scrubber sits on the top edge', () => {
 });
 
 describe('mini player and navigation controls', () => {
-  // 1.43.0 (Spotify's mini player): Devices, the heart, then play, on a floating rounded card. Next is the swipe,
+  // The mini player: song options, the heart, then play, on a floating rounded card. Next is the swipe,
   // and TalkBack keeps its "Next song" action.
-  it('shows Devices, the heart and play, in that order, and Next stays reachable', () => {
+  it('shows song options, the heart and play, in that order, and Next stays reachable', () => {
     const pill = code(read('PillPlayer.tsx'));
-    const devices = pill.indexOf('accessibilityLabel="Devices"');
+    const options = pill.indexOf('accessibilityLabel="Song options"');
     const heart = pill.indexOf("'Remove from Liked songs' : 'Add to Liked songs'");
     const play = pill.indexOf('<PlaybackButton size={48}');
-    expect(devices).toBeGreaterThan(0);
-    expect(heart).toBeGreaterThan(devices);
+    expect(options).toBeGreaterThan(0);
+    expect(heart).toBeGreaterThan(options);
     expect(play).toBeGreaterThan(heart);
     expect(pill).not.toMatch(/label="Next song"/);
     expect(pill).toMatch(/\{ name: 'next', label: 'Next song' \}/);
@@ -89,7 +89,7 @@ describe('mini player and navigation controls', () => {
   });
 
   // 1.44.0 (owner: "place neatly like Spotify"): one glyph size, even 44dp slots, each a 48dp touch.
-  it('sets Devices, the saved mark and play on one rhythm and one size', () => {
+  it('sets song options, the saved mark and play on one rhythm and one size', () => {
     const pill = code(read('PillPlayer.tsx'));
     expect(pill).toMatch(/const ACTION_GLYPH = 26;/);
     expect(pill).toMatch(/const ACTION_SLOT = 44;/);
@@ -100,10 +100,10 @@ describe('mini player and navigation controls', () => {
     expect(pill).toMatch(/name=\{liked \? 'checkmark-circle' : 'add-circle-outline'\} size=\{ACTION_GLYPH\}/);
   });
 
-  it('the local mini player passes Devices and the heart; the Connect one passes Devices', () => {
+  it('the local mini player passes song options and the heart; the Connect one passes song options', () => {
     const mini = code(read('MiniPlayer.tsx'));
-    expect(mini).toMatch(/onDevices=\{connect\.openDevices\}\s*\n\s*liked=\{isLiked\}\s*\n\s*onToggleLike=/);
-    expect(code(read('connect', 'ConnectMiniPlayer.tsx'))).toMatch(/onDevices=\{connect\.openDevices\}/);
+    expect(mini).toMatch(/onMore=\{\(\) => setSongMenuOpen\(true\)\}\s*\n\s*liked=\{isLiked\}\s*\n\s*onToggleLike=/);
+    expect(code(read('connect', 'ConnectMiniPlayer.tsx'))).toMatch(/onMore=\{\(\) => setMenuOpen\(true\)\}/);
   });
 
   it('the native navigation tabs read as tabs to TalkBack', () => {
