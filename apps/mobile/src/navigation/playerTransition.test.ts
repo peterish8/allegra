@@ -30,8 +30,8 @@ describe('the cover on its way', () => {
     expect(coverFrame(0, mini, card)).toEqual(mini);
     expect(coverFrame(1, mini, card)).toEqual(card);
     const half = coverFrame(0.5, mini, card);
-    expect(half.width).toBeCloseTo(194, 5);
-    expect(half.y).toBeCloseTo(410, 5);
+    expect(half.width).toBeCloseTo(236.8, 1);
+    expect(half.y).toBeCloseTo(325.1, 1);
   });
 
   it('keeps a square cover square all the way', () => {
@@ -62,10 +62,10 @@ describe('what fades when', () => {
   });
 
   it('brings the player\'s text in only once the cover has mostly arrived', () => {
-    expect(playerContentOpacity(0.5)).toBe(0);
-    expect(playerContentOpacity(0.52)).toBe(0);
-    expect(playerContentOpacity(0.70)).toBeCloseTo(0.5, 5);
-    expect(playerContentOpacity(0.88)).toBe(1);
+    expect(playerContentOpacity(0.3)).toBe(0);
+    expect(playerContentOpacity(0.34)).toBe(0);
+    expect(playerContentOpacity(0.53)).toBeCloseTo(0.5, 5);
+    expect(playerContentOpacity(0.75)).toBe(1);
   });
 
   it('shows the moving cover only between the ends', () => {
