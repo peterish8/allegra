@@ -45,3 +45,12 @@ export function guestLinkBackoffMs(attempt: number): number {
 
 /** After this many failed attempts the provider stops on its own and waits for the next sign-in or reload. */
 export const GUEST_LINK_MAX_ATTEMPTS = 6;
+
+/**
+ * Whether a failed read of the stored guest means the server no longer knows it. Only then may the
+ * token be replaced: after a network error or an outage the guest still exists and still holds the
+ * likes and playlists a failed merge left behind.
+ */
+export function guestIsGone(status: number | undefined): boolean {
+  return status === 401 || status === 404;
+}

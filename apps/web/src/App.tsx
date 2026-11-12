@@ -1893,6 +1893,8 @@ export default function App() {
       radio.stop();
       // Loaded without autoplay: the room decides when it starts. The element only points at the new
       // stream after React renders, so a seek made now would land on the previous track.
+      // The room's song is the newest pick: a slower pick made before it must not land on top.
+      playIntent.begin();
       audio.loadForConnect(match, [match], false);
       const element = audio.audioRef.current;
       if (!element || !(await waitForAudioSource(element, resolveApiUrl(match.streamUrl)))) return false;

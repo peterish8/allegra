@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { isCurrentMediaGeneration, playbackRejectionMessage, shouldHandlePlayerShortcut, shownAsPlaying, takeNextUnvisited, type RecoveryCursor } from './audioPlayerRules';
+import { afterSourceSwap, isCurrentMediaGeneration, playbackRejectionMessage, shouldHandlePlayerShortcut, shownAsPlaying, takeNextUnvisited, type RecoveryCursor } from './audioPlayerRules';
+
+describe('afterSourceSwap', () => {
+  it('a swap where neither source opened leaves nothing playing or waiting to play', () => {
+    assert.equal(afterSourceSwap({ opened: false, wasPlaying: true, wantsPlay: true }), 'dead');
+    assert.equal(afterSourceSwap({ opened: false, wasPlaying: false, wantsPlay: false }), 'dead');
+  });
+
+  it('resumes only when it was playing and nobody paused during the switch', () => {
+    assert.equal(afterSourceSwap({ opened: true, wasPlaying: true, wantsPlay: true }), 'resume');
+    assert.equal(afterSourceSwap({ opened: true, wasPlaying: true, wantsPlay: false }), 'stay');
+    assert.equal(afterSourceSwap({ opened: true, wasPlaying: false, wantsPlay: true }), 'stay');
+  });
+});
 
 describe('shownAsPlaying', () => {
   it('an element that plays is shown as playing, even if its early play event was ignored', () => {
