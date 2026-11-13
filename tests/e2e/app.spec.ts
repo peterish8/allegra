@@ -1,4 +1,4 @@
-import { test as plain } from '@playwright/test';
+import { test as plain, type Page } from '@playwright/test';
 
 import { audioState, collectPageErrors, expect, expectPlaying, startPlayback, test } from './helpers';
 
@@ -406,4 +406,40 @@ test('the full player opens with lyrics and closes again', async ({ page }) => {
   await expect(player).toBeHidden();
   await expectPlaying(page);
   expect(errors).toEqual([]);
+});
+
+test.describe('reduced motion', () => {
+  test.use({ reducedMotion: 'reduce' });
+
+  // Work and live-state indicators may keep moving (spinners, the DJ listening pulse). Anything else
+  // that loops forever means a class rule beat the site-wide collapse again.
+  const INDICATORS = [
+    '.spin', '.is-spinning', '.cmdk-spinner', '.ctrl-play-wait', '.dj-spin',
+    '.lyric-sync-jobs__spinner', '.import-chip__spinner', '.lucide-loader-circle',
+    '.dj-dots i', '.dj-mic-button', '.dj-quick-icon', '.am-dj', '.dj-m-orbit i', '.dj-now-dot',
+  ].join(', ');
+
+  async function loopingOutsideIndicators(page: Page): Promise<string[]> {
+    return page.evaluate((indicators) =>
+      document.getAnimations().flatMap((animation) => {
+        const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+        const looping = animation.playState === 'running' && animation.effect?.getComputedTiming().iterations === Infinity;
+        if (!looping || (target && target.matches(indicators))) return [];
+        const name = animation instanceof CSSAnimation ? animation.animationName : 'script';
+        return [`${name} on ${target?.tagName.toLowerCase() ?? '?'}.${target?.className ?? ''}`];
+      }), INDICATORS);
+  }
+
+  test('Home and the listening room run no infinite animation outside the indicator allowlist', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: /^Play .+/ }).first()).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(500);
+    expect(await loopingOutsideIndicators(page), 'Home').toEqual([]);
+
+    await startPlayback(page);
+    await page.locator(bar).getByRole('button', { name: 'Expand player', exact: true }).click();
+    await expect(page.getByRole('dialog').filter({ has: page.getByRole('tablist', { name: 'Player surfaces' }) })).toBeVisible();
+    await page.waitForTimeout(500);
+    expect(await loopingOutsideIndicators(page), 'listening room').toEqual([]);
+  });
 });

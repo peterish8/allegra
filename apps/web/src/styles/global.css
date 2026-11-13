@@ -1706,23 +1706,8 @@ input:focus-visible,
 
   .offline-toast { right: 12px; bottom: 76px; left: 12px; max-width: none; }}
 
-/* =========================================================================
-   Reduced motion. Nothing is disabled, everything collapses to opacity.
-   ========================================================================= */
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms;
-    animation-iteration-count: 1;
-    transition-duration: 0.01ms;
-    scroll-behavior: auto;
-  }
-
-  .aura-orb { transform: translate3d(-50%, 0, 0); }
-  .player-panel[data-live='true'] .scrubber-fill::after { animation: none; opacity: 0; }
-  .visualizer { opacity: 1; }
-  .lyric-line::before { transform: scaleY(1); opacity: 0; }
-  .lyric-line.is-active::before { opacity: 1; }}
+/* Reduced motion lives at the end of app.css, outside this layer. Rules in `@layer legacy` lose
+ * to every unlayered stylesheet, so a collapse kept here never reached app.css, dj.css or blend.css. */
 
 /* Polaris-inspired stage composition, translated for a blue Allegra listening room. */
 html { background: var(--bg); }

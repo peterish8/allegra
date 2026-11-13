@@ -8139,3 +8139,52 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 @media (max-width: 767px) {
   .picks-preview__columns { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* =========================================================================
+   Reduced motion. Nothing is disabled, everything collapses to opacity.
+
+   Keep this block last and outside every @layer. A plain `*` rule has the lowest
+   specificity, so without `!important` any class that sets `animation` wins over it, and
+   inside `@layer legacy` (where it used to live) it also lost to all unlayered CSS.
+   `!important` declarations beat every normal declaration, whatever its layer or specificity.
+   ========================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: var(--d-reduced) !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: var(--d-reduced) !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Work indicators keep moving: a spinner that stops reads as a hang. */
+  .spin,
+  .is-spinning,
+  .cmdk-spinner,
+  .ctrl-play-wait,
+  .dj-spin,
+  .lyric-sync-jobs__spinner,
+  .import-chip__spinner,
+  .listening-world .np-action--tool .lucide-loader-circle {
+    animation-duration: var(--d-spin) !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  /* Live states that only fade (dj.css swaps their keyframes to opacity): the DJ is thinking,
+   * listening or awake, and the song row shows it is playing. */
+  .dj-dots i,
+  .dj-mic-button[data-state='listening'],
+  .dj-quick-icon.is-listening,
+  .am-dj.is-awake::after,
+  .dj-m-orbit i,
+  .dj-now[data-playing='true'] .dj-now-dot {
+    animation-duration: var(--d-atmosphere) !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  .aura-orb { transform: translate3d(-50%, 0, 0); }
+  .player-panel[data-live='true'] .scrubber-fill::after { animation: none; opacity: 0; }
+  .visualizer { opacity: 1; }
+  .lyric-line::before { transform: scaleY(1); opacity: 0; }
+  .lyric-line.is-active::before { opacity: 1; }
+}
