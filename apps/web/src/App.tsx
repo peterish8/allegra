@@ -2009,7 +2009,9 @@ export default function App() {
             currentSongId={playerSong?.id ?? null}
             isPlaying={playerIsPlaying}
             likedIds={likedIds}
-            loading={personalLoading || playlists.loading}
+            loading={personalLoading || playlists.loading || searching}
+            error={searchError}
+            onRetry={() => void loadHome()}
             onPlay={(song, queue) => playSong(song, queue, false, settings.autoplaySimilar)}
             onToggle={togglePlayer}
             onLike={toggleLike}

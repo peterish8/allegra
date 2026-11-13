@@ -34,6 +34,9 @@ interface HomePageProps {
   readonly isPlaying: boolean;
   readonly likedIds: ReadonlySet<string>;
   readonly loading: boolean;
+  /** Why the shelves could not be built, when nothing at all came back. */
+  readonly error?: string | null;
+  readonly onRetry?: () => void;
   readonly onPlay: (song: UnifiedSong, queue: UnifiedSong[]) => void;
   readonly onToggle: () => void;
   readonly onLike: (song: UnifiedSong) => void;
@@ -92,7 +95,7 @@ const HOVER_GLOW_OPACITY = 0.14;
 export function HomePage({
   profile, taste, recentlyPlayed, likedSongs, picks, picksReason, picksProvider,
   trending, madeForYou, recommended, faces,
-  currentSongId, isPlaying, likedIds,
+  currentSongId, isPlaying, likedIds, loading, error = null, onRetry,
   onPlay, onToggle, onLike, onOpenArtist, onSeedTaste, onOpenAuth, onAskDj
 }: HomePageProps) {
   const reduced = useReducedMotion();
@@ -119,7 +122,10 @@ export function HomePage({
     [recentlyPlayed, likedSongs, picks, trending]
   );
 
-  const stagger = reduced ? undefined : { initial: { opacity: 0, y: 14 }, animate: { opacity: 1, y: 0 } };
+  // The hero is at rest on the first paint, so it does not animate in. Only things that arrive later do.
+  const hasShelves = recentlyPlayed.length > 1 || picks.length > 0 || likedSongs.length > 0;
+  const shelvesPending = !hasShelves && feature === null && loading;
+  const shelvesFailed = !hasShelves && feature === null && !loading && error !== null;
 
   const playFeature = (): void => {
     if (!feature) return;
@@ -144,8 +150,6 @@ export function HomePage({
       <motion.section
         className="home-hero"
         aria-labelledby="home-title"
-        {...stagger}
-        transition={{ duration: motionTokens.duration.slow, ease: motionTokens.ease.decelerate }}
       >
         {/* Spotify tints its header with the tile under the pointer; here the hovered cover glows behind the glass. */}
         <AnimatePresence initial={false}>
@@ -239,6 +243,9 @@ export function HomePage({
           setSkippedSetup(true);
         }}
       />
+
+      {shelvesPending ? <ShelfSkeleton /> : null}
+      {shelvesFailed ? <ShelfError message={error} {...(onRetry ? { onRetry } : {})} /> : null}
 
       {topArtists.length > 0 ? (
         <Section id="home-artists" title="Your artists" hint="Learned from what you play" reduced={reduced}>
@@ -583,6 +590,39 @@ interface ShelfProps {
   readonly likedIds: ReadonlySet<string>;
   readonly onPlay: (song: UnifiedSong, queue: UnifiedSong[]) => void;
   readonly onLike: (song: UnifiedSong) => void;
+}
+
+/** Eight tiles the size of the real ones (same `.tile` box), so the shelf does not jump when songs arrive. */
+function ShelfSkeleton() {
+  return (
+    <section className="home-section shelf-skeleton" aria-busy="true" aria-label="Loading your shelves">
+      <div className="section-heading">
+        <div><span className="skeleton shelf-skeleton__title" /></div>
+      </div>
+      <div className="shelf" aria-hidden="true">
+        {Array.from({ length: 8 }, (_, index) => (
+          <div key={index} className="tile">
+            <div className="tile-art"><span className="skeleton shelf-skeleton__fill" /></div>
+            <div className="tile-meta">
+              <div className="tile-copy">
+                <span className="skeleton shelf-skeleton__line" />
+                <span className="skeleton shelf-skeleton__line shelf-skeleton__line--short" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ShelfError({ message, onRetry }: { readonly message: string; readonly onRetry?: () => void }) {
+  return (
+    <section className="home-section shelf-error" role="alert">
+      <p>{message}</p>
+      {onRetry ? <button type="button" className="btn-glass tactile-control" onClick={onRetry}>Try again</button> : null}
+    </section>
+  );
 }
 
 function Shelf({ id, title, hint, href, eyebrow, songs, reduced, currentSongId, isPlaying, likedIds, onPlay, onLike }: ShelfProps) {
