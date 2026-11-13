@@ -1725,32 +1725,6 @@ input:focus-visible,
   .lyric-line.is-active::before { opacity: 1; }}
 
 /* Polaris-inspired stage composition, translated for a blue Allegra listening room. */
-:root {
-  --bg: #080a0d;
-  --bg-deep: #050608;
-  --surface: #15171b;
-  --surface-soft: #1d2026;
-  --surface-inverse: #101216;
-  --surface-raised: #252a32;
-  --surface-hover: #252a32;
-  --ink: #f1f6fb;
-  --ink-soft: #d7e2ec;
-  --ink-muted: #9ca8b4;
-  --ink-faint: #8a96a2;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --accent: #6fc1ff;
-  --accent-blue: #a8ddff;
-  --accent-violet: #8298ff;
-  --accent-cobalt: #276ee8;
-  --accent-green: #8bdcca;
-  --accent-soft: rgba(111, 193, 255, 0.13);
-  --accent-border: rgba(111, 193, 255, 0.5);
-  --shadow-card: 0 24px 70px rgba(0, 0, 0, 0.42);
-  --shadow-panel: 0 14px 34px rgba(0, 0, 0, 0.36);
-  --shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 2px 0 #34536d, 0 8px 20px rgba(0, 0, 0, 0.42);
-}
-
 html { background: var(--bg); }
 body { background: var(--bg); color: var(--ink); }
 body::before { opacity: 0.055; background-size: 160px 160px; }
@@ -1857,20 +1831,6 @@ body::before { opacity: 0.055; background-size: 160px 160px; }
    illuminated stage, an editorial copy dock, tactile controls, then the
    product surfaces below. Allegra keeps its blue identity and real content.
    ------------------------------------------------------------------------- */
-
-:root {
-  --primary-fill: #f5f0e4;
-  --primary-fill-hover: #fffaf0;
-  --primary-ink: #0b0c0f;
-  --primary-edge: #918b7d;
-  --stage-blue: #6fc1ff;
-  --stage-blue-soft: rgba(111, 193, 255, 0.16);
-  --stage-blue-line: rgba(111, 193, 255, 0.48);
-  --stage-cobalt: #276ee8;
-  --stage-violet: #788aff;
-  --stage-shadow: 0 26px 80px rgba(0, 0, 0, 0.48);
-  --tactile-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 2px 0 #35536d, 0 9px 22px rgba(0, 0, 0, 0.42);
-}
 
 html,
 body { background: #0b0b0c; }
@@ -2111,17 +2071,6 @@ body::before { opacity: 0.045; }
    navigation, compact featured content, quieter surfaces and one clear scan
    path from search to queue.
    ------------------------------------------------------------------------- */
-
-:root {
-  --workspace-bg: #0c0d0f;
-  --workspace-panel: #151619;
-  --workspace-panel-raised: #1c1d21;
-  --workspace-line: rgba(255, 255, 255, 0.09);
-  --workspace-line-strong: rgba(255, 255, 255, 0.16);
-  --workspace-muted: #96979d;
-  --workspace-soft: #c5c6ca;
-  --workspace-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
-}
 
 html,
 body,
@@ -2912,20 +2861,6 @@ body,
  * picks, dense track rows and an always-readable queue. Artwork supplies the
  * color; the shell stays quiet so the music remains the subject.
  */
-:root {
-  --listen-bg: #101114;
-  --listen-rail: #0b0c0f;
-  --listen-surface: #181a1f;
-  --listen-surface-raised: #20232a;
-  --listen-surface-soft: rgba(255, 255, 255, 0.055);
-  --listen-ink: #f5f5f1;
-  --listen-muted: #a6a8ae;
-  --listen-faint: #737780;
-  --listen-line: rgba(255, 255, 255, 0.11);
-  --listen-accent: #d9ff65;
-  --listen-radius: 22px;
-}
-
 html,
 body { background: var(--listen-bg); }
 body { color: var(--listen-ink); }
