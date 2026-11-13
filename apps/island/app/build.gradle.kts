@@ -45,6 +45,11 @@ android {
         }
     }
 
+    buildFeatures {
+        // The island logs its geometry in debug builds (com.lyricflow.app.BuildConfig.DEBUG).
+        buildConfig = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
