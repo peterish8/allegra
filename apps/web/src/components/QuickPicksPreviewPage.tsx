@@ -34,9 +34,11 @@ export function QuickPicksPreviewPage({ currentSongId, isPlaying, onPlay, onTogg
   const [preview, setPreview] = useState<QuickPicksPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    setError(null);
     fetchQuickPicksPreviewProfiles(controller.signal)
       .then((data) => {
         setProfiles(data.profiles);
@@ -47,7 +49,7 @@ export function QuickPicksPreviewPage({ currentSongId, isPlaying, onPlay, onTogg
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'The preview is not available.');
       });
     return () => controller.abort();
-  }, []);
+  }, [attempt]);
 
   useEffect(() => {
     if (!selected) return undefined;
@@ -70,7 +72,7 @@ export function QuickPicksPreviewPage({ currentSongId, isPlaying, onPlay, onTogg
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [selected]);
+  }, [selected, attempt]);
 
   const ranks = useMemo(() => new Map(preview?.candidates.map((row) => [row.id, row]) ?? []), [preview]);
   /** Shelf position in the current column, so the arrows describe what the listener sees. */
@@ -149,7 +151,12 @@ export function QuickPicksPreviewPage({ currentSongId, isPlaying, onPlay, onTogg
           </p>
         ) : null}
       </div>
-      {error ? <p className="picks-preview__error" role="alert">{error}</p> : null}
+      {error ? (
+        <p className="picks-preview__error" role="alert">
+          {error} <button type="button" className="collection-unavailable__retry" onClick={() => setAttempt((count) => count + 1)}>Try again</button>
+        </p>
+      ) : null}
+      {!error && !loading && profiles.length === 0 ? <p className="picks-preview__status">No profiles are available to preview yet.</p> : null}
       {loading && !preview ? <p className="picks-preview__status">Asking the catalog for candidates…</p> : null}
       {preview ? (
         <>

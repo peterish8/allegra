@@ -30,6 +30,23 @@ export function likedKey(song: UnifiedSong): string {
   return toAllegraId(ref) ?? `library:${ref}`;
 }
 
+export interface CollectionState {
+  /** The library is still being fetched or hydrated. */
+  readonly loading: boolean;
+  /** Saved items the catalog did not return. They stay saved; the page says so and offers Retry. */
+  readonly unavailable: number;
+}
+
+/**
+ * Loading is about the fetch alone. A playlist can hold more saved items than rows that resolved once the
+ * fetch has finished (an item with no snapshot that the catalog no longer returns); that gap is "unavailable",
+ * never "loading", or the page waits for a row that will not come (FE-006).
+ */
+export function collectionState({ fetching, expected, resolved }: { readonly fetching: boolean; readonly expected: number; readonly resolved: number }): CollectionState {
+  if (fetching) return { loading: true, unavailable: 0 };
+  return { loading: false, unavailable: Math.max(0, expected - resolved) };
+}
+
 export function createLibrarySong(ref: SongRef, snapshot?: SongSnapshot, playable?: UnifiedSong): LibrarySong | null {
   if (playable) return { ...playable, libraryRef: ref, ...(snapshot ? { librarySnapshot: snapshot } : {}) };
   if (!snapshot) return null;

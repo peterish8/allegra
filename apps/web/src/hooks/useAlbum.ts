@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import type { AlbumDetail } from '@shared/types';
 
@@ -10,6 +10,8 @@ export interface AlbumState {
   readonly loading: boolean;
   /** The lookup failed: the page falls back to the songs it already has. */
   readonly failed: boolean;
+  /** Asks the catalog again after a failure. */
+  readonly retry: () => void;
 }
 
 /** Albums already loaded this visit, so going back to one is instant. Small: albums are a few KB. */
@@ -21,7 +23,8 @@ const KEEP = 24;
  * catalog gave no album id) means there is nothing to load and the caller groups what it has.
  */
 export function useAlbum(albumId: string | null): AlbumState {
-  const [state, setState] = useState<AlbumState & { readonly id: string | null }>(() => ({
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<Omit<AlbumState, 'retry'> & { readonly id: string | null }>(() => ({
     id: albumId,
     detail: albumId ? loaded.get(albumId) ?? null : null,
     loading: Boolean(albumId && !loaded.has(albumId)),
@@ -44,7 +47,12 @@ export function useAlbum(albumId: string | null): AlbumState {
       if (!controller.signal.aborted) setState({ id: albumId, detail: null, loading: false, failed: true });
     });
     return () => controller.abort();
+  }, [albumId, attempt]);
+
+  const retry = useCallback((): void => {
+    setState((current) => (current.id === albumId ? { ...current, loading: true, failed: false } : current));
+    setAttempt((count) => count + 1);
   }, [albumId]);
 
-  return { detail: state.id === albumId ? state.detail : null, loading: state.id === albumId ? state.loading : Boolean(albumId), failed: state.id === albumId && state.failed };
+  return { detail: state.id === albumId ? state.detail : null, loading: state.id === albumId ? state.loading : Boolean(albumId), failed: state.id === albumId && state.failed, retry };
 }
