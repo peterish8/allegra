@@ -97,20 +97,16 @@ const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visib
             </Panel>
 
             <Panel>
-              <Text style={styles.kicker}>LuvLyrics {appConfig.expo.version}</Text>
               <Text style={styles.story}>Made for your music.</Text>
-              <Text style={styles.body}>
-                Every screen, every animation and every little detail — through many iterations and even more ideas, until it landed here.
-                It is free, and it always will be. Hope it feels like yours.
-              </Text>
-              <Text style={styles.signature}>— Prathick</Text>
+              <Text style={styles.body}>Every screen and detail went through many iterations until it landed here. It is free, and it always will be.</Text>
+              <Text style={styles.signature}>Prathick · version {appConfig.expo.version}</Text>
             </Panel>
 
             <Panel>
               <LinkRow icon="globe-outline" label="Website" value="prathick.vercel.app" onPress={() => open(WEBSITE)} />
               <LinkRow icon="logo-instagram" label="Instagram" value={`@${INSTAGRAM}`} onPress={openInstagram} last={!UPI_ID} />
               {UPI_ID ? (
-                <LinkRow icon="cafe-outline" label="Feel free to buy me a coffee 😉" value={copied ? `${UPI_ID} · copied` : `UPI · ${UPI_ID}`} onPress={coffee} last />
+                <LinkRow icon="cafe-outline" label="Buy me a coffee" value={copied ? `${UPI_ID} · copied` : `UPI · ${UPI_ID}`} onPress={coffee} last />
               ) : null}
             </Panel>
 
@@ -158,13 +154,10 @@ const AboutSheet: React.FC<{ visible: boolean; onClose: () => void }> = ({ visib
             <Panel>
               <Text style={styles.panelTitle}>Privacy</Text>
               <Text style={styles.body}>
-                LuvLyrics is free to use, with no ads and no sale of personal data. Downloads and local lyrics stay on this phone.
-                When you sign in, your account, likes, playlists and listening preferences sync through Allegra and Convex.
-                Music and artwork providers receive requests needed for playback. Sentry receives crash and performance reports; session replay is off.
-                Bug reports you send are stored so we can investigate and respond.
-              </Text>
-              <Text style={[styles.body, styles.gap]}>
-                Google sign-in connects this app with {ALLEGRA}. Account privacy controls on the website let you stop learning from listening, download your data or delete your account.
+                Free, with no ads and no sale of personal data. Downloads and local lyrics stay on this phone.
+                Signed in, your account, likes, playlists and listening preferences sync through Allegra and Convex.
+                Playback providers receive the requests they need, Sentry receives crash and performance reports (session replay is off), and bug reports you send are stored so I can answer.
+                On {ALLEGRA} you can stop learning from listening, download your data or delete your account.
               </Text>
             </Panel>
           </SheetScrollView>
@@ -184,11 +177,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.09)',
     overflow: 'hidden',
   },
-  kicker: { color: Signal.wave, fontSize: 12, fontWeight: '600' },
-  story: { color: Signal.ink, fontSize: 24, fontWeight: '700', marginTop: 8 },
+  story: { color: Signal.ink, fontSize: 24, fontWeight: '700' },
   body: { color: Signal.inkSoft, fontSize: 15, lineHeight: 23, marginTop: 6 },
-  gap: { marginTop: 10 },
-  signature: { color: Signal.inkMuted, fontSize: 14, fontWeight: '600', marginTop: 10 },
+  signature: { color: Signal.inkMuted, fontSize: 13, marginTop: 10 },
   panelTitle: { color: Signal.ink, fontSize: 18, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, borderRadius: Space.sm },
   rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.07)' },

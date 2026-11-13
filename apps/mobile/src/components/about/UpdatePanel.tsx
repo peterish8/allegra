@@ -12,7 +12,7 @@ import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTimin
 import appConfig from '../../../app.json';
 import { Motion, Radius, Signal, Surface } from '../../constants/allegraTheme';
 import {
-  ALL_RELEASES_URL, checkedAgo, formatSize, INSTALLED_BUILD,
+  checkedAgo, formatSize, INSTALLED_BUILD,
   LATEST_APK_URL,
   LatestBuild,
   releasedAgo,
@@ -190,7 +190,7 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
     : available ? { icon: 'arrow-down-circle', tone: 'wave', title: build?.version ? `Update available · ${build.version}` : 'Update available', sub: `Released ${releasedAgo(build.publishedAt)}${build.sizeBytes ? ` · ${formatSize(build.sizeBytes)}` : ''}` }
     : build && standing === 'current' ? { icon: 'checkmark-circle', tone: 'ok', title: "You're on the latest version", sub: `Version ${installedLabel}` }
     : build && standing === 'older' ? { icon: 'checkmark-circle', tone: 'ok', title: 'This phone is ahead of the release', sub: `Version ${installedLabel}. The latest release came out ${releasedAgo(build.publishedAt)}.` }
-    : checked ? { icon: 'alert-circle', tone: 'warn', title: "Couldn't check for updates", sub: 'Check your connection and try again.' }
+    : checked ? { icon: 'alert-circle', tone: 'warn', title: "Couldn't check for updates", sub: 'The update server did not answer. Try again in a minute.' }
     : { icon: 'refresh-circle', tone: 'plain', title: 'Check for updates', sub: `You are on ${installedLabel}` };
 
   const busy = checking || installing;
@@ -236,15 +236,14 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
     <View style={styles.settings}>
       <Switch
         label="Check for updates automatically"
-        hint="Looks when you open the app, at most every few hours, and marks About when there is something new."
+        hint="Looks when you open the app, at most every few hours."
         value={autoCheck}
         onChange={on => useUpdateStore.getState().setAutoCheck(on)}
       />
     </View>
 
     <View style={styles.links}>
-      <Text style={styles.link} accessibilityRole="link" onPress={() => { Linking.openURL(RELEASES_URL).catch(() => setNotice('Could not open the release notes.')); }}>Latest release notes ↗</Text>
-      <Text style={styles.link} accessibilityRole="link" onPress={() => { Linking.openURL(ALL_RELEASES_URL).catch(() => setNotice('Could not open the releases.')); }}>All releases ↗</Text>
+      <Text style={styles.link} accessibilityRole="link" onPress={() => { Linking.openURL(RELEASES_URL).catch(() => setNotice('Could not open the release notes.')); }}>Release notes ↗</Text>
     </View>
   </>;
 }
