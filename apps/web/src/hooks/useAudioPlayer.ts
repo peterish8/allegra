@@ -76,6 +76,8 @@ export function useAudioPlayer(): AudioPlayerState {
   const midSongRecoveriesRef = useRef(0);
   /** Generation of the reload in flight. Its own wait settles the error that reload causes, so the listener skips it. */
   const reloadingGenerationRef = useRef<number | null>(null);
+  /** Counts listener seeks, so a reload that was overtaken by one does not move the playhead back. */
+  const userSeekCountRef = useRef(0);
   const shuffleRef = useRef(false);
   const shuffleOrderRef = useRef<string[]>([]);
   const repeatRef = useRef<RepeatMode>('off');
@@ -209,6 +211,7 @@ export function useAudioPlayer(): AudioPlayerState {
     if (!audio) return;
     const nextTime = clamp(seconds, 0, Number.isFinite(audio.duration) ? audio.duration : duration);
     const wasPlaying = !audio.paused;
+    userSeekCountRef.current += 1;
     audio.pause();
     audio.currentTime = nextTime;
     setCurrentTime(nextTime);
@@ -463,6 +466,7 @@ export function useAudioPlayer(): AudioPlayerState {
     playbackGenerationRef.current += 1;
     const generation = playbackGenerationRef.current;
     playbackIntentRef.current = shouldPlay;
+    const seeksAtStart = userSeekCountRef.current;
     audio.pause();
     // The reload is part of the same play: the button keeps showing Pause (the pause that ends a
     // stream just before `ended` has already cleared it).
@@ -486,8 +490,11 @@ export function useAudioPlayer(): AudioPlayerState {
       return 'failed';
     }
     loadedGenerationRef.current = generation;
-    audio.currentTime = resumeAt;
-    setCurrentTime(resumeAt);
+    // A seek the listener made during the reload already placed the playhead: it wins.
+    if (userSeekCountRef.current === seeksAtStart) {
+      audio.currentTime = resumeAt;
+      setCurrentTime(resumeAt);
+    }
     setIsBuffering(false);
     // The intent is read again: a pause asked for during the reload must stay paused.
     if (playbackIntentRef.current) await requestPlayback(true);
