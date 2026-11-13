@@ -43,8 +43,9 @@ export function consumePlayerHardwareBack(): boolean {
 }
 
 export function handlePlayerBack(state: PlayerBackState, actions: PlayerBackActions): void {
-  if (state.lyricsFullscreen) actions.exitLyricsFullscreen();
-  else if (state.hasSheet) actions.closeSheet();
+  // A sheet opened over fullscreen lyrics is the topmost surface, so it closes first.
+  if (state.hasSheet) actions.closeSheet();
+  else if (state.lyricsFullscreen) actions.exitLyricsFullscreen();
   else if (state.upNextOpen) actions.closeUpNext();
   else if (state.ambient) actions.leaveAmbient();
   else actions.closePlayer();

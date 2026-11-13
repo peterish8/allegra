@@ -393,74 +393,8 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
     }
   }, [lyricsFullscreen, onExitLyricsFullscreen, onEnterLyricsFullscreen, onMorePress, isCurrentSongLiked, onToggleLike]);
 
-  if (lyricsFullscreen) {
-    return (
-      <Animated.View
-        style={[styles.focusContainer, { paddingTop: insets.top + 16 }, animatedStyle]}
-        pointerEvents={controlsVisible ? 'box-none' : 'none'}
-      >
-        <View style={styles.focusContent}>
-          <Artwork uri={coverImageUri} title={currentSongTitle ?? ''} artist={currentSongArtist} size={52} style={styles.focusArtwork} />
-          <View style={styles.focusMeta}>
-            {/* One line each, capped growth: the lyrics frame below clears a fixed header height. */}
-            <Tactile onPress={onAlbumPress} disabled={!onAlbumPress} accessibilityRole="button" accessibilityLabel="Open song album"><Text style={styles.focusTitle} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongTitle || 'Not playing'}</Text></Tactile>
-            <Tactile onPress={onArtistPress} disabled={!onArtistPress} accessibilityRole="button" accessibilityLabel="Open artist"><Text style={styles.focusArtist} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongArtist}</Text></Tactile>
-          </View>
-          {/* The same buttons, in the same order, as the row under the lyrics. */}
-          {nativeActions ? (
-            <NativeSongActions
-              fullscreen="exit"
-              hasMore={!!onMorePress}
-              liked={isCurrentSongLiked}
-              saving={isLikeSaving}
-              likeLabel={likeLabelOf(isCurrentSongLiked, isLikeSaving)}
-              slop={FOCUS_HIT_SLOP}
-              reduceMotion={reduceMotion}
-              onAction={onSongAction}
-            />
-          ) : (
-            <>
-          <Tactile
-            onPress={() => { tick('light'); onExitLyricsFullscreen?.(); }}
-            hitSlop={FOCUS_HIT_SLOP}
-            pressScale={0.88}
-            accessibilityRole="button"
-            accessibilityLabel="Exit lyrics fullscreen"
-            style={styles.roundGlass}
-          >
-            <MaterialCommunityIcons name="fullscreen-exit" size={19} color={INK} />
-          </Tactile>
-          {onMorePress ? (
-            <Tactile
-              onPress={e => { tick('light'); onMorePress(e); }}
-              hitSlop={FOCUS_HIT_SLOP}
-              pressScale={0.88}
-              accessibilityRole="button"
-              accessibilityLabel="Song options"
-              style={styles.roundGlass}
-            >
-              <Ionicons name="ellipsis-vertical" size={18} color={INK} />
-            </Tactile>
-          ) : null}
-          <Tactile
-            onPress={() => { tick(isCurrentSongLiked ? 'light' : 'success'); onToggleLike(); }}
-            hitSlop={FOCUS_HIT_SLOP}
-            pressScale={0.88}
-            accessibilityRole="button"
-            accessibilityLabel={isLikeSaving ? 'Saving to Liked songs, tap to cancel' : isCurrentSongLiked ? 'Unlike' : 'Like'}
-            style={styles.roundGlass}
-          >
-            <SavingPulse saving={isLikeSaving}>
-              <MorphIcon on={isCurrentSongLiked} onIcon="heart" offIcon="heart-outline" size={20} color={INK} />
-            </SavingPulse>
-          </Tactile>
-            </>
-          )}
-        </View>
-      </Animated.View>
-    );
-  }
-
+  // Fullscreen lyrics keep this same bottom stack (title, scrubber, transport, the three action icons);
+  // only the first icon turns from "open" into "exit".
   return (
     <Animated.View
       // Pinned to the bottom. Its size never changes with lyrics: the volume row fades in place (ROWS_MOVE).
@@ -506,7 +440,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
 
           {nativeActions ? (
             <NativeSongActions
-              fullscreen={onEnterLyricsFullscreen ? 'enter' : 'none'}
+              fullscreen={onEnterLyricsFullscreen ? (lyricsFullscreen ? 'exit' : 'enter') : 'none'}
               hasMore={!!onMorePress}
               liked={isCurrentSongLiked}
               saving={isLikeSaving}
@@ -519,14 +453,14 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
             <>
           {onEnterLyricsFullscreen ? (
             <Tactile
-              onPress={() => { tick('light'); onEnterLyricsFullscreen(); }}
+              onPress={() => { tick('light'); (lyricsFullscreen ? onExitLyricsFullscreen : onEnterLyricsFullscreen)?.(); }}
               hitSlop={8}
               pressScale={0.88}
               accessibilityRole="button"
-              accessibilityLabel="Open lyrics fullscreen"
+              accessibilityLabel={lyricsFullscreen ? 'Exit lyrics fullscreen' : 'Open lyrics fullscreen'}
               style={styles.roundGlass}
             >
-              <MaterialCommunityIcons name="fullscreen" size={19} color={INK} />
+              <MaterialCommunityIcons name={lyricsFullscreen ? 'fullscreen-exit' : 'fullscreen'} size={19} color={INK} />
             </Tactile>
           ) : null}
           {onMorePress ? (
@@ -670,19 +604,8 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
 
 const CONTAINER_PAD_TOP = 40;
 
-/** The fullscreen header's 38pt glass buttons reach Android's 48dp touch target without growing. */
-const FOCUS_HIT_SLOP = 6;
-
 const styles = StyleSheet.create({
   container: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 15, paddingTop: CONTAINER_PAD_TOP },
-  focusContainer: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 25 },
-  focusContent: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: CONTENT_PAD },
-  // Artwork takes its size from `style` (its `size` only scales the generated placeholder): without a width and a
-  // height the cover collapsed to nothing and the header showed an empty gap.
-  focusArtwork: { width: 52, height: 52, borderRadius: 8, overflow: 'hidden' },
-  focusMeta: { flex: 1, minWidth: 0, gap: 3 },
-  focusTitle: { color: INK, fontSize: 16, fontWeight: '700' },
-  focusArtist: { color: INK_META, fontSize: 13 },
   content: { paddingHorizontal: CONTENT_PAD },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // The native buttons carry their 8 dp hit slop outside the row's right edge: Android hands a child only the touches

@@ -302,7 +302,6 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   ), []);
   // The lines rise in once the cover is on its way, and sink out first on the way back.
   const linesStyle = useAnimatedStyle(() => {
-    if (fullscreen) return { opacity: 1, transform: [{ translateY: 0 }] };
     const p = lyricsP ? lyricsP.value : showLyrics ? 1 : 0;
     const t = clamp01((p - 0.3) / 0.7);
     return { opacity: t, transform: [{ translateY: 28 * (1 - t) }] };
@@ -311,8 +310,8 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   const artworkHandoff = useAnimatedStyle(() => ({ opacity: transitionProgress && transitionProgress.value < 0.999 ? 0 : 1 }));
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {!fullscreen ? (
-        <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, artworkHandoff]}>
+      {/* Mounted in fullscreen too: it has flown into the title's thumbnail, and it flies back out on exit. */}
+      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, artworkHandoff]}>
         <Stage
           mode={mode}
           width={width}
@@ -327,8 +326,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
           dockX={dockX}
           dockY={dockY}
         />
-        </Animated.View>
-      ) : null}
+      </Animated.View>
       {lyricsMounted ? (
         // Apple Music's lyrics view: the lines own the space between the header
         // and the controls, and the sung line's centre rides at 35% of that
@@ -336,9 +334,8 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
         <Animated.View
           style={[
             styles.lyricsFrame,
-            fullscreen
-              ? { paddingTop: insets.top + 92, marginBottom: Math.max(insets.bottom, 16) + 12 }
-              : { paddingTop: insets.top + HEADER_CLEARANCE },
+            // The controls sit at the bottom in fullscreen too, so the frame is the same: no layout jump on open.
+            { paddingTop: insets.top + HEADER_CLEARANCE },
             linesStyle,
           ]}
           pointerEvents={showLyrics ? 'auto' : 'none'}

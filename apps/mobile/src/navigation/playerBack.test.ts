@@ -23,16 +23,20 @@ const actions = (): PlayerBackActions => ({
 });
 
 describe('handlePlayerBack', () => {
-  it('dismisses only fullscreen lyrics before the other player surfaces', () => {
+  it('dismisses only a sheet over fullscreen lyrics, then the fullscreen lyrics, then the player', () => {
     const handlers = actions();
 
-    handlePlayerBack(state({ lyricsFullscreen: true, hasSheet: true, upNextOpen: true, ambient: true }), handlers);
+    handlePlayerBack(state({ lyricsFullscreen: true, hasSheet: true }), handlers);
+    expect(handlers.closeSheet).toHaveBeenCalledTimes(1);
+    expect(handlers.exitLyricsFullscreen).not.toHaveBeenCalled();
 
+    handlePlayerBack(state({ lyricsFullscreen: true }), handlers);
     expect(handlers.exitLyricsFullscreen).toHaveBeenCalledTimes(1);
-    expect(handlers.closeSheet).not.toHaveBeenCalled();
-    expect(handlers.closeUpNext).not.toHaveBeenCalled();
-    expect(handlers.leaveAmbient).not.toHaveBeenCalled();
     expect(handlers.closePlayer).not.toHaveBeenCalled();
+
+    handlePlayerBack(state(), handlers);
+    expect(handlers.closePlayer).toHaveBeenCalledTimes(1);
+    expect(handlers.exitLyricsFullscreen).toHaveBeenCalledTimes(1);
   });
 
   it('dismisses a sheet before Up next, ambient mode, or the player', () => {

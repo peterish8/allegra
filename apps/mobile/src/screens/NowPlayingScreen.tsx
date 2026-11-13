@@ -10,6 +10,7 @@ import Animated, {
   Extrapolation,
   interpolate,
   runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -17,7 +18,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { projectMomentum, rubberBand } from '../components/allegra/physics';
+import { rubberBand } from '../components/allegra/physics';
 import ConnectRemotePlayer from '../components/connect/ConnectRemotePlayer';
 import LuvLinkPanel from '../components/luvLink/LuvLinkPanel';
 import { useNativeSkip } from '../components/NativeSkip';
@@ -41,13 +42,14 @@ import { Glass, Motion, Radius } from '../constants/allegraTheme';
 import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
 import { useNowPlayingLogic } from '../hooks/useNowPlayingLogic';
 import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
-import { DISMISS_VELOCITY } from '../navigation/playerSheet';
+import { shouldExitLyricsFullscreen, shouldOpenLyricsFullscreen, startsInFooter } from '../navigation/lyricsGesture';
 import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from '../navigation/usePlayerSheetMotion';
 import { cardCoverRect, heroCoverRect, playerContentOpacity } from '../navigation/playerTransition';
 import { shouldCloseSheet } from '../navigation/sheetClose';
 import { playerCoverFrom } from '../navigation/sheetProgress';
 import { MiniPlayerGlow } from '../components/MiniPlayerGlow';
 import CoverGhost from '../components/player/CoverGhost';
+import { DOCK_THUMB } from '../components/player/lyricsMorph';
 import { heroHeight as playerHeroHeight } from '../components/player/AppleBackdrop';
 import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { shellNavHeight, SEEK_BAND_HEIGHT, miniRowHeight } from '../navigation/v6Shell';
@@ -137,6 +139,12 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // This is deliberately separate from showLyrics: leaving focus returns to
   // the regular lyrics view instead of making the listener reopen it.
   const [lyricsFullscreen, setLyricsFullscreen] = useState(false);
+  // Opening and leaving also change showLyrics, which comes from a hook further down, so the
+  // gestures and Back call through these refs (set once the hook has run).
+  const openLyricsFullscreenRef = useRef<() => void>(() => undefined);
+  const exitLyricsFullscreenRef = useRef<() => void>(() => undefined);
+  const openLyricsFullscreen = useCallback(() => openLyricsFullscreenRef.current(), []);
+  const exitLyricsFullscreen = useCallback(() => exitLyricsFullscreenRef.current(), []);
 
   // ── Up next: swipe up and the queue rises under the player (YouTube Music) ──
   // 0 closed .. 1 open. The finger drives it both ways; the title, scrubber and
@@ -157,7 +165,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     setUpNextOpen(open);
     diag('player', `up next ${open ? 'open' : 'closed'}`);
   }, []);
-  const mountUpNext = useCallback(() => setUpNextMounted(true), []);
   const openUpNext = useCallback((velocity = 0) => {
     setUpNextMounted(true);
     upNextShown.value = true;
@@ -176,12 +183,12 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     upNextOpen: upNextRef.current,
     ambient: ambientRef.current,
   }, {
-    exitLyricsFullscreen: () => setLyricsFullscreen(false),
+    exitLyricsFullscreen,
     closeSheet: () => setSheet(null),
     closeUpNext: () => closeUpNext(0),
     leaveAmbient: () => setAmbient(false),
     closePlayer: () => animateClose(0),
-  }), [lyricsFullscreen, closeUpNext, animateClose]);
+  }), [lyricsFullscreen, exitLyricsFullscreen, closeUpNext, animateClose]);
 
   // The root BackHandler invokes this before NavigationContainer's stack pop.
   useFocusEffect(useCallback(() => registerPlayerBackHandler(handleBack), [handleBack]));
@@ -253,8 +260,9 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       dismissActive.value = false;
     });
 
-  // Swipe up anywhere but the lyrics list (which scrolls) to bring up Up next.
-  const upNextGesture = Gesture.Pan()
+  // Swipe up anywhere but the lyrics list (which scrolls) to open the fullscreen lyrics. Up next
+  // stays behind its queue button and `player?sheet=queue`. A short swipe changes nothing.
+  const lyricsUpGesture = Gesture.Pan()
     .enabled(!ambient && sheet === null && !upNextOpen && !lyricsFullscreen)
     .activeOffsetY(-12)
     .failOffsetY(10)
@@ -264,28 +272,26 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       const y = e.allTouches[0] ? e.allTouches[0].y : 0;
       if (closing.value || (showLyricsSV.value && y > lyricsTop && y < frameH.value - CONTROLS_CLEARANCE)) state.fail();
     })
-    .onStart(() => {
+    .onEnd(e => {
       'worklet';
-      runOnJS(mountUpNext)();
-    })
-    .onUpdate(e => {
+      if (shouldOpenLyricsFullscreen(e.translationY, e.velocityY)) runOnJS(openLyricsFullscreen)();
+    });
+  // Fullscreen lyrics: a swipe down that starts in the controls footer goes back to the cover. This
+  // pan runs once per touch, and the player's dismiss pan is off while the lyrics are fullscreen, so
+  // one swipe never also closes the player; the next, separate swipe does (dismissGesture).
+  const lyricsDownGesture = Gesture.Pan()
+    .enabled(!ambient && sheet === null && lyricsFullscreen)
+    .activeOffsetY(12)
+    .failOffsetY(-10)
+    .failOffsetX([-24, 24])
+    .onTouchesDown((e, state) => {
       'worklet';
-      upNext.value = Math.min(1, Math.max(0, -e.translationY / upNextTravel));
+      const y = e.allTouches[0] ? e.allTouches[0].y : 0;
+      if (!startsInFooter(y, frameH.value, CONTROLS_CLEARANCE)) state.fail();
     })
     .onEnd(e => {
       'worklet';
-      const landing = upNext.value - projectMomentum(e.velocityY) / upNextTravel;
-      if (landing > 0.4 || e.velocityY < -DISMISS_VELOCITY) {
-        // Set here too, before onFinalize runs on this thread.
-        upNextShown.value = true;
-        runOnJS(openUpNext)(e.velocityY);
-      } else {
-        upNext.value = withSpring(0, SETTLE_SPRING);
-      }
-    })
-    .onFinalize((_e, success) => {
-      'worklet';
-      if (!success && !upNextShown.value && upNext.value > 0) upNext.value = withSpring(0, SETTLE_SPRING);
+      if (shouldExitLyricsFullscreen(e.translationY, e.velocityY)) runOnJS(exitLyricsFullscreen)();
     });
   const reverseActive = useSharedValue(false);
   const reverseGesture = Gesture.Pan()
@@ -310,7 +316,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       reverseActive.value = false;
     });
 
-  const playerGesture = Gesture.Race(dismissGesture, reverseGesture, upNextGesture);
+  const playerGesture = Gesture.Race(dismissGesture, reverseGesture, lyricsUpGesture, lyricsDownGesture);
 
   // The sheet ends at the bottom bar's top while it is closed and reaches the screen's bottom once
   // open, the bar sliding down under that edge (useTabBarPushStyle) — the bar never pops out from
@@ -405,9 +411,18 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const lyricsP = useSharedValue(showLyrics ? 1 : 0);
   const dockX = useSharedValue(0);
   const dockY = useSharedValue(0);
+  // The thumbnail's centre as plain numbers: the moving cover (CoverGhost) takes a rectangle prop, and under
+  // lyrics the cover lives in that thumbnail, so it must fly there and not to the big cover.
+  const [dockCenter, setDockCenter] = useState({ x: 0, y: 0 });
+  useAnimatedReaction(
+    () => dockY.value,
+    y => { if (y > 0) runOnJS(setDockCenter)({ x: dockX.value, y }); },
+    [dockX, dockY],
+  );
   useEffect(() => {
     const target = showLyrics || lyricsFullscreen ? 1 : 0;
-    lyricsP.value = reduceMotion || lyricsFullscreen
+    // Fullscreen rides the same cover -> lyrics morph (opacity only under Reduce Motion).
+    lyricsP.value = reduceMotion
       ? target
       : withTiming(target, { duration: LYRICS_MORPH_MS, easing: Easing.bezier(0.32, 0.72, 0, 1) });
   }, [showLyrics, lyricsFullscreen, reduceMotion, lyricsP]);
@@ -698,6 +713,12 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     setShowLyrics(true);
     setLyricsFullscreen(true);
   }, [setShowLyrics]);
+  openLyricsFullscreenRef.current = enterLyricsFullscreen;
+  // Leaving goes back to the cover, not to the regular lyrics view.
+  exitLyricsFullscreenRef.current = () => {
+    setLyricsFullscreen(false);
+    setShowLyrics(false);
+  };
 
   // The sleep timer's remaining time, refreshed while it runs.
   const sleepEndsAt = useSleepTimerStore(s => s.endsAt);
@@ -774,6 +795,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
         return;
       case 'lyrics':
         setSheet(null);
+        setLyricsFullscreen(false);
         setShowLyrics(!showLyrics);
         return;
       case 'shuffle':
@@ -869,6 +891,9 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // so the lifted title reads over it.
   const stageBackStyle = useAnimatedStyle(() => ({ opacity: 1 - 0.75 * upNext.value }));
   const upNextShadeStyle = useAnimatedStyle(() => ({ opacity: upNext.value }));
+  // With lyrics up (regular or fullscreen) the cover is the title's thumbnail, so the sheet's cover lands there.
+  const ghostOnDock = (showLyrics || lyricsFullscreen) && dockCenter.y > 0;
+  const dockRect = { x: dockCenter.x - DOCK_THUMB / 2, y: dockCenter.y - DOCK_THUMB / 2, width: DOCK_THUMB, height: DOCK_THUMB };
 
   return (
     <View style={styles.root}>
@@ -974,7 +999,11 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           onSkipBackward={skipBackward}
           nativeSkip={nativeSkip}
           onToggleLike={onToggleLike}
-          onToggleLyrics={() => setShowLyrics(!showLyrics)}
+          onToggleLyrics={() => {
+            // From fullscreen the lyrics button goes back to the cover in one step.
+            if (lyricsFullscreen) setLyricsFullscreen(false);
+            setShowLyrics(!showLyrics);
+          }}
           onLyricsLongPress={() => setSheet('lyrics')}
           onHighlightSwitched={h => say(h === 'letters' ? 'Lyrics light up letter by letter' : 'Lyrics light up line by line')}
           positionSV={positionSV}
@@ -984,7 +1013,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           showLyrics={showLyrics}
           compact={showLyrics}
           lyricsFullscreen={lyricsFullscreen}
-          onExitLyricsFullscreen={() => setLyricsFullscreen(false)}
+          onExitLyricsFullscreen={exitLyricsFullscreen}
           onEnterLyricsFullscreen={enterLyricsFullscreen}
           coverImageUri={currentSong?.coverImageUri}
           lyricsP={lyricsP}
@@ -1050,9 +1079,9 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       {movingCover && currentSong ? (
         <CoverGhost
           progress={progress}
-          to={landingRect}
-          toRadius={coverLanding === 'card' ? Radius.panel : 0}
-          fadeOut={coverLanding !== 'card'}
+          to={ghostOnDock ? dockRect : landingRect}
+          toRadius={ghostOnDock ? Radius.thumb : coverLanding === 'card' ? Radius.panel : 0}
+          fadeOut={!ghostOnDock && coverLanding !== 'card'}
           uri={currentSong.coverImageUri}
           title={currentSong.title}
           artist={currentSong.artist}
