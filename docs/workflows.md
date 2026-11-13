@@ -151,6 +151,35 @@ node -e "require('./.vercel/output/config.json').routes.forEach((r,i)=>console.l
 The `/api` rewrite must appear **before** Next's `[[...slug]]` catch-all. If it does not, every API
 call will 404 in production while the site still renders.
 
+## Dependency updates
+
+`.github/dependabot.yml` opens version-update pull requests on Mondays at 03:00 (Asia/Kolkata). It has one
+entry per manifest: the root `package-lock.json`, `apps/mobile/package-lock.json`, the Gradle build in
+`apps/mobile/android`, the Cargo lock in `apps/desktop`, and the workflow files.
+
+- **Grouping.** Minor and patch updates for an ecosystem arrive as one pull request. Major updates arrive one
+  per dependency, so each gets its own review.
+- **Cooldown.** A new release waits 7 days before Dependabot proposes it, and 14 days for a major version in
+  npm and Cargo. Gradle waits 14 days for every update. The cooldown applies to version updates only, so
+  security updates are not held back.
+- **Expo and React Native.** The mobile entry ignores `expo`, `expo-*`, `@expo/*`, `react`, `react-native` and
+  `react-native-*`. Expo ties these packages to one SDK, so upgrade them together with `npx expo install --fix`,
+  not one package at a time.
+- **Media3.** The Gradle entry ignores `androidx.media3:*`. The app's Media3 version must equal the version
+  expo-video and expo-audio are built for, which `apps/mobile/src/media3Version.test.ts` checks. Change it by
+  hand, together with those packages.
+- **`needs-version-bump`.** This label marks a pull request that changes an APK or desktop path. Add the
+  `expo.version` (`apps/mobile/app.json`) or `apps/desktop/Cargo.toml` version bump commit before merging. The
+  bot cannot make that bump, so the label is the reminder.
+- **One lockfile.** The root entry only ever changes the root `package-lock.json`. Each other entry changes only
+  its own manifest or lockfile. No entry adds a lockfile.
+- **Labels.** Dependabot ignores a label the repo does not define. `dependencies` and `needs-version-bump` must
+  exist, or the version-bump reminder is silently lost.
+- **Gradle.** `apps/mobile/android/settings.gradle` loads the React Native and Expo Gradle plugins from
+  `node_modules`. The Dependabot job may not have those installed, so it can fail to resolve them. If
+  Dependabot reports an error for the Gradle entry, remove that entry. Do not add an install step to the
+  update job.
+
 ## Branching and commits
 
 `main` is always deployable and always green. Work on `feat/`, `fix/`, `chore/`, `docs/` branches.
