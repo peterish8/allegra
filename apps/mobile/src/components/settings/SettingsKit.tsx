@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import Animated, { FadeIn as EnterFade, interpolateColor, LinearTransition, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
-import { Motion, Radius, Signal } from '../../constants/allegraTheme';
+import { Control, Glass, Motion, OnMedia, Radius, Signal, Surface, TypeScale } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
 import { Tactile } from '../allegra/motion';
 import { choiceColumns } from './choiceLayout';
@@ -52,7 +52,11 @@ export const Section: React.FC<{
   const reduce = useReducedMotion();
   const turn = useSharedValue(open ? 1 : 0);
   useEffect(() => {
-    turn.value = reduce ? withTiming(open ? 1 : 0, { duration: 0 }) : withSpring(open ? 1 : 0, Motion.spring.tactile);
+    if (reduce) {
+      turn.value = open ? 1 : 0;
+      return;
+    }
+    turn.value = withSpring(open ? 1 : 0, Motion.spring.tactile);
   }, [open, reduce, turn]);
   const chevron = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 180}deg` }] }));
   // Closing fades the body out, then unmounts it, and only then does the section's layout transition shrink.
@@ -66,7 +70,12 @@ export const Section: React.FC<{
       bodyOpacity.value = 1;
       return;
     }
-    bodyOpacity.value = withTiming(0, { duration: reduce ? 0 : Motion.duration.instant }, done => {
+    if (reduce) {
+      bodyOpacity.value = 0;
+      setBodyMounted(false);
+      return;
+    }
+    bodyOpacity.value = withTiming(0, { duration: Motion.duration.instant }, done => {
       if (done) runOnJS(setBodyMounted)(false);
     });
   }, [open, reduce, bodyOpacity]);
@@ -87,7 +96,7 @@ export const Section: React.FC<{
     <Animated.View style={styles.section} onLayout={onLayout} layout={reduce ? undefined : LinearTransition.duration(Motion.duration.base)}>
       {/* Light along the top edge, brightest in the middle. */}
       <LinearGradient
-        colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)', 'rgba(255,255,255,0)']}
+        colors={[Glass.sheen[2], Glass.highlight, Glass.sheen[2]]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.sectionHighlight}
@@ -132,18 +141,22 @@ export const Switch: React.FC<{ label: string; hint?: string; value: boolean; on
   const held = useSharedValue(0);
   const reduce = useReducedMotion();
   useEffect(() => {
+    if (reduce) {
+      on.value = value ? 1 : 0;
+      return;
+    }
     on.value = withSpring(value ? 1 : 0, Motion.spring.tactile);
-  }, [value, on]);
-  const track = useAnimatedStyle(() => ({ backgroundColor: interpolateColor(on.value, [0, 1], ['rgba(255,255,255,0.12)', Signal.wave]) }));
+  }, [value, on, reduce]);
+  const track = useAnimatedStyle(() => ({ backgroundColor: interpolateColor(on.value, [0, 1], [Glass.highlight, Signal.wave]) }));
   const thumb = useAnimatedStyle((): ViewStyle => ({
     transform: [{ translateX: on.value * (TRACK_W - THUMB - 8) }, { scaleX: reduce ? 1 : 1 + 0.22 * held.value }],
-    backgroundColor: interpolateColor(on.value, [0, 1], ['#ffffff', Signal.waveInk]),
+    backgroundColor: interpolateColor(on.value, [0, 1], [OnMedia.primary, Signal.waveInk]),
   }));
   return (
     <Tactile
       onPress={() => { Haptics.selectionAsync().catch(() => {}); onChange(!value); }}
-      onPressIn={() => { held.value = withSpring(1, Motion.spring.tactile); }}
-      onPressOut={() => { held.value = withSpring(0, Motion.spring.tactile); }}
+      onPressIn={() => { if (reduce) return; held.value = withSpring(1, Motion.spring.tactile); }}
+      onPressOut={() => { if (reduce) return; held.value = withSpring(0, Motion.spring.tactile); }}
       pressScale={0.985}
       accessibilityRole="switch"
       accessibilityState={{ checked: value }}
@@ -233,8 +246,15 @@ export const JumpChips: React.FC<{ items: { key: string; label: string }[]; onJu
 );
 
 export const FadeIn: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const o = useSharedValue(0);
-  useEffect(() => { o.value = withTiming(1, { duration: Motion.duration.base }); }, [o]);
+  const reduce = useReducedMotion();
+  const o = useSharedValue(reduce ? 1 : 0);
+  useEffect(() => {
+    if (reduce) {
+      o.value = 1;
+      return;
+    }
+    o.value = withTiming(1, { duration: Motion.duration.base });
+  }, [o, reduce]);
   const s = useAnimatedStyle(() => ({ opacity: o.value }));
   return <Animated.View style={s}>{children}</Animated.View>;
 };
@@ -250,9 +270,9 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 4,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: Surface.divider,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.09)',
+    borderColor: Glass.hairline,
     overflow: 'hidden',
   },
   sectionHighlight: { position: 'absolute', top: 0, left: 0, right: 0, height: 1 },
@@ -265,33 +285,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headTitle: { color: Signal.ink, fontSize: 18, fontWeight: '700', letterSpacing: -0.2 },
-  headLead: { color: Signal.inkMuted, fontSize: 13, marginTop: 2 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255, 255, 255, 0.07)' },
+  headTitle: { color: Signal.ink, fontSize: TypeScale.section, fontWeight: '700' },
+  headLead: { color: Signal.inkMuted, fontSize: TypeScale.meta, marginTop: 2 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Surface.divider },
   rowStack: { flexDirection: 'column', alignItems: 'stretch', gap: 12 },
   copy: { gap: 3 },
-  label: { color: Signal.ink, fontSize: 15, fontWeight: '600' },
-  hint: { color: Signal.inkMuted, fontSize: 13, lineHeight: 18 },
+  label: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '600' },
+  hint: { color: Signal.inkMuted, fontSize: TypeScale.meta, lineHeight: 18 },
   control: { flexShrink: 0 },
   actionControl: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '45%' },
-  value: { color: Signal.inkSoft, fontSize: 14 },
-  destructive: { color: Signal.accent },
+  value: { color: Signal.inkSoft, fontSize: TypeScale.secondary },
+  destructive: { color: Signal.danger },
   track: { width: TRACK_W, height: 28, borderRadius: 14, padding: 4, justifyContent: 'center' },
   thumb: { width: THUMB, height: THUMB, borderRadius: THUMB / 2 },
-  // Segmented: 38pt pills 4pt inside the box, so the box's radius is 19 + 4 = 23.
-  choice: { padding: 4, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.08)' },
+  // Segmented: 48dp pills 4dp inside the box, so the box's radius is 24 + 4 = 28.
+  choice: { padding: 4, borderRadius: Control.target / 2 + 4, backgroundColor: Surface.divider, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
   choiceRow: { flexDirection: 'row', gap: 4 },
   // Grid: each option is its own pill.
   choiceGrid: { gap: 8 },
   choiceGridRow: { flexDirection: 'row', gap: 8 },
   choiceCell: { flex: 1, flexBasis: 0 },
-  choiceOption: { minHeight: 38, paddingHorizontal: 10, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
-  choiceChip: { minHeight: 42, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)' },
+  choiceOption: { minHeight: Control.target, paddingHorizontal: 10, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+  choiceChip: { backgroundColor: Surface.divider, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
   choicePad: { flex: 1, flexBasis: 0 },
   choiceOptionOn: { backgroundColor: Signal.wave },
-  choiceText: { color: Signal.inkSoft, fontSize: 13, fontWeight: '600' },
+  choiceText: { color: Signal.inkSoft, fontSize: TypeScale.meta, fontWeight: '600' },
   choiceTextOn: { color: Signal.waveInk },
   jump: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingVertical: 8 },
-  jumpChip: { minHeight: 36, paddingHorizontal: 15, borderRadius: Radius.pill, justifyContent: 'center', backgroundColor: 'rgba(22, 22, 25, 0.88)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)' },
-  jumpText: { color: Signal.inkSoft, fontSize: 13, fontWeight: '600' },
+  jumpChip: { minHeight: Control.target, paddingHorizontal: 15, borderRadius: Radius.pill, justifyContent: 'center', backgroundColor: Glass.fillHeavy, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
+  jumpText: { color: Signal.inkSoft, fontSize: TypeScale.meta, fontWeight: '600' },
 });

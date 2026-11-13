@@ -10,8 +10,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import { Dimensions, LayoutChangeEvent, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import { Surface } from '../../constants/allegraTheme';
 import { AuraPalette, NEUTRAL_AURA } from '../allegra/palette';
 
 const FADE_MS = 900;
@@ -40,6 +41,7 @@ interface Layer {
 }
 
 const SettingsGlow: React.FC<{ palette: AuraPalette | null }> = ({ palette }) => {
+  const reduce = useReducedMotion();
   const [{ width, height }, setSize] = useState(() => Dimensions.get('screen'));
   const onLayout = (e: LayoutChangeEvent) => {
     const { width: w, height: h } = e.nativeEvent.layout;
@@ -61,18 +63,18 @@ const SettingsGlow: React.FC<{ palette: AuraPalette | null }> = ({ palette }) =>
   return (
     <View style={[StyleSheet.absoluteFill, styles.base]} pointerEvents="none" onLayout={onLayout}>
       {layers.map((layer, i) => (
-        <Animated.View key={layer.key} style={StyleSheet.absoluteFill} entering={i > 0 ? FadeIn.duration(FADE_MS) : undefined}>
+        <Animated.View key={layer.key} style={StyleSheet.absoluteFill} entering={reduce ? undefined : i > 0 ? FadeIn.duration(FADE_MS) : undefined}>
           <Glow palette={layer.palette} width={width} height={height} id={`sg${i}${layer.key.replace(/#/g, '')}`} />
         </Animated.View>
       ))}
       {/* Keeps the glow off the lower page: panels sit on true black. */}
-      <LinearGradient colors={['rgba(4,4,5,0)', 'rgba(4,4,5,0.6)', '#040405']} locations={[0.18, 0.46, 0.7]} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['transparent', Surface.immersive, Surface.immersive]} locations={[0.18, 0.5, 0.7]} style={StyleSheet.absoluteFill} />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  base: { backgroundColor: '#040405' },
+  base: { backgroundColor: Surface.immersive },
 });
 
 export default React.memo(SettingsGlow);

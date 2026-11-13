@@ -12,7 +12,6 @@ import Slider from '@react-native-community/slider';
 import React from 'react';
 import type { LayoutChangeEvent } from 'react-native';
 import {
-  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -20,10 +19,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import appConfig from '../../app.json';
-import { CustomAlert } from '../components/CustomAlert';
 import { LanguagePickerModal } from '../components/LanguagePickerModal';
 import { Toast } from '../components/Toast';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
@@ -37,7 +35,7 @@ import SettingsGlow from '../components/settings/SettingsGlow';
 import * as Kit from '../components/settings/SettingsKit';
 import { Action, Choice, JumpChips, Row, Section, SettingsAccordion } from '../components/settings/SettingsKit';
 import { ShortcutSettings } from '../components/settings/ShortcutSettings';
-import { Motion, Radius, Signal, Space } from '../constants/allegraTheme';
+import { Control, Glass, Motion, Radius, Signal, Space, Surface } from '../constants/allegraTheme';
 import { Colors } from '../constants/colors';
 import { SettingsStrings } from '../constants/uiStrings';
 import { clearAllData } from '../database/queries';
@@ -50,7 +48,7 @@ import { usePlaylistStore } from '../store/playlistStore';
 import { LYRICS_SIZE_MAX, LYRICS_SIZE_MIN, LyricsAlign, LyricsHighlight, PlayerBackground, ReduceEffects, isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
 import { useSongsStore } from '../store/songsStore';
 import { TabScreenProps } from '../types/navigation';
-import { Button, IconButton, Sheet, SheetScrollView, TactileRow } from '../ui';
+import { Button, ConfirmSheet, IconButton, Sheet, SheetScrollView, TactileRow } from '../ui';
 import { exportAllSongs, importSongsFromJson, shareExportedFile } from '../utils/exportImport';
 import * as Haptics from '../utils/haptics';
 import { deviceTier } from '../utils/performanceTier';
@@ -103,17 +101,15 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
     setDisplaySize(size);
     if (!saveDisplaySize(size)) { setDisplaySize(readDisplaySize()); setNotice('Could not change the display size'); }
   }, [displaySize]);
-  const [alertConfig, setAlertConfig] = React.useState<{
-    visible: boolean; title: string; message: string;
-    buttons: { text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive' }[];
-  }>({ visible: false, title: '', message: '', buttons: [] });
+  // One question at a time ("Delete all library data", "Reset settings"), asked in a ConfirmSheet.
+  const [confirm, setConfirm] = React.useState<{ title: string; body: string; confirmLabel: string; destructive?: boolean; onConfirm: () => void | Promise<void> } | null>(null);
 
   const handleExport = React.useCallback(async () => {
     try {
       const filePath = await exportAllSongs();
       await shareExportedFile(filePath);
-    } catch (e) {
-      Alert.alert('Export failed', e instanceof Error ? e.message : 'Unknown error');
+    } catch {
+      setNotice('Could not export your library. Try again.');
     }
   }, []);
 
@@ -123,10 +119,10 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
       const imported = await importSongsFromJson();
       if (imported > 0) {
         await fetchSongs();
-        Alert.alert('Import complete', `${imported} song(s) imported successfully.`);
+        setNotice(`${imported} ${imported === 1 ? 'song' : 'songs'} imported`);
       }
-    } catch (e) {
-      Alert.alert('Import failed', e instanceof Error ? e.message : 'Unknown error');
+    } catch {
+      setNotice('Could not read that backup. Pick a file exported from LuvLyrics.');
     } finally {
       setIsImporting(false);
     }
@@ -138,8 +134,8 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
       setAvailableAudioFiles(files);
       setSelectedFiles(new Set(files.map((f: any) => f.uri)));
       setSelectionModalVisible(true);
-    } catch (e) {
-      Alert.alert('Scan failed', e instanceof Error ? e.message : 'Unknown error');
+    } catch {
+      setNotice('Could not look through this phone for music. Check that LuvLyrics can read your audio.');
     }
   }, []);
 
@@ -195,7 +191,7 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
     }
     if (count > 0) {
       await fetchSongs();
-      Alert.alert('Import complete', `${count} song(s) added to library.`);
+      setNotice(`${count} ${count === 1 ? 'song' : 'songs'} added to your library`);
     }
     setSelectedFiles(new Set());
   }, [availableAudioFiles, selectedFiles, addSong, fetchSongs]);
@@ -451,14 +447,12 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
             label="Delete all library data"
             hint="Every song and playlist on this phone. This cannot be undone."
             destructive
-            onPress={() => setAlertConfig({
-              visible: true,
-              title: 'Delete all library data',
-              message: 'This permanently deletes every song and playlist on this phone. It cannot be undone.',
-              buttons: [
-                { text: SettingsStrings.cancel, onPress: () => {}, style: 'cancel' },
-                { text: 'Delete everything', onPress: async () => { await clearAllData(); await fetchSongs(); }, style: 'destructive' },
-              ],
+            onPress={() => setConfirm({
+              title: 'Delete all library data?',
+              body: 'This permanently deletes every song and playlist on this phone. It cannot be undone.',
+              confirmLabel: 'Delete everything',
+              destructive: true,
+              onConfirm: async () => { await clearAllData(); await fetchSongs(); },
             })}
           />
         </Section>
@@ -473,14 +467,11 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
           <Action
             label="Reset settings"
             hint="Put everything on this page back to how it started. Your songs stay."
-            onPress={() => setAlertConfig({
-              visible: true,
-              title: 'Reset settings',
-              message: 'Every setting goes back to its default. Your library is not touched.',
-              buttons: [
-                { text: SettingsStrings.cancel, onPress: () => {}, style: 'cancel' },
-                { text: 'Reset', onPress: () => settings.resetToDefaults(), style: 'destructive' },
-              ],
+            onPress={() => setConfirm({
+              title: 'Reset settings?',
+              body: 'Every setting goes back to its default. Your library is not touched.',
+              confirmLabel: 'Reset',
+              onConfirm: () => settings.resetToDefaults(),
             })}
           />
         </Section>
@@ -495,12 +486,14 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
       />
 
       <Toast visible={notice !== null} message={notice ?? ''} type="info" onDismiss={() => setNotice(null)} />
-      <CustomAlert
-        visible={alertConfig.visible}
-        title={alertConfig.title}
-        message={alertConfig.message}
-        buttons={alertConfig.buttons}
-        onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
+      <ConfirmSheet
+        visible={confirm !== null}
+        title={confirm?.title ?? ''}
+        body={confirm?.body}
+        confirmLabel={confirm?.confirmLabel ?? ''}
+        destructive={confirm?.destructive}
+        onConfirm={() => { const run = confirm?.onConfirm; setConfirm(null); void run?.(); }}
+        onClose={() => setConfirm(null)}
       />
 
 
@@ -522,7 +515,7 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
           accessibilityLabel="Select all"
           accessibilityState={{ checked: selectedFiles.size === availableAudioFiles.length }}
         >
-          <Ionicons name={selectedFiles.size === availableAudioFiles.length ? 'checkbox' : 'square-outline'} size={24} color="#EDEDED" />
+          <Ionicons name={selectedFiles.size === availableAudioFiles.length ? 'checkbox' : 'square-outline'} size={24} color={Signal.ink} />
           <Text style={styles.selectAllText}>Select all</Text>
         </TactileRow>
         <SheetScrollView style={styles.selectionList} keyboardShouldPersistTaps="handled">
@@ -540,7 +533,7 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: selectedFiles.has(file.uri) }}
               >
-                <Ionicons name={selectedFiles.has(file.uri) ? 'checkbox' : 'square-outline'} size={24} color={selectedFiles.has(file.uri) ? '#EDEDED' : Colors.textSecondary} />
+                <Ionicons name={selectedFiles.has(file.uri) ? 'checkbox' : 'square-outline'} size={24} color={selectedFiles.has(file.uri) ? Signal.ink : Colors.textSecondary} />
                 <View style={styles.selectionItemInfo}>
                   <Text style={styles.selectionItemTitle} numberOfLines={1}>{file.filename.replace(/\.[^/.]+$/, '')}</Text>
                   <Text style={styles.selectionItemArtist} numberOfLines={1}>{file.artist || file.album || 'Unknown'}</Text>
@@ -571,8 +564,8 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
               <View key={song.id} style={styles.selectionItem}>
                 {song.coverImageUri
                   ? <Image source={{ uri: song.coverImageUri }} style={{ width: 44, height: 44, borderRadius: 8 }} />
-                  : <View style={{ width: 44, height: 44, borderRadius: 8, backgroundColor: '#2C2C2E', alignItems: 'center', justifyContent: 'center' }}>
-                      <Ionicons name="disc" size={24} color="rgba(255,255,255,0.3)" />
+                  : <View style={{ width: 44, height: 44, borderRadius: 8, backgroundColor: Surface.control, alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="disc" size={24} color={Signal.inkMuted} />
                     </View>
                 }
                 <View style={styles.selectionItemInfo}>
@@ -616,7 +609,7 @@ const LyricsSizeRow: React.FC<{ size: number; align: LyricsAlign; onChange: (siz
         onValueChange={setLive}
         onSlidingComplete={onChange}
         minimumTrackTintColor={Signal.wave}
-        maximumTrackTintColor="rgba(244,241,234,0.18)"
+        maximumTrackTintColor={Glass.hairlineStrong}
         thumbTintColor={Signal.wave}
       />
     </Row>
@@ -629,6 +622,7 @@ const LyricsSizeRow: React.FC<{ size: number; align: LyricsAlign; onChange: (siz
  * to exactly in sync in one tap.
  */
 const TimingRow: React.FC<{ value: number; onChange: (seconds: number) => void }> = ({ value, onChange }) => {
+  const reduce = useReducedMotion();
   const [live, setLive] = React.useState(value);
   React.useEffect(() => { setLive(value); }, [value]);
   const shown = Math.round(live * 10) / 10;
@@ -645,11 +639,11 @@ const TimingRow: React.FC<{ value: number; onChange: (seconds: number) => void }
         onValueChange={setLive}
         onSlidingComplete={onChange}
         minimumTrackTintColor={Signal.wave}
-        maximumTrackTintColor="rgba(244,241,234,0.18)"
+        maximumTrackTintColor={Glass.hairlineStrong}
         thumbTintColor={Signal.wave}
       />
       {off ? (
-        <Animated.View entering={FadeIn.duration(Motion.duration.base)} exiting={FadeOut.duration(Motion.duration.fast)} style={styles.resetWrap}>
+        <Animated.View entering={reduce ? undefined : FadeIn.duration(Motion.duration.base)} exiting={reduce ? undefined : FadeOut.duration(Motion.duration.fast)} style={styles.resetWrap}>
           <Tactile
             onPress={() => { Haptics.selectionAsync().catch(() => {}); setLive(0); onChange(0); }}
             accessibilityRole="button"
@@ -671,7 +665,7 @@ const styles = StyleSheet.create({
   heroTitle: { color: Signal.ink, fontSize: TypeScale.page, fontWeight: '700' },
   slider: { width: '100%', height: 36 },
   resetWrap: { alignItems: 'flex-start', marginTop: 4 },
-  resetPill: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 14, borderRadius: Radius.pill, backgroundColor: Signal.wave },
+  resetPill: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: Control.target, paddingHorizontal: 14, borderRadius: Radius.pill, backgroundColor: Signal.wave },
   resetText: { color: Signal.waveInk, fontSize: TypeScale.meta, fontWeight: '600' },
   tokenField: { marginBottom: 12 },
   tokenLabel: { color: Signal.inkSoft, fontSize: TypeScale.meta, fontWeight: '600', marginBottom: 6 },
@@ -681,29 +675,19 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     color: Signal.ink,
     fontSize: TypeScale.body,
-    backgroundColor: 'rgba(244,241,234,0.06)',
+    backgroundColor: Glass.fillLight,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: Glass.hairline,
   },
   container: { flex: 1 },
 
-  // Modals
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
-  nameModal: { backgroundColor: '#1C1C1E', borderRadius: 16, padding: 24, width: '80%', maxWidth: 320 },
-  nameModalTitle: { fontSize: TypeScale.section, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16, textAlign: 'center' },
-  nameModalButtons: { flexDirection: 'row', gap: 10 },
-  nameModalButton: { flex: 1, padding: 13, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center' },
-  nameModalButtonPrimary: { backgroundColor: '#2E2E2E' },
-  nameModalButtonText: { fontSize: TypeScale.body, fontWeight: '600', color: Colors.textPrimary },
-  nameModalButtonTextPrimary: { color: '#fff' },
-
   // Selection modal
-  searchBarContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 12, marginBottom: 4, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  searchBarContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 12, marginBottom: 4, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: Glass.fillLight, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
   searchBarInput: { flex: 1, fontSize: TypeScale.body, color: Colors.textPrimary },
   emptySearchContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 12 },
   emptySearchText: { fontSize: TypeScale.body, color: Colors.textMuted, textAlign: 'center' },
-  selectAllButton: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },
-  selectAllText: { fontSize: TypeScale.body, fontWeight: '600', color: '#EDEDED' },
+  selectAllButton: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Glass.hairline },
+  selectAllText: { fontSize: TypeScale.body, fontWeight: '600', color: Signal.ink },
   selectionList: { maxHeight: 400 },
   selectionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 12 },
   selectionItemInfo: { flex: 1 },
