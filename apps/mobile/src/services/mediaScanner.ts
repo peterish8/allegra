@@ -20,7 +20,8 @@ export interface AudioFile {
 }
 
 export const requestMediaLibraryPermissions = async (): Promise<boolean> => {
-  const { status } = await MediaLibrary.requestPermissionsAsync();
+  // Audio only: the manifest strips photo and video access (src/androidPermissions.test.ts).
+  const { status } = await MediaLibrary.requestPermissionsAsync(false, ['audio']);
   return status === 'granted';
 };
 

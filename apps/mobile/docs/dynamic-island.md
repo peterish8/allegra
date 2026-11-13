@@ -1,5 +1,9 @@
 # System Dynamic Island
 
+> **Removed (2026-11-13).** The island's accessibility service and notification listener made Play Protect block
+> sideloaded installs and Google Pay pause payments. The feature, its service and its settings are gone; see
+> `.planning/mobile-security/ANDROID-PERMISSIONS-AUDIT-2026-11-13.md`. This page is history, not setup.
+
 The island is a native Kotlin accessibility overlay, outside the React Native activity. It stays
 over other apps and opens into cover artwork, song information, elapsed/remaining time, a seek bar,
 and previous/play-pause/next controls. The Settings screen only configures the native feature.

@@ -55,15 +55,12 @@ class MainActivity : ReactActivity() {
     }
   }
 
-  // The system island steps aside while the app is in front, when the listener chose that (Settings → Dynamic island).
   override fun onResume() {
     super.onResume()
-    com.lyricflow.app.island.IslandService.setAppInFront(true)
     FrameWatch.start(this)
   }
 
   override fun onPause() {
-    com.lyricflow.app.island.IslandService.setAppInFront(false)
     FrameWatch.stop()
     super.onPause()
   }

@@ -220,7 +220,7 @@ class NativeFlowGlowView(context: Context, appContext: AppContext) : ExpoView(co
     }
 
     private companion object {
-        /** The island's flow pace (IslandView.FLOW_TEMPO). */
+        /** The flow pace the retired system island used, kept so the glow moves as before. */
         const val FLOW_TEMPO = 2f
         const val COLOR_FADE_S = 1.2f
         val executor = Executors.newSingleThreadExecutor { r ->
