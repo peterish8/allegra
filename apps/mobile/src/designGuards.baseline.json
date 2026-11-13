@@ -133,7 +133,7 @@
   },
   "componentTypeSize": {
     "App.tsx": 5,
-    "components/about/AboutSheet.tsx": 9,
+    "components/about/AboutSheet.tsx": 8,
     "components/about/UpdatePanel.tsx": 10,
     "components/AddToPlaylistModal.tsx": 5,
     "components/blend/BlendParts.tsx": 18,
