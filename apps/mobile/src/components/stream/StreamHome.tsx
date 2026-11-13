@@ -27,7 +27,8 @@ import SavedBadge from './SavedBadge';
 
 // Matches SectionHeading's inset so headings and content share an edge.
 export const GUTTER = Control.gutter;
-const SURFACE = 'rgba(255, 255, 255, 0.07)';
+// 0.04: the Jump back in tiles sit calmer behind their covers (they were 0.07 and read as heavy boxes).
+const SURFACE = 'rgba(255, 255, 255, 0.04)';
 const SURFACE_ON = 'rgba(255, 255, 255, 0.12)';
 
 export interface TrackItem {
@@ -94,7 +95,6 @@ export const ShortcutGrid: React.FC<{
           </View>
           <View style={[styles.shortcutCopy, { minHeight: Math.ceil(34 * fontScale) }]}>
             <Text style={[styles.shortcutTitle, item.isCurrent && styles.current]} numberOfLines={2} ellipsizeMode="tail">{item.title}</Text>
-            {item.artist ? <Text style={styles.shortcutMeta} numberOfLines={1}>{item.artist}</Text> : null}
           </View>
         </Tactile>
       </View>
@@ -179,7 +179,6 @@ const styles = StyleSheet.create({
   shortcutArt: { width: SHORTCUT_COVER, height: SHORTCUT_COVER, marginLeft: (SHORTCUT_ART - SHORTCUT_COVER) / 2, borderRadius: Radius.cover, overflow: 'hidden', alignSelf: 'center' },
   shortcutCopy: { flex: 1, minWidth: 0, paddingHorizontal: Space.sm - 2, paddingVertical: Space.xxs },
   shortcutTitle: { fontSize: TypeScale.secondary, lineHeight: 17, fontWeight: '600', color: Signal.ink },
-  shortcutMeta: { fontSize: TypeScale.caption, lineHeight: 16, color: Signal.inkMuted, marginTop: 1 },
 
   columns: { paddingHorizontal: GUTTER, gap: Space.xs },
   row: { flexDirection: 'row', alignItems: 'center' },
