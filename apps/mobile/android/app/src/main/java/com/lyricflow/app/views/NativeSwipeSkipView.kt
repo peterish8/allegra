@@ -27,7 +27,7 @@ import expo.modules.kotlin.views.ExpoView
  * that is when the content slides back in.
  */
 class NativeSwipeSkipView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
-    var enabled = false
+    var active = false
     var rtl = false
     var reduceMotion = false
     var songKey: String? = null
@@ -57,7 +57,7 @@ class NativeSwipeSkipView(context: Context, appContext: AppContext) : ExpoView(c
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) = Unit
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
-        if (!enabled) return false
+        if (!active) return false
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 armed = true

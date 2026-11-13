@@ -12,7 +12,7 @@ class NativeSwipeSkipModule : Module() {
         View(NativeSwipeSkipView::class) {
             Events("onSkip")
 
-            Prop("enabled") { view: NativeSwipeSkipView, enabled: Boolean? -> view.enabled = enabled ?: false }
+            Prop("enabled") { view: NativeSwipeSkipView, enabled: Boolean? -> view.active = enabled ?: false }
             Prop("rtl") { view: NativeSwipeSkipView, rtl: Boolean? -> view.rtl = rtl ?: false }
             Prop("reduceMotion") { view: NativeSwipeSkipView, reduce: Boolean? -> view.reduceMotion = reduce ?: false }
             Prop("songKey") { view: NativeSwipeSkipView, key: String? -> view.songKey = key }
