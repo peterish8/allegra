@@ -1,12 +1,15 @@
 /**
  * @fileoverview How the downloads folder is laid out and named. The listener picks one folder; inside it:
  *
- *   All songs/<Artist - Title>.mp3 + .jpg + .json   every song, with its cover and a small file about it
- *   Playlists/<Playlist name>/<Artist - Title>.mp3   a copy of each song in that playlist
+ *   All songs/<Title>.mp3 + .jpg + .json            every song: the audio (title, artist, album, cover and lyrics are
+ *                                                    written into the file itself), its cover, and a small file about it
+ *   Playlists/<Playlist name>/<Title>.mp3            a copy of each song in that playlist
  *   playlists.json                                   which songs each playlist holds, for a fresh install
  *
- * File names are for people (they read them in a file manager), so they say who and what; the song's id lives in
- * its `.json`. Pure: the native side (android/.../saf/SafLibrary.kt) writes whatever name it is handed.
+ * A file is named for the song only. Who sings it and which album it is on live in the file's tags and in its `.json`
+ * (the library id is there too, which is what ties a file back to its song). Two different songs with one name keep
+ * their own files: the second becomes "Title (2)" (android/.../saf/SafLibrary.kt). Pure: the native side writes
+ * whatever name it is handed.
  */
 
 export const ALL_SONGS_FOLDER = 'All songs';
@@ -25,6 +28,7 @@ const MAX_PART = 80;
 /** A name safe to create as a file or folder: no separators or reserved characters, no edge dots or spaces, never empty. */
 export function safeName(raw: string | null | undefined, fallback = 'Untitled'): string {
   const cleaned = withoutControls(raw ?? '')
+    .replace(/"/g, '')
     .replace(FORBIDDEN, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -33,29 +37,23 @@ export function safeName(raw: string | null | undefined, fallback = 'Untitled'):
   return cleaned || fallback;
 }
 
-/** The file name of a song without its extension: "Artist - Title", or just the title when no artist is known. */
-export function songBase(title: string, artist?: string | null): string {
-  const name = safeName(title);
-  const by = (artist ?? '').trim();
-  return by ? `${safeName(by, '')} - ${name}`.replace(/^ - /, '') : name;
+/** The file name of a song without its extension: its title. */
+export function songBase(title: string): string {
+  return safeName(title);
 }
 
 /**
- * A base for each song that is unique among them: the first keeps its plain name, a later one with the same name
- * gets the tail of its id so two different songs never overwrite each other's file.
+ * The name 1.63.0 gave a song, "Artist - Title". Songs saved then are found by it and renamed to [songBase]
+ * (libraryFolder.ts); nothing new is written under it.
  */
-export function uniqueBases(songs: readonly { id: string; title: string; artist?: string | null }[]): Map<string, string> {
-  const taken = new Set<string>();
-  const bases = new Map<string, string>();
-  for (const song of songs) {
-    let base = songBase(song.title, song.artist);
-    if (taken.has(base.toLowerCase())) {
-      base = `${base} (${safeName(song.id.slice(-6), 'copy')})`;
-    }
-    taken.add(base.toLowerCase());
-    bases.set(song.id, base);
-  }
-  return bases;
+export function legacyBase(title: string, artist?: string | null): string | null {
+  const by = (artist ?? '').trim();
+  return by ? `${safeName(by, '')} - ${safeName(title)}` : null;
+}
+
+/** The names a song may take, in order: "Title", "Title (2)", "Title (3)" ... */
+export function nameCandidates(base: string, count = 8): string[] {
+  return Array.from({ length: count }, (_, index) => (index === 0 ? base : `${base} (${index + 1})`));
 }
 
 /** The folder name for a playlist. */
@@ -63,7 +61,7 @@ export function playlistFolderName(name: string): string {
   return safeName(name, 'Playlist');
 }
 
-/** "Artist - Title.mp3" -> "Artist - Title"; null for a name with another extension. */
+/** "Title.mp3" -> "Title"; null for a name with another extension. */
 export function baseOf(fileName: string, extension: string): string | null {
   const suffix = `.${extension}`;
   return fileName.toLowerCase().endsWith(suffix) ? fileName.slice(0, -suffix.length) : null;

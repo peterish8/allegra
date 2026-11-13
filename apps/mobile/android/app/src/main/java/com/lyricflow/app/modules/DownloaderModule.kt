@@ -5,6 +5,7 @@ import com.lyricflow.app.saf.SafLibrary
 import com.lyricflow.app.workers.DownloadReceipt
 import com.lyricflow.app.workers.DownloadWorker
 import com.lyricflow.app.workers.ProgressBus
+import org.json.JSONObject
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.*
@@ -86,6 +87,28 @@ class DownloaderModule : Module() {
         AsyncFunction("exportToFolder") { treeUri: String, path: List<String>, name: String, mime: String, sourceUri: String?, text: String? ->
             val context = appContext.reactContext ?: throw Exception("React context not available")
             SafLibrary.write(context, treeUri, path, name, mime, sourceUri, text)
+        }
+
+        /**
+         * Copies a song into `All songs/` under its own name, with its details written into the audio file
+         * (SafLibrary.exportSong). [song] is the JSON of `FolderSongInput` (services/folder/libraryFolder.ts).
+         * Resolves to the name it ended up with, which differs from the one asked for when another song has it.
+         */
+        AsyncFunction("exportSong") { treeUri: String, song: String ->
+            val context = appContext.reactContext ?: throw Exception("React context not available")
+            val result = SafLibrary.exportSong(context, treeUri, SafLibrary.songFromJson(JSONObject(song)))
+            mapOf(
+                "base" to result.base,
+                "audioName" to result.audioName,
+                "audioUri" to result.audioUri,
+                "coverName" to result.coverName,
+            )
+        }
+
+        /** Renames a file in a folder; false when the provider refuses or the target name is taken. */
+        AsyncFunction("renameInFolder") { treeUri: String, path: List<String>, from: String, to: String ->
+            val context = appContext.reactContext ?: throw Exception("React context not available")
+            SafLibrary.rename(context, treeUri, path, from, to)
         }
 
         /** What a folder holds: name, uri and whether it is itself a folder. Empty when it does not exist. */

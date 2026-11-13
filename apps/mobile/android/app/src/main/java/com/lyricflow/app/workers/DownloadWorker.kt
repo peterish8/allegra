@@ -82,7 +82,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             if (!safDir.isNullOrEmpty()) {
                 ProgressBus.post(ProgressEvent(id, 0.95f, "exporting"))
                 try {
-                    exportToFolder(safDir, audioFile, File(songDir, "cover.jpg"), inputData.getString("meta"))
+                    exportToFolder(id, safDir, audioFile, File(songDir, "cover.jpg"), inputData.getString("meta"), lyrics)
                 } catch (e: Exception) {
                     Log.w("DownloadWorker", "Downloads folder copy failed for $id: ${e.message}")
                 }
@@ -197,25 +197,18 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     }
 
     /**
-     * Writes the song into `All songs/` of the chosen folder: the audio, its cover and a small JSON file about it
-     * (the page's `folder` entry in [meta], built in services/folder/ so both sides spell it the same).
-     * That JSON is what lets a fresh install find the song again.
+     * Writes the song into `All songs/` of the chosen folder under its name (SafLibrary.exportSong): the audio with
+     * its title, artist, album, cover and lyrics inside, the cover beside it, and a small JSON file about it that lets
+     * a fresh install find the song again. The song's details are the `folder` entry in [meta].
      */
-    private fun exportToFolder(treeUri: String, audio: File, cover: File?, meta: String?) {
+    private fun exportToFolder(id: String, treeUri: String, audio: File, cover: File?, meta: String?, lyrics: String?) {
         val folder = try { meta?.let { JSONObject(it).optJSONObject("folder") } } catch (_: Exception) { null }
             ?: throw Exception("No folder details in the download")
-        val base = folder.getString("base")
-        val sidecar = folder.getString("sidecar")
-        val path = listOf(SafLibrary.ALL_SONGS)
-        SafLibrary.write(applicationContext, treeUri, path, "$base.mp3", "audio/mpeg", Uri.fromFile(audio).toString(), null)
-        if (cover != null && cover.exists()) {
-            try {
-                SafLibrary.write(applicationContext, treeUri, path, "$base.jpg", "image/jpeg", Uri.fromFile(cover).toString(), null)
-            } catch (e: Exception) {
-                Log.w("DownloadWorker", "Cover copy failed for $base: ${e.message}")
-            }
-        }
-        // Last: a song only counts as saved once its details are there.
-        SafLibrary.write(applicationContext, treeUri, path, "$base.json", "application/json", null, sidecar)
+        // The song's own details (title, artist, album, lyrics, ...) are what the file's tags and its details file carry.
+        folder.put("id", id)
+        if (!lyrics.isNullOrEmpty()) folder.put("lyrics", lyrics)
+        folder.put("audioUri", Uri.fromFile(audio).toString())
+        if (cover != null && cover.exists()) folder.put("coverUri", Uri.fromFile(cover).toString())
+        SafLibrary.exportSong(applicationContext, treeUri, SafLibrary.songFromJson(folder))
     }
 }
