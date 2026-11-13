@@ -4,7 +4,7 @@ Statuses: `queued`, `running`, `in-review`, `merged`, `parked-ready` (HOLD, wait
 
 **Step 0 checks (2026-11-13):** origin/main `cf662478b3cef6dd11eb5a4c890741ab6f87b3b5`; gh authenticated as peterish8; Node v24.18.0 / npm 11.16.0; adb reports no connected devices; probe AVD configured for Android 36 google_apis_playstore x86_64 (not launched); C: free 19,847,364,608 bytes. Root `npm run typecheck` passed. Root lint and tests running.
 
-**Dispatch blocker:** T3 orchestrator_capabilities search for Luna Sonnet Sol returned enabled Codex and Claude providers but empty model lists. No model IDs or effort options were verified. A harness question is pending; no substitution or worker dispatch is authorized until resolved. Council also needs three providers, while this response exposes only two enabled providers. No code cards have started.
+**Models resolved:** Initial combined search returned no matches. Owner directed individual-name discovery; verified Codex `gpt-6-luna` with reasoningEffort xhigh, Claude `claude-sonnet-5-5` with effort high, and reviewer Codex `gpt-6.1-sol`. No substitution. Antigravity is now enabled and can be explored for the third council provider when needed. No code cards have started; dispatch awaits Step 0 merge.
 
 **Additional defaults:** Library defaults to grid and remembers the choice. Albums is investigated first; removal is the default, with persisted Albums start tabs normalized to Songs.
 
