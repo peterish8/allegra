@@ -24,6 +24,7 @@ import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
 import CanvasVideoLayer from './CanvasVideoLayer';
 import PillPlayer from './PillPlayer';
 import { NativePlaybackControl } from './NativePlaybackControl';
+import { NativeSkip, useNativeSkip } from './NativeSkip';
 import { useSongActions } from './library/useSongActions';
 import SynchronizedLyrics from './SynchronizedLyrics';
 import TimelineScrubber from './TimelineScrubber';
@@ -127,6 +128,8 @@ const PlaybackControls = memo(({
   playing, onToggle, onSkipBack, onSkipForward, animatedButtonStyle, showSkipButtons = true,
 }: PlaybackControlsProps) => {
   const reduceMotion = useReducedMotion();
+  // A tap skips on Android's main thread (the island's path); the Pressable then must not skip as well.
+  const nativeSkip = useNativeSkip();
   // Keep transport geometry fixed while the controls appear. Animating width
   // moved the play button and title row on every expand/collapse.
   const skipProgress = useSharedValue(showSkipButtons ? 1 : 0);
@@ -155,31 +158,35 @@ const PlaybackControls = memo(({
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipBackStyle]}>
-        <Pressable
-          onPress={(e) => { e.stopPropagation(); onSkipBack(e); }}
-          style={styles.controlButton}
-          accessibilityRole="button"
-          accessibilityLabel="Previous song"
-          accessibilityElementsHidden={!showSkipButtons}
-          importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
-        >
-          <Ionicons name="play-skip-back" size={24} color="#fff" />
-        </Pressable>
+        <NativeSkip direction={-1} enabled={nativeSkip && showSkipButtons}>
+          <Pressable
+            onPress={(e) => { e.stopPropagation(); if (!(nativeSkip && showSkipButtons)) onSkipBack(e); }}
+            style={styles.controlButton}
+            accessibilityRole="button"
+            accessibilityLabel="Previous song"
+            accessibilityElementsHidden={!showSkipButtons}
+            importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
+          >
+            <Ionicons name="play-skip-back" size={24} color="#fff" />
+          </Pressable>
+        </NativeSkip>
       </Animated.View>
       <Animated.View style={animatedButtonStyle}>
         <NativePlaybackControl plain size={48} status={playing ? 'playing' : 'paused'} onPress={onToggle} />
       </Animated.View>
       <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipForwardStyle]}>
-        <Pressable
-          onPress={(e) => { e.stopPropagation(); onSkipForward(e); }}
-          style={styles.controlButton}
-          accessibilityRole="button"
-          accessibilityLabel="Next song"
-          accessibilityElementsHidden={!showSkipButtons}
-          importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
-        >
-          <Ionicons name="play-skip-forward" size={24} color="#fff" />
-        </Pressable>
+        <NativeSkip direction={1} enabled={nativeSkip && showSkipButtons}>
+          <Pressable
+            onPress={(e) => { e.stopPropagation(); if (!(nativeSkip && showSkipButtons)) onSkipForward(e); }}
+            style={styles.controlButton}
+            accessibilityRole="button"
+            accessibilityLabel="Next song"
+            accessibilityElementsHidden={!showSkipButtons}
+            importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
+          >
+            <Ionicons name="play-skip-forward" size={24} color="#fff" />
+          </Pressable>
+        </NativeSkip>
       </Animated.View>
     </View>
   );

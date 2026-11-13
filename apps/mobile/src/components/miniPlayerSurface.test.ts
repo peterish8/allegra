@@ -114,3 +114,14 @@ describe('mini player and navigation controls', () => {
     expect(tabBar).toMatch(/info\.isSelected = host\.isSelected/);
   });
 });
+
+describe('the classic mini player’s skip buttons', () => {
+  // Owner, 2026-11-13: playback controls on Android's main thread, not through JavaScript.
+  test('skip on the main thread and do not also skip from the press handler', () => {
+    const mini = code(read('MiniPlayer.tsx'));
+    expect(mini).toMatch(/<NativeSkip direction=\{-1\} enabled=\{nativeSkip && showSkipButtons\}>/);
+    expect(mini).toMatch(/<NativeSkip direction=\{1\} enabled=\{nativeSkip && showSkipButtons\}>/);
+    expect(mini).toMatch(/if \(!\(nativeSkip && showSkipButtons\)\) onSkipBack\(e\)/);
+    expect(mini).toMatch(/if \(!\(nativeSkip && showSkipButtons\)\) onSkipForward\(e\)/);
+  });
+});
