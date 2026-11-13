@@ -444,6 +444,27 @@ test.describe('reduced motion', () => {
   });
 });
 
+test('Library: the playlist layout toggle works from the keyboard and the choice survives a reload', async ({ page }) => {
+  await page.goto('/library');
+  const toggle = page.getByRole('group', { name: 'Playlist layout' });
+  const grid = toggle.getByRole('button', { name: 'Show as grid', exact: true });
+  const list = toggle.getByRole('button', { name: 'Show as list', exact: true });
+  await expect(grid).toHaveAttribute('aria-pressed', 'true');
+  await list.focus();
+  await page.keyboard.press('Enter');
+  await expect(list).toHaveAttribute('aria-pressed', 'true');
+  await expect(grid).toHaveAttribute('aria-pressed', 'false');
+  for (const button of [grid, list]) {
+    const box = await button.boundingBox();
+    expect(box?.width ?? 0).toBeGreaterThanOrEqual(40);
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(40);
+  }
+  await page.reload();
+  await expect(page.getByRole('group', { name: 'Playlist layout' }).getByRole('button', { name: 'Show as list', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('group', { name: 'Playlist layout' }).getByRole('button', { name: 'Show as grid', exact: true }).click();
+  await expect(page.getByRole('group', { name: 'Playlist layout' }).getByRole('button', { name: 'Show as grid', exact: true })).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('Home: the loading shelf has the same tile box as the loaded one, so nothing jumps', async ({ page }) => {
   // Hold the shelves back long enough to measure the skeleton, then let them through.
   let release: () => void = () => undefined;
