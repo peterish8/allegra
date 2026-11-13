@@ -1,4 +1,4 @@
-import { checkedAgo, formatSize, LATEST_APK_URL, NO_NOTES, notesFromBody, parseChangelog, parseRelease, releasedAgo, shouldAutoCheck, standingOf, type LatestBuild } from './appUpdate';
+import { buildFromAssets, CHANGELOG_URL, checkedAgo, fetchLatestBuild, formatSize, LATEST_APK_URL, NO_NOTES, notesFromBody, parseChangelog, parseRelease, releasedAgo, shouldAutoCheck, standingOf, type LatestBuild } from './appUpdate';
 
 describe('parseRelease', () => {
   it('reads the date and the APK from a release', () => {
@@ -147,6 +147,88 @@ describe('shouldAutoCheck', () => {
   });
   it('leaves it alone when it looked recently', () => {
     expect(shouldAutoCheck('2026-10-02T09:00:00Z', now)).toBe(false);
+  });
+});
+
+const COMMIT = 'bf78a9a941054bd84c87a85a7e9aed7184c93f7c';
+const CHANGELOG = { version: '1.60.0', commit: COMMIT, description: '', changelog: [{ title: 'New', items: ['One song menu'] }] };
+
+describe('buildFromAssets', () => {
+  const when = new Date('2026-11-13T07:08:03Z');
+
+  it('reads the version, commit and notes from changelog.json, and the date and size from the files', () => {
+    const build = buildFromAssets(CHANGELOG, when, 64_831_215);
+    expect(build).toMatchObject({ version: '1.60.0', commit: COMMIT, sizeBytes: 64_831_215, downloadUrl: LATEST_APK_URL, changelogUrl: CHANGELOG_URL });
+    expect(build?.publishedAt).toBe(when);
+    expect(build?.notes.sections).toEqual([{ title: 'New', items: ['One song menu'] }]);
+  });
+
+  it('keeps an unknown size, version or commit as null instead of guessing', () => {
+    const build = buildFromAssets({ version: 'latest', commit: 'main', changelog: [] }, when, null);
+    expect(build).toMatchObject({ version: null, commit: null, sizeBytes: null });
+  });
+
+  it('has nothing to offer without a date or without a changelog object', () => {
+    expect(buildFromAssets(CHANGELOG, null, 1)).toBeNull();
+    expect(buildFromAssets(CHANGELOG, new Date('nope'), 1)).toBeNull();
+    expect(buildFromAssets(null, when, 1)).toBeNull();
+    expect(buildFromAssets('text', when, 1)).toBeNull();
+  });
+});
+
+describe('fetchLatestBuild', () => {
+  const realFetch = global.fetch;
+  afterEach(() => { global.fetch = realFetch; });
+
+  const answer = (body: unknown, headers: Record<string, string> = {}, ok = true): Response =>
+    ({ ok, status: ok ? 200 : 403, headers: { get: (name: string) => headers[name.toLowerCase()] ?? null }, json: async () => body }) as unknown as Response;
+
+  const serve = (routes: Record<string, () => Response | Promise<Response>>) => {
+    const calls: string[] = [];
+    global.fetch = jest.fn(async (url: RequestInfo | URL) => {
+      const key = String(url);
+      calls.push(key);
+      const route = routes[key];
+      if (!route) throw new Error(`unexpected ${key}`);
+      return route();
+    }) as unknown as typeof fetch;
+    return calls;
+  };
+
+  it('finds the build from the release downloads and never touches the rate-limited API', async () => {
+    const calls = serve({
+      [CHANGELOG_URL]: () => answer(CHANGELOG, { 'last-modified': 'Fri, 13 Nov 2026 07:08:03 GMT' }),
+      [LATEST_APK_URL]: () => answer(null, { 'last-modified': 'Fri, 13 Nov 2026 07:07:50 GMT', 'content-length': '64831215' }),
+    });
+    const build = await fetchLatestBuild();
+    expect(build).toMatchObject({ version: '1.60.0', commit: COMMIT, sizeBytes: 64_831_215 });
+    expect(build?.publishedAt.toISOString()).toBe('2026-11-13T07:07:50.000Z');
+    expect(calls.some(url => url.includes('api.github.com'))).toBe(false);
+  });
+
+  it('still answers when the API is rate limited (403), which used to read as no connection', async () => {
+    serve({
+      [CHANGELOG_URL]: () => answer(CHANGELOG, { 'last-modified': 'Fri, 13 Nov 2026 07:08:03 GMT' }),
+      [LATEST_APK_URL]: () => { throw new Error('HEAD blocked'); },
+      'https://api.github.com/repos/peterish8/allegra/releases/tags/apk-latest': () => answer({ message: 'API rate limit exceeded' }, {}, false),
+    });
+    const build = await fetchLatestBuild();
+    expect(build).toMatchObject({ version: '1.60.0', commit: COMMIT, sizeBytes: null });
+    expect(build?.publishedAt.toISOString()).toBe('2026-11-13T07:08:03.000Z');
+  });
+
+  it('falls back to the API when the download links cannot be read', async () => {
+    serve({
+      [CHANGELOG_URL]: () => answer(null, {}, false),
+      [LATEST_APK_URL]: () => answer(null, {}, false),
+      'https://api.github.com/repos/peterish8/allegra/releases/tags/apk-latest': () => answer({ name: 'LuvLyrics 1.61.0 — latest build', published_at: '2026-11-14T08:00:00Z', assets: [] }),
+    });
+    expect(await fetchLatestBuild()).toMatchObject({ version: '1.61.0' });
+  });
+
+  it('is null, not a throw, when nothing can be reached', async () => {
+    global.fetch = jest.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch;
+    expect(await fetchLatestBuild()).toBeNull();
   });
 });
 

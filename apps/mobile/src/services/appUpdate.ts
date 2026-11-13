@@ -179,17 +179,68 @@ export const shouldAutoCheck = (lastCheckedAt: string | null, now: Date = new Da
   return !last || now.getTime() - last.getTime() >= intervalMs;
 };
 
-const fetchJson = async (url: string, accept: string): Promise<unknown> => {
+/** The release's own `changelog.json`, served from github.com (not the REST API). */
+export const CHANGELOG_URL = 'https://github.com/peterish8/allegra/releases/download/apk-latest/changelog.json';
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * Pure: the latest build from the release's own files, with no call to GitHub's REST API. That API
+ * allows 60 unsigned requests an hour per address, and phones on a shared Wi-Fi or mobile network
+ * share an address, so the check answered 403 for hours and the panel blamed the connection. The
+ * download links are not limited that way. The version and commit come from `changelog.json`, the date
+ * from the file's Last-Modified header, and the size from the APK's Content-Length. Null without a
+ * usable date, because `standingOf` cannot tell a new build from an old one without it.
+ */
+export const buildFromAssets = (changelog: unknown, publishedAt: Date | null, sizeBytes: number | null): LatestBuild | null => {
+  if (!publishedAt || Number.isNaN(publishedAt.getTime()) || !changelog || typeof changelog !== 'object') return null;
+  const { version, commit } = changelog as { version?: unknown; commit?: unknown };
+  return {
+    publishedAt,
+    downloadUrl: LATEST_APK_URL,
+    commit: typeof commit === 'string' && /^[0-9a-f]{40}$/i.test(commit) ? commit.toLowerCase() : null,
+    sizeBytes: sizeBytes !== null && sizeBytes > 0 ? sizeBytes : null,
+    version: typeof version === 'string' ? version.match(/\b(\d+\.\d+\.\d+)\b/)?.[1] ?? null : null,
+    changelogUrl: CHANGELOG_URL,
+    notes: parseChangelog(changelog) ?? NO_NOTES,
+  };
+};
+
+/** One request that always ends: a response, or null for a timeout, a dropped connection or anything that threw. */
+const timedFetch = async (url: string, init: RequestInit & { headers: Record<string, string> }): Promise<Response | null> => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-  try {
-    const res = await fetch(url, { signal: controller.signal, headers: { Accept: accept } });
-    return res.ok ? await res.json() : null;
-  } catch { return null; }
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try { return await fetch(url, { ...init, signal: controller.signal }); }
+  catch { return null; }
   finally { clearTimeout(timeout); }
 };
 
-export const fetchLatestBuild = async (): Promise<LatestBuild | null> => {
+const fetchJson = async (url: string, accept: string): Promise<unknown> => {
+  const res = await timedFetch(url, { headers: { Accept: accept } });
+  if (!res?.ok) return null;
+  try { return await res.json(); } catch { return null; }
+};
+
+const headerDate = (res: Response | null): Date | null => asDate(res?.headers.get('last-modified') ?? undefined);
+
+const headerSize = (res: Response | null): number | null => {
+  const length = Number(res?.headers.get('content-length'));
+  return Number.isFinite(length) && length > 0 ? length : null;
+};
+
+/** The release as its download links describe it. Null when either file cannot be read. */
+const fetchFromAssets = async (): Promise<LatestBuild | null> => {
+  const [changelogRes, apkRes] = await Promise.all([
+    timedFetch(CHANGELOG_URL, { headers: { Accept: 'application/json' } }),
+    timedFetch(LATEST_APK_URL, { method: 'HEAD', headers: {} }),
+  ]);
+  if (!changelogRes?.ok) return null;
+  let changelog: unknown;
+  try { changelog = await changelogRes.json(); } catch { return null; }
+  return buildFromAssets(changelog, apkRes?.ok ? headerDate(apkRes) ?? headerDate(changelogRes) : headerDate(changelogRes), apkRes?.ok ? headerSize(apkRes) : null);
+};
+
+/** The same release from GitHub's REST API: more detail, but rate limited, so it is the second choice. */
+const fetchFromApi = async (): Promise<LatestBuild | null> => {
   const build = parseRelease((await fetchJson(RELEASE_API, 'application/vnd.github+json')) as ReleaseJson | null);
   if (!build) return null;
   if (build.changelogUrl) {
@@ -198,3 +249,5 @@ export const fetchLatestBuild = async (): Promise<LatestBuild | null> => {
   }
   return build;
 };
+
+export const fetchLatestBuild = async (): Promise<LatestBuild | null> => (await fetchFromAssets()) ?? (await fetchFromApi());
