@@ -1,6 +1,7 @@
 package com.lyricflow.app.modules
 
 import androidx.work.*
+import com.lyricflow.app.saf.SafLibrary
 import com.lyricflow.app.workers.DownloadReceipt
 import com.lyricflow.app.workers.DownloadWorker
 import com.lyricflow.app.workers.ProgressBus
@@ -77,6 +78,28 @@ class DownloaderModule : Module() {
         Function("clearReceipt") { id: String ->
             val context = appContext.reactContext ?: return@Function false
             DownloadReceipt.clear(DownloadReceipt.dir(context.filesDir), id)
+        }
+
+        // The listener's downloads folder (services/folder/): one tree they granted, All songs/ and Playlists/<name>/ inside.
+
+        /** Writes one file into the folder: the bytes of [sourceUri], or [text]. Returns the new document's uri. */
+        AsyncFunction("exportToFolder") { treeUri: String, path: List<String>, name: String, mime: String, sourceUri: String?, text: String? ->
+            val context = appContext.reactContext ?: throw Exception("React context not available")
+            SafLibrary.write(context, treeUri, path, name, mime, sourceUri, text)
+        }
+
+        /** What a folder holds: name, uri and whether it is itself a folder. Empty when it does not exist. */
+        AsyncFunction("listFolder") { treeUri: String, path: List<String> ->
+            val context = appContext.reactContext ?: throw Exception("React context not available")
+            SafLibrary.list(context, treeUri, path).map {
+                mapOf("name" to it.name, "uri" to it.uri, "isDirectory" to it.isDirectory)
+            }
+        }
+
+        /** Whether the app still holds write access to the chosen folder (uninstalling drops it). */
+        Function("folderWritable") { treeUri: String ->
+            val context = appContext.reactContext ?: return@Function false
+            SafLibrary.canWrite(context, treeUri)
         }
     }
 }

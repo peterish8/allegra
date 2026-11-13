@@ -2,8 +2,9 @@ package com.lyricflow.app.workers
 
 import android.content.Context
 import android.net.Uri
-import android.provider.DocumentsContract
 import android.util.Log
+import com.lyricflow.app.saf.SafLibrary
+import org.json.JSONObject
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -74,14 +75,17 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 } catch (_: Exception) {}
             }
 
-            // 4. SAF export (optional, falls back to internal storage)
-            // Internal storage path needs file:// prefix; SAF returns a content:// URI as-is
-            var finalAudioUri = "file://${audioFile.absolutePath}"
+            // 4. The listener's downloads folder (optional). The app keeps playing from its own copy; the folder
+            // holds the one that survives an uninstall. A failure here is not a failed download: Settings can
+            // copy whatever is missing later.
+            val finalAudioUri = "file://${audioFile.absolutePath}"
             if (!safDir.isNullOrEmpty()) {
                 ProgressBus.post(ProgressEvent(id, 0.95f, "exporting"))
                 try {
-                    finalAudioUri = copyToSaf(applicationContext, audioFile, safDir, id, "audio/mpeg")
-                } catch (_: Exception) {}
+                    exportToFolder(safDir, audioFile, File(songDir, "cover.jpg"), inputData.getString("meta"))
+                } catch (e: Exception) {
+                    Log.w("DownloadWorker", "Downloads folder copy failed for $id: ${e.message}")
+                }
             }
 
             // Before JavaScript hears of it: if the app is gone, the receipt is how the song reaches the library.
@@ -192,25 +196,26 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
     }
 
-    private fun copyToSaf(
-        context: Context,
-        sourceFile: File,
-        safDirUriStr: String,
-        filename: String,
-        mimeType: String
-    ): String {
-        val contentResolver = context.contentResolver
-        val safDirUri = Uri.parse(safDirUriStr)
-        val parentId = DocumentsContract.getTreeDocumentId(safDirUri)
-        val parentDocUri = DocumentsContract.buildDocumentUriUsingTree(safDirUri, parentId)
-        val fileUri = DocumentsContract.createDocument(contentResolver, parentDocUri, mimeType, filename)
-            ?: throw Exception("Failed to create SAF document in $safDirUriStr")
-
-        contentResolver.openInputStream(Uri.fromFile(sourceFile))?.use { input ->
-            contentResolver.openOutputStream(fileUri)?.use { output ->
-                input.copyTo(output)
+    /**
+     * Writes the song into `All songs/` of the chosen folder: the audio, its cover and a small JSON file about it
+     * (the page's `folder` entry in [meta], built in services/folder/ so both sides spell it the same).
+     * That JSON is what lets a fresh install find the song again.
+     */
+    private fun exportToFolder(treeUri: String, audio: File, cover: File?, meta: String?) {
+        val folder = try { meta?.let { JSONObject(it).optJSONObject("folder") } } catch (_: Exception) { null }
+            ?: throw Exception("No folder details in the download")
+        val base = folder.getString("base")
+        val sidecar = folder.getString("sidecar")
+        val path = listOf(SafLibrary.ALL_SONGS)
+        SafLibrary.write(applicationContext, treeUri, path, "$base.mp3", "audio/mpeg", Uri.fromFile(audio).toString(), null)
+        if (cover != null && cover.exists()) {
+            try {
+                SafLibrary.write(applicationContext, treeUri, path, "$base.jpg", "image/jpeg", Uri.fromFile(cover).toString(), null)
+            } catch (e: Exception) {
+                Log.w("DownloadWorker", "Cover copy failed for $base: ${e.message}")
             }
         }
-        return fileUri.toString()
+        // Last: a song only counts as saved once its details are there.
+        SafLibrary.write(applicationContext, treeUri, path, "$base.json", "application/json", null, sidecar)
     }
 }
