@@ -162,7 +162,7 @@
     "components/ModernDeleteModal.tsx": 4,
     "components/MoreMenu.tsx": 3,
     "components/NativeSynchronizedLyrics.tsx": 1,
-    "components/NowPlayingControls.tsx": 3,
+    "components/NowPlayingControls.tsx": 1,
     "components/NowPlayingHeader.tsx": 1,
     "components/NowPlayingLyricsArea.tsx": 2,
     "components/PerformanceHUD.tsx": 2,
