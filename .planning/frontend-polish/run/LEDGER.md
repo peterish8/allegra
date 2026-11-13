@@ -8,6 +8,8 @@ Statuses: `queued`, `running`, `in-review`, `merged`, `parked-ready` (HOLD, wait
 
 **Additional defaults:** Library defaults to grid and remembers the choice. Albums is investigated first; removal is the default, with persisted Albums start tabs normalized to Songs.
 
+**Step 0 PR:** https://github.com/peterish8/allegra/pull/91 (open, awaiting CI/review). Root lint passed. Root test run encountered androidRelease refresh timing failure (357/358 web tests passed); focused rerun passed all 8 tests. No application code changed. P1/W0/M0 remain queued until Step 0 merges.
+
 **Defaults applied for the plan's open questions:** Q1 keep and fix YtMiniPlayer; Q2 keep orbit loops and DJ notes; Q3 no copy changes; Q4 allow colour/background-colour/border-colour
 transitions 100-160 ms on web only; Q5 craft-lite; Q6 owner phone checks batched in `OWNER-TODO.md`; Q7 assume other mobile work exists.
 
