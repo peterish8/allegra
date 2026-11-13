@@ -29,10 +29,8 @@
     "components/VoiceMicButton.tsx": 1,
     "components/VoiceSearchCard.tsx": 1,
     "components/YtMiniPlayer.tsx": 3,
-    "screens/ArtistScreen.tsx": 1,
     "screens/BlendJoinScreen.tsx": 2,
-    "screens/LuvLinkScreen.tsx": 1,
-    "screens/LyricsEditorScreen.tsx": 1
+    "screens/LuvLinkScreen.tsx": 1
   },
   "slideModal": {
     "components/LrcSearchModal.tsx": 1
@@ -52,16 +50,11 @@
   "bottomPad": {},
   "alert": {
     "components/import/SpotifySyncPanel.tsx": 1,
-    "screens/BlendScreen.tsx": 1,
-    "screens/SearchScreen.tsx": 1
+    "screens/BlendScreen.tsx": 1
   },
   "color": {
-    "screens/ArtistScreen.tsx": 8,
     "screens/LuvsScreen.tsx": 2,
-    "screens/LyricsEditorScreen.tsx": 1,
-    "screens/NowPlayingScreen.tsx": 2,
-    "screens/SearchScreen.tsx": 2,
-    "screens/StreamScreen.tsx": 2
+    "screens/NowPlayingScreen.tsx": 2
   },
   "typeSize": {},
   "componentColor": {
