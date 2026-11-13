@@ -29,7 +29,8 @@ export const SHARED_COPIES = [
   'regions.ts',
   'listenSignal.ts',
   'lyricsText.ts',
-  'lyricSync.ts'
+  'lyricSync.ts',
+  'scrobble.ts'
 ];
 
 const root = new URL('../', import.meta.url);
