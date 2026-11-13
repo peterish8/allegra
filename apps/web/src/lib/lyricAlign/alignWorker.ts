@@ -17,7 +17,15 @@ async function run({ pcm, candidates, gpu }: { pcm: Float32Array; candidates: Ly
   const ort = await import('onnxruntime-web/webgpu');
   ort.env.logLevel = 'error';
   ort.env.wasm.numThreads = 1;
-  const bytes = await loadAlignModel(gpu, (p) => progress('Downloading and checking model', p, p * 0.3));
+  let downloading = false;
+  progress('Checking this browser for the model', 0, 0);
+  const bytes = await loadAlignModel(gpu, (p) => {
+    if (downloading) progress('Downloading alignment model', p, p * 0.3);
+    else progress('Model is ready in this browser', 100, 30);
+  }, () => {
+    downloading = true;
+    progress('Downloading alignment model', 0, 0);
+  });
   progress('Loading model', 0, 30);
   // A GPU failure is surfaced with a CPU retry choice: never download another 241 MB without consent.
   const session = await ort.InferenceSession.create(bytes, { executionProviders: gpu ? ['webgpu'] : ['wasm'], logSeverityLevel: 3 });

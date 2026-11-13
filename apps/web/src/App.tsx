@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowUpToLine, ChevronRight, House, Heart as HeartIcon, Disc
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
 
 import type { AlbumSummary, ArtistProfile, HomePayload, LyricLine, LyricsPayload, SharedPlaylist, UnifiedSong } from '@shared/types';
@@ -58,6 +58,9 @@ import { SearchResults, artistsFromSongs } from './components/SearchResults';
 import { Artwork, EmptyState, IconButton, NoticeToast, OfflineToast, TactileButton } from './components/ui';
 import { useAccount, useListenTracker } from './hooks/useAccount';
 import { LyricsSyncDialog } from './components/LyricsSyncDialog';
+import { LyricsSyncJobsStatus } from './components/LyricsSyncJobsStatus';
+import { createLyricsSyncCoordinator, type LyricsSyncJob } from './lib/lyricAlign/jobs';
+import { persistLyricsSyncDrafts, readLyricsSyncDrafts } from './lib/lyricAlign/drafts';
 import { useSongRadio } from './hooks/useSongRadio';
 import { accountDisplayName, isResolvingAccount, recallAccountName, rememberAccountName } from './lib/accountState';
 import { upcomingSong, useAudioPlayer } from './hooks/useAudioPlayer';
@@ -138,6 +141,7 @@ const DJ_PLACES = {
 } as const;
 /** A DJ catalog lookup gives up after this long, so a slow search never hangs the DJ. */
 const DJ_SEARCH_TIMEOUT_MS = 8000;
+const EMPTY_LYRICS_SYNC_JOBS: readonly LyricsSyncJob[] = Object.freeze([]);
 
 export default function App() {
   const reduced = useReducedMotion();
@@ -194,6 +198,19 @@ export default function App() {
   const [sharedError, setSharedError] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [lyricsSyncSong, setLyricsSyncSong] = useState<UnifiedSong | null>(null);
+  const [lyricsSyncReviewJobId, setLyricsSyncReviewJobId] = useState<string | null>(null);
+  const [lyricsSyncCoordinator] = useState(() => createLyricsSyncCoordinator());
+  const lyricsSyncJobs = useSyncExternalStore(
+    lyricsSyncCoordinator.subscribe,
+    lyricsSyncCoordinator.getSnapshot,
+    () => EMPTY_LYRICS_SYNC_JOBS
+  );
+  const lyricsSyncReviewJob = lyricsSyncJobs.find((job) => job.id === lyricsSyncReviewJobId) ?? null;
+  useEffect(() => {
+    const unsubscribe = lyricsSyncCoordinator.subscribe(() => persistLyricsSyncDrafts(lyricsSyncCoordinator.getSnapshot()));
+    lyricsSyncCoordinator.restore(readLyricsSyncDrafts());
+    return unsubscribe;
+  }, [lyricsSyncCoordinator]);
   const [artistSongs, setArtistSongs] = useState<UnifiedSong[]>([]);
   const [artistProfile, setArtistProfile] = useState<ArtistProfile | null>(null);
   const [artistLoading, setArtistLoading] = useState(false);
@@ -273,6 +290,8 @@ export default function App() {
   };
   const remoteSong = remotePlayback && connectView?.song ? shownRemote(connectView.song) : null;
   const playerSong = remotePlayback ? remoteSong : audio.currentSong;
+  const playerSongIdRef = useRef<string | null>(playerSong?.id ?? null);
+  useLayoutEffect(() => { playerSongIdRef.current = playerSong?.id ?? null; }, [playerSong?.id]);
   const playerQueue = remotePlayback && connectView
     ? [...(remoteSong ? [remoteSong] : []), ...connectView.queue.map(shownRemote)]
     : audio.queue;
@@ -2396,7 +2415,7 @@ export default function App() {
           alternativesError: lyricsAlternativesError,
           onLoadAlternatives: loadLyricsAlternatives,
           onSelectAlternative: selectLyricsAlternative,
-          onSyncLyrics: () => { if (playerIsPlaying) togglePlayer(); setLyricsSyncSong(playerSong); },
+          onSyncLyrics: () => { setLyricsSyncReviewJobId(null); setLyricsSyncSong(playerSong); },
           songId: playerSong?.id ?? null
         }}
         palette={palette}
@@ -2422,7 +2441,36 @@ export default function App() {
         onOpenAlbum={openAlbumFromPlayer}
         onOpenArtist={openArtistFromPlayer}
       />
-      {lyricsSyncSong ? <LyricsSyncDialog key={lyricsSyncSong.id} song={lyricsSyncSong} signedIn={signIn.signedIn} onSignIn={() => { setLyricsSyncSong(null); setAuthOpen(true); }} onClose={() => setLyricsSyncSong(null)} onSaved={retryLyrics} onUse={(payload) => { if (playerSong?.id === lyricsSyncSong.id) selectLyricsAlternative(payload); setLyricsSyncSong(null); }} playhead={playhead} playing={playerIsPlaying} onActivateLine={(seconds) => { if (playerSong?.id === lyricsSyncSong.id) activateLyricLine(seconds); else void playSong(lyricsSyncSong, [lyricsSyncSong]).then(() => activateLyricLine(seconds)); }} /> : null}
+      <LyricsSyncJobsStatus
+        jobs={lyricsSyncJobs}
+        onCancel={(jobId) => lyricsSyncCoordinator.cancel(jobId)}
+        onRetry={(jobId) => lyricsSyncCoordinator.retry(jobId)}
+        onReview={(jobId) => {
+          const job = lyricsSyncCoordinator.getSnapshot().find((candidate) => candidate.id === jobId);
+          if (!job || (job.status !== 'ready' && job.status !== 'saved')) return;
+          setLyricsSyncSong(job.target.song);
+          setLyricsSyncReviewJobId(jobId);
+        }}
+      />
+      {lyricsSyncSong ? <LyricsSyncDialog
+        key={`${lyricsSyncSong.id}:${lyricsSyncReviewJobId ?? 'choose'}`}
+        song={lyricsSyncSong}
+        reviewJob={lyricsSyncReviewJob}
+        signedIn={signIn.signedIn}
+        onSignIn={() => { setLyricsSyncSong(null); setLyricsSyncReviewJobId(null); setAuthOpen(true); }}
+        onClose={() => { setLyricsSyncSong(null); setLyricsSyncReviewJobId(null); }}
+        onStart={(target) => { lyricsSyncCoordinator.enqueue(target); setLyricsSyncSong(null); }}
+        onSaveJob={(jobId) => lyricsSyncCoordinator.save(jobId)}
+        onSaved={() => { if (playerSongIdRef.current === lyricsSyncSong.id) retryLyrics(); }}
+        onUse={(payload) => { if (playerSong?.id === lyricsSyncSong.id) selectLyricsAlternative(payload); setLyricsSyncSong(null); setLyricsSyncReviewJobId(null); }}
+        playhead={playhead}
+        isTargetCurrent={playerSong?.id === lyricsSyncSong.id}
+        playing={playerIsPlaying}
+        onActivateLine={(seconds) => {
+          if (playerSong?.id === lyricsSyncSong.id) activateLyricLine(seconds);
+          else void playSong(lyricsSyncSong, [lyricsSyncSong]).then(() => activateLyricLine(seconds));
+        }}
+      /> : null}
       <DjQuickPrompt
         open={djQuickOpen && view !== 'dj'}
         onClose={closeDjQuick}
