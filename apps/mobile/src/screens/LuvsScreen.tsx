@@ -21,7 +21,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, StatusBar, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, useSharedValue } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, useReducedMotion, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { LUVS_TOUR, luvsScene } from '../components/allegra/infoTours';
@@ -33,7 +33,7 @@ import TasteExplorer from '../components/luvs/TasteExplorer';
 import { LuvsVaultModal } from '../components/LuvsVaultModal';
 import { PlaylistSelectionModal } from '../components/PlaylistSelectionModal';
 import { Toast } from '../components/Toast';
-import { Glass, Signal } from '../constants/allegraTheme';
+import { Glass, Motion, Signal } from '../constants/allegraTheme';
 import { useDownloadState } from '../hooks/useDownloadState';
 import { TAB_BAR_CLEARANCE } from '../navigation/tabs';
 import { snapshotOfSong } from '../services/connect/mobilePlayerPort';
@@ -87,6 +87,7 @@ const placeholder = (laneId: string, title: string, empty: boolean): UnifiedSong
 const isPlaceholder = (song: UnifiedSong | undefined) => !song || /^(loading|empty):/.test(song.id);
 
 const LuvsScreen: React.FC = () => {
+  const reduceMotion = useReducedMotion();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
@@ -425,7 +426,7 @@ const LuvsScreen: React.FC = () => {
             style={[styles.backdrop, { transform: [{ scale: Math.max(screenW, screenH) / 40 }] }]}
             blurRadius={4}
             contentFit="cover"
-            transition={500}
+            transition={reduceMotion ? 0 : Motion.duration.luvsArtworkFade}
           />
         ) : null}
         <View style={[StyleSheet.absoluteFill, styles.scrim]} />
@@ -470,7 +471,11 @@ const LuvsScreen: React.FC = () => {
               <SwapText style={styles.songArtist} numberOfLines={1} direction={lastDir}>{song && !isPlaceholder(song) ? song.artist || ' ' : ' '}</SwapText>
             </View>
             {hint ? (
-              <Animated.Text entering={FadeIn.duration(400)} exiting={FadeOut.duration(300)} style={styles.hint}>
+              <Animated.Text
+                entering={reduceMotion ? undefined : FadeIn.duration(Motion.duration.luvsHintIn)}
+                exiting={reduceMotion ? undefined : FadeOut.duration(Motion.duration.luvsHintOut)}
+                style={styles.hint}
+              >
                 Swipe across for another taste · up to go deeper · double-tap to Luv
               </Animated.Text>
             ) : (
