@@ -45,4 +45,23 @@ class TabBarGeometryTest {
         for (i in 0 until 3) assertTrue(slots[i].right <= slots[i + 1].left + 0.001f)
         assertTrue(slots.all { it.left >= 0f && it.right <= 360f })
     }
+
+    @Test fun `v6 labels and child bounds fit at 100 130 and 200 percent text`() {
+        val cases = listOf(
+            Triple(1f, 56f, 48f),
+            Triple(1.3f, 59f, 50.9f),
+            Triple(2f, 70f, 60f),
+        )
+
+        cases.forEach { (fontScale, expectedHeight, expectedBaseline) ->
+            val fontTop = -13f * fontScale
+            val fontBottom = 3f * fontScale
+            val layout = TabBarGeometry.v6Layout(fontScale, fontTop, fontBottom)
+
+            assertEquals(expectedHeight, layout.barHeight, 0.001f)
+            assertEquals(expectedBaseline, layout.labelBaseline, 0.001f)
+            assertEquals(layout.barHeight, layout.childBottom, 0.001f)
+            assertTrue(layout.labelBaseline + fontBottom + 4f <= layout.childBottom + 0.001f)
+        }
+    }
 }
