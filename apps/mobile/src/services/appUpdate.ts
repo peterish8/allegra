@@ -131,7 +131,9 @@ export const parseRelease = (json: ReleaseJson | null | undefined): LatestBuild 
   if (!json?.published_at) return null;
   const publishedAt = new Date(json.published_at);
   if (Number.isNaN(publishedAt.getTime())) return null;
-  const apk = json.assets?.find(a => a.name?.toLowerCase().endsWith('.apk') && a.browser_download_url);
+  // The release also carries the optional island add-on (LuvLyricsIsland.apk): the update is always the app itself.
+  const apk = json.assets?.find(a => a.name?.toLowerCase() === 'luvlyrics.apk' && a.browser_download_url)
+    ?? json.assets?.find(a => a.name?.toLowerCase().endsWith('.apk') && !/island/i.test(a.name) && a.browser_download_url);
   const changelog = json.assets?.find(a => a.name?.toLowerCase() === 'changelog.json' && a.browser_download_url);
   const commit = json.target_commitish && /^[0-9a-f]{40}$/i.test(json.target_commitish) ? json.target_commitish.toLowerCase() : null;
   const version = (json.name ?? '').match(/\b(\d+\.\d+\.\d+)\b/)?.[1] ?? null;

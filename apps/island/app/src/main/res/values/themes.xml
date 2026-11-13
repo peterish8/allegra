@@ -1,0 +1,10 @@
+<resources>
+  <style name="IslandTheme" parent="@android:style/Theme.Material.NoActionBar">
+    <item name="android:windowBackground">#0B0B0C</item>
+    <item name="android:statusBarColor">#0B0B0C</item>
+    <item name="android:navigationBarColor">#0B0B0C</item>
+    <item name="android:textColorPrimary">#FFFFFF</item>
+    <item name="android:textColorSecondary">#99FFFFFF</item>
+    <item name="android:colorAccent">#FFFFFF</item>
+  </style>
+</resources>

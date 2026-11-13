@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - "apps/mobile/**"
+      - "apps/island/**"
       - "packages/**"
       - "convex/_generated/**"
       - ".github/workflows/mobile-apk.yml"
@@ -19,6 +20,7 @@ on:
     branches: [main, feat/connect-and-sync]
     paths:
       - "apps/mobile/**"
+      - "apps/island/**"
       - "packages/**"
       - "convex/_generated/**"
       - ".github/workflows/mobile-apk.yml"
@@ -130,6 +132,21 @@ jobs:
       - name: Collect APK
         run: cp android/app/build/outputs/apk/release/app-release.apk LuvLyrics.apk
 
+      # The island is an optional add-on (apps/island): its own small app, so LuvLyrics itself declares no
+      # accessibility service. Same signer as LuvLyrics (the app only talks to an add-on it shares a signature
+      # with), built and unit-tested here, and published beside LuvLyrics.apk.
+      - name: Build and test the island add-on
+        working-directory: apps/island
+        env:
+          ANDROID_RELEASE_KEYSTORE_PATH: ${{ github.ref == 'refs/heads/main' && format('{0}/apps/mobile/android/app/release.keystore', github.workspace) || '' }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.ANDROID_RELEASE_STORE_PASSWORD || '' }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ github.ref == 'refs/heads/main' && secrets.ANDROID_RELEASE_KEY_ALIAS || '' }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.ANDROID_RELEASE_KEY_PASSWORD || '' }}
+        run: |
+          chmod +x gradlew
+          ./gradlew testReleaseUnitTest assembleRelease --no-daemon "-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/apps/mobile/LuvLyricsIsland.apk"
+
       - name: Verify APK certificate
         env:
           EXPECTED_CERT_SHA256: ${{ github.ref == 'refs/heads/main' && vars.ANDROID_RELEASE_CERT_SHA256 || env.ANDROID_BUILD_CERT_SHA256 }}
@@ -137,6 +154,7 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$APKSIGNER"
           node ../../scripts/mobile-signing-policy.mjs --apk "$EXPECTED_CERT_SHA256" "$APKSIGNER" LuvLyrics.apk
+          node ../../scripts/mobile-signing-policy.mjs --apk "$EXPECTED_CERT_SHA256" "$APKSIGNER" LuvLyricsIsland.apk
 
       # The merged manifest, not the source one: a library can add access the app never asked for.
       - name: Verify APK permissions
@@ -153,7 +171,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: LuvLyrics-apk
-          path: apps/mobile/LuvLyrics.apk
+          path: |
+            apps/mobile/LuvLyrics.apk
+            apps/mobile/LuvLyricsIsland.apk
           retention-days: 14
 
   # The unit-level gate: the same checks as Mobile CI (secrets, lint, typecheck, every test — including
@@ -309,7 +329,7 @@ jobs:
             echo "Direct link: https://github.com/${GITHUB_REPOSITORY}/releases/download/apk-latest/LuvLyrics.apk"
           } > "$RUNNER_TEMP/notes/release-body.md"
           gh release delete apk-latest --yes --cleanup-tag || true
-          gh release create apk-latest apps/mobile/LuvLyrics.apk "$RUNNER_TEMP/notes/changelog.json" \
+          gh release create apk-latest apps/mobile/LuvLyrics.apk apps/mobile/LuvLyricsIsland.apk "$RUNNER_TEMP/notes/changelog.json" \
             --prerelease \
             --target "$GITHUB_SHA" \
             --title "LuvLyrics $VERSION — latest build" \

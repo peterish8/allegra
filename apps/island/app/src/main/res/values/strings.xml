@@ -1,0 +1,6 @@
+<resources>
+  <string name="app_name" translatable="false">LuvLyrics island</string>
+  <string name="island_service_label" translatable="false">LuvLyrics island</string>
+  <string name="island_service_summary" translatable="false">The music island round your camera</string>
+  <string name="island_service_description" translatable="false">Shows the song that is playing in a small island round your camera, over every app. Tap it to open the player with play, pause, skip and a scrubber. Android only lets an accessibility service draw above the status bar, which is why it is here. It reads nothing on your screen and does nothing on its own.</string>
+</resources>
