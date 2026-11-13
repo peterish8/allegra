@@ -34,10 +34,13 @@ const SEPARATOR = /\s[-–—|]\s/;
 
 export const VERSION_PENALTY = { extra: -60, missing: -30, remaster: -5 } as const;
 
+/** Peeling brackets is quadratic in the bracket count; no real title is longer than this. */
+const MAX_TITLE_LENGTH = 300;
+
 /** The parts of a title that can carry a version: bracketed groups and text after " - ". */
 export function versionSegments(title: string): string[] {
   const groups: string[] = [];
-  let rest = title;
+  let rest = title.slice(0, MAX_TITLE_LENGTH);
   // Peel innermost groups first so an outer group such as "(feat. A (B))" is scanned too.
   while (INNERMOST_BRACKETS.test(rest)) {
     rest = rest.replace(INNERMOST_BRACKETS, (_whole: string, inner: string) => {

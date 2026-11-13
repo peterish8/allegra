@@ -51,6 +51,14 @@ test('unicode brackets are scanned', () => {
   assert.deepEqual(versionSegments('Yellow （Live）'), ['Live']);
 });
 
+test('pathological bracket strings finish fast', () => {
+  const started = Date.now();
+  versionTags('(a)'.repeat(50000));
+  versionTags('('.repeat(5000) + 'live' + ')'.repeat(5000));
+  versionTags('('.repeat(100000));
+  assert.ok(Date.now() - started < 500);
+});
+
 test('a version word counted twice in one title is one tag', () => {
   assert.equal(versionPenalty('Song', 'Song (Live) - Live'), VERSION_PENALTY.extra);
 });
