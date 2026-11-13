@@ -3746,6 +3746,21 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .shelf.has-before { --shelf-fade-before: calc(var(--page-gutter, 36px) + 48px); }
 .shelf.has-after { --shelf-fade-after: calc(var(--page-gutter, 36px) + 72px); }
 
+/* Loading: the same `.tile` and `.tile-art` boxes as the real shelf, so nothing moves when songs arrive.
+ * The meta row is held at the height of the like button beside a real tile's two text lines. */
+.shelf-skeleton .section-heading > div { min-height: 44px; display: flex; align-items: center; }
+.shelf-skeleton__title { display: block; width: 168px; height: 22px; }
+.shelf-skeleton .tile-art { cursor: default; box-shadow: none; }
+.shelf-skeleton__fill { position: absolute; inset: 0; border-radius: 0; }
+.shelf-skeleton .tile-meta { min-height: 41px; }
+.shelf-skeleton .tile-copy { width: 100%; gap: 8px; padding-top: 4px; }
+.shelf-skeleton__line { display: block; width: 78%; height: 12px; }
+.shelf-skeleton__line--short { width: 52%; }
+
+/* Failed: one calm line and a way back, in place of the shelves. */
+.shelf-error { align-items: flex-start; gap: 12px; padding: 20px 0; }
+.shelf-error p { margin: 0; color: var(--ink-muted); font-size: 14px; }
+
 .tile,
 .playlist-tile { display: flex; width: 168px; flex: 0 0 168px; flex-direction: column; gap: 10px; scroll-snap-align: start; color: var(--ink); text-decoration: none; }
 

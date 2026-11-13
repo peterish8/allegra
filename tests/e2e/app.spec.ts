@@ -443,3 +443,26 @@ test.describe('reduced motion', () => {
     expect(await loopingOutsideIndicators(page), 'listening room').toEqual([]);
   });
 });
+
+test('Home: the loading shelf has the same tile box as the loaded one, so nothing jumps', async ({ page }) => {
+  // Hold the shelves back long enough to measure the skeleton, then let them through.
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route('**/api/home*', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.goto('/');
+  const skeleton = page.getByRole('region', { name: 'Loading your shelves' });
+  await expect(skeleton).toBeVisible({ timeout: 30_000 });
+  const before = await skeleton.locator('.tile').first().boundingBox();
+  release();
+  await expect(skeleton).toBeHidden({ timeout: 30_000 });
+  const loaded = page.locator('.home-section .shelf .tile').first();
+  await expect(loaded).toBeVisible({ timeout: 30_000 });
+  const after = await loaded.boundingBox();
+  expect(before).not.toBeNull();
+  expect(after).not.toBeNull();
+  expect(Math.round(after!.width)).toBe(Math.round(before!.width));
+  expect(Math.round(after!.height)).toBe(Math.round(before!.height));
+});
