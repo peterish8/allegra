@@ -21,7 +21,6 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -34,7 +33,7 @@ import { Tactile } from '../components/allegra/motion';
 import { LrcSearchModal } from '../components/LrcSearchModal';
 import { Choice, Row, Section } from '../components/settings/SettingsKit';
 import { Toast } from '../components/Toast';
-import { Glass, Radius, Signal } from '../constants/allegraTheme';
+import { Control, Glass, Radius, Signal, Surface } from '../constants/allegraTheme';
 import { GeniusService } from '../services/GeniusService';
 import { lyricaService } from '../services/LyricaService';
 import { SearchResult } from '../services/LyricsRepository';
@@ -340,9 +339,9 @@ const LyricsEditorScreen: React.FC<Props> = ({ navigation, route }) => {
                   ))}
                 </View>
                 {shifted !== 0 ? (
-                  <Pressable onPress={() => nudge(-shifted)} accessibilityRole="button" style={styles.undo}>
+                  <Tactile onPress={() => nudge(-shifted)} accessibilityRole="button" style={styles.undo}>
                     <Text style={styles.undoText}>Undo shift</Text>
-                  </Pressable>
+                  </Tactile>
                 ) : null}
               </Row>
             ) : (
@@ -403,7 +402,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    minHeight: 38,
+    minHeight: Control.target,
     paddingHorizontal: 14,
     borderRadius: Radius.pill,
     backgroundColor: Glass.fillLight,
@@ -415,7 +414,7 @@ const styles = StyleSheet.create({
   chipTextOn: { color: Signal.waveInk },
   well: {
     borderRadius: Radius.well,
-    backgroundColor: 'rgba(0, 0, 0, 0.22)',
+    backgroundColor: Surface.deep,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Glass.hairline,
     marginBottom: 16,
@@ -425,7 +424,7 @@ const styles = StyleSheet.create({
   // Three to a row, always: the grid never runs off the edge.
   offsetCell: { flexBasis: '30%', flexGrow: 1 },
   offset: {
-    height: 42,
+    height: Control.target,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -434,7 +433,7 @@ const styles = StyleSheet.create({
     borderColor: Glass.hairlineStrong,
   },
   offsetText: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  undo: { alignSelf: 'flex-start', paddingVertical: 4 },
+  undo: { alignSelf: 'flex-start', minHeight: Control.target, justifyContent: 'center' },
   undoText: { color: Signal.wave, fontSize: TypeScale.body, fontWeight: '600' },
 });
 

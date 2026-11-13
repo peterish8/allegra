@@ -16,13 +16,13 @@ import { AppScreen } from '../components/AppScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Animated, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { heroHeight, heroImageUrl } from '../components/playlist/heroFade';
 import { ImmersiveHero, ImmersiveTopBar, useHeroScroll } from '../components/playlist/ImmersiveHero';
 import { RiseIn, Tactile } from '../components/allegra/motion';
 import { BrowseShelf } from '../components/browse/BrowseShelf';
-import { Radius, Signal, TypeScale } from '../constants/allegraTheme';
+import { Glass, Radius, Signal, TypeScale } from '../constants/allegraTheme';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { playEndpoint, playYTSongs } from '../services/stream/browsePlay';
 import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
@@ -142,13 +142,13 @@ const ArtistScreen: React.FC<Props> = ({ navigation, route }) => {
 
         {page.description ? (
           <RiseIn index={1}>
-            <Pressable onPress={() => setAboutOpen(o => !o)} style={styles.about} accessibilityRole="button" accessibilityLabel={aboutOpen ? 'About, tap to collapse' : 'About, tap to read more'}>
+            <Tactile onPress={() => setAboutOpen(o => !o)} pressScale={0.985} style={styles.about} accessibilityRole="button" accessibilityLabel={aboutOpen ? 'About, tap to collapse' : 'About, tap to read more'}>
               <View style={styles.aboutHead}>
                 <Text style={styles.aboutTitle}>About</Text>
                 <Ionicons name={aboutOpen ? 'chevron-up' : 'chevron-down'} size={16} color={Signal.inkMuted} />
               </View>
               <Text style={styles.aboutText} numberOfLines={aboutOpen ? undefined : 3}>{page.description}</Text>
-            </Pressable>
+            </Tactile>
           </RiseIn>
         ) : null}
 
@@ -187,9 +187,9 @@ const styles = StyleSheet.create({
   actionWrap: { flex: 1 },
   action: { minHeight: 48, borderRadius: Radius.control, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   primary: { backgroundColor: Signal.wave },
-  glass: { backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)' },
+  glass: { backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
   follow: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
-  followOn: { borderColor: 'rgba(255, 255, 255, 0.32)', backgroundColor: 'rgba(255, 255, 255, 0.14)' },
+  followOn: { borderColor: Glass.selectedRim, backgroundColor: Glass.selected },
   actionText: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '700' },
   about: {
     marginHorizontal: 16,
@@ -197,9 +197,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 16,
     borderRadius: Radius.sheet,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: Surface.divider,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: Glass.hairline,
     overflow: 'hidden',
   },
   aboutHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
@@ -212,9 +212,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sheet,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(10,10,12,0.5)',
+    backgroundColor: Glass.scrim,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: Glass.hairlineStrong,
   },
 });
 

@@ -40,7 +40,7 @@ import { ShimmerBlock } from '../components/stream/StreamItems';
 import { recentPlaylists, type RecentView } from '../services/stream/recentItems';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useStreamSongActions } from '../components/stream/useStreamSongActions';
-import { Radius, Signal, Space } from '../constants/allegraTheme';
+import { Glass, Radius, Signal, Space, Surface } from '../constants/allegraTheme';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { isDoubleTap } from '../navigation/tabs';
 import { useLiveQuickPicks } from '../hooks/useLiveQuickPicks';
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
     height: 44,
     paddingHorizontal: Space.sm,
     borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.09)',
+    backgroundColor: Glass.chip,
   },
   searchInput: { flex: 1, color: Signal.ink, fontSize: TypeScale.body, paddingVertical: 0 },
   listButton: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
@@ -567,7 +567,7 @@ const styles = StyleSheet.create({
     marginTop: Space.xl,
     padding: Space.lg,
     borderRadius: Radius.well,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: Surface.divider,
     alignItems: 'center',
     gap: Space.sm,
   },

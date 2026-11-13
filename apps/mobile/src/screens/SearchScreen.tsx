@@ -28,7 +28,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   BackHandler,
-  Alert,
   Keyboard,
   ScrollView,
   StyleSheet,
@@ -45,11 +44,11 @@ import { RiseIn, Tactile, TactileRow } from '../components/allegra/motion';
 import { GUTTER, MoodChips, SongRow, TrackItem } from '../components/stream/StreamHome';
 import { useStreamSongActions } from '../components/stream/useStreamSongActions';
 import { Toast } from '../components/Toast';
-import { Glass, Radius, Signal, Space } from '../constants/allegraTheme';
+import { Glass, Radius, Signal, Space, Surface } from '../constants/allegraTheme';
 import { useVoiceField } from '../components/search/VoiceField';
 import { playVoicePick } from '../services/voicePlay';
 import { useVoiceSearchStore } from '../store/voiceSearchStore';
-import { Button, IconButton, SongRow as SharedSongRow } from '../ui';
+import { Button, IconButton, Sheet, SheetOption, SongRow as SharedSongRow } from '../ui';
 import { navigationRef } from '../utils/navigationService';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { openPlayerSheet } from '../navigation/playerSheet';
@@ -369,25 +368,20 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
     setToast(`Saving \u201c${song.title}\u201d to your library`);
   }, [addToDownloads]);
 
+  // The trace actions are a short list of choices, so they open as a sheet, not a system dialog.
+  const [traceCount, setTraceCount] = useState<number | null>(null);
   const showTraceActions = useCallback(() => {
-    const count = androidPerformance.trace.exportRecords().length;
-    Alert.alert('Local performance trace', `${count} bounded records in memory`, [
-      {
-        text: 'Clear',
-        onPress: () => {
-          androidPerformance.clearSnapshot();
-          setToast('Local performance trace cleared');
-        },
-      },
-      {
-        text: 'Dump to device log',
-        onPress: () => {
-          const written = androidPerformance.dumpSnapshotToLog();
-          setToast(`Emitted ${written} trace records to local Android logcat`);
-        },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setTraceCount(androidPerformance.trace.exportRecords().length);
+  }, []);
+  const clearTrace = useCallback(() => {
+    setTraceCount(null);
+    androidPerformance.clearSnapshot();
+    setToast('Local performance trace cleared');
+  }, []);
+  const dumpTrace = useCallback(() => {
+    setTraceCount(null);
+    const written = androidPerformance.dumpSnapshotToLog();
+    setToast(`Emitted ${written} trace records to local Android logcat`);
   }, []);
 
   // A long press opens the song's actions (Play next first), as everywhere in the app.
@@ -651,6 +645,10 @@ const SearchScreen: React.FC<Props> = ({ navigation }) => {
         style={[styles.statusScrim, { height: insets.top + 16 }]}
       />
       {songActions.element}
+      <Sheet visible={traceCount !== null} onClose={() => setTraceCount(null)} title="Local performance trace">
+        <SheetOption icon="trash-outline" label="Clear" hint={`${traceCount ?? 0} bounded records in memory`} onPress={clearTrace} />
+        <SheetOption icon="document-text-outline" label="Dump to device log" onPress={dumpTrace} />
+      </Sheet>
       {toast ? <Toast visible message={toast} type="info" duration={2200} onDismiss={() => setToast(null)} /> : null}
     </AppScreen>
   );
@@ -703,7 +701,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 48,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    borderBottomColor: Surface.divider,
   },
   recentMainCell: { flex: 1 },
   recentMain: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingVertical: Space.sm },
@@ -723,7 +721,7 @@ const styles = StyleSheet.create({
     padding: Space.sm,
     justifyContent: 'space-between',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: Glass.hairline,
   },
   moodLabel: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '700' },
   shelf: { paddingHorizontal: GUTTER, gap: Space.sm },
