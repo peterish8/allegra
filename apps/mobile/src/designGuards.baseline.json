@@ -47,8 +47,7 @@
     "components/TimelineScrubber.tsx": 1
   },
   "tracking": {
-    "components/luvLink/LuvLinkPanel.tsx": 2,
-    "components/settings/SettingsKit.tsx": 1
+    "components/luvLink/LuvLinkPanel.tsx": 2
   },
   "bottomPad": {},
   "alert": {
@@ -62,7 +61,6 @@
     "screens/LyricsEditorScreen.tsx": 1,
     "screens/NowPlayingScreen.tsx": 2,
     "screens/SearchScreen.tsx": 2,
-    "screens/SettingsScreen.tsx": 12,
     "screens/StreamScreen.tsx": 2
   },
   "typeSize": {},
@@ -109,8 +107,6 @@
     "components/playlist/playlistPage.ts": 1,
     "components/PlaylistItem.tsx": 1,
     "components/settings/DynamicIslandSettings.tsx": 1,
-    "components/settings/SettingsGlow.tsx": 4,
-    "components/settings/SettingsKit.tsx": 14,
     "components/share/ScanFrame.tsx": 3,
     "components/stream/AddListSheet.tsx": 6,
     "components/stream/DownloadButton.tsx": 1,
@@ -174,7 +170,6 @@
     "components/player/UpNextPanel.tsx": 5,
     "components/PlaylistSelectionModal.tsx": 6,
     "components/settings/AccountConsentSheet.tsx": 3,
-    "components/settings/SettingsKit.tsx": 7,
     "components/SongVersionSearchModal.tsx": 8,
     "components/stream/AddListSheet.tsx": 8,
     "components/stream/StreamHome.tsx": 4,
@@ -196,7 +191,6 @@
     "components/player/AmbientMode.tsx": 2,
     "components/player/AppleBackdrop.tsx": 1,
     "components/player/SeekRipple.tsx": 2,
-    "components/settings/SettingsKit.tsx": 1,
     "components/stream/DownloadButton.tsx": 2,
     "components/stream/SavedBadge.tsx": 1,
     "components/TimelineScrubber.tsx": 4,
@@ -242,8 +236,6 @@
     "components/player/YouTubeBackdrop.tsx": 1,
     "components/playlist/CoverFlipCard.tsx": 1,
     "components/PlaylistItem.tsx": 1,
-    "components/settings/SettingsGlow.tsx": 1,
-    "components/settings/SettingsKit.tsx": 1,
     "components/share/ScanFrame.tsx": 1,
     "components/share/ScanResultCard.tsx": 1,
     "components/stream/DownloadButton.tsx": 1,
@@ -260,7 +252,6 @@
     "screens/LuvsScreen.tsx": 1,
     "screens/NowPlayingScreen.tsx": 1,
     "screens/PlaylistDetailScreen.tsx": 1,
-    "screens/SettingsScreen.tsx": 1,
     "ui/Chip.tsx": 1,
     "ui/HeaderGlow.tsx": 1,
     "ui/Segmented.tsx": 1,
