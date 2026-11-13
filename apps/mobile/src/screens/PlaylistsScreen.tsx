@@ -1,3 +1,4 @@
+import { useSavedQuickPicks } from '../components/library/SavedQuickPicks';
 import { AppScreen } from '../components/AppScreen';
 /**
  * PlaylistsScreen - Library Hub
@@ -15,6 +16,8 @@ import { PLAYLISTS_TOUR, playlistsScene } from '../components/allegra/infoTours'
 import { MosaicCover } from '../components/MosaicCover';
 import { PlaylistsStrings } from '../constants/uiStrings';
 import { getOnlinePlaylistSongs } from '../database/syncQueries';
+import { navigationRef } from '../utils/navigationService';
+import { toStreamSong } from '../services/stream/streamSong';
 import { onlineRowToSong } from '../services/sync/onlineSongs';
 import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { usePlaylistStore } from '../store/playlistStore';
@@ -43,7 +46,13 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
   >();
   const isLoading = usePlaylistStore(state => state.isLoading);
   const deletePlaylist = usePlaylistStore(state => state.deletePlaylist);
-  const playlists = usePlaylistStore(state => state.playlists);
+  const ordinaryPlaylists = usePlaylistStore(state => state.playlists);
+  const { entry: livePicks } = useSavedQuickPicks();
+  const playlists = React.useMemo<Playlist[]>(() => livePicks?.saved ? [{
+    id: `generated:quick-picks:${livePicks.scope}`, name: 'Quick picks', description: 'Live on this phone',
+    isDefault: false, sortOrder: -1, dateCreated: new Date(livePicks.generatedAt).toISOString(),
+    dateModified: new Date(livePicks.generatedAt).toISOString(), songCount: livePicks.songs.length,
+  }, ...ordinaryPlaylists] : ordinaryPlaylists, [ordinaryPlaylists, livePicks]);
   const fetchPlaylists = usePlaylistStore(state => state.fetchPlaylists);
   const [playlistSongs, setPlaylistSongs] = React.useState<Record<string, Song[]>>({});
 
@@ -75,6 +84,7 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
       const songsMap: Record<string, Song[]> = {};
 
       for (const playlist of playlists) {
+        if (playlist.id.startsWith('generated:quick-picks:')) { songsMap[playlist.id] = (livePicks?.songs ?? []).slice(0, 4).map(song => toStreamSong(song)); continue; }
         const local = await getPlaylistSongs(playlist.id);
         const online = local.length >= 4
           ? []
@@ -90,9 +100,10 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
       fetchAllPlaylistSongs().catch(() => undefined);
     }
     return () => { current = false; };
-  }, [playlists, onlineVersion]);
+  }, [playlists, onlineVersion, livePicks]);
 
   const handlePlaylistPress = (playlistId: string) => {
+    if (playlistId.startsWith('generated:quick-picks:')) { navigationRef.navigate('Main', { screen: 'Browse', params: { screen: 'QuickPicks' } }); return; }
     navigation.navigate('PlaylistDetail', { playlistId });
   };
 
@@ -173,18 +184,18 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
             contentContainerStyle={[styles.grid, { paddingBottom: bottom }]}
             renderItem={({ item }) => {
               const name = displayPlaylistName(item.name);
-              const count = countOf(item.songCount || 0, 'song');
+              const count = item.id.startsWith('generated:') ? 'Live - updates on this phone' : countOf(item.songCount || 0, 'song');
               return (
                 <Tactile
                   wrapperStyle={[styles.playlistCard, { maxWidth: columns === 1 ? '100%' : '46%' }]}
                   pressScale={0.98}
                   haptic="select"
                   onPress={() => handlePlaylistPress(item.id)}
-                  onLongPress={item.isDefault ? undefined : () => handleLongPress(item)}
+                  onLongPress={item.isDefault || item.id.startsWith('generated:') ? undefined : () => handleLongPress(item)}
                   delayLongPress={350}
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${name}, ${count}`}
-                  accessibilityHint={item.isDefault ? undefined : 'Long press for more'}
+                  accessibilityHint={item.isDefault || item.id.startsWith('generated:') ? undefined : 'Long press for more'}
                 >
                   <MosaicCover songs={playlistSongs[item.id] || []} size={folderWidth} name={name} />
                   <View style={styles.playlistMeta}>

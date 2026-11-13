@@ -30,6 +30,7 @@ export const toStreamSong = (song: UnifiedSong, now: string = new Date().toISOSt
   id: streamIdFor(song),
   title: song.title,
   artist: song.artist,
+  album: song.album,
   gradientId: 'dynamic',
   duration: song.duration ?? 0,
   dateCreated: now,

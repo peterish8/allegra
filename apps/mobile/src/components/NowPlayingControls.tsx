@@ -1,5 +1,5 @@
 import { usePlaybackStatus } from '../hooks/usePlaybackStatus';
-import { PlaybackButton } from '../ui/PlaybackButton';
+import { NativePlaybackControl as PlaybackButton } from './NativePlaybackControl';
 /**
  * Now Playing transport — Apple Music's layout.
  *
@@ -97,6 +97,7 @@ interface NowPlayingControlsProps {
   /** Time left on the sleep timer ("12 min"), or null when it is off. */
   sleepLabel?: string | null;
   onArtistPress?: () => void;
+  onAlbumPress?: () => void;
   /** Lyrics view: drop the volume row so the lines get the room. */
   compact?: boolean;
   /** Up next (0 closed .. 1 open): title, scrubber and transport ride up above the panel, the rest fades. */
@@ -217,6 +218,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   onOpenTimer,
   sleepLabel,
   onArtistPress,
+  onAlbumPress,
   compact = false,
   upNext,
   upNextTop = 0,
@@ -256,6 +258,10 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   // they have closed); the title glides over by transform alone, so the flight
   // costs no layout pass per frame. The thumbnail fades in as the cover lands.
   const [docked, setDocked] = useState(showLyrics);
+  // The title's shift reads this shared value: a style keyed on React state could keep the lyrics-open offset after
+  // the slot was removed, clipping the title's first letters at the left edge.
+  const dockedSV = useSharedValue(showLyrics);
+  useEffect(() => { dockedSV.value = docked; }, [docked, dockedSV]);
   useEffect(() => {
     if (showLyrics) {
       setDocked(true);
@@ -267,8 +273,8 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   const titleShift = DOCK_THUMB + DOCK_GAP;
   const titleStyle = useAnimatedStyle(() => {
     const p = lyricsP ? lyricsP.value : 0;
-    return { transform: [{ translateX: docked ? -titleShift * (1 - p) : 0 }] };
-  }, [docked]);
+    return { transform: [{ translateX: dockedSV.value ? -titleShift * (1 - p) : 0 }] };
+  });
   const thumbStyle = useAnimatedStyle(() => {
     const p = lyricsP ? lyricsP.value : 0;
     const t = Math.min(1, Math.max(0, (p - 0.78) / 0.22));
@@ -397,8 +403,8 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
           <Artwork uri={coverImageUri} title={currentSongTitle ?? ''} artist={currentSongArtist} size={52} style={styles.focusArtwork} />
           <View style={styles.focusMeta}>
             {/* One line each, capped growth: the lyrics frame below clears a fixed header height. */}
-            <Text style={styles.focusTitle} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongTitle || 'Not playing'}</Text>
-            <Text style={styles.focusArtist} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongArtist}</Text>
+            <Tactile onPress={onAlbumPress} disabled={!onAlbumPress} accessibilityRole="button" accessibilityLabel="Open song album"><Text style={styles.focusTitle} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongTitle || 'Not playing'}</Text></Tactile>
+            <Tactile onPress={onArtistPress} disabled={!onArtistPress} accessibilityRole="button" accessibilityLabel="Open artist"><Text style={styles.focusArtist} numberOfLines={1} maxFontSizeMultiplier={1.3}>{currentSongArtist}</Text></Tactile>
           </View>
           {/* The same buttons, in the same order, as the row under the lyrics. */}
           {nativeActions ? (
@@ -483,20 +489,20 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
               </Animated.View>
             </View>
           ) : null}
-          <Tactile wrapperStyle={styles.metaText} pressScale={0.98} onPress={onArtistPress} disabled={!onArtistPress} accessibilityRole="button">
+          <View style={styles.metaText}>
             {/* The dock shift lives on its own view: Tactile's press scale would otherwise replace its transform. */}
             <Animated.View style={titleStyle}>
-              <View style={styles.swapLine}>
+              <Tactile onPress={onAlbumPress} disabled={!onAlbumPress} accessibilityRole="button" accessibilityLabel="Open song album" style={styles.swapLine}>
                 {/* 1.41.0 (owner): full size, scrolling slowly right to left with a 5 s rest; never shrunk to fit. */}
                 <SwapMarquee style={styles.title} key={swapMarqueeKey(songId, currentSongTitle || 'Not playing')} songId={songId} direction={songDirection} active={focused} speed={PLAYER_TITLE_SPEED}
                   restMs={PLAYER_TITLE_REST_MS}>{currentSongTitle || 'Not playing'}</SwapMarquee>
-              </View>
-              <View style={styles.swapLineSmall}>
+              </Tactile>
+              <Tactile onPress={onArtistPress} disabled={!onArtistPress} accessibilityRole="button" accessibilityLabel="Open artist" style={styles.swapLineSmall}>
                 <SwapMarquee style={styles.artist} key={swapMarqueeKey(songId, currentSongArtist || 'Unknown artist')} songId={songId} direction={songDirection} active={focused} speed={PLAYER_TITLE_SPEED}
                   restMs={PLAYER_ARTIST_REST_MS}>{currentSongArtist || 'Unknown artist'}</SwapMarquee>
-              </View>
+              </Tactile>
             </Animated.View>
-          </Tactile>
+          </View>
 
           {nativeActions ? (
             <NativeSongActions
@@ -583,7 +589,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
                 </NativeSkip>
               </View>
               <View style={styles.transportSlot}>
-                <PlaybackButton status={playbackStatus} onPress={() => { if (!remoteVolume && playbackStatus === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
+                <PlaybackButton remote={!!remoteVolume} status={playbackStatus} onPress={() => { if (!remoteVolume && playbackStatus === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
               </View>
               <View style={styles.transportSlot}>
                 <NativeSkip direction={1} enabled={nativeSkip} slop={12}>

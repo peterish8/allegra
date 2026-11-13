@@ -7,7 +7,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Signal, Space, Tactile, Text, type IconName } from '../ui';
 import { tabTapParams } from '../navigation/tabs';
 import { NAV_BAR_HEIGHT, createSheetFrame, navBarHeight, shellNavHeight } from '../navigation/v6Shell';
-import { useMiniPlayerShowing } from '../hooks/useBottomClearance';
 import { useTabBarPushStyle } from '../navigation/sheetProgress';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { useShallow } from 'zustand/react/shallow';
@@ -47,8 +46,7 @@ export function V6TabBar({ state, navigation }: BottomTabBarProps) {
   const keyboard = useKeyboardVisible();
   const route = state.routes[state.index]?.name ?? 'Stream';
   // RootNavigator draws no mini player on Luvs; everywhere else the Create card rests above it.
-  const pillShowing = useMiniPlayerShowing() && route !== 'Luvs';
-  const sheet = createSheetFrame(height, insets, pillShowing, fontScale, Space.sm);
+  const sheet = createSheetFrame(height, insets, false, fontScale, Space.sm);
   const previousTab = useRef<NavTab>('Stream');
   const active = litTab(route, previousTab.current);
   previousTab.current = active;
@@ -93,7 +91,7 @@ export function V6TabBar({ state, navigation }: BottomTabBarProps) {
   };
   if (keyboard) return null;
   // While the Create sheet is up the host covers the screen (its dimmed page closes it); otherwise only the bar.
-  return <View pointerEvents="box-none" style={[styles.host, createOpen && styles.hostOpen]}>
+  return <View pointerEvents="box-none" style={[styles.host, styles.hostOpen]}>
     <CreateSheet open={createOpen} bottom={sheet.bottom} maxHeight={sheet.maxHeight} onClose={() => setCreateOpen(false)} onPick={create} />
     <AnimatedBar height={barHeight} push={push}>
     {/* 1.43.0 (owner's Spotify screenshot): no slab behind the bar. The page fades to black under it, starting

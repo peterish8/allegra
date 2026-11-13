@@ -10,3 +10,6 @@ export const shortcutColumns = (fontScale: number): 1 | 2 => (fontScale >= 1.3 ?
  */
 export const shortcutCellWidth = (windowWidth: number, columns: 1 | 2, inset: number): number =>
   Math.max(0, Math.floor((windowWidth - inset * 2) / columns));
+
+/** Reserve two title lines and the metadata line, uniformly for the current text scale. */
+export const shortcutCellHeight = (fontScale: number): number => Math.max(72, Math.ceil(58 * fontScale + 14));

@@ -23,6 +23,8 @@ export const ROW_ART = Control.rowArtwork;
 export interface ListRowProps {
   title: string;
   subtitle?: string;
+  /** Room for explanatory sheet copy at larger system text sizes. */
+  subtitleLines?: number;
   onPress?: () => void;
   /** The row's actions sheet. Long press means "actions" everywhere in the app. */
   onLongPress?: () => void;
@@ -42,7 +44,7 @@ export interface ListRowProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, onPress, onLongPress, artwork, icon, iconStyle = 'disc', trailing, chevron, active, disabled, accessibilityLabel, style }) => (
+export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, subtitleLines = 1, onPress, onLongPress, artwork, icon, iconStyle = 'disc', trailing, chevron, active, disabled, accessibilityLabel, style }) => (
   <TactileRow
     onPress={onPress}
     onLongPress={onLongPress}
@@ -63,7 +65,7 @@ export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, onPress, onLo
     ) : null}
     <View style={styles.text}>
       <Text variant="row" tone="primary" style={active && styles.activeTitle} numberOfLines={1} ellipsizeMode="tail">{title}</Text>
-      {subtitle ? <Text variant="secondary" tone="muted" numberOfLines={1} ellipsizeMode="tail">{subtitle}</Text> : null}
+      {subtitle ? <Text variant="secondary" tone="muted" numberOfLines={subtitleLines} ellipsizeMode="tail">{subtitle}</Text> : null}
     </View>
     {trailing}
     {chevron ? <Ionicons name="chevron-forward" size={18} color={OnMedia.muted} /> : null}

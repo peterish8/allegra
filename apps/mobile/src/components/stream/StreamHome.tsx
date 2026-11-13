@@ -22,7 +22,7 @@ import { Chip, CHIP_ROW_PADDING, Control, SongRow as SharedSongRow } from '../..
 import Artwork from '../allegra/Artwork';
 import { Tactile } from '../allegra/motion';
 import DownloadButton from './DownloadButton';
-import { shortcutCellWidth, shortcutColumns } from './shortcutGrid';
+import { shortcutCellWidth, shortcutColumns, shortcutCellHeight } from './shortcutGrid';
 import SavedBadge from './SavedBadge';
 
 // Matches SectionHeading's inset so headings and content share an edge.
@@ -85,15 +85,15 @@ export const ShortcutGrid: React.FC<{
           pressScale={0.97}
           accessibilityRole="button"
           accessibilityLabel={`${item.title}${item.artist ? `, ${item.artist}` : ''}`}
-          style={styles.shortcut}
+          style={[styles.shortcut, { height: shortcutCellHeight(fontScale) }]}
         >
           <View style={styles.shortcutArt}>
             <Artwork uri={item.artwork} title={item.title} artist={item.artist} size={SHORTCUT_COVER} style={StyleSheet.absoluteFill} />
             {item.isCurrent ? <PlayingMark size={18} /> : null}
             {item.download ? <SavedBadge song={item.download} small /> : null}
           </View>
-          <View style={styles.shortcutCopy}>
-            <Text style={[styles.shortcutTitle, item.isCurrent && styles.current]} numberOfLines={2}>{item.title}</Text>
+          <View style={[styles.shortcutCopy, { minHeight: Math.ceil(34 * fontScale) }]}>
+            <Text style={[styles.shortcutTitle, item.isCurrent && styles.current]} numberOfLines={2} ellipsizeMode="tail">{item.title}</Text>
             {item.artist ? <Text style={styles.shortcutMeta} numberOfLines={1}>{item.artist}</Text> : null}
           </View>
         </Tactile>

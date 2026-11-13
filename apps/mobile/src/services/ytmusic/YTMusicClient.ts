@@ -7,7 +7,7 @@
 import { cacheKey, postJson, TtlCache } from '../net/fetchWithTimeout';
 import { NextPage, parseNext, parseRelatedSongs, parseSearchSongs, YTSong } from './parsers';
 import {
-  ArtistPage, CollectionPage, HomePage, PlayEndpoint, YTPageItem,
+  ArtistPage, CollectionPage, HomePage, PlayEndpoint, YTPageItem, ArtistReleasesPage, BrowseRef, parseArtistReleases,
   leadArtist, parseArtistPage, parseArtistSearch, parseCollectionPage, parseHomePage,
 } from './browse';
 
@@ -158,6 +158,17 @@ export const YTMusicClient = {
     const json = await postContinuation(continuation);
     const page = parseHomePage(json);
     return { chips: [], shelves: page.shelves, continuation: page.continuation };
+  },
+
+  artistReleases(endpoint: BrowseRef): Promise<ArtistReleasesPage | null> {
+    return pageCached(cacheKey('artist-releases-v1', endpoint.browseId, endpoint.params ?? '', locale.gl), async () => {
+      const json = await call<unknown>('browse', { browseId: endpoint.browseId, params: endpoint.params });
+      return json ? parseArtistReleases(json) : null;
+    });
+  },
+  async artistReleasesMore(token: string): Promise<ArtistReleasesPage | null> {
+    const json = await postContinuation(token);
+    return json ? parseArtistReleases(json) : null;
   },
 
   /** An album or playlist with its tracks. */

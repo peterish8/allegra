@@ -44,7 +44,9 @@ export const lerp = (from: number, to: number, t: number): number => {
 /** The cover's rectangle `progress` of the way from the mini player's cover to its place in the player. */
 export function coverFrame(progress: number, from: Rect, to: Rect): Rect {
   'worklet';
-  const t = clamp01(progress);
+  const u = 1 - clamp01(progress);
+  // Ease-out: the cover is already most of the way up while the surface is still rising (the reference's 35% and 70%).
+  const t = 1 - u * Math.sqrt(u);
   return { x: lerp(from.x, to.x, t), y: lerp(from.y, to.y, t), width: lerp(from.width, to.width, t), height: lerp(from.height, to.height, t) };
 }
 
@@ -56,21 +58,21 @@ export function coverRadius(progress: number, fromRadius: number, toRadius: numb
 }
 
 /**
- * The mini player's own contents (title, buttons) fade out over the first quarter, so the growing cover never sits on
+ * The mini player's own contents (title, buttons) fade out over the first 18%, so the growing cover never sits on
  * top of its text (the overlap in the reference's second frame). 1 = fully shown.
  */
 export const miniContentOpacity = (progress: number): number => {
   'worklet';
-  return 1 - clamp01(progress / 0.25);
+  return 1 - clamp01(progress / 0.18);
 };
 
 /**
- * The player's own contents (title, controls) fade in late, after the cover has arrived: 0 until 60%, 1 at 90%.
- * Used instead of the classic 15-40% only while the fluid transition is on.
+ * The player's own contents (title, controls) fade in late, after the cover has arrived: 0 until 34%, 1 at 72%.
+ * Both tap expansion and fluid dragging use this choreography.
  */
 export const playerContentOpacity = (progress: number): number => {
   'worklet';
-  return clamp01((progress - 0.6) / 0.3);
+  return clamp01((progress - 0.34) / 0.38);
 };
 
 /** The moving cover shows while the sheet is between the ends; at either end the real cover (or the mini one) is. */

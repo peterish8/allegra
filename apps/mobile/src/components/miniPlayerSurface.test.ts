@@ -63,15 +63,17 @@ describe('mini player scrubber sits on the top edge', () => {
 });
 
 describe('mini player and navigation controls', () => {
-  // The mini player: song options, the heart, then play, on a floating rounded card. Next is the swipe,
-  // and TalkBack keeps its "Next song" action.
-  it('shows song options, the heart and play, in that order, and Next stays reachable', () => {
+  // The mini player: the heart, then play, on a floating rounded card. Song options are a long press on the song
+  // (owner, 2026-11-13: no ••• on the mini player), also a TalkBack action. Next is the swipe, and TalkBack keeps
+  // its "Next song" action.
+  it('shows the heart and play, opens song options on a long press, and Next stays reachable', () => {
     const pill = code(read('PillPlayer.tsx'));
-    const options = pill.indexOf('accessibilityLabel="Song options"');
     const heart = pill.indexOf("'Remove from Liked songs' : 'Add to Liked songs'");
     const play = pill.indexOf('<PlaybackButton size={48}');
-    expect(options).toBeGreaterThan(0);
-    expect(heart).toBeGreaterThan(options);
+    expect(pill).not.toMatch(/ellipsis-horizontal/);
+    expect(pill).toMatch(/onLongPress=\{onMore\}/);
+    expect(pill).toMatch(/\{ name: 'longpress', label: 'Song options' \}/);
+    expect(heart).toBeGreaterThan(0);
     expect(play).toBeGreaterThan(heart);
     expect(pill).not.toMatch(/label="Next song"/);
     expect(pill).toMatch(/\{ name: 'next', label: 'Next song' \}/);
@@ -92,17 +94,17 @@ describe('mini player and navigation controls', () => {
   it('sets song options, the saved mark and play on one rhythm and one size', () => {
     const pill = code(read('PillPlayer.tsx'));
     expect(pill).toMatch(/const ACTION_GLYPH = 26;/);
-    expect(pill).toMatch(/const ACTION_SLOT = 44;/);
+    expect(pill).toMatch(/const ACTION_SLOT = 48;/);
     expect(pill).toMatch(/action: \{ width: ACTION_SLOT, height: Control\.target/);
-    // 44 wide plus 2 + 2 of slop = a 48dp touch.
-    expect(pill).toMatch(/const ACTION_SLOP = \{ left: 2, right: 2, top: 0, bottom: 0 \}/);
+    // Every control occupies the same 48dp slot.
+    expect(pill).toMatch(/const ACTION_SLOP = \{ left: 0, right: 0, top: 0, bottom: 0 \}/);
     expect(code(read('..', 'ui', 'PlaybackButton.tsx'))).toMatch(/const glyph = plain \? 26 :/);
     expect(pill).toMatch(/name=\{liked \? 'checkmark-circle' : 'add-circle-outline'\} size=\{ACTION_GLYPH\}/);
   });
 
   it('the local mini player passes song options and the heart; the Connect one passes song options', () => {
     const mini = code(read('MiniPlayer.tsx'));
-    expect(mini).toMatch(/onMore=\{\(\) => setSongMenuOpen\(true\)\}\s*\n\s*liked=\{isLiked\}\s*\n\s*onToggleLike=/);
+    expect(mini).toMatch(/onMore=\{\(\) => songActions\.open\(currentSong, \{ current: true \}\)\}\s*\n\s*liked=\{isLiked\}\s*\n\s*onToggleLike=/);
     expect(code(read('connect', 'ConnectMiniPlayer.tsx'))).toMatch(/onMore=\{\(\) => setMenuOpen\(true\)\}/);
   });
 
@@ -110,5 +112,16 @@ describe('mini player and navigation controls', () => {
     const tabBar = read('..', '..', 'android', 'app', 'src', 'main', 'java', 'com', 'lyricflow', 'app', 'views', 'NativeTabBarView.kt');
     expect(tabBar).toMatch(/if \(variant == "v6" && !create\) info\.roleDescription = "Tab"/);
     expect(tabBar).toMatch(/info\.isSelected = host\.isSelected/);
+  });
+});
+
+describe('the classic mini player’s skip buttons', () => {
+  // Owner, 2026-11-13: playback controls on Android's main thread, not through JavaScript.
+  test('skip on the main thread and do not also skip from the press handler', () => {
+    const mini = code(read('MiniPlayer.tsx'));
+    expect(mini).toMatch(/<NativeSkip direction=\{-1\} enabled=\{nativeSkip && showSkipButtons\}>/);
+    expect(mini).toMatch(/<NativeSkip direction=\{1\} enabled=\{nativeSkip && showSkipButtons\}>/);
+    expect(mini).toMatch(/if \(!\(nativeSkip && showSkipButtons\)\) onSkipBack\(e\)/);
+    expect(mini).toMatch(/if \(!\(nativeSkip && showSkipButtons\)\) onSkipForward\(e\)/);
   });
 });

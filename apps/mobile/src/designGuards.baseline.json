@@ -15,7 +15,7 @@
     "components/luvLink/LuvLinkLegacyPanel.tsx": 6,
     "components/luvs/LaneRail.tsx": 1,
     "components/LyricsResumePill.tsx": 1,
-    "components/MiniPlayer.tsx": 7,
+    "components/MiniPlayer.tsx": 6,
     "components/ModernDeleteModal.tsx": 3,
     "components/MoreMenu.tsx": 1,
     "components/NowPlayingLyricsArea.tsx": 1,

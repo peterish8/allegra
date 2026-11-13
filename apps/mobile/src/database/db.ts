@@ -139,6 +139,11 @@ const initializeTables = async (database: SQLite.SQLiteDatabase): Promise<void> 
       FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE CASCADE
     );
     
+    CREATE TABLE IF NOT EXISTS generated_playlists (
+      scope TEXT PRIMARY KEY,
+      payload TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS playlists (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -253,6 +258,15 @@ const initializeTables = async (database: SQLite.SQLiteDatabase): Promise<void> 
     CREATE INDEX IF NOT EXISTS idx_lyrics_song_id ON lyrics(song_id);
     CREATE INDEX IF NOT EXISTS idx_lyrics_timestamp ON lyrics(timestamp);
     CREATE INDEX IF NOT EXISTS idx_playlist_songs_playlist ON playlist_songs(playlist_id, sort_order);
+
+    -- The order a listener dragged a playlist into, for every row it shows: downloaded songs and songs that are
+    -- only in the account (playlist_online_songs has no position, so those snapped back after a reorder).
+    CREATE TABLE IF NOT EXISTS playlist_item_order (
+      playlist_id TEXT NOT NULL,
+      song_id TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      PRIMARY KEY (playlist_id, song_id)
+    );
 
     -- Seed default playlist
     INSERT OR IGNORE INTO playlists (id, name, description, is_default, sort_order, date_created, date_modified)

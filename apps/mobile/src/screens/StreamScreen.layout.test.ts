@@ -35,7 +35,7 @@ it('does not let asynchronously restored home sections anchor the initial view b
 describe('feed measurement', () => {
   it('puts the mood chips in the feed as its first item, not in ListHeaderComponent', () => {
     expect(listProp('ListHeaderComponent')).toBeUndefined();
-    expect(source).toMatch(/\[moodsSection, \.\.\.feedSections\]/);
+    expect(source).toMatch(/\[moodsSection, [^\n]*\.\.\.homeSections\]/);
   });
 
   it('keeps Reanimated layout animations out of the recycled feed cells', () => {

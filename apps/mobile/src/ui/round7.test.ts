@@ -52,7 +52,6 @@ describe('item 9: Download is back beside the ⋮ on Stream and Search', () => {
   it('passes a save action to every catalog row on Stream and Search', () => {
     const stream = read('screens/StreamScreen.tsx');
     expect(stream).toMatch(/onSave=\{i => save\(quick\[i\]\)\}/);
-    expect(stream).toMatch(/onSave=\{\(\) => save\(item\.song\)\}/);
     expect(read('screens/SearchScreen.tsx')).toMatch(/onSave=\{\(\) => save\(s\)\}/);
     expect(read('components/stream/StreamHome.tsx')).toMatch(/<DownloadButton song=\{item\.download\} onSave=\{onSave\} \/>/);
   });
@@ -75,7 +74,8 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
 
   // 1.43.0 (owner's Spotify screenshot): the bar has no slab of its own; the page fades to black under it.
   it('gives the mini player its own cover glow and fades the page to black under the bar', () => {
-    expect(read('components/PillPlayer.tsx')).toMatch(/<MiniPlayerGlow uri=\{coverImageUri\} active \/>/);
+    // The pill stays mounted under the player and the Create sheet, so the glow rests there (was: unmounted, 1.43.0).
+    expect(read('components/PillPlayer.tsx')).toMatch(/<MiniPlayerGlow uri=\{coverImageUri\} active=\{!sheetUp && !createOpen\} \/>/);
     expect(read('components/PillPlayer.tsx')).not.toMatch(/shell: \{[^}]*backgroundColor/);
     const bar = read('components/V6TabBar.tsx');
     expect(bar).not.toMatch(/<ShellMaterial/);
@@ -132,10 +132,10 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
     const at = order.map(part => header.indexOf(part));
     expect(at.every(i => i >= 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
-    // The wash is a calm tone of the cover (playlistPage), and back and ⋮ sit in discs.
+    // The wash is a calm tone of the cover (playlistPage); back and ⋮ are plain icons, no disc (owner, 2026-11-13).
     expect(header).toMatch(/colors=\{wash\} locations=\{PLAYLIST_WASH_STOPS\}/);
-    expect(detail).toMatch(/icon="arrow-back" label="Back" variant="secondary" shape="disc"/);
-    expect(detail).toMatch(/icon="ellipsis-vertical" label="Playlist options" variant="secondary" shape="disc"/);
+    expect(detail).toMatch(/icon="arrow-back" label="Back" variant="plain"/);
+    expect(detail).toMatch(/icon="ellipsis-vertical" label="Playlist options" variant="plain"/);
   });
 
   it('shows the mini player title in bold with the artist under it, and Spotify\'s saved mark (1.43.0)', () => {
@@ -189,8 +189,11 @@ describe('item 2: action sheets open on their identity', () => {
   });
 
   it('uses the identity header on the song and mix sheets', () => {
-    expect(read('components/stream/useStreamSongActions.tsx')).toMatch(/<SheetIdentity /);
-    expect(read('components/LibraryBottomSheet.tsx')).toMatch(/<SheetIdentity /);
+    // Stream's long press opens the one song actions sheet (2026-11-13), which carries the identity header.
+    expect(read('components/stream/useStreamSongActions.tsx')).toMatch(/<MiniSongMenu /);
+    expect(read('components/player/MiniSongMenu.tsx')).toMatch(/<SheetIdentity /);
+    // Library and playlist rows open the same sheet through useSongActions.
+    expect(read('components/library/useSongActions.tsx')).toMatch(/<MiniSongMenu /);
     expect(read('screens/StreamScreen.tsx')).toMatch(/<SheetIdentity title=\{mixActions\.title\}/);
   });
 });

@@ -97,8 +97,20 @@ export interface SharedPlaylist {
   readonly songs: UnifiedSong[];
 }
 
+/** A playlist the scanner just resolved opens its page without asking again for this long. */
+const SHARED_CACHE_MS = 60_000;
+const sharedCache = new Map<string, { at: number; value: SharedPlaylist }>();
+
 /** A public playlist by its share code, or null when the link is off or unknown. */
 export async function fetchSharedPlaylist(code: string): Promise<SharedPlaylist | null> {
+  const hit = sharedCache.get(code);
+  if (hit && Date.now() - hit.at < SHARED_CACHE_MS) return hit.value;
+  const fresh = await requestSharedPlaylist(code);
+  if (fresh) sharedCache.set(code, { at: Date.now(), value: fresh });
+  return fresh;
+}
+
+async function requestSharedPlaylist(code: string): Promise<SharedPlaylist | null> {
   type Payload = { code: string; name: string; ownerName: string; coverUrl?: string; songs: AllegraSong[] };
   const res = await fetchJson<Envelope<Payload>>(`${ALLEGRA_API_URL}/api/shared/${encodeURIComponent(code)}`, { timeoutMs: 12_000 });
   if (!res?.success || !res.data) return null;

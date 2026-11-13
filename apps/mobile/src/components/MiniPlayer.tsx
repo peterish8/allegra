@@ -17,11 +17,15 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
+import { createSheetProgress } from '../navigation/sheetProgress';
+import { useShellMenuStore } from '../store/shellMenuStore';
 import { openPlayerSheet } from '../navigation/playerSheet';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
 import CanvasVideoLayer from './CanvasVideoLayer';
 import PillPlayer from './PillPlayer';
-import { MiniSongMenu } from './player/MiniSongMenu';
+import { NativePlaybackControl } from './NativePlaybackControl';
+import { NativeSkip, useNativeSkip } from './NativeSkip';
+import { useSongActions } from './library/useSongActions';
 import SynchronizedLyrics from './SynchronizedLyrics';
 import TimelineScrubber from './TimelineScrubber';
 import { YtMiniPlayer } from './YtMiniPlayer';
@@ -38,7 +42,7 @@ import { useConnect } from '../services/connect/ConnectProvider';
 import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
 import { handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
 import { skipBackward as sharedSkipBackward, skipForward as sharedSkipForward } from '../services/player/skipControls';
-import { beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldAutoPlayLoadedSong, takeRestoredLoad, takeResumePosition, usePlayerStore } from '../store/playerStore';
+import { beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldPlayAfterLoad, takeResumePosition, usePlayerStore } from '../store/playerStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSongsStore } from '../store/songsStore';
 import { diag } from '../utils/diag';
@@ -124,6 +128,8 @@ const PlaybackControls = memo(({
   playing, onToggle, onSkipBack, onSkipForward, animatedButtonStyle, showSkipButtons = true,
 }: PlaybackControlsProps) => {
   const reduceMotion = useReducedMotion();
+  // A tap skips on Android's main thread (the island's path); the Pressable then must not skip as well.
+  const nativeSkip = useNativeSkip();
   // Keep transport geometry fixed while the controls appear. Animating width
   // moved the play button and title row on every expand/collapse.
   const skipProgress = useSharedValue(showSkipButtons ? 1 : 0);
@@ -152,39 +158,35 @@ const PlaybackControls = memo(({
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipBackStyle]}>
-        <Pressable
-          onPress={(e) => { e.stopPropagation(); onSkipBack(e); }}
-          style={styles.controlButton}
-          accessibilityRole="button"
-          accessibilityLabel="Previous song"
-          accessibilityElementsHidden={!showSkipButtons}
-          importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
-        >
-          <Ionicons name="play-skip-back" size={24} color="#fff" />
-        </Pressable>
+        <NativeSkip direction={-1} enabled={nativeSkip && showSkipButtons}>
+          <Pressable
+            onPress={(e) => { e.stopPropagation(); if (!(nativeSkip && showSkipButtons)) onSkipBack(e); }}
+            style={styles.controlButton}
+            accessibilityRole="button"
+            accessibilityLabel="Previous song"
+            accessibilityElementsHidden={!showSkipButtons}
+            importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
+          >
+            <Ionicons name="play-skip-back" size={24} color="#fff" />
+          </Pressable>
+        </NativeSkip>
       </Animated.View>
-      <Pressable
-        onPress={(e) => { e.stopPropagation(); onToggle(e); }}
-        hitSlop={20}
-        style={styles.playButton}
-        accessibilityRole="button"
-        accessibilityLabel={playing ? 'Pause' : 'Play'}
-      >
-        <Animated.View style={animatedButtonStyle}>
-          <Ionicons name={playing ? 'pause' : 'play'} size={32} color="#fff" />
-        </Animated.View>
-      </Pressable>
+      <Animated.View style={animatedButtonStyle}>
+        <NativePlaybackControl plain size={48} status={playing ? 'playing' : 'paused'} onPress={onToggle} />
+      </Animated.View>
       <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipForwardStyle]}>
-        <Pressable
-          onPress={(e) => { e.stopPropagation(); onSkipForward(e); }}
-          style={styles.controlButton}
-          accessibilityRole="button"
-          accessibilityLabel="Next song"
-          accessibilityElementsHidden={!showSkipButtons}
-          importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
-        >
-          <Ionicons name="play-skip-forward" size={24} color="#fff" />
-        </Pressable>
+        <NativeSkip direction={1} enabled={nativeSkip && showSkipButtons}>
+          <Pressable
+            onPress={(e) => { e.stopPropagation(); if (!(nativeSkip && showSkipButtons)) onSkipForward(e); }}
+            style={styles.controlButton}
+            accessibilityRole="button"
+            accessibilityLabel="Next song"
+            accessibilityElementsHidden={!showSkipButtons}
+            importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
+          >
+            <Ionicons name="play-skip-forward" size={24} color="#fff" />
+          </Pressable>
+        </NativeSkip>
       </Animated.View>
     </View>
   );
@@ -195,6 +197,8 @@ PlaybackControls.displayName = 'PlaybackControls';
 
 export const MiniPlayer: React.FC = () => {
   const reduceMotion = useReducedMotion();
+  const createOpen = useShellMenuStore(s => s.createOpen);
+  const createDismissStyle = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, createSheetProgress.value * 2) }));
   const connect = useConnect();
   const player = usePlayer();
   const currentSong = usePlayerStore(state => state.currentSong);
@@ -243,7 +247,7 @@ export const MiniPlayer: React.FC = () => {
   }, [currentSong, requestPlayback, playButtonScale]);
 
 
-  const [songMenuOpen, setSongMenuOpen] = useState(false);
+  const songActions = useSongActions();
   const [expanded, setExpanded] = useState(false);
   const [classicFullExpanded, setClassicFullExpanded] = useState(false);
   const [lyricExpandedAt, setLyricExpandedAt] = useState(0);
@@ -371,10 +375,9 @@ export const MiniPlayer: React.FC = () => {
           // The last-played song restored at launch waits for a tap; anything
           // the listener picked plays. (Keyed to that song: a fresh install
           // used to swallow its first pick because it was the "first load".)
-          const restored = takeRestoredLoad(songId);
-          if (!restored && shouldAutoPlayLoadedSong(songId)) requestPlayback(true);
-          else requestPlayback(false);
-          diag('audio', `pill loaded "${currentSong.title}", ${restored ? 'restored, waits for a tap' : 'play requested'}`);
+          const play = shouldPlayAfterLoad(songId);
+          requestPlayback(play);
+          diag('audio', `pill loaded "${currentSong.title}", ${play ? 'play requested' : 'waits for a tap'}`);
         } catch (error) {
           if (__DEV__) console.error('[MiniPlayer] Failed to sync audio:', error);
         } finally {
@@ -725,7 +728,7 @@ export const MiniPlayer: React.FC = () => {
       await player.seekTo(time);
       await notifyOwnedLuvLinkUserSeek(time);
       notifyLuvLinkUserSeek(time);
-      if (wasPlaying && usePlayerStore.getState().isPlaying && usePlayerStore.getState().currentSongId === seekSongId) player.play();
+      if (wasPlaying && usePlayerStore.getState().isPlaying && usePlayerStore.getState().currentSongId === seekSongId) requestPlayback(true);
     } catch (error) {
       if (usePlayerStore.getState().currentSongId === seekSongId) positionSV.value = previousPosition;
       throw error;
@@ -735,7 +738,7 @@ export const MiniPlayer: React.FC = () => {
         isSeeking.value = false;
       }, 280);
     }
-  }, [player]);
+  }, [player, requestPlayback]);
 
 
 
@@ -772,11 +775,11 @@ export const MiniPlayer: React.FC = () => {
         onPrevious={skipBackward}
         onRetry={() => usePlayerStore.getState().requestPlayback(true)}
         onSeek={handleClassicLyricSeek}
-        onMore={() => setSongMenuOpen(true)}
+        onMore={() => songActions.open(currentSong, { current: true })}
         liked={isLiked}
         onToggleLike={() => { void toggleLike(currentSong.id); }}
       />
-      <MiniSongMenu key={currentSong.id} song={currentSong} visible={songMenuOpen} onClose={() => setSongMenuOpen(false)} />
+      {songActions.element}
       </>
     );
   }
@@ -793,7 +796,7 @@ export const MiniPlayer: React.FC = () => {
   ];
 
   return (
-    <Animated.View style={[classicShellStyle, animatedClassicShellStyle]}>
+    <Animated.View pointerEvents={createOpen ? "none" : "auto"} accessibilityElementsHidden={createOpen} importantForAccessibility={createOpen ? "no-hide-descendants" : "auto"} style={[classicShellStyle, animatedClassicShellStyle, createDismissStyle]}>
       {/* Classic background — clipped to the player shell only (no bleed into nav). */}
         <View
           pointerEvents="none"

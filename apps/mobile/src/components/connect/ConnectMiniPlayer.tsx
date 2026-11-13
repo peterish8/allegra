@@ -38,6 +38,7 @@ export const ConnectMiniPlayer: React.FC = () => {
   const open = useCallback(() => {
     if (song) openPlayerSheet(song.ref);
   }, [song]);
+  const openTracking = useCallback(() => { if (song) openPlayerSheet(song.ref, 0, true); }, [song]);
   const toggle = useCallback(() => {
     control({ kind: view?.isPlaying ? 'pause' : 'play' });
   }, [control, view?.isPlaying]);
@@ -59,6 +60,7 @@ export const ConnectMiniPlayer: React.FC = () => {
       bottom={bottom}
       sheetUp={hiddenOnlyBySheet}
       onOpen={open}
+      onOpenTracking={openTracking}
       onTogglePlay={toggle}
       onNext={next}
       onPrevious={previous}

@@ -82,6 +82,9 @@ export const Glass = {
   grabber: 'rgba(255,255,255,0.35)',
   scrim: 'rgba(7, 8, 11, 0.55)',
   scrimHeavy: 'rgba(7, 8, 11, 0.78)',
+  /** The player sheet's top sheen while it rises: three stops from the edge down, and its hairline rim. */
+  sheen: ['rgba(255, 255, 255, 0.22)', 'rgba(255, 255, 255, 0.06)', 'rgba(255, 255, 255, 0)'] as const,
+  sheenRim: 'rgba(255, 255, 255, 0.38)',
 } as const;
 
 /** expo-blur intensities that approximate the web blur tokens (8/16/24/40px). */
@@ -111,9 +114,9 @@ export const ShellFrost = {
    * The navigation bar (1.43.0, owner's Spotify screenshot): no slab of its own. The page fades to black under it,
    * starting `navFade` above the bar, so rows scroll softly out under the icons.
    */
-  navFadeColors: ['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.82)', '#000000'] as const,
-  navFadeStops: [0, 0.45, 1] as const,
-  navFade: 40,
+  navFadeColors: ['rgba(0, 0, 0, 0.04)', 'rgba(0, 0, 0, 0.96)', '#000000'] as const,
+  navFadeStops: [0, 0.32, 1] as const,
+  navFade: 80,
   /**
    * Liked songs' header (1.43.0, owner): Spotify's layout, but a smooth forest-green wash instead of its blue, from the
    * top of the screen down into the page's black. No cover.
@@ -246,6 +249,7 @@ export const Motion = {
     deal: 320, // a finished sleeve dealt out of the crate
     morph: 460, // one surface becoming another (lyrics opening, fullscreen)
     drift: 9000, // one leg of the header glow's slow drift (Stream, Library)
+    scan: 1600, // the scanner's light crossing its frame, one way
   },
   ease: {
     standard: Easing.bezier(0.4, 0, 0.2, 1),
@@ -255,6 +259,8 @@ export const Motion = {
     morph: Easing.bezier(0.32, 0.72, 0, 1),
   },
   spring: {
+    /** Approved player prototype: soft, interruptible arrival with no repeated bounce. */
+    player: { stiffness: 330, damping: 34, mass: 1, overshootClamping: true },
     // Press feedback: firm and quick to settle, so a tap registers at once (a hint of give, not a wobble).
     tactile: { stiffness: 700, damping: 40, mass: 0.8 },
     sheet: { stiffness: 300, damping: 34, mass: 1 },

@@ -39,10 +39,15 @@ export async function openShareTarget(target: ShareTarget): Promise<OpenOutcome>
   }
   const song = await resolveShareSong(target).catch(() => null);
   if (!song) return 'not-found';
+  playResolvedSong(song);
+  return 'playing';
+}
+
+/** Plays a song that is already resolved (the scanner's result card) and opens Now Playing on it. */
+export function playResolvedSong(song: UnifiedSong): void {
   StreamService.play([song], 0);
   const songId = usePlayerStore.getState().currentSongId;
   if (songId) navigationRef.navigate('NowPlaying', { songId });
-  return 'playing';
 }
 
 /**

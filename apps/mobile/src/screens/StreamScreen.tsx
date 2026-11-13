@@ -7,18 +7,17 @@ import { TypeScale } from '../constants/allegraTheme';
  */
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
-import { PrefixCache, TYPEAHEAD_DEBOUNCE_MS } from '@shared/typeahead';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  useWindowDimensions,
   Keyboard,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent
@@ -30,32 +29,34 @@ import { InfoTour } from '../components/allegra/InfoTour';
 import { AuraMood } from '../components/allegra/MusicFlowField';
 import { PrimaryButton, SectionHeading } from '../components/allegra/home';
 import { STREAM_TOUR, streamScene } from '../components/allegra/infoTours';
+import { RiseIn } from '../components/allegra/motion';
+import { Control } from '../ui';
 import { useHeaderGlow } from '../hooks/useHeaderGlow';
 import { BrowseShelf } from '../components/browse/BrowseShelf';
 import { ConnectDropdown } from '../components/connect/ConnectDropdown';
-import AddListSheet from '../components/stream/AddListSheet';
 import { GUTTER, MoodChips, QuickPicks, ShortcutGrid, SongRow, TrackItem } from '../components/stream/StreamHome';
 import { RecentShelf, RecentSwitch } from '../components/stream/RecentShelf';
 import { ShimmerBlock } from '../components/stream/StreamItems';
-import { playlistMeta, recentPlaylists, type RecentView } from '../services/stream/recentItems';
+import { recentPlaylists, type RecentView } from '../services/stream/recentItems';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useStreamSongActions } from '../components/stream/useStreamSongActions';
 import { Radius, Signal, Space } from '../constants/allegraTheme';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { isDoubleTap } from '../navigation/tabs';
+import { useLiveQuickPicks } from '../hooks/useLiveQuickPicks';
 import { useAccount } from '../services/account/AccountProvider';
-import { getRecommendations, toPlayableAllegraSong } from '../services/account/allegraApi';
 import { tasteSeeds } from '../services/luvsTaste';
 import { StreamService } from '../services/stream/StreamService';
-import { playYTSongs } from '../services/stream/browsePlay';
+import { playYTSongs, resolveYTSong } from '../services/stream/browsePlay';
+import { catalogShelfTitle } from '../services/stream/shelfTitles';
 import { preloadedFeedCache, preloadFeedCache, writeFeedCache } from '../services/stream/feedCache';
 import { buildHomeFeed, HomeFeed } from '../services/stream/homeFeed';
 import { shouldLoadMoreHome } from '../services/stream/homePagination';
-import { personalMoodMix, Taste } from '../services/stream/moodMix';
+import { moodRecommendations } from '../services/stream/moodRecommendations';
+import { Taste } from '../services/stream/moodMix';
 import { searchOfficial } from '../services/stream/officialSearch';
 import { recommendFor } from '../services/stream/recommend';
 import { streamIdFor } from '../services/stream/streamSong';
-import { onPlayReported } from '../services/sync/LibrarySync';
 import { YTMusicClient } from '../services/ytmusic/YTMusicClient';
 import { HomeChip, HomePage, leadArtist, Shelf, YTItem, YTPageItem } from '../services/ytmusic/browse';
 import { YTSong } from '../services/ytmusic/parsers';
@@ -69,16 +70,11 @@ import { TabParamList, type MixParams } from '../types/navigation';
 import { UnifiedSong } from '../types/song';
 import { Button, CollectionCard, HeaderGlow, IconButton, identityMeta, Sheet, SheetDivider, SheetIdentity, SheetOption, Text as UiText } from '../ui';
 import { countOf } from '../utils/formatters';
-import { libraryKeys, matchKey } from '../utils/downloadState';
 import * as Haptics from '../utils/haptics';
 import { shuffled } from '../utils/shuffle';
 
 const HEADER_HEIGHT = 52;
 const HOME_END_THRESHOLD = 0.6;
-/** Search answers for the session, so typing on (or backspacing) shows something at once. */
-const searchAnswers = new PrefixCache<UnifiedSong>();
-const songText = (song: UnifiedSong): string => `${song.title} ${song.artist}`;
-
 const MOODS = [
   { label: 'Chill', query: 'chill lofi' },
   { label: 'Energy', query: 'workout hits' },
@@ -90,12 +86,11 @@ const MOODS = [
 const MOOD_LABELS = MOODS.map(m => m.label);
 
 
-type StreamSection =
-  | { id: string; kind: 'content' | 'home-content'; content: React.ReactNode }
-  | { id: string; kind: 'search-result'; song: UnifiedSong; index: number };
+type StreamSection = { id: string; kind: 'content' | 'home-content'; content: React.ReactNode };
 
 const StreamScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
   const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
   const localSongs = useSongsStore(s => s.songs);
   const history = useStreamHistoryStore(s => s.plays);
@@ -109,18 +104,11 @@ const StreamScreen: React.FC = () => {
   const [feed, setFeed] = useState<HomeFeed | null>(() => preloadedFeedCache()?.feed ?? null);
   const [loading, setLoading] = useState(() => !preloadedFeedCache()?.feed);
   const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState('');
+  const livePicks = useLiveQuickPicks(feed?.quickPicks, !!feed);
   const [recentView, setRecentView] = useState<RecentView>('songs');
   const playlists = usePlaylistStore(s => s.playlists);
-  const queryRef = useRef(query);
-  queryRef.current = query;
-  const [results, setResults] = useState<UnifiedSong[] | null>(null);
-  const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [accountPicks, setAccountPicks] = useState<UnifiedSong[]>([]);
-  const accountPicksRequest = useRef(0);
   const [mood, setMood] = useState<string | null>(null);
-  const searchSeq = useRef(0);
 
   // Double-tap the Stream tab: straight to the search field with the keyboard
   // up. The first tap still switches tabs at once — nothing waits on a timer.
@@ -136,7 +124,6 @@ const StreamScreen: React.FC = () => {
     distanceFromEnd.current = Number.POSITIVE_INFINITY;
     viewportHeight.current = 0;
   }, []);
-  const searchRef = useRef<TextInput>(null);
   const lastTabPress = useRef(0);
   // A tap on the Stream tab is "take me home": any search or mood view clears and the page goes to the top.
   const backHome = useRef<() => void>(() => {});
@@ -149,7 +136,7 @@ const StreamScreen: React.FC = () => {
       didUserScroll.current = false;
       scrollRef.current?.scrollToOffset({ offset: 0, animated: true });
       // After the tab switch has settled, or focus is lost to the transition.
-      setTimeout(() => searchRef.current?.focus(), 60);
+      navigation.navigate('Search');
     } else {
       lastTabPress.current = now;
     }
@@ -166,9 +153,6 @@ const StreamScreen: React.FC = () => {
   const [ytHome, setYtHome] = useState<HomePage | null>(() => preloadedFeedCache()?.home ?? null);
   const ytHomeRef = useRef(ytHome);
   ytHomeRef.current = ytHome;
-  const [ytChip, setYtChip] = useState<HomeChip | null>(null);
-  const [chipShelves, setChipShelves] = useState<Shelf[] | null>(null);
-  const [artists, setArtists] = useState<YTPageItem<'artist'>[]>([]);
   const [pendingSong, setPendingSong] = useState<string | null>(null);
   const followed = useFollowedArtistsStore(s => s.artists);
 
@@ -232,20 +216,23 @@ const StreamScreen: React.FC = () => {
 
   // "Your <mood> mix": the chip's mood by the artists you follow and play,
   // in your languages (services/stream/moodMix).
+  const [moodError, setMoodError] = useState(false);
+  const [moodPersonalized, setMoodPersonalized] = useState(false);
   const [moodMix, setMoodMix] = useState<YTSong[] | null>(null);
   const mixSeq = useRef(0);
   const loadMoodMix = useCallback((label: string) => {
     const seq = ++mixSeq.current;
     setMoodMix(null);
+    setMoodError(false);
     const seen = new Set<string>();
     const artistsInOrder = [
       ...followed.map(a => a.name),
       ...tasteSeeds(historyRef.current, localRef.current, Date.now(), 8).map(s => leadArtist(s.artist)),
     ].filter(a => a && !/^unknown artist$/i.test(a) && !seen.has(a.toLowerCase()) && seen.add(a.toLowerCase()));
     const taste: Taste = { artists: artistsInOrder, languages: preferred };
-    personalMoodMix(label, taste, q => YTMusicClient.searchSongs(q))
-      .then(songs => { if (seq === mixSeq.current) setMoodMix(songs); })
-      .catch(() => { if (seq === mixSeq.current) setMoodMix([]); });
+    moodRecommendations(label, taste, q => YTMusicClient.searchSongs(q))
+      .then(result => { if (seq === mixSeq.current) { setMoodMix(result.songs); setMoodPersonalized(result.personalized); } })
+      .catch(() => { if (seq === mixSeq.current) { setMoodMix([]); setMoodError(true); } });
   }, [followed, preferred]);
 
   const loadFeed = useCallback(async () => {
@@ -260,28 +247,6 @@ const StreamScreen: React.FC = () => {
     writeFeedCache(next, null);
   }, [preferred]);
 
-  const loadAccountPicks = useCallback(async () => {
-    const request = ++accountPicksRequest.current;
-    const token = account.signedIn ? account.token : null;
-    if (!token) {
-      setAccountPicks([]);
-      return;
-    }
-    const songs = await getRecommendations(token);
-    if (request !== accountPicksRequest.current) return;
-    setAccountPicks(songs.map(toPlayableAllegraSong).filter((song): song is UnifiedSong => song !== null));
-  }, [account.signedIn, account.token]);
-
-  useEffect(() => {
-    const requestCounter = accountPicksRequest;
-    if (isFocused) loadAccountPicks().catch(() => undefined);
-    return () => { requestCounter.current++; };
-  }, [isFocused, loadAccountPicks]);
-
-  useEffect(() => onPlayReported(() => {
-    if (isFocused) loadAccountPicks().catch(() => undefined);
-  }), [isFocused, loadAccountPicks]);
-
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -291,75 +256,14 @@ const StreamScreen: React.FC = () => {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadFeed(), loadAccountPicks()]);
+    await Promise.all([loadFeed(), livePicks.refresh(true)]);
     setRefreshing(false);
-  }, [loadFeed, loadAccountPicks]);
-
-  // `live`: a keystroke search. It keeps the keyboard up and the rows showing until new ones land.
-  const runSearch = useCallback(async (text?: string, moodLabel: string | null = null, live = false) => {
-    const q = (text ?? query).trim();
-    if (!q) return;
-    resetHomePagination();
-    continuationGeneration.current++;
-    // A mood chip searches its own query without writing it into the field.
-    if (text !== undefined && !moodLabel && !live) {
-      queryRef.current = text;
-      setQuery(text);
-    }
-    setMood(moodLabel);
-    if (!live) Keyboard.dismiss();
-    const seq = ++searchSeq.current;
-    // The longest prefix already answered shows at once, narrowed; the live answer replaces it.
-    const known = moodLabel ? null : searchAnswers.instant(q, songText);
-    setResults(prev => (known ? [...known.items] : live && prev ? prev : []));
-    if (!live) setArtists([]);
-    if (!moodLabel) YTMusicClient.searchArtists(q).then(a => { if (seq === searchSeq.current) setArtists(a); }).catch(() => {});
-    if (known?.exact) { setSearching(false); return; }
-    setSearching(true);
-    const found = await searchOfficial(q).catch(() => []);
-    if (found.length > 0) searchAnswers.set(q, found);
-    if (seq !== searchSeq.current) return; // a newer search won
-    setResults(found);
-    setSearching(false);
-  }, [query, resetHomePagination]);
-
-  // Results follow the typing (Spotify's rule); the keyboard's Search answers at once.
-  useEffect(() => {
-    const q = query.trim();
-    if (!q) return;
-    const t = setTimeout(() => { runSearch(q, null, true).catch(() => undefined); }, TYPEAHEAD_DEBOUNCE_MS);
-    return () => clearTimeout(t);
-  }, [query, resetHomePagination]); // eslint-disable-line react-hooks/exhaustive-deps -- runSearch changes with query
-
-  const clearSearch = useCallback(() => {
-    resetHomePagination();
-    continuationGeneration.current++;
-    queryRef.current = '';
-    searchSeq.current++;
-    setArtists([]);
-    setYtChip(null);
-    setChipShelves(null);
-    mixSeq.current++;
-    setMoodMix(null);
-    setQuery('');
-    setMood(null);
-    setResults(null);
-    setSearching(false);
-  }, [resetHomePagination]);
+  }, [loadFeed, livePicks.refresh]);
 
   const play = useCallback((list: UnifiedSong[], index: number) => {
     Haptics.selectionAsync().catch(() => {});
     StreamService.play(list, index);
   }, []);
-
-  const playHit = useCallback((song: UnifiedSong) => {
-    Haptics.selectionAsync().catch(() => {});
-    Keyboard.dismiss();
-    StreamService.playFromSearch(song);
-  }, []);
-
-
-
 
   // One song's Download button (Round 7 item 9 restores it beside the ⋮ on Stream and Search rows).
   const save = useCallback((song: UnifiedSong) => {
@@ -368,22 +272,18 @@ const StreamScreen: React.FC = () => {
     setToast(`Saving \u201c${song.title}\u201d to your library`);
   }, [addToDownloads]);
 
-  // Save all: every result that is not already on the phone. (Ones already queued are skipped by the queue.)
-  const unsavedResults = useMemo(() => {
-    const have = libraryKeys(localSongs);
-    return (results ?? []).filter(song => !have.has(matchKey(song.title, song.artist)));
-  }, [results, localSongs]);
-  const saveAll = useCallback(() => {
-    if (unsavedResults.length === 0) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    addToDownloads(unsavedResults);
-    setToast(`Saving ${unsavedResults.length} ${unsavedResults.length === 1 ? 'song' : 'songs'} to your library`);
-  }, [unsavedResults, addToDownloads]);
-  const [listOpen, setListOpen] = useState(false);
-
   // A long press opens the song's actions (Play next first), as everywhere in the app.
   const songActions = useStreamSongActions({ onDone: setToast });
   const queueNext = songActions.open;
+  // A long press on a YouTube Music song: its catalog audio first (the same lookup a tap makes), then the sheet.
+  const openSongActions = songActions.open;
+  const ytActions = useCallback(async (song: YTSong) => {
+    setPendingSong(song.videoId);
+    const resolved = await resolveYTSong(song);
+    setPendingSong(null);
+    if (resolved) openSongActions(resolved);
+    else setToast('That one isn’t available to stream');
+  }, [openSongActions]);
   const [mixActions, setMixActions] = useState<MixParams | null>(null);
   const openMix = useCallback((mix: MixParams) => navigation.navigate('Browse', { screen: 'Mix', params: mix }), [navigation]);
   const playMix = useCallback((mix: MixParams, random = false) => {
@@ -401,24 +301,12 @@ const StreamScreen: React.FC = () => {
   const ytChips = useMemo(() => ytHome?.chips ?? [], [ytHome]);
   const selectMood = useCallback((label: string | null) => {
     Haptics.selectionAsync().catch(() => {});
-    // YouTube Music's chips open their own shelves, as in Echo.
-    const chip = ytChips.find(c => c.title === label);
-    if (chip?.browse) {
-      continuationGeneration.current++;
-      clearSearch();
-      setMood(chip.title);
-      setYtChip(chip);
-      loadMoodMix(chip.title);
-      YTMusicClient.home(chip.browse).then(page => setChipShelves(page.shelves)).catch(() => setChipShelves([]));
-      return;
-    }
-    const picked = MOODS.find(m => m.label === label);
-    if (!picked) clearSearch();
-    else {
-      runSearch(picked.query, picked.label);
-      loadMoodMix(picked.label);
-    }
-  }, [clearSearch, runSearch, ytChips, loadMoodMix]);
+    mixSeq.current++;
+    setMood(label);
+    setMoodError(false);
+    if (label) loadMoodMix(label);
+    else setMoodMix(null);
+  }, [loadMoodMix]);
 
   // Clear the tab bar pill plus the mini player pill stacked above it (only while a song is loaded).
   const bottomClearance = useBottomClearance(Space.lg);
@@ -426,18 +314,7 @@ const StreamScreen: React.FC = () => {
 
   // The shader takes its colours from whatever is playing (or the top pick).
 
-  const searchActive = results !== null || searching;
-  const searchActiveRef = useRef(searchActive);
-  searchActiveRef.current = searchActive;
-  const chipActive = ytChip !== null && !searchActive;
-  const chipActiveRef = useRef(chipActive);
-  chipActiveRef.current = chipActive;
-
-  const onScrollBeginDrag = useCallback(() => {
-    didUserScroll.current = !searchActiveRef.current
-      && !chipActiveRef.current
-      && queryRef.current.trim().length === 0;
-  }, []);
+  const onScrollBeginDrag = useCallback(() => { didUserScroll.current = true; }, []);
   // The header glow leaves and returns with the feed's own scroll offset.
   const glow = useHeaderGlow();
   const glowScrolled = glow.onScroll;
@@ -459,8 +336,8 @@ const StreamScreen: React.FC = () => {
       isLoading: homeMoreRequest.current !== null,
       distanceFromEnd: distanceFromEnd.current,
       nearEndThreshold: viewportHeight.current * HOME_END_THRESHOLD,
-      searchActive: searchActiveRef.current || queryRef.current.trim().length > 0,
-      chipActive: chipActiveRef.current,
+      searchActive: false,
+      chipActive: false,
     })) return;
 
     homeMoreRequest.current = requestId;
@@ -472,9 +349,6 @@ const StreamScreen: React.FC = () => {
         || generation !== homeGeneration.current
         || pageGeneration !== continuationGeneration.current
         || latest.continuation !== continuation
-        || searchActiveRef.current
-        || queryRef.current.trim().length > 0
-        || chipActiveRef.current
       ) return;
 
       const next = { ...latest, shelves: [...latest.shelves, ...more.shelves], continuation: more.continuation };
@@ -490,10 +364,7 @@ const StreamScreen: React.FC = () => {
   const onEndReached = useCallback(() => { loadMoreHome().catch(() => undefined); }, [loadMoreHome]);
 
   backHome.current = () => {
-    const showingSearch = query.length > 0 || results !== null || mood !== null || ytChip !== null;
-    if (showingSearch) { clearSearch(); Keyboard.dismiss(); }
-    // From a search, or a tap while already on Stream: back to the top of the home page at once.
-    if (showingSearch || isFocused) {
+    if (isFocused) {
       didUserScroll.current = false;
       scrollRef.current?.scrollToOffset({ offset: 0, animated: false });
     }
@@ -517,24 +388,23 @@ const StreamScreen: React.FC = () => {
     : null), [followed]);
 
   // Memoised so the list's sections below are not rebuilt on every render of the page.
-  const mixSection = useMemo(() => (mood ? (
-    moodMix === null ? (
-      <View>
-        <SectionHeading title={`Your ${mood.toLowerCase()} mix`} />
-        <ActivityIndicator color={Signal.wave} style={styles.spinner} />
-      </View>
-    ) : moodMix.length > 0 ? (
-      <BrowseShelf
-        shelf={{ title: `Your ${mood.toLowerCase()} mix`, strapline: 'From artists you play, in your languages', items: moodMix.map(song => ({ kind: 'song' as const, song })) }}
-        rows
-        maxRows={8}
-        onMore={() => playYT(moodMix, 0)}
-        onOpen={openItem}
-        onPlay={playYT}
-        pendingId={pendingSong}
-      />
-    ) : null
-  ) : null), [mood, moodMix, playYT, openItem, pendingSong]);
+  const mixSection = useMemo(() => mood ? (
+    <View style={{ minHeight: Control.row * (8 * fontScale + 2) }}>
+      <RiseIn key={`${mood}:${moodMix === null ? 'loading' : moodError ? 'error' : 'results'}`}>
+      {moodMix === null ? <>
+        <SectionHeading title={`${mood} picks`} />
+        <View style={styles.skeleton}>{[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="100%" height={64} />)}</View>
+      </> : moodError ? <View style={styles.emptyCard}>
+        <UiText variant="lead">Could not load {mood.toLowerCase()} picks</UiText>
+        <UiText tone="secondary">Check your connection and try again.</UiText>
+        <Button label="Try again" onPress={() => loadMoodMix(mood)} />
+      </View> : moodMix.length ? <BrowseShelf
+        shelf={{ title: `${mood} picks`, strapline: moodPersonalized ? 'Based on artists and languages you listen to' : 'Songs for this mood', items: moodMix.map(song => ({ kind: 'song' as const, song })) }}
+        rows maxRows={8} onOpen={openItem} onPlay={playYT} pendingId={pendingSong}
+      /> : <View style={styles.emptyCard}><UiText>No songs found. Try another mood.</UiText></View>}
+      </RiseIn>
+    </View>
+  ) : null, [fontScale, mood, moodMix, moodError, moodPersonalized, loadMoodMix, openItem, playYT, pendingSong]);
 
   const homeSections = useMemo(() => {
     const sections: StreamSection[] = [];
@@ -547,83 +417,31 @@ const StreamScreen: React.FC = () => {
         <RecentShelf
           view={recentView}
           songs={listenAgain.map(track)}
-          playlists={recentLists.map(list => ({ key: `playlist:${list.id}`, title: list.name, artist: playlistMeta(list.songCount), artwork: list.coverImageUri, isCurrent: false }))}
+          playlists={recentLists.map(list => ({ key: `playlist:${list.id}`, title: list.name,  artwork: list.coverImageUri, isCurrent: false }))}
           onPressSong={i => play(listenAgain, i)}
           onLongPressSong={i => queueNext(listenAgain[i])}
           onPressPlaylist={i => navigation.navigate('Library', { screen: 'PlaylistDetail', params: { playlistId: recentLists[i].id } })}
         />
       </>);
     }
-    const quick = accountPicks.length ? accountPicks : feed?.quickPicks ?? [];
-    if (quick.length) add('quick-picks', <><SectionHeading title="Quick picks" action="Play all" onAction={() => play(quick, 0)} /><QuickPicks items={quick.map(track)} onPress={i => play(quick, i)} onLongPress={i => queueNext(quick[i])} onSave={i => save(quick[i])} /></>);
+    const quick = livePicks.entry?.songs ?? feed?.quickPicks ?? [];
+    if (quick.length) add('quick-picks', <><SectionHeading title="Quick picks" action="Open playlist" onAction={() => navigation.navigate('Browse', { screen: 'QuickPicks' })} /><QuickPicks items={quick.map(track)} onPress={i => play(quick, i)} onLongPress={i => queueNext(quick[i])} onSave={i => save(quick[i])} /></>);
     const mixes: MixParams[] = [];
     if (feed?.dailyDiscover.length) mixes.push({ title: 'Daily discover', kind: 'stream', songs: feed.dailyDiscover.map(item => item.recommendation) });
     for (const related of feed?.similar ?? []) if (related.songs.length) mixes.push({ title: `More like ${related.artist}`, kind: 'stream', songs: related.songs });
     if (feed?.forgottenFavorites.length) mixes.push({ title: 'Forgotten favourites', kind: 'local', songs: feed.forgottenFavorites });
     if (mixes.length) add('made-for-you', <><SectionHeading title="Made for you" /><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: GUTTER, gap: Space.sm }}>
-      {mixes.map(mix => <CollectionCard key={mix.title} title={mix.title} meta={`Mix ? ${mix.songs.length} songs`} uri={mix.kind === 'stream' ? mix.songs[0].highResArt : mix.songs[0].coverImageUri} onPress={() => openMix(mix)} onActions={() => setMixActions(mix)} />)}
+      {mixes.map(mix => <CollectionCard key={mix.title} title={mix.title} meta={`Mix · ${mix.songs.length} songs`} uri={mix.kind === 'stream' ? mix.songs[0].highResArt : mix.songs[0].coverImageUri} onPress={() => openMix(mix)} onActions={() => setMixActions(mix)} />)}
     </ScrollView></>);
-    if (followedShelf) add('your-artists', <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} />);
-    (ytHome?.shelves ?? []).forEach((shelf, index) => add(`catalog:${index}:${shelf.title}`, <BrowseShelf shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />));
+    if (followedShelf) add('your-artists', <BrowseShelf shelf={followedShelf} onOpen={openItem} onPlay={playYT} onSongActions={ytActions} />);
+    // YouTube Music's own "Quick picks" sits under ours: it gets a title of its own (shelfTitles).
+    const ours = ['Jump back in', quick.length ? 'Quick picks' : '', mixes.length ? 'Made for you' : '', followedShelf?.title ?? ''];
+    (ytHome?.shelves ?? []).forEach((shelf, index) => add(`catalog:${index}:${shelf.title}`,
+      <BrowseShelf shelf={{ ...shelf, title: catalogShelfTitle(shelf.title, ours) }} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} onSongActions={ytActions} />));
     if (loading && !quick.length && !ytHome?.shelves.length) add('loading', <View style={styles.skeleton}>{[0, 1, 2, 3].map(i => <ShimmerBlock key={i} width="100%" height={64} />)}</View>);
     if (!loading && !quick.length && !ytHome?.shelves.length) add('catalog-unavailable', <View style={styles.emptyCard}><UiText variant="lead">Can\u2019t reach the catalog</UiText><UiText tone="secondary">Pull down to try again. Your saved songs still play.</UiText><PrimaryButton label="Open Library" icon="library-outline" onPress={openDownloads} /></View>);
     return sections;
-  }, [feed, track, play, queueNext, accountPicks, save, openMix, followedShelf, openItem, playYT, ytHome, pendingSong, loading, openDownloads, playlists, recentView, navigation]);
-
-  const chipSections = useMemo(() => {
-    if (!ytChip || searchActive) return [];
-    const sections: StreamSection[] = [
-      { id: 'chip-title', kind: 'content', content: <SectionHeading title={ytChip.title} action="Clear" onAction={clearSearch} /> },
-    ];
-    if (mixSection) sections.push({ id: 'chip-mix', kind: 'content', content: mixSection });
-    if (chipShelves === null) sections.push({ id: 'chip-loading', kind: 'content', content: <ActivityIndicator color={Signal.wave} style={styles.spinner} /> });
-    if (chipShelves?.length === 0) sections.push({ id: 'chip-empty', kind: 'content', content: <Text style={styles.empty}>Nothing here right now. Try another mood.</Text> });
-    (chipShelves ?? []).forEach((shelf, index) => sections.push({
-      id: `chip:${index}:${shelf.title}`,
-      kind: 'content',
-      content: <BrowseShelf shelf={shelf} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />,
-    }));
-    return sections;
-  }, [chipShelves, clearSearch, mixSection, openItem, pendingSong, playYT, searchActive, ytChip]);
-
-  const searchSections = useMemo(() => {
-    if (!searchActive) return [];
-    const sections: StreamSection[] = [];
-    const count = results?.length ?? 0;
-    sections.push({
-      id: 'search-title',
-      kind: 'content',
-      content: <SectionHeading
-        title={mood ?? `“${query.trim()}”`}
-        subtitle={searching ? 'Searching…' : `${count} ${count === 1 ? 'song' : 'songs'}`}
-        action="Clear"
-        onAction={clearSearch}
-      />,
-    });
-    if (mixSection) sections.push({ id: 'search-mix', kind: 'content', content: mixSection });
-    if (artists.length > 0) sections.push({
-      id: 'search-artists', kind: 'content',
-      content: <BrowseShelf shelf={{ title: 'Artists', items: artists }} onOpen={openItem} onPlay={playYT} pendingId={pendingSong} />,
-    });
-    if (unsavedResults.length >= 2 && !searching) sections.push({
-      id: 'search-save-all', kind: 'content',
-      content: <View style={styles.saveAllRow}>
-        <IconButton icon="arrow-down-circle-outline" label="Save all" onPress={saveAll} />
-      </View>,
-    });
-    if (searching) sections.push({ id: 'search-loading', kind: 'content', content: <ActivityIndicator color={Signal.wave} style={styles.spinner} /> });
-    if (!searching && count === 0) sections.push({
-      id: 'search-empty', kind: 'content',
-      content: <Text style={styles.empty}>Nothing streamable for that. Try the artist name or a different spelling.</Text>,
-    });
-    (results ?? []).forEach((song, index) => sections.push({
-      id: `search-result:${streamIdFor(song)}:${index}`,
-      kind: 'search-result',
-      song,
-      index,
-    }));
-    return sections;
-  }, [artists, clearSearch, mixSection, mood, openItem, pendingSong, playYT, query, results, saveAll, searching, searchActive, unsavedResults]);
+  }, [feed, track, play, queueNext, livePicks.entry, save, openMix, followedShelf, openItem, playYT, ytActions, ytHome, pendingSong, loading, openDownloads, playlists, recentView, navigation]);
 
   // The mood chips are the feed's first item, not a ListHeaderComponent: FlashList places its first item from the
   // header's measured offset, and a header that settled after that offset was read drew "Jump back in" over the
@@ -637,24 +455,8 @@ const StreamScreen: React.FC = () => {
     // moodLabels is described by moodKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [moodKey, mood, selectMood]);
-  const feedSections = chipActive ? chipSections : searchActive ? searchSections : homeSections;
-  const sections = useMemo(() => [moodsSection, ...feedSections], [moodsSection, feedSections]);
-  const renderSection = useCallback(({ item }: { item: StreamSection }) => {
-    if (item.kind === 'search-result') {
-      return <View style={styles.list}>
-        <SongRow
-          item={track(item.song)}
-          // A search hit plays with its own song radio after it, not the rest of the results.
-          onPress={() => (mood ? play(results ?? [], item.index) : playHit(item.song))}
-          onLongPress={() => queueNext(item.song)}
-          onSave={() => save(item.song)}
-        />
-      </View>;
-    }
-    // No Reanimated `entering` here: a layout animation inside a recycled FlashList cell can hand FlashList a stale
-    // size, which left a tall blank gap under a short "Jump back in" (owner report, 2026-11-06).
-    return <View>{item.content}</View>;
-  }, [mood, play, playHit, queueNext, results, save, track]);
+  const sections = useMemo(() => [moodsSection, ...(mixSection ? [{ id: 'inline-mood', kind: 'content' as const, content: mixSection }] : []), ...homeSections], [moodsSection, mixSection, homeSections]);
+  const renderSection = useCallback(({ item }: { item: StreamSection }) => <View>{item.content}</View>, []);
 
   return (
     <AppScreen style={styles.screen} staticGlow={false}>
@@ -709,7 +511,6 @@ const StreamScreen: React.FC = () => {
       </Sheet>
       {songActions.element}
       {toast ? <Toast visible message={toast} type="info" duration={2200} onDismiss={() => setToast(null)} /> : null}
-      <AddListSheet visible={listOpen} onClose={() => setListOpen(false)} onSaved={setToast} />
     </AppScreen>
   );
 };

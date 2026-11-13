@@ -144,7 +144,7 @@ describe('the scanner', () => {
 
   it('shares open the code and link sheet from a song’s ⋮ and a playlist page', () => {
     expect(read('src/components/library/useSongActions.tsx')).toMatch(/<ShareSheet visible=\{shareOpen\}/);
-    expect(read('src/components/LibraryBottomSheet.tsx')).toMatch(/<SheetOption label="Share" icon="share-social-outline" onPress=\{onShareLink\} \/>/);
+    expect(read('src/components/library/useSongActions.tsx')).toMatch(/shareLink: \(\) => later\(\(\) => setShareOpen\(true\)\)/);
     expect(read('src/screens/PlaylistDetailScreen.tsx')).toMatch(/<ShareSheet visible=\{shareOpen\}/);
   });
 });
