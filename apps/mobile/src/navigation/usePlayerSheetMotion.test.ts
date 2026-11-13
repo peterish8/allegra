@@ -28,13 +28,30 @@ jest.mock('./sheetProgress', () => ({ playerSheetProgress: { value: 0 }, playerD
 
 import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from './usePlayerSheetMotion';
 
-function mount(reduced = false) {
-  const motion = usePlayerSheetMotion(600, false, true, reduced, jest.fn());
+function mount(reduced = false, revealMini = jest.fn()) {
+  const motion = usePlayerSheetMotion(600, false, true, reduced, revealMini);
   mockEffects.splice(0).forEach(effect => effect());
   return motion;
 }
 function drainJS() { mockJS.splice(0).forEach(task => task()); }
 beforeEach(() => { mockSetHold.mockClear(); mockEffects.length = 0; mockCleanups.length = 0; mockJS.length = 0; mockCompletions.length = 0; });
+
+it('reveals the mini only after the close completes, and never for an interrupted close', () => {
+  const revealMini = jest.fn();
+  const motion = mount(false, revealMini);
+  motion.animateClose();
+  drainJS();
+  expect(revealMini).not.toHaveBeenCalled();
+  mockCompletions[0](true);
+  beginSheetDrag(motion.controls);
+  drainJS();
+  expect(revealMini).not.toHaveBeenCalled();
+  motion.animateClose();
+  mockCompletions[1](true);
+  drainJS();
+  expect(revealMini).toHaveBeenCalledTimes(1);
+  expect(mockSetHold).toHaveBeenCalledWith(false);
+});
 
 it('keeps the route until the return animation finishes', () => {
   const motion = mount();

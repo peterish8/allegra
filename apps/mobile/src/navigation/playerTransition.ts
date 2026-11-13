@@ -44,9 +44,8 @@ export const lerp = (from: number, to: number, t: number): number => {
 /** The cover's rectangle `progress` of the way from the mini player's cover to its place in the player. */
 export function coverFrame(progress: number, from: Rect, to: Rect): Rect {
   'worklet';
-  const u = 1 - clamp01(progress);
-  // Ease-out: the cover is already most of the way up while the surface is still rising (the reference's 35% and 70%).
-  const t = 1 - u * Math.sqrt(u);
+  // Use the sheet's own progress so the cover cannot race ahead of its surface.
+  const t = clamp01(progress);
   return { x: lerp(from.x, to.x, t), y: lerp(from.y, to.y, t), width: lerp(from.width, to.width, t), height: lerp(from.height, to.height, t) };
 }
 

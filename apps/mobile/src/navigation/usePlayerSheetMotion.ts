@@ -58,14 +58,16 @@ export function usePlayerSheetMotion(restY: number, instant: boolean, fluid: boo
   const mounted = useRef(true);
   const finishClose = useCallback((expected: number) => {
     // A cancelled spring may already have queued its JS callback. A new grab invalidates it.
-    if (mounted.current && closing.value && generation.value === expected) setHoldRoute(false);
-  }, [closing, generation]);
+    if (mounted.current && closing.value && generation.value === expected) {
+      revealMini();
+      setHoldRoute(false);
+    }
+  }, [closing, generation, revealMini]);
   const animateClose = useCallback((velocity = 0) => {
     'worklet';
     if (closing.value) return;
     closing.value = true;
     const expected = ++generation.value;
-    runOnJS(revealMini)();
     const done = (finished?: boolean) => {
       'worklet';
       if (finished && closing.value && generation.value === expected) runOnJS(finishClose)(expected);
@@ -73,7 +75,7 @@ export function usePlayerSheetMotion(restY: number, instant: boolean, fluid: boo
     sheetY.value = reduceMotion
       ? withTiming(restY, { duration: Motion.duration.fast, reduceMotion: ReduceMotion.Never }, done)
       : withSpring(restY, { ...Motion.spring.player, velocity }, done);
-  }, [closing, generation, revealMini, finishClose, sheetY, reduceMotion, restY]);
+  }, [closing, generation, finishClose, sheetY, reduceMotion, restY]);
   const sheet = useMemo<SheetControls>(
     () => ({ sheetY, progress, closing, generation, tracked, restY, reduceMotion, animateClose }),
     [sheetY, progress, closing, generation, tracked, restY, reduceMotion, animateClose],
