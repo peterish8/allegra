@@ -47,6 +47,10 @@ class MainApplication : Application(), ReactApplication {
     // First: MainActivity's constructor reads it to decide whether this start opens the rescue screen.
     LaunchGuard.init(this)
     StartupPreloader.preload(this)
+    // The system-wide island (an accessibility service) and "Play here" (a notification listener) were removed for
+    // least privilege (.planning/mobile-security/ANDROID-PERMISSIONS-AUDIT-2026-11-13.md). Android unbinds both
+    // with the update; this drops the switches an older build saved. A no-op once the file is gone.
+    runCatching { deleteSharedPreferences("dynamic_island") }
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {

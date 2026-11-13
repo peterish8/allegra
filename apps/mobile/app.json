@@ -2,7 +2,7 @@
   "expo": {
     "name": "LuvLyrics",
     "slug": "lyricflow",
-    "version": "1.60.0",
+    "version": "1.60.1",
     "orientation": "portrait",
     "icon": "./assets/luvlyrics-icon-white.png",
     "userInterfaceStyle": "dark",
@@ -45,6 +45,12 @@
         "android.permission.ACCESS_WIFI_STATE",
         "android.permission.WRITE_SETTINGS",
         "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ],
       "intentFilters": [
         {

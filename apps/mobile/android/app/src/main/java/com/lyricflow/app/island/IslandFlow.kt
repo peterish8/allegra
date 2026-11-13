@@ -11,11 +11,11 @@ import kotlin.math.sin
  * one), so the field is one continuous liquid: no circles, no edges, no gaps of black between colours.
  *
  * Android 12 phones cannot run an app's own GPU shader, so the field is computed here at [W]×[H] pixels and drawn
- * many times larger with filtering (IslandView.drawFlow), which is all smooth light. A frame costs a few thousand
+ * many times larger with filtering (NativeFlowGlowView), which is all smooth light. A frame costs a few thousand
  * pixels of arithmetic and allocates nothing; it is only recomputed while the clock moves (music playing).
  */
 class IslandFlow {
-    /** The field's pixels, ARGB, row by row: what IslandView copies into its bitmap. */
+    /** The field's pixels, ARGB, row by row: what the glow view copies into its bitmap. */
     val pixels = IntArray(W * H)
     private val r = FloatArray(4)
     private val g = FloatArray(4)

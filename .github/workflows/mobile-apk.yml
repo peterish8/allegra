@@ -138,6 +138,18 @@ jobs:
           test -x "$APKSIGNER"
           node ../../scripts/mobile-signing-policy.mjs --apk "$EXPECTED_CERT_SHA256" "$APKSIGNER" LuvLyrics.apk
 
+      # The merged manifest, not the source one: a library can add access the app never asked for.
+      - name: Verify APK permissions
+        run: bash ../../.github/scripts/apk-permission-check.sh LuvLyrics.apk apk-permissions.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: apk-permissions
+          path: apps/mobile/apk-permissions.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
       - uses: actions/upload-artifact@v4
         with:
           name: LuvLyrics-apk
