@@ -197,12 +197,20 @@ export const useSongsStore = create<SongsState>()((set, get) => ({
       deleteSong: async (id: string) => {
         set({ isLoading: true, error: null });
         try {
+          const deleted = get().songs.find(s => s.id === id);
           await queries.deleteSong(id);
-          
+
           set(state => ({
              songs: state.songs.filter(s => s.id !== id),
              isLoading: false
           }));
+
+          // The song is no longer on the phone, so its finished download must not keep saying "Downloaded": the
+          // queue item outlives the row, and the song's menus would still show it as saved (downloadState.ts).
+          if (deleted) {
+            const { useDownloadQueueStore } = await import('./downloadQueueStore');
+            useDownloadQueueStore.getState().removeFinishedFor({ title: deleted.title, artist: deleted.artist, originId: deleted.originId });
+          }
 
           // Sync with playerStore
           const { usePlayerStore } = await import('./playerStore');

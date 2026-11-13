@@ -24,7 +24,9 @@ describe('Jump back in grid', () => {
   });
 });
 
-it('reserves two title lines and grows every tile equally with system text size', () => {
-  expect(shortcutCellHeight(1)).toBe(72);
-  expect(shortcutCellHeight(2)).toBeGreaterThanOrEqual(58 * 2 + 14);
+it('is a short tile that still holds two title lines, and grows every tile equally with system text size', () => {
+  expect(shortcutCellHeight(1)).toBe(56);
+  // Two 17pt lines at the text scale, plus the tile's padding.
+  expect(shortcutCellHeight(1.15)).toBeGreaterThanOrEqual(Math.ceil(2 * 17 * 1.15) + 8);
+  expect(shortcutCellHeight(2)).toBeGreaterThanOrEqual(2 * 17 * 2 + 8);
 });
