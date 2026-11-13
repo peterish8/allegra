@@ -7,11 +7,14 @@ import { ImmersiveHero, ImmersiveTopBar, useHeroScroll } from '../playlist/Immer
 import { Button, Space, Surface, Text, SongRow, useBottomClearance } from '../../ui';
 import type { UnifiedSong } from '../../types/song';
 import { StreamService } from '../../services/stream/StreamService';
+import { CatalogDownloadButton } from './CatalogDownloadButton';
 import { useStreamSongActions } from './useStreamSongActions';
 import { shuffled } from '../../utils/shuffle';
-interface Props { title: string; subtitle: string; artwork?: string; songs: UnifiedSong[]; loading: boolean; error?: string; onBack: () => void; onRefresh: () => void; saved?: boolean; onSave?: () => void }
+interface Props { title: string; subtitle: string; artwork?: string; songs: UnifiedSong[]; loading: boolean; error?: string; onBack: () => void; onRefresh: () => void; saved?: boolean; onSave?: () => void;
+  /** Only a catalog album sets this (CatalogAlbumScreen): the page gets the album Download button. Quick picks, which is the listener's own live playlist, does not. */
+  catalogDownload?: boolean }
 /** One presentation for catalog albums and the locally managed personalized playlist. */
-export function DiscoveryCollection({ title, subtitle, artwork, songs, loading, error, onBack, onRefresh, saved, onSave }: Props) {
+export function DiscoveryCollection({ title, subtitle, artwork, songs, loading, error, onBack, onRefresh, saved, onSave, catalogDownload }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const bottom = useBottomClearance();
@@ -26,6 +29,7 @@ export function DiscoveryCollection({ title, subtitle, artwork, songs, loading, 
           <View style={styles.actions}>
             <Button label="Shuffle" icon="shuffle" disabled={!songs.length} onPress={() => StreamService.play(shuffled([...songs]), 0)} />
             <Button label="Play" icon="play" variant="primary" disabled={!songs.length} onPress={() => StreamService.play([...songs], 0)} />
+            {catalogDownload ? <CatalogDownloadButton songs={songs} ready={!loading && !error && songs.length > 0} /> : null}
           </View>
         </ImmersiveHero>
         <View style={styles.status}>
@@ -40,4 +44,4 @@ export function DiscoveryCollection({ title, subtitle, artwork, songs, loading, 
     {actions.element}
   </AppScreen>;
 }
-const styles = StyleSheet.create({ screen: { backgroundColor: Surface.immersive }, actions: { flexDirection: 'row', justifyContent: 'center', gap: Space.sm, padding: Space.md }, status: { gap: Space.sm, padding: Space.md } });
+const styles = StyleSheet.create({ screen: { backgroundColor: Surface.immersive }, actions: { flexDirection: 'row', justifyContent: 'center', gap: Space.sm, padding: Space.md }, status: { gap: Space.sm, padding: Space.md } });

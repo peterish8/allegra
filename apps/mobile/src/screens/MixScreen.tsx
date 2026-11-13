@@ -8,6 +8,7 @@ import { AppScreen } from '../components/AppScreen';
 import { useSongActions } from '../components/library/useSongActions';
 import { heroHeight, heroImageUrl } from '../components/playlist/heroFade';
 import { ImmersiveHero, ImmersiveTopBar, useHeroScroll } from '../components/playlist/ImmersiveHero';
+import { CatalogDownloadButton } from '../components/stream/CatalogDownloadButton';
 import { useStreamSongActions } from '../components/stream/useStreamSongActions';
 import { Surface } from '../constants/allegraTheme';
 import { StreamService } from '../services/stream/StreamService';
@@ -39,6 +40,7 @@ export default function MixScreen({ route, navigation }: NativeStackScreenProps<
       <View style={styles.actions}>
         <Button label="Shuffle" icon="shuffle" size="compact" disabled={!rows.length} onPress={playShuffled} />
         <Button label="Play mix" icon="play" variant="primary" disabled={!rows.length} onPress={() => play(0)} />
+        {mix.kind === 'stream' ? <CatalogDownloadButton songs={mix.songs} ready={mix.songs.length > 0} /> : null}
       </View>
     </ImmersiveHero>
   );

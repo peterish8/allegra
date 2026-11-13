@@ -28,6 +28,6 @@ export default function CatalogAlbumScreen({ route, navigation }: NativeStackScr
     return () => controller.abort();
   }, [id, songRef, albumName, artist, attempt]);
   return <DiscoveryCollection title={album?.title ?? albumName ?? 'Album'} subtitle={album?.artist ?? artist ?? ''}
-    artwork={album?.artwork} songs={album?.songs ?? []} loading={loading} error={error}
+    artwork={album?.artwork} songs={album?.songs ?? []} loading={loading} error={error} catalogDownload
     onBack={() => navigation.goBack()} onRefresh={() => setAttempt(n => n + 1)} />;
 }
