@@ -43,6 +43,7 @@ import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
 import { useNowPlayingLogic } from '../hooks/useNowPlayingLogic';
 import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
 import { shouldExitLyricsFullscreen, shouldOpenLyricsFullscreen, startsInFooter } from '../navigation/lyricsGesture';
+import { fullscreenClearance } from '../components/player/fullscreenFooter';
 import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from '../navigation/usePlayerSheetMotion';
 import { cardCoverRect, heroCoverRect, playerContentOpacity } from '../navigation/playerTransition';
 import { shouldCloseSheet } from '../navigation/sheetClose';
@@ -279,6 +280,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // Fullscreen lyrics: a swipe down that starts in the controls footer goes back to the cover. This
   // pan runs once per touch, and the player's dismiss pan is off while the lyrics are fullscreen, so
   // one swipe never also closes the player; the next, separate swipe does (dismissGesture).
+  // Fullscreen lyrics end at a slim footer, so only a swipe that starts there goes back to the cover.
+  const fullscreenFooterHeight = fullscreenClearance(insets.bottom);
   const lyricsDownGesture = Gesture.Pan()
     .enabled(!ambient && sheet === null && lyricsFullscreen)
     .activeOffsetY(12)
@@ -287,7 +290,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     .onTouchesDown((e, state) => {
       'worklet';
       const y = e.allTouches[0] ? e.allTouches[0].y : 0;
-      if (!startsInFooter(y, frameH.value, CONTROLS_CLEARANCE)) state.fail();
+      if (!startsInFooter(y, frameH.value, fullscreenFooterHeight)) state.fail();
     })
     .onEnd(e => {
       'worklet';

@@ -16,6 +16,7 @@ import ErrorBoundary from './ErrorBoundary';
 import { NativeSynchronizedLyrics, canUseNativeLyrics } from './NativeSynchronizedLyrics';
 import { isCoverFull } from './player/coverStage';
 import { DOCK_THUMB, LYRICS_MORPH_MS } from './player/lyricsMorph';
+import { fullscreenClearance } from './player/fullscreenFooter';
 import SynchronizedLyrics, { SynchronizedLyricsRef } from './SynchronizedLyrics';
 import { cardSize } from '../navigation/playerTransition';
 
@@ -334,8 +335,8 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
         <Animated.View
           style={[
             styles.lyricsFrame,
-            // The controls sit at the bottom in fullscreen too, so the frame is the same: no layout jump on open.
-            { paddingTop: insets.top + HEADER_CLEARANCE },
+            // Fullscreen: the lyrics run down to a slim footer (cover, name, exit, like, scrubber) instead of the full controls.
+            { paddingTop: insets.top + HEADER_CLEARANCE, marginBottom: fullscreen ? fullscreenClearance(insets.bottom) : CONTROLS_CLEARANCE },
             linesStyle,
           ]}
           pointerEvents={showLyrics ? 'auto' : 'none'}
