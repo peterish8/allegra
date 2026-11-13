@@ -2043,10 +2043,10 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   position: absolute;
   inset: -12%;
   opacity: 1;
-  transition: opacity 0.7s var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
+  transition: opacity calc(var(--d-slow) * 5 / 3) var(--ease-standard);
   will-change: opacity;
 }
-.artwork-bg-stack.is-incoming { opacity: 0; animation: artwork-fade-in 0.7s var(--ease-standard, cubic-bezier(0.4, 0, 0.2, 1)) forwards; }
+.artwork-bg-stack.is-incoming { opacity: 0; animation: artwork-fade-in calc(var(--d-slow) * 5 / 3) var(--ease-standard) forwards; }
 .artwork-bg-stack.is-fading { opacity: 0; }
 .artwork-bg-layer {
   position: absolute;
@@ -8154,7 +8154,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   isolation: isolate;
   background: transparent;
   filter: none;
-  transition: filter 420ms cubic-bezier(.2,.75,.25,1);
+  transition: filter var(--d-slow) var(--ease-decelerate);
 }
 .dj-nav-icon::before {
   position: absolute;
@@ -8165,12 +8165,12 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   content: '';
   opacity: 0;
   scale: .72;
-  transition: opacity 520ms ease, scale 620ms cubic-bezier(.16,1,.3,1);
+  transition: opacity calc(var(--d-slow) * 1.25) var(--ease-standard), scale calc(var(--d-slow) * 1.5) var(--ease-decelerate);
 }
 .dj-nav-icon__eye {
   background: #a5a5aa;
   box-shadow: none;
-  transition: background-color 380ms ease, filter 420ms ease, transform 520ms cubic-bezier(.16,1,.3,1);
+  transition: background-color var(--d-slow) var(--ease-standard), filter var(--d-slow) var(--ease-standard), transform calc(var(--d-slow) * 1.25) var(--ease-decelerate);
 }
 .nav-link.is-active:not(:hover):not(:focus-visible) .dj-nav-icon { filter: none; }
 .nav-link:is(:hover, :focus-visible) .dj-nav-icon {
@@ -8186,9 +8186,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 @media (hover: hover) and (pointer: fine) {
   .nav-link:hover .dj-nav-icon__eye--left { transform: rotate(-4deg) translateY(-1px); }
   .nav-link:hover .dj-nav-icon__eye--right { transform: rotate(18deg) translateY(1px); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .dj-nav-icon, .dj-nav-icon::before, .dj-nav-icon__eye { transition-duration: .01ms; }
 }
 
 .lyric-sync-paste { display: grid; gap: 14px; padding: 16px; margin: 16px 0; border: 1px solid rgb(255 255 255 / 12%); border-radius: 16px; }
