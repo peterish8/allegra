@@ -99,6 +99,40 @@ test('every section renders without a page error', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+// A11Y-001: the account dialog used to leave keyboard focus on the page behind it.
+test('the account dialog takes focus, keeps Tab inside it both ways, and hands focus back on close', async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await page.goto('/');
+  const opener = page.getByRole('button', { name: /Sign in or create an account|Checking your account|Open your account/ });
+  await expect(opener).toBeVisible({ timeout: 30_000 });
+  await opener.focus();
+  await opener.click();
+
+  const dialog = page.getByRole('dialog', { name: /^(Sign in|Your account)$/ });
+  await expect(dialog).toBeVisible();
+  const focusInside = async (): Promise<boolean> =>
+    dialog.evaluate((node) => node.contains(document.activeElement) && document.activeElement !== node);
+
+  // Initial focus lands inside the dialog, not on the page behind it.
+  await expect.poll(focusInside).toBe(true);
+
+  // Tab forward past the last control, and Shift+Tab back past the first: focus never leaves.
+  for (let step = 0; step < 8; step += 1) {
+    await page.keyboard.press('Tab');
+    expect(await focusInside(), `Tab ${step + 1}`).toBe(true);
+  }
+  for (let step = 0; step < 8; step += 1) {
+    await page.keyboard.press('Shift+Tab');
+    expect(await focusInside(), `Shift+Tab ${step + 1}`).toBe(true);
+  }
+
+  // Escape closes it and the opener has focus again.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+  expect(errors).toEqual([]);
+});
+
 test('search finds a song and plays it', async ({ page }) => {
   const errors = collectPageErrors(page);
   await page.goto('/');

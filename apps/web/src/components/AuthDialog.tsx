@@ -5,11 +5,12 @@ import { rememberConsent, clearPendingConsent } from '../lib/consent';
 import { deleteAccount, recordConsent } from '../lib/api';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { useSignIn } from '../auth/SignInContext';
 import type { AccountApi } from '../hooks/useAccount';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { isResolvingAccount } from '../lib/accountState';
 import { motionTokens, spring } from '../motion';
 import { ProfileSheet } from './ProfileSheet';
@@ -62,6 +63,10 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [agreed, setAgreed] = useState(false);
+
+  // Focus moves into the dialog on open, Tab stays inside it, and the opener gets focus back on close.
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(open, sheetRef);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -138,6 +143,7 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
         <div className="cmdk-layer auth-layer" key="auth">
           <motion.div className="cmdk-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: motionTokens.duration.base }} onClick={onClose} />
           <motion.div
+            ref={sheetRef}
             className="glass-sheet auth-sheet"
             role="dialog"
             aria-modal="true"
