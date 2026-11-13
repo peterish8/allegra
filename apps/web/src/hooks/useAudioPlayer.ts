@@ -8,10 +8,13 @@ import { nextInOrder, orderWithAppended, shuffledOrder, withUpcoming } from '../
 import { songIdentity, uniqueByIdentity } from '../lib/songIdentity';
 import { clamp } from '../lib/utils';
 import { activeWebSearchAttempt, hasSelectedPlaybackProgress, matchesSelectedPlaybackSource, webPerformanceTrace } from '../lib/performanceTrace';
-import { afterSourceSwap, isCurrentMediaGeneration, playbackRejectionMessage, reopensQueueEnd, shownAsPlaying, SOURCE_SWAP_TIMEOUT_MS, takeNextUnvisited, type RecoveryCursor } from '../lib/audioPlayerRules';
+import { afterSourceSwap, endVerdict, errorVerdict, isCurrentMediaGeneration, playbackRejectionMessage, reopensQueueEnd, shownAsPlaying, SOURCE_SWAP_TIMEOUT_MS, takeNextUnvisited, type RecoveryCursor } from '../lib/audioPlayerRules';
 import { decidePrevious, manualNext, nextDistinct, reshuffleOrder, shufflePlayOrder } from '../lib/skipRules';
 
 export type RepeatMode = 'off' | 'all' | 'one';
+
+/** How a mid-song reload settled: resumed, failed to open, or overtaken by a newer pick, pause or seek. */
+type MidSongOutcome = 'resumed' | 'failed' | 'superseded';
 
 export interface AudioPlayerState {
   readonly currentSong: UnifiedSong | null;
@@ -69,6 +72,10 @@ export function useAudioPlayer(): AudioPlayerState {
   const pendingCanPlayRef = useRef<(() => void) | null>(null);
   const autoAdvancedRef = useRef(false);
   const automaticRecoveryRef = useRef<RecoveryCursor | null>(null);
+  /** Mid-song reloads already used on the song playing. Reset when a different song is picked. */
+  const midSongRecoveriesRef = useRef(0);
+  /** Generation of the reload in flight. Its own wait settles the error that reload causes, so the listener skips it. */
+  const reloadingGenerationRef = useRef<number | null>(null);
   const shuffleRef = useRef(false);
   const shuffleOrderRef = useRef<string[]>([]);
   const repeatRef = useRef<RepeatMode>('off');
@@ -177,6 +184,7 @@ export function useAudioPlayer(): AudioPlayerState {
     const ordered = next.some((item) => item.id === playable.id) ? next : [playable, ...next];
     syncShuffleOrder(ordered, playable.id);
     playbackGenerationRef.current += 1;
+    midSongRecoveriesRef.current = 0;
     currentSongRef.current = playable;
     queueRef.current = ordered;
     pendingPlaybackRef.current = shouldPlay;
@@ -443,6 +451,49 @@ export function useAudioPlayer(): AudioPlayerState {
     return switched;
   }, [requestPlayback]);
 
+  /**
+   * Reloads the song already selected, from the same source, and resumes it at `resumeAt`. The browser
+   * gave up on a stream that stopped mid-song, so a new request is the fix. Each reload is its own
+   * generation, as a source switch is: a pick, a pause or a seek during it wins.
+   */
+  const recoverInPlace = useCallback(async (resumeAt: number, shouldPlay: boolean): Promise<MidSongOutcome> => {
+    const audio = audioRef.current;
+    const song = currentSongRef.current;
+    if (!audio || !song) return 'superseded';
+    playbackGenerationRef.current += 1;
+    const generation = playbackGenerationRef.current;
+    playbackIntentRef.current = shouldPlay;
+    audio.pause();
+    // The reload is part of the same play: the button keeps showing Pause (the pause that ends a
+    // stream just before `ended` has already cleared it).
+    if (shouldPlay) {
+      isPlayingRef.current = true;
+      setIsPlaying(true);
+    }
+    setIsBuffering(true);
+    reloadingGenerationRef.current = generation;
+    audio.load();
+    const ready = await waitForSourceReady(audio, SOURCE_SWAP_TIMEOUT_MS);
+    if (reloadingGenerationRef.current === generation) reloadingGenerationRef.current = null;
+    if (generation !== playbackGenerationRef.current || currentSongRef.current?.id !== song.id) return 'superseded';
+    if (!ready) {
+      // Nothing opened: nothing plays and nothing may stay waiting to (the button must not keep showing Pause).
+      audio.pause();
+      playbackIntentRef.current = false;
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      setIsBuffering(false);
+      return 'failed';
+    }
+    loadedGenerationRef.current = generation;
+    audio.currentTime = resumeAt;
+    setCurrentTime(resumeAt);
+    setIsBuffering(false);
+    // The intent is read again: a pause asked for during the reload must stay paused.
+    if (playbackIntentRef.current) await requestPlayback(true);
+    return 'resumed';
+  }, [requestPlayback]);
+
   const setVolume = useCallback((value: number): void => {
     const audio = audioRef.current;
     const next = clamp(value, 0, 1);
@@ -565,18 +616,27 @@ export function useAudioPlayer(): AudioPlayerState {
       // is left wanting to play, so a later source switch does not start it again.
       playbackIntentRef.current = false;
     };
-    const onEnded = (): void => { if (sourceIsLoaded()) advanceToNext(); };
-    const onError = (): void => {
-      if (!sourceIsSelected()) return;
-      setIsBuffering(false);
-      if (!currentSongRef.current) return;
-      if (webPerformanceTrace) {
-        const attempt = activeWebSearchAttempt();
-        if (matchesSelectedPlaybackSource(attempt, currentSongRef.current.id)) {
-          webPerformanceTrace.record(attempt, 'media.error');
-          webPerformanceTrace.finish(attempt, 'playback-failure');
-        }
+    const onEnded = (): void => {
+      if (!sourceIsLoaded()) return;
+      // A stream that stopped short still reports `ended`: reload it at the same second. The pause
+      // that precedes `ended` has cleared the play intent, so the resume is asked for explicitly.
+      const song = currentSongRef.current;
+      if (song && endVerdict({
+        positionSec: audio.currentTime,
+        elementDurationSec: audio.duration,
+        catalogDurationSec: song.duration,
+        recoveriesUsed: midSongRecoveriesRef.current,
+      }) === 'resume') {
+        midSongRecoveriesRef.current += 1;
+        void recoverInPlace(audio.currentTime, true).then((outcome) => {
+          if (outcome === 'failed') advanceToNext();
+        });
+        return;
       }
+      advanceToNext();
+    };
+    /** What a song that cannot go on does: move to the next song of the recovery walk, or show the error. */
+    const failCurrent = (): void => {
       if (automaticRecoveryRef.current) {
         advanceToNext(true);
         return;
@@ -584,6 +644,34 @@ export function useAudioPlayer(): AudioPlayerState {
       setError('This track could not be loaded. Try another song.');
       isPlayingRef.current = false;
       setIsPlaying(false);
+    };
+    const onError = (): void => {
+      if (!sourceIsSelected()) return;
+      // Our own reload is in flight: its wait settles this same error, so it is not handled twice.
+      if (reloadingGenerationRef.current === playbackGenerationRef.current) return;
+      setIsBuffering(false);
+      if (!currentSongRef.current) return;
+      const recover = errorVerdict({
+        mediaErrorCode: audio.error?.code ?? null,
+        positionSec: audio.currentTime,
+        recoveriesUsed: midSongRecoveriesRef.current,
+      }) === 'resume';
+      if (webPerformanceTrace) {
+        const attempt = activeWebSearchAttempt();
+        if (matchesSelectedPlaybackSource(attempt, currentSongRef.current.id)) {
+          webPerformanceTrace.record(attempt, 'media.error');
+          // A stream being recovered is not a playback failure yet.
+          if (!recover) webPerformanceTrace.finish(attempt, 'playback-failure');
+        }
+      }
+      if (recover) {
+        midSongRecoveriesRef.current += 1;
+        void recoverInPlace(audio.currentTime, playbackIntentRef.current).then((outcome) => {
+          if (outcome === 'failed') failCurrent();
+        });
+        return;
+      }
+      failCurrent();
     };
     // `waiting` is the only honest signal that sound has stopped for lack of data.
     const onWaiting = (): void => {
@@ -636,7 +724,7 @@ export function useAudioPlayer(): AudioPlayerState {
       audio.removeEventListener('playing', onPlaying);
       audio.removeEventListener('canplay', onCanPlay);
     };
-  }, [advanceToNext]);
+  }, [advanceToNext, recoverInPlace]);
 
   useEffect(() => {
     const audio = audioRef.current;
