@@ -1,8 +1,9 @@
+import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import type { Response as ExpressResponse } from 'express';
 
-import { cacheKey, type CacheStore } from './cache.js';
+import type { CacheStore } from './cache.js';
 import { correlationId, errorShape, redactUrl, SILENT_LOG, type DiagLog } from './diagnostics.js';
 import { ProviderUnavailableError, TimeoutError } from './errors.js';
 import { fetchUntilHeaders, isAbortError } from './fetchWithTimeout.js';
@@ -13,8 +14,29 @@ import type { GaanaProvider } from '../providers/gaana.js';
 import { parseSongRef } from '../shared/songRef.js';
 
 const STREAM_HEADER_TIMEOUT_MS = 25_000;
+const STREAM_URL_TTL_SECONDS = 3_600;
+const DEAD_SONG_TTL_SECONDS = 60;
+const REFUSED_URL_TTL_SECONDS = 600;
 const PASSTHROUGH_STATUSES = new Set([200, 206, 416]);
+const REFUSED_STATUSES = new Set([403, 404, 410]);
 const STREAM_CACHE_CONTROL = 'private, max-age=86400';
+
+// Keys keep the song id's case. cacheKey() lowercases, so `saavn:AbC` and `saavn:abc` shared one
+// cached URL (BE-001). The version bump leaves any v1 entry unread.
+const streamKey = (songId: string): string => `stream:v2:${songId}`;
+const deadKey = (songId: string): string => `stream-dead:v1:${songId}`;
+const refusedKey = (url: string): string => `stream-refused:v1:${createHash('sha256').update(url).digest('hex').slice(0, 16)}`;
+
+interface DeadMarker {
+  readonly status: number;
+}
+
+/** A forced refresh handed back a link this instance already saw refused. The CDN is not asked again. */
+class RefusedLinkError extends ProviderUnavailableError {
+  public constructor(public readonly url: string) {
+    super();
+  }
+}
 
 export interface StreamResolverOptions {
   readonly saavn: SaavnProvider;
@@ -48,11 +70,30 @@ export class StreamResolver {
   }
 
   public async pipe(songId: string, range: string | undefined, response: ExpressResponse, corr = correlationId('str')): Promise<void> {
+    // The song's refreshed link was also refused within the last minute: answer at once, with no lookup or CDN call.
+    if ((await this.cache.get<DeadMarker>(deadKey(songId))) !== null) {
+      throw new ProviderUnavailableError();
+    }
     let upstream = await this.fetchResolved(songId, range, false);
-    if (upstream.response.status === 403 || upstream.response.status === 404) {
-      this.log.warn({ op: 'stream', corr, song: songId, status: upstream.response.status, url: redactUrl(upstream.url), step: 'refresh' }, 'stream link refused');
+    if (REFUSED_STATUSES.has(upstream.response.status)) {
+      const firstStatus = upstream.response.status;
+      this.log.warn({ op: 'stream', corr, song: songId, status: firstStatus, url: redactUrl(upstream.url), step: 'refresh' }, 'stream link refused');
+      await this.cache.set(refusedKey(upstream.url), true, REFUSED_URL_TTL_SECONDS);
       upstream.abort();
-      upstream = await this.fetchResolved(songId, range, true);
+      try {
+        upstream = await this.fetchResolved(songId, range, true);
+      } catch (error) {
+        if (error instanceof RefusedLinkError) {
+          await this.markDead(songId, corr, firstStatus, error.url);
+        }
+        throw error;
+      }
+      if (REFUSED_STATUSES.has(upstream.response.status)) {
+        await this.cache.set(refusedKey(upstream.url), true, REFUSED_URL_TTL_SECONDS);
+        upstream.abort();
+        await this.markDead(songId, corr, upstream.response.status, upstream.url);
+        throw new ProviderUnavailableError();
+      }
     }
 
     if (!PASSTHROUGH_STATUSES.has(upstream.response.status)) {
@@ -130,8 +171,15 @@ export class StreamResolver {
     }
   }
 
+  private async markDead(songId: string, corr: string, status: number, url: string): Promise<void> {
+    const marker: DeadMarker = { status };
+    await this.cache.set(deadKey(songId), marker, DEAD_SONG_TTL_SECONDS);
+    await this.cache.delete(streamKey(songId));
+    this.log.warn({ op: 'stream', corr, song: songId, status, url: redactUrl(url) }, 'stream song dead');
+  }
+
   private async resolve(songId: string, force: boolean): Promise<string> {
-    const key = cacheKey('stream', songId);
+    const key = streamKey(songId);
     if (!force) {
       const cached = await this.cache.get<string>(key);
       if (cached) {
@@ -149,7 +197,10 @@ export class StreamResolver {
       throw result.reason === 'timeout' ? new TimeoutError() : new ProviderUnavailableError();
     }
     const safeUrl = assertStreamUrl(url);
-    await this.cache.set(key, safeUrl, 3600);
+    if (force && (await this.cache.get<boolean>(refusedKey(safeUrl))) !== null) {
+      throw new RefusedLinkError(safeUrl);
+    }
+    await this.cache.set(key, safeUrl, STREAM_URL_TTL_SECONDS);
     return safeUrl;
   }
 }

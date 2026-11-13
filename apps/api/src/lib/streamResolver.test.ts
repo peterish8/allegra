@@ -5,7 +5,7 @@ import { PassThrough } from 'node:stream';
 import type { Response as ExpressResponse } from 'express';
 
 import { MemoryCacheStore } from './cache.js';
-import type { DiagLog } from './diagnostics.js';
+import { redactUrl, type DiagLog } from './diagnostics.js';
 import { ProviderUnavailableError } from './errors.js';
 import { StreamResolver } from './streamResolver.js';
 import { SaavnProvider, type SaavnSong } from '../providers/saavn.js';
@@ -300,4 +300,152 @@ test('a body failure after headers logs sentBytes', async () => {
   assert.equal(serialized.includes('sig='), false);
   assert.equal(serialized.includes('fixture-signature'), false);
   assert.equal(serialized.includes('terminated'), false, 'the error message must never be logged');
+});
+
+/** A provider whose n-th lookup returns urlFor(n), and that counts its lookups. */
+function numberedProvider(urlFor: (lookup: number) => string): { readonly provider: SaavnProvider; readonly lookups: () => number } {
+  let lookups = 0;
+  const provider = new SaavnProvider({
+    baseUrl: 'https://saavn.example/api',
+    fetchImpl: async () => {
+      lookups += 1;
+      return json({ success: true, data: { ...song, downloadUrl: [{ quality: '320kbps', url: urlFor(lookups) }] } });
+    }
+  });
+  return { provider, lookups: () => lookups };
+}
+
+const partialAudio = (): Response =>
+  new Response('audio', { status: 206, headers: { 'content-range': 'bytes 0-4/20', 'content-type': 'audio/mp4' } });
+
+test('song ids that differ only in letter case resolve to their own audio', async () => {
+  const cdnUrls: string[] = [];
+  const resolver = new StreamResolver({
+    cache: new MemoryCacheStore(),
+    saavn: new SaavnProvider({
+      baseUrl: 'https://saavn.example/api',
+      fetchImpl: async (input) => {
+        const id = new URL(String(input)).pathname.split('/').at(-1) ?? '';
+        return json({ success: true, data: { ...song, id, downloadUrl: [{ quality: '320kbps', url: `https://cdn.example/${id}.mp4` }] } });
+      }
+    }),
+    fetchImpl: async (input) => {
+      cdnUrls.push(String(input));
+      return partialAudio();
+    }
+  });
+
+  await resolver.pipe('song-AbC', 'bytes=0-4', fakeResponse());
+  await resolver.pipe('song-abc', 'bytes=0-4', fakeResponse());
+  assert.deepEqual(cdnUrls, ['https://cdn.example/song-AbC.mp4', 'https://cdn.example/song-abc.mp4']);
+});
+
+test('a song whose link is refused twice is answered from the dead marker without new lookups', async () => {
+  const provider = numberedProvider((lookup) => `https://cdn.example/dead-${lookup}.mp4`);
+  let cdnCalls = 0;
+  const resolver = new StreamResolver({
+    cache: new MemoryCacheStore(),
+    saavn: provider.provider,
+    fetchImpl: async () => {
+      cdnCalls += 1;
+      return new Response('gone', { status: 403 });
+    }
+  });
+
+  await assert.rejects(() => resolver.pipe('song-1', 'bytes=0-10', fakeResponse()), ProviderUnavailableError);
+  assert.equal(provider.lookups(), 2);
+  assert.equal(cdnCalls, 2);
+
+  await assert.rejects(() => resolver.pipe('song-1', 'bytes=0-10', fakeResponse()), ProviderUnavailableError);
+  assert.equal(provider.lookups(), 2, 'the dead marker answers before any provider lookup');
+  assert.equal(cdnCalls, 2, 'the dead marker answers before any CDN request');
+});
+
+test('the dead marker expires after 60 seconds and the song is looked up again', async (t) => {
+  let now = 1_700_000_000_000;
+  t.mock.method(Date, 'now', () => now);
+  const provider = numberedProvider((lookup) => `https://cdn.example/expiry-${lookup}.mp4`);
+  let cdnCalls = 0;
+  const resolver = new StreamResolver({
+    cache: new MemoryCacheStore(),
+    saavn: provider.provider,
+    fetchImpl: async () => {
+      cdnCalls += 1;
+      return cdnCalls <= 2 ? new Response('gone', { status: 403 }) : partialAudio();
+    }
+  });
+
+  await assert.rejects(() => resolver.pipe('song-1', 'bytes=0-4', fakeResponse()), ProviderUnavailableError);
+  now += 59_000;
+  await assert.rejects(() => resolver.pipe('song-1', 'bytes=0-4', fakeResponse()), ProviderUnavailableError);
+  assert.equal(provider.lookups(), 2, 'still inside the 60 second window');
+
+  now += 2_000;
+  const response = fakeResponse();
+  await resolver.pipe('song-1', 'bytes=0-4', response);
+  assert.equal(response.statusCode, 206);
+  assert.equal(provider.lookups(), 3);
+});
+
+test('a refresh that returns the same refused link is not fetched again, and the logs carry no secret', async () => {
+  const signed = 'https://cdn.example/song.mp4?sig=fixture-signature';
+  let cdnCalls = 0;
+  const log = capturingLog();
+  const resolver = new StreamResolver({
+    cache: new MemoryCacheStore(),
+    log,
+    saavn: new SaavnProvider({
+      baseUrl: 'https://saavn.example/api',
+      fetchImpl: async () => json({ success: true, data: { ...song, downloadUrl: [{ quality: '320kbps', url: signed }] } })
+    }),
+    fetchImpl: async () => {
+      cdnCalls += 1;
+      return new Response('expired', { status: 403 });
+    }
+  });
+
+  await assert.rejects(() => resolver.pipe('song-1', 'bytes=0-10', fakeResponse(), 'str-deadlink01'), ProviderUnavailableError);
+  assert.equal(cdnCalls, 1, 'the refresh returned a link already refused, so the CDN is not asked again');
+  assert.deepEqual(log.lines.map((line) => line.message), ['stream link refused', 'stream song dead']);
+  assert.equal(log.lines[1]?.level, 'warn');
+  assert.deepEqual(log.lines[1]?.fields, { op: 'stream', corr: 'str-deadlink01', song: 'song-1', status: 403, url: redactUrl(signed) });
+  const serialized = JSON.stringify(log.lines);
+  assert.equal(serialized.includes('sig='), false, 'logs must not carry the signature parameter');
+  assert.equal(serialized.includes('fixture-signature'), false, 'logs must not carry the signature value');
+});
+
+test('a 410 link is refreshed like a 403', async () => {
+  const provider = numberedProvider((lookup) => `https://cdn.example/gone-${lookup}.mp4`);
+  let cdnCalls = 0;
+  const resolver = new StreamResolver({
+    cache: new MemoryCacheStore(),
+    saavn: provider.provider,
+    fetchImpl: async () => {
+      cdnCalls += 1;
+      return cdnCalls === 1 ? new Response('gone', { status: 410 }) : partialAudio();
+    }
+  });
+
+  const response = fakeResponse();
+  await resolver.pipe('song-1', 'bytes=0-4', response);
+  assert.equal(response.statusCode, 206);
+  assert.equal(provider.lookups(), 2);
+});
+
+test('a server error from the CDN is not a refused link and does not mark the song dead', async () => {
+  const provider = numberedProvider(() => 'https://cdn.example/flaky.mp4');
+  let cdnCalls = 0;
+  const resolver = new StreamResolver({
+    cache: new MemoryCacheStore(),
+    saavn: provider.provider,
+    fetchImpl: async () => {
+      cdnCalls += 1;
+      return new Response('oops', { status: 500 });
+    }
+  });
+
+  await assert.rejects(() => resolver.pipe('song-1', 'bytes=0-4', fakeResponse()), ProviderUnavailableError);
+  await assert.rejects(() => resolver.pipe('song-1', 'bytes=0-4', fakeResponse()), ProviderUnavailableError);
+  assert.equal(cdnCalls, 2, 'the second request still reaches the CDN');
+  assert.equal(provider.lookups(), 1, 'the cached link is reused; nothing was marked dead');
 });
