@@ -22,6 +22,9 @@ interface CollectionPageProps {
   readonly title: string;
   readonly songs: readonly UnifiedSong[];
   readonly loading: boolean;
+  /** Saved songs the catalog did not return once loading finished. They stay saved. */
+  readonly unavailable?: number;
+  readonly onRetry?: () => void;
   readonly currentSongId: string | null;
   readonly isPlaying: boolean;
   readonly likedIds: Set<string>;
@@ -53,7 +56,7 @@ interface CollectionPageProps {
  * A playlist or the Liked Songs list, laid out like an album: the cover leads (its own, else a
  * mosaic of its songs), then the title, Play and Shuffle, and every song in order under it.
  */
-export function CollectionPage({ kind, title, songs, loading, currentSongId, isPlaying, likedIds, onToggle, onPlayTrack, onPlayAll, onLike, onOpenAlbum, onDiscover, onDelete, share, cover, ownerName, onSaveCopy, coverUrl, sharedCode }: CollectionPageProps) {
+export function CollectionPage({ kind, title, songs, loading, unavailable = 0, onRetry, currentSongId, isPlaying, likedIds, onToggle, onPlayTrack, onPlayAll, onLike, onOpenAlbum, onDiscover, onDelete, share, cover, ownerName, onSaveCopy, coverUrl, sharedCode }: CollectionPageProps) {
   const [palette, setPalette] = useState<Palette | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const queue = useMemo(() => [...songs], [songs]);
@@ -119,7 +122,7 @@ export function CollectionPage({ kind, title, songs, loading, currentSongId, isP
         <div className="artist-hero-copy">
           <span className="artist-sheet-eyebrow">{kind === 'liked' ? 'Your collection' : kind === 'shared' ? `Shared by ${ownerName ?? 'a listener'}` : 'Playlist'}</span>
           <div className="page-title-row"><h1>{title}</h1>{kind === 'liked' ? <InfoTour label="About Liked Songs" steps={LIKED_TOUR} stage={likedScene} /> : kind === 'playlist' ? <InfoTour label="About playlists" steps={PLAYLIST_TOUR} stage={playlistScene} /> : null}</div>
-          <p>{loading ? 'Loading…' : songs.length > 0 ? `${songs.length} ${songs.length === 1 ? 'song' : 'songs'} · ${formatAlbumDuration(totalSeconds)}` : 'No songs yet'}</p>
+          <p>{loading ? 'Loading…' : songs.length > 0 ? `${songs.length} ${songs.length === 1 ? 'song' : 'songs'} · ${formatAlbumDuration(totalSeconds)}${unavailable > 0 ? ` · ${unavailable} unavailable` : ''}` : unavailable > 0 ? `${unavailable} ${unavailable === 1 ? 'song' : 'songs'} unavailable` : 'No songs yet'}</p>
           <div className="artist-actions">
             {songs.length > 0 ? (
               <>
@@ -150,6 +153,12 @@ export function CollectionPage({ kind, title, songs, loading, currentSongId, isP
 
       {loading && songs.length === 0 ? (
         <div className="track-list" aria-busy="true"><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
+      ) : songs.length === 0 && unavailable > 0 ? (
+        <EmptyState
+          title="These songs are not available right now"
+          copy="They are still saved in this playlist. Try again in a moment."
+          {...(onRetry ? { action: <TactileButton variant="primary" onClick={onRetry}>Try again</TactileButton> } : {})}
+        />
       ) : songs.length === 0 ? (
         <EmptyState
           title={kind === 'liked' ? 'Nothing liked yet' : 'This playlist is empty'}
@@ -173,6 +182,12 @@ export function CollectionPage({ kind, title, songs, loading, currentSongId, isP
               />
             ))}
           </div>
+          {unavailable > 0 ? (
+            <p className="collection-unavailable" role="status">
+              {unavailable === 1 ? '1 saved song is not available right now.' : `${unavailable} saved songs are not available right now.`} They stay in this playlist.
+              {onRetry ? <button type="button" className="collection-unavailable__retry" onClick={onRetry}>Try again</button> : null}
+            </p>
+          ) : null}
         </section>
       )}
     </div>

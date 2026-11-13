@@ -47,6 +47,9 @@ interface AlbumPageProps {
   readonly detail?: AlbumDetail | null;
   /** True while the catalog's tracks are on their way. */
   readonly loading?: boolean;
+  /** The catalog lookup failed and there are no tracks to show instead. */
+  readonly failed?: boolean;
+  readonly onRetry?: () => void;
   readonly tracks: UnifiedSong[];
   readonly palette: Palette;
   readonly currentSongId: string | null;
@@ -68,6 +71,8 @@ export function AlbumPage({
   seed,
   detail = null,
   loading = false,
+  failed = false,
+  onRetry,
   tracks,
   palette,
   currentSongId,
@@ -208,7 +213,8 @@ export function AlbumPage({
             </div>
           ) : (
             <p className="album-tracklist__empty" role="status">
-              {loading ? 'Loading the album tracks…' : 'No playable tracks are available for this album.'}
+              {loading ? 'Loading the album tracks…' : failed ? 'The album could not be loaded.' : 'No playable tracks are available for this album.'}
+              {!loading && failed && onRetry ? <button type="button" className="collection-unavailable__retry" onClick={onRetry}>Try again</button> : null}
             </p>
           )}
         </div>

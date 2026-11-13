@@ -591,6 +591,8 @@ body::after,
 
 .track-list,
 .library-track-list { display: flex; min-width: 0; flex-direction: column; gap: 0; padding-top: 6px; }
+.collection-unavailable { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 12px 0 0; color: var(--ink-muted); font-size: 13px; }
+.collection-unavailable__retry { min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
 .track-row {
   position: relative;
@@ -3628,6 +3630,7 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .album-track .album-track__playlist-trigger:disabled { opacity: 0.45; }
 .album-track__playlist-action { display: contents; }
 .album-tracklist__empty { margin: 0; padding: var(--space-lg) var(--space-md); color: var(--ink-muted); text-align: center; }
+.album-tracklist__empty .collection-unavailable__retry { display: block; margin: 8px auto 0; }
 
 @media (max-width: 900px) {
   .album-page { padding-inline: var(--space-sm); padding-bottom: calc(var(--mini-player-height) + var(--nav-height) + var(--space-md)); }
