@@ -49,3 +49,10 @@ describe('ExpoModulesPackageList.kt', () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe('the mini player’s native swipe', () => {
+  it('is registered, so the setting does something on Android', () => {
+    const list = fs.readFileSync(listPath, 'utf8');
+    expect(list).toContain('com.lyricflow.app.modules.NativeSwipeSkipModule::class.java');
+  });
+});

@@ -27,6 +27,7 @@ import Marquee from './allegra/Marquee';
 import Artwork from './allegra/Artwork';
 import { MiniPlayerGlow } from './MiniPlayerGlow';
 import { MiniScrubber } from './MiniScrubber';
+import { NativeSwipeSkip, useNativeSwipeSkip } from './NativeSwipeSkip';
 import { useShellMenuStore } from '../store/shellMenuStore';
 import { scrubSeconds, spokenPosition } from '../playback/miniScrub';
 
@@ -167,7 +168,9 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
     fade.value = withTiming(1, { duration: Motion.duration.fast });
   };
   const rtl = I18nManager.isRTL;
-  const swipe = Gesture.Pan().activeOffsetX([-16, 16]).failOffsetY([-14, 14])
+  // With the native swipe on, Kotlin owns the sideways swipe (follow, decide, skip); this pan steps aside.
+  const nativeSwipe = useNativeSwipeSkip(!!remote);
+  const swipe = Gesture.Pan().enabled(!nativeSwipe).activeOffsetX([-16, 16]).failOffsetY([-14, 14])
     .onUpdate(e => {
       'worklet';
       if (skipInFlight.value) return;
@@ -235,6 +238,7 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
     <Animated.View style={[styles.row, { height: rowHeight }, rowDim]}>
       <GestureDetector gesture={infoGesture}><View style={styles.main} onLayout={e => setInfoWidth(e.nativeEvent.layout.width)}>
         {/* Owner, 2026-11-13: no ••• on the mini player; a long press opens the song's actions instead. */}
+        <NativeSwipeSkip enabled={nativeSwipe} songKey={`${displayed.songId ?? ''}|${displayed.title}`} style={{ height: rowHeight }}>
         <Tactile onPress={openMeasured} onLongPress={onMore} delayLongPress={350} pressScale={0.985} accessibilityRole="button" accessibilityLabel={miniPlayerLabel(displayed.title)} accessibilityHint={displayed.artist ? `By ${displayed.artist}` : undefined}
           accessibilityActions={[{ name: 'activate' }, { name: 'next', label: 'Next song' }, { name: 'previous', label: 'Previous song' }, ...(onMore ? [{ name: 'longpress', label: 'Song options' }] : [])]}
           onAccessibilityAction={e => { const a = e.nativeEvent.actionName; if (a === 'next') onNext(); else if (a === 'previous') onPrevious(); else if (a === 'longpress') onMore?.(); else openMeasured(); }}
@@ -251,6 +255,7 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
             </View>
           </Animated.View>
         </Tactile>
+        </NativeSwipeSkip>
       </View></GestureDetector>
       {/* Song options, the saved mark, then play. Next is the sideways swipe (and TalkBack's
           "Next song" action above). */}

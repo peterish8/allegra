@@ -70,6 +70,7 @@ class ExpoModulesPackageList : ModulesProvider {
         com.lyricflow.app.modules.StartupModule::class.java,
         com.lyricflow.app.modules.MainPlayerModule::class.java,
         com.lyricflow.app.modules.NativeSkipModule::class.java,
+        com.lyricflow.app.modules.NativeSwipeSkipModule::class.java,
         com.lyricflow.app.modules.NativeTransportModule::class.java,
         com.lyricflow.app.modules.NativeTransportBarModule::class.java,
         com.lyricflow.app.modules.NativeTabBarModule::class.java,

@@ -112,6 +112,9 @@ interface SettingsState {
   keepScreenOn: boolean;
   /** Echo Music's "auto load more": a queue running out is topped up with songs like the one playing. */
   autoQueueRefill: boolean;
+  /** The mini player's sideways swipe skips on Android's main thread (components/NativeSwipeSkip). Off by default. */
+  nativeMiniSwipe: boolean;
+  setNativeMiniSwipe: (v: boolean) => void;
   /** Listening stats (1.45.0): keep a log of what is heard on this phone. On by default; never leaves the phone. */
   listeningStats: boolean;
   hapticsEnabled: boolean;
@@ -249,6 +252,7 @@ const DEFAULT_SETTINGS = {
   skipDuration: 15 as const,
   keepScreenOn: true,
   autoQueueRefill: true,
+  nativeMiniSwipe: false,
   listeningStats: true,
   hapticsEnabled: true,
   showTimeRemaining: true,
@@ -308,6 +312,7 @@ export const useSettingsStore = create<SettingsState>()(
       setSkipDuration: (skipDuration) => set({ skipDuration }),
       setKeepScreenOn: (keepScreenOn) => set({ keepScreenOn }),
       setAutoQueueRefill: (autoQueueRefill) => set({ autoQueueRefill }),
+      setNativeMiniSwipe: (nativeMiniSwipe) => set({ nativeMiniSwipe }),
       setListeningStats: (listeningStats) => set({ listeningStats }),
       setHapticsEnabled: (hapticsEnabled) => set({ hapticsEnabled }),
       setShowTimeRemaining: (showTimeRemaining) => set({ showTimeRemaining }),
