@@ -142,6 +142,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
   const isUserScrolling = useRef(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [lyrics, setLyrics] = useState<{ timestamp: number; text: string }[]>([]);
+  const [lyricSource, setLyricSource] = useState<string>();
   const songRef = song?.ref;
   const songTitle = song?.title;
   const songArtist = song?.artist;
@@ -149,10 +150,14 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
   useEffect(() => {
     let current = true;
     setLyrics([]);
+    setLyricSource(undefined);
     if (!songRef || !songTitle) return () => { current = false; };
-    lyricaService.fetchLyrics(songTitle, songArtist, false, songDuration)
+    lyricaService.fetchLyrics(songTitle, songArtist, false, songDuration, { ref: songRef })
       .then(result => {
-        if (current && result?.lyrics) setLyrics(lyricaService.parseLrc(result.lyrics, songDuration));
+        if (current && result?.lyrics) {
+          setLyrics(lyricaService.parseLrc(result.lyrics, songDuration));
+          setLyricSource(result.source);
+        }
       })
       .catch(() => undefined);
     return () => { current = false; };
@@ -316,6 +321,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
             transitionProgress={movingCover ? progress : undefined}
                     showLyrics={showLyrics}
                     processedLyrics={lyrics}
+                    lyricSource={lyricSource}
                     duration={song.duration}
                     currentTime={livePos}
                     onLyricPress={seek}

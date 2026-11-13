@@ -6,6 +6,8 @@
 import { parseWordTags } from '@shared/wordSync';
 import { LyricLine } from '../types/song';
 import { EchoLyricsCascade } from './lyrics/EchoLyricsCascade';
+import { chooseLyricsFallback } from './lyrics/foundOnlineLyrics';
+import { fetchFoundOnlineLyrics } from './lyrics/foundOnlineLyricsApi';
 import { ProviderLyrics } from './lyrics/providers';
 
 const BASE_URL = 'https://test-0k.onrender.com/lyrics';
@@ -66,10 +68,19 @@ class LyricaService {
     artist: string,
     syncedOnly: boolean = false,
     duration?: number,
-    options: { skipEcho?: boolean; ref?: string; signal?: AbortSignal } = {},
+    options: { skipEcho?: boolean; ref?: string; album?: string; language?: string; signal?: AbortSignal } = {},
   ): Promise<LyricaResult | null> {
     try {
       const { cleanSong, cleanArtist } = cleanTitleArtist(song, artist);
+      const onlineQuery = {
+        title: cleanSong,
+        artist: cleanArtist,
+        duration,
+        ref: options.ref,
+        album: options.album,
+        language: options.language,
+        signal: options.signal,
+      };
 
       if (__DEV__) console.log('[Lyrica] Cleaned - Artist:', cleanArtist, 'Song:', cleanSong, 'Duration:', duration);
 
@@ -111,15 +122,17 @@ class LyricaService {
         try {
           result = await this.executeFetch(url, strategy.label, timeoutMs);
         } catch (e) {
-          // Backend down or timed out: the Echo plain lyrics beat an error.
-          if (echo) return this.fromProvider(echo);
-          throw e;
+          // Backend down or timed out: keep any mobile plain result, then try the website's fallback.
+          if (__DEV__) console.error('[Lyrica] Backend lookup failed:', e);
+          return this.withFoundOnlineFallback(echo ? this.fromProvider(echo) : null, onlineQuery, syncedOnly);
         }
-        if (result) return result;
+        if (result) {
+          return this.withFoundOnlineFallback(result, onlineQuery, syncedOnly);
+        }
       }
       
       if (__DEV__) console.log('[Lyrica] All strategies exhausted');
-      return echo ? this.fromProvider(echo) : null;
+      return this.withFoundOnlineFallback(echo ? this.fromProvider(echo) : null, onlineQuery, syncedOnly);
     } catch (error) {
       console.error('[Lyrica] Fetch error:', error);
       throw error;
@@ -137,6 +150,16 @@ class LyricaService {
         duration: hit.duration,
       },
     };
+  }
+
+  private async withFoundOnlineFallback(
+    current: LyricaResult | null,
+    query: { title: string; artist: string; duration?: number; ref?: string; album?: string; language?: string; signal?: AbortSignal },
+    syncedOnly: boolean,
+  ): Promise<LyricaResult | null> {
+    if (syncedOnly || (current && this.hasTimestamps(current.lyrics))) return current;
+    const online = await fetchFoundOnlineLyrics(query);
+    return chooseLyricsFallback(current, online);
   }
 
   private async executeFetch(url: string, label: string, timeoutMs: number): Promise<LyricaResult | null> {

@@ -941,6 +941,7 @@ const SynchronizedLyrics = forwardRef<SynchronizedLyricsRef, SynchronizedLyricsP
         <LyricsResumePill
           icon={plainPaused || readingPlain || !autoScrollPlain ? 'play' : 'pause'}
           label="Auto-scroll"
+          iconOnly
           accessibilityLabel={plainPaused || readingPlain || !autoScrollPlain ? 'Resume lyrics auto-scroll' : 'Pause lyrics auto-scroll'}
           onPress={() => {
             if (plainPaused || readingPlain || !autoScrollPlain) {
