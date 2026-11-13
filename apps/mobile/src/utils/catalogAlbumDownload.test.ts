@@ -37,19 +37,26 @@ describe('albumDownloadState', () => {
   });
 
   it('shows downloaded only when every song is confirmed saved', () => {
-    expect(albumDownloadState(songs, [item('a', 'completed'), item('b', 'completed'), item('c', 'downloading', 0.9)], none, true).phase).toBe('downloading');
-    expect(albumDownloadState(songs, [item('a', 'completed'), item('b', 'completed'), item('c', 'completed')], none, true).phase).toBe('saved');
+    const onPhone = (...titles: string[]) => new Set(titles.map(title => matchKey(title, 'Band')));
+    expect(albumDownloadState(songs, [item('a', 'completed'), item('b', 'completed'), item('c', 'downloading', 0.9)], onPhone('One', 'Two'), true).phase).toBe('downloading');
+    expect(albumDownloadState(songs, [item('a', 'completed'), item('b', 'completed'), item('c', 'completed')], onPhone('One', 'Two', 'Three'), true).phase).toBe('saved');
+  });
+
+  it('does not call a finished download saved once the song is no longer in the library', () => {
+    expect(albumDownloadState(songs, [item('a', 'completed'), item('b', 'completed'), item('c', 'completed')], none, true).phase).toBe('idle');
   });
 
   it('averages real progress across the album', () => {
-    const state = albumDownloadState(songs, [item('a', 'completed'), item('b', 'downloading', 0.5), item('c', 'pending')], none, true);
+    const library = new Set([matchKey('One', 'Band')]);
+    const state = albumDownloadState(songs, [item('a', 'completed'), item('b', 'downloading', 0.5), item('c', 'pending')], library, true);
     expect(state.phase).toBe('downloading');
     expect(state.progress).toBeCloseTo((1 + 0.5 + 0) / 3);
-    expect(albumPercent(songs, [item('a', 'completed'), item('b', 'downloading', 0.5), item('c', 'pending')], none)).toBe(50);
+    expect(albumPercent(songs, [item('a', 'completed'), item('b', 'downloading', 0.5), item('c', 'pending')], library)).toBe(50);
   });
 
   it('retries only the failed songs and keeps completed ones', () => {
-    const state = albumDownloadState(songs, [item('a', 'completed'), item('b', 'failed'), item('c', 'completed')], none, true);
+    const library = new Set([matchKey('One', 'Band'), matchKey('Three', 'Band')]);
+    const state = albumDownloadState(songs, [item('a', 'completed'), item('b', 'failed'), item('c', 'completed')], library, true);
     expect(state.phase).toBe('failed');
     expect(state.failed.map(s => s.id)).toEqual(['b']);
     expect(state.missing).toHaveLength(0);

@@ -45,6 +45,7 @@ describe('startCatalogAlbumDownload', () => {
   });
 
   it('retries only failed songs and leaves completed ones alone', () => {
+    useSongsStore.setState({ songs: [{ id: 'local-a', title: 'Song a', artist: 'Band', audioUri: 'file:///a.mp3' } as never] });
     useDownloadQueueStore.getState().addToQueue(album);
     useDownloadQueueStore.setState(state => ({
       queue: state.queue.map(q => (q.id === 'a' ? { ...q, status: 'completed' as const, progress: 1 } : q.id === 'b' ? { ...q, status: 'failed' as const } : q)),
