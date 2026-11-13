@@ -238,9 +238,9 @@ export const BlendStage: React.FC<{
 const styles = StyleSheet.create({
   stage: { width: '100%' },
   centre: { position: 'absolute', left: 0, right: 0, height: 120, alignItems: 'center', justifyContent: 'center' },
-  match: { color: '#fff', fontSize: 72, fontWeight: '800', fontVariant: ['tabular-nums'], textShadowColor: 'rgba(0,0,0,0.35)', textShadowRadius: 24 },
+  match: { color: '#fff', fontSize: 72, fontWeight: '700', fontVariant: ['tabular-nums'], textShadowColor: 'rgba(0,0,0,0.35)', textShadowRadius: 24 },
   label: { color: 'rgba(255,255,255,0.82)', fontSize: 14, fontWeight: '600' },
-  headline: { color: '#fff', fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  headline: { color: '#fff', fontSize: 22, fontWeight: '700', textAlign: 'center' },
   srOnly: { position: 'absolute', width: 1, height: 1, opacity: 0 },
   name: { position: 'absolute', width: 120, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   nameDot: { width: 8, height: 8, borderRadius: 4 },
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
   // Position and size sit on the touch wrapper; the pill fills it.
   inviteWrap: { position: 'absolute', width: 140, height: 44 },
   invite: { width: '100%', height: '100%', borderRadius: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Signal.wave },
-  inviteText: { color: Signal.waveInk, fontSize: 14, fontWeight: '800' },
+  inviteText: { color: Signal.waveInk, fontSize: 14, fontWeight: '700' },
   skipWrap: { position: 'absolute', top: 0, right: 16 },
   skip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.16)' },
   skipText: { color: Signal.ink, fontSize: 13, fontWeight: '600' },
