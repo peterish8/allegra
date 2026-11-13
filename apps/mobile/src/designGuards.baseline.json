@@ -8,11 +8,8 @@
     "components/connect/ConnectRemotePlayer.tsx": 7,
     "components/CreatePlaylistModal.tsx": 1,
     "components/CustomAlert.tsx": 2,
-    "components/import/SpotifySyncPanel.tsx": 1,
     "components/LibraryEditModal.tsx": 3,
     "components/LrcSearchModal.tsx": 5,
-    "components/luvLink/LuvLinkHost.tsx": 2,
-    "components/luvLink/LuvLinkLegacyPanel.tsx": 6,
     "components/luvs/LaneRail.tsx": 1,
     "components/LyricsResumePill.tsx": 1,
     "components/MiniPlayer.tsx": 6,
@@ -29,8 +26,7 @@
     "components/VoiceMicButton.tsx": 1,
     "components/VoiceSearchCard.tsx": 1,
     "components/YtMiniPlayer.tsx": 3,
-    "screens/BlendJoinScreen.tsx": 2,
-    "screens/LuvLinkScreen.tsx": 1
+    "screens/BlendJoinScreen.tsx": 2
   },
   "slideModal": {
     "components/LrcSearchModal.tsx": 1
@@ -40,16 +36,13 @@
     "components/blend/BlendParts.tsx": 4,
     "components/blend/BlendStage.tsx": 3,
     "components/blend/BlendStoryPlayer.tsx": 4,
-    "components/import/SpotifyCrate.tsx": 1,
-    "components/import/SpotifySyncPanel.tsx": 2,
     "components/TimelineScrubber.tsx": 1
   },
   "tracking": {
-    "components/luvLink/LuvLinkPanel.tsx": 2
+    "components/luvLink/LuvLinkPanel.tsx": 1
   },
   "bottomPad": {},
   "alert": {
-    "components/import/SpotifySyncPanel.tsx": 1,
     "screens/BlendScreen.tsx": 1
   },
   "color": {
@@ -140,8 +133,8 @@
     "components/LanguagePickerModal.tsx": 2,
     "components/LibraryEditModal.tsx": 5,
     "components/LrcSearchModal.tsx": 15,
-    "components/luvLink/LuvLinkHost.tsx": 2,
     "components/luvLink/LuvLinkLegacyPanel.tsx": 12,
+    "components/luvLink/LuvLinkHost.tsx": 2,
     "components/luvLink/LuvLinkPanel.tsx": 10,
     "components/luvs/LaneRail.tsx": 2,
     "components/luvs/LuvControls.tsx": 1,
@@ -177,7 +170,6 @@
   "motionLiteral": {
     "components/connect/ConnectRemotePlayer.tsx": 4,
     "components/InstrumentalWaveform.tsx": 1,
-    "components/luvLink/LuvLinkHost.tsx": 2,
     "components/luvs/LuvControls.tsx": 16,
     "components/luvs/TasteExplorer.tsx": 1,
     "components/NowPlayingControls.tsx": 7,
@@ -205,10 +197,7 @@
     "components/blend/BlendStoryPlayer.tsx": 1,
     "components/CanvasVideoLayer.tsx": 1,
     "components/connect/ConnectRemotePlayer.tsx": 1,
-    "components/import/SpotifyCrate.tsx": 1,
-    "components/import/SpotifySyncPanel.tsx": 1,
     "components/InstrumentalWaveform.tsx": 1,
-    "components/luvLink/LuvLinkHost.tsx": 1,
     "components/luvs/LuvControls.tsx": 1,
     "components/luvs/TasteExplorer.tsx": 1,
     "components/MiniPlayer.tsx": 1,

@@ -44,8 +44,14 @@ const Sleeve: React.FC<{
   const reduce = useReducedMotion();
   const d = useSharedValue(depth);
   const up = useSharedValue(lifted ? 1 : 0);
-  useEffect(() => { d.value = withTiming(depth, { duration: Motion.duration.base, easing: Motion.ease.decelerate }); }, [d, depth]);
-  useEffect(() => { up.value = withTiming(lifted ? 1 : 0, { duration: Motion.duration.base, easing: Motion.ease.decelerate }); }, [up, lifted]);
+  useEffect(() => {
+    if (reduce) { d.value = depth; return; }
+    d.value = withTiming(depth, { duration: Motion.duration.base, easing: Motion.ease.decelerate });
+  }, [d, depth, reduce]);
+  useEffect(() => {
+    if (reduce) { up.value = lifted ? 1 : 0; return; }
+    up.value = withTiming(lifted ? 1 : 0, { duration: Motion.duration.base, easing: Motion.ease.decelerate });
+  }, [up, lifted, reduce]);
   // Each sleeve under the top fans a little further left and back; the running one lifts and tilts.
   const fan = useAnimatedStyle(() => {
     if (reduce) return {};
@@ -56,8 +62,8 @@ const Sleeve: React.FC<{
     <Animated.View
       style={[styles.sleeve, { zIndex: layer }]}
       // A picked sleeve appears as its flying cover lands.
-      entering={reduce ? FadeIn.duration(Motion.duration.instant) : FadeIn.duration(Motion.duration.base).delay(transferring ? 0 : Motion.duration.flight)}
-      exiting={transferring && !reduce ? DEAL : FadeOut.duration(Motion.duration.instant)}
+      entering={reduce ? undefined : FadeIn.duration(Motion.duration.base).delay(transferring ? 0 : Motion.duration.flight)}
+      exiting={reduce ? undefined : transferring ? DEAL : FadeOut.duration(Motion.duration.instant)}
     >
       <Animated.View style={fan}><SourceCover playlist={playlist} size={SLEEVE} /></Animated.View>
     </Animated.View>
@@ -101,15 +107,21 @@ export const FlyingCover: React.FC<{
   /** Stable across renders: a new identity would restart the flight. */
   readonly onLanded: (flightKey: number) => void;
 }> = ({ playlist, from, to, flightKey, onLanded }) => {
+  const reduce = useReducedMotion();
   const t = useSharedValue(0);
   useEffect(() => {
+    if (reduce) {
+      t.value = 1;
+      onLanded(flightKey);
+      return;
+    }
     t.value = withTiming(1, { duration: Motion.duration.flight, easing: Motion.ease.emphasis }, (finished) => { if (finished) runOnJS(onLanded)(flightKey); });
-  }, [t, onLanded, flightKey]);
+  }, [t, onLanded, flightKey, reduce]);
   // Moves centre to centre and scales about the centre, so the cover lands exactly on the target.
   const dx = to.x + to.width / 2 - (from.x + from.width / 2);
   const dy = to.y + to.height / 2 - (from.y + from.height / 2);
   const ratio = to.width / from.width;
-  const style = useAnimatedStyle(() => ({
+  const style = useAnimatedStyle(() => reduce ? {} : ({
     opacity: 1 - 0.15 * t.value,
     transform: [{ translateX: dx * t.value }, { translateY: dy * t.value }, { scale: 1 + (ratio - 1) * t.value }] as const,
   }));
@@ -127,6 +139,6 @@ const styles = StyleSheet.create({
   sleeve: { position: 'absolute', top: 6, right: 4, width: SLEEVE, height: SLEEVE },
   liked: { alignItems: 'center', justifyContent: 'center' },
   count: { position: 'absolute', top: 0, right: 0, zIndex: 10, minWidth: 20, height: 20, paddingHorizontal: 5, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
-  countText: { color: Signal.waveInk, fontSize: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  countText: { color: Signal.waveInk, fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] },
   flight: { position: 'absolute', zIndex: 50 },
 });

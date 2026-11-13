@@ -4,7 +4,7 @@
  * and ending on a check. Liked Songs land in Allegra likes; a playlist becomes its own playlist.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Switch, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -15,11 +15,11 @@ import type { RowRun } from '@shared/spotifyTransfer';
 import { crateIds, spotifyTickerText } from '@shared/importCrate';
 import { connectSpotify, disconnectSpotify, fetchSpotifyPlaylists, fetchSpotifyStatus, setSpotifyDailySync, SpotifyApiError } from '../../services/spotify/spotifyApi';
 import { spotifyTransfer, spotifyTransferDeps, useSpotifyTransfer } from '../../services/spotify/spotifyTransfer';
-import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
 import { Glass, Motion, Radius, Signal, Space } from '../../constants/allegraTheme';
 import { useThrottled } from '../../hooks/useThrottled';
 import { RiseIn, Tactile } from '../allegra/motion';
 import { type Box, FlyingCover, SourceCover, SpotifyCrate } from './SpotifyCrate';
+import { ConfirmSheet } from '../../ui';
 
 const apiMessage = (error: unknown): string => error instanceof SpotifyApiError && error.status === 401
   ? 'Your Spotify connection needs attention. Reconnect to continue.'
@@ -46,7 +46,10 @@ const ago = (at: number): string => {
 const Check: React.FC<{ on: boolean }> = ({ on }) => {
   const reduce = useReducedMotion();
   const t = useSharedValue(on ? 1 : 0);
-  useEffect(() => { t.value = reduce ? withTiming(on ? 1 : 0, { duration: Motion.duration.fast }) : withSpring(on ? 1 : 0, Motion.spring.tactile); }, [on, reduce, t]);
+  useEffect(() => {
+    if (reduce) { t.value = on ? 1 : 0; return; }
+    t.value = withSpring(on ? 1 : 0, Motion.spring.tactile);
+  }, [on, reduce, t]);
   const fill = useAnimatedStyle(() => ({ opacity: t.value, transform: reduce ? [] : [{ scale: 0.6 + 0.4 * t.value }] }));
   return (
     <View style={styles.check}>
@@ -59,9 +62,13 @@ const Check: React.FC<{ on: boolean }> = ({ on }) => {
 
 /** A thin bar that grows from the left by translating a full-width fill (transform only). */
 const Progress: React.FC<{ value: number }> = ({ value }) => {
+  const reduce = useReducedMotion();
   const [width, setWidth] = useState(0);
   const t = useSharedValue(value);
-  useEffect(() => { t.value = withTiming(value, { duration: Motion.duration.slow, easing: Motion.ease.decelerate }); }, [t, value]);
+  useEffect(() => {
+    if (reduce) { t.value = value; return; }
+    t.value = withTiming(value, { duration: Motion.duration.slow, easing: Motion.ease.decelerate });
+  }, [t, value, reduce]);
   const fill = useAnimatedStyle(() => ({ transform: [{ translateX: -(1 - Math.min(1, Math.max(0, t.value))) * width }] }));
   return (
     <View style={styles.track} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
@@ -126,6 +133,7 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
   const job = useSpotifyTransfer();
   const { runs, syncing } = job;
   const [busy, setBusy] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [message, setMessage] = useState('');
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const statusRequest = useRef<AbortController | null>(null);
@@ -257,16 +265,17 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
 
   const disconnect = (): void => {
     if (!token) return;
-    Alert.alert('Disconnect Spotify?', 'Your Allegra playlists and likes stay. Scheduled transfers will stop.', [
-      { text: 'Keep connected', style: 'cancel' },
-      { text: 'Disconnect', style: 'destructive', onPress: () => {
-        setBusy(true); setMessage('');
-        void disconnectSpotify(token).then(() => {
-          spotifyTransfer.pause(); spotifyTransfer.dismiss(); spotifyTransfer.clear(); setStatus((current) => current ? { ...current, connected: false, dailyEnabled: false, playlists: [] } : current);
-          setSources([]); setSelected(new Set()); setMessage('Spotify is disconnected. Your Allegra playlists remain.');
-        }).catch((error: unknown) => setMessage(apiMessage(error))).finally(() => setBusy(false));
-      } }
-    ]);
+    setConfirmDisconnect(true);
+  };
+
+  const confirmSpotifyDisconnect = (): void => {
+    if (!token) return;
+    setConfirmDisconnect(false);
+    setBusy(true); setMessage('');
+    void disconnectSpotify(token).then(() => {
+      spotifyTransfer.pause(); spotifyTransfer.dismiss(); spotifyTransfer.clear(); setStatus((current) => current ? { ...current, connected: false, dailyEnabled: false, playlists: [] } : current);
+      setSources([]); setSelected(new Set()); setMessage('Spotify is disconnected. Your Allegra playlists remain.');
+    }).catch((error: unknown) => setMessage(apiMessage(error))).finally(() => setBusy(false));
   };
 
   const tracked = useMemo(() => new Map(status?.playlists.map((row) => [row.id, row.lastSyncedAt]) ?? []), [status]);
@@ -294,7 +303,7 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
           <Text style={styles.sub}>{status?.connected ? 'Pick what to bring. Songs are matched to Allegra’s catalog.' : 'Bring your Liked Songs and playlists over in one go.'}</Text>
         </View>
         {status?.connected ? (
-          <Tactile onPress={() => void refresh(new AbortController())} disabled={busy || syncing} hitSlop={6} accessibilityRole="button" accessibilityLabel="Refresh playlists" style={[styles.iconButton, (busy || syncing) && styles.dim]}>
+          <Tactile wrapperStyle={styles.controlTarget} onPress={() => void refresh(new AbortController())} disabled={busy || syncing} accessibilityRole="button" accessibilityLabel="Refresh playlists" style={[styles.iconButton, (busy || syncing) && styles.dim]}>
             {busy && !syncing ? <ActivityIndicator size="small" color={Signal.inkSoft} /> : <Ionicons name="refresh" size={18} color={Signal.ink} />}
           </Tactile>
         ) : null}
@@ -309,7 +318,7 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
           <>
             <View style={styles.listHead}>
               <Text style={styles.listLabel}>{selected.size > 0 ? `${selected.size} selected · ${queueSongs(queue, songTotal)}` : `${sources.length} on Spotify`}</Text>
-              <Tactile onPress={toggleAll} disabled={syncing || selectable.length === 0} pressScale={0.96} haptic="select" accessibilityRole="checkbox" accessibilityState={{ checked: allOn, disabled: syncing }} accessibilityLabel="Select all" style={[styles.allChip, allOn && styles.allChipOn]}>
+              <Tactile wrapperStyle={styles.chipTarget} onPress={toggleAll} disabled={syncing || selectable.length === 0} pressScale={0.96} haptic="select" accessibilityRole="checkbox" accessibilityState={{ checked: allOn, disabled: syncing }} accessibilityLabel="Select all" style={[styles.allChip, allOn && styles.allChipOn]}>
                 <Ionicons name={allOn ? 'checkmark-done' : 'checkmark-done-outline'} size={16} color={allOn ? Signal.waveInk : Signal.ink} />
                 <Text style={[styles.allText, allOn && styles.allTextOn]}>All</Text>
               </Tactile>
@@ -344,7 +353,7 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
                     </View>
                     <Progress value={queue.length ? doneCount / queue.length : 0} />
                   </View>
-                  <Tactile onPress={pause} accessibilityRole="button" accessibilityLabel="Pause transfer" style={styles.iconButton}><Ionicons name="pause" size={18} color={Signal.ink} /></Tactile>
+                  <Tactile wrapperStyle={styles.controlTarget} onPress={pause} accessibilityRole="button" accessibilityLabel="Pause transfer" style={styles.iconButton}><Ionicons name="pause" size={18} color={Signal.ink} /></Tactile>
                 </>
               ) : (
                 <Tactile onPress={() => void transfer()} disabled={queue.length === 0 || busy} wrapperStyle={{ flex: 1 }} accessibilityRole="button" style={[styles.primary, (queue.length === 0 || busy) && styles.dim]}>
@@ -361,7 +370,9 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
               </View>
               <Switch value={status.dailyEnabled} disabled={busy || syncing} onValueChange={(value) => void daily(value)} trackColor={{ false: Glass.fillPressed, true: Signal.wave }} thumbColor={Signal.ink} accessibilityLabel="Check daily for new songs" />
             </View>
-            <Pressable onPress={disconnect} disabled={busy || syncing} accessibilityRole="button" hitSlop={8} style={styles.disconnect}><Text style={styles.disconnectText}>Disconnect Spotify</Text></Pressable>
+            <Tactile onPress={disconnect} disabled={busy || syncing} wrapperStyle={styles.disconnectTarget} accessibilityRole="button" accessibilityLabel="Disconnect Spotify" style={styles.disconnect}>
+              <Text style={styles.disconnectText}>Disconnect Spotify</Text>
+            </Tactile>
           </>
         ) : status?.configured ? (
           <Tactile onPress={() => void connect()} disabled={busy} accessibilityRole="button" style={[styles.primary, styles.wide, busy && styles.dim]}>
@@ -373,6 +384,16 @@ export const SpotifySyncPanel: React.FC<{ readonly accountKey: string | null; re
         const playlist = byId.get(flight.id);
         return playlist ? <FlyingCover key={flight.key} playlist={playlist} from={flight.from} to={flight.to} flightKey={flight.key} onLanded={landed} /> : null;
       })}
+      <ConfirmSheet
+        visible={confirmDisconnect}
+        title="Disconnect Spotify?"
+        body="Your Allegra playlists and likes stay. Scheduled transfers will stop."
+        confirmLabel="Disconnect"
+        cancelLabel="Keep connected"
+        destructive
+        onConfirm={confirmSpotifyDisconnect}
+        onClose={() => setConfirmDisconnect(false)}
+      />
     </View>
   );
 };
@@ -381,14 +402,15 @@ const styles = StyleSheet.create({
   panel: { backgroundColor: Glass.fill, borderColor: Glass.hairline, borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.panel, padding: Space.md, gap: Space.sm },
   head: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
   brand: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
-  title: { color: Signal.ink, fontSize: 20, fontWeight: '800' },
+  title: { color: Signal.ink, fontSize: 20, fontWeight: '700' },
   sub: { color: Signal.inkMuted, fontSize: 13, lineHeight: 18 },
   message: { color: Signal.accentBright, fontSize: 13, lineHeight: 18 },
   iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
   dim: { opacity: 0.45 },
   listHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Space.xs },
   listLabel: { color: Signal.inkSoft, fontSize: 13, fontWeight: '600' },
-  allChip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 14, borderRadius: Radius.pill, backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
+  chipTarget: { minHeight: 48, justifyContent: 'center' },
+  allChip: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 48, paddingHorizontal: 14, borderRadius: Radius.pill, backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
   allChipOn: { backgroundColor: Signal.wave, borderColor: Signal.wave },
   allText: { color: Signal.ink, fontSize: 13, fontWeight: '700' },
   allTextOn: { color: Signal.waveInk },
@@ -408,11 +430,13 @@ const styles = StyleSheet.create({
   ticker: { height: 17, overflow: 'hidden' },
   tickerText: { color: Signal.inkMuted, fontSize: 12 },
   primary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Space.xs, minHeight: 52, paddingHorizontal: Space.md, borderRadius: Radius.pill, backgroundColor: Signal.wave },
-  primaryText: { color: Signal.waveInk, fontSize: 15, fontWeight: '800', flexShrink: 1 },
+  primaryText: { color: Signal.waveInk, fontSize: 15, fontWeight: '700', flexShrink: 1 },
   wide: { alignSelf: 'stretch' },
   setting: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingTop: Space.sm, marginTop: Space.xs },
   settingTitle: { color: Signal.ink, fontSize: 14, fontWeight: '600' },
-  disconnect: { alignSelf: 'center', paddingVertical: Space.xs },
+  controlTarget: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  disconnectTarget: { minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  disconnect: { minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Space.xs },
   disconnectText: { color: Signal.inkMuted, fontSize: 13, fontWeight: '600' },
 });
 

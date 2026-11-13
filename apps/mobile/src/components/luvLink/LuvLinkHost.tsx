@@ -4,12 +4,13 @@
  * join request (Let in / Decline, like Echo's notification) and room news.
  */
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
+import { StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInUp, FadeOutUp, useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Frosted from '../allegra/Frosted';
 import { Toast } from '../Toast';
-import { Signal } from '../../constants/allegraTheme';
+import { Motion, Signal } from '../../constants/allegraTheme';
+import { Tactile } from '../../ui';
 import * as Haptics from '../../utils/haptics';
 import { useLuvLinkStore } from '../../store/luvLinkStore';
 import { useAccount } from '../../services/account/AccountProvider';
@@ -22,6 +23,7 @@ import { startLuvLinkSync } from '../../services/luvLink/legacy/sync';
 export const LuvLinkHost: React.FC = () => {
   const account = useAccount();
   const insets = useSafeAreaInsets();
+  const reduce = useReducedMotion();
   const request = useLuvLinkStore(s => (s.role === 'host' ? s.joinRequests[0] : undefined));
   const notice = useLuvLinkStore(s => s.notice);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
@@ -59,8 +61,8 @@ export const LuvLinkHost: React.FC = () => {
       {request ? (
         <Animated.View
           key={request.user_id}
-          entering={FadeInUp.duration(260)}
-          exiting={FadeOutUp.duration(200)}
+          entering={reduce ? undefined : FadeInUp.duration(Motion.duration.base)}
+          exiting={reduce ? undefined : FadeOutUp.duration(Motion.duration.fast)}
           style={[styles.card, { top: insets.top + 10 }]}
           accessibilityLiveRegion="polite"
         >
@@ -68,12 +70,12 @@ export const LuvLinkHost: React.FC = () => {
           <View style={styles.cardBody}>
             <Text style={styles.cardTitle} numberOfLines={1}>{`${request.username} wants to listen along`}</Text>
             <View style={styles.cardButtons}>
-              <Pressable onPress={() => rejectJoin(request.user_id)} style={styles.btn} accessibilityRole="button">
+              <Tactile onPress={() => rejectJoin(request.user_id)} wrapperStyle={styles.btnTarget} accessibilityRole="button" accessibilityLabel="Decline join request" style={styles.btn}>
                 <Text style={styles.btnText}>Decline</Text>
-              </Pressable>
-              <Pressable onPress={() => approveJoin(request.user_id)} style={[styles.btn, styles.btnPrimary]} accessibilityRole="button">
+              </Tactile>
+              <Tactile onPress={() => approveJoin(request.user_id)} wrapperStyle={styles.btnTarget} accessibilityRole="button" accessibilityLabel="Let this person in" style={[styles.btn, styles.btnPrimary]}>
                 <Text style={[styles.btnText, styles.btnPrimaryText]}>Let in</Text>
-              </Pressable>
+              </Tactile>
             </View>
           </View>
         </Animated.View>
@@ -94,7 +96,8 @@ const styles = StyleSheet.create({
   cardBody: { padding: 14 },
   cardTitle: { color: '#fff', fontSize: 15, fontWeight: '600' },
   cardButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 10 },
-  btn: { height: 38, paddingHorizontal: 16, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
+  btnTarget: { minHeight: 48, justifyContent: 'center' },
+  btn: { minHeight: 48, paddingHorizontal: 16, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
   btnPrimary: { backgroundColor: Signal.wave },
   btnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   btnPrimaryText: { color: Signal.waveInk },

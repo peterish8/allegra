@@ -131,7 +131,7 @@ const LuvLinkPanel: React.FC<{ visible?: boolean }> = ({ visible = true }) => {
           <View style={styles.avatar}><Text style={styles.avatarText}>{member.displayName.slice(0, 1).toUpperCase()}</Text></View>
           <View style={styles.memberInfo}><Text style={styles.memberName}>{member.displayName}{member.userId === account.profile?.userId ? ' · you' : ''}</Text><Text style={styles.hint}>{member.role === 'host' ? 'Host' : member.userId === room.leaderUserId ? 'Speaker' : member.mode === 'listen' ? 'Listening' : 'Controller'}</Text></View>
           {isHost && room.mode === 'speaker' && member.userId !== room.leaderUserId ? <Button label="Make speaker" secondary onPress={() => { void run(() => setOwnedLuvLinkSpeaker(member.userId)); }} disabled={busy} /> : null}
-          {isHost && member.role !== 'host' ? <Tactile accessibilityRole="switch" accessibilityLabel={`${member.canControl ? 'Disable' : 'Allow'} controls for ${member.displayName}`} onPress={() => { void run(() => setOwnedLuvLinkController(member.userId, !member.canControl)); }}><Text style={styles.permission}>{member.canControl ? 'Controls on' : 'Controls off'}</Text></Tactile> : null}
+          {isHost && member.role !== 'host' ? <Tactile wrapperStyle={styles.permissionTarget} accessibilityRole="switch" accessibilityLabel={`${member.canControl ? 'Disable' : 'Allow'} controls for ${member.displayName}`} accessibilityState={{ checked: member.canControl }} onPress={() => { void run(() => setOwnedLuvLinkController(member.userId, !member.canControl)); }}><Text style={styles.permission}>{member.canControl ? 'Controls on' : 'Controls off'}</Text></Tactile> : null}
           {!isHost && member.userId === account.profile?.userId ? <Text style={styles.permission}>{me?.canControl ? 'Controls on' : 'Controls off'}</Text> : null}
         </View>
       ))}
@@ -143,9 +143,9 @@ const LuvLinkPanel: React.FC<{ visible?: boolean }> = ({ visible = true }) => {
           <Text style={styles.order}>{index + 1}</Text>
           <View style={styles.memberInfo}><Text numberOfLines={1} style={styles.memberName}>{entry.song.title}</Text><Text numberOfLines={1} style={styles.hint}>{entry.song.artist} · added by {entry.addedByName}</Text></View>
           <View style={styles.queueActions}>
-            <Tactile accessibilityRole="button" accessibilityLabel={`Play ${entry.song.title} in LuvLink`} disabled={busy || !me?.canControl && !isHost} onPress={() => { void run(() => playOwnedLuvLinkQueueEntry(entry.entryId)); }}><Ionicons name="play" size={18} color={Signal.wave} /></Tactile>
-            <Tactile accessibilityRole="button" accessibilityLabel={`Move ${entry.song.title} up`} disabled={index === 0 || busy || !me?.canControl && !isHost} onPress={() => { void run(() => moveOwnedLuvLinkQueueItem(entry.entryId, queue.entries[index - 1]?.entryId ?? null)); }}><Ionicons name="chevron-up" size={20} color={Signal.ink} /></Tactile>
-            <Tactile accessibilityRole="button" accessibilityLabel={`Remove ${entry.song.title}`} disabled={busy || !me?.canControl && !isHost} onPress={() => { void run(() => removeOwnedLuvLinkQueueItem(entry.entryId)); }}><Ionicons name="close" size={20} color={Signal.inkFaint} /></Tactile>
+            <Tactile wrapperStyle={styles.queueActionTarget} accessibilityRole="button" accessibilityLabel={`Play ${entry.song.title} in LuvLink`} disabled={busy || !me?.canControl && !isHost} onPress={() => { void run(() => playOwnedLuvLinkQueueEntry(entry.entryId)); }}><Ionicons name="play" size={18} color={Signal.wave} /></Tactile>
+            <Tactile wrapperStyle={styles.queueActionTarget} accessibilityRole="button" accessibilityLabel={`Move ${entry.song.title} up`} disabled={index === 0 || busy || !me?.canControl && !isHost} onPress={() => { void run(() => moveOwnedLuvLinkQueueItem(entry.entryId, queue.entries[index - 1]?.entryId ?? null)); }}><Ionicons name="chevron-up" size={20} color={Signal.ink} /></Tactile>
+            <Tactile wrapperStyle={styles.queueActionTarget} accessibilityRole="button" accessibilityLabel={`Remove ${entry.song.title}`} disabled={busy || !me?.canControl && !isHost} onPress={() => { void run(() => removeOwnedLuvLinkQueueItem(entry.entryId)); }}><Ionicons name="close" size={20} color={Signal.inkFaint} /></Tactile>
           </View>
         </View>
       ))}
@@ -178,15 +178,16 @@ const styles = StyleSheet.create({
   copy: { color: Signal.inkMuted, fontSize: 14, textAlign: 'center' },
   sectionTitle: { color: Signal.ink, fontSize: 15, fontWeight: '600', marginTop: 8 },
   hint: { color: Signal.inkMuted, fontSize: 12 },
-  input: { backgroundColor: Glass.fillLight, borderColor: Glass.hairline, borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.well, minHeight: 48, paddingHorizontal: 14, color: Signal.ink, fontSize: 16, letterSpacing: 1.3 },
+  input: { backgroundColor: Glass.fillLight, borderColor: Glass.hairline, borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.well, minHeight: 48, paddingHorizontal: 14, color: Signal.ink, fontSize: 16 },
   buttonWrap: { flex: 1 },
-  button: { minHeight: 42, paddingHorizontal: 15, borderRadius: Radius.pill, backgroundColor: Signal.wave, justifyContent: 'center', alignItems: 'center' },
+  button: { minHeight: 48, paddingHorizontal: 15, borderRadius: Radius.pill, backgroundColor: Signal.wave, justifyContent: 'center', alignItems: 'center' },
   secondary: { backgroundColor: Glass.fillLight, borderColor: Glass.hairline, borderWidth: StyleSheet.hairlineWidth },
   buttonText: { color: Signal.waveInk, fontSize: 13, fontWeight: '700' },
   secondaryText: { color: Signal.ink },
   disabled: { opacity: 0.45 },
   row: { flexDirection: 'row', gap: 9, alignItems: 'center' },
   card: { padding: 16, borderRadius: 20, backgroundColor: Glass.fillLight, gap: 10 },
+  // Room invite codes use wider tracking to help listeners scan and read them accurately.
   code: { color: Signal.ink, fontSize: 27, fontWeight: '700', letterSpacing: 5 },
   qr: { alignSelf: 'flex-start', padding: 8, borderRadius: 14, backgroundColor: '#fff' },
   roomHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -197,6 +198,8 @@ const styles = StyleSheet.create({
   memberInfo: { flex: 1 },
   memberName: { color: Signal.ink, fontSize: 14, fontWeight: '600' },
   permission: { color: Signal.wave, fontSize: 11, fontWeight: '600' },
+  permissionTarget: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  queueActionTarget: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   queueHeading: { gap: 3 },
   consent: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, borderRadius: 14, backgroundColor: Glass.fillLight },
   nowPlaying: { padding: 12, borderRadius: 14, backgroundColor: Glass.fillLight },
