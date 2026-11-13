@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { UnifiedSong } from '../types/song';
 import { downloadManager } from '../services/DownloadManager';
+import { matchKey } from '@shared/songRef';
 
 // Per-item throttle for progress-only store writes — max 4/sec (250ms)
 const PROGRESS_THROTTLE_MS = 250;
@@ -30,6 +31,8 @@ interface DownloadQueueStore {
   updateItem: (id: string, updates: Partial<QueueItem>) => void;
   removeItem: (id: string) => void;
   clearCompleted: () => void;
+  /** Drops the finished or failed items of a song that was deleted from the library, so its Download button is plain again. */
+  removeFinishedFor: (song: { title: string; artist?: string; originId?: string }) => void;
   setProcessing: (isProcessing: boolean) => void;
 
   pauseItem: (id: string) => void;
@@ -85,7 +88,7 @@ export const mergeQueue = (
 export const visibleDownloads = <T extends Pick<QueueItem, 'playlistOnly'>>(queue: readonly T[]): T[] =>
   queue.filter(item => !item.playlistOnly);
 
-export const useDownloadQueueStore = create<DownloadQueueStore>((set) => ({
+export const useDownloadQueueStore = create<DownloadQueueStore>((set, get) => ({
   queue: [],
   isProcessing: false,
 
@@ -140,6 +143,14 @@ export const useDownloadQueueStore = create<DownloadQueueStore>((set) => ({
     set(state => ({
       queue: state.queue.filter(item => item.status !== 'completed')
     }));
+  },
+
+  removeFinishedFor: (song) => {
+    const key = matchKey(song.title, song.artist);
+    const finished = get().queue.filter(item =>
+      (item.status === 'completed' || item.status === 'failed') &&
+      (matchKey(item.song.title, item.song.artist) === key || (!!song.originId && item.id === song.originId)));
+    for (const item of finished) get().removeItem(item.id);
   },
 
   setProcessing: (isProcessing: boolean) => set({ isProcessing }),

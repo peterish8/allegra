@@ -50,7 +50,10 @@ export const downloadStateOf = (
     case 'paused':
       return { phase: 'paused', progress };
     case 'completed':
-      return { phase: 'saved', progress: 1 };
+      // A finished download counts while the library holds the song (BackgroundDownloader adds the row before it marks
+      // the item done). After the listener deletes the song the item is stale: the song is not on the phone any more
+      // and its Download button comes back.
+      return inLibrary ? { phase: 'saved', progress: 1 } : { phase: 'idle', progress: 0 };
     case 'failed':
       return inLibrary ? { phase: 'saved', progress: 1 } : { phase: 'failed', progress: 0 };
     default:

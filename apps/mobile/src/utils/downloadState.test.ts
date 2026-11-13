@@ -38,8 +38,13 @@ describe('downloadStateOf', () => {
     expect(downloadStateOf({ status: 'staging', progress: 0 }, false).phase).toBe('queued');
     expect(downloadStateOf({ status: 'downloading', progress: 0.42 }, false)).toEqual({ phase: 'downloading', progress: 0.42 });
     expect(downloadStateOf({ status: 'paused', progress: 0.3 }, false).phase).toBe('paused');
-    expect(downloadStateOf({ status: 'completed', progress: 1 }, false).phase).toBe('saved');
+    expect(downloadStateOf({ status: 'completed', progress: 1 }, true).phase).toBe('saved');
     expect(downloadStateOf({ status: 'failed', progress: 0 }, false).phase).toBe('failed');
+  });
+
+  it('offers Download again once a finished download has been deleted from the library', () => {
+    // The queue item stays "completed" in memory after the song is deleted; only the library says what is on the phone.
+    expect(downloadStateOf({ status: 'completed', progress: 1 }, false)).toEqual({ phase: 'idle', progress: 0 });
   });
 
   it('shows a song already on the phone as saved', () => {
