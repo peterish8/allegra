@@ -31,6 +31,7 @@ import { useArtworkPalette } from '../components/allegra/useArtworkPalette';
 import AllegraAccountSettings from '../components/settings/AllegraAccountSettings';
 import DynamicIslandSettings from '../components/settings/DynamicIslandSettings';
 import LuvLinkSettings from '../components/settings/LuvLinkSettings';
+import DownloadsFolderRows from '../components/settings/DownloadsFolderRows';
 import SettingsGlow from '../components/settings/SettingsGlow';
 import * as Kit from '../components/settings/SettingsKit';
 import { Action, Choice, JumpChips, Row, Section, SettingsAccordion } from '../components/settings/SettingsKit';
@@ -439,6 +440,7 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
         <LuvLinkSettings onLayout={at('together')} onNotice={setNotice} />
 
         <Section id="library" summary={summaries.library} icon="folder-open-outline" title="Library and data" lead="Your songs, backups and clean-up." onLayout={at('library')}>
+          <DownloadsFolderRows onNotice={setNotice} />
           <Action label="Add songs from this phone" hint="Find music files already on your device." onPress={handleImportLocalAudio} />
           <Action label="Export library" hint="Songs, lyrics and playlists as one file." onPress={handleExport} />
           <Action label="Import a backup" onPress={handleImport} />

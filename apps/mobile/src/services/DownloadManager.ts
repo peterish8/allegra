@@ -13,6 +13,8 @@ import { StagingSong } from '../hooks/useSongStaging';
 import { lyricaService } from '../services/LyricaService';
 import { getNativeModule, nativeAddListener } from './nativeModule';
 import type { ReceiptMeta } from './downloadReceipts';
+import { songBase } from './folder/folderNames';
+import { buildSidecar } from './folder/folderSidecar';
 
 // Module is already an EventEmitter on Expo SDK 52+ — do not wrap with EventEmitter.
 const DownloaderModule = getNativeModule<any>('Downloader');
@@ -40,6 +42,30 @@ export function clearDownloadReceipt(id: string): void {
     } catch {
         // Cleared at the next start instead; adding the row again is a no-op.
     }
+}
+
+/** What the worker needs to copy a song into the listener's downloads folder: its file name and the JSON kept beside it. */
+function folderDetails(
+    staging: StagingSong,
+    origin: { originId?: string; coverRemoteUri?: string },
+    hasCover: boolean,
+): { base: string; sidecar: string } {
+    const base = songBase(staging.title, staging.artist);
+    const sidecar = buildSidecar(
+        {
+            id: staging.id,
+            title: staging.title,
+            artist: staging.artist,
+            album: staging.album || undefined,
+            duration: staging.duration,
+            originId: origin.originId,
+            coverRemoteUri: origin.coverRemoteUri,
+            lyrics: staging.selectedLyrics || undefined,
+        },
+        base,
+        hasCover,
+    );
+    return { base, sidecar };
 }
 
 class DownloadManager {
@@ -166,6 +192,7 @@ class DownloadManager {
                     coverFallback: staging.selectedCoverUri || undefined,
                     originId: origin.originId,
                     coverRemoteUri: origin.coverRemoteUri,
+                    folder: safDir ? folderDetails(staging, origin, coverUrl !== null) : undefined,
                 };
 
                 try {
