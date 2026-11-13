@@ -113,7 +113,9 @@
   color: var(--ink); background: rgba(255, 255, 255, .08); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
   transition: transform var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard);
 }
-.dj-chip-button:hover { transform: translateY(-1px); }
+@media (hover: hover) and (pointer: fine) {
+  .dj-chip-button:hover { transform: translateY(-1px); }
+}
 .dj-chip-button:active { transform: scale(.97); }
 .dj-chip-button--accent { border-color: transparent; color: #15170c; background: var(--wave); }
 
@@ -167,7 +169,9 @@
 .dj-send-button.is-stop { color: #111214; background: var(--ink); }
 /* Send: a plain arrow in a white circle; faint until there is something to send. */
 .dj-send-button { width: 34px; height: 34px; margin-left: 2px; color: #111214; background: var(--ink); }
-.dj-send-button:not(:disabled):hover { transform: scale(1.06); }
+@media (hover: hover) and (pointer: fine) {
+  .dj-send-button:not(:disabled):hover { transform: scale(1.06); }
+}
 .dj-send-button:disabled { opacity: .28; cursor: default; }
 .dj-input-wrap button:focus-visible { outline: 2px solid rgba(255, 255, 255, .82); outline-offset: 2px; }
 .dj-spin { animation: dj-rotate var(--d-spin) linear infinite; }
@@ -313,7 +317,9 @@
   transition: transform var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard);
 }
 .dj-energy-bar.is-lit::before { background: var(--ink); }
-.dj-energy-bar:hover::before { transform: scaleY(calc(.3 + var(--bar, 3) * .14)) scaleX(1.3); }
+@media (hover: hover) and (pointer: fine) {
+  .dj-energy-bar:hover::before { transform: scaleY(calc(.3 + var(--bar, 3) * .14)) scaleX(1.3); }
+}
 .dj-energy-word { min-width: 58px; color: var(--ink); font-size: 12.5px; font-weight: 600; }
 
 /* Quiet: what the DJ remembers. */
@@ -329,7 +335,10 @@
   color: var(--ink-soft, var(--ink-muted)); background: transparent; font: inherit; font-size: 12.5px; cursor: pointer;
   transition: transform var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard);
 }
-.dj-starter:hover { border-color: rgba(255, 255, 255, .12); color: var(--ink); background: var(--dj-hover); transform: translateY(-1px); }
+.dj-starter:hover { border-color: rgba(255, 255, 255, .12); color: var(--ink); background: var(--dj-hover); }
+@media (hover: hover) and (pointer: fine) {
+  .dj-starter:hover { transform: translateY(-1px); }
+}
 .dj-chip button:focus-visible, .dj-starter:focus-visible, .dj-chip-button:focus-visible, .dj-mode-option:focus-visible, .dj-energy-bar:focus-visible { outline: 2px solid rgba(255, 255, 255, .82); outline-offset: 2px; }
 
 /* The set at a glance, at the top of the stage: what is playing for you and in what shape. */
@@ -358,7 +367,9 @@
   color: #15170c; background: var(--wave); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
   transition: transform var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard);
 }
-.dj-primary:hover { transform: translateY(-1px); }
+@media (hover: hover) and (pointer: fine) {
+  .dj-primary:hover { transform: translateY(-1px); }
+}
 .dj-primary:active { transform: scale(.97); }
 .dj-primary:disabled { opacity: .42; cursor: default; transform: none; }
 .dj-draft-name input { width: min(220px, 44cqw); height: 36px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 999px; color: var(--ink); background: rgba(255, 255, 255, .06); font: inherit; font-size: 12px; }

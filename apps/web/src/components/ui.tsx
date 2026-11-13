@@ -49,7 +49,7 @@ export function IconButton({ icon: Icon, label, active = false, solid = false, c
   return (
     <button
       {...press}
-      className={`tactile-icon-control inline-flex items-center justify-center w-11 h-11 rounded-pill border border-border bg-surface-raised transition-transform duration-fast ease-press ${active ? 'text-accent-deep border-accent-line' : 'text-ink-soft hover:text-ink hover:bg-surface-hover'} ${className}`}
+      className={`tactile-icon-control hit-44 inline-flex items-center justify-center w-11 h-11 rounded-pill border border-border bg-surface-raised transition-transform duration-fast ease-press ${active ? 'text-accent-deep border-accent-line' : 'text-ink-soft hover:text-ink hover:bg-surface-hover'} ${className}`}
       aria-label={label}
       title={label}
       {...props}
