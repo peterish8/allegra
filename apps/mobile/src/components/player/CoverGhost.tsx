@@ -32,15 +32,13 @@ export const CoverGhost: React.FC<Props> = ({ progress, to, toRadius, fadeOut = 
     const p = progress.value;
     const from = playerCoverFrom.value;
     const frame = coverFrame(p, from, to);
-    // The cover rides inside the rising surface: never above its top edge (the surface is linear in progress).
-    const top = Math.max(frame.y, (from.y - 12) * (1 - p) + 10);
     const shown = from.width > 0 && ghostVisible(p);
     const tail = fadeOut ? 1 - Math.min(1, Math.max(0, (p - 0.9) / 0.1)) : 1;
     return {
       opacity: shown ? tail : 0,
       transform: [
         { translateX: frame.x + (frame.width - to.width) / 2 },
-        { translateY: top + (frame.height - to.height) / 2 },
+        { translateY: frame.y + (frame.height - to.height) / 2 },
         { scaleX: frame.width / to.width },
         { scaleY: frame.height / to.height },
       ] as const,

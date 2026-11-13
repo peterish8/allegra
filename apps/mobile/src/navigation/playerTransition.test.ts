@@ -30,8 +30,16 @@ describe('the cover on its way', () => {
     expect(coverFrame(0, mini, card)).toEqual(mini);
     expect(coverFrame(1, mini, card)).toEqual(card);
     const half = coverFrame(0.5, mini, card);
-    expect(half.width).toBeCloseTo(236.8, 1);
-    expect(half.y).toBeCloseTo(325.1, 1);
+    expect(half.width).toBeCloseTo(194, 1);
+    expect(half.y).toBeCloseTo(410, 1);
+  });
+
+  it('stays inside the sheet as it travels from the measured mini cover', () => {
+    // Sheet starts at y=680; the cover starts 20px inside it and lands at y=0.
+    const hero = { x: 0, y: 0, width: 360, height: 400 };
+    for (const p of [0.1, 0.25, 0.5, 0.75, 0.9]) {
+      expect(coverFrame(p, mini, hero).y).toBeGreaterThanOrEqual(680 * (1 - p));
+    }
   });
 
   it('keeps a square cover square all the way', () => {
