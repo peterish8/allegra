@@ -1,0 +1,45 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- LuvLyrics island: the optional add-on to the LuvLyrics app. It draws the island over other apps and drives
+       LuvLyrics' player. Nothing here is in the LuvLyrics app itself, so that app installs without an
+       accessibility service (which Play Protect and Google Pay treat as a fraud risk). -->
+
+  <!-- Android 11+ hides other apps unless they are named: the island opens LuvLyrics and reaches its media session. -->
+  <queries>
+    <package android:name="com.lyricflow.app"/>
+  </queries>
+
+  <application
+      android:label="@string/app_name"
+      android:allowBackup="false"
+      android:supportsRtl="true"
+      android:theme="@style/IslandTheme">
+
+    <!-- Where the listener turns the island on and sets how it looks. -->
+    <activity android:name=".island.IslandSettingsActivity" android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
+
+    <!-- The island over every app. An accessibility overlay is the only window an app may put above the status
+         bar and take taps in; the listener turns it on in Settings → Accessibility. It reads no screen content
+         (res/xml/island_accessibility.xml). -->
+    <service android:name=".island.IslandService"
+        android:label="@string/island_service_label"
+        android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService"/>
+      </intent-filter>
+      <meta-data android:name="android.accessibilityservice" android:resource="@xml/island_accessibility"/>
+    </service>
+
+    <!-- LuvLyrics tells the island when its own screen is in front or has drawn (the island steps aside). -->
+    <receiver android:name=".island.IslandAppStateReceiver" android:exported="true">
+      <intent-filter>
+        <action android:name="com.lyricflow.island.APP_STATE"/>
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

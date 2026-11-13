@@ -13,6 +13,19 @@ describe('parseRelease', () => {
     expect(build?.downloadUrl).toBe('https://example.com/LuvLyrics.apk');
   });
 
+  it('offers LuvLyrics itself, never the island add-on listed beside it', () => {
+    const build = parseRelease({
+      published_at: '2026-09-27T18:49:06Z',
+      assets: [
+        { name: 'LuvLyricsIsland.apk', size: 1_000, browser_download_url: 'https://example.com/LuvLyricsIsland.apk' },
+        { name: 'LuvLyrics.apk', size: 60_000_000, browser_download_url: 'https://example.com/LuvLyrics.apk' },
+      ],
+    });
+    expect(build?.downloadUrl).toBe('https://example.com/LuvLyrics.apk');
+    expect(build?.sizeBytes).toBe(60_000_000);
+    expect(parseRelease({ published_at: '2026-09-27T18:49:06Z', assets: [{ name: 'LuvLyricsIsland.apk', browser_download_url: 'https://example.com/i.apk' }] })?.downloadUrl).toBe(LATEST_APK_URL);
+  });
+
   it('falls back to the stable download link when the release lists no APK', () => {
     expect(parseRelease({ published_at: '2026-09-27T18:49:06Z', assets: [] })?.downloadUrl).toBe(LATEST_APK_URL);
   });

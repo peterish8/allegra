@@ -57,10 +57,13 @@ class MainActivity : ReactActivity() {
 
   override fun onResume() {
     super.onResume()
+    // The optional island add-on steps aside while this app is in front (addon/IslandAddon.kt).
+    com.lyricflow.app.addon.IslandAddon.appInFront(this, true)
     FrameWatch.start(this)
   }
 
   override fun onPause() {
+    com.lyricflow.app.addon.IslandAddon.appInFront(this, false)
     FrameWatch.stop()
     super.onPause()
   }

@@ -1,0 +1,7 @@
+<resources>
+    <item name="island_previous" type="id" />
+    <item name="island_play_pause" type="id" />
+    <item name="island_next" type="id" />
+    <item name="island_open_app" type="id" />
+    <item name="island_playlists" type="id" />
+</resources>
