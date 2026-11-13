@@ -126,6 +126,8 @@
   --motion-duration-instant: var(--d-instant);
   --motion-duration-fast: var(--d-fast);
   --motion-ease-standard: var(--ease-standard);
+  /* Under prefers-reduced-motion every animation and transition collapses to this: finished, but still fires its end events. */
+  --d-reduced: 0.01ms;
   --d-instant: 100ms;
   --d-fast: 160ms;
   --d-base: 240ms;

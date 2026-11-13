@@ -908,6 +908,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .am-dj.is-awake::after, .dj-mic-button[data-state='listening'], .dj-quick-icon.is-listening { animation-name: dj-live; }
+  /* The thinking dots stop hopping and just fade, one after another (delays stay on :nth-child). */
+  .dj-dots i { animation-name: dj-live; animation-direction: alternate; }
 }
 
 /* ---------- Entrance: the stage rises, the DJ pops in, then the console and its row ---------- */
