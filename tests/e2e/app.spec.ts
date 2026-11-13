@@ -444,6 +444,21 @@ test.describe('reduced motion', () => {
   });
 });
 
+test('LuvLink: every button is at least 44px and none is named by a glyph', async ({ page }) => {
+  await page.goto('/luvlink');
+  await expect(page.locator('.luvlink-page')).toBeVisible({ timeout: 30_000 });
+  const problems = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('.luvlink-page button, .luvlink-page [role="button"]')].flatMap((button) => {
+      const box = button.getBoundingClientRect();
+      const name = (button.getAttribute('aria-label') ?? button.textContent ?? '').trim();
+      const issues: string[] = [];
+      if (box.width < 44 || box.height < 44) issues.push(`${Math.round(box.width)}x${Math.round(box.height)}`);
+      if (name.length > 0 && !/[\p{L}\p{N}]/u.test(name)) issues.push(`glyph label "${name}"`);
+      return issues.length ? [`${name || '(no name)'}: ${issues.join(', ')}`] : [];
+    }));
+  expect(problems).toEqual([]);
+});
+
 test('Library: the playlist layout toggle works from the keyboard and the choice survives a reload', async ({ page }) => {
   await page.goto('/library');
   const toggle = page.getByRole('group', { name: 'Playlist layout' });

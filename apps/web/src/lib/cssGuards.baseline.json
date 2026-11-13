@@ -21,14 +21,14 @@
   },
   "undefinedCustomProperty": {},
   "ungatedHoverTransform": {
-    "app.css": 22,
+    "app.css": 21,
     "blend.css": 1,
     "components.css": 3,
     "dj.css": 2,
     "global.css": 16
   },
   "smallFontSize": {
-    "app.css": 67,
+    "app.css": 63,
     "blend.css": 5,
     "components.css": 6,
     "dj.css": 19,
@@ -39,7 +39,7 @@
     "components.css": 4
   },
   "rawColor": {
-    "app.css": 1134,
+    "app.css": 1128,
     "blend.css": 152,
     "components.css": 161,
     "dj.css": 203,
