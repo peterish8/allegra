@@ -143,9 +143,14 @@ function parseScrobbleOutcome(json: unknown, count: number): ScrobbleOutcome {
   const raw = scrobbles.scrobble;
   const entries: unknown[] = Array.isArray(raw) ? raw : isRecord(raw) ? [raw] : [];
   // Entries come back in submission order. If their count differs from the request, positions
-  // cannot be mapped to rows safely, so the batch is treated as unreadable and retried rather than
-  // dropping a row Last.fm may not have stored.
-  if (entries.length !== count) throw unreadable('track.scrobble');
+  // cannot be mapped to rows. When the totals say everything was accepted and nothing ignored, the
+  // positions do not matter and the batch is a success (throwing here would resend, and so risk
+  // duplicating, listens Last.fm already stored). Otherwise the batch is unreadable and retried
+  // rather than dropping a row Last.fm may not have stored.
+  if (entries.length !== count) {
+    if (accepted === count && numberish(attr?.ignored) === 0) return { accepted, ignored: [] };
+    throw unreadable('track.scrobble');
+  }
   const ignored = entries.flatMap((entry, index) => {
     const message = isRecord(entry) ? entry.ignoredMessage : undefined;
     const code = isRecord(message) ? numberish(message.code) : undefined;

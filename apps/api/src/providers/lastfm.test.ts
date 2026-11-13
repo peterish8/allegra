@@ -184,13 +184,25 @@ test('the single-object and array forms of a scrobble response both parse', asyn
 
 test('a scrobble response whose entries do not match the request is unreadable, so it is retried', async () => {
   const { fetchImpl } = fakeLastfm(() => ({
-    json: { scrobbles: { '@attr': { accepted: '2', ignored: '0' }, scrobble: [{ ignoredMessage: { code: '0' } }] } }
+    json: { scrobbles: { '@attr': { accepted: '1', ignored: '1' }, scrobble: [{ ignoredMessage: { code: '1' } }] } }
   }));
   const client = new LastfmClient({ apiKey: API_KEY, secret: SECRET, fetchImpl });
   await assert.rejects(client.scrobble('SESSIONKEY', [
     { artist: 'A', track: 'B', timestamp: 1 },
     { artist: 'C', track: 'D', timestamp: 2 }
   ]), (error: unknown) => error instanceof Error && !(error instanceof LastfmError));
+});
+
+test('missing entries still succeed when the totals say every listen was accepted, so nothing is resent', async () => {
+  const { fetchImpl } = fakeLastfm(() => ({
+    json: { scrobbles: { '@attr': { accepted: '2', ignored: '0' } } }
+  }));
+  const client = new LastfmClient({ apiKey: API_KEY, secret: SECRET, fetchImpl });
+  const outcome = await client.scrobble('SESSIONKEY', [
+    { artist: 'A', track: 'B', timestamp: 1 },
+    { artist: 'C', track: 'D', timestamp: 2 }
+  ]);
+  assert.deepEqual(outcome, { accepted: 2, ignored: [] });
 });
 
 test('a scrobble batch must hold between 1 and 50 listens and sends nothing otherwise', async () => {
