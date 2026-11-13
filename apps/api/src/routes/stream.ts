@@ -1,5 +1,6 @@
 import { Router } from 'express';
 
+import { correlationId } from '../lib/diagnostics.js';
 import type { StreamResolver } from '../lib/streamResolver.js';
 import { sendFailure, songId } from './common.js';
 
@@ -12,7 +13,7 @@ export function streamRouter(stream: StreamResolver): Router {
       return;
     }
     try {
-      await stream.pipe(id, request.header('range'), response);
+      await stream.pipe(id, request.header('range'), response, correlationId('str', request.header('x-vercel-id')));
     } catch (error) {
       sendFailure(response, error);
     }
