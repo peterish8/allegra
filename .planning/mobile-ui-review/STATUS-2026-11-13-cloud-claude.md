@@ -12,6 +12,8 @@ branch `backup/pre-kotlin-migration-2026-11-12` (= `e2699dc`). Nothing below tou
 | One song menu | 1.55.0 | 90 | `songActionRows.test` (model, 12), `MiniSongMenu.test` (presenter), jest | the sheet from a playlist row, a search row, the mini player, Now Playing ellipsis |
 | Playlist header | 1.56.0 | 90 | `findReveal.test`, source guards | the pull-down on a device (Android overscroll, FlashList scroll restore, short lists) |
 | Scan result card | 1.57.0 | 90 | `scanFlow.test`, `scanResolve.test`, `sharedCache.test` | a real scan of an app-made code; the animation |
+| Classic bar skip buttons on the main thread | 1.59.0 | 90 | `miniPlayerSurface.test`, jest | a tap on a device |
+| Mini player swipe skips in Kotlin (setting, off by default) | 1.60.0 | 90 | `MiniSwipeTest.kt` and `nativeSwipeSkip.test.ts` on the same cases, jest, CI | a swipe on a device; double skip or missed skip |
 | Finger-tracked cover and deck | 1.58.0 | 90 | `coverGesture.test` (rules), source guards, worklet-safety test | gesture feel; 60 fps; interrupting mid-turn |
 
 ## Decisions taken (owner defaults from the brief)
@@ -51,6 +53,9 @@ Mobile APK (Build APK, then "Opens on an emulator", the launch gate) all passed.
 4. Cover: double tap the playlist cover, and drag across it sideways. It turns under the finger and springs. Swipe the
    deck, flick it, grab it mid-spring. Reduce Motion on: the turn is a fade.
 5. Native transport controls on the mini player and Now Playing (HEVC canvas video, release build) as before.
+6. Settings, Playback, "Native mini player swipes": switch it on, swipe the mini player left and right (it should skip once
+   per swipe, the title follows the finger), swipe up (still opens the player), long press (song menu), tap (opens
+   the player). Switch it off and compare. If it double-skips or misses, turn it off and tell me which.
 
 ## Full-Kotlin request
 
