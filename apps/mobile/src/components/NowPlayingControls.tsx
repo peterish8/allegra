@@ -56,6 +56,7 @@ import { shouldUseNativeScrubber } from './player/nativeScrubberProps';
 import NativeSongActions, { nativeSongActionsAvailable } from './player/NativeSongActions';
 import { likeLabelOf, shouldUseNativeSongActions, type SongAction } from './player/nativeSongActionsProps';
 import { TIME_ROW_STYLE, TIME_TEXT_STYLE } from './player/scrubberLayout';
+import { FULLSCREEN_FOOTER_TOP, fullscreenFooterPad } from './player/fullscreenFooter';
 
 interface NowPlayingControlsProps {
   animatedStyle: React.ComponentProps<typeof Animated.View>['style'];
@@ -398,7 +399,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   return (
     <Animated.View
       // Pinned to the bottom. Its size never changes with lyrics: the volume row fades in place (ROWS_MOVE).
-      style={[styles.container, animatedStyle]}
+      style={[styles.container, lyricsFullscreen && styles.containerCompact, animatedStyle]}
       pointerEvents={controlsVisible ? 'box-none' : 'none'}
       onLayout={e => { boxY.value = e.nativeEvent.layout.y; syncDock(); }}
     >
@@ -408,7 +409,10 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
       </Animated.View>
 
       {/* Echo keeps the bottom row a clear step above the system bar. */}
-      <Animated.View style={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 14 }, liftStyle]} pointerEvents="box-none">
+      <Animated.View
+        style={[styles.content, { paddingBottom: lyricsFullscreen ? fullscreenFooterPad(insets.bottom) : Math.max(insets.bottom, 16) + 14 }, liftStyle]}
+        pointerEvents="box-none"
+      >
         <Animated.View style={[dropStyle, nativeActions && styles.metaRowNative]} pointerEvents="box-none">
         <Animated.View
           style={[styles.metaRow, nativeActions && styles.metaRowNative]}
@@ -431,17 +435,20 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
                 <SwapMarquee style={styles.title} key={swapMarqueeKey(songId, currentSongTitle || 'Not playing')} songId={songId} direction={songDirection} active={focused} speed={PLAYER_TITLE_SPEED}
                   restMs={PLAYER_TITLE_REST_MS}>{currentSongTitle || 'Not playing'}</SwapMarquee>
               </Tactile>
+              {/* Fullscreen lyrics keep only the song's name beside the cover. */}
+              {lyricsFullscreen ? null : (
               <Tactile onPress={onArtistPress} disabled={!onArtistPress} accessibilityRole="button" accessibilityLabel="Open artist" style={styles.swapLineSmall}>
                 <SwapMarquee style={styles.artist} key={swapMarqueeKey(songId, currentSongArtist || 'Unknown artist')} songId={songId} direction={songDirection} active={focused} speed={PLAYER_TITLE_SPEED}
                   restMs={PLAYER_ARTIST_REST_MS}>{currentSongArtist || 'Unknown artist'}</SwapMarquee>
               </Tactile>
+              )}
             </Animated.View>
           </View>
 
           {nativeActions ? (
             <NativeSongActions
               fullscreen={onEnterLyricsFullscreen ? (lyricsFullscreen ? 'exit' : 'enter') : 'none'}
-              hasMore={!!onMorePress}
+              hasMore={!!onMorePress && !lyricsFullscreen}
               liked={isCurrentSongLiked}
               saving={isLikeSaving}
               likeLabel={likeLabelOf(isCurrentSongLiked, isLikeSaving)}
@@ -463,7 +470,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
               <MaterialCommunityIcons name={lyricsFullscreen ? 'fullscreen-exit' : 'fullscreen'} size={19} color={INK} />
             </Tactile>
           ) : null}
-          {onMorePress ? (
+          {onMorePress && !lyricsFullscreen ? (
             <Tactile
               onPress={e => { tick('light'); onMorePress(e); }}
               hitSlop={8}
@@ -491,7 +498,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
           )}
         </Animated.View>
 
-        <Animated.View style={styles.scrubber}>
+        <Animated.View style={[styles.scrubber, lyricsFullscreen && styles.scrubberCompact]}>
           {nativeScrubber && localSongId ? (
             <NativeScrubber
               songId={localSongId}
@@ -513,6 +520,8 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
           )}
         </Animated.View>
 
+        {/* Fullscreen lyrics drop the transport and the rows under it: cover, name, exit, like and the scrubber stay. */}
+        {lyricsFullscreen ? null : (
         <Animated.View style={styles.transport} onLayout={e => { transportEnd.value = e.nativeEvent.layout.y + e.nativeEvent.layout.height; }}>
             <>
               <View style={styles.transportSlot}>
@@ -534,8 +543,10 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
               </View>
             </>
         </Animated.View>
+        )}
         </Animated.View>
 
+        {lyricsFullscreen ? null : (
         <Animated.View style={[lowerStyle, nativeFooter && styles.lowerNative]} pointerEvents={upNextOpen ? 'none' : 'box-none'}>
 
 
@@ -597,6 +608,7 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
         </View>
         )}
         </Animated.View>
+        )}
       </Animated.View>
     </Animated.View>
   );
@@ -606,6 +618,8 @@ const CONTAINER_PAD_TOP = 40;
 
 const styles = StyleSheet.create({
   container: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 15, paddingTop: CONTAINER_PAD_TOP },
+  // Fullscreen lyrics: a slim footer (NowPlayingLyricsArea FULLSCREEN_FOOTER_BASE adds up to this).
+  containerCompact: { paddingTop: FULLSCREEN_FOOTER_TOP },
   content: { paddingHorizontal: CONTENT_PAD },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // The native buttons carry their 8 dp hit slop outside the row's right edge: Android hands a child only the touches
@@ -633,6 +647,7 @@ const styles = StyleSheet.create({
   // Echo's rhythm: 24 between the title and the bar, 24 under the times,
   // ~30 between the transport and the bottom row.
   scrubber: { marginTop: 24 },
+  scrubberCompact: { marginTop: 10 },
   // Shared with the native scrubber's spacer, so both are the same height.
   timeRow: TIME_ROW_STYLE,
   time: TIME_TEXT_STYLE,
