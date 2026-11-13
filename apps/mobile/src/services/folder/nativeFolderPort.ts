@@ -5,7 +5,7 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getNativeModule } from '../nativeModule';
-import type { FolderEntry, FolderPort } from './libraryFolder';
+import type { FolderEntry, FolderPort, FolderSongOutcome } from './libraryFolder';
 
 interface FolderNative {
   exportToFolder(
@@ -16,6 +16,8 @@ interface FolderNative {
     sourceUri: string | null,
     text: string | null,
   ): Promise<string>;
+  exportSong(treeUri: string, song: string): Promise<FolderSongOutcome>;
+  renameInFolder(treeUri: string, path: string[], from: string, to: string): Promise<boolean>;
   listFolder(treeUri: string, path: string[]): Promise<FolderEntry[]>;
   folderWritable(treeUri: string): boolean;
 }
@@ -23,7 +25,7 @@ interface FolderNative {
 const native = (): FolderNative | null => (Platform.OS === 'android' ? getNativeModule<FolderNative>('Downloader') : null);
 
 /** Whether this build can keep a downloads folder at all (Android with the native module). */
-export const folderSupported = (): boolean => native() !== null && typeof native()?.exportToFolder === 'function';
+export const folderSupported = (): boolean => native() !== null && typeof native()?.exportSong === 'function';
 
 /** Whether the app still holds the folder's permission; false after an uninstall or when the listener removed it. */
 export function folderStillGranted(treeUri: string): boolean {
@@ -45,6 +47,11 @@ export function nativeFolderPort(treeUri: string): FolderPort {
     readText: uri => FileSystem.readAsStringAsync(uri),
     write: (path, name, mime, source) =>
       module.exportToFolder(treeUri, path, name, mime, 'uri' in source ? source.uri : null, 'text' in source ? source.text : null),
+    exportSong: async song => {
+      const outcome = await module.exportSong(treeUri, JSON.stringify(song));
+      return { base: outcome.base, audioName: outcome.audioName, audioUri: outcome.audioUri, coverName: outcome.coverName ?? null };
+    },
+    rename: (path, from, to) => module.renameInFolder(treeUri, path, from, to),
   };
 }
 

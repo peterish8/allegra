@@ -21,10 +21,19 @@ export interface ReceiptMeta {
   /** The catalog's https cover, the one that travels to other devices. */
   coverRemoteUri?: string;
   /**
-   * Only for a download copied into the listener's downloads folder: the file name and the JSON kept beside the
-   * audio (services/folder/). The worker writes them; a receipt does not read them back.
+   * Only for a download copied into the listener's downloads folder: the file name (the song's title) and the
+   * details the worker writes into the audio file's tags and the JSON kept beside it (services/folder/). A receipt
+   * does not read them back.
    */
-  folder?: { base: string; sidecar: string };
+  folder?: {
+    base: string;
+    title: string;
+    artist: string;
+    album?: string;
+    duration: number;
+    originId?: string;
+    coverRemoteUri?: string;
+  };
 }
 
 /** A finished download, as the worker wrote it. */

@@ -46,7 +46,11 @@ export function lyricsToLrc(lines: readonly LyricLine[] | undefined): string {
     .join('\n');
 }
 
-export function buildSidecar(source: SidecarSource, base: string, hasCover: boolean): string {
+/**
+ * A song's details file. Only used when the app itself rewrites one (a song renamed from "Artist - Title" to its title);
+ * a song copied into the folder gets its file from the native side, in the same shape.
+ */
+export function buildSidecar(source: SidecarSource, files: { audio: string; cover?: string }): string {
   const sidecar: Sidecar = {
     v: 1,
     id: source.id,
@@ -57,8 +61,8 @@ export function buildSidecar(source: SidecarSource, base: string, hasCover: bool
     originId: source.originId || undefined,
     coverRemoteUri: source.coverRemoteUri || undefined,
     lyrics: source.lyrics || undefined,
-    file: `${base}.mp3`,
-    cover: hasCover ? `${base}.jpg` : undefined,
+    file: files.audio,
+    cover: files.cover || undefined,
   };
   return JSON.stringify(sidecar);
 }
