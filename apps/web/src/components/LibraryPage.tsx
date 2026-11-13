@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { paths } from '../lib/routes';
-import { ArrowUpRight, Clock3, Heart, ListMusic, Music2, Play, RefreshCw, Users } from 'lucide-react';
+import { ArrowUpRight, Clock3, Heart, LayoutGrid, List, ListMusic, Music2, Play, RefreshCw, Users } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -11,7 +11,9 @@ import { SongCard } from './SongCard';
 import { usePlaylistsContext } from '../hooks/usePlaylists';
 import type { LibraryRecord } from '../lib/api';
 import type { LibrarySong } from '../lib/libraryRows';
-import { EmptyState, TactileButton } from './ui';
+import { EmptyState, IconButton, TactileButton } from './ui';
+import { readPlaylistLayout, writePlaylistLayout } from '../lib/libraryLayout';
+import type { PlaylistLayout } from '../lib/libraryLayout';
 import { BlendsShelf } from './blend/BlendsShelf';
 import { flags } from '../lib/flags';
 import { itemVariants, motionTokens, pageVariants } from '../motion';
@@ -40,6 +42,12 @@ export function LibraryPage({ likedSongs, recentlyPlayed, likedIds, loading, err
   const reduced = useReducedMotion();
   const transition = reduced ? { duration: motionTokens.duration.instant } : undefined;
   const playlistsApi = usePlaylistsContext();
+  // Read in the initialiser, so the first render is already the saved layout and nothing flips after paint.
+  const [layout, setLayout] = useState<PlaylistLayout>(readPlaylistLayout);
+  const chooseLayout = (next: PlaylistLayout): void => {
+    setLayout(next);
+    writePlaylistLayout(next);
+  };
 
   return (
     <motion.div className="library-page" variants={pageVariants} initial="hidden" animate="visible" transition={transition}>
@@ -76,8 +84,8 @@ export function LibraryPage({ likedSongs, recentlyPlayed, likedIds, loading, err
           <LibrarySection eyebrow="Kept close" title="Your likes" icon={<Heart size={15} aria-hidden="true" />}>
             {likedSongs.length > 0 ? <SongGrid songs={likedSongs} currentSongId={currentSongId} isPlaying={isPlaying} likedIds={likedIds} onPlay={onPlay} onLike={onLike} /> : <EmptyState title="Make a small collection" copy="Tap the heart on any track and it will land here for the next listening session." action={<div className="library-empty-actions"><TactileButton variant="accent" icon={ArrowUpRight} onClick={onDiscover}>Find something to keep</TactileButton>{flags.import ? <Link className="import-link" href={paths.import}>Import your library</Link> : null}</div>} />}
           </LibrarySection>
-          <LibrarySection eyebrow="Your rooms" title="Playlists" icon={<ListMusic size={15} aria-hidden="true" />}>
-            <PlaylistsSection currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} onDiscover={onDiscover} />
+          <LibrarySection eyebrow="Your rooms" title="Playlists" icon={<ListMusic size={15} aria-hidden="true" />} actions={<PlaylistLayoutToggle layout={layout} onChange={chooseLayout} />}>
+            <PlaylistsSection layout={layout} currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} onDiscover={onDiscover} />
           </LibrarySection>
           {flags.blend ? (
             <LibrarySection eyebrow="Shared with friends" title="Blends" icon={<Users size={15} aria-hidden="true" />}>
@@ -93,15 +101,25 @@ export function LibraryPage({ likedSongs, recentlyPlayed, likedIds, loading, err
   );
 }
 
-function LibrarySection({ eyebrow, title, icon, children }: { readonly eyebrow: string; readonly title: string; readonly icon: ReactNode; readonly children: ReactNode }) {
-  return <motion.section id={`library-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} className="library-section" variants={itemVariants}><div className="library-section-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div><span className="library-section-icon">{icon}</span></div>{children}</motion.section>;
+function LibrarySection({ eyebrow, title, icon, actions, children }: { readonly eyebrow: string; readonly title: string; readonly icon: ReactNode; readonly actions?: ReactNode; readonly children: ReactNode }) {
+  return <motion.section id={`library-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} className="library-section" variants={itemVariants}><div className="library-section-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div><div className="library-section-end">{actions}<span className="library-section-icon">{icon}</span></div></div>{children}</motion.section>;
+}
+
+/** Two icon buttons, named for what they do. One is pressed: the layout in use. */
+function PlaylistLayoutToggle({ layout, onChange }: { readonly layout: PlaylistLayout; readonly onChange: (next: PlaylistLayout) => void }) {
+  return (
+    <div className="layout-toggle" role="group" aria-label="Playlist layout">
+      <IconButton icon={LayoutGrid} label="Show as grid" active={layout === 'grid'} aria-pressed={layout === 'grid'} onClick={() => onChange('grid')} />
+      <IconButton icon={List} label="Show as list" active={layout === 'list'} aria-pressed={layout === 'list'} onClick={() => onChange('list')} />
+    </div>
+  );
 }
 
 function SongGrid({ songs, currentSongId, isPlaying, likedIds, onPlay, onLike }: { readonly songs: UnifiedSong[]; readonly currentSongId?: string; readonly isPlaying: boolean; readonly likedIds: Set<string>; readonly onPlay: (song: UnifiedSong, queue?: UnifiedSong[]) => void; readonly onLike: (song: UnifiedSong) => void }) {
   return <div className="library-track-list">{songs.map((song, index) => <SongCard key={song.id} song={song} index={index} isCurrent={song.id === currentSongId} isPlaying={song.id === currentSongId && isPlaying} onPlay={(pick) => onPlay(pick, songs)} onLike={() => onLike(song)} liked={likedIds.has(song.id)} />)}</div>;
 }
 
-function PlaylistsSection({ currentSongId, isPlaying, onPlay, onDiscover }: { readonly currentSongId?: string; readonly isPlaying: boolean; readonly onPlay: (song: UnifiedSong, queue?: UnifiedSong[]) => void; readonly onDiscover: () => void }) {
+function PlaylistsSection({ layout, currentSongId, isPlaying, onPlay, onDiscover }: { readonly layout: PlaylistLayout; readonly currentSongId?: string; readonly isPlaying: boolean; readonly onPlay: (song: UnifiedSong, queue?: UnifiedSong[]) => void; readonly onDiscover: () => void }) {
   const { playlists, songs, loading, error, actionError, reload, create } = usePlaylistsContext();
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -126,11 +144,45 @@ function PlaylistsSection({ currentSongId, isPlaying, onPlay, onDiscover }: { re
       </form>
       {actionError ? <p className="library-sync-notice" role="status">{actionError}</p> : null}
       {playlists.length === 0 ? <EmptyState title="Start a playlist" copy="Name one above, then use the list-plus button on any track to save it here." action={<TactileButton variant="accent" icon={ArrowUpRight} onClick={onDiscover}>Find something to save</TactileButton>} /> : (
-        <div className="playlist-grid">
-          {playlists.map((playlist) => <PlaylistFolder key={playlist.id} playlist={playlist} songs={playlist.songIds.map((id) => songs.get(id)).filter((song): song is LibrarySong => song !== undefined)} currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} />)}
+        <div className={layout === 'list' ? 'playlist-list' : 'playlist-grid'}>
+          {playlists.map((playlist) => {
+            const resolved = playlist.songIds.map((id) => songs.get(id)).filter((song): song is LibrarySong => song !== undefined);
+            return layout === 'list'
+              ? <PlaylistRow key={playlist.id} playlist={playlist} songs={resolved} currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} />
+              : <PlaylistFolder key={playlist.id} playlist={playlist} songs={resolved} currentSongId={currentSongId} isPlaying={isPlaying} onPlay={onPlay} />;
+          })}
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A playlist as one row: its cover, name and song count, and a round play button. The whole row opens the
+ * playlist; Play and open behave exactly as on the folder.
+ */
+function PlaylistRow({ playlist, songs, currentSongId, isPlaying, onPlay }: { readonly playlist: LibraryRecord; readonly songs: UnifiedSong[]; readonly currentSongId?: string; readonly isPlaying: boolean; readonly onPlay: (song: UnifiedSong, queue?: UnifiedSong[]) => void }) {
+  const first = songs[0];
+  const cover = playlist.coverUrl ?? songs.find((song) => song.artwork)?.artwork ?? null;
+  const playing = currentSongId !== undefined && isPlaying && songs.some((song) => song.id === currentSongId);
+  const count = playlist.songIds.length;
+  return (
+    <article className="playlist-row" aria-label={`Playlist ${playlist.name}`}>
+      <Link className="playlist-row__open" href={paths.playlist(playlist.id)} aria-label={`Open ${playlist.name}`}>
+        <span className="playlist-row__cover" aria-hidden="true">
+          {cover ? <img src={cover} alt="" loading="lazy" decoding="async" /> : <ListMusic size={22} strokeWidth={1.5} />}
+        </span>
+        <span className="playlist-row__text">
+          <strong title={playlist.name}>{playlist.name}</strong>
+          <small className="playlist-row__count">{count} {count === 1 ? 'song' : 'songs'}</small>
+        </span>
+      </Link>
+      {first ? (
+        <button type="button" className={`playlist-row__play${playing ? ' is-playing' : ''}`} aria-label={`Play ${playlist.name}`} onClick={() => onPlay(first, songs)}>
+          {playing ? <Music2 size={18} aria-hidden="true" /> : <Play size={17} fill="currentColor" aria-hidden="true" />}
+        </button>
+      ) : null}
+    </article>
   );
 }
 
