@@ -81,3 +81,47 @@ export function takeNextUnvisited<T extends { readonly id: string }>(
     cursor: { remaining: cursor.remaining - 1, visited: new Set([...cursor.visited, candidate.id]) },
   };
 }
+
+/** Seconds a song may end short of its length before the end counts as a cut. */
+export const CUTOFF_THRESHOLD_SECONDS = 3;
+/** Reloads allowed per song for a cut or a mid-song network error. */
+export const MAX_MIDSONG_RECOVERIES = 2;
+/** Below this position a failure is a load failure, handled by the existing recovery cursor. */
+export const MIN_RECOVERY_POSITION_SECONDS = 1;
+/** MediaError.code for MEDIA_ERR_NETWORK: the browser gave up fetching the stream. */
+const MEDIA_ERR_NETWORK = 2;
+
+export interface EndCheck {
+  readonly positionSec: number;
+  /** `audio.duration`. NaN or Infinity when the element does not know it. */
+  readonly elementDurationSec: number;
+  /** The catalog duration of the song, 0 when unknown. */
+  readonly catalogDurationSec: number;
+  readonly recoveriesUsed: number;
+}
+
+/**
+ * Whether a song that reached its end really ended. The element's own duration is trusted first:
+ * a position within the threshold of it is the genuine end, whatever the catalog says (an edit or
+ * a longer album version can differ). The catalog duration is used only when the element has none.
+ */
+export function endVerdict(check: EndCheck): 'accept' | 'resume' {
+  const position = Math.max(0, check.positionSec);
+  if (!(position >= MIN_RECOVERY_POSITION_SECONDS)) return 'accept';
+  const expected = Number.isFinite(check.elementDurationSec) ? check.elementDurationSec : check.catalogDurationSec;
+  if (!Number.isFinite(expected) || expected <= 0) return 'accept';
+  if (expected - position <= CUTOFF_THRESHOLD_SECONDS || check.recoveriesUsed >= MAX_MIDSONG_RECOVERIES) return 'accept';
+  return 'resume';
+}
+
+/**
+ * Whether a media error mid-song is a stream that stopped (reload the same song at the same second)
+ * or a failure to keep. Only a network error is retried: a decode or unsupported-source error fails
+ * again on reload, and an error before the song has played a second is a load failure.
+ */
+export function errorVerdict(input: { readonly mediaErrorCode: number | null; readonly positionSec: number; readonly recoveriesUsed: number }): 'resume' | 'fail' {
+  const resumable = input.mediaErrorCode === MEDIA_ERR_NETWORK
+    && input.positionSec >= MIN_RECOVERY_POSITION_SECONDS
+    && input.recoveriesUsed < MAX_MIDSONG_RECOVERIES;
+  return resumable ? 'resume' : 'fail';
+}
