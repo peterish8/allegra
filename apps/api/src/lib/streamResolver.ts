@@ -3,6 +3,7 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import type { Response as ExpressResponse } from 'express';
 
 import { cacheKey, type CacheStore } from './cache.js';
+import { correlationId, errorShape, redactUrl, SILENT_LOG, type DiagLog } from './diagnostics.js';
 import { ProviderUnavailableError, TimeoutError } from './errors.js';
 import { fetchUntilHeaders, isAbortError } from './fetchWithTimeout.js';
 import { parsePublicHttpsUrl } from './publicUrl.js';
@@ -21,6 +22,7 @@ export interface StreamResolverOptions {
   readonly cache: CacheStore;
   readonly fetchImpl?: typeof fetch;
   readonly timeoutMs?: number;
+  readonly log?: DiagLog;
 }
 
 export class StreamResolver {
@@ -29,6 +31,7 @@ export class StreamResolver {
   private readonly cache: CacheStore;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly log: DiagLog;
 
   public constructor(options: StreamResolverOptions) {
     this.saavn = options.saavn;
@@ -36,6 +39,7 @@ export class StreamResolver {
     this.cache = options.cache;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? STREAM_HEADER_TIMEOUT_MS;
+    this.log = options.log ?? SILENT_LOG;
   }
 
   /** Server-only source CDN URL for stem separation etc. Never send this to the browser. */
@@ -43,14 +47,16 @@ export class StreamResolver {
     return this.resolve(songId, force);
   }
 
-  public async pipe(songId: string, range: string | undefined, response: ExpressResponse): Promise<void> {
+  public async pipe(songId: string, range: string | undefined, response: ExpressResponse, corr = correlationId('str')): Promise<void> {
     let upstream = await this.fetchResolved(songId, range, false);
     if (upstream.response.status === 403 || upstream.response.status === 404) {
+      this.log.warn({ op: 'stream', corr, song: songId, status: upstream.response.status, url: redactUrl(upstream.url), step: 'refresh' }, 'stream link refused');
       upstream.abort();
       upstream = await this.fetchResolved(songId, range, true);
     }
 
     if (!PASSTHROUGH_STATUSES.has(upstream.response.status)) {
+      this.log.warn({ op: 'stream', corr, song: songId, status: upstream.response.status }, 'stream upstream status');
       upstream.abort();
       throw new ProviderUnavailableError();
     }
@@ -79,17 +85,25 @@ export class StreamResolver {
       }
     };
     response.on('close', onClose);
-    Readable.fromWeb(upstream.response.body as NodeReadableStream<Uint8Array>)
-      .on('error', () => {
+    const body = Readable.fromWeb(upstream.response.body as NodeReadableStream<Uint8Array>);
+    // Passive count only: the plain pipe below still owns backpressure.
+    let sentBytes = 0;
+    body.on('data', (chunk: Uint8Array) => {
+      sentBytes += chunk.byteLength;
+    });
+    body
+      .on('error', (error: unknown) => {
         // An event handler cannot throw to the route's try/catch: throwing here would be an
         // uncaught exception. Before the first byte the client can still get the JSON failure.
         upstream.abort();
         if (!response.headersSent) {
+          this.log.warn({ op: 'stream', corr, song: songId, error: errorShape(error), headersSent: false }, 'stream body failed');
           response.removeHeader('content-length');
           response.removeHeader('content-range');
           response.status(502).type('application/json').json({ success: false, data: null, error: 'Music service is having a moment. Try again shortly.' });
           return;
         }
+        this.log.warn({ op: 'stream', corr, song: songId, error: errorShape(error), headersSent: true, sentBytes }, 'stream body failed');
         response.destroy();
       })
       .pipe(response);
@@ -99,14 +113,15 @@ export class StreamResolver {
     songId: string,
     range: string | undefined,
     force: boolean
-  ): Promise<{ response: Response; abort: () => void }> {
+  ): Promise<{ response: Response; abort: () => void; url: string }> {
     const url = await this.resolve(songId, force);
     const headers: Record<string, string> = { ...BROWSER_HEADERS };
     if (range) {
       headers.Range = range;
     }
     try {
-      return await fetchUntilHeaders(url, { headers }, this.timeoutMs, this.fetchImpl);
+      const { response, abort } = await fetchUntilHeaders(url, { headers }, this.timeoutMs, this.fetchImpl);
+      return { response, abort, url };
     } catch (error) {
       if (isAbortError(error)) {
         throw new TimeoutError();

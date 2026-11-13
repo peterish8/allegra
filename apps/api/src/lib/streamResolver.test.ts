@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import test from 'node:test';
 import { PassThrough } from 'node:stream';
 import type { Response as ExpressResponse } from 'express';
 
 import { MemoryCacheStore } from './cache.js';
+import type { DiagLog } from './diagnostics.js';
 import { ProviderUnavailableError } from './errors.js';
 import { StreamResolver } from './streamResolver.js';
 import { SaavnProvider, type SaavnSong } from '../providers/saavn.js';
@@ -176,4 +178,126 @@ test('provider-qualified Gaana stream requests resolve the Gaana CDN and preserv
   assert.ok(requested.some((url) => url === 'https://gaana.example/api/songs/g1'));
   assert.ok(requested.includes('cdn:https://cdn.example/gaana.mp4:bytes=0-4'));
   assert.equal(requested.some((url) => url === 'https://saavn.example/api/songs/g1'), false);
+});
+
+interface CapturedLine {
+  readonly level: 'warn' | 'error' | 'info';
+  readonly fields: Record<string, unknown>;
+  readonly message: string;
+}
+
+function capturingLog(): DiagLog & { readonly lines: CapturedLine[] } {
+  const lines: CapturedLine[] = [];
+  const capture = (level: CapturedLine['level']) => (fields: Record<string, unknown>, message: string): void => {
+    lines.push({ level, fields, message });
+  };
+  return { lines, warn: capture('warn'), error: capture('error'), info: capture('info') };
+}
+
+test('a refused link logs a redacted url and the refresh step', async () => {
+  const signed = 'https://cdn.example/song.mp4?sig=fixture-signature';
+  const refreshed = 'https://cdn.example/song-2.mp4?sig=fixture-fresh';
+  let songCalls = 0;
+  let cdnCalls = 0;
+  const log = capturingLog();
+  const resolver = new StreamResolver({
+    cache: new MemoryCacheStore(),
+    log,
+    saavn: new SaavnProvider({
+      baseUrl: 'https://saavn.example/api',
+      fetchImpl: async () => {
+        songCalls += 1;
+        const url = songCalls === 1 ? signed : refreshed;
+        return json({ success: true, data: { ...song, downloadUrl: [{ quality: '320kbps', url }] } });
+      }
+    }),
+    fetchImpl: async () => {
+      cdnCalls += 1;
+      if (cdnCalls === 1) {
+        return new Response('expired', { status: 403 });
+      }
+      return new Response('audio-bytes', {
+        status: 206,
+        headers: { 'content-range': 'bytes 0-10/100', 'accept-ranges': 'bytes', 'content-type': 'audio/mp4' }
+      });
+    }
+  });
+
+  const response = fakeResponse();
+  await resolver.pipe('song-1', 'bytes=0-10', response, 'str-refused01');
+  assert.equal(response.statusCode, 206);
+
+  assert.equal(log.lines.length, 1);
+  const [line] = log.lines;
+  assert.equal(line?.level, 'warn');
+  assert.equal(line?.message, 'stream link refused');
+  assert.deepEqual(line?.fields, {
+    op: 'stream',
+    corr: 'str-refused01',
+    song: 'song-1',
+    status: 403,
+    url: 'https://cdn.example/~8a863b64',
+    step: 'refresh'
+  });
+  const serialized = JSON.stringify(log.lines);
+  assert.equal(serialized.includes('sig='), false, 'logs must not carry the signature parameter');
+  assert.equal(serialized.includes('fixture-signature'), false, 'logs must not carry the signature value');
+  assert.equal(serialized.includes(signed), false, 'logs must not carry the full signed url');
+  assert.equal(serialized.includes('song.mp4'), false, 'logs must not carry the url path');
+});
+
+test('a body failure after headers logs sentBytes', async () => {
+  const failure = Object.assign(new TypeError('terminated https://cdn.example/song.mp4?sig=fixture-signature'), {
+    cause: { code: 'UND_ERR_SOCKET' }
+  });
+  let pulls = 0;
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) {
+          controller.enqueue(new TextEncoder().encode('audio-'));
+          return;
+        }
+        controller.error(failure);
+      }
+    },
+    { highWaterMark: 0 }
+  );
+  const log = capturingLog();
+  const resolver = new StreamResolver({
+    cache: new MemoryCacheStore(),
+    log,
+    saavn: new SaavnProvider({
+      baseUrl: 'https://saavn.example/api',
+      fetchImpl: async () => json({ success: true, data: song })
+    }),
+    fetchImpl: async () => new Response(body, {
+      status: 206,
+      headers: { 'content-range': 'bytes 0-10/100', 'accept-ranges': 'bytes', 'content-type': 'audio/mp4' }
+    })
+  });
+
+  // Headers already went out before the body failed, so the route must destroy instead of sending JSON.
+  const response = Object.assign(fakeResponse(), { headersSent: true });
+  const closed = once(response, 'close');
+  await resolver.pipe('song-1', 'bytes=0-10', response, 'str-bodyfail1');
+  await closed;
+
+  assert.equal(log.lines.length, 1);
+  const [line] = log.lines;
+  assert.equal(line?.level, 'warn');
+  assert.equal(line?.message, 'stream body failed');
+  assert.deepEqual(line?.fields, {
+    op: 'stream',
+    corr: 'str-bodyfail1',
+    song: 'song-1',
+    error: { name: 'TypeError', code: 'UND_ERR_SOCKET' },
+    headersSent: true,
+    sentBytes: 6
+  });
+  const serialized = JSON.stringify(log.lines);
+  assert.equal(serialized.includes('sig='), false);
+  assert.equal(serialized.includes('fixture-signature'), false);
+  assert.equal(serialized.includes('terminated'), false, 'the error message must never be logged');
 });

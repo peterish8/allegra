@@ -169,7 +169,9 @@ export function createServices(options: ServiceOptions): AppServices {
     ?? (options.convexSiteUrl ? new ConvexTokenVerifier({ siteUrl: options.convexSiteUrl }) : undefined);
 
   const fetchImpl = options.fetchImpl ? { fetchImpl: options.fetchImpl } : {};
-  const stream = new StreamResolver({ saavn, gaana, cache, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
+  // Production-only, one instance shared by the stream path and the blend builder.
+  const serviceLog = createLogger(process.env.NODE_ENV === 'production');
+  const stream = new StreamResolver({ saavn, gaana, cache, log: serviceLog, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
   const auth = new AuthService({
     store: userStore,
     guest: guestVerifier,
@@ -193,7 +195,6 @@ export function createServices(options: ServiceOptions): AppServices {
   const spotifyProvider = options.spotifyClientId ? new SpotifyProvider(options.spotifyClientId, options.fetchImpl ?? fetch) : undefined;
   const spotifyStore = new SpotifyStore(convex, options.convexServerSecret ?? options.jwtSecret);
   const spotify = new SpotifyTransferService(spotifyProvider, options.spotifyClientId, options.spotifyRedirectUri ?? 'https://allegravibe.vercel.app/api/spotify/callback', spotifyStore, auth, importMatcher);
-  const blendLog = createLogger(process.env.NODE_ENV === 'production');
   const blends = options.blends ?? (convex ? new ConvexBlendStore(convex) : new MemoryBlendStore());
   const blendBuilder = new BlendBuildService({
     blends,
@@ -203,7 +204,7 @@ export function createServices(options: ServiceOptions): AppServices {
     catalog,
     resolver: importMatcher,
     // Counts and timings only (PLAN.md §0); silent outside production.
-    log: (fields) => { blendLog.info(fields, 'blend build'); }
+    log: (fields) => { serviceLog.info(fields, 'blend build'); }
   });
 
   return {
