@@ -4,6 +4,209 @@ import { audioState, collectPageErrors, expect, expectPlaying, startPlayback, te
 
 const bar = '[aria-label="Player bar"]';
 
+plain('an opened album separates hover, playback, likes, and playlist membership', async ({ page }, testInfo) => {
+  const errors = collectPageErrors(page);
+  const artwork = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600"><rect width="600" height="600" fill="#73436d"/><circle cx="300" cy="300" r="160" fill="#d8a46d"/></svg>')}`;
+  const sampleRate = 8_000;
+  const pcm = Buffer.alloc(sampleRate * 8, 128);
+  const wave = Buffer.alloc(44 + pcm.length);
+  wave.write('RIFF', 0);
+  wave.writeUInt32LE(36 + pcm.length, 4);
+  wave.write('WAVE', 8);
+  wave.write('fmt ', 12);
+  wave.writeUInt32LE(16, 16);
+  wave.writeUInt16LE(1, 20);
+  wave.writeUInt16LE(1, 22);
+  wave.writeUInt32LE(sampleRate, 24);
+  wave.writeUInt32LE(sampleRate, 28);
+  wave.writeUInt16LE(1, 32);
+  wave.writeUInt16LE(8, 34);
+  wave.write('data', 36);
+  wave.writeUInt32LE(pcm.length, 40);
+  const audioUrl = '/api/stream/album-fixture';
+  const song = (id: string, title: string) => ({
+    id,
+    title,
+    artist: 'Mira Vale',
+    album: 'Quiet Satellites',
+    albumId: 'album-fixture',
+    artwork,
+    streamUrl: audioUrl,
+    duration: 184,
+    hasLyrics: false,
+    playCount: 42,
+    source: 'Saavn' as const,
+    language: 'English'
+  });
+  const tracks = [song('album-track-1', 'North Window'), song('album-track-2', 'Paper Satellites'), song('album-track-3', 'Low Tide')];
+  const album = {
+    id: 'album-fixture',
+    name: 'Quiet Satellites',
+    artist: 'Mira Vale',
+    artwork,
+    year: '2024',
+    language: 'English',
+    songCount: tracks.length,
+    songs: tracks
+  };
+  const playlist = { id: 'fixture-night-set', name: 'Night set', isPublic: false, songIds: [], createdAt: new Date(0).toISOString() };
+  const ok = (data: unknown) => ({ success: true, data });
+
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/search/suggest') return route.fulfill({ json: ok({ results: tracks }) });
+    if (path === '/api/search') return route.fulfill({ json: ok({ results: tracks, source: 'Saavn' }) });
+    if (path === '/api/search/albums') return route.fulfill({ json: ok({ results: [] }) });
+    if (path === '/api/albums/album-fixture') return route.fulfill({ json: ok(album) });
+    if (path === '/api/stream/album-fixture') return route.fulfill({ status: 200, contentType: 'audio/wav', body: wave });
+    if (path === '/api/libraries' && route.request().method() === 'GET') return route.fulfill({ json: ok([playlist]) });
+    if (path === '/api/libraries' && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { name: string };
+      return route.fulfill({ json: ok({ ...playlist, id: 'fixture-album-copy', name: body.name }) });
+    }
+    if (path === '/api/me/library/changes') return route.fulfill({ json: ok({ rev: 0, changes: [], more: false }) });
+    if (path === '/api/me/library/ops') {
+      const body = route.request().postDataJSON() as { ops?: readonly unknown[] };
+      return route.fulfill({ json: ok({ rev: 1, rejected: [], superseded: [], applied: body.ops?.length ?? 1 }) });
+    }
+    if (path === '/api/me/liked' && route.request().method() === 'GET') return route.fulfill({ json: ok([]) });
+    if (path === '/api/me/liked') return route.fulfill({ json: ok({ liked: true }) });
+    if (path === '/api/me/recently-played' && route.request().method() === 'GET') return route.fulfill({ json: ok([]) });
+    if (path === '/api/me/recently-played') return route.fulfill({ json: ok(null) });
+    return route.continue();
+  });
+
+  await page.goto('/');
+  const notNow = page.getByRole('button', { name: /^(Not now|Skip for now)$/ });
+  if (await notNow.count()) await notNow.first().click();
+  await page.getByRole('button', { name: 'Search music' }).first().click();
+  await page.getByRole('combobox').fill('Fixture');
+  await expect(page.getByRole('option').first()).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('option').first().click();
+  await page.getByRole('button', { name: 'Open album Quiet Satellites' }).click();
+  await expect(page.locator('.album-page')).toBeVisible();
+  await expect(page.locator('.album-track')).toHaveCount(3);
+  await expect(page.locator('.album-tracklist__head')).toBeVisible();
+  await expect(page.locator('.album-hero__meta')).toContainText('2024');
+  await expect(page.locator('.album-hero__meta')).toContainText('3 Songs');
+  await expect(page.locator('.album-tracklist__head')).toContainText('Plays');
+
+  const firstRow = page.locator('.album-track').nth(0);
+  const firstMain = firstRow.locator('.album-track__main');
+  const firstPlaylist = firstRow.locator('.album-track__playlist-trigger');
+
+  await page.getByRole('button', { name: 'Like album' }).click();
+  await expect(page.getByRole('button', { name: 'Remove album from likes' })).toBeVisible();
+  await expect(firstRow.getByRole('button', { name: 'Remove North Window from likes' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(firstPlaylist).toHaveAttribute('aria-pressed', 'false');
+
+  await firstRow.getByRole('button', { name: 'Remove North Window from likes' }).click();
+  await expect(firstRow.getByRole('button', { name: 'Add North Window to likes' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(firstPlaylist).toHaveAttribute('aria-pressed', 'false');
+
+  await firstPlaylist.focus();
+  await page.keyboard.press('Enter');
+  const playlistSheet = page.getByRole('dialog');
+  await expect(playlistSheet).toBeVisible();
+  const nightSet = playlistSheet.getByRole('checkbox', { name: /Night set/ });
+  await nightSet.click();
+  await expect(nightSet).toHaveAttribute('aria-checked', 'true');
+  await expect(firstPlaylist).toHaveAttribute('aria-pressed', 'true');
+  await expect(firstPlaylist).toHaveAttribute('aria-label', 'Saved in Night set. Manage playlists for North Window');
+  await playlistSheet.getByRole('button', { name: 'Close' }).click();
+  await expect(playlistSheet).toBeHidden();
+
+  await firstPlaylist.click();
+  const removeFromPlaylist = page.getByRole('dialog').getByRole('checkbox', { name: /Night set/ });
+  await expect(removeFromPlaylist).toHaveAttribute('aria-checked', 'true');
+  await removeFromPlaylist.click();
+  await expect(removeFromPlaylist).toHaveAttribute('aria-checked', 'false');
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
+  await expect(firstPlaylist).toHaveAttribute('aria-pressed', 'false');
+  await expect(firstRow.getByRole('button', { name: 'Add North Window to likes' })).toHaveAttribute('aria-pressed', 'false');
+
+  await page.getByRole('button', { name: 'Save as playlist' }).click();
+  const saveAlbumSheet = page.getByRole('dialog', { name: 'Save as playlist' });
+  const playlistName = saveAlbumSheet.getByRole('textbox', { name: 'Playlist name' });
+  await expect(playlistName).toHaveValue('Quiet Satellites');
+  await playlistName.fill('Night drive album copy');
+  await saveAlbumSheet.getByRole('button', { name: 'Save playlist' }).click();
+  await expect(page.getByRole('status')).toContainText('Saved 3 songs');
+  await expect(page.locator('.album-track').nth(2).locator('.album-track__playlist-trigger')).toHaveAttribute('aria-label', 'Saved in Night drive album copy. Manage playlists for Low Tide');
+
+  const secondRow = page.locator('.album-track').nth(1);
+  const secondMain = secondRow.locator('.album-track__main');
+  await secondMain.focus();
+  await expect(secondRow.locator('.album-track__index-hover')).toHaveCSS('opacity', '1');
+  await page.keyboard.press('Enter');
+  await expect(secondRow).toHaveClass(/is-current/);
+  await expect(secondRow).toHaveAttribute('data-playing', 'true');
+  await expect(secondMain).toHaveAttribute('aria-current', 'true');
+  await expect(secondMain).toHaveAttribute('aria-pressed', 'true');
+  await expect(secondMain).toHaveAccessibleName('Pause Paper Satellites');
+
+  await firstRow.hover();
+  await expect(firstRow.locator('.album-track__index-hover')).toHaveCSS('opacity', '1');
+  await expect(firstRow.locator('.album-track__index-number')).toHaveCSS('opacity', '0');
+  await expect(firstMain).not.toHaveAttribute('aria-current', 'true');
+  await expect(firstRow).not.toHaveAttribute('data-playing');
+  await expect(secondRow).toHaveClass(/is-current/);
+  await expect(secondRow).toHaveAttribute('data-playing', 'true');
+
+  await page.getByRole('button', { name: 'Play Quiet Satellites' }).click();
+  await expect(page.locator('.album-track[data-playing="true"]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Shuffle Quiet Satellites' }).click();
+  await expect(page.locator('.album-track[data-playing="true"]')).toHaveCount(1);
+
+  await secondMain.focus();
+  await page.keyboard.press('Enter');
+  await expect(secondRow).toHaveAttribute('data-playing', 'true');
+  await firstRow.hover();
+  await expect(firstRow.locator('.album-track__index-hover')).toHaveCSS('opacity', '1');
+  await expect(secondRow).toHaveAttribute('data-playing', 'true');
+
+  const viewports = [
+    { width: 360, height: 800, name: '360' },
+    { width: 768, height: 900, name: '768' },
+    { width: 1280, height: 860, name: '1280' },
+    { width: 1920, height: 1080, name: '1920' }
+  ] as const;
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.locator('.album-hero').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`album-after-${viewport.name}.png`) });
+    const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(hasHorizontalOverflow, `album has horizontal overflow at ${viewport.width}px`).toBe(false);
+    if (viewport.width <= 640) await expect(page.locator('.album-toolbar__save > svg')).toBeVisible();
+    const savePlaylist = await page.getByRole('button', { name: 'Save as playlist' }).boundingBox();
+    const playerBar = await page.locator(bar).boundingBox();
+    if (viewport.width <= 768 && savePlaylist && playerBar) {
+      expect(savePlaylist.y + savePlaylist.height, `album save action clears the player at ${viewport.width}px`).toBeLessThanOrEqual(playerBar.y);
+    }
+
+    await page.evaluate(() => {
+      const scrollingElement = document.scrollingElement;
+      if (scrollingElement) window.scrollTo({ top: scrollingElement.scrollHeight, behavior: 'instant' });
+    });
+    const clearance = await page.evaluate(() => {
+      const lastTrack = document.querySelector('.album-track:last-child')?.getBoundingClientRect();
+      const player = document.querySelector('[aria-label="Player bar"]')?.getBoundingClientRect();
+      return { trackBottom: lastTrack?.bottom ?? 0, playerTop: player?.top ?? window.innerHeight, playerVisible: Boolean(player && player.top < window.innerHeight) };
+    });
+    if (clearance.playerVisible) expect(clearance.trackBottom, `last album track clears the player at ${viewport.width}px`).toBeLessThanOrEqual(clearance.playerTop);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+  }
+
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const reducedMotionPlay = page.getByRole('button', { name: 'Play Quiet Satellites' });
+  await expect(reducedMotionPlay).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('album-after-reduced-motion.png') });
+  await reducedMotionPlay.click();
+  await expect(page.locator('.album-track[data-playing="true"]')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
 plain('a first visit offers taste onboarding and "Not now" dismisses it', async ({ page }) => {
   await page.goto('/');
   const dialog = page.getByRole('dialog').filter({ has: page.locator('#taste-title') });
