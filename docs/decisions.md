@@ -3,6 +3,13 @@
 Choices that are easy to undo by accident. Each says what was decided, why, and what would change
 it. Newest first. Mistakes that led to some of these are in `.planning/LEARNING-LOG.md`.
 
+## 2026-11-13
+
+### Web and mobile color transitions
+**Decided:** web hover and press feedback may transition `color`, `background-color`, and `border-color` over 100–160 ms. Never transition `box-shadow` or `filter`. Mobile does not animate color.
+**Why:** short, explicit color feedback is allowed on web while mobile keeps its immediate color changes.
+**Changes if:** the owner changes this motion policy.
+
 ## 2026-10-11
 
 ### Big features run the full local e2e suite before merge; every fix ships its test

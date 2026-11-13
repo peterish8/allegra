@@ -1,0 +1,73 @@
+{
+  "rawDuration": {
+    "app.css": 77,
+    "blend.css": 1,
+    "components.css": 10,
+    "global.css": 9
+  },
+  "rawBezier": {
+    "app.css": 7,
+    "components.css": 1
+  },
+  "bannedTransition": {
+    "app.css": 6,
+    "components.css": 1,
+    "global.css": 1
+  },
+  "filterTransition": {
+    "app.css": 6,
+    "components.css": 1,
+    "global.css": 1
+  },
+  "undefinedCustomProperty": {
+    "--artwork-bg-fallback": 1,
+    "--artwork-bg-veil": 1,
+    "--danger": 1,
+    "--ease-in-out": 1,
+    "--ease-tactile": 1,
+    "--fluid-a": 2,
+    "--fluid-b": 2,
+    "--font-sans": 3,
+    "--motion-duration-fast": 2,
+    "--motion-duration-instant": 1,
+    "--motion-ease-standard": 3,
+    "--music-accent-rgb": 6,
+    "--music-deep": 3,
+    "--music-deep-rgb": 5,
+    "--music-primary": 2,
+    "--music-primary-rgb": 8,
+    "--music-secondary": 2,
+    "--music-secondary-rgb": 10,
+    "--pointer-x": 1,
+    "--pointer-y": 1,
+    "--surface-base": 2,
+    "--text-muted": 10,
+    "--text-primary": 6,
+    "--text-secondary": 9
+  },
+  "ungatedHoverTransform": {
+    "app.css": 76,
+    "blend.css": 1,
+    "components.css": 3,
+    "dj.css": 7,
+    "global.css": 16
+  },
+  "smallFontSize": {
+    "app.css": 67,
+    "blend.css": 5,
+    "components.css": 6,
+    "dj.css": 19,
+    "global.css": 24
+  },
+  "highZIndex": {
+    "app.css": 1,
+    "components.css": 4
+  },
+  "rawColor": {
+    "app.css": 1155,
+    "blend.css": 152,
+    "components.css": 162,
+    "dj.css": 203,
+    "global.css": 500
+  }
+}

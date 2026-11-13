@@ -17,12 +17,6 @@ const auditedComponents = [
 ];
 
 describe('motion rules', () => {
-  it('keeps CSS transitions on compositor-friendly properties', () => {
-    const css = readFileSync(join(src, 'styles/global.css'), 'utf8');
-    const bad = css.match(/transition\s*:\s*[^;]*(?:\b(?:all|width|height|left|right|margin(?:-[\w]+)?|padding(?:-[\w]+)?|box-shadow|border-radius)\b)[^;]*;/gi) ?? [];
-    assert.deepEqual(bad, []);
-  });
-
   it('uses named motion tokens for durations and spring stiffness in audited components', () => {
     const bad = auditedComponents.flatMap((file) => {
       const text = readFileSync(join(src, file), 'utf8');
