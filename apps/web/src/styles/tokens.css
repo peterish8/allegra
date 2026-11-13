@@ -18,19 +18,27 @@
   --surface-sunken: #0d1012;
   --surface-glass: rgba(24, 29, 32, 0.72);
   --surface-glass-heavy: rgba(18, 21, 23, 0.94);
+  --surface-soft: #1d2026;
+  --surface-inverse: #101216;
+  --surface-base: var(--surface);
 
   /* Text: high-contrast cool white */
   --ink: #f4f1ea;
   --ink-soft: #d1d0c9;
   --ink-muted: #8e9498;
   --ink-faint: #8a939a;
+  /* Aliases for the LuvLink page, which reads the --text-* names. */
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-soft);
+  --text-muted: var(--ink-muted);
+  --danger: #e07a5f;
 
   /* Hairlines & glass borders */
   --border: #2b3237;
   --border-strong: #454d52;
   --border-subtle: rgba(255, 255, 255, 0.06);
 
-  /* Single aqua accent — warmer highlights for focus/playback */
+  /* Coral accent, with warmer highlights for focus and playback */
   --accent: #ee6b5f;
   --accent-bright: #ffaaa0;
   --accent-deep: #783e44;
@@ -38,6 +46,12 @@
   --accent-wash: rgba(238, 107, 95, 0.14);
   --accent-glow: rgba(238, 107, 95, 0.32);
   --accent-line: rgba(238, 107, 95, 0.42);
+  --accent-blue: #a8ddff;
+  --accent-violet: #8298ff;
+  --accent-cobalt: #276ee8;
+  --accent-green: #8bdcca;
+  --accent-soft: rgba(111, 193, 255, 0.13);
+  --accent-border: rgba(111, 193, 255, 0.5);
   /* Stable action color — soft chartreuse, not neon lime */
   --wave: #d9e66a;
   --wave-ink: #17180d;
@@ -45,9 +59,7 @@
   --vibe-blue: #7bafd4;
 
   /* Gradients */
-  --gradient-hero: radial-gradient(circle at 68% 42%, rgba(123, 175, 212, 0.18), transparent 58%);
   --gradient-glass: linear-gradient(135deg, rgba(37, 43, 48, 0.92) 0%, rgba(18, 21, 23, 0.96) 100%);
-  --gradient-accent: linear-gradient(145deg, #ee6b5f 0%, #9a4d4b 100%);
   --gradient-glow: radial-gradient(circle at center, rgba(238, 107, 95, 0.22) 0%, transparent 70%);
 
   /* Stage backdrop fields */
@@ -83,6 +95,8 @@
   /* Elevation & Floating Shadows */
   --shadow-panel: inset 0 1px 0 var(--glass-highlight), 0 20px 40px -15px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border);
   --shadow-lift: inset 0 1px 0 var(--glass-highlight), 0 12px 32px -6px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 24px 70px rgba(0, 0, 0, 0.42);
+  --shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 2px 0 #34536d, 0 8px 20px rgba(0, 0, 0, 0.42);
   --shadow-glow: 0 0 30px rgba(56, 189, 248, 0.25);
   --shadow-floating-nav: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 16px 36px -10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.1);
 
@@ -106,6 +120,12 @@
   --ease-press: cubic-bezier(0.2, 0, 0, 1);
   /* A small overshoot: a pressed control springing back past rest and settling. */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in-out: ease-in-out;
+  --ease-tactile: var(--ease-standard);
+  /* Aliases for the LuvLink page, which reads the --motion-* names. */
+  --motion-duration-instant: var(--d-instant);
+  --motion-duration-fast: var(--d-fast);
+  --motion-ease-standard: var(--ease-standard);
   --d-instant: 100ms;
   --d-fast: 160ms;
   --d-base: 240ms;
@@ -134,8 +154,8 @@
   --tone-amber: #ffc56b;
 
   /* Shorthand transitions — color/opacity/transform only (never layout props) */
-  --transition-fast: color var(--d-fast) var(--ease-standard), background-color var(--d-fast) var(--ease-standard), border-color var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard), transform var(--d-fast) var(--ease-standard), box-shadow var(--d-fast) var(--ease-standard);
-  --transition-base: color var(--d-base) var(--ease-standard), background-color var(--d-base) var(--ease-standard), border-color var(--d-base) var(--ease-standard), opacity var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-standard), box-shadow var(--d-base) var(--ease-standard);
+  --transition-fast: color var(--d-fast) var(--ease-standard), background-color var(--d-fast) var(--ease-standard), border-color var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard), transform var(--d-fast) var(--ease-standard);
+  --transition-base: color var(--d-base) var(--ease-standard), background-color var(--d-base) var(--ease-standard), border-color var(--d-base) var(--ease-standard), opacity var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-standard);
   --transition-smooth: color var(--d-panel) var(--ease-decelerate), background-color var(--d-panel) var(--ease-decelerate), opacity var(--d-panel) var(--ease-decelerate), transform var(--d-panel) var(--ease-decelerate);
 
   /* Layout */
@@ -145,7 +165,63 @@
   --nav-height: 64px;
   --mini-player-height: 72px;
 
-  --font-body: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'DM Mono', ui-monospace, monospace;
+  --rail-w: 204px;
+  --dock: 16px;
+
+  --font-body: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-sans: var(--font-body);
+
+  /* Primary action and stage palette */
+  --primary-fill: #f5f0e4;
+  --primary-fill-hover: #fffaf0;
+  --primary-ink: #0b0c0f;
+  --primary-edge: #918b7d;
+  --stage-blue: #6fc1ff;
+  --stage-blue-soft: rgba(111, 193, 255, 0.16);
+  --stage-blue-line: rgba(111, 193, 255, 0.48);
+  --stage-cobalt: #276ee8;
+  --stage-violet: #788aff;
+  --stage-shadow: 0 26px 80px rgba(0, 0, 0, 0.48);
+  --tactile-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 2px 0 #35536d, 0 9px 22px rgba(0, 0, 0, 0.42);
+
+  /* Workspace shell */
+  --workspace-bg: #0c0d0f;
+  --workspace-panel: #151619;
+  --workspace-panel-raised: #1c1d21;
+  --workspace-line: rgba(255, 255, 255, 0.09);
+  --workspace-line-strong: rgba(255, 255, 255, 0.16);
+  --workspace-muted: #96979d;
+  --workspace-soft: #c5c6ca;
+  --workspace-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+
+  /* Listening room */
+  --listen-bg: var(--bg);
+  --listen-rail: var(--bg-deep);
+  --listen-surface: var(--surface-raised);
+  --listen-surface-raised: var(--surface-raised);
+  --listen-surface-soft: rgba(255, 255, 255, 0.58);
+  --listen-ink: var(--ink);
+  --listen-muted: var(--ink-muted);
+  --listen-faint: var(--ink-faint);
+  --listen-line: var(--border);
+  --listen-accent: var(--accent);
+  --listen-radius: 22px;
+  --karaoke-ready: color-mix(in srgb, var(--wave) 78%, transparent);
+
+  /* Music-reactive backdrop defaults, used until a song supplies its palette */
+  --music-primary: #5b9dff;
+  --music-secondary: #7f6bff;
+  --music-deep: #0a0b10;
+  --music-primary-rgb: 91, 157, 255;
+  --music-secondary-rgb: 127, 107, 255;
+  --music-accent-rgb: 65, 216, 255;
+  --music-deep-rgb: 8, 9, 11;
+  --fluid-a: 91, 157, 255;
+  --fluid-b: 127, 107, 255;
+  --artwork-bg-fallback: #0b0b0d;
+  --artwork-bg-veil: 0.24;
+  --pointer-x: 0;
+  --pointer-y: 0;
 }

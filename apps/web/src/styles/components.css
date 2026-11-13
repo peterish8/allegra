@@ -8,19 +8,6 @@
 
 /* Foundation & Glass System ------------------------------------------------ */
 
-:root {
-  --listen-bg: var(--bg);
-  --listen-rail: var(--bg-deep);
-  --listen-surface: var(--surface-raised);
-  --listen-surface-raised: var(--surface-raised);
-  --listen-surface-soft: rgba(255, 255, 255, 0.58);
-  --listen-ink: var(--ink);
-  --listen-muted: var(--ink-muted);
-  --listen-faint: var(--ink-faint);
-  --listen-line: var(--border);
-  --listen-accent: var(--accent);
-}
-
 html {
   background: var(--bg-deep);
   color-scheme: dark;
@@ -2043,10 +2030,6 @@ body::before { display: none; }
 .np-karaoke-hint-pill svg:first-child { color: var(--wave); }
 
 /* ── Karaoke coverage: where the AI model has separated the song ───────────── */
-:root {
-  --karaoke-ready: color-mix(in srgb, var(--wave) 78%, transparent);
-}
-
 .karaoke-consent__body { margin: 0; color: rgba(255, 255, 255, 0.78); font-size: 0.8rem; line-height: 1.5; }
 .karaoke-consent__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 

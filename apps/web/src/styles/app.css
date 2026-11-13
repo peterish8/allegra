@@ -16,17 +16,6 @@
  * Motion: color / opacity / transform only (CLAUDE.md rule 5).
  */
 
-:root {
-  --font-body: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-display: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-
-  --rail-w: 204px;
-  --dock: 16px;
-  --wave: #d9e66a;
-  --wave-ink: #17180d;
-}
-
 /* One quiet scrollbar language across the app: slim, translucent and palette-aware. */
 * {
   scrollbar-width: thin;
@@ -3559,7 +3548,8 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .album-track__index > * { grid-area: 1 / 1; }
 .album-track__index-current { color: var(--wave); }
 .album-track__index-hover { opacity: 0; transform: scale(0.85); transition: var(--transition-fast); }
-.album-track:is(:hover, :focus-within) .album-track__index-hover { opacity: 1; transform: none; }
+.album-track:focus-within .album-track__index-hover { opacity: 1; transform: none; }
+@media (hover: hover) { .album-track:hover .album-track__index-hover { opacity: 1; transform: none; } }
 .album-track:is(:hover, :focus-within) .album-track__index-number { opacity: 0; }
 .album-track__copy { display: grid; min-width: 0; gap: var(--space-3xs); }
 .album-track__title { min-width: 0; color: var(--ink); font-size: var(--text-body); font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
@@ -5711,7 +5701,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .lyric-sync-jobs__item small { line-height: 1.4; }
 .lyric-sync-jobs__text-action, .lyric-sync-jobs__review { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: var(--space-2xs); justify-self: start; padding: var(--space-2xs) var(--space-xs); border: 1px solid var(--border-strong); border-radius: var(--radius-pill); background: var(--surface-glass); color: var(--ink); font: inherit; cursor: pointer; }
 .lyric-sync-jobs__review { border-color: color-mix(in srgb, var(--wave) 42%, var(--border-strong)); background: color-mix(in srgb, var(--wave) 14%, var(--surface-glass)); color: var(--wave); font-weight: 650; }
-.lyric-sync-jobs__spinner { animation: lyric-sync-spin 900ms linear infinite; }
+.lyric-sync-jobs__spinner { animation: lyric-sync-spin var(--d-spin) linear infinite; }
 @keyframes lyric-sync-spin { to { transform: rotate(360deg); } }
 @media (max-width: 600px) {
   .lyric-sync-backdrop { padding: var(--space-xs); }
