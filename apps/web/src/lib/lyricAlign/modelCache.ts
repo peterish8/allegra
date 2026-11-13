@@ -2,7 +2,11 @@ import { ALIGN_MODEL } from './config';
 import { opfsDir, readFile, writeFile } from '../liveKaraoke/roformer/opfs';
 import { Sha256 } from '../liveKaraoke/roformer/sha256';
 
-export async function loadAlignModel(gpu: boolean, progress: (percent: number) => void): Promise<Uint8Array<ArrayBuffer>> {
+export async function loadAlignModel(
+  gpu: boolean,
+  progress: (percent: number) => void,
+  onCacheMiss: () => void = () => undefined
+): Promise<Uint8Array<ArrayBuffer>> {
   const spec = gpu ? ALIGN_MODEL.gpu : ALIGN_MODEL.cpu;
   const dir = await opfsDir(['allegra-lyric-align-v1']);
   const cached = dir ? await readFile(dir, spec.file) : null;
@@ -10,6 +14,7 @@ export async function loadAlignModel(gpu: boolean, progress: (percent: number) =
     const bytes = new Uint8Array(await cached.arrayBuffer());
     if (new Sha256().update(bytes).hex() === spec.sha256) { progress(100); return bytes; }
   }
+  onCacheMiss();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15 * 60_000);
   try {
