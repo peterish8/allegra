@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
@@ -353,27 +354,37 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
     private fun slotRects(width: Float, height: Float): List<RectF> {
         if (variant == "v6") {
             val n = v6Tabs.size.toFloat()
-            return v6Tabs.indices.map { i -> RectF(i * width / n, 0f, (i + 1) * width / n, v6BarHeight()) }
+            val childBottom = v6Layout().childBottom
+            return v6Tabs.indices.map { i -> RectF(i * width / n, 0f, (i + 1) * width / n, childBottom) }
         }
         return TabBarGeometry.slots(variant == "modern-pill", micEnabled, width, barTop(height))
             .map { RectF(it.left, it.top, it.right, it.bottom) }
     }
 
-    private fun v6BarHeight(): Float = maxOf(V6_BAR_DP, kotlin.math.ceil(38f + 12f * resources.configuration.fontScale.coerceAtLeast(1f) * 1.3f))
+    private fun v6LabelSizeDp(): Float =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, TabBarGeometry.V6_LABEL_SP, resources.displayMetrics) / density()
+
+    private fun v6Layout(): TabBarGeometry.V6Layout {
+        labelPaint.textSize = v6LabelSizeDp()
+        labelPaint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        val metrics = labelPaint.fontMetrics
+        return TabBarGeometry.v6Layout(resources.configuration.fontScale, metrics.top, metrics.bottom)
+    }
 
     private fun drawV6(canvas: Canvas, width: Float) {
+        val layout = v6Layout()
         val n = v6Tabs.size.toFloat()
         v6Tabs.forEachIndexed { index, name ->
             val selected = name != CREATE && name == activeTab
             val cx = width * (index + 0.5f) / n
-            // The 56dp V6 bar (src/navigation/v6Shell.ts NAV_BAR_HEIGHT). Round 7 item 3: the selected tab is its foreground
-            // only (filled icon, bright semibold label); no pill, tile or background behind it.
+            // The V6 bar grows with its system-scaled label (src/navigation/v6Shell.ts navBarHeight). Round 7 item 3:
+            // the selected tab is its foreground only (filled icon, bright semibold label); no pill, tile or background.
             if (slotViews.getOrNull(index)?.isFocused == true) {
                 // Keyboard focus is its own ring and never looks like selection.
                 iconPaint.color = ColorUtils.setAlphaComponent(Color.WHITE, 230)
                 iconPaint.style = Paint.Style.STROKE
                 iconPaint.strokeWidth = 2f
-                canvas.drawRoundRect(RectF(cx - width / (2f * n) + 4f, 4f, cx + width / (2f * n) - 4f, v6BarHeight() - 4f), 14f, 14f, iconPaint)
+                canvas.drawRoundRect(RectF(cx - width / (2f * n) + 4f, 4f, cx + width / (2f * n) - 4f, layout.barHeight - 4f), 14f, 14f, iconPaint)
                 iconPaint.style = Paint.Style.FILL
             }
             val color = if (selected) activeTint else inactiveTint
@@ -386,9 +397,9 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
             drawTabIcon(canvas, name, ColorUtils.setAlphaComponent(color, (Color.alpha(color) * (1f - pressed[index] * 0.15f)).roundToInt()), selected)
             canvas.restore()
             labelPaint.color = color
-            labelPaint.textSize = 12f * resources.configuration.fontScale.coerceAtLeast(1f)
+            labelPaint.textSize = v6LabelSizeDp()
             labelPaint.typeface = Typeface.create(if (selected) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
-            canvas.drawText(name, cx, maxOf(48f, 34f - labelPaint.fontMetrics.top), labelPaint)
+            canvas.drawText(name, cx, TabBarGeometry.v6LabelBaseline(labelPaint.fontMetrics.top), labelPaint)
         }
     }
 
@@ -496,7 +507,7 @@ class NativeTabBarView(context: Context, appContext: AppContext) : ExpoView(cont
 
     private companion object {
         const val TAB_HEIGHT = 64f
-        /** The V6 bar's height above the inset; must match NAV_BAR_HEIGHT in src/navigation/v6Shell.ts. */
+        /** The V6 bar's minimum height above the inset; must match NAV_BAR_HEIGHT in src/navigation/v6Shell.ts. */
         const val V6_BAR_DP = 56f
         /** How long a tab is held to open its shortcut; must match TAB_HOLD_MS in src/navigation/tabHold.ts. */
         const val HOLD_MS = 2000L
