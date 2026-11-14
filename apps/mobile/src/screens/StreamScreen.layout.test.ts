@@ -8,19 +8,25 @@ const nodes: ts.Node[] = [];
 const visit = (node: ts.Node) => { nodes.push(node); ts.forEachChild(node, visit); };
 visit(file);
 
-// 1.42.0: the update entry is your picture (ProfileButton: the profile menu holds About and its Updates panel, and the
-// picture carries the update dot). It must stay in the fixed header, never inside the recycled feed.
-it('keeps the Stream update entry outside the scrolling or recycled feed', () => {
-  const about = nodes.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === 'ProfileButton');
-  expect(about).toBeDefined();
+// Stream's Devices and Updates controls stay reachable while feed sections hydrate or scroll.
+it('keeps the Stream Connect entry outside the scrolling or recycled feed', () => {
+  const devices = nodes.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === 'ConnectDropdown');
+  expect(devices).toBeDefined();
   const ancestors: string[] = [];
-  for (let node = about?.parent; node; node = node.parent) {
+  for (let node = devices?.parent; node; node = node.parent) {
     if (ts.isJsxElement(node)) ancestors.push(node.openingElement.tagName.getText(file));
     if (ts.isJsxAttribute(node)) ancestors.push(node.name.getText(file));
   }
   expect(ancestors).toContain('AppScreen');
   expect(ancestors).not.toContain('ListHeaderComponent');
   expect(ancestors).not.toContain('FlashList');
+});
+
+it('replaces the Stream explanation with the LuvLyrics updates dropdown', () => {
+  expect(source).toContain('<StreamUpdatesDropdown');
+  expect(source).not.toContain('About Stream');
+  expect(source).not.toContain('STREAM_TOUR');
+  expect(source.indexOf('<ConnectDropdown />')).toBeLessThan(source.indexOf('<StreamUpdatesDropdown'));
 });
 
 const flashList = () => nodes.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === 'FlashList') as ts.JsxSelfClosingElement;

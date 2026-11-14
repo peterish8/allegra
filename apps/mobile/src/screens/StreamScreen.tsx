@@ -24,15 +24,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Toast } from '../components/Toast';
-import { ProfileButton } from '../components/nav/ProfileButton';
-import { InfoTour } from '../components/allegra/InfoTour';
 import { AuraMood } from '../components/allegra/MusicFlowField';
 import { PrimaryButton, SectionHeading } from '../components/allegra/home';
-import { STREAM_TOUR, streamScene } from '../components/allegra/infoTours';
 import { RiseIn } from '../components/allegra/motion';
 import { Control } from '../ui';
 import { useHeaderGlow } from '../hooks/useHeaderGlow';
 import { BrowseShelf } from '../components/browse/BrowseShelf';
+import { StreamUpdatesDropdown } from '../components/about/StreamUpdatesDropdown';
 import { ConnectDropdown } from '../components/connect/ConnectDropdown';
 import { GUTTER, MoodChips, QuickPicks, ShortcutGrid, SongRow, TrackItem } from '../components/stream/StreamHome';
 import { RecentShelf, RecentSwitch } from '../components/stream/RecentShelf';
@@ -461,17 +459,15 @@ const StreamScreen: React.FC = () => {
   return (
     <AppScreen style={styles.screen} staticGlow={false}>
       <HeaderGlow {...glow.props} />
-      {/* Keep the update entry reachable while feed sections hydrate or scroll. */}
+      {/* Keep Connect and Updates reachable while feed sections hydrate or scroll. */}
       <View style={{ paddingTop: insets.top + Space.xs }}>
         <View style={styles.header}>
-          {/* 1.42.0 (Spotify's place): your picture opens the profile menu, where About and updates now live. */}
           <View style={styles.headerLead}>
-            <ProfileButton />
+            <ConnectDropdown />
             <RecentSwitch view={recentView} onChange={setRecentView} />
           </View>
           <View style={styles.headerActions}>
-            <InfoTour label="About Stream" steps={STREAM_TOUR} scene={streamScene} />
-            <ConnectDropdown />
+            <StreamUpdatesDropdown topOffset={insets.top + Space.xs + HEADER_HEIGHT + Space.xs} rightOffset={GUTTER} />
           </View>
         </View>
       </View>
