@@ -4,8 +4,9 @@
  * its first lines. Tap one to use it (services/lyrics/lyricsPicker).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { TactileRow } from '../allegra/motion';
 import { SheetScrollView } from './PlayerSheet';
 import { KIND_LABEL, LyricsOption, rankOptions } from '../../services/lyrics/lyricsChoice';
 import { applyLyricsOption, PickerTarget, searchEveryProvider } from '../../services/lyrics/lyricsPicker';
@@ -67,10 +68,10 @@ export const LyricsPicker: React.FC<Props> = ({ target, currentSource, onDone })
         {ranked.map((option, i) => {
           const inUse = !!currentSource && currentSource.toLowerCase() === option.provider.toLowerCase();
           return (
-            <Pressable
+            <TactileRow
               key={option.id}
               onPress={() => pick(option)}
-              style={({ pressed }) => [styles.card, i === 0 && !searching && styles.best, pressed && styles.pressed]}
+              style={[styles.card, i === 0 && !searching && styles.best]}
               accessibilityRole="button"
               accessibilityLabel={`${option.provider}, ${KIND_LABEL[option.kind]}, ${option.score} percent match${inUse ? ', in use' : ''}. Use these lyrics`}
             >
@@ -89,7 +90,7 @@ export const LyricsPicker: React.FC<Props> = ({ target, currentSource, onDone })
               {option.preview.map((line, n) => (
                 <Text key={n} style={[styles.line, n === 0 && styles.lineFirst]} numberOfLines={1}>{line}</Text>
               ))}
-            </Pressable>
+            </TactileRow>
           );
         })}
       </SheetScrollView>
@@ -110,7 +111,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.16)',
   },
   best: { borderColor: 'rgba(255,255,255,0.5)' },
-  pressed: { backgroundColor: 'rgba(255,255,255,0.16)' },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   provider: { color: '#fff', fontSize: 16, fontWeight: '700', flexShrink: 1 },
   badge: { paddingHorizontal: 8, height: 22, borderRadius: 11, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },

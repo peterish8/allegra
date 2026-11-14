@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, Text, View, ViewProps } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
-import Animated, { runOnJS, SharedValue, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { runOnJS, SharedValue, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Motion, Signal } from '../../constants/allegraTheme';
 import { shouldCloseSheet } from '../../navigation/sheetClose';
@@ -85,6 +85,7 @@ const Row: React.FC<{
   drag: DragState;
   onPick: (index: number) => void;
 }> = ({ song, index, current, movable, drag, onPick }) => {
+  const reduceMotion = useReducedMotion();
   const { from, to, dy, count, list, onDrop, onLift } = drag;
   const lifted = useSharedValue(0);
   const style = useAnimatedStyle(() => {
@@ -94,7 +95,8 @@ const Row: React.FC<{
       y = dy.value;
       scale = 1 + 0.03 * lifted.value;
     } else if (from.value >= 0) {
-      y = withSpring(rowShift(index, from.value, to.value, ROW_H), Motion.spring.tactile);
+      const target = rowShift(index, from.value, to.value, ROW_H);
+      y = reduceMotion ? target : withSpring(target, Motion.spring.tactile);
     }
     return { transform: [{ translateY: y }, { scale }] as const };
   });
@@ -110,7 +112,8 @@ const Row: React.FC<{
         from.value = index;
         to.value = index;
         dy.value = 0;
-        lifted.value = withSpring(1, Motion.spring.tactile);
+        if (reduceMotion) lifted.value = 1;
+        else lifted.value = withSpring(1, Motion.spring.tactile);
         runOnJS(onLift)(index);
       })
       .onUpdate(e => {
@@ -122,16 +125,23 @@ const Row: React.FC<{
         'worklet';
         const target = to.value;
         // Land exactly in the gap before the list re-orders under it.
-        dy.value = withSpring((target - index) * ROW_H, Motion.spring.tactile, done => {
-          'worklet';
-          if (done) runOnJS(onDrop)(index, target);
-        });
+        const landing = (target - index) * ROW_H;
+        if (reduceMotion) {
+          dy.value = landing;
+          runOnJS(onDrop)(index, target);
+        } else {
+          dy.value = withSpring(landing, Motion.spring.tactile, done => {
+            'worklet';
+            if (done) runOnJS(onDrop)(index, target);
+          });
+        }
       })
       .onFinalize(() => {
         'worklet';
-        lifted.value = withSpring(0, Motion.spring.tactile);
+        if (reduceMotion) lifted.value = 0;
+        else lifted.value = withSpring(0, Motion.spring.tactile);
       });
-  }, [movable, index, lifted, from, to, dy, count, list, onDrop, onLift]);
+  }, [movable, index, lifted, from, to, dy, count, list, onDrop, onLift, reduceMotion]);
 
   return (
     <Animated.View style={[styles.rowWrap, style]}>

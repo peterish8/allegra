@@ -3,8 +3,9 @@
  * editors that used to live in the menu) and Advanced (Echo's tempo & pitch).
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Tactile } from '../allegra/motion';
 import * as Haptics from '../../utils/haptics';
 import { Song } from '../../types/song';
 import { isStreamSongId, parseStreamId } from '../../services/stream/streamSong';
@@ -20,10 +21,10 @@ const Field: React.FC<{ label: string; value?: string | null }> = ({ label, valu
   ) : null;
 
 const Action: React.FC<{ icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string; onPress: () => void }> = ({ icon, label, onPress }) => (
-  <Pressable onPress={onPress} style={({ pressed }) => [styles.action, pressed && styles.pressed]} accessibilityRole="button">
+  <Tactile onPress={onPress} style={styles.action} accessibilityRole="button">
     <MaterialCommunityIcons name={icon} size={20} color="#fff" />
     <Text style={styles.actionText}>{label}</Text>
-  </Pressable>
+  </Tactile>
 );
 
 export const SongDetails: React.FC<{
@@ -63,13 +64,13 @@ const Stepper: React.FC<{ label: string; value: number; steps: readonly number[]
   return (
     <View style={styles.stepper}>
       <Text style={styles.stepLabel}>{label}</Text>
-      <Pressable onPress={() => move(-1)} disabled={at <= 0} hitSlop={8} style={[styles.stepBtn, at <= 0 && styles.disabled]} accessibilityLabel={`Lower ${label.toLowerCase()}`}>
+      <Tactile onPress={() => move(-1)} disabled={at <= 0} hitSlop={8} style={[styles.stepBtn, at <= 0 && styles.disabled]} accessibilityLabel={`Lower ${label.toLowerCase()}`}>
         <MaterialCommunityIcons name="minus" size={20} color="#fff" />
-      </Pressable>
+      </Tactile>
       <Text style={styles.stepValue}>{`${value}×`}</Text>
-      <Pressable onPress={() => move(1)} disabled={at >= steps.length - 1} hitSlop={8} style={[styles.stepBtn, at >= steps.length - 1 && styles.disabled]} accessibilityLabel={`Raise ${label.toLowerCase()}`}>
+      <Tactile onPress={() => move(1)} disabled={at >= steps.length - 1} hitSlop={8} style={[styles.stepBtn, at >= steps.length - 1 && styles.disabled]} accessibilityLabel={`Raise ${label.toLowerCase()}`}>
         <MaterialCommunityIcons name="plus" size={20} color="#fff" />
-      </Pressable>
+      </Tactile>
     </View>
   );
 };
@@ -82,14 +83,14 @@ export const TempoPitch: React.FC = () => {
     <View>
       <Stepper label="Tempo" value={tempo} steps={TEMPO_STEPS} onChange={t => set(t, pitch)} />
       <Stepper label="Pitch" value={pitch} steps={PITCH_STEPS} onChange={p => set(tempo, p)} />
-      <Pressable
+      <Tactile
         onPress={() => set(1, 1)}
         disabled={tempo === 1 && pitch === 1}
-        style={({ pressed }) => [styles.reset, pressed && styles.pressed, tempo === 1 && pitch === 1 && styles.disabled]}
+        style={[styles.reset, tempo === 1 && pitch === 1 && styles.disabled]}
         accessibilityRole="button"
       >
         <Text style={styles.resetText}>Reset</Text>
-      </Pressable>
+      </Tactile>
     </View>
   );
 };
@@ -101,7 +102,6 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 4 },
   action: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.1)' },
   actionText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  pressed: { backgroundColor: 'rgba(255,255,255,0.16)' },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 6 },
   stepLabel: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
   stepBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)' },

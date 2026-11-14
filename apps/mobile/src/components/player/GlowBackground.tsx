@@ -16,11 +16,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { Canvas, Fill, RadialGradient, Rect, vec } from '@shopify/react-native-skia';
-import { Easing, useDerivedValue, useFrameCallback, useSharedValue, withTiming } from 'react-native-reanimated';
+import { Easing, useDerivedValue, useFrameCallback, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import type { FrameInfo } from 'react-native-reanimated';
 import { useVisualBudget } from '../../hooks/useVisualBudget';
 
-import { Blob, BASE, CYCLE_S, FADE_MS, MINI_BLOBS, oscillate, PLAYER_BLOBS, rgba, rotatedColorAt, toRgb } from './glowMath';
+import { Blob, BASE, CYCLE_S, FADE_MS, MINI_BLOBS, oscillate, PLAYER_BLOBS, rgba, rotatedColorAt, shouldAdvanceGlow, toRgb } from './glowMath';
 
 const styles = StyleSheet.create({
   clip: { overflow: 'hidden' },
@@ -69,6 +69,7 @@ const GlowBackground: React.FC<GlowBackgroundProps> = ({ colors, variant = 'play
   };
 
   const palette = useMemo(() => colors.map(toRgb), [colors]);
+  const reduceMotion = useReducedMotion();
   const from = useSharedValue<number[][]>([]);
   const to = useSharedValue<number[][]>(palette);
   const mix = useSharedValue(1);
@@ -76,9 +77,9 @@ const GlowBackground: React.FC<GlowBackgroundProps> = ({ colors, variant = 'play
     if (palette.length === 0) return;
     from.value = to.value;
     to.value = palette;
-    mix.value = 0;
-    mix.value = withTiming(1, { duration: FADE_MS, easing: Easing.linear });
-  }, [palette, from, to, mix]);
+    mix.value = reduceMotion ? 1 : 0;
+    if (!reduceMotion) mix.value = withTiming(1, { duration: FADE_MS, easing: Easing.linear });
+  }, [palette, reduceMotion, from, to, mix]);
 
   // progress: 0→1 every 20s, linear, restarting (Echo's infiniteRepeatable tween).
   const budget = useVisualBudget();
@@ -96,7 +97,7 @@ const GlowBackground: React.FC<GlowBackgroundProps> = ({ colors, variant = 'play
     pending.value = 0;
   }, [minStep, pending, progress]);
   const frame = useFrameCallback(tick, false);
-  const running = active && budget.running;
+  const running = shouldAdvanceGlow(active, budget.running, reduceMotion);
   useEffect(() => {
     frame.setActive(running);
   }, [running, frame]);

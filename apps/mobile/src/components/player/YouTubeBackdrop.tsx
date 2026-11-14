@@ -6,7 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { AuraPalette, WASH_STOPS, youtubeWash } from '../allegra/palette';
 
 const FADE_MS = 700;
@@ -17,6 +17,7 @@ interface Layer {
 }
 
 const YouTubeBackdrop: React.FC<{ palette: AuraPalette }> = ({ palette }) => {
+  const reduceMotion = useReducedMotion();
   const colors = youtubeWash(palette.primary);
   const key = colors.join();
   // The last wash stays underneath while the new one fades in on top.
@@ -30,7 +31,7 @@ const YouTubeBackdrop: React.FC<{ palette: AuraPalette }> = ({ palette }) => {
   return (
     <View style={[StyleSheet.absoluteFill, styles.base]} pointerEvents="none">
       {layers.map((layer, i) => (
-        <Animated.View key={layer.key} style={StyleSheet.absoluteFill} entering={i > 0 ? FadeIn.duration(FADE_MS) : undefined}>
+        <Animated.View key={layer.key} style={StyleSheet.absoluteFill} entering={reduceMotion ? undefined : i > 0 ? FadeIn.duration(FADE_MS) : undefined}>
           <LinearGradient colors={layer.colors} locations={[...WASH_STOPS]} style={StyleSheet.absoluteFill} />
         </Animated.View>
       ))}
