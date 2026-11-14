@@ -24,7 +24,7 @@
     "components/Toast.tsx": 1,
     "components/VoiceMicButton.tsx": 1,
     "components/VoiceSearchCard.tsx": 1,
-    "components/YtMiniPlayer.tsx": 3,
+    "components/YtMiniPlayer.tsx": 3
   },
   "slideModal": {
     "components/LrcSearchModal.tsx": 1
