@@ -110,11 +110,12 @@ export const ShellFrost = {
    * texture, and a light scrim so white text always reads. Nothing of the page behind shows through.
    */
   miniBase: '#050505',
-  /**
-   * The navigation bar (1.43.0, owner's Spotify screenshot): no slab of its own. The page fades to black under it,
-   * starting `navFade` above the bar, so rows scroll softly out under the icons.
-   */
-  navFadeColors: ['rgba(0, 0, 0, 0.04)', 'rgba(0, 0, 0, 0.96)', '#000000'] as const,
+  miniRim: 'rgba(255, 255, 255, 0.08)',
+  /** The lower navigation rests on black, with a little transparency at its top edge. */
+  navSurfaceColors: ['rgba(0, 0, 0, 0.88)', '#000000'] as const,
+  navSurfaceStops: [0, 1] as const,
+  /** The page fades into the nav surface above it; the bottom remains solid black. */
+  navFadeColors: ['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.45)', '#000000'] as const,
   navFadeStops: [0, 0.32, 1] as const,
   navFade: 80,
   /**

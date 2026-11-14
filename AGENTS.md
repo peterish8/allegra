@@ -63,6 +63,15 @@ same thing — remove it rather than documenting around it.
   to be readable in the corresponding app bundle.
 - **Convex Auth owns the `users` table.** Listener data lives in `profiles`.
 
+## Phone update copy
+
+Write LuvLyrics release notes for listeners in everyday English. Say what changed or what someone can now do,
+in a short, specific sentence. Avoid commit prefixes, PR numbers, internal component names, build/CI terms,
+and engineering jargon. Describe the visible result of a fix and omit work listeners cannot see. Keep
+`apps/mobile/update-history.json` ordered newest first with up to four versions; `scripts/mobile-release-notes.mjs`
+publishes those notes beside the APK. Use the same plain-language rule for update errors and download status
+messages shown in the phone.
+
 ## Testing style
 
 Tests state a behaviour, not a method name: *"Karaoke falls back locally when the device cannot run

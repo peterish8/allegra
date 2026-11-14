@@ -1,0 +1,164 @@
+name: Mobile rollback APKs
+
+on:
+  workflow_run:
+    workflows: ["Mobile APK"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  plan:
+    name: Find missing retained versions
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_missing: ${{ steps.plan.outputs.has_missing }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Plan missing packages
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view apk-latest --repo "$GH_REPO" --json assets --jq '[.assets[].name]' > "$RUNNER_TEMP/release-assets.json"
+          node scripts/mobile-rollback-plan.mjs --assets "$RUNNER_TEMP/release-assets.json" --out "$RUNNER_TEMP/rollback-plan.json"
+          echo "matrix=$(jq -c '{include: .include}' "$RUNNER_TEMP/rollback-plan.json")" >> "$GITHUB_OUTPUT"
+          echo "has_missing=$(jq -r '(.include | length) > 0' "$RUNNER_TEMP/rollback-plan.json")" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build version ${{ matrix.version }}
+    needs: plan
+    if: needs.plan.outputs.has_missing == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          path: tooling
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ matrix.commit }}
+          path: source
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: source/apps/mobile/package-lock.json
+
+      - name: Install mobile dependencies
+        run: npm ci --prefix source/apps/mobile
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+
+      - name: Configure the release signer
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 }}
+        run: |
+          for name in KEYSTORE_B64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD EXPECTED_CERT_SHA256; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Rollback APK builds need the configured Android release signer ($name is missing)."
+              exit 1
+            fi
+          done
+          KEY="$GITHUB_WORKSPACE/source/apps/mobile/android/app/release.keystore"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEY"
+          chmod 600 "$KEY"
+          ACTUAL_CERT_SHA256="$(keytool -list -v -keystore "$KEY" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | awk -F': ' '/SHA256: / { gsub(":", "", $2); print toupper($2); exit }')"
+          node tooling/scripts/mobile-signing-policy.mjs "$EXPECTED_CERT_SHA256" "$ACTUAL_CERT_SHA256"
+
+      - name: Set the shared installer version
+        run: |
+          VERSION_CODE="$(node -p "require('./tooling/apps/mobile/rollback-version-code.json').versionCode")"
+          node tooling/scripts/patch-mobile-version-code.mjs "source/apps/mobile/android/app/build.gradle" "$VERSION_CODE"
+
+      - name: Build and verify the signed rollback APK
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+          ANDROID_RELEASE_REQUIRED: "true"
+          ANDROID_RELEASE_KEYSTORE_PATH: ${{ github.workspace }}/source/apps/mobile/android/app/release.keystore
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+          EXPO_PUBLIC_BUILD_COMMIT: ${{ matrix.commit }}
+        run: |
+          cd source/apps/mobile/android
+          chmod +x gradlew
+          ./gradlew testReleaseUnitTest assembleRelease --no-daemon "-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g"
+          APK="$GITHUB_WORKSPACE/source/apps/mobile/android/app/build/outputs/apk/release/app-release.apk"
+          OUTPUT="$RUNNER_TEMP/${{ matrix.asset }}"
+          cp "$APK" "$OUTPUT"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          EXPECTED="${{ vars.ANDROID_RELEASE_CERT_SHA256 }}"
+          node "$GITHUB_WORKSPACE/tooling/scripts/mobile-signing-policy.mjs" --apk "$EXPECTED" "$APKSIGNER" "$OUTPUT"
+          VERSION_CODE="$(node -p "require('$GITHUB_WORKSPACE/tooling/apps/mobile/rollback-version-code.json').versionCode")"
+          "$AAPT" dump badging "$OUTPUT" | grep -F "versionCode='$VERSION_CODE'" >/dev/null
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rollback-package-${{ matrix.version }}
+          path: ${{ runner.temp }}/${{ matrix.asset }}
+          retention-days: 14
+
+  publish:
+    name: Add signed rollback packages
+    needs: [plan, build]
+    if: needs.plan.outputs.has_missing == 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: rollback-package-*
+          path: ${{ runner.temp }}/rollback-apks
+          merge-multiple: true
+
+      - name: Publish assets and enable their install buttons
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release upload apk-latest "$RUNNER_TEMP"/rollback-apks/LuvLyrics-rollback-*.apk --clobber --repo "$GH_REPO"
+          gh release view apk-latest --repo "$GH_REPO" --json assets --jq '[.assets[].name]' > "$RUNNER_TEMP/release-assets.json"
+          VERSION="$(node -p "require('./apps/mobile/app.json').expo.version")"
+          node scripts/mobile-release-notes.mjs --to "$GITHUB_SHA" --version "$VERSION" --history apps/mobile/update-history.json --available-rollbacks "$RUNNER_TEMP/release-assets.json" --out "$RUNNER_TEMP/notes"
+          gh release upload apk-latest "$RUNNER_TEMP/notes/update-history.json" --clobber --repo "$GH_REPO"

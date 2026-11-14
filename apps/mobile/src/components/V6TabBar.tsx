@@ -94,10 +94,12 @@ export function V6TabBar({ state, navigation }: BottomTabBarProps) {
   return <View pointerEvents="box-none" style={[styles.host, styles.hostOpen]}>
     <CreateSheet open={createOpen} bottom={sheet.bottom} maxHeight={sheet.maxHeight} onClose={() => setCreateOpen(false)} onPick={create} />
     <AnimatedBar height={barHeight} push={push}>
-    {/* 1.43.0 (owner's Spotify screenshot): no slab behind the bar. The page fades to black under it, starting
-        ShellFrost.navFade above it; touches on the fade reach the page. */}
+    <LinearGradient pointerEvents="none" colors={ShellFrost.navSurfaceColors} locations={ShellFrost.navSurfaceStops}
+      style={[styles.navSurface, { height: barHeight }]} />
+    {/* The page fades into a black navigation surface; touches through the fade still reach the page. */}
     <LinearGradient pointerEvents="none" colors={ShellFrost.navFadeColors} locations={ShellFrost.navFadeStops}
       style={[styles.fade, { top: -ShellFrost.navFade }]} />
+    <View pointerEvents="none" style={styles.navTopEdge} />
     {NativeBar ? <NativeBar variant="v6" activeTab={active} moreActive={false} moreOpen={createOpen} micEnabled={false} dark glassBackground bottomInset={barHeight - navBarHeight(fontScale)} bottomOffset={0}
       activeTint={Signal.ink} inactiveTint={Signal.inkSoft} style={{ height: barHeight }} onTabPress={e => press(e.nativeEvent.route)} onMorePress={() => press(CREATE_TAB)}
       holdTab={holdTab} onTabLongPress={e => hold(e.nativeEvent.route)} />
@@ -123,7 +125,9 @@ const AnimatedBar: React.FC<{ height: number; push: ReturnType<typeof useTabBarP
 const styles = StyleSheet.create({
   host: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   hostOpen: { top: 0, zIndex: 20, justifyContent: 'flex-end' },
+  navSurface: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   fade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  navTopEdge: { position: 'absolute', left: 0, right: 0, top: 0, height: StyleSheet.hairlineWidth, backgroundColor: ShellFrost.miniRim },
   // Spotify's open Create tab: a white disc with a dark close mark.
   closeDisc: { width: 40, height: 40, borderRadius: 20, backgroundColor: Signal.ink },
   row: { flexDirection: 'row', minHeight: NAV_BAR_HEIGHT }, target: { flex: 1 }, item: { alignItems: 'center', justifyContent: 'center', gap: Space.xxs, height: NAV_BAR_HEIGHT },

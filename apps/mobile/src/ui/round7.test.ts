@@ -72,13 +72,16 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
     expect(read('components/V6TabBar.tsx')).not.toMatch(/styles\.selected/);
   });
 
-  // 1.43.0 (owner's Spotify screenshot): the bar has no slab of its own; the page fades to black under it.
-  it('gives the mini player its own cover glow and fades the page to black under the bar', () => {
-    // The pill stays mounted under the player and the Create sheet, so the glow rests there (was: unmounted, 1.43.0).
-    expect(read('components/PillPlayer.tsx')).toMatch(/<MiniPlayerGlow uri=\{coverImageUri\} active=\{!sheetUp && !createOpen\} \/>/);
-    expect(read('components/PillPlayer.tsx')).not.toMatch(/shell: \{[^}]*backgroundColor/);
+  it('gives the mini player a floating rim and rests the bottom navigation on black', () => {
+    const player = read('components/PillPlayer.tsx');
+    expect(player).toMatch(/<MiniPlayerGlow uri=\{coverImageUri\} active=\{!sheetUp && !createOpen\} \/>/);
+    expect(player).toMatch(/left: Space\.sm, right: Space\.sm/);
+    expect(player).toMatch(/borderRadius: Radius\.sheet/);
+    expect(player).toMatch(/playButtonOffset: \{ marginRight: Space\.xxs \}/);
     const bar = read('components/V6TabBar.tsx');
-    expect(bar).not.toMatch(/<ShellMaterial/);
+    expect(bar).toMatch(/colors=\{ShellFrost\.navSurfaceColors\}/);
+    expect(bar).toMatch(/colors=\{ShellFrost\.navFadeColors\}/);
+    expect(bar).toMatch(/navTopEdge/);
     expect(bar).toMatch(/<LinearGradient pointerEvents="none" colors=\{ShellFrost\.navFadeColors\} locations=\{ShellFrost\.navFadeStops\}/);
     expect(bar).toMatch(/top: -ShellFrost\.navFade/);
   });

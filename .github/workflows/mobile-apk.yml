@@ -116,8 +116,8 @@ jobs:
           ANDROID_RELEASE_STORE_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.ANDROID_RELEASE_STORE_PASSWORD || '' }}
           ANDROID_RELEASE_KEY_ALIAS: ${{ github.ref == 'refs/heads/main' && secrets.ANDROID_RELEASE_KEY_ALIAS || '' }}
           ANDROID_RELEASE_KEY_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.ANDROID_RELEASE_KEY_PASSWORD || '' }}
-          # The in-app updater uses the commit and semantic version; Android versionCode is
-          # derived monotonically from that same semantic version in app/build.gradle.
+          # The in-app updater uses the commit and semantic version. The Android versionCode is
+          # pinned for same-signature rollback APKs; see apps/mobile/rollback-version-code.json.
           EXPO_PUBLIC_BUILD_COMMIT: ${{ github.sha }}
         # gradlew was committed without the executable bit. gradle.properties caps
         # the JVM at 2 GB, which leaves R8 thrashing; runners have 16 GB. arm64
@@ -209,7 +209,7 @@ jobs:
         run: npm run test:ci
 
   # The release gate: the same commit, built for the emulator's CPU, must open — twice, from cold — draw, answer a
-  # link, keep its screen layer alive, and reach About and its Updates panel. 1.0.3 compiled and was published,
+  # link, keep its screen layer alive, and open Stream's recent updates dropdown. 1.0.3 compiled and was published,
   # then closed on every launch on every phone, and a phone with a build that cannot open cannot update itself.
   # `publish` waits for this; a failure here leaves the last good build on apk-latest.
   launch-check:
@@ -308,29 +308,61 @@ jobs:
           name: LuvLyrics-apk
           path: apps/mobile
 
-      # The release carries what the app's update screen shows (apps/mobile/src/services/appUpdate.ts),
-      # as Echo Music's does: the version, the date and size (from the release and its APK), and
-      # changelog.json — what changed since the previous build, from the commit subjects.
+      # The release carries the current build and four listener-written summaries. Existing
+      # rollback APKs are retained; a separate workflow fills in missing signed builds after publish.
       - name: Publish to the apk-latest release
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          PREVIOUS="$(gh release view apk-latest --json targetCommitish --jq .targetCommitish 2>/dev/null || true)"
-          case "$PREVIOUS" in *[!0-9a-f]*) PREVIOUS="" ;; esac
-          [ "${#PREVIOUS}" -eq 40 ] || PREVIOUS=""
+          set -euo pipefail
           VERSION="$(node -p "require('./apps/mobile/app.json').expo.version")"
-          node scripts/mobile-release-notes.mjs --from "$PREVIOUS" --to "$GITHUB_SHA" --version "$VERSION" --out "$RUNNER_TEMP/notes"
+          node scripts/mobile-release-notes.mjs --to "$GITHUB_SHA" --version "$VERSION" --history apps/mobile/update-history.json --out "$RUNNER_TEMP/notes"
           {
             cat "$RUNNER_TEMP/notes/notes.md"
             echo
-            echo "Built from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7}. Download LuvLyrics.apk below and open it on your Android phone to install, or use Update app in the app's About page."
-            echo "Direct link: https://github.com/${GITHUB_REPOSITORY}/releases/download/apk-latest/LuvLyrics.apk"
+            echo "Built from $GITHUB_REF_NAME at $(printf '%.7s' "$GITHUB_SHA"). Download LuvLyrics.apk below and open it on your Android phone to install, or use Update app in the app's About page."
+            echo "Direct link: https://github.com/$GITHUB_REPOSITORY/releases/download/apk-latest/LuvLyrics.apk"
           } > "$RUNNER_TEMP/notes/release-body.md"
-          gh release delete apk-latest --yes --cleanup-tag || true
-          gh release create apk-latest apps/mobile/LuvLyrics.apk apps/mobile/LuvLyricsIsland.apk "$RUNNER_TEMP/notes/changelog.json" \
-            --prerelease \
-            --target "$GITHUB_SHA" \
-            --title "LuvLyrics $VERSION — latest build" \
-            --notes-file "$RUNNER_TEMP/notes/release-body.md"
+          mkdir -p "$RUNNER_TEMP/previous"
+          PREVIOUS_VERSION=""
+          PREVIOUS_APK=""
+          if gh release view apk-latest >/dev/null 2>&1; then
+            if gh release download apk-latest --pattern LuvLyrics.apk --pattern changelog.json --dir "$RUNNER_TEMP/previous"; then
+              PREVIOUS_VERSION="$(jq -r '.version // empty' "$RUNNER_TEMP/previous/changelog.json")"
+              if [[ "$PREVIOUS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$PREVIOUS_VERSION" != "$VERSION" ]]; then
+                PREVIOUS_APK="$RUNNER_TEMP/previous/LuvLyrics-rollback-$PREVIOUS_VERSION.apk"
+                cp "$RUNNER_TEMP/previous/LuvLyrics.apk" "$PREVIOUS_APK"
+              fi
+            fi
+            gh release edit apk-latest \
+              --target "$GITHUB_SHA" \
+              --title "LuvLyrics $VERSION — latest build" \
+              --notes-file "$RUNNER_TEMP/notes/release-body.md" \
+              --prerelease
+          else
+            gh release create apk-latest \
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              --title "LuvLyrics $VERSION — latest build" \
+              --notes-file "$RUNNER_TEMP/notes/release-body.md"
+          fi
+          git tag --force apk-latest "$GITHUB_SHA"
+          git push origin refs/tags/apk-latest --force
+          gh release upload apk-latest apps/mobile/LuvLyrics.apk apps/mobile/LuvLyricsIsland.apk "$RUNNER_TEMP/notes/changelog.json" --clobber
+          if [ -n "$PREVIOUS_APK" ]; then gh release upload apk-latest "$PREVIOUS_APK" --clobber; fi
+          node -e "const h=require('./apps/mobile/update-history.json'); process.stdout.write(JSON.stringify(h.entries.map(e=>e.rollbackAsset).filter(Boolean)))" > "$RUNNER_TEMP/rollback-assets-keep.json"
+          gh release view apk-latest --json assets --jq '[.assets[].name]' > "$RUNNER_TEMP/release-assets.json"
+          while IFS= read -r asset; do
+            case "$asset" in
+              LuvLyrics-rollback-*.apk)
+                if ! jq -e --arg asset "$asset" 'index($asset) != null' "$RUNNER_TEMP/rollback-assets-keep.json" >/dev/null; then
+                  gh release delete-asset apk-latest "$asset" --yes
+                fi
+                ;;
+            esac
+          done < <(jq -r '.[]' "$RUNNER_TEMP/release-assets.json")
+          gh release view apk-latest --json assets --jq '[.assets[].name]' > "$RUNNER_TEMP/release-assets.json"
+          node scripts/mobile-release-notes.mjs --to "$GITHUB_SHA" --version "$VERSION" --history apps/mobile/update-history.json --available-rollbacks "$RUNNER_TEMP/release-assets.json" --out "$RUNNER_TEMP/notes"
+          gh release upload apk-latest "$RUNNER_TEMP/notes/update-history.json" --clobber

@@ -30,6 +30,7 @@ import { MiniScrubber } from './MiniScrubber';
 import { NativeSwipeSkip, useNativeSwipeSkip } from './NativeSwipeSkip';
 import { useShellMenuStore } from '../store/shellMenuStore';
 import { scrubSeconds, spokenPosition } from '../playback/miniScrub';
+import { ShellFrost } from '../constants/allegraTheme';
 
 interface Props {
   title: string; artist?: string; coverImageUri?: string; playing: boolean; bottom: number; sheetUp?: boolean;
@@ -269,7 +270,9 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
             <Ionicons name={liked ? 'checkmark-circle' : 'add-circle-outline'} size={ACTION_GLYPH} color={Signal.ink} />
           </Tactile>
         ) : null}
-        <PlaybackButton size={48} plain remote={remote} status={status} onPress={() => { if (!remote && status === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
+        <View style={styles.playButtonOffset}>
+          <PlaybackButton size={48} plain remote={remote} status={status} onPress={() => { if (!remote && status === 'error') (onRetry ?? onTogglePlay)(); else onTogglePlay(); }} />
+        </View>
       </View>
     </Animated.View>
   </Animated.View>;
@@ -279,11 +282,11 @@ const ACTION_GLYPH = 26;
 const ACTION_SLOT = 48;
 const ACTION_SLOP = { left: 0, right: 0, top: 0, bottom: 0 } as const;
 const styles = StyleSheet.create({
-  // No fill of its own: MiniPlayerGlow is its surface (1.41.0). 1.44.0 (owner): the full width of the screen, edge to
-  // edge, with no border or outline of its own; the glow and the progress line are clipped to its rounded corners.
-  shell: { position: 'absolute', left: 0, right: 0, zIndex: 15, borderRadius: Radius.panel, overflow: 'hidden' },
+  // MiniPlayerGlow is the surface; the inset, rim and larger corners give it a clear edge above the black nav bar.
+  shell: { position: 'absolute', left: Space.sm, right: Space.sm, zIndex: 15, borderRadius: Radius.sheet, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: ShellFrost.miniRim },
   row: { flexDirection: 'row', alignItems: 'center', paddingLeft: Space.xs, paddingRight: Space.xxs },
   actions: { flexDirection: 'row', alignItems: 'center' },
+  playButtonOffset: { marginRight: Space.xxs },
   action: { width: ACTION_SLOT, height: Control.target, alignItems: 'center', justifyContent: 'center' },
   main: { flex: 1, minWidth: 0 }, info: { justifyContent: 'center' },
   follow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingLeft: Space.xs },
