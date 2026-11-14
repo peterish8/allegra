@@ -2,7 +2,6 @@
   "pressable": {
     "App.tsx": 2,
     "components/blend/BlendParts.tsx": 1,
-    "components/blend/BlendStoryPlayer.tsx": 3,
     "components/connect/ConnectDeviceSheet.tsx": 4,
     "components/connect/ConnectNoticeHost.tsx": 2,
     "components/connect/ConnectRemotePlayer.tsx": 7,
@@ -29,7 +28,6 @@
     "components/VoiceMicButton.tsx": 1,
     "components/VoiceSearchCard.tsx": 1,
     "components/YtMiniPlayer.tsx": 3,
-    "screens/BlendJoinScreen.tsx": 2,
     "screens/LuvLinkScreen.tsx": 1
   },
   "slideModal": {
@@ -37,9 +35,6 @@
   },
   "weight": {
     "App.tsx": 1,
-    "components/blend/BlendParts.tsx": 4,
-    "components/blend/BlendStage.tsx": 3,
-    "components/blend/BlendStoryPlayer.tsx": 4,
     "components/import/SpotifyCrate.tsx": 1,
     "components/import/SpotifySyncPanel.tsx": 2,
     "components/TimelineScrubber.tsx": 1
@@ -49,8 +44,7 @@
   },
   "bottomPad": {},
   "alert": {
-    "components/import/SpotifySyncPanel.tsx": 1,
-    "screens/BlendScreen.tsx": 1
+    "components/import/SpotifySyncPanel.tsx": 1
   },
   "color": {
     "screens/LuvsScreen.tsx": 2,

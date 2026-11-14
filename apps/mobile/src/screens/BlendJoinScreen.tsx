@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -10,6 +10,7 @@ import { blendStyles as s, ConsentSheet } from '../components/blend/BlendParts';
 import { useAccount } from '../services/account/AccountProvider';
 import { acceptInvite, previewInvite } from '../services/blend/blendApi';
 import type { LibraryStackParamList } from '../types/navigation';
+import { Tactile } from '../ui';
 
 export default function BlendJoinScreen() {
   const { params: { code } } = useRoute<RouteProp<LibraryStackParamList, 'BlendJoin'>>();
@@ -52,10 +53,10 @@ export default function BlendJoinScreen() {
       <Text style={s.panelBody}>{preview ? `${preview.inviterName} invited you to a playlist made from both your tastes.` : error ?? 'Loading the invite…'}</Text>
       {preview?.full ? <Text style={s.note}>{BLEND_TEXT.full}</Text> : preview ? <>
         {account.signedIn ? <Text style={s.note}>Joining as {account.profile?.displayName ?? 'your account'}</Text> : null}
-        <Pressable style={s.primary} accessibilityRole="button" onPress={() => account.signedIn ? setConsent(true) : void account.signInWithGoogle()}>
+        <Tactile style={s.primary} wrapperStyle={s.selfStart} accessibilityRole="button" onPress={() => account.signedIn ? setConsent(true) : void account.signInWithGoogle()}>
           <Text style={s.primaryText}>{account.signedIn ? 'Join' : 'Sign in to join'}</Text>
-        </Pressable>
-      </> : error ? <Pressable style={s.primary} accessibilityRole="button" onPress={() => setAttempt(value => value + 1)}><Text style={s.primaryText}>Try again</Text></Pressable> : null}
+        </Tactile>
+      </> : error ? <Tactile style={s.primary} wrapperStyle={s.selfStart} accessibilityRole="button" onPress={() => setAttempt(value => value + 1)}><Text style={s.primaryText}>Try again</Text></Tactile> : null}
       {preview && error ? <Text style={s.note} accessibilityRole="alert">{error}</Text> : null}
     </View>
     <ConsentSheet visible={consent} mode="join" inviterName={preview?.inviterName} busy={busy} error={error} onConfirm={() => void join()} onCancel={() => setConsent(false)} />
