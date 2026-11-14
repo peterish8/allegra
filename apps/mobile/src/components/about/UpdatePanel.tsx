@@ -10,10 +10,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Linking, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import appConfig from '../../../app.json';
-import { Motion, Radius, Signal, Surface } from '../../constants/allegraTheme';
+import { Motion, Radius, Signal, Surface, TypeScale } from '../../constants/allegraTheme';
 import {
   checkedAgo, formatSize, INSTALLED_BUILD,
-  LATEST_APK_URL,
+  latestReleaseNotes, LATEST_APK_URL,
   LatestBuild,
   releasedAgo,
   ReleaseNotes,
@@ -60,11 +60,12 @@ const Notes: React.FC<{ notes: ReleaseNotes }> = ({ notes }) => (
         </View>
       </View>
     ))}
+    {!notes.description && notes.sections.length === 0 ? <Text style={styles.body}>No release notes are available for this build.</Text> : null}
   </View>
 );
 
 /** WorkManager owns the transfer. This view observes only while visible and active. */
-export default function UpdatePanel({ visible }: { visible: boolean }) {
+export default function UpdatePanel({ visible, dropdown = false, onClose }: { visible: boolean; dropdown?: boolean; onClose?: () => void }) {
   const [build, setBuild] = useState<LatestBuild | null>(null);
   const [checking, setChecking] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -114,7 +115,7 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
         }
         if (next.kind === 'downloading') timer = setTimeout(poll, 700);
       } catch {
-        if (alive) setNotice('Could not read the download. Close About and try again.');
+        if (alive) setNotice('Could not read the download. Close Updates and try again.');
       } finally { polling = false; }
     };
     poll().catch(() => {});
@@ -137,7 +138,16 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
     checkBusy.current = true;
     setChecking(true);
     setNotice('');
-    try { setBuild(await checkNow()); setChecked(true); }
+    try {
+      const latest = await checkNow();
+      setBuild(latest);
+      setChecked(true);
+      if (!latest) setNotice('Could not load the latest release. Check your connection and retry.');
+    } catch {
+      setBuild(null);
+      setChecked(true);
+      setNotice('Could not reach the release feed. Check your connection and retry.');
+    }
     finally { checkBusy.current = false; setChecking(false); }
   }, []);
 
@@ -155,10 +165,11 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableCommit]);
 
-  // Opening About looks for an update by itself, unless the listener turned that off (Echo does the same).
+  // Opening the updates dropdown always checks so the installed and latest versions and notes are real.
+  // About continues to respect the listener's automatic-check preference.
   useEffect(() => {
-    if (visible && autoCheck && !checked) check().catch(() => {});
-  }, [visible, autoCheck, checked, check]);
+    if (visible && (dropdown || autoCheck) && !checked) check().catch(() => {});
+  }, [visible, dropdown, autoCheck, checked, check]);
 
   const download = async () => {
     if (downloadBusy.current) return;
@@ -182,6 +193,8 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
   const canDownload = status.kind === 'error' || available;
   const installedLabel = `${appConfig.expo.version}${INSTALLED_BUILD.commit ? ` · build ${INSTALLED_BUILD.commit.slice(0, 7)}` : ''}`;
   const lastChecked = lastCheckedAt ? `Last checked ${checkedAgo(new Date(lastCheckedAt))}` : 'Not checked yet';
+  const latestNotes = latestReleaseNotes(build);
+  const latestVersion = build?.version ?? (checking ? 'Checking' : checked ? 'Unavailable' : 'Not checked');
 
   const head: { icon: IconName; tone: 'wave' | 'ok' | 'warn' | 'plain'; title: string; sub: string } =
     checking ? { icon: 'sync', tone: 'plain', title: 'Checking for updates', sub: `You are on ${installedLabel}` }
@@ -198,11 +211,25 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
     !supportsAppUpdates ? null
     : ready ? { label: 'Install update', icon: 'phone-portrait-outline', run: () => { install().catch(() => {}); } }
     : downloading ? null
-    : canDownload ? { label: 'Update', icon: 'arrow-down', run: () => { download().catch(() => {}); } }
-    : { label: checked ? 'Check again' : 'Check for updates', icon: 'refresh', run: () => { check().catch(() => {}); } };
+    : canDownload ? { label: status.kind === 'error' ? 'Retry download' : 'Update', icon: 'arrow-down', run: () => { download().catch(() => {}); } }
+    : { label: checked && !build ? 'Retry' : checked ? 'Check again' : 'Check for updates', icon: 'refresh', run: () => { check().catch(() => {}); } };
 
   return <>
-    <Text style={styles.title}>Updates</Text>
+    <View style={styles.titleRow}>
+      <Text style={styles.title}>Updates</Text>
+      {onClose ? (
+        <Tactile onPress={onClose} accessibilityRole="button" accessibilityLabel="Close updates" hitSlop={8} style={styles.close}>
+          <Ionicons name="close" size={20} color={Signal.ink} />
+        </Tactile>
+      ) : null}
+    </View>
+
+    {dropdown ? (
+      <View style={styles.versions} accessibilityLabel={`Current version ${appConfig.expo.version}. Latest version ${latestVersion}.`}>
+        <View style={styles.versionLine}><Text style={styles.versionLabel}>Current</Text><Text style={styles.versionValue}>{appConfig.expo.version}</Text></View>
+        <View style={styles.versionLine}><Text style={styles.versionLabel}>Latest</Text><Text style={styles.versionValue}>{latestVersion}</Text></View>
+      </View>
+    ) : null}
 
     <View style={styles.card} accessibilityLiveRegion="polite">
       <View style={[styles.tile, head.tone === 'wave' && styles.tileWave, head.tone === 'ok' && styles.tileOk, head.tone === 'warn' && styles.tileWarn]}>
@@ -216,7 +243,7 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
       </View>
     </View>
 
-    {available && build ? <Notes notes={build.notes} /> : null}
+    {latestNotes ? <Notes notes={latestNotes} /> : null}
     {downloading ? <ProgressBar percent={status.progress} /> : null}
 
     {notice || status.kind === 'error' ? <Text style={styles.notice} accessibilityLiveRegion="polite">{notice || status.message}</Text> : null}
@@ -233,23 +260,31 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
       </Tactile>
     ) : !supportsAppUpdates ? <Text style={styles.body}>Installable updates are available in the Android app.</Text> : null}
 
-    <View style={styles.settings}>
-      <Switch
-        label="Check for updates automatically"
-        hint="Looks when you open the app, at most every few hours."
-        value={autoCheck}
-        onChange={on => useUpdateStore.getState().setAutoCheck(on)}
-      />
-    </View>
+    {!dropdown ? <>
+      <View style={styles.settings}>
+        <Switch
+          label="Check for updates automatically"
+          hint="Looks when you open the app, at most every few hours."
+          value={autoCheck}
+          onChange={on => useUpdateStore.getState().setAutoCheck(on)}
+        />
+      </View>
 
-    <View style={styles.links}>
-      <Text style={styles.link} accessibilityRole="link" onPress={() => { Linking.openURL(RELEASES_URL).catch(() => setNotice('Could not open the release notes.')); }}>Release notes ↗</Text>
-    </View>
+      <View style={styles.links}>
+        <Text style={styles.link} accessibilityRole="link" onPress={() => { Linking.openURL(RELEASES_URL).catch(() => setNotice('Could not open the release notes.')); }}>Release notes ↗</Text>
+      </View>
+    </> : null}
   </>;
 }
 
 const styles = StyleSheet.create({
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { color: Signal.ink, fontSize: 17, fontWeight: '700' },
+  close: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Surface.control },
+  versions: { gap: 8, marginTop: 10, padding: 12, borderRadius: 14, backgroundColor: Surface.raised },
+  versionLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  versionLabel: { color: Signal.inkMuted, fontSize: TypeScale.meta },
+  versionValue: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '600' },
   body: { color: Signal.inkSoft, fontSize: 14, lineHeight: 21, marginTop: 10 },
   card: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 12, padding: 14, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)' },
   tile: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)' },

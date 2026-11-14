@@ -148,6 +148,9 @@ export const parseRelease = (json: ReleaseJson | null | undefined): LatestBuild 
   };
 };
 
+/** The latest release notes remain useful even after this phone has installed that build. */
+export const latestReleaseNotes = (build: LatestBuild | null): ReleaseNotes | null => build?.notes ?? null;
+
 /** "61.8 MB". Whole numbers keep no decimal, as in Android's own download list. */
 export const formatSize = (bytes: number): string => {
   const mb = bytes / (1024 * 1024);
