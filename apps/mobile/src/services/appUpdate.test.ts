@@ -1,4 +1,4 @@
-import { buildFromAssets, CHANGELOG_URL, checkedAgo, fetchLatestBuild, formatSize, LATEST_APK_URL, NO_NOTES, notesFromBody, parseChangelog, parseRelease, releasedAgo, shouldAutoCheck, standingOf, type LatestBuild } from './appUpdate';
+import { buildFromAssets, CHANGELOG_URL, checkedAgo, fetchLatestBuild, formatSize, latestReleaseNotes, LATEST_APK_URL, NO_NOTES, notesFromBody, parseChangelog, parseRelease, releasedAgo, shouldAutoCheck, standingOf, type LatestBuild } from './appUpdate';
 
 describe('parseRelease', () => {
   it('reads the date and the APK from a release', () => {
@@ -77,6 +77,20 @@ describe('standingOf', () => {
 
   it('offers the release when nothing is known about this build', () => {
     expect(standingOf(release('2026-09-30T08:02:11Z'), { commit: null, builtAt: null })).toBe('update');
+  });
+
+  it('keeps the latest release notes when the phone already has that exact build', () => {
+    const latest: LatestBuild = {
+      publishedAt: new Date('2026-10-02T09:00:00Z'),
+      downloadUrl: LATEST_APK_URL,
+      commit: sha,
+      sizeBytes: null,
+      version: '1.65.0',
+      changelogUrl: null,
+      notes: { description: null, sections: [{ title: 'New', items: ['Lyrics without a provider key'] }] },
+    };
+    expect(standingOf(latest, { commit: sha, builtAt: latest.publishedAt })).toBe('current');
+    expect(latestReleaseNotes(latest)).toEqual(latest.notes);
   });
 });
 
