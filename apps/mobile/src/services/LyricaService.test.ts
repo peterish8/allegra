@@ -1,5 +1,16 @@
+const mockFoundOnline = jest.fn().mockResolvedValue(null);
+jest.mock('./lyrics/foundOnlineLyricsApi', () => ({
+  fetchFoundOnlineLyrics: (...args: unknown[]) => mockFoundOnline(...args),
+}));
+
 import { getLyricsFriendlyError, lyricaService } from './LyricaService';
 import { continuePlainLyrics, plainLyricsScroll } from '@shared/plainLyrics';
+import { EchoLyricsCascade } from './lyrics/EchoLyricsCascade';
+
+afterEach(() => {
+  jest.restoreAllMocks();
+  mockFoundOnline.mockReset().mockResolvedValue(null);
+});
 
 describe('plain lyrics', () => {
   it('preserves words without inventing sung-line times', () => {
@@ -19,6 +30,23 @@ describe('plain lyrics', () => {
     expect(continuePlainLyrics(110, 210, 1600, 600, 110, 800)).toBe(800);
     expect(continuePlainLyrics(120, 210, 1600, 600, 110, 800)).toBe(850);
     expect(continuePlainLyrics(6, 210, 1600, 600, 4, 500)).toBe(510);
+  });
+});
+
+describe('Found online fallback', () => {
+  it('asks the Allegra endpoint after the mobile lookup and returns its plain result last', async () => {
+    jest.spyOn(EchoLyricsCascade, 'fetchBest').mockResolvedValue(null);
+    jest.spyOn(global, 'fetch').mockRejectedValue(new Error('offline'));
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const online = { type: 'plain' as const, result: { lyrics: 'Website words', source: 'Found online' } };
+    mockFoundOnline.mockResolvedValue(online);
+
+    await expect(lyricaService.fetchLyrics('Song', 'Artist', false, 180, {
+      ref: 'saavn:track-1', album: 'Album', language: 'tamil',
+    })).resolves.toEqual(online.result);
+    expect(mockFoundOnline).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Song', artist: 'Artist', duration: 180, ref: 'saavn:track-1', album: 'Album', language: 'tamil',
+    }));
   });
 });
 

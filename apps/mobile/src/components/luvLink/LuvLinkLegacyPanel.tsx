@@ -5,11 +5,11 @@
  */
 import React, { useState } from 'react';
 import { SheetScrollView } from '../player/PlayerSheet';
-import { KeyboardAvoidingView, Platform, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import * as Haptics from '../../utils/haptics';
 import { Signal } from '../../constants/allegraTheme';
+import { Tactile, TactileRow } from '../../ui';
 import { useLuvLinkStore } from '../../store/luvLinkStore';
 import { StreamService } from '../../services/stream/StreamService';
 import { resolveToCatalog } from '../../services/ytmusic/resolver';
@@ -30,23 +30,23 @@ import {
   transferHost,
 } from '../../services/luvLink/legacy/client';
 
-const tap = () => Haptics.selectionAsync().catch(() => {});
-
 const Button: React.FC<{ label: string; onPress: () => void; primary?: boolean; danger?: boolean; disabled?: boolean; icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name'] }> = ({ label, onPress, primary, danger, disabled, icon }) => (
-  <Pressable
-    onPress={() => { tap(); onPress(); }}
+  <Tactile
+    onPress={onPress}
     disabled={disabled}
-    style={({ pressed }) => [styles.button, primary && styles.primary, danger && styles.danger, pressed && styles.pressed, disabled && styles.disabled]}
+    haptic="select"
+    wrapperStyle={styles.actionTarget}
+    style={[styles.button, primary && styles.primary, danger && styles.danger, disabled && styles.disabled]}
     accessibilityRole="button"
     accessibilityLabel={label}
   >
     {icon ? <MaterialCommunityIcons name={icon} size={18} color={primary ? Signal.waveInk : '#fff'} /> : null}
     <Text style={[styles.buttonText, primary && styles.primaryText, danger && styles.dangerText]}>{label}</Text>
-  </Pressable>
+  </Tactile>
 );
 
 const Toggle: React.FC<{ label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }> = ({ label, hint, value, onChange }) => (
-  <Pressable onPress={() => { tap(); onChange(!value); }} style={styles.toggleRow} accessibilityRole="switch" accessibilityState={{ checked: value }}>
+  <TactileRow onPress={() => onChange(!value)} haptic="select" style={styles.toggleRow} accessibilityRole="switch" accessibilityLabel={label} accessibilityState={{ checked: value }}>
     <View style={styles.flex}>
       <Text style={styles.toggleLabel}>{label}</Text>
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
@@ -54,7 +54,7 @@ const Toggle: React.FC<{ label: string; hint?: string; value: boolean; onChange:
     <View style={[styles.track, value && styles.trackOn]}>
       <View style={[styles.thumb, value && styles.thumbOn]} />
     </View>
-  </Pressable>
+  </TactileRow>
 );
 
 /** Approving a guest's suggestion: find it in the catalog and play it next. */
@@ -158,12 +158,12 @@ const Room: React.FC = () => {
           <Text style={styles.code} selectable>{room.room_code}</Text>
           <Text style={styles.hint}>{status}</Text>
         </View>
-        <Pressable onPress={copyCode} hitSlop={8} style={styles.round} accessibilityLabel="Copy room code">
+        <Tactile onPress={copyCode} accessibilityRole="button" accessibilityLabel="Copy room code" style={styles.round}>
           <MaterialCommunityIcons name="content-copy" size={18} color="#fff" />
-        </Pressable>
-        <Pressable onPress={shareCode} hitSlop={8} style={styles.round} accessibilityLabel="Share room code">
+        </Tactile>
+        <Tactile onPress={shareCode} accessibilityRole="button" accessibilityLabel="Share room code" style={styles.round}>
           <MaterialCommunityIcons name="share-outline" size={20} color="#fff" />
-        </Pressable>
+        </Tactile>
       </View>
 
       {isHost && requests.length > 0 ? (
@@ -172,15 +172,15 @@ const Room: React.FC = () => {
           {requests.map(r => (
             <View key={r.user_id} style={styles.personRow}>
               <Text style={[styles.person, styles.flex]} numberOfLines={1}>{r.username}</Text>
-              <Pressable
-                onPress={() => { tap(); blockUser(r.username); }}
-                hitSlop={8}
+              <Tactile
+                onPress={() => blockUser(r.username)}
+                haptic="select"
                 style={styles.round}
                 accessibilityRole="button"
                 accessibilityLabel={`Block ${r.username}`}
               >
                 <MaterialCommunityIcons name="account-cancel-outline" size={18} color="#fff" />
-              </Pressable>
+              </Tactile>
               <Button label="Decline" onPress={() => rejectJoin(r.user_id)} />
               <Button label="Let in" primary onPress={() => approveJoin(r.user_id)} />
             </View>
@@ -211,7 +211,14 @@ const Room: React.FC = () => {
           const canManage = isHost && u.user_id !== me;
           return (
             <View key={u.user_id}>
-              <Pressable onPress={() => canManage && setManaging(managing === u.user_id ? null : u.user_id)} style={styles.personRow} disabled={!canManage}>
+              <TactileRow
+                onPress={() => setManaging(managing === u.user_id ? null : u.user_id)}
+                style={styles.personRow}
+                disabled={!canManage}
+                accessibilityRole="button"
+                accessibilityLabel={canManage ? `Manage ${u.username}` : u.username}
+                accessibilityState={{ disabled: !canManage, expanded: managing === u.user_id }}
+              >
                 <View style={[styles.dot, u.is_connected === false && styles.dotOff]} />
                 <Text style={[styles.person, styles.flex, u.is_connected === false && styles.offline]} numberOfLines={1}>
                   {u.user_id === me ? `${u.username} (you)` : u.username}
@@ -219,7 +226,7 @@ const Room: React.FC = () => {
                 {waiting ? <Text style={styles.hint}>loading…</Text> : null}
                 {u.user_id === room.host_id ? <Text style={styles.badge}>Host</Text> : null}
                 {canManage ? <MaterialCommunityIcons name={managing === u.user_id ? 'chevron-up' : 'chevron-down'} size={20} color="rgba(255,255,255,0.6)" /> : null}
-              </Pressable>
+              </TactileRow>
               {managing === u.user_id ? (
                 <View style={styles.manageRow}>
                   <Button label="Make host" onPress={() => { transferHost(u.user_id); setManaging(null); }} />
@@ -263,16 +270,16 @@ const styles = StyleSheet.create({
   codeInput: { fontWeight: '700', marginBottom: 0 },
   joinRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   or: { color: 'rgba(255,255,255,0.5)', fontSize: 13, textAlign: 'center', marginVertical: 12 },
-  button: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 44, paddingHorizontal: 18, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)' },
+  actionTarget: { minHeight: 48, justifyContent: 'center' },
+  button: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48, paddingHorizontal: 18, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.1)' },
   primary: { backgroundColor: Signal.wave },
   danger: { backgroundColor: 'rgba(255,110,100,0.16)' },
   buttonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   primaryText: { color: Signal.waveInk },
   dangerText: { color: '#ff8a80' },
-  pressed: { opacity: 0.8 },
   disabled: { opacity: 0.4 },
   status: { color: 'rgba(255,255,255,0.6)', fontSize: 13, marginTop: 12, textAlign: 'center' },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 4, marginTop: 6 },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48, paddingVertical: 14, paddingHorizontal: 4, marginTop: 6 },
   toggleLabel: { color: '#fff', fontSize: 15, fontWeight: '600' },
   hint: { color: 'rgba(255,255,255,0.55)', fontSize: 13, marginTop: 2 },
   track: { width: 46, height: 28, borderRadius: 14, padding: 3, backgroundColor: 'rgba(255,255,255,0.18)' },
@@ -283,7 +290,7 @@ const styles = StyleSheet.create({
   codeCard: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 16, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.07)', marginBottom: 12 },
   codeLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '600' },
   code: { color: '#fff', fontSize: 30, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  round: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
+  round: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
   section: { marginBottom: 12 },
   sectionTitle: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '600', marginBottom: 6, marginHorizontal: 4 },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, paddingHorizontal: 12, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', marginBottom: 4 },

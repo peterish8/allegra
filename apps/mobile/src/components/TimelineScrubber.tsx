@@ -10,10 +10,11 @@ import Animated, {
   useDerivedValue,
   useAnimatedReaction,
   SharedValue,
-  Easing,
   interpolate,
   Extrapolation,
+  useReducedMotion,
 } from 'react-native-reanimated';
+import { Glass, Motion, OnMedia, TypeScale } from '../constants/allegraTheme';
 import { formatTimeSV } from '../playback/positionBus';
 
 export interface TimelineScrubberProps {
@@ -28,9 +29,12 @@ export interface TimelineScrubberProps {
 }
 
 /** One shared morph clock for track + thumb — no desynced withTimings. */
-const MORPH_IN_MS = 150;
-const MORPH_OUT_MS = 170;
-const MORPH_EASE = Easing.bezier(0.25, 0.1, 0.25, 1);
+const MORPH_IN_MS = Motion.duration.fast;
+const MORPH_OUT_MS = Motion.duration.fast;
+const MORPH_EASE = Motion.ease.standard;
+/** The track's full (scrubbing) thickness, and how thin it rests (3.5 / 14). */
+const TRACK_FULL = 14;
+const REST_SCALE = 0.25;
 
 const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
   currentTime,
@@ -155,12 +159,22 @@ const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
     [],
   );
 
+  // Reduce Motion: the line thickens and thins at once, so the scrub still reads without any easing.
+  const reduce = useReducedMotion();
   const morphIn = () => {
     'worklet';
+    if (reduce) {
+      scrubUI.value = 1;
+      return;
+    }
     scrubUI.value = withTiming(1, { duration: MORPH_IN_MS, easing: MORPH_EASE });
   };
   const morphOut = () => {
     'worklet';
+    if (reduce) {
+      scrubUI.value = 0;
+      return;
+    }
     scrubUI.value = withTiming(0, { duration: MORPH_OUT_MS, easing: MORPH_EASE });
   };
 
@@ -210,10 +224,12 @@ const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
       dragProgress.value = newProgress;
       // Tap = instant jump (no drag hold). One sequence — calling morphIn() then
       // morphOut() in the same frame just cancels the first, so nothing pulsed.
-      scrubUI.value = withSequence(
-        withTiming(1, { duration: MORPH_IN_MS, easing: MORPH_EASE }),
-        withTiming(0, { duration: MORPH_OUT_MS, easing: MORPH_EASE }),
-      );
+      if (!reduce) {
+        scrubUI.value = withSequence(
+          withTiming(1, { duration: MORPH_IN_MS, easing: MORPH_EASE }),
+          withTiming(0, { duration: MORPH_OUT_MS, easing: MORPH_EASE }),
+        );
+      }
       runOnJS(handleSeekCommit)(newProgress);
       runOnJS(startSettleWindow)();
     });
@@ -221,28 +237,24 @@ const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
   const composedGesture = Gesture.Race(panGesture, tapGesture);
 
   // Track height + always-pill corners from one scrubUI clock.
+  // The track is laid out at its full (scrubbing) thickness and thinned by scaleY from the top edge, so the
+  // thickening is a transform and never a layout pass.
   const trackStyle = useAnimatedStyle(() => {
     'worklet';
-    const h = interpolate(scrubUI.value, [0, 1], [3.5, 14], Extrapolation.CLAMP);
     return {
-      height: h,
-      borderRadius: h / 2,
+      transform: [{ scaleY: interpolate(scrubUI.value, [0, 1], [REST_SCALE, 1], Extrapolation.CLAMP) }],
     };
   });
 
   const fillStyle = useAnimatedStyle(() => {
     'worklet';
     const p = Math.max(0, Math.min(1, displayProgress.value));
-    const h = interpolate(scrubUI.value, [0, 1], [3.5, 14], Extrapolation.CLAMP);
     // A full-width bar slid left inside the clipped track: progress moves by
     // transform, so playback never triggers a layout pass (a %-width did,
     // several times a second, which is what made old phones stutter).
     return {
       transform: [{ translateX: (p - 1) * trackWidthSV.value }],
       opacity: trackWidthSV.value > 0 ? 1 : 0, // unmeasured: don't flash a full bar
-      // Leading edge of fill is always a soft cap (reads as curve while scrubbing).
-      borderTopRightRadius: h / 2,
-      borderBottomRightRadius: h / 2,
     };
   });
 
@@ -343,26 +355,31 @@ const styles = StyleSheet.create({
     top: 0,
     height: 16,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: Glass.selected,
   },
   trackBase: {
     width: '100%',
+    height: TRACK_FULL,
+    borderRadius: TRACK_FULL / 2,
     overflow: 'hidden',
-    // Relative in the top-aligned trackWrapper (not absolute center)
+    // Thinned by scaleY from the top edge; relative in the top-aligned trackWrapper (not absolute center)
+    transformOrigin: 'top',
   },
+  // The leading edge is a soft cap (reads as a curve while scrubbing).
   fillBase: {
     width: '100%',
     height: '100%',
+    borderRadius: TRACK_FULL / 2,
   },
   // Unplayed remainder: low enough that the blurred cover art reads through it and
   // it feels part of the artwork, high enough to still register as a line. The
   // affordance is carried by the contrast against the solid white played portion,
   // not by this being bright in its own right.
   classicTrackBg: {
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: Glass.selected,
   },
   classicFill: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: OnMedia.primary,
   },
   timeContainer: {
     flexDirection: 'row',
@@ -371,10 +388,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   timeText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: TypeScale.caption,
+    color: OnMedia.muted,
     fontVariant: ['tabular-nums'],
-    fontWeight: '500',
+    fontWeight: '600',
   },
 });
 

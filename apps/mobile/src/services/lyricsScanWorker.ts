@@ -39,11 +39,22 @@ export async function processLyricsScanQueue(): Promise<void> {
       }));
 
       try {
+        const currentSong = await useSongsStore.getState().getSong(nextJob.songId);
+        if (!currentSong) {
+          updateJob(nextJob.songId, prev => ({
+            status: 'failed' as const,
+            log: appendLog(prev.log, 'Song not found in DB'),
+          }));
+          await delay(500);
+          continue;
+        }
+
         const result = await lyricaService.fetchLyrics(
           nextJob.title,
           nextJob.artist,
           nextJob.isForcedSynced,
-          nextJob.duration
+          nextJob.duration,
+          { ref: currentSong.originId, album: nextJob.album ?? currentSong.album },
         );
 
         if (!result || !result.lyrics) {
@@ -69,17 +80,6 @@ export async function processLyricsScanQueue(): Promise<void> {
           updateJob(nextJob.songId, prev => ({
             status: 'failed' as const,
             log: appendLog(prev.log, 'Failed to parse lyrics'),
-          }));
-          await delay(500);
-          continue;
-        }
-
-        const currentSong = await useSongsStore.getState().getSong(nextJob.songId);
-
-        if (!currentSong) {
-          updateJob(nextJob.songId, prev => ({
-            status: 'failed' as const,
-            log: appendLog(prev.log, 'Song not found in DB'),
           }));
           await delay(500);
           continue;

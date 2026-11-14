@@ -746,9 +746,12 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       title: currentSong?.title ?? '',
       artist: currentSong?.artist ?? '',
       duration: currentSong?.duration ?? 0,
-      ref: fromMobileId(currentSong?.id ?? '') ?? undefined,
+      album: currentSong?.album,
+      ref: currentSong?.originId && parseSongRef(currentSong.originId)
+        ? currentSong.originId
+        : fromMobileId(currentSong?.id ?? '') ?? undefined,
     }),
-    [currentSong?.title, currentSong?.artist, currentSong?.duration, currentSong?.id],
+    [currentSong?.title, currentSong?.artist, currentSong?.duration, currentSong?.id, currentSong?.album, currentSong?.originId],
   );
 
   const onToggleLike = useCallback(async () => {
@@ -953,6 +956,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
             transitionProgress={movingCover ? progress : undefined}
             showLyrics={showLyrics}
             processedLyrics={processedLyrics}
+            lyricSource={currentSong?.lyricSource}
             currentTime={positionSV}
             onLyricPress={handleLyricTap}
             songTitle={swipePreview?.title ?? currentSong?.title}

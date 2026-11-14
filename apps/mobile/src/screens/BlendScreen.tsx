@@ -25,7 +25,7 @@ import type { SongSnapshot } from '@shared/songRef';
 import { Artwork } from '../components/allegra/Artwork';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { BLEND_TOUR, blendScene } from '../components/allegra/infoTours';
-import { RiseIn, Tactile } from '../components/allegra/motion';
+import { RiseIn } from '../components/allegra/motion';
 import { discColour, MemberDiscs, blendStyles as s } from '../components/blend/BlendParts';
 import { BlendStage } from '../components/blend/BlendStage';
 import { BlendStoryPlayer } from '../components/blend/BlendStoryPlayer';
@@ -36,7 +36,7 @@ import { blendTrackSong, getBlend, getInvite, inviteUrl, leaveBlend } from '../s
 import { watchStaleBlend } from '../services/blend/staleRefresh';
 import { StreamService } from '../services/stream/StreamService';
 import type { LibraryStackParamList } from '../types/navigation';
-import { Button } from '../ui';
+import { Button, ConfirmSheet, Tactile } from '../ui';
 import { shuffled } from '../utils/shuffle';
 
 const revealKey = (detail: BlendDetail): string => `blend-revealed:${detail.members.find(member => member.isYou)?.userId ?? 'guest'}:${detail.id}:${detail.builtFor}:${detail.buildVersion ?? 0}`;
@@ -51,6 +51,7 @@ export const BlendScreen: React.FC = () => {
   const [revealing, setRevealing] = useState(false);
   const [filter, setFilter] = useState<string | null>(null);
   const [watching, setWatching] = useState(false);
+  const [leaveConfirmationOpen, setLeaveConfirmationOpen] = useState(false);
   const [pulse, setPulse] = useState(0);
   const insets = useSafeAreaInsets();
   const bottom = useBottomClearance();
@@ -64,7 +65,7 @@ export const BlendScreen: React.FC = () => {
   const request = useRef(0);
   const shown = useRef<BlendDetail | null>(null);
   shown.current = detail;
-  useEffect(() => { request.current += 1; setDetail(null); setError(null); setRefreshFailed(false); setRevealing(false); setFilter(null); setWatching(false); }, [account.profile?.userId, route.params.blendId]);
+  useEffect(() => { request.current += 1; setDetail(null); setError(null); setRefreshFailed(false); setRevealing(false); setFilter(null); setWatching(false); setLeaveConfirmationOpen(false); }, [account.profile?.userId, route.params.blendId]);
 
   /** Resolves true once a fresh (not stale) build is showing. */
   const load = useCallback(async (): Promise<boolean> => {
@@ -120,19 +121,16 @@ export const BlendScreen: React.FC = () => {
 
   const leave = (): void => {
     if (!token || !detail) return;
-    Alert.alert(`Leave ${detail.name}?`, "You'll stop seeing it, and it refreshes without your songs.", [
-      { text: 'Stay', style: 'cancel' },
-      {
-        text: 'Leave',
-        style: 'destructive',
-        onPress: () => {
-          void leaveBlend(token, detail.id).then((result) => {
-            if (result.ok === true) navigation.navigate('Blends');
-            else Alert.alert('That did not work', result.error);
-          });
-        },
-      },
-    ]);
+    setLeaveConfirmationOpen(true);
+  };
+
+  const confirmLeave = (): void => {
+    if (!token || !detail) return;
+    setLeaveConfirmationOpen(false);
+    void leaveBlend(token, detail.id).then((result) => {
+      if (result.ok === true) navigation.navigate('Blends');
+      else Alert.alert('That did not work', result.error);
+    });
   };
 
   if (error || !detail) {
@@ -264,6 +262,16 @@ export const BlendScreen: React.FC = () => {
         contentContainerStyle={{ paddingBottom: bottom }}
       />
       <BlendStoryPlayer detail={detail} visible={watching} onClose={closeStory} onPlay={playFromStory} />
+      <ConfirmSheet
+        visible={leaveConfirmationOpen}
+        title={`Leave ${detail.name}?`}
+        body="You'll stop seeing it, and it refreshes without your songs."
+        confirmLabel="Leave"
+        cancelLabel="Stay"
+        destructive
+        onConfirm={confirmLeave}
+        onClose={() => setLeaveConfirmationOpen(false)}
+      />
     </AppScreen>
   );
 };

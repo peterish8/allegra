@@ -25,8 +25,8 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withSpring,
-  withTiming,
 } from 'react-native-reanimated';
+import { Motion } from '../../constants/allegraTheme';
 import type { UnifiedSong } from '../../types/song';
 import { diag } from '../../utils/diag';
 
@@ -58,7 +58,7 @@ interface TasteExplorerProps {
 
 const GAP = 14;
 const LIFT = 1.08;
-const SPRING = { stiffness: 230, damping: 25, mass: 1 } as const;
+const CAMERA_SPRING = Motion.spring.luvsCamera;
 
 const rubber = (over: number, dimension: number): number => {
   'worklet';
@@ -158,7 +158,8 @@ export const TasteExplorer: React.FC<TasteExplorerProps> = ({
       committedDepth.value = depth;
       curLane.value = laneIndex;
       // A lane picked on the rail glides over rather than cutting.
-      camX.value = reduce ? laneIndex : withSpring(laneIndex, SPRING);
+      if (reduce) camX.value = laneIndex;
+      else camX.value = withSpring(laneIndex, CAMERA_SPRING);
       camZ.value = depth;
     }
     laneDepths.value = depths;
@@ -182,7 +183,8 @@ export const TasteExplorer: React.FC<TasteExplorerProps> = ({
 
   const spring = (target: number, velocity: number) => {
     'worklet';
-    return reduce ? withTiming(target, { duration: 220 }) : withSpring(target, { ...SPRING, velocity });
+    if (reduce) return target;
+    return withSpring(target, { ...CAMERA_SPRING, velocity });
   };
 
   const pan = Gesture.Pan()

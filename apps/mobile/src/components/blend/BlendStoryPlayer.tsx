@@ -8,7 +8,7 @@
  * slides wait for the listener instead of advancing by themselves.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, BackHandler, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, BackHandler, Modal, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,8 +22,8 @@ import type { SongSnapshot } from '@shared/songRef';
 
 import { Motion, Radius, Signal, Space } from '../../constants/allegraTheme';
 import * as Haptics from '../../utils/haptics';
+import { IconButton, Tactile } from '../../ui';
 import { Artwork } from '../allegra/Artwork';
-import { Tactile } from '../allegra/motion';
 import { discColour, MemberDisc } from './BlendParts';
 
 /** How long one slide plays before the next. */
@@ -259,8 +259,10 @@ export const BlendStoryPlayer: React.FC<{
         <LinearGradient colors={['rgba(7, 8, 11, 0.35)', 'rgba(7, 8, 11, 0)', 'rgba(7, 8, 11, 0.55)']} style={StyleSheet.absoluteFill} />
 
         {/* Tap zones: left third goes back, the rest goes on; holding pauses. */}
-        <Pressable
+        <Tactile
+          wrapperStyle={StyleSheet.absoluteFill}
           style={StyleSheet.absoluteFill}
+          pressScale={1}
           onPressIn={() => setPaused(true)}
           onPressOut={() => setPaused(false)}
           onPress={(event) => tap(event.nativeEvent.locationX < width / 3 ? -1 : 1)}
@@ -272,7 +274,7 @@ export const BlendStoryPlayer: React.FC<{
           <Animated.View key={index} entering={enter} style={[styles.body, { paddingTop: insets.top + 64, paddingBottom: insets.bottom + 48 }]} pointerEvents="box-none">
             {content}
           </Animated.View>
-        </Pressable>
+        </Tactile>
 
         <View style={[styles.top, { paddingTop: insets.top + Space.xs }]} pointerEvents="box-none">
           <View style={styles.segments}>
@@ -280,10 +282,8 @@ export const BlendStoryPlayer: React.FC<{
           </View>
           <View style={styles.topBar}>
             <Text style={styles.topName} numberOfLines={1}>{detail.name}</Text>
-            {screenReader ? <Pressable onPress={() => tap(1)} accessibilityRole="button" accessibilityLabel="Next slide" hitSlop={10} style={styles.close}><Ionicons name="chevron-forward" size={22} color={Signal.ink} /></Pressable> : null}
-            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close story" hitSlop={10} style={styles.close}>
-              <Ionicons name="close" size={24} color={Signal.ink} />
-            </Pressable>
+            {screenReader ? <IconButton icon="chevron-forward" label="Next slide" onPress={() => tap(1)} /> : null}
+            <IconButton icon="close" label="Close story" onPress={onClose} />
           </View>
         </View>
       </View>
@@ -301,21 +301,20 @@ const styles = StyleSheet.create({
   segmentFill: { ...StyleSheet.absoluteFillObject, backgroundColor: Signal.ink, borderRadius: 2 },
   topBar: { flexDirection: 'row', alignItems: 'center', gap: Space.xs, paddingLeft: Space.xxs },
   topName: { flex: 1, color: Signal.ink, fontSize: 14, fontWeight: '700' },
-  close: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   meeting: { flexDirection: 'row', alignItems: 'center', marginBottom: Space.md },
   eyebrow: { color: Signal.inkSoft, fontSize: 15, fontWeight: '600', textAlign: 'center' },
-  headline: { color: Signal.ink, fontSize: 30, lineHeight: 36, fontWeight: '800', textAlign: 'center' },
+  headline: { color: Signal.ink, fontSize: 30, lineHeight: 36, fontWeight: '700', textAlign: 'center' },
   headlineBig: { fontSize: 38, lineHeight: 44 },
   detail: { color: Signal.inkSoft, fontSize: 16, lineHeight: 22, textAlign: 'center', maxWidth: 320 },
-  matchNumber: { color: Signal.ink, fontSize: 132, lineHeight: 140, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  matchNumber: { color: Signal.ink, fontSize: 132, lineHeight: 140, fontWeight: '700', fontVariant: ['tabular-nums'] },
   coverShadow: { borderRadius: Radius.art, shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 24, shadowOffset: { width: 0, height: 14 }, elevation: 18 },
   cover: { borderRadius: Radius.art },
   playSmall: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 44, paddingHorizontal: 20, borderRadius: Radius.pill, backgroundColor: Signal.wave },
-  playSmallText: { color: Signal.waveInk, fontSize: 15, fontWeight: '800' },
+  playSmallText: { color: Signal.waveInk, fontSize: 15, fontWeight: '700' },
   playBig: { width: 84, height: 84, borderRadius: 42, alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.wave },
   topList: { alignSelf: 'stretch', gap: Space.sm, marginTop: Space.sm },
   topRow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
-  topIndex: { width: 22, color: Signal.inkSoft, fontSize: 18, fontWeight: '800', textAlign: 'center', fontVariant: ['tabular-nums'] },
+  topIndex: { width: 22, color: Signal.inkSoft, fontSize: 18, fontWeight: '700', textAlign: 'center', fontVariant: ['tabular-nums'] },
   topCover: { width: 52, height: 52, borderRadius: Radius.thumb },
   topTitle: { color: Signal.ink, fontSize: 16, fontWeight: '700' },
   topArtist: { color: Signal.inkSoft, fontSize: 13 },

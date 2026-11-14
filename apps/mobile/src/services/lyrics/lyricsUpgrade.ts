@@ -4,7 +4,7 @@
  * its full cold-start allowance. Asked once per song per app run, and applied only if the same song
  * still shows the same lyrics, so a skip or a version picked by hand meanwhile is left alone.
  */
-import { fromMobileId } from '@shared/songRef';
+import { fromMobileId, parseSongRef } from '@shared/songRef';
 import { lyricaService } from '../LyricaService';
 import { usePlayerStore } from '../../store/playerStore';
 import { isStreamSongId } from '../stream/streamSong';
@@ -29,8 +29,11 @@ export async function upgradeToSyncedLyrics(song: Song): Promise<boolean> {
   asked.add(song.id);
   const before = song.lyrics;
   try {
+    let ref = song.originId && parseSongRef(song.originId) ? song.originId : undefined;
+    if (!ref && isStreamSongId(song.id)) ref = fromMobileId(song.id) ?? undefined;
     const result = await lyricaService.fetchLyrics(song.title, song.artist ?? '', true, song.duration || undefined, {
-      ref: isStreamSongId(song.id) ? fromMobileId(song.id) ?? undefined : undefined,
+      ref,
+      album: song.album,
     });
     if (!result || !lyricaService.hasTimestamps(result.lyrics)) return false;
     const lyrics = lyricaService.parseLrc(result.lyrics, song.duration || 180);

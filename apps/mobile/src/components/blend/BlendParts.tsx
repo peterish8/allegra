@@ -113,7 +113,7 @@ export const ConsentSheet: React.FC<{
 
 export const blendStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bg },
-  title: { color: Signal.ink, fontSize: 28, fontWeight: '800', paddingHorizontal: Space.md, paddingTop: Space.md },
+  title: { color: Signal.ink, fontSize: 28, fontWeight: '700', paddingHorizontal: Space.md, paddingTop: Space.md },
   lead: { color: Signal.inkMuted, fontSize: 14, paddingHorizontal: Space.md, paddingTop: Space.xs, paddingBottom: Space.md },
   panel: { marginHorizontal: Space.md, marginBottom: Space.sm, padding: Space.md, borderRadius: Radius.panel, backgroundColor: Glass.fill, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline, gap: Space.xs },
   panelTitle: { color: Signal.ink, fontSize: 17, fontWeight: '700' },
@@ -133,16 +133,16 @@ export const blendStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   disc: { alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Signal.bg },
-  discText: { color: Signal.waveInk, fontWeight: '800' },
+  discText: { color: Signal.waveInk, fontWeight: '700' },
   discs: { flexDirection: 'row', alignItems: 'center' },
   cards: { gap: Space.sm, paddingHorizontal: Space.md, paddingVertical: Space.xs },
   card: { width: 240, minHeight: 180, padding: Space.md, borderRadius: Radius.panel, backgroundColor: Glass.fill, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline, gap: Space.xs },
   headline: { color: Signal.ink, fontSize: 18, fontWeight: '700', lineHeight: 24 },
-  headlineBig: { fontSize: 44, lineHeight: 50, fontWeight: '800' },
+  headlineBig: { fontSize: 44, lineHeight: 50, fontWeight: '700' },
   detail: { color: Signal.inkSoft, fontSize: 13, lineHeight: 18 },
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: Glass.scrim },
   sheet: { position: 'absolute', left: Space.md, right: Space.md, bottom: Space.lg, padding: Space.lg, borderRadius: Radius.sheet, backgroundColor: Glass.fillHeavy, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairlineStrong, gap: Space.sm },
-  sheetTitle: { color: Signal.ink, fontSize: 20, fontWeight: '800' },
+  sheetTitle: { color: Signal.ink, fontSize: 20, fontWeight: '700' },
   sheetLead: { color: Signal.ink, fontSize: 15, fontWeight: '600' },
   sheetBody: { color: Signal.inkSoft, fontSize: 14, lineHeight: 20 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: Space.xs },

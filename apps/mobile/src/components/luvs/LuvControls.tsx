@@ -9,7 +9,6 @@ import React, { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   cancelAnimation,
-  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -23,6 +22,7 @@ import { Glass, Motion, Signal } from '../../constants/allegraTheme';
 import { luvsBufferManager } from '../../services/LuvsBufferManager';
 import { Tactile } from '../allegra/motion';
 import TimelineScrubber from '../TimelineScrubber';
+import { equaliserMotionMode } from './luvsMotion';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -35,9 +35,18 @@ const PulseRing: React.FC<{ trigger: number; color: string }> = ({ trigger, colo
   const reduce = useReducedMotion();
   const progress = useSharedValue(1);
   useEffect(() => {
-    if (trigger === 0 || reduce) return;
+    if (reduce) {
+      cancelAnimation(progress);
+      progress.value = 1;
+      return;
+    }
+    if (trigger === 0) {
+      cancelAnimation(progress);
+      progress.value = 1;
+      return;
+    }
     progress.value = 0;
-    progress.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
+    progress.value = withTiming(1, { duration: Motion.duration.luvsPulse, easing: Motion.ease.decelerate });
   }, [trigger, reduce, progress]);
   const style = useAnimatedStyle(() => ({
     opacity: 0.5 * (1 - progress.value),
@@ -63,12 +72,12 @@ export const DoubleTapHeart: React.FC<{ trigger: number; x: number; y: number }>
     pop.value = reduce ? 1 : 0;
     lift.value = 0;
     fade.value = 0;
-    if (!reduce) pop.value = withSpring(1, { stiffness: 520, damping: 15, mass: 0.8 });
+    if (!reduce) pop.value = withSpring(1, Motion.spring.luvsHeartPop);
     fade.value = withSequence(
-      withTiming(1, { duration: 80 }),
-      withDelay(360, withTiming(0, { duration: 320, easing: Easing.out(Easing.quad) })),
+      withTiming(1, { duration: reduce ? 0 : Motion.duration.luvsHeartIn }),
+      withDelay(Motion.duration.luvsHeartHold, withTiming(0, { duration: reduce ? 0 : Motion.duration.luvsHeartOut, easing: Motion.ease.decelerate })),
     );
-    lift.value = withDelay(360, withTiming(1, { duration: 320, easing: Easing.out(Easing.quad) }));
+    if (!reduce) lift.value = withDelay(Motion.duration.luvsHeartHold, withTiming(1, { duration: Motion.duration.luvsHeartOut, easing: Motion.ease.decelerate }));
   }, [trigger, reduce, pop, lift, fade]);
   const style = useAnimatedStyle(() => ({
     opacity: fade.value,
@@ -88,16 +97,21 @@ export const DoubleTapHeart: React.FC<{ trigger: number; x: number; y: number }>
 
 /** An icon that turns steadily while `spinning`, and settles back upright when it stops. */
 export const SpinningIcon: React.FC<{ name: IconName; size: number; color: string; spinning: boolean }> = ({ name, size, color, spinning }) => {
+  const reduce = useReducedMotion();
   const turn = useSharedValue(0);
   useEffect(() => {
+    cancelAnimation(turn);
+    if (reduce) {
+      turn.value = 0;
+      return;
+    }
     if (spinning) {
       turn.value = 0;
-      turn.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.linear }), -1, false);
+      turn.value = withRepeat(withTiming(1, { duration: Motion.duration.luvsRefreshTurn, easing: Motion.ease.linear }), -1, false);
     } else {
-      cancelAnimation(turn);
-      turn.value = withTiming(0, { duration: 160 });
+      turn.value = withTiming(0, { duration: Motion.duration.fast });
     }
-  }, [spinning, turn]);
+  }, [spinning, reduce, turn]);
   const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 360}deg` }] as const }));
   return (
     <Animated.View style={style}>
@@ -121,12 +135,13 @@ export const LuvAction: React.FC<{
   const pop = useSharedValue(1);
   const glow = useSharedValue(on ? 1 : 0);
   useEffect(() => {
-    glow.value = withTiming(on ? 1 : 0, { duration: Motion.duration.base });
-  }, [on, glow]);
+    glow.value = withTiming(on ? 1 : 0, { duration: reduce ? 0 : Motion.duration.base });
+  }, [on, reduce, glow]);
   // The press itself is Tactile's (sinks, comes back, even if the finger slides off). Only the moment the action
   // turns on — a Luv, a save — gets one small pop on the settle spring; every other press stays a press.
   useEffect(() => {
-    if (burst === 0 || reduce) return;
+    if (reduce) return;
+    if (burst === 0) return;
     pop.value = withSequence(withTiming(1.12, { duration: Motion.duration.fast, easing: Motion.ease.decelerate }), withSpring(1, Motion.spring.settle));
   }, [burst, reduce, pop]);
   const circle = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }] }));
@@ -155,18 +170,25 @@ export const LuvAction: React.FC<{
 // ─── Equaliser ───────────────────────────────────────────────────────────────
 const EQ_MAX = 15;
 export const EqBars: React.FC<{ active: boolean }> = ({ active }) => {
+  const reduce = useReducedMotion();
+  const motionMode = equaliserMotionMode(active, reduce);
   const h1 = useSharedValue(3);
   const h2 = useSharedValue(3);
   const h3 = useSharedValue(3);
   useEffect(() => {
-    if (active) {
-      h1.value = withRepeat(withSequence(withTiming(13, { duration: 280 }), withTiming(3, { duration: 280 })), -1, false);
-      h2.value = withRepeat(withSequence(withTiming(7, { duration: 200 }), withTiming(15, { duration: 320 }), withTiming(3, { duration: 240 })), -1, false);
-      h3.value = withRepeat(withSequence(withTiming(15, { duration: 380 }), withTiming(3, { duration: 320 })), -1, false);
+    [h1, h2, h3].forEach(cancelAnimation);
+    if (reduce) {
+      h1.value = 3;
+      h2.value = 3;
+      h3.value = 3;
+    } else if (motionMode === 'loop') {
+      h1.value = withRepeat(withSequence(withTiming(13, { duration: Motion.duration.luvsEqualiserBeat }), withTiming(3, { duration: Motion.duration.luvsEqualiserBeat })), -1, false);
+      h2.value = withRepeat(withSequence(withTiming(7, { duration: Motion.duration.luvsEqualiserRise }), withTiming(15, { duration: Motion.duration.luvsEqualiserPeak }), withTiming(3, { duration: Motion.duration.luvsEqualiserReturn })), -1, false);
+      h3.value = withRepeat(withSequence(withTiming(15, { duration: Motion.duration.luvsEqualiserAccent }), withTiming(3, { duration: Motion.duration.luvsEqualiserPeak })), -1, false);
     } else {
-      [h1, h2, h3].forEach(h => { cancelAnimation(h); h.value = withTiming(3, { duration: 250 }); });
+      [h1, h2, h3].forEach(h => { h.value = withTiming(3, { duration: Motion.duration.luvsEqualiserSettle }); });
     }
-  }, [active, h1, h2, h3]);
+  }, [motionMode, reduce, h1, h2, h3]);
   const s1 = useAnimatedStyle(() => ({ transform: [{ scaleY: h1.value / EQ_MAX }] }));
   const s2 = useAnimatedStyle(() => ({ transform: [{ scaleY: h2.value / EQ_MAX }] }));
   const s3 = useAnimatedStyle(() => ({ transform: [{ scaleY: h3.value / EQ_MAX }] }));

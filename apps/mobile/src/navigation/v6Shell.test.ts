@@ -30,8 +30,8 @@ it('keeps the slimmer shell above the minimum control target', () => {
 
 it('grows the navigation target with system text and reserves the same height above the gesture inset', () => {
   expect(navBarHeight(1)).toBe(56);
-  expect(navBarHeight(1.3)).toBeGreaterThan(NAV_BAR_HEIGHT);
-  expect(navBarHeight(2)).toBeGreaterThanOrEqual(68);
+  expect(navBarHeight(1.3)).toBe(59);
+  expect(navBarHeight(2)).toBe(70);
   expect(shellNavHeight(800, 24, 2)).toBe(navBarHeight(2) + 24);
   expect(shellHeight(800, 24, false, 2)).toBe(navBarHeight(2) + 24);
 });

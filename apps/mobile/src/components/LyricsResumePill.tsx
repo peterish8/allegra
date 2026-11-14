@@ -1,8 +1,9 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Frosted } from './allegra/Frosted';
-import { Signal } from '../constants/allegraTheme';
+import { Tactile } from './allegra/motion';
+import { Control, Signal, TypeScale } from '../constants/allegraTheme';
 
 interface LyricsResumePillProps {
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -10,29 +11,33 @@ interface LyricsResumePillProps {
   accessibilityLabel: string;
   onPress: () => void;
   hitSlop?: number;
+  iconOnly?: boolean;
 }
 
 /** The frosted pill floating over the lyrics: back to the playing line, or the plain-text auto-scroll switch. */
-export const LyricsResumePill: React.FC<LyricsResumePillProps> = ({ icon, label, accessibilityLabel, onPress, hitSlop }) => (
-  <Pressable
-    style={styles.pill}
+export const LyricsResumePill: React.FC<LyricsResumePillProps> = ({ icon, label, accessibilityLabel, onPress, hitSlop, iconOnly = false }) => (
+  <Tactile
+    wrapperStyle={styles.place}
+    style={[styles.pill, iconOnly && styles.iconOnly]}
     onPress={onPress}
     hitSlop={hitSlop}
     accessibilityRole="button"
     accessibilityLabel={accessibilityLabel}
   >
     <Frosted radius={18} intensity={50} tint={0.35} />
-    <Ionicons name={icon} size={14} color={Signal.wave} />
-    <Text style={styles.text}>{label}</Text>
-  </Pressable>
+    <Ionicons name={icon} size={iconOnly ? Control.glyph.sm : 14} color={Signal.wave} />
+    {iconOnly ? null : <Text style={styles.text}>{label}</Text>}
+  </Tactile>
 );
 
 const styles = StyleSheet.create({
   // Floating over the lyrics, clear of the transport row below.
-  pill: {
+  place: {
     position: 'absolute',
     alignSelf: 'center',
     bottom: 16,
+  },
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -41,9 +46,14 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: 'hidden',
   },
+  iconOnly: {
+    minWidth: Control.target,
+    minHeight: Control.target,
+    justifyContent: 'center',
+  },
   text: {
     color: Signal.ink,
-    fontSize: 13,
+    fontSize: TypeScale.meta,
     fontWeight: '600',
   },
 });

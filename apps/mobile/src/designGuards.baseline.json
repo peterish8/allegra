@@ -2,20 +2,14 @@
   "pressable": {
     "App.tsx": 2,
     "components/blend/BlendParts.tsx": 1,
-    "components/blend/BlendStoryPlayer.tsx": 3,
     "components/connect/ConnectDeviceSheet.tsx": 4,
     "components/connect/ConnectNoticeHost.tsx": 2,
     "components/connect/ConnectRemotePlayer.tsx": 7,
     "components/CreatePlaylistModal.tsx": 1,
     "components/CustomAlert.tsx": 2,
-    "components/import/SpotifySyncPanel.tsx": 1,
     "components/LibraryEditModal.tsx": 3,
     "components/LrcSearchModal.tsx": 5,
-    "components/luvLink/LuvLinkHost.tsx": 2,
-    "components/luvLink/LuvLinkLegacyPanel.tsx": 6,
     "components/luvs/LaneRail.tsx": 1,
-    "components/LyricsResumePill.tsx": 1,
-    "components/MiniPlayer.tsx": 6,
     "components/ModernDeleteModal.tsx": 3,
     "components/MoreMenu.tsx": 1,
     "components/NowPlayingLyricsArea.tsx": 1,
@@ -27,31 +21,19 @@
     "components/SynchronizedLyrics.tsx": 2,
     "components/Toast.tsx": 1,
     "components/VoiceMicButton.tsx": 1,
-    "components/VoiceSearchCard.tsx": 1,
-    "components/YtMiniPlayer.tsx": 3,
-    "screens/BlendJoinScreen.tsx": 2,
-    "screens/LuvLinkScreen.tsx": 1
+    "components/VoiceSearchCard.tsx": 1
   },
   "slideModal": {
     "components/LrcSearchModal.tsx": 1
   },
   "weight": {
-    "App.tsx": 1,
-    "components/blend/BlendParts.tsx": 4,
-    "components/blend/BlendStage.tsx": 3,
-    "components/blend/BlendStoryPlayer.tsx": 4,
-    "components/import/SpotifyCrate.tsx": 1,
-    "components/import/SpotifySyncPanel.tsx": 2,
-    "components/TimelineScrubber.tsx": 1
+    "App.tsx": 1
   },
   "tracking": {
-    "components/luvLink/LuvLinkPanel.tsx": 2
+    "components/luvLink/LuvLinkPanel.tsx": 1
   },
   "bottomPad": {},
-  "alert": {
-    "components/import/SpotifySyncPanel.tsx": 1,
-    "screens/BlendScreen.tsx": 1
-  },
+  "alert": {},
   "color": {
     "screens/LuvsScreen.tsx": 2,
     "screens/NowPlayingScreen.tsx": 2
@@ -78,7 +60,6 @@
     "components/luvs/LuvControls.tsx": 2,
     "components/luvs/TasteCard.tsx": 5,
     "components/LuvsVaultModal.tsx": 1,
-    "components/MiniPlayer.tsx": 34,
     "components/ModernDeleteModal.tsx": 2,
     "components/MoreMenu.tsx": 7,
     "components/NowPlayingControls.tsx": 10,
@@ -107,11 +88,9 @@
     "components/stream/StreamHome.tsx": 3,
     "components/stream/trackRowPayload.ts": 1,
     "components/SynchronizedLyrics.tsx": 3,
-    "components/TimelineScrubber.tsx": 4,
     "components/Toast.tsx": 1,
     "components/VoiceMicButton.tsx": 11,
     "components/VoiceSearchCard.tsx": 5,
-    "components/YtMiniPlayer.tsx": 9,
     "hooks/useNowPlayingLogic.ts": 6,
     "navigation/TabNavigator.tsx": 2,
     "navigation/theme.ts": 2,
@@ -140,14 +119,12 @@
     "components/LanguagePickerModal.tsx": 2,
     "components/LibraryEditModal.tsx": 5,
     "components/LrcSearchModal.tsx": 15,
-    "components/luvLink/LuvLinkHost.tsx": 2,
     "components/luvLink/LuvLinkLegacyPanel.tsx": 12,
+    "components/luvLink/LuvLinkHost.tsx": 2,
     "components/luvLink/LuvLinkPanel.tsx": 10,
     "components/luvs/LaneRail.tsx": 2,
     "components/luvs/LuvControls.tsx": 1,
     "components/LuvsVaultModal.tsx": 4,
-    "components/LyricsResumePill.tsx": 1,
-    "components/MiniPlayer.tsx": 3,
     "components/ModernDeleteModal.tsx": 4,
     "components/MoreMenu.tsx": 3,
     "components/NativeSynchronizedLyrics.tsx": 1,
@@ -168,29 +145,21 @@
     "components/stream/StreamHome.tsx": 4,
     "components/stream/StreamItems.tsx": 2,
     "components/SynchronizedLyrics.tsx": 1,
-    "components/TimelineScrubber.tsx": 1,
     "components/Toast.tsx": 1,
     "components/VoiceSearchCard.tsx": 10,
-    "components/YtMiniPlayer.tsx": 1,
     "widget/SongWidget.tsx": 13
   },
   "motionLiteral": {
     "components/connect/ConnectRemotePlayer.tsx": 4,
     "components/InstrumentalWaveform.tsx": 1,
-    "components/luvLink/LuvLinkHost.tsx": 2,
-    "components/luvs/LuvControls.tsx": 16,
-    "components/luvs/TasteExplorer.tsx": 1,
     "components/NowPlayingControls.tsx": 7,
     "components/player/AmbientMode.tsx": 2,
     "components/player/AppleBackdrop.tsx": 1,
     "components/player/SeekRipple.tsx": 2,
     "components/stream/DownloadButton.tsx": 2,
     "components/stream/SavedBadge.tsx": 1,
-    "components/TimelineScrubber.tsx": 4,
     "components/VoiceMicButton.tsx": 7,
-    "components/YtMiniPlayer.tsx": 11,
     "navigation/TabNavigator.tsx": 4,
-    "screens/LuvsScreen.tsx": 2,
     "screens/NowPlayingScreen.tsx": 4
   },
   "reduceMotion": {
@@ -205,14 +174,7 @@
     "components/blend/BlendStoryPlayer.tsx": 1,
     "components/CanvasVideoLayer.tsx": 1,
     "components/connect/ConnectRemotePlayer.tsx": 1,
-    "components/import/SpotifyCrate.tsx": 1,
-    "components/import/SpotifySyncPanel.tsx": 1,
     "components/InstrumentalWaveform.tsx": 1,
-    "components/luvLink/LuvLinkHost.tsx": 1,
-    "components/luvs/LuvControls.tsx": 1,
-    "components/luvs/TasteExplorer.tsx": 1,
-    "components/MiniPlayer.tsx": 1,
-    "components/MiniScrubber.tsx": 1,
     "components/MoreMenu.tsx": 1,
     "components/nav/CreateSheet.tsx": 1,
     "components/nav/ProfileMenu.tsx": 1,
@@ -234,15 +196,12 @@
     "components/stream/DownloadButton.tsx": 1,
     "components/stream/SavedBadge.tsx": 1,
     "components/SynchronizedLyrics.tsx": 1,
-    "components/TimelineScrubber.tsx": 1,
     "components/Toast.tsx": 1,
     "components/VoiceMicButton.tsx": 1,
     "components/VoiceSearchCard.tsx": 1,
-    "components/YtMiniPlayer.tsx": 1,
     "hooks/useHeaderGlow.ts": 1,
     "navigation/usePlayerSheetMotion.ts": 1,
     "screens/BlendScreen.tsx": 1,
-    "screens/LuvsScreen.tsx": 1,
     "screens/NowPlayingScreen.tsx": 1,
     "screens/PlaylistDetailScreen.tsx": 1,
     "ui/Chip.tsx": 1,
@@ -254,9 +213,6 @@
   "layoutAnim": {
     "components/allegra/infoTours.tsx": 5,
     "components/allegra/motion.tsx": 1,
-    "components/MiniPlayer.tsx": 5,
-    "components/NowPlayingControls.tsx": 1,
-    "components/TimelineScrubber.tsx": 2,
-    "components/YtMiniPlayer.tsx": 2
+    "components/NowPlayingControls.tsx": 1
   }
 }
