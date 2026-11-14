@@ -250,6 +250,20 @@ export const Motion = {
     morph: 460, // one surface becoming another (lyrics opening, fullscreen)
     drift: 9000, // one leg of the header glow's slow drift (Stream, Library)
     scan: 1600, // the scanner's light crossing its frame, one way
+    luvsPulse: 560,
+    luvsHeartIn: 80,
+    luvsHeartHold: 360,
+    luvsHeartOut: 320,
+    luvsRefreshTurn: 900,
+    luvsEqualiserBeat: 280,
+    luvsEqualiserRise: 200,
+    luvsEqualiserPeak: 320,
+    luvsEqualiserReturn: 240,
+    luvsEqualiserAccent: 380,
+    luvsEqualiserSettle: 250,
+    luvsArtworkFade: 500,
+    luvsHintIn: 400,
+    luvsHintOut: 300,
   },
   ease: {
     standard: Easing.bezier(0.4, 0, 0.2, 1),
@@ -257,6 +271,7 @@ export const Motion = {
     accelerate: Easing.bezier(0.4, 0, 1, 1),
     emphasis: Easing.bezier(0.2, 0, 0, 1),
     morph: Easing.bezier(0.32, 0.72, 0, 1),
+    linear: Easing.linear,
   },
   spring: {
     /** Approved player prototype: soft, interruptible arrival with no repeated bounce. */
@@ -273,6 +288,10 @@ export const Motion = {
     fling: criticallyDamped(1500),
     /** Coming to rest after a drag that didn't commit. */
     settle: { stiffness: 320, damping: 34, mass: 1, overshootClamping: true },
+    /** Luvs taste-map camera: follows the swipe with a soft, interruptible settle. */
+    luvsCamera: { stiffness: 230, damping: 25, mass: 1 },
+    /** The single allowed overshoot in the Luvs taste map: its double-tap heart. */
+    luvsHeartPop: { stiffness: 520, damping: 25, mass: 0.8 },
   },
   /** Release speed (pt/s) above which a drag counts as a flick. */
   flingVelocity: 800,

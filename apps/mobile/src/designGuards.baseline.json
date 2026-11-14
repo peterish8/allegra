@@ -172,8 +172,6 @@
     "components/connect/ConnectRemotePlayer.tsx": 4,
     "components/InstrumentalWaveform.tsx": 1,
     "components/luvLink/LuvLinkHost.tsx": 2,
-    "components/luvs/LuvControls.tsx": 16,
-    "components/luvs/TasteExplorer.tsx": 1,
     "components/NowPlayingControls.tsx": 7,
     "components/player/AmbientMode.tsx": 2,
     "components/player/AppleBackdrop.tsx": 1,
@@ -184,7 +182,6 @@
     "components/VoiceMicButton.tsx": 7,
     "components/YtMiniPlayer.tsx": 11,
     "navigation/TabNavigator.tsx": 4,
-    "screens/LuvsScreen.tsx": 2,
     "screens/NowPlayingScreen.tsx": 4
   },
   "reduceMotion": {
@@ -203,8 +200,6 @@
     "components/import/SpotifySyncPanel.tsx": 1,
     "components/InstrumentalWaveform.tsx": 1,
     "components/luvLink/LuvLinkHost.tsx": 1,
-    "components/luvs/LuvControls.tsx": 1,
-    "components/luvs/TasteExplorer.tsx": 1,
     "components/MiniPlayer.tsx": 1,
     "components/MiniScrubber.tsx": 1,
     "components/MoreMenu.tsx": 1,
@@ -236,7 +231,6 @@
     "hooks/useHeaderGlow.ts": 1,
     "navigation/usePlayerSheetMotion.ts": 1,
     "screens/BlendScreen.tsx": 1,
-    "screens/LuvsScreen.tsx": 1,
     "screens/NowPlayingScreen.tsx": 1,
     "screens/PlaylistDetailScreen.tsx": 1,
     "ui/Chip.tsx": 1,
