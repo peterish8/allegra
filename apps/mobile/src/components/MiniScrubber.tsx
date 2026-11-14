@@ -9,7 +9,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import { Glass, Motion, Radius, Signal } from '../constants/allegraTheme';
 import { scrubFraction, SCRUB_REST_SCALE } from '../playback/miniScrub';
 import * as Haptics from '../utils/haptics';
@@ -32,6 +32,7 @@ export interface MiniScrubberProps {
 }
 
 export const MiniScrubber: React.FC<MiniScrubberProps> = ({ positionSV, durationSV, enabled, onCommit, active, height, accessibility }) => {
+  const reduce = useReducedMotion();
   const width = useSharedValue(1);
   /** The finger's place along the line, -1 when nothing holds it. */
   const held = useSharedValue(-1);
@@ -45,13 +46,21 @@ export const MiniScrubber: React.FC<MiniScrubberProps> = ({ positionSV, duration
   const pan = Gesture.Pan().enabled(enabled).hitSlop(SCRUB_HIT_SLOP).activeOffsetX([-3, 3]).failOffsetY([-24, 24])
     .onBegin(e => {
       held.value = scrubFraction(e.x, width.value);
-      active.value = withSpring(1, Motion.spring.tactile);
+      if (reduce) {
+        active.value = 1;
+      } else {
+        active.value = withSpring(1, Motion.spring.tactile);
+      }
     })
     .onStart(() => { runOnJS(tick)(); })
     .onUpdate(e => { held.value = scrubFraction(e.x, width.value); })
     .onEnd(e => { runOnJS(finish)(scrubFraction(e.x, width.value)); })
     .onFinalize((_e, success) => {
-      active.value = withSpring(0, Motion.spring.tactile);
+      if (reduce) {
+        active.value = 0;
+      } else {
+        active.value = withSpring(0, Motion.spring.tactile);
+      }
       if (!success) held.value = -1;
     });
   const tap = Gesture.Tap().enabled(enabled).hitSlop(SCRUB_HIT_SLOP).maxDuration(250)

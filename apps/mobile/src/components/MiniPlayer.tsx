@@ -31,13 +31,15 @@ import TimelineScrubber from './TimelineScrubber';
 import { YtMiniPlayer } from './YtMiniPlayer';
 const { Gesture, GestureDetector } = GestureHandler;
 
-import { Glass, Motion, Signal } from '../constants/allegraTheme';
+import { Control, Glass, Motion, OnMedia, Signal, Surface, TypeScale } from '../constants/allegraTheme';
+import { CLASSIC_BAR_SCRIM, CLASSIC_BAR_SONG_FALLBACK, classicBarStops } from '../constants/classicBarThemes';
+import { Tactile, TactileRow } from './allegra/motion';
 import { planLyricsSwap } from './player/lyricsSwap';
 import { getGradientColors } from '../constants/gradients';
 import { CLASSIC_MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from '../constants/layout';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useIsSongLiked } from '../hooks/useIsSongLiked';
-import { PILL_STACK_GAP, pillBarInset, pillBarTop } from '../navigation/tabs';
+import { PILL_STACK_GAP, pillBarTop } from '../navigation/tabs';
 import { useConnect } from '../services/connect/ConnectProvider';
 import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
 import { handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
@@ -47,8 +49,6 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useSongsStore } from '../store/songsStore';
 import { diag } from '../utils/diag';
 import Artwork from './allegra/Artwork';
-
-const PILL_RADIUS = 22;
 
 // Tallest the classic bar's blurred artwork ever needs to be — the full-expand
 // stage is 0.915 of the screen, with headroom so the image is never the thing
@@ -94,7 +94,7 @@ interface TrackInfoProps {
 }
 const TrackInfo = memo(({ title, artist, coverImageUri, onPress, onBodyPress }: TrackInfoProps) => (
   <>
-    <Pressable onPress={(e) => { e.stopPropagation(); onPress(); }} accessibilityRole="button" accessibilityLabel={`Open player, ${title || 'Untitled'}`}>
+    <Tactile onPress={(e) => { e.stopPropagation(); onPress(); }} accessibilityRole="button" accessibilityLabel={`Open player, ${title || 'Untitled'}`}>
       <Artwork
         uri={coverImageUri}
         title={title || 'Untitled'}
@@ -102,13 +102,18 @@ const TrackInfo = memo(({ title, artist, coverImageUri, onPress, onBodyPress }: 
         size={48}
         style={styles.coverThumbnail}
       />
-    </Pressable>
-    <Pressable onPress={(e) => { e.stopPropagation(); onBodyPress(); }} style={styles.info}>
+    </Tactile>
+    <TactileRow
+      onPress={(e) => { e.stopPropagation(); onBodyPress(); }}
+      style={styles.info}
+      wrapperStyle={styles.info}
+      pressedColor={Glass.fillLight}
+    >
       <Text style={styles.title} numberOfLines={1}>{title}</Text>
       <Text style={styles.artist} numberOfLines={1}>
         {artist || 'Unknown Artist'}
       </Text>
-    </Pressable>
+    </TactileRow>
   </>
 ));
 TrackInfo.displayName = 'TrackInfo';
@@ -123,6 +128,8 @@ interface PlaybackControlsProps {
 }
 // Width the skip buttons occupy once fully grown (24px icon + 4px padding each side).
 const SKIP_BUTTON_WIDTH = 32;
+// The 32 dp glyph is padded out to a 48 dp touch target without moving the transport row.
+const SKIP_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 } as const;
 
 const PlaybackControls = memo(({
   playing, onToggle, onSkipBack, onSkipForward, animatedButtonStyle, showSkipButtons = true,
@@ -134,9 +141,11 @@ const PlaybackControls = memo(({
   // moved the play button and title row on every expand/collapse.
   const skipProgress = useSharedValue(showSkipButtons ? 1 : 0);
   useEffect(() => {
-    skipProgress.value = reduceMotion
-      ? withTiming(showSkipButtons ? 1 : 0, { duration: Motion.duration.fast })
-      : withSpring(showSkipButtons ? 1 : 0, Motion.spring.tactile);
+    if (reduceMotion) {
+      skipProgress.value = showSkipButtons ? 1 : 0;
+    } else {
+      skipProgress.value = withSpring(showSkipButtons ? 1 : 0, Motion.spring.tactile);
+    }
   }, [reduceMotion, showSkipButtons, skipProgress]);
 
   const skipBackStyle = useAnimatedStyle(() => ({
@@ -159,16 +168,17 @@ const PlaybackControls = memo(({
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipBackStyle]}>
         <NativeSkip direction={-1} enabled={nativeSkip && showSkipButtons}>
-          <Pressable
+          <Tactile
             onPress={(e) => { e.stopPropagation(); if (!(nativeSkip && showSkipButtons)) onSkipBack(e); }}
             style={styles.controlButton}
+            hitSlop={SKIP_HIT_SLOP}
             accessibilityRole="button"
             accessibilityLabel="Previous song"
             accessibilityElementsHidden={!showSkipButtons}
             importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
           >
-            <Ionicons name="play-skip-back" size={24} color="#fff" />
-          </Pressable>
+            <Ionicons name="play-skip-back" size={24} color={OnMedia.primary} />
+          </Tactile>
         </NativeSkip>
       </Animated.View>
       <Animated.View style={animatedButtonStyle}>
@@ -176,16 +186,17 @@ const PlaybackControls = memo(({
       </Animated.View>
       <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipForwardStyle]}>
         <NativeSkip direction={1} enabled={nativeSkip && showSkipButtons}>
-          <Pressable
+          <Tactile
             onPress={(e) => { e.stopPropagation(); if (!(nativeSkip && showSkipButtons)) onSkipForward(e); }}
             style={styles.controlButton}
+            hitSlop={SKIP_HIT_SLOP}
             accessibilityRole="button"
             accessibilityLabel="Next song"
             accessibilityElementsHidden={!showSkipButtons}
             importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
           >
-            <Ionicons name="play-skip-forward" size={24} color="#fff" />
-          </Pressable>
+            <Ionicons name="play-skip-forward" size={24} color={OnMedia.primary} />
+          </Tactile>
         </NativeSkip>
       </Animated.View>
     </View>
@@ -238,13 +249,17 @@ export const MiniPlayer: React.FC = () => {
       e?.stopPropagation();
       if (!currentSong) return;
 
-      playButtonScale.value = withSequence(
-          withTiming(0.82, { duration: Motion.duration.instant }),
-          withSpring(1, Motion.spring.tactile)
-      );
+      if (reduceMotion) {
+        playButtonScale.value = 1;
+      } else {
+        playButtonScale.value = withSequence(
+            withTiming(0.82, { duration: Motion.duration.instant }),
+            withSpring(1, Motion.spring.tactile)
+        );
+      }
 
       requestPlayback(!usePlayerStore.getState().isPlaying);
-  }, [currentSong, requestPlayback, playButtonScale]);
+  }, [currentSong, requestPlayback, playButtonScale, reduceMotion]);
 
 
   const songActions = useSongActions();
@@ -267,11 +282,10 @@ export const MiniPlayer: React.FC = () => {
   // With the floating pill tab bar, the collapsed player is a matching pill
   // just above it (Apple Music style) and widens into the sheet as it expands.
   const pillMode = navBarStyle === 'modern-pill';
-  const pillInset = pillBarInset(Dimensions.get('window').width);
 
   const gradientColors = currentSong?.gradientId
     ? getGradientColors(currentSong.gradientId)
-    : ['#222', '#111'];
+    : CLASSIC_BAR_SONG_FALLBACK;
 
   // Local state for persistent lyrics (Cross-fade support)
   const [displayedSong, setDisplayedSong] = useState(currentSong);
@@ -292,11 +306,21 @@ export const MiniPlayer: React.FC = () => {
       expanded,
     });
     if (swap === 'fade') {
+      if (reduceMotion) {
+        cancelAnimation(transitionOpacity);
+        setDisplayedSong(currentSong);
+        transitionOpacity.value = 1;
+        return;
+      }
       // Fade out -> swap -> fade in. A new timing replaces this one (its callback then gets finished=false).
       transitionOpacity.value = withTiming(0, { duration: LYRICS_SWAP_MS }, (finished) => {
         if (finished) {
           runOnJS(showLatestSong)();
-          transitionOpacity.value = withTiming(1, { duration: LYRICS_SWAP_MS });
+          if (reduceMotion) {
+            transitionOpacity.value = 1;
+          } else {
+            transitionOpacity.value = withTiming(1, { duration: LYRICS_SWAP_MS });
+          }
         }
       });
     } else if (swap === 'cut') {
@@ -307,7 +331,11 @@ export const MiniPlayer: React.FC = () => {
       // Same song, new object (lyrics landed, or a skip away and back): call off any fade still running and bring
       // the lines back — even when the shared value still reads 1, so a pending fade-out cannot finish on us.
       cancelAnimation(transitionOpacity);
-      transitionOpacity.value = withTiming(1, { duration: LYRICS_SWAP_MS });
+      if (reduceMotion) {
+        transitionOpacity.value = 1;
+      } else {
+        transitionOpacity.value = withTiming(1, { duration: LYRICS_SWAP_MS });
+      }
       if (currentSong !== displayedSong) setDisplayedSong(currentSong);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -320,17 +348,7 @@ export const MiniPlayer: React.FC = () => {
   // decodes video. Album-art backgrounds only; theme gradients stay flat.
   const canvas = useCanvasArtwork(expanded && !useThemeBg ? currentSong : null);
 
-  const themePlayerColors: [string, string, string] = (() => {
-    switch (activeBgMode) {
-      case 'song-gradient': return [gradientColors[0] || '#111', gradientColors[1] || '#333', gradientColors[2] || gradientColors[0] || '#111'] as [string, string, string];
-      case 'purest-black': return ['#000000', '#000000', '#000000'];
-      case 'grey':         return ['#121212', '#212121', '#121212'];
-      case 'theme-blue':   return ['#0A1628', '#1A3A6B', '#2F8CFF'];
-      case 'theme-subtle': return ['#0A0A0A', '#1F1F1F', '#0A0A0A'];
-      case 'aurora':       return ['#000000', '#EA7980', '#1D728F'];
-      default:             return ['#080808', '#0A0A0A', '#080808'];
-    }
-  })();
+  const themePlayerColors = classicBarStops(activeBgMode, gradientColors);
 
   // Seek lock timeout (isSeeking shared value lives in positionBus)
   const seekLockTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -402,20 +420,34 @@ export const MiniPlayer: React.FC = () => {
   useEffect(() => {
     if (expanded && ytVideoPreview && currentSong?.youtubeVideoId) {
       setShowYtButton(true);
-      ytButtonOpacity.value = reduceMotion
-        ? withTiming(1, { duration: Motion.duration.fast })
-        : withSpring(1, Motion.spring.breathe);
-      ytButtonScale.value = reduceMotion ? 1 : withSpring(1, Motion.spring.breathe);
+      if (reduceMotion) {
+        ytButtonOpacity.value = 1;
+        ytButtonScale.value = 1;
+      } else {
+        ytButtonOpacity.value = withSpring(1, Motion.spring.breathe);
+        ytButtonScale.value = withSpring(1, Motion.spring.breathe);
+      }
       if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current);
       ytButtonTimer.current = setTimeout(() => {
-        ytButtonOpacity.value = withTiming(0, { duration: Motion.duration.fast });
-        if (!reduceMotion) ytButtonScale.value = withTiming(0.6, { duration: Motion.duration.fast });
-        setTimeout(() => setShowYtButton(false), Motion.duration.fast);
+        if (reduceMotion) {
+          ytButtonOpacity.value = 0;
+          ytButtonScale.value = 0.6;
+          setShowYtButton(false);
+        } else {
+          ytButtonOpacity.value = withTiming(0, { duration: Motion.duration.fast });
+          ytButtonScale.value = withTiming(0.6, { duration: Motion.duration.fast });
+          setTimeout(() => setShowYtButton(false), Motion.duration.fast);
+        }
       }, 5000);
     } else {
       if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current);
-      ytButtonOpacity.value = withTiming(0, { duration: Motion.duration.fast });
-      if (!reduceMotion) ytButtonScale.value = withTiming(0.6, { duration: Motion.duration.fast });
+      if (reduceMotion) {
+        ytButtonOpacity.value = 0;
+        ytButtonScale.value = 0.6;
+      } else {
+        ytButtonOpacity.value = withTiming(0, { duration: Motion.duration.fast });
+        ytButtonScale.value = withTiming(0.6, { duration: Motion.duration.fast });
+      }
       setShowYtButton(false);
     }
     return () => { if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current); };
@@ -423,8 +455,9 @@ export const MiniPlayer: React.FC = () => {
   }, [expanded, reduceMotion, ytVideoPreview, currentSong?.youtubeVideoId]);
 
   // Classic Height Animation — three stages: collapsed → half → full (95%).
-  // Height lives on the SHELL (not only content) so overflow clips cleanly and
-  // the box never spills into the tab-bar strip when collapsed.
+  // Keep the shell at its full static height and reveal it with a bottom-anchored
+  // scale. The content counter-scales so text and the transport row stay at their
+  // normal size while the shell clips the lyrics during collapse.
   const classicHeightForProgress = () => {
     'worklet';
     const halfHeight = screenHeight * CLASSIC_HALF_RATIO;
@@ -444,70 +477,31 @@ export const MiniPlayer: React.FC = () => {
     return baseHeight + fullExtension;
   };
 
-  // Content fills the shell (styles.classicContent has flex:1); shell owns the
-  // animated height and always clips to it.
+  const classicFullHeight = screenHeight * CLASSIC_FULL_RATIO;
+
   const animatedClassicShellStyle = useAnimatedStyle(() => {
-    const e = expansionProgress.value;
-    // The classic bar is a plain rectangle at every stage (the listener asked for
-    // a classic bar: no rounded corners collapsed, half or full).
-    if (!pillMode) {
-      return {
-        height: classicHeightForProgress(),
-        // Square on every corner, said outright so no rounding carried over from elsewhere shows.
-        borderRadius: 0,
-        overflow: 'hidden' as const,
-      };
-    }
-    const halfR = interpolate(e, [0, 0.35, 1], [PILL_RADIUS, 16, 28], Extrapolation.CLAMP);
-    const fullR = interpolate(classicFullProgress.value, [0, 1], [0, 6], Extrapolation.CLAMP);
-    // Whole pixels only: a rounded corner + overflow:hidden makes Android rebuild
-    // the clip path whenever the radius changes. Reanimated diffs the style object
-    // per prop, so quantising means most frames don't touch it at all. Sub-pixel
-    // radius is not visible either way.
-    const r = Math.round(halfR + fullR);
-    // Pill: inset like the tab bar and rounded all round while collapsed; the
-    // sides and bottom corners open out as it grows into the sheet.
-    const side = Math.round(pillInset * (1 - Math.min(1, e * 2)));
-    const bottomR = Math.round(PILL_RADIUS * (1 - Math.min(1, e * 2)));
     return {
-      height: classicHeightForProgress(),
-      left: side,
-      right: side,
-      borderTopLeftRadius: r,
-      borderTopRightRadius: r,
-      borderBottomLeftRadius: bottomR,
-      borderBottomRightRadius: bottomR,
-      overflow: 'hidden' as const,
+      transform: [{ scaleY: classicHeightForProgress() / classicFullHeight }],
     };
   });
 
-  // Classic lyrics height + opacity.
-  //
-  // The height follows ONLY classicFullProgress — never expansionProgress. That
-  // split is the whole point:
-  //   · collapse (expansionProgress 1→0, classicFullProgress stays 0): height is
-  //     CONSTANT, so the ~60-row lyric subtree is never re-measured while the bar
-  //     closes. Yoga keeps its cached layout, the ScrollView's onLayout never
-  //     fires into JS, and the shell simply clips the block. This is the jank fix.
-  //   · half↔full (classicFullProgress 0→1): height grows in lockstep with the
-  //     shell, so the lyric area always fills the bar. Pinning this to the settled
-  //     React state instead was wrong — setClassicFullExpanded only fires at
-  //     gesture end, so the whole drag ran with the half height and left a dead
-  //     band above the lyrics that popped shut on release.
+  const animatedClassicContentStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleY: classicFullHeight / classicHeightForProgress() }],
+  }));
+
+  // The lyric viewport stays at its full-stage layout height. Its parent shell
+  // clips the hidden rows during collapse, so Yoga and the ScrollView never
+  // remeasure while the listener drags between stages.
   const animatedClassicLyricsStyle = useAnimatedStyle(() => {
-    const halfLyricsH = screenHeight * CLASSIC_HALF_RATIO - CLASSIC_TRANSPORT_H;
-    const fullExtension = interpolate(
-      classicFullProgress.value,
-      [0, 1],
-      [0, screenHeight * (CLASSIC_FULL_RATIO - CLASSIC_HALF_RATIO)],
-      Extrapolation.CLAMP,
-    );
     const expandOp = interpolate(expansionProgress.value, [0.25, 0.75], [0, 1], Extrapolation.CLAMP);
     return {
-      height: halfLyricsH + fullExtension,
       opacity: expandOp * transitionOpacity.value,
     };
   });
+
+  const animatedClassicOverlayStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleY: classicFullHeight / classicHeightForProgress() }],
+  }));
 
   // Classic artwork scrim — collapsed is near-solid black (readable mini bar).
   // Half/full open dissolve almost all of it so cover colour stays vivid;
@@ -560,6 +554,17 @@ export const MiniPlayer: React.FC = () => {
   // through this ref instead of capturing it.
   const openNowPlayingRef = useRef<() => void>(() => {});
   const requestOpenNowPlaying = useCallback(() => openNowPlayingRef.current(), []);
+
+  const settleClassicStage = (expansion: number, full: number) => {
+    'worklet';
+    if (reduceMotion) {
+      expansionProgress.value = expansion;
+      classicFullProgress.value = full;
+    } else {
+      expansionProgress.value = withSpring(expansion);
+      classicFullProgress.value = withSpring(full);
+    }
+  };
 
   const buildStageGesture = () => Gesture.Pan()
     .activeOffsetY([-5, 5])
@@ -651,26 +656,21 @@ export const MiniPlayer: React.FC = () => {
         // collapsed = (0, 0) · half = (1, 0) · full = (1, 1).
         if (!classicFullExpandedSV.value) {
           if (trans < -50 || vel < -500) {
-            expansionProgress.value = withSpring(1);
-            classicFullProgress.value = withSpring(1);
+            settleClassicStage(1, 1);
             runOnJS(setClassicFullExpanded)(true);
           } else if (trans > 50 || vel > 500) {
-            expansionProgress.value = withSpring(0);
-            classicFullProgress.value = withSpring(0);
+            settleClassicStage(0, 0);
             runOnJS(setExpanded)(false);
             runOnJS(setClassicFullExpanded)(false);
           } else {
-            expansionProgress.value = withSpring(1);
-            classicFullProgress.value = withSpring(0);
+            settleClassicStage(1, 0);
           }
         } else {
           if (trans > 50 || vel > 500) {
-            expansionProgress.value = withSpring(1);
-            classicFullProgress.value = withSpring(0);
+            settleClassicStage(1, 0);
             runOnJS(setClassicFullExpanded)(false);
           } else {
-            expansionProgress.value = withSpring(1);
-            classicFullProgress.value = withSpring(1);
+            settleClassicStage(1, 1);
           }
         }
       }
@@ -694,13 +694,18 @@ export const MiniPlayer: React.FC = () => {
       // while it's focused and releases it as it closes. A global hide set
       // here was never cleared, so the pill vanished after the player closed.
       openPlayerSheet(currentSong.id, typeof velocity === 'number' ? velocity : 0);
-      expansionProgress.value = withSpring(0);
-      classicFullProgress.value = withSpring(0);
+      if (reduceMotion) {
+        expansionProgress.value = 0;
+        classicFullProgress.value = 0;
+      } else {
+        expansionProgress.value = withSpring(0);
+        classicFullProgress.value = withSpring(0);
+      }
       setExpanded(false);
       setClassicFullExpanded(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSong]);
+  }, [currentSong, reduceMotion]);
   openNowPlayingRef.current = openNowPlaying;
   // Fluid player: the sheet opens at the start of a drag from the pill and follows the finger (PillPlayer).
   const openNowPlayingTracking = useCallback(() => {
@@ -789,6 +794,9 @@ export const MiniPlayer: React.FC = () => {
     styles.barContainer,
     {
       bottom: tabChromeH,
+      height: classicFullHeight,
+      overflow: 'hidden' as const,
+      transformOrigin: 'center bottom' as const,
       // No elevation — Android elevates above the in-navigator tab bar otherwise.
       elevation: 0,
       zIndex: 10,
@@ -838,27 +846,58 @@ export const MiniPlayer: React.FC = () => {
               <Animated.View style={[StyleSheet.absoluteFill, animatedClassicScrimStyle]}>
                 {/* Soft tint only — expanded opacity is tiny so colour stays vivid. */}
                 <LinearGradient
-                  colors={['rgba(0,0,0,0.4)', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.4)']}
+                  colors={CLASSIC_BAR_SCRIM}
                   locations={[0, 0.5, 1]}
                   style={StyleSheet.absoluteFill}
                 />
               </Animated.View>
             </>
           ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: Surface.deep }]} />
           )}
           <CanvasVideoLayer canvas={canvas} playing={storePlaying} scrimStrength={0.85} />
         </View>
 
-      {/* Scrubber on the top edge of the transport row — same collapsed/half/full. */}
-         <View pointerEvents="box-none" style={[styles.classicScrubberOverride, pillMode && styles.pillScrubber]}>
-           <TimelineScrubber
-              currentTime={positionSV}
-              duration={durationSV}
-              onSeek={handleClassicLyricSeek}
-              showTimeLabels={false}
-           />
-         </View>
+      <Animated.View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, styles.classicOverlay, animatedClassicOverlayStyle]}
+      >
+        {/* Scrubber stays pinned to the transport row while the shell scales. */}
+        <View pointerEvents="box-none" style={styles.classicScrubberOverride}>
+          <TimelineScrubber
+            currentTime={positionSV}
+            duration={durationSV}
+            onSeek={handleClassicLyricSeek}
+            showTimeLabels={false}
+          />
+        </View>
+
+        {/* Beta: YouTube video preview button — floats above play/pause row. */}
+        {showYtButton && (
+          <Animated.View
+            style={[
+              styles.ytPreviewBtn,
+              {
+                opacity: ytButtonOpacity,
+                transform: [{ scale: ytButtonScale }],
+              },
+            ]}
+          >
+            <Tactile
+              onPress={() => {
+                if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current);
+                setShowYtButton(false);
+                setShowYtMini(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Watch the video"
+              style={[styles.ytPreviewBtnInner, { backgroundColor: Glass.fillLight }]}
+            >
+              <Ionicons name="logo-youtube" size={18} color={Signal.ink} />
+            </Tactile>
+          </Animated.View>
+        )}
+      </Animated.View>
 
       <AnimatedPressable
         onPress={!expanded ? onBarPress : undefined}
@@ -866,6 +905,7 @@ export const MiniPlayer: React.FC = () => {
         style={[
           styles.content,
           styles.classicContent,
+          animatedClassicContentStyle,
         ]}
       >
         {/* No detector around the whole column: that stole every vertical drag over the lyrics
@@ -885,13 +925,13 @@ export const MiniPlayer: React.FC = () => {
                             onBodyPress={onBarPress}
                         />
                         {/* Like the currently playing song without leaving the bar. */}
-                        <Pressable
+                        <Tactile
                             onPress={(e) => {
                                 e.stopPropagation();
                                 if (currentSong) toggleLike(currentSong.id);
                             }}
                             hitSlop={12}
-                            style={{ paddingHorizontal: 8 }}
+                            style={styles.likeButton}
                             accessibilityRole="button"
                             accessibilityLabel={isLiked ? 'Remove from liked songs' : 'Add to liked songs'}
                             accessibilityState={{ selected: isLiked }}
@@ -899,9 +939,9 @@ export const MiniPlayer: React.FC = () => {
                             <Ionicons
                                 name={isLiked ? 'checkmark-circle' : 'add-circle-outline'}
                                 size={24}
-                                color={isLiked ? Signal.wave : '#fff'}
+                                color={isLiked ? Signal.wave : OnMedia.primary}
                             />
-                        </Pressable>
+                        </Tactile>
                         <PlaybackControls
                             playing={storePlaying}
                             onToggle={togglePlay}
@@ -913,7 +953,13 @@ export const MiniPlayer: React.FC = () => {
                     </View>
                   </GestureDetector>
 
-                    <Animated.View style={[styles.classicLyricsContainer, animatedClassicLyricsStyle]}>
+                    <Animated.View
+                      style={[
+                        styles.classicLyricsContainer,
+                        { height: classicFullHeight - CLASSIC_TRANSPORT_H },
+                        animatedClassicLyricsStyle,
+                      ]}
+                    >
                         {/* edgeFade uses native ScrollView fadingEdgeLength (no
                             MaskedView rebuild) so lyric text soft-dissolves at
                             the top/bottom instead of a black scrim. */}
@@ -948,33 +994,6 @@ export const MiniPlayer: React.FC = () => {
                         <View style={styles.dragHandle} />
                     </Animated.View>
 
-                        {/* Beta: YouTube video preview button — floats above play/pause row */}
-                        {showYtButton && (
-                          <Animated.View
-                            style={[
-                              styles.ytPreviewBtn,
-                              {
-                                opacity: ytButtonOpacity,
-                                transform: [{ scale: ytButtonScale }],
-                              },
-                            ]}
-                          >
-                            <Pressable
-                              onPress={() => {
-                                if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current);
-                                setShowYtButton(false);
-                                setShowYtMini(true);
-                              }}
-                              hitSlop={8}
-                              accessibilityRole="button"
-                              accessibilityLabel="Watch the video"
-                            >
-                              <View style={[styles.ytPreviewBtnInner, { backgroundColor: Glass.fillLight }]}>
-                                <Ionicons name="logo-youtube" size={18} color={Signal.ink} />
-                              </View>
-                            </Pressable>
-                          </Animated.View>
-                        )}
                 </View>
       </AnimatedPressable>
       {showYtMini && currentSong?.youtubeVideoId && (
@@ -1012,8 +1031,14 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     paddingHorizontal: 0,
     overflow: 'hidden',
-    // Fill shell height from animatedClassicShellStyle
+    transformOrigin: 'center bottom',
+    // Fill the shell's static max height; animatedClassicContentStyle counter-scales it.
     flex: 1,
+  },
+  classicOverlay: {
+    zIndex: 20,
+    elevation: 20,
+    transformOrigin: 'center bottom',
   },
   classicTransportRow: {
     flexDirection: 'row',
@@ -1029,8 +1054,6 @@ const styles = StyleSheet.create({
   // the track paints from the wrapper's y=0 downward. left/right 0 makes it span the
   // real screen width at runtime — the scrubber measures itself via onLayout, so no
   // width is hardcoded anywhere.
-  // Keeps the track clear of the pill's rounded corners.
-  pillScrubber: { left: 18, right: 18 },
   classicScrubberOverride: {
     position: 'absolute',
     bottom: CLASSIC_TRANSPORT_H - CLASSIC_SCRUBBER_HIT_H,
@@ -1042,8 +1065,8 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
   expandedLyricText: {
-    color: '#fff',
-    fontSize: 23,
+    color: OnMedia.primary,
+    fontSize: TypeScale.detail,
     lineHeight: 28,
     marginVertical: 10,
     textAlign: 'center',
@@ -1055,7 +1078,7 @@ const styles = StyleSheet.create({
     marginLeft: -20,
     width: 40,
     height: 4,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: Glass.hairlineStrong,
     borderRadius: 2
   },
   content: {
@@ -1080,8 +1103,7 @@ const styles = StyleSheet.create({
     right: 0,
   },
   classicLyricsContainer: {
-    // Height comes from `classicLyricsHeight` (stage-pinned, not shell-driven).
-    // flexShrink must stay 0 so the shell clipping the block never resizes it.
+    // A fixed max-stage height keeps the lyric ScrollView layout stable; the shell clips it.
     flexShrink: 0,
     width: '100%',
     backgroundColor: 'transparent', // Transparent to show blurred background
@@ -1094,9 +1116,9 @@ const styles = StyleSheet.create({
     zIndex: 50,
   },
   ytPreviewBtnInner: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: Control.target,
+    height: Control.target,
+    borderRadius: Control.target / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1113,17 +1135,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontSize: 14,
+    fontSize: TypeScale.body,
     fontWeight: '600',
-    color: '#fff',
+    color: OnMedia.primary,
   },
   artist: {
-    fontSize: 12,
-    color: '#888',
+    fontSize: TypeScale.caption,
+    color: OnMedia.muted,
     marginTop: 2,
   },
   controlButton: {
     padding: 4,
+  },
+  likeButton: {
+    paddingHorizontal: 8,
   },
   // Always reserves transport space; visibility changes use opacity and transform.
   skipWrap: {
