@@ -1,7 +1,7 @@
 import { useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Dimensions, InteractionManager, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Dimensions, InteractionManager, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, { EntryAnimationsValues, ExitAnimationsValues, SharedValue, useAnimatedStyle, useReducedMotion, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Motion, Space } from '../constants/allegraTheme';
@@ -20,6 +20,7 @@ import { fullscreenClearance } from './player/fullscreenFooter';
 import SynchronizedLyrics, { SynchronizedLyricsRef } from './SynchronizedLyrics';
 import { cardSize } from '../navigation/playerTransition';
 import { Text as UiText } from '../ui/Text';
+import { Tactile } from './allegra/motion';
 
 type ProcessedLyric = { timestamp: number; text: string };
 
@@ -47,30 +48,6 @@ const clamp01 = (v: number) => {
   'worklet';
   return Math.min(1, Math.max(0, v));
 };
-// Tap the cover: the card grows into the full-bleed cover, or the full cover
-// draws back into a card.
-const growIn = (_v: EntryAnimationsValues) => {
-  'worklet';
-  const t = { duration: 340, easing: Motion.ease.decelerate };
-  return {
-    initialValues: { opacity: 0, transform: [{ scale: 0.9 }] as const },
-    animations: { opacity: withTiming(1, t), transform: [{ scale: withTiming(1, t) }] as const },
-  };
-};
-const shrinkIn = (_v: EntryAnimationsValues) => {
-  'worklet';
-  const t = { duration: 340, easing: Motion.ease.decelerate };
-  return {
-    initialValues: { opacity: 0, transform: [{ scale: 1.12 }] as const },
-    animations: { opacity: withTiming(1, t), transform: [{ scale: withTiming(1, t) }] as const },
-  };
-};
-const fadeAway = (_v: ExitAnimationsValues) => {
-  'worklet';
-  const t = { duration: 220, easing: Motion.ease.accelerate };
-  return { initialValues: { opacity: 1 }, animations: { opacity: withTiming(0, t) } };
-};
-
 /** The full-bleed cover's height: YouTube Music's, a little taller than wide, never past 62% of the screen. */
 export const fullCoverHeight = (width: number, height: number): number => Math.round(Math.min(width * 1.15, height * 0.62));
 
@@ -91,6 +68,21 @@ const FullCover: React.FC<{
   lyricsP?: SharedValue<number>;
 }> = ({ width, screenH, uri, title, artist, primary, onBlack = false, stageX, lyricsP }) => {
   const reduce = useReducedMotion();
+  // The builders are absent under Reduce Motion, so even their worklet timing calls cannot run.
+  const growIn = reduce ? undefined : (_v: EntryAnimationsValues) => {
+    'worklet';
+    return {
+      initialValues: { opacity: 0, transform: [{ scale: 0.9 }] as const },
+      animations: {
+        opacity: withTiming(1, { duration: reduce ? 0 : 340, easing: Motion.ease.decelerate }),
+        transform: [{ scale: withTiming(1, { duration: reduce ? 0 : 340, easing: Motion.ease.decelerate }) }] as const,
+      },
+    };
+  };
+  const fadeAway = reduce ? undefined : (_v: ExitAnimationsValues) => {
+    'worklet';
+    return { initialValues: { opacity: 1 }, animations: { opacity: withTiming(0, { duration: reduce ? 0 : 220, easing: Motion.ease.accelerate }) } };
+  };
   const h = fullCoverHeight(width, screenH);
   // The backdrop's own colour where the cover ends, so there is no seam.
   const meet = onBlack ? COVER_GLOW_BASE : washAt(youtubeWash(primary), h / Math.max(1, screenH));
@@ -104,7 +96,7 @@ const FullCover: React.FC<{
     };
   });
   return (
-    <Animated.View style={[styles.fullCover, { height: h }, follow]} entering={reduce ? undefined : growIn} exiting={reduce ? undefined : fadeAway} pointerEvents="none">
+    <Animated.View style={[styles.fullCover, { height: h }, follow]} entering={growIn} exiting={fadeAway} pointerEvents="none">
       <Artwork uri={uri} title={title} artist={artist} size={Math.max(width, h)} priority="high" continuous quiet style={{ width, height: h }} />
       <LinearGradient colors={['rgba(0,0,0,0.32)', 'rgba(0,0,0,0)']} style={[styles.fullShade, { height: Math.round(h * 0.22) }]} />
       <LinearGradient colors={[`${meet}00`, `${meet}cc`, meet]} locations={[0, 0.6, 1]} style={[styles.fullMelt, { height: Math.round(h * 0.42) }]} />
@@ -175,6 +167,20 @@ const Stage: React.FC<{
   dockY?: SharedValue<number>;
 }> = ({ mode, width, screenH, paddingTop, uri, title, artist, onBlack, stageX, lyricsP, dockX, dockY }) => {
   const reduce = useReducedMotion();
+  const shrinkIn = reduce ? undefined : (_v: EntryAnimationsValues) => {
+    'worklet';
+    return {
+      initialValues: { opacity: 0, transform: [{ scale: 1.12 }] as const },
+      animations: {
+        opacity: withTiming(1, { duration: reduce ? 0 : 340, easing: Motion.ease.decelerate }),
+        transform: [{ scale: withTiming(1, { duration: reduce ? 0 : 340, easing: Motion.ease.decelerate }) }] as const,
+      },
+    };
+  };
+  const fadeAway = reduce ? undefined : (_v: ExitAnimationsValues) => {
+    'worklet';
+    return { initialValues: { opacity: 1 }, animations: { opacity: withTiming(0, { duration: reduce ? 0 : 220, easing: Motion.ease.accelerate }) } };
+  };
   const palette = useArtworkPalette(uri);
   // Short screens: the card also fits the height above the title, which used
   // to run over the card's bottom edge.
@@ -208,7 +214,7 @@ const Stage: React.FC<{
       <View style={[styles.cardArea, { paddingTop }]}>
         <Animated.View style={[{ width: card, height: card, alignItems: 'center', justifyContent: 'center', shadowColor: palette.primary, shadowOpacity: 0.28, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 8 }, stageStyle]}>
           {mode === 'card' ? (
-            <Animated.View key="card" entering={reduce ? undefined : shrinkIn} exiting={reduce ? undefined : fadeAway} style={styles.stageLayer}>
+            <Animated.View key="card" entering={shrinkIn} exiting={fadeAway} style={styles.stageLayer}>
               <Artwork uri={uri} title={title} artist={artist} size={card} priority="high" continuous quiet style={[styles.card, { width: card, height: card }]} />
             </Animated.View>
           ) : null}
@@ -304,10 +310,10 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
     }
   }, [isUserScrollingRef, scrollTimeoutRef]);
   const lyricsFallback = React.useCallback((retry: () => void) => (
-    <Pressable onPress={retry} style={styles.fallback} accessibilityRole="button">
+    <Tactile onPress={retry} style={styles.fallback} accessibilityRole="button">
       <Text style={styles.fallbackTitle}>These lyrics couldn't be drawn</Text>
       <Text style={styles.fallbackHint}>The song keeps playing. Tap to try again.</Text>
-    </Pressable>
+    </Tactile>
   ), []);
   // The lines rise in once the cover is on its way, and sink out first on the way back.
   const linesStyle = useAnimatedStyle(() => {

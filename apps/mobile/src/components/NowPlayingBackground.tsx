@@ -19,7 +19,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { InteractionManager, View, StyleSheet } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
-import Animated, { SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { SharedValue, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import AppleBackdrop, { heroHeight, usePlayerFrame } from './player/AppleBackdrop';
 import GlowBackground from './player/GlowBackground';
 import NativeFlowGlow, { nativeFlowGlowAvailable } from './player/NativeFlowGlow';
@@ -64,6 +64,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   incomingCoverImageUri,
 }) => {
   const { frame, onLayout } = usePlayerFrame();
+  const reduceMotion = useReducedMotion();
   // The shader only draws while this screen is the one in front.
   const focused = useIsFocused();
   const appActive = useAppActive();
@@ -98,8 +99,9 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   // Apple <-> glow cross-fade.
   const glowOpacity = useSharedValue(glowOn ? 1 : 0);
   useEffect(() => {
-    glowOpacity.value = withTiming(glowOn ? 1 : 0, { duration: CROSSFADE_MS });
-  }, [glowOn, glowOpacity]);
+    if (reduceMotion) glowOpacity.value = glowOn ? 1 : 0;
+    else glowOpacity.value = withTiming(glowOn ? 1 : 0, { duration: CROSSFADE_MS });
+  }, [glowOn, glowOpacity, reduceMotion]);
   const glowStyle = useAnimatedStyle(() => ({ opacity: glowOpacity.value }));
 
   // Echo shows the sharp cover (and the canvas inside it) only on the cover
@@ -121,8 +123,9 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   // The wash eases in with the canvas and out with it.
   const washOpacity = useSharedValue(0);
   useEffect(() => {
-    washOpacity.value = withTiming(canvasShown ? 1 : 0, { duration: CROSSFADE_MS });
-  }, [canvasShown, washOpacity]);
+    if (reduceMotion) washOpacity.value = canvasShown ? 1 : 0;
+    else washOpacity.value = withTiming(canvasShown ? 1 : 0, { duration: CROSSFADE_MS });
+  }, [canvasShown, washOpacity, reduceMotion]);
   const washStyle = useAnimatedStyle(() => ({ opacity: washOpacity.value }));
   const heroFollow = useAnimatedStyle(() => {
     const x = shift ? shift.value : 0;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { PlayerSheet, SheetScrollView } from '../player/PlayerSheet';
@@ -9,6 +9,7 @@ import { useAccount } from '../../services/account/AccountProvider';
 import { signInMessage } from '../../services/account/signInFlow';
 import * as Haptics from '../../utils/haptics';
 import { Signal } from '../../constants/allegraTheme';
+import { Tactile, TactileRow } from '../../ui';
 
 type TransferFailure = Partial<Pick<Extract<TransferResult, { ok: false }>, 'reason' | 'code' | 'error'>>;
 
@@ -78,14 +79,14 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
       <View style={styles.content}>
         <Text style={styles.intro}>Move playback between your phone and Allegra on the web.</Text>
         {!account.signedIn ? (
-          <Pressable accessibilityRole="button" style={styles.action} onPress={signIn}>
+          <TactileRow accessibilityRole="button" style={styles.action} onPress={signIn}>
             <Ionicons name="person-circle-outline" size={23} color="#fff" />
             <View style={styles.rowCopy}>
               <Text style={styles.rowTitle}>{account.loading ? 'Checking your account' : 'Sign in to Allegra'}</Text>
               <Text style={styles.rowHint}>Sign in with Google to play on your other devices.</Text>
             </View>
             {account.loading ? <ActivityIndicator color="#fff" /> : <Ionicons name="chevron-forward" size={20} color="#aaa" />}
-          </Pressable>
+          </TactileRow>
         ) : view ? (
           <>
             {view.activeDevice ? (
@@ -118,13 +119,13 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
                       ? 'In a LuvLink room'
                       : 'Ready';
               return (
-                <Pressable
+                <TactileRow
                   key={device.deviceId}
                   accessibilityRole="button"
                   accessibilityState={{ disabled: unavailable || busy }}
                   disabled={unavailable || busy}
                   onPress={() => transfer(device.deviceId)}
-                  style={({ pressed }) => [styles.device, pressed && styles.pressed, unavailable && styles.unavailable]}
+                  style={[styles.device, unavailable && styles.unavailable]}
                 >
                   <Ionicons name={device.kind === 'web' ? 'laptop-outline' : 'phone-portrait-outline'} size={22} color={isActive ? Signal.wave : '#fff'} />
                   <View style={styles.rowCopy}>
@@ -132,7 +133,7 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
                     <Text style={styles.rowHint}>{status}</Text>
                   </View>
                   {busy ? <ActivityIndicator color="#fff" /> : isActive ? <Ionicons name="checkmark-circle" size={21} color={Signal.wave} /> : !unavailable ? <Ionicons name="arrow-forward-circle-outline" size={21} color="#ddd" /> : null}
-                </Pressable>
+                </TactileRow>
               );
             })}
             {view.devices.length === 0 ? <Text style={styles.empty}>No other signed-in devices yet.</Text> : null}
@@ -150,14 +151,14 @@ export const ConnectDeviceList: React.FC<{ onClose: () => void }> = ({ onClose }
                     selectionColor={Signal.wave}
                     accessibilityLabel="Name for this phone"
                   />
-                  <Pressable accessibilityRole="button" onPress={saveName} hitSlop={8}>
+                  <Tactile accessibilityRole="button" onPress={saveName} hitSlop={8}>
                     <Text style={styles.renameAction}>Save</Text>
-                  </Pressable>
+                  </Tactile>
                 </View>
               ) : (
-                <Pressable accessibilityRole="button" onPress={() => setRenaming(thisPhone.name)} hitSlop={8} style={styles.renameLink}>
+                <Tactile accessibilityRole="button" onPress={() => setRenaming(thisPhone.name)} hitSlop={8} style={styles.renameLink}>
                   <Text style={styles.renameAction}>Rename this phone</Text>
-                </Pressable>
+                </Tactile>
               )
             ) : null}
           </>
@@ -193,7 +194,6 @@ const styles = StyleSheet.create({
   empty: { color: 'rgba(255,255,255,0.6)', fontSize: 14, lineHeight: 20, padding: 12 },
   loading: { minHeight: 80, alignItems: 'center', justifyContent: 'center', gap: 12 },
   message: { color: '#ff9a91', fontSize: 13, lineHeight: 19, paddingHorizontal: 6, paddingTop: 4 },
-  pressed: { backgroundColor: 'rgba(255,255,255,0.14)' },
   unavailable: { opacity: 0.58 },
   rename: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 6, paddingTop: 4 },
   renameInput: { flex: 1, height: 44, paddingHorizontal: 16, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 15 },

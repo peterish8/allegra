@@ -5,13 +5,14 @@
  */
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import Animated, { FadeIn, FadeOut, useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CanvasArtwork } from '../../services/canvas/types';
 import { Song } from '../../types/song';
 import Artwork from '../allegra/Artwork';
 import CanvasVideoLayer from '../CanvasVideoLayer';
+import { Tactile } from '../allegra/motion';
 
 interface AmbientModeProps {
   song: Song;
@@ -22,6 +23,7 @@ interface AmbientModeProps {
 
 const AmbientMode: React.FC<AmbientModeProps> = ({ song, canvas, playing, onExit }) => {
   const { width, height } = useWindowDimensions();
+  const reduceMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const size = Math.min(width - 56, height * 0.5, 460);
 
@@ -31,8 +33,8 @@ const AmbientMode: React.FC<AmbientModeProps> = ({ song, canvas, playing, onExit
   }, []);
 
   return (
-    <Animated.View entering={FadeIn.duration(360)} exiting={FadeOut.duration(260)} style={[StyleSheet.absoluteFill, styles.room]}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onExit} accessibilityRole="button" accessibilityLabel="Leave ambient mode">
+    <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(360)} exiting={reduceMotion ? undefined : FadeOut.duration(260)} style={[StyleSheet.absoluteFill, styles.room]}>
+      <Tactile wrapperStyle={StyleSheet.absoluteFill} style={StyleSheet.absoluteFill} pressScale={1} onPress={onExit} accessibilityRole="button" accessibilityLabel="Leave ambient mode">
         {/* The cover stays under the canvas, so the clip fades in over it, never over black. */}
         <View style={styles.center}>
           <Artwork uri={song.coverImageUri} title={song.title} artist={song.artist} size={size} priority="high" continuous style={[styles.art, { width: size, height: size }]} />
@@ -42,7 +44,7 @@ const AmbientMode: React.FC<AmbientModeProps> = ({ song, canvas, playing, onExit
           <Text style={styles.title} numberOfLines={1}>{song.title}</Text>
           {song.artist ? <Text style={styles.artist} numberOfLines={1}>{song.artist}</Text> : null}
         </View>
-      </Pressable>
+      </Tactile>
     </Animated.View>
   );
 };

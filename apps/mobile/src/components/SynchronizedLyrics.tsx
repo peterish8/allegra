@@ -36,7 +36,7 @@
  * regardless, at once from the pill, or when you scroll back to it yourself.
  */
 import React, { useEffect, useRef, useCallback, useMemo, useState, forwardRef, useImperativeHandle } from 'react';
-import { View, Dimensions, Text, Pressable, StyleSheet, LayoutChangeEvent, TextStyle, ViewStyle } from 'react-native';
+import { View, Dimensions, Text, StyleSheet, LayoutChangeEvent, TextStyle, ViewStyle } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -63,6 +63,7 @@ import { anchorFooter, anchorScrollY, LineBox, lineOffsets } from '../playback/l
 import InstrumentalWaveform, { isInstrumentalLyric, useIsActiveLine } from './InstrumentalWaveform';
 import { LyricsResumePill } from './LyricsResumePill';
 import { Motion } from '../constants/allegraTheme';
+import { TactileRow } from './allegra/motion';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -177,9 +178,11 @@ const LyricLine = React.memo(({
   const dimStyle = useAnimatedStyle((): ViewStyle => {
     const active = activeIndexSV.value;
     const target = lineRestOpacity(index, active, readingSV.value, sweeping);
+    if (reduceMotion) return { opacity: target };
     // Far from the sung line: plain values, no animation to run.
     const far = active >= 0 && Math.abs(index - active) > 6;
-    return { opacity: far ? target : withTiming(target, { duration: DIM_MS, easing: DIM_EASE }) };
+    if (far) return { opacity: target };
+    return { opacity: withTiming(target, { duration: DIM_MS, easing: DIM_EASE }) };
   });
 
   // The sweep is drawn only around the sung line: the one just sung (fading
@@ -214,13 +217,13 @@ const LyricLine = React.memo(({
     return (
       <View onLayout={handleLayout} style={{ paddingVertical: gap }}>
         <Animated.View style={dimStyle}>
-          <Pressable onPress={handlePress} style={styles.linePressable} accessibilityRole="button" accessibilityHint="Plays the song from this line">
+          <TactileRow onPress={handlePress} style={styles.linePressable} accessibilityRole="button" accessibilityHint="Plays the song from this line">
             {isInstrumental ? (
               <InstrumentalLine activeIndexSV={activeIndexSV} liveSV={liveSV} index={index} />
             ) : (
               <Text style={[styles.lyricText, textStyle]}>{renderedText}</Text>
             )}
-          </Pressable>
+          </TactileRow>
         </Animated.View>
       </View>
     );
@@ -228,7 +231,7 @@ const LyricLine = React.memo(({
 
   return (
     <View onLayout={handleLayout} style={{ paddingVertical: gap }}>
-      <Pressable onPress={handlePress} style={styles.linePressable} accessibilityRole="button" accessibilityHint="Plays the song from this line">
+      <TactileRow onPress={handlePress} style={styles.linePressable} accessibilityRole="button" accessibilityHint="Plays the song from this line">
         {/* The sweep sits over exactly the box the resting words fill. */}
         <View>
           <Animated.View style={dimStyle}>
@@ -249,7 +252,7 @@ const LyricLine = React.memo(({
             </View>
           ) : null}
         </View>
-      </Pressable>
+      </TactileRow>
     </View>
   );
 });
@@ -316,6 +319,7 @@ interface SweepRowProps {
 const SweepRow = ({ words, textStyle, rtl, index, activeIndexSV, clockSV, delaySV, reduceMotion }: SweepRowProps) => {
   const shownStyle = useAnimatedStyle((): ViewStyle => {
     const target = activeIndexSV.value === index ? 1 : 0;
+    if (reduceMotion) return { opacity: target };
     return { opacity: withTiming(target, { duration: DIM_MS, easing: DIM_EASE }) };
   });
   return (

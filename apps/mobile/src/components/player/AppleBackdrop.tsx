@@ -27,7 +27,7 @@ import {
   TileMode,
   vec,
 } from '@shopify/react-native-skia';
-import { DerivedValue, SharedValue, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import { DerivedValue, SharedValue, useDerivedValue, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Motion } from '../../constants/allegraTheme';
 import { AuraPalette } from '../allegra/palette';
 import { useCoverImage } from './coverImages';
@@ -152,6 +152,7 @@ export const usePlayerFrame = () => {
 };
 
 const AppleBackdropSkia: React.FC<AppleBackdropProps> = ({ uri, palette, showHero, frame, veil = false, shift }) => {
+  const reduceMotion = useReducedMotion();
   const win = useWindowDimensions();
   const width = frame?.width ?? win.width;
   const height = frame?.height ?? win.height;
@@ -196,15 +197,21 @@ const AppleBackdropSkia: React.FC<AppleBackdropProps> = ({ uri, palette, showHer
       fade.value = 1;
       return;
     }
+    if (reduceMotion) {
+      fadingUntil.current = 0;
+      fade.value = 1;
+      return;
+    }
     fadingUntil.current = Date.now() + 1200;
     if (!midFade) fade.value = 0;
     fade.value = withTiming(1, { duration: midFade ? 700 : 1200, easing: Motion.ease.standard });
-  }, [image, failed, uri, fade, veil]);
+  }, [image, failed, uri, fade, veil, reduceMotion]);
 
   const hero = useSharedValue(showHero ? 1 : 0);
   useEffect(() => {
-    hero.value = withTiming(showHero ? 1 : 0, { duration: 500, easing: Motion.ease.standard });
-  }, [showHero, hero]);
+    if (reduceMotion) hero.value = showHero ? 1 : 0;
+    else hero.value = withTiming(showHero ? 1 : 0, { duration: 500, easing: Motion.ease.standard });
+  }, [showHero, hero, reduceMotion]);
   const heroOpacity = useDerivedValue(() => hero.value * (shift ? 1 - 0.6 * Math.min(1, Math.abs(shift.value) / Math.max(1, width)) : 1));
   const heroShift = useDerivedValue(() => [{ translateX: shift ? shift.value : 0 }]);
   const fadeOpacity = useDerivedValue(() => fade.value);

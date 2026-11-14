@@ -1,4 +1,4 @@
-import { MINI_BLOBS, oscillate, PLAYER_BLOBS, rgba, rotatedColorAt, toRgb } from './glowMath';
+import { MINI_BLOBS, oscillate, PLAYER_BLOBS, rgba, rotatedColorAt, shouldAdvanceGlow, toRgb } from './glowMath';
 
 describe("Echo's glow maths", () => {
   it('oscillate follows min + (max - min) * ((sin(2π(p + phase)) + 1) / 2)', () => {
@@ -24,5 +24,11 @@ describe("Echo's glow maths", () => {
     expect(PLAYER_BLOBS.map(b => b.alphas)).toEqual([[0.85, 0.5], [0.8, 0.45], [0.75, 0.4], [0.7, 0.35], [0.65, 0.3], [0.6, 0.25]]);
     expect(MINI_BLOBS.map(b => b.r)).toEqual([1.2, 1.0]);
     expect(rgba([10, 20, 30], 0.5)).toBe('rgba(10, 20, 30, 0.5)');
+  });
+
+  it('holds the glow still under Reduce Motion while leaving it rendered', () => {
+    expect(shouldAdvanceGlow(true, true, true)).toBe(false);
+    expect(shouldAdvanceGlow(true, true, false)).toBe(true);
+    expect(shouldAdvanceGlow(false, true, false)).toBe(false);
   });
 });

@@ -19,6 +19,7 @@ import Animated, {
   SharedValue,
   useAnimatedStyle,
   useDerivedValue,
+  useReducedMotion,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
@@ -44,6 +45,7 @@ const clamp01 = (v: number) => {
 const AppleSlider: React.FC<AppleSliderProps> = ({
   progress, onCommit, onChange, height = 7, accessibilityLabel, style, renderBelow,
 }) => {
+  const reduceMotion = useReducedMotion();
   const width = useSharedValue(0);
   const dragging = useSharedValue(false);
   const settling = useSharedValue(false);
@@ -75,7 +77,8 @@ const AppleSlider: React.FC<AppleSliderProps> = ({
     .onStart(e => {
       dragValue.value = at(e.x);
       dragging.value = true;
-      grow.value = withSpring(1, Motion.spring.tactile);
+      if (reduceMotion) grow.value = 0;
+      else grow.value = withSpring(1, Motion.spring.tactile);
     })
     .onUpdate(e => {
       dragValue.value = at(e.x);
@@ -87,7 +90,8 @@ const AppleSlider: React.FC<AppleSliderProps> = ({
     })
     .onFinalize(() => {
       dragging.value = false;
-      grow.value = withSpring(0, Motion.spring.tactile);
+      if (reduceMotion) grow.value = 0;
+      else grow.value = withSpring(0, Motion.spring.tactile);
     });
 
   const tap = Gesture.Tap().onEnd(e => {
