@@ -8,7 +8,7 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Dimensions, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Dimensions, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -21,7 +21,8 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SongSnapshot } from '@shared/songRef';
-import { Motion, Radius, Signal } from '../../constants/allegraTheme';
+import { Radius, Signal } from '../../constants/allegraTheme';
+import { Tactile, TactileRow } from '../../ui';
 import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from '../../navigation/usePlayerSheetMotion';
 import { playerCoverFrom } from '../../navigation/sheetProgress';
 import { cardCoverRect, heroCoverRect, playerContentOpacity } from '../../navigation/playerTransition';
@@ -374,7 +375,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
                 />
                 <PlayerSheet visible={queueOpen} title="Up next" tall onClose={() => setQueueOpen(false)}>
                   <View style={styles.modes}>
-                    <Pressable
+                    <Tactile
                       onPress={() => { Haptics.selectionAsync().catch(() => undefined); control({ kind: 'shuffle', on: !view.shuffle }); }}
                       style={[styles.mode, view.shuffle && styles.modeOn]}
                       accessibilityRole="button"
@@ -383,8 +384,8 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
                     >
                       <Ionicons name="shuffle" size={18} color={view.shuffle ? Signal.waveInk : '#fff'} />
                       <Text style={[styles.modeText, view.shuffle && styles.modeTextOn]}>Shuffle</Text>
-                    </Pressable>
-                    <Pressable
+                    </Tactile>
+                    <Tactile
                       onPress={() => { Haptics.selectionAsync().catch(() => undefined); control({ kind: 'repeat', mode: view.repeat === 'off' ? 'all' : view.repeat === 'all' ? 'one' : 'off' }); }}
                       style={[styles.mode, view.repeat !== 'off' && styles.modeOn]}
                       accessibilityRole="button"
@@ -392,23 +393,23 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
                     >
                       <MaterialCommunityIcons name={view.repeat === 'one' ? 'repeat-once' : 'repeat'} size={18} color={view.repeat !== 'off' ? Signal.waveInk : '#fff'} />
                       <Text style={[styles.modeText, view.repeat !== 'off' && styles.modeTextOn]}>{view.repeat === 'one' ? 'Repeat one' : view.repeat === 'all' ? 'Repeat all' : 'Repeat'}</Text>
-                    </Pressable>
+                    </Tactile>
                     {view.queueEditable && view.queue.length > 0 ? (
-                      <Pressable
+                      <Tactile
                         onPress={() => { Haptics.selectionAsync().catch(() => undefined); control({ kind: 'queue_clear' }); }}
                         style={[styles.mode, styles.modeEnd]}
                         accessibilityRole="button"
                         accessibilityLabel="Clear the queue"
                       >
                         <Text style={styles.modeText}>Clear</Text>
-                      </Pressable>
+                      </Tactile>
                     ) : null}
                   </View>
                   <SheetScrollView showsVerticalScrollIndicator={false}>
                     {view.queue.length ? view.queue.map((queued, index) => (
                       <View key={`${queued.ref}-${index}`} style={styles.queued}>
-                        <Pressable
-                          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                        <TactileRow
+                          style={styles.row}
                           onPress={() => {
                             control({ kind: 'play_song', song: queued, queue: view.queue.slice(index + 1) });
                             setQueueOpen(false);
@@ -421,29 +422,29 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
                             <Text style={styles.rowTitle} numberOfLines={1}>{queued.title}</Text>
                             <Text style={styles.rowArtist} numberOfLines={1}>{queued.artist}</Text>
                           </View>
-                        </Pressable>
+                        </TactileRow>
                         {view.queueEditable ? (
                           <>
                             {index > 0 ? (
-                              <Pressable
-                                style={({ pressed }) => [styles.rowAction, pressed && styles.rowPressed]}
+                              <Tactile
+                                style={styles.rowAction}
                                 onPress={() => { Haptics.selectionAsync().catch(() => undefined); control({ kind: 'queue_move', from: index, to: 0, ref: queued.ref }); }}
                                 accessibilityRole="button"
                                 accessibilityLabel={`Play ${queued.title} next`}
                                 hitSlop={4}
                               >
                                 <MaterialCommunityIcons name="arrow-collapse-up" size={20} color="rgba(255,255,255,0.7)" />
-                              </Pressable>
+                              </Tactile>
                             ) : null}
-                            <Pressable
-                              style={({ pressed }) => [styles.rowAction, pressed && styles.rowPressed]}
+                            <Tactile
+                              style={styles.rowAction}
                               onPress={() => { Haptics.selectionAsync().catch(() => undefined); control({ kind: 'queue_remove', index, ref: queued.ref }); }}
                               accessibilityRole="button"
                               accessibilityLabel={`Remove ${queued.title} from the queue`}
                               hitSlop={4}
                             >
                               <Ionicons name="close" size={20} color="rgba(255,255,255,0.7)" />
-                            </Pressable>
+                            </Tactile>
                           </>
                         ) : null}
                       </View>
@@ -454,10 +455,10 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
             ) : (
               <View style={styles.waiting}>
                 <Text style={styles.notice}>Waiting for the playing device…</Text>
-                <Pressable style={styles.waitingAction} onPress={connect.openDevices} accessibilityRole="button">
+                <Tactile style={styles.waitingAction} onPress={connect.openDevices} accessibilityRole="button">
                   <MaterialCommunityIcons name="devices" size={19} color={Signal.waveInk} />
                   <Text style={styles.waitingActionText}>Choose a device</Text>
-                </Pressable>
+                </Tactile>
               </View>
             )}
           </Animated.View>
@@ -485,7 +486,6 @@ const styles = StyleSheet.create({
   queued: { flexDirection: 'row', alignItems: 'center' },
   row: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, paddingHorizontal: 4, borderRadius: 12 },
   rowAction: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20 },
-  rowPressed: { backgroundColor: 'rgba(255,255,255,0.08)' },
   rowArt: { width: 48, height: 48, borderRadius: 8, overflow: 'hidden' },
   rowCopy: { flex: 1 },
   rowTitle: { color: '#fff', fontSize: 15, fontWeight: '600' },

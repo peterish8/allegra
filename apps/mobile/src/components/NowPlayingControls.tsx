@@ -181,7 +181,9 @@ const SavingPulse: React.FC<{ saving: boolean; children: React.ReactNode }> = ({
   const o = useSharedValue(1);
   useEffect(() => {
     cancelAnimation(o);
-    if (saving && !reduce) {
+    if (reduce) {
+      o.value = 1;
+    } else if (saving) {
       o.value = withRepeat(withSequence(withTiming(0.4, { duration: 600, easing: Easing.inOut(Easing.quad) }), withTiming(1, { duration: 600, easing: Easing.inOut(Easing.quad) })), -1);
     } else {
       o.value = withTiming(1, { duration: 160 });
@@ -248,7 +250,8 @@ const NowPlayingControls: React.FC<NowPlayingControlsProps> = ({
   const compactP = useSharedValue(compact ? 1 : 0);
   const reduceMotion = useReducedMotion();
   useEffect(() => {
-    compactP.value = reduceMotion ? (compact ? 1 : 0) : withTiming(compact ? 1 : 0, ROWS_MOVE);
+    if (reduceMotion) compactP.value = compact ? 1 : 0;
+    else compactP.value = withTiming(compact ? 1 : 0, ROWS_MOVE);
   }, [compact, reduceMotion, compactP]);
   const syncDock = () => {
     if (dockX) dockX.value = CONTENT_PAD + DOCK_THUMB / 2;

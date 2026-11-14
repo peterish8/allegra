@@ -12,6 +12,7 @@ import Animated, {
   withSequence,
   Easing,
   cancelAnimation,
+  useReducedMotion,
   SharedValue,
 } from 'react-native-reanimated';
 
@@ -36,17 +37,20 @@ const SPECS: BarSpec[] = [
 
 function Bar({
   active,
+  reduceMotion,
   min,
   max,
   duration,
   delay,
   scale,
-}: BarSpec & { active: boolean; scale: number }) {
+}: BarSpec & { active: boolean; reduceMotion: boolean; scale: number }) {
   const h = useSharedValue(min * scale);
 
   useEffect(() => {
     cancelAnimation(h);
-    if (active) {
+    if (reduceMotion) {
+      h.value = active ? (min + max) * scale / 2 : Math.max(4, min * scale * 0.45);
+    } else if (active) {
       h.value = min * scale;
       h.value = withDelay(
         delay,
@@ -65,7 +69,7 @@ function Bar({
         easing: Easing.out(Easing.quad),
       });
     }
-  }, [active, min, max, duration, delay, scale, h]);
+  }, [active, reduceMotion, min, max, duration, delay, scale, h]);
 
   // A fixed-height bar scaled on Y: transform only, so dancing bars never
   // re-run layout on every frame.
@@ -87,13 +91,14 @@ const InstrumentalWaveform: React.FC<InstrumentalWaveformProps> = ({
   size = 'md',
   style,
 }) => {
+  const reduceMotion = useReducedMotion();
   const scale = size === 'lg' ? 1.15 : size === 'sm' ? 0.75 : 1;
   const rowH = size === 'lg' ? 52 : size === 'sm' ? 32 : 44;
 
   return (
     <View style={[styles.container, { height: rowH }, style]} accessibilityLabel="Instrumental">
       {SPECS.map((spec, i) => (
-        <Bar key={i} active={active} scale={scale} {...spec} />
+        <Bar key={i} active={active} reduceMotion={reduceMotion} scale={scale} {...spec} />
       ))}
     </View>
   );

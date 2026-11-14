@@ -23,6 +23,10 @@ export const CYCLE_S = 20;
 export const FADE_MS = 1200;
 export const BASE = '#050505';
 
+/** Reduce Motion holds the glow at its current frame while keeping it visible. */
+export const shouldAdvanceGlow = (active: boolean, budgetRunning: boolean, reduceMotion: boolean): boolean =>
+  active && budgetRunning && !reduceMotion;
+
 export const toRgb = (hex: string): number[] => {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return [40, 40, 40];

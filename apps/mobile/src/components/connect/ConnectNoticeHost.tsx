@@ -8,13 +8,14 @@
  * Mounted once in RootNavigator, beside the device sheet.
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { PlayerSheet } from '../player/PlayerSheet';
 import { Toast } from '../Toast';
 import { useConnect } from '../../services/connect/ConnectProvider';
 import * as Haptics from '../../utils/haptics';
+import { TactileRow } from '../../ui';
 
 export const ConnectNoticeHost: React.FC = () => {
   const connect = useConnect();
@@ -35,22 +36,22 @@ export const ConnectNoticeHost: React.FC = () => {
             <Text style={styles.body}>
               “{choice.title}” is only on this phone, so {choice.deviceName} can’t play it. Playing it here stops {choice.deviceName}.
             </Text>
-            <Pressable
+            <TactileRow
               accessibilityRole="button"
-              style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+              style={styles.action}
               onPress={() => answer(true)}
             >
               <Ionicons name="phone-portrait-outline" size={22} color="#fff" />
               <Text style={styles.actionTitle}>Play on this phone</Text>
-            </Pressable>
-            <Pressable
+            </TactileRow>
+            <TactileRow
               accessibilityRole="button"
-              style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+              style={styles.action}
               onPress={() => answer(false)}
             >
               <Ionicons name="close" size={22} color="rgba(255,255,255,0.72)" />
               <Text style={styles.actionQuiet}>Keep playing on {choice.deviceName}</Text>
-            </Pressable>
+            </TactileRow>
           </View>
         ) : null}
       </PlayerSheet>
@@ -64,7 +65,6 @@ const styles = StyleSheet.create({
   action: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 58, paddingHorizontal: 16, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.07)' },
   actionTitle: { color: '#fff', fontSize: 15, fontWeight: '600', flex: 1 },
   actionQuiet: { color: 'rgba(255,255,255,0.78)', fontSize: 15, flex: 1 },
-  pressed: { backgroundColor: 'rgba(255,255,255,0.14)' },
 });
 
 export default ConnectNoticeHost;

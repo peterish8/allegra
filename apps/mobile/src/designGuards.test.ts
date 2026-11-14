@@ -78,7 +78,10 @@ const rel = (file: string) => path.relative(SRC, file).split(path.sep).join('/')
 const isLibraryFile = (file: string) => LIBRARY.some(dir => file.startsWith(dir));
 
 // Intentional exceptions require one file and one concrete reason. Existing unhandled files stay in the ratchet.
-const REDUCE_MOTION_ALLOWLIST: Record<string, string> = {};
+const REDUCE_MOTION_ALLOWLIST: Record<string, string> = {
+  // M2 explicitly preserves UpNextPanel's player sheet spring physics (K9).
+  'components/player/UpNextPanel.tsx': 'The Up next panel settle spring remains identical per K9; queue row feedback is reduced separately.',
+};
 
 const LAYOUT_PROPERTIES = new Set([
   'height', 'width', 'minHeight', 'minWidth', 'maxHeight', 'maxWidth',
