@@ -80,11 +80,11 @@ describe('mini player and navigation controls', () => {
     expect(pill).toMatch(/const which = miniSwipe\(/);
   });
 
-  // 1.44.0 (owner): edge to edge, no border and no grey line of its own.
-  it('spans the full width with no border, and its progress track is a faint white, not a grey line', () => {
+  // The mini player sits in from the screen edge, with a soft rim above the black navigation bar.
+  it('gives the mini player rounded inset edges and a slightly inset play control', () => {
     const pill = code(read('PillPlayer.tsx'));
-    expect(pill).toMatch(/shell: \{ position: 'absolute', left: 0, right: 0, zIndex: 15, borderRadius: Radius\.panel, overflow: 'hidden' \}/);
-    expect(pill).not.toMatch(/border(Width|Color)/);
+    expect(pill).toMatch(/shell: \{ position: 'absolute', left: Space\.sm, right: Space\.sm, zIndex: 15, borderRadius: Radius\.sheet, overflow: 'hidden', borderWidth: StyleSheet\.hairlineWidth, borderColor: ShellFrost\.miniRim \}/);
+    expect(pill).toMatch(/playButtonOffset: \{ marginRight: Space\.xxs \}/);
     const scrubber = code(read('MiniScrubber.tsx'));
     expect(scrubber).toMatch(/height: SCRUB_LINE, overflow: 'hidden', backgroundColor: Glass\.selected/);
     expect(scrubber).not.toMatch(/Surface\.control/);

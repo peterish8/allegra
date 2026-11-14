@@ -1,0 +1,69 @@
+{
+  "entries": [
+    {
+      "version": "1.66.0",
+      "description": "Stream now shows recent updates, with clearer player controls and a darker navigation bar",
+      "changelog": [
+        {
+          "title": "New",
+          "items": [
+            "Open the LuvLyrics logo in Stream to see the latest four versions and what changed"
+          ]
+        },
+        {
+          "title": "Improved",
+          "items": [
+            "Player animations follow your phone’s reduced-motion setting",
+            "Connect devices from one easy-to-find panel",
+            "The mini-player has softer corners and sits more clearly above the darker navigation bar"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.65.0",
+      "sourceCommit": "1b3c2bd389b0ba1663f0d17d36292ae61f224dc2",
+      "rollbackAsset": "LuvLyrics-rollback-1.65.0.apk",
+      "description": "Finding lyrics and using player and import controls is easier",
+      "changelog": [
+        {
+          "title": "New",
+          "items": [
+            "Find lyrics for more versions of the same song"
+          ]
+        },
+        {
+          "title": "Improved",
+          "items": [
+            "Blends, navigation labels and music imports are easier to use",
+            "Songs with the same title and artist match across more sources",
+            "Player and Luvs animations follow your phone’s reduced-motion setting"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.64.5",
+      "sourceCommit": "9e898611ac2e7213d0f07396166130ed33b7ec8f",
+      "rollbackAsset": "LuvLyrics-rollback-1.64.5.apk",
+      "description": "This release included no visible changes in the Android app.",
+      "changelog": []
+    },
+    {
+      "version": "1.64.3",
+      "sourceCommit": "1f58d23e9ad7a7da70bbbe817e5e001fc23b99f4",
+      "rollbackAsset": "LuvLyrics-rollback-1.64.3.apk",
+      "description": "Jump back in and fullscreen lyrics are easier to use, and removed downloads are easier to restore",
+      "changelog": [
+        {
+          "title": "Improved",
+          "items": [
+            "Jump back in shows song names more clearly",
+            "Fullscreen lyrics have more room and a slimmer control bar",
+            "Download a song again from its menu after removing it"
+          ]
+        }
+      ]
+    }
+  ]
+}

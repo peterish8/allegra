@@ -106,9 +106,13 @@ android {
         if (versionParts.size() != 3 || versionParts.any { it < 0 || it >= 1000 }) {
             throw new GradleException("Expected a semantic mobile version with each part below 1000, got ${appVersion}")
         }
-        // The old release channel used versionCode 1. This monotonic encoding makes the first
-        // migrated APK an installable update and orders later patch/minor/major releases.
-        versionCode versionParts[0] * 1_000_000 + versionParts[1] * 1_000 + versionParts[2]
+        // This app is sideloaded through its signed APK updater, not Google Play. Keep one
+        // installer code so a signed rollback APK can replace a newer build without uninstalling.
+        def rollbackVersionCode = new groovy.json.JsonSlurper().parse(file('../../rollback-version-code.json')).versionCode
+        if (!(rollbackVersionCode instanceof Integer) || rollbackVersionCode <= 0) {
+            throw new GradleException("Expected a positive Android release versionCode")
+        }
+        versionCode rollbackVersionCode
         versionName appVersion
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""

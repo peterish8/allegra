@@ -9,7 +9,7 @@
 #   1. the process starts and stays up, with no crash for the app in the crash buffer
 #   2. React draws and answers: a lyricflow:// link navigates (the app's own [diag:link] line says where it landed)
 #   3. the screen layer never died (no "UiRecovery … React instance lost")
-#   4. About opens from Stream and shows its Updates panel — the way out of a bad build must always work
+#   4. the LuvLyrics mark opens recent updates from Stream and shows release notes
 #   6. Now Playing with animations on: the cover, then lyrics switched on, so UI-thread motion actually runs
 #   5. all of it again after a force stop (the second start restores the saved queue and state)
 # Exit code is the number of failed checks; results go to <out-dir>/launch.txt with logcat beside it.
@@ -84,37 +84,26 @@ check_start() {
   esac
   shot "$ctx-settings"
 
-  # 4. About, from Stream, with its Updates panel. Since 1.42.0 About lives in the profile menu (the picture at the
-  #    top left, Spotify's place); a build without the menu still has About on Stream itself.
+  # 4. The LuvLyrics mark on Stream opens recent release notes.
   link "lyricflow://open/stream"
   sleep 4
   xy=""
-  ui_dump && xy=$(centre_of 'About LuvLyrics[^"]*')
+  ui_dump && xy=$(centre_of 'LuvLyrics updates[^"]*')
   if [ -z "$xy" ]; then
-    menu=""
-    ui_dump && menu=$(centre_of 'Profile and settings[^"]*')
-    if [ -n "$menu" ]; then
-      adb shell input tap $menu
-      sleep 2
-      ui_dump && xy=$(centre_of 'About LuvLyrics[^"]*')
-    fi
-  fi
-  if [ -z "$xy" ]; then
-    fail "$ctx: no About button on Stream"
-    shot "$ctx-no-about"
+    fail "$ctx: no updates button on Stream"
+    shot "$ctx-no-stream-updates"
   else
     adb shell input tap $xy
     sleep 3
     found=""
     for i in 1 2 3; do
-      ui_dump && found=$(grep -o -E '(content-desc|text)="(Updates|Check for updates|Check again|Checking for updates|Update)"' "$OUT/ui.xml" | head -n 1)
+      ui_dump && found=$(grep -o -E '(content-desc|text)="(Recent updates|Version [0-9]+\.[0-9]+\.[0-9]+)"' "$OUT/ui.xml" | head -n 1)
       [ -n "$found" ] && break
-      # The panel sits lower in the sheet: scroll it into view.
       adb shell input swipe "$SWIPE_X" "$SWIPE_FROM" "$SWIPE_X" "$SWIPE_TO" 300
       sleep 2
     done
-    if [ -n "$found" ]; then ok "$ctx: About shows its Updates panel ($found)"; else fail "$ctx: About opened without its Updates panel"; fi
-    shot "$ctx-about"
+    if [ -n "$found" ]; then ok "$ctx: Stream shows recent release notes ($found)"; else fail "$ctx: updates opened without recent release notes"; fi
+    shot "$ctx-stream-updates"
     adb shell input keyevent KEYCODE_BACK
     sleep 1
   fi

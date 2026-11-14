@@ -1,4 +1,4 @@
-import { buildFromAssets, CHANGELOG_URL, checkedAgo, fetchLatestBuild, formatSize, LATEST_APK_URL, NO_NOTES, notesFromBody, parseChangelog, parseRelease, releasedAgo, shouldAutoCheck, standingOf, type LatestBuild } from './appUpdate';
+import { buildFromAssets, CHANGELOG_URL, checkedAgo, fetchLatestBuild, fetchReleaseHistory, formatSize, latestReleaseNotes, LATEST_APK_URL, NO_NOTES, notesFromBody, parseChangelog, parseRelease, parseReleaseHistory, releasedAgo, shouldAutoCheck, standingOf, UPDATE_HISTORY_URL, type LatestBuild } from './appUpdate';
 
 describe('parseRelease', () => {
   it('reads the date and the APK from a release', () => {
@@ -78,6 +78,20 @@ describe('standingOf', () => {
   it('offers the release when nothing is known about this build', () => {
     expect(standingOf(release('2026-09-30T08:02:11Z'), { commit: null, builtAt: null })).toBe('update');
   });
+
+  it('keeps the latest release notes when the phone already has that exact build', () => {
+    const latest: LatestBuild = {
+      publishedAt: new Date('2026-10-02T09:00:00Z'),
+      downloadUrl: LATEST_APK_URL,
+      commit: sha,
+      sizeBytes: null,
+      version: '1.65.0',
+      changelogUrl: null,
+      notes: { description: null, sections: [{ title: 'New', items: ['Lyrics without a provider key'] }] },
+    };
+    expect(standingOf(latest, { commit: sha, builtAt: latest.publishedAt })).toBe('current');
+    expect(latestReleaseNotes(latest)).toEqual(latest.notes);
+  });
 });
 
 describe('release size, version and changelog file', () => {
@@ -129,6 +143,47 @@ describe('parseChangelog', () => {
     expect(parseChangelog(null)).toBeNull();
     expect(parseChangelog({ description: 'x' })).toBeNull();
     expect(parseChangelog('nope')).toBeNull();
+  });
+});
+
+describe('parseReleaseHistory', () => {
+  const entry = (version: string, item: string) => ({ version, description: null, changelog: [{ title: 'New', items: [item] }] });
+
+  it('reads at most four recent versions in newest-first order', () => {
+    expect(parseReleaseHistory({ entries: [
+      entry('1.66.0', 'See recent updates in Stream.'),
+      entry('1.65.0', 'Find lyrics for more versions of a song.'),
+      { version: '1.64.5', description: 'This release included no visible changes in the Android app.', changelog: [] },
+      entry('1.64.3', 'Download a song again after removing it.'),
+      entry('1.64.2', 'Oldest retained version.'),
+    ] })).toEqual([
+      { version: '1.66.0', notes: { description: null, sections: [{ title: 'New', items: ['See recent updates in Stream.'] }] } },
+      { version: '1.65.0', notes: { description: null, sections: [{ title: 'New', items: ['Find lyrics for more versions of a song.'] }] } },
+      { version: '1.64.5', notes: { description: 'This release included no visible changes in the Android app.', sections: [] } },
+      { version: '1.64.3', notes: { description: null, sections: [{ title: 'New', items: ['Download a song again after removing it.'] }] } },
+    ]);
+  });
+
+  it('skips invalid and duplicate versions and rejects an empty history', () => {
+    expect(parseReleaseHistory({ entries: [
+      entry('latest', 'Do not guess a version.'),
+      entry('1.66.0', 'A clear update.'),
+      entry('1.66.0', 'Do not show a duplicate.'),
+    ] })).toHaveLength(1);
+    expect(parseReleaseHistory({ entries: [] })).toBeNull();
+    expect(parseReleaseHistory(null)).toBeNull();
+  });
+
+  it('offers rollback only for the matching retained APK asset', () => {
+    const history = parseReleaseHistory({ entries: [
+      entry('1.66.0', 'Latest.'),
+      { ...entry('1.65.0', 'Earlier.'), rollbackUrl: 'https://github.com/peterish8/allegra/releases/download/apk-latest/LuvLyrics-rollback-1.65.0.apk' },
+      { ...entry('1.64.5', 'Older.'), rollbackUrl: 'https://example.com/LuvLyrics-rollback-1.64.5.apk' },
+      { ...entry('1.64.3', 'Oldest.'), rollbackUrl: 'https://github.com/peterish8/allegra/releases/download/apk-latest/LuvLyrics-rollback-1.64.5.apk' },
+    ] });
+    expect(history?.[1].rollbackUrl).toBe('https://github.com/peterish8/allegra/releases/download/apk-latest/LuvLyrics-rollback-1.65.0.apk');
+    expect(history?.[2].rollbackUrl).toBeUndefined();
+    expect(history?.[3].rollbackUrl).toBeUndefined();
   });
 });
 
@@ -242,6 +297,28 @@ describe('fetchLatestBuild', () => {
   it('is null, not a throw, when nothing can be reached', async () => {
     global.fetch = jest.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch;
     expect(await fetchLatestBuild()).toBeNull();
+  });
+});
+
+describe('fetchReleaseHistory', () => {
+  const realFetch = global.fetch;
+  afterEach(() => { global.fetch = realFetch; });
+
+  it('loads the release history from the static asset without a GitHub API call', async () => {
+    const entries = [{ version: '1.66.0', description: null, changelog: [{ title: 'New', items: ['See updates in Stream.'] }] }];
+    const calls: string[] = [];
+    global.fetch = jest.fn(async (url: RequestInfo | URL) => {
+      calls.push(String(url));
+      return { ok: true, status: 200, json: async () => ({ entries }) } as Response;
+    }) as unknown as typeof fetch;
+
+    expect(await fetchReleaseHistory()).toEqual([{ version: '1.66.0', notes: { description: null, sections: [{ title: 'New', items: ['See updates in Stream.'] }] } }]);
+    expect(calls).toEqual([UPDATE_HISTORY_URL]);
+  });
+
+  it('returns null when the optional asset is not available', async () => {
+    global.fetch = jest.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch;
+    expect(await fetchReleaseHistory()).toBeNull();
   });
 });
 

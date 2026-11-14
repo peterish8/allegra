@@ -384,7 +384,7 @@ can't blank it.
 
 | Screen | Composition |
 | --- | --- |
-| Stream | Moods, Jump back in (six typed song shortcuts), four vertical Quick picks with Play all, one Made for you collection shelf, Your artists, typed provider shelves. Collection taps open a real mix page; long press opens real actions. The LuvLyrics mark stays at top right, with an update dot. |
+| Stream | Moods, Jump back in (six typed song shortcuts), four vertical Quick picks with Play all, one Made for you collection shelf, Your artists, typed provider shelves. Devices sits at top left; the LuvLyrics mark at top right opens the latest four release notes. |
 | Library | Songs, Playlists, Artists, Albums. Search is pinned beside horizontally scrolling tabs and searches the active scope. Song sorting is remembered. Albums and playlists use square covers; artists use circles. Phone import, hidden songs and account import remain accessible through Library options. |
 | Playlist | Centered 184dp cover, 24dp title, metadata with compact shuffle/play discs, quiet order and Add songs utilities, then shared song rows. Edit mode retains reorder handles. Removal offers Undo; concurrent additions survive restoration. |
 | Artist / album | Centered compact artwork, 24dp title, quiet metadata and compact actions, then real catalog sections. No decorative full-height hero. |

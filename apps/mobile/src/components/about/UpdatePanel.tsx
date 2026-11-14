@@ -10,11 +10,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Linking, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import appConfig from '../../../app.json';
-import { Motion, Radius, Signal, Surface } from '../../constants/allegraTheme';
+import { Glass, Motion, Radius, Signal, Space, Surface, TypeScale } from '../../constants/allegraTheme';
 import {
   checkedAgo, formatSize, INSTALLED_BUILD,
-  LATEST_APK_URL,
+  fetchReleaseHistory, latestReleaseNotes, LATEST_APK_URL,
   LatestBuild,
+  ReleaseHistoryEntry,
   releasedAgo,
   ReleaseNotes,
   RELEASES_URL, standingOf,
@@ -22,6 +23,7 @@ import {
 import { canInstallUpdate, DownloadStatus, downloadUpdate, installUpdate, supportsAppUpdates, updateDownloadStatus } from '../../services/appUpdateDownload';
 import { checkNow } from '../../services/updateCheck';
 import { useUpdateStore } from '../../store/updateStore';
+import { ConfirmSheet } from '../../ui/ConfirmSheet';
 import * as Haptics from '../../utils/haptics';
 import { Tactile } from '../allegra/motion';
 import { Switch } from '../settings/SettingsKit';
@@ -60,17 +62,49 @@ const Notes: React.FC<{ notes: ReleaseNotes }> = ({ notes }) => (
         </View>
       </View>
     ))}
+    {!notes.description && notes.sections.length === 0 ? <Text style={styles.body}>No release notes are available for this build.</Text> : null}
+  </View>
+);
+
+/** All recent versions stay readable in the dropdown, with the newest one first. */
+const RecentVersions: React.FC<{ entries: readonly ReleaseHistoryEntry[]; onRollback?: (entry: ReleaseHistoryEntry) => void }> = ({ entries, onRollback }) => (
+  <View>
+    <Text style={styles.recentHeading}>Recent updates</Text>
+    {entries.map((entry, index) => (
+      <View key={entry.version} style={[styles.historyEntry, index > 0 && styles.historyEntryGap]}>
+        <View style={styles.historyHeader}>
+          <Text style={styles.historyVersion}>Version {entry.version}</Text>
+          {index === 0 ? <Text style={styles.latestBadge}>Latest</Text> : null}
+        </View>
+        <Notes notes={entry.notes} />
+        {entry.rollbackUrl && onRollback ? (
+          <Tactile
+            onPress={() => onRollback(entry)}
+            accessibilityRole="button"
+            accessibilityLabel={'Install version ' + entry.version}
+            style={styles.rollbackButton}
+            pressScale={0.97}
+          >
+            <Ionicons name="arrow-undo" size={15} color={Signal.wave} />
+            <Text style={styles.rollbackText}>Install version {entry.version}</Text>
+          </Tactile>
+        ) : null}
+      </View>
+    ))}
   </View>
 );
 
 /** WorkManager owns the transfer. This view observes only while visible and active. */
-export default function UpdatePanel({ visible }: { visible: boolean }) {
+export default function UpdatePanel({ visible, dropdown = false, onClose }: { visible: boolean; dropdown?: boolean; onClose?: () => void }) {
   const [build, setBuild] = useState<LatestBuild | null>(null);
+  const [history, setHistory] = useState<readonly ReleaseHistoryEntry[] | null>(null);
   const [checking, setChecking] = useState(false);
   const [checked, setChecked] = useState(false);
   const [status, setStatus] = useState<DownloadStatus>({ kind: 'idle', progress: 0, message: '' });
   const [notice, setNotice] = useState('');
   const [installing, setInstalling] = useState(false);
+  const [pendingDownload, setPendingDownload] = useState<{ url: string; version: string | null } | null>(null);
+  const [rollback, setRollback] = useState<ReleaseHistoryEntry | null>(null);
   const autoCheck = useUpdateStore(s => s.autoCheck);
   const lastCheckedAt = useUpdateStore(s => s.lastCheckedAt);
   const autoInstall = useRef(false);
@@ -114,7 +148,7 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
         }
         if (next.kind === 'downloading') timer = setTimeout(poll, 700);
       } catch {
-        if (alive) setNotice('Could not read the download. Close About and try again.');
+        if (alive) setNotice('Could not read the download. Close Updates and try again.');
       } finally { polling = false; }
     };
     poll().catch(() => {});
@@ -137,9 +171,22 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
     checkBusy.current = true;
     setChecking(true);
     setNotice('');
-    try { setBuild(await checkNow()); setChecked(true); }
+    try {
+      const [latest, recent] = await Promise.all([
+        checkNow(),
+        dropdown ? fetchReleaseHistory() : Promise.resolve(null),
+      ]);
+      setBuild(latest);
+      setHistory(recent);
+      setChecked(true);
+      if (!latest) setNotice('Could not load the latest release. Check your connection and retry.');
+    } catch {
+      setBuild(null);
+      setChecked(true);
+      setNotice('Could not reach the release feed. Check your connection and retry.');
+    }
     finally { checkBusy.current = false; setChecking(false); }
-  }, []);
+  }, [dropdown]);
 
   // The app-wide watcher (services/updateWatcher) looks more often while this panel is open, and when it finds a new
   // build the store changes: refresh what this panel shows, so an update that lands now appears without a tap.
@@ -155,18 +202,21 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableCommit]);
 
-  // Opening About looks for an update by itself, unless the listener turned that off (Echo does the same).
+  // Opening the updates dropdown always checks so the installed and latest versions and notes are real.
+  // About continues to respect the listener's automatic-check preference.
   useEffect(() => {
-    if (visible && autoCheck && !checked) check().catch(() => {});
-  }, [visible, autoCheck, checked, check]);
+    if (visible && (dropdown || autoCheck) && !checked) check().catch(() => {});
+  }, [visible, dropdown, autoCheck, checked, check]);
 
-  const download = async () => {
+  const download = async (urlOverride?: string, version: string | null = null) => {
     if (downloadBusy.current) return;
     downloadBusy.current = true;
     setNotice('');
     autoInstall.current = true;
+    const url = urlOverride ?? build?.downloadUrl ?? LATEST_APK_URL;
+    setPendingDownload({ url, version });
     try {
-      await downloadUpdate(build?.downloadUrl ?? LATEST_APK_URL);
+      await downloadUpdate(url);
       setStatus({ kind: 'downloading', progress: 0, message: '' });
     } catch (e) {
       autoInstall.current = false;
@@ -174,19 +224,38 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
     } finally { downloadBusy.current = false; }
   };
 
+  const retryDownload = () => download(pendingDownload?.url, pendingDownload?.version ?? null);
+
+  const requestRollback = (entry: ReleaseHistoryEntry) => {
+    if (!entry.rollbackUrl || !supportsAppUpdates) return;
+    Haptics.selectionAsync().catch(() => {});
+    setRollback(entry);
+  };
+
+  const confirmRollback = () => {
+    if (!rollback?.rollbackUrl) return;
+    const selected = rollback;
+    setRollback(null);
+    download(selected.rollbackUrl, selected.version).catch(() => {});
+  };
+
   const ready = status.kind === 'ready';
-  // Never offer the release when it is this build or older than it: every build is versionCode 1,
-  // so Android would install an older one over this without a word.
+  // The normal updater offers the latest build; recent-version rollback buttons are listed in Stream's updates view.
   const standing = build ? standingOf(build, INSTALLED_BUILD) : null;
   const available = build !== null && standing === 'update';
   const canDownload = status.kind === 'error' || available;
   const installedLabel = `${appConfig.expo.version}${INSTALLED_BUILD.commit ? ` · build ${INSTALLED_BUILD.commit.slice(0, 7)}` : ''}`;
   const lastChecked = lastCheckedAt ? `Last checked ${checkedAgo(new Date(lastCheckedAt))}` : 'Not checked yet';
+  const latestNotes = latestReleaseNotes(build);
+  const versionsToShow = history?.length
+    ? history
+    : build?.version && latestNotes ? [{ version: build.version, notes: latestNotes }] : null;
+  const latestVersion = build?.version ?? (checking ? 'Checking' : checked ? 'Unavailable' : 'Not checked');
 
   const head: { icon: IconName; tone: 'wave' | 'ok' | 'warn' | 'plain'; title: string; sub: string } =
     checking ? { icon: 'sync', tone: 'plain', title: 'Checking for updates', sub: `You are on ${installedLabel}` }
     : downloading ? { icon: 'cloud-download-outline', tone: 'wave', title: `Downloading update · ${status.progress}%`, sub: 'You can keep listening or leave the app.' }
-    : ready ? { icon: 'phone-portrait-outline', tone: 'wave', title: 'Ready to install', sub: 'Android will ask you to confirm. Your library stays.' }
+    : ready ? { icon: 'phone-portrait-outline', tone: 'wave', title: 'Ready to install', sub: pendingDownload?.version ? 'Android will ask you to confirm version ' + pendingDownload.version + '.' : 'Android will ask you to confirm. Your library stays.' }
     : available ? { icon: 'arrow-down-circle', tone: 'wave', title: build?.version ? `Update available · ${build.version}` : 'Update available', sub: `Released ${releasedAgo(build.publishedAt)}${build.sizeBytes ? ` · ${formatSize(build.sizeBytes)}` : ''}` }
     : build && standing === 'current' ? { icon: 'checkmark-circle', tone: 'ok', title: "You're on the latest version", sub: `Version ${installedLabel}` }
     : build && standing === 'older' ? { icon: 'checkmark-circle', tone: 'ok', title: 'This phone is ahead of the release', sub: `Version ${installedLabel}. The latest release came out ${releasedAgo(build.publishedAt)}.` }
@@ -196,13 +265,27 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
   const busy = checking || installing;
   const action: { label: string; icon: IconName; run: () => void } | null =
     !supportsAppUpdates ? null
-    : ready ? { label: 'Install update', icon: 'phone-portrait-outline', run: () => { install().catch(() => {}); } }
+    : ready ? { label: pendingDownload?.version ? 'Install version ' + pendingDownload.version : 'Install update', icon: 'phone-portrait-outline', run: () => { install().catch(() => {}); } }
     : downloading ? null
-    : canDownload ? { label: 'Update', icon: 'arrow-down', run: () => { download().catch(() => {}); } }
-    : { label: checked ? 'Check again' : 'Check for updates', icon: 'refresh', run: () => { check().catch(() => {}); } };
+    : canDownload ? { label: status.kind === 'error' ? 'Retry download' : 'Update', icon: 'arrow-down', run: () => { retryDownload().catch(() => {}); } }
+    : { label: checked && !build ? 'Retry' : checked ? 'Check again' : 'Check for updates', icon: 'refresh', run: () => { check().catch(() => {}); } };
 
   return <>
-    <Text style={styles.title}>Updates</Text>
+    <View style={styles.titleRow}>
+      <Text style={styles.title}>Updates</Text>
+      {onClose ? (
+        <Tactile onPress={onClose} accessibilityRole="button" accessibilityLabel="Close updates" hitSlop={8} style={styles.close}>
+          <Ionicons name="close" size={20} color={Signal.ink} />
+        </Tactile>
+      ) : null}
+    </View>
+
+    {dropdown ? (
+      <View style={styles.versions} accessibilityLabel={`Current version ${appConfig.expo.version}. Latest version ${latestVersion}.`}>
+        <View style={styles.versionLine}><Text style={styles.versionLabel}>Current</Text><Text style={styles.versionValue}>{appConfig.expo.version}</Text></View>
+        <View style={styles.versionLine}><Text style={styles.versionLabel}>Latest</Text><Text style={styles.versionValue}>{latestVersion}</Text></View>
+      </View>
+    ) : null}
 
     <View style={styles.card} accessibilityLiveRegion="polite">
       <View style={[styles.tile, head.tone === 'wave' && styles.tileWave, head.tone === 'ok' && styles.tileOk, head.tone === 'warn' && styles.tileWarn]}>
@@ -216,7 +299,9 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
       </View>
     </View>
 
-    {available && build ? <Notes notes={build.notes} /> : null}
+    {dropdown
+      ? versionsToShow ? <RecentVersions entries={versionsToShow} onRollback={supportsAppUpdates ? requestRollback : undefined} /> : null
+      : latestNotes ? <Notes notes={latestNotes} /> : null}
     {downloading ? <ProgressBar percent={status.progress} /> : null}
 
     {notice || status.kind === 'error' ? <Text style={styles.notice} accessibilityLiveRegion="polite">{notice || status.message}</Text> : null}
@@ -233,23 +318,49 @@ export default function UpdatePanel({ visible }: { visible: boolean }) {
       </Tactile>
     ) : !supportsAppUpdates ? <Text style={styles.body}>Installable updates are available in the Android app.</Text> : null}
 
-    <View style={styles.settings}>
-      <Switch
-        label="Check for updates automatically"
-        hint="Looks when you open the app, at most every few hours."
-        value={autoCheck}
-        onChange={on => useUpdateStore.getState().setAutoCheck(on)}
-      />
-    </View>
+    {!dropdown ? <>
+      <View style={styles.settings}>
+        <Switch
+          label="Check for updates automatically"
+          hint="Looks when you open the app, at most every few hours."
+          value={autoCheck}
+          onChange={on => useUpdateStore.getState().setAutoCheck(on)}
+        />
+      </View>
 
-    <View style={styles.links}>
-      <Text style={styles.link} accessibilityRole="link" onPress={() => { Linking.openURL(RELEASES_URL).catch(() => setNotice('Could not open the release notes.')); }}>Release notes ↗</Text>
-    </View>
+      <View style={styles.links}>
+        <Text style={styles.link} accessibilityRole="link" onPress={() => { Linking.openURL(RELEASES_URL).catch(() => setNotice('Could not open the release notes.')); }}>Release notes ↗</Text>
+      </View>
+    </> : null}
+
+    <ConfirmSheet
+      visible={rollback !== null}
+      title={rollback ? `Install version ${rollback.version}?` : 'Install an earlier version?'}
+      body="This replaces LuvLyrics with an earlier version. Your library and downloaded songs stay on this phone, but newer features may no longer be available."
+      confirmLabel={rollback ? `Install version ${rollback.version}` : 'Install version'}
+      cancelLabel="Keep current version"
+      onConfirm={confirmRollback}
+      onClose={() => setRollback(null)}
+    />
   </>;
 }
 
 const styles = StyleSheet.create({
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { color: Signal.ink, fontSize: 17, fontWeight: '700' },
+  close: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Surface.control },
+  versions: { gap: 8, marginTop: 10, padding: 12, borderRadius: 14, backgroundColor: Surface.raised },
+  versionLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  versionLabel: { color: Signal.inkMuted, fontSize: TypeScale.meta },
+  versionValue: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '600' },
+  recentHeading: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '700', marginTop: Space.md, marginBottom: Space.sm },
+  historyEntry: { padding: Space.sm, borderRadius: Radius.sheet, backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },
+  historyEntryGap: { marginTop: Space.sm },
+  historyHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Space.sm, marginBottom: Space.xxs },
+  historyVersion: { color: Signal.ink, fontSize: TypeScale.body, fontWeight: '700' },
+  latestBadge: { color: Signal.wave, fontSize: TypeScale.meta, fontWeight: '700' },
+  rollbackButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: Space.xs, paddingHorizontal: Space.sm, marginTop: Space.sm, borderRadius: Radius.control, backgroundColor: Surface.control },
+  rollbackText: { color: Signal.wave, fontSize: TypeScale.meta, fontWeight: '700' },
   body: { color: Signal.inkSoft, fontSize: 14, lineHeight: 21, marginTop: 10 },
   card: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 12, padding: 14, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)' },
   tile: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)' },
