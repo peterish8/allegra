@@ -362,6 +362,8 @@ async function loadLyrics(streamId: string, meta: UnifiedSong | undefined): Prom
   try {
     const result = await lyricaService.fetchLyrics(current.title, current.artist ?? '', false, meta?.duration ?? current.duration, {
       ref: fromMobileId(streamId) ?? undefined,
+      album: meta?.album ?? current.album,
+      language: meta?.language,
       signal: lookup.controller.signal,
     });
     if (!result) return;

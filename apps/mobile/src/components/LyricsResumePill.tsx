@@ -3,7 +3,7 @@ import { StyleSheet, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Frosted } from './allegra/Frosted';
 import { Tactile } from './allegra/motion';
-import { Signal, TypeScale } from '../constants/allegraTheme';
+import { Control, Signal, TypeScale } from '../constants/allegraTheme';
 
 interface LyricsResumePillProps {
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -11,21 +11,22 @@ interface LyricsResumePillProps {
   accessibilityLabel: string;
   onPress: () => void;
   hitSlop?: number;
+  iconOnly?: boolean;
 }
 
 /** The frosted pill floating over the lyrics: back to the playing line, or the plain-text auto-scroll switch. */
-export const LyricsResumePill: React.FC<LyricsResumePillProps> = ({ icon, label, accessibilityLabel, onPress, hitSlop }) => (
+export const LyricsResumePill: React.FC<LyricsResumePillProps> = ({ icon, label, accessibilityLabel, onPress, hitSlop, iconOnly = false }) => (
   <Tactile
     wrapperStyle={styles.place}
-    style={styles.pill}
+    style={[styles.pill, iconOnly && styles.iconOnly]}
     onPress={onPress}
     hitSlop={hitSlop}
     accessibilityRole="button"
     accessibilityLabel={accessibilityLabel}
   >
     <Frosted radius={18} intensity={50} tint={0.35} />
-    <Ionicons name={icon} size={14} color={Signal.wave} />
-    <Text style={styles.text}>{label}</Text>
+    <Ionicons name={icon} size={iconOnly ? Control.glyph.sm : 14} color={Signal.wave} />
+    {iconOnly ? null : <Text style={styles.text}>{label}</Text>}
   </Tactile>
 );
 
@@ -44,6 +45,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 18,
     overflow: 'hidden',
+  },
+  iconOnly: {
+    minWidth: Control.target,
+    minHeight: Control.target,
+    justifyContent: 'center',
   },
   text: {
     color: Signal.ink,

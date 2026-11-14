@@ -9,7 +9,7 @@ jest.mock('./LyricaService', () => ({ lyricaService: {
   parseLrc: () => [{ timestamp: 1, text: 'Hello' }],
 } }));
 jest.mock('../store/songsStore', () => ({ useSongsStore: { getState: () => ({
-  getSong: async () => ({ id: 'song', title: 'Song', audioUri: 'file:///song.mp3', duration: 120 }),
+  getSong: async () => ({ id: 'song', title: 'Song', album: 'Album', originId: 'saavn:track-1', audioUri: 'file:///song.mp3', duration: 120 }),
   updateSong: (...args: unknown[]) => mockUpdateSong(...args),
 }) } }));
 jest.mock('../store/lyricsScanQueueStore', () => ({
@@ -49,6 +49,7 @@ test('Lyrics arriving later are attached to the already downloaded song', async 
   expect(mockUpdateSong).toHaveBeenCalledWith(expect.objectContaining({
     id: 'song', audioUri: 'file:///song.mp3', lyrics: [{ timestamp: 1, text: 'Hello' }],
   }));
+  expect(mockFetch).toHaveBeenCalledWith('Song', 'Artist', undefined, 120, { ref: 'saavn:track-1', album: 'Album' });
   expect(mockJob?.status).toBe('completed');
 });
 

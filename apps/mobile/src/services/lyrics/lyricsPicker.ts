@@ -16,6 +16,8 @@ export interface PickerTarget {
   artist: string;
   /** Seconds; 0 when unknown. */
   duration: number;
+  album?: string;
+  language?: string;
   /** "saavn:<id>" for a streamed song: Allegra and JioSaavn look it up by it. */
   ref?: string;
 }
@@ -85,7 +87,12 @@ export async function searchEveryProvider(
     (LYRICS_PROVIDERS[name]?.(query) ?? Promise.resolve(null))
       .then((hit: ProviderLyrics | null) => report(hit ? lyricaService.fromProvider(hit) : null))
       .catch(() => undefined));
-  const backend = lyricaService.fetchLyrics(query.title, query.artist, false, target.duration || undefined, { skipEcho: true })
+  const backend = lyricaService.fetchLyrics(query.title, query.artist, false, target.duration || undefined, {
+    skipEcho: true,
+    ref: target.ref,
+    album: target.album,
+    language: target.language,
+  })
     .then(report)
     .catch(() => undefined);
   await Promise.all([shared, ...echo, backend]);

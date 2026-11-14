@@ -4,7 +4,7 @@ import React from 'react';
 import { Dimensions, InteractionManager, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, { EntryAnimationsValues, ExitAnimationsValues, SharedValue, useAnimatedStyle, useReducedMotion, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Motion } from '../constants/allegraTheme';
+import { Motion, Space } from '../constants/allegraTheme';
 import { useAppActive } from '../hooks/useAppActive';
 import { usePlayerStore } from '../store/playerStore';
 import { isCardPlayerBackground, lyricsTextStyle, useSettingsStore } from '../store/settingsStore';
@@ -19,6 +19,7 @@ import { DOCK_THUMB, LYRICS_MORPH_MS } from './player/lyricsMorph';
 import { fullscreenClearance } from './player/fullscreenFooter';
 import SynchronizedLyrics, { SynchronizedLyricsRef } from './SynchronizedLyrics';
 import { cardSize } from '../navigation/playerTransition';
+import { Text as UiText } from '../ui/Text';
 
 type ProcessedLyric = { timestamp: number; text: string };
 
@@ -116,6 +117,7 @@ interface NowPlayingLyricsAreaProps {
   transitionProgress?: SharedValue<number>;
   showLyrics: boolean;
   processedLyrics: ProcessedLyric[];
+  lyricSource?: string;
   duration?: number;
   currentTime: SharedValue<number>;
   onLyricPress: (timestamp: number) => void;
@@ -220,6 +222,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   showLyrics,
   transitionProgress,
   processedLyrics,
+  lyricSource,
   duration,
   currentTime,
   onLyricPress,
@@ -239,6 +242,11 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   songId,
 }) => {
   const useNativeLyrics = localClock && !!songId && canUseNativeLyrics(processedLyrics);
+  const sourceHeader = React.useMemo(() => lyricSource === 'Found online' ? (
+    <UiText variant="caption" tone="muted" onMedia style={{ marginHorizontal: Space.lg, marginBottom: Space.sm }}>
+      Found online
+    </UiText>
+  ) : null, [lyricSource]);
   const routeFocused = useIsFocused();
   const appActive = useAppActive();
   const lyricsLive = showLyrics && routeFocused && appActive;
@@ -362,6 +370,7 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
         ref={flatListRef}
         textStyle={textStyle}
         lyrics={processedLyrics || []}
+        headerContent={sourceHeader}
         duration={duration}
         currentTime={currentTime}
         onLyricPress={onLyricPress}
