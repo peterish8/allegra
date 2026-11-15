@@ -17,6 +17,7 @@ import type * as covers from "../covers.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as library from "../library.js";
+import type * as liveUser from "../liveUser.js";
 import type * as luvLink from "../luvLink.js";
 import type * as oauth from "../oauth.js";
 import type * as profiles from "../profiles.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   http: typeof http;
   library: typeof library;
+  liveUser: typeof liveUser;
   luvLink: typeof luvLink;
   oauth: typeof oauth;
   profiles: typeof profiles;
