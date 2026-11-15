@@ -1,0 +1,455 @@
+﻿[
+    {
+        "path":  "C:/dev/allegra",
+        "branch":  "fix/web-auth-dialog-focus",
+        "head":  "8a084c077b434a5d537222525ebf7276b97567dd",
+        "status":  [
+                       " M .planning/frontend-polish/run/LEDGER.md",
+                       " M .planning/frontend-polish/run/OWNER-TODO.md",
+                       " M .planning/frontend-polish/run/STARTER-PROMPT.md",
+                       " M apps/web/src/lib/connectView.test.ts",
+                       " M apps/web/src/lib/playIntent.test.ts",
+                       " M apps/web/src/lib/skipRules.test.ts",
+                       "?? .planning/echo-backend-port/",
+                       "?? .planning/frontend-polish/run/HANDOFF-2026-11-14-orchestrator.md",
+                       "?? .planning/frontend-polish/run/STARTER-PROMPT-orchestrator-2026-11-14.md",
+                       "?? .planning/frontend-polish/run/tasks/ALBUM-DOWNLOAD.md",
+                       "?? .planning/frontend-polish/run/tasks/ALBUM.md",
+                       "?? .planning/frontend-polish/run/tasks/LYRICS-GESTURE.md",
+                       "?? .planning/frontend-polish/run/tasks/PLAYER-TRANSITION.md",
+                       "?? .planning/frontend-polish/run/tasks/SYNC.md"
+                   ],
+        "diffStat":  [
+                         " .planning/frontend-polish/run/LEDGER.md         | 56 +++++++++++++++++++++++--",
+                         " .planning/frontend-polish/run/OWNER-TODO.md     |  8 ++++",
+                         " .planning/frontend-polish/run/STARTER-PROMPT.md |  5 +++",
+                         " 3 files changed, 66 insertions(+), 3 deletions(-)"
+                     ],
+        "changedSinceMain":  [
+                                 "apps/web/src/components/AuthDialog.tsx",
+                                 "tests/e2e/app.spec.ts"
+                             ],
+        "recentCommits":  [
+                              "8a084c07 fix(web): keep keyboard focus inside the account dialog",
+                              "0dbbda33 docs: add the frontend polish plan and run kit (#91)",
+                              "cf662478 docs: plan mobile integration and summarize QA evidence (#88)",
+                              "bf78a9a9 feat(mobile): one song menu, pull-down playlist search, scan result card, finger-tracked cover and native playback controls (1.60.0)"
+                          ],
+        "version":  "1.60.0"
+    },
+    {
+        "path":  "C:/dev/allegra-discovery-polish",
+        "branch":  "feat/discovery-polish",
+        "head":  "c7dd43011d25b9b3691dc23fcc44d5622a188df6",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+                                 "apps/mobile/DESIGN.md",
+                                 "apps/mobile/android/app/src/main/java/com/lyricflow/app/modules/NativeTransportModule.kt",
+                                 "apps/mobile/android/app/src/main/java/com/lyricflow/app/views/NativeTransportView.kt",
+                                 "apps/mobile/android/app/src/main/java/expo/modules/ExpoModulesPackageList.kt",
+                                 "apps/mobile/app.json",
+                                 "apps/mobile/src/App.tsx",
+                                 "apps/mobile/src/components/BackgroundDownloader.test.ts",
+                                 "apps/mobile/src/components/BackgroundDownloader.tsx",
+                                 "apps/mobile/src/components/MiniPlayer.tsx",
+                                 "apps/mobile/src/components/NativePlaybackControl.tsx",
+                                 "apps/mobile/src/components/NowPlayingControls.tsx",
+                                 "apps/mobile/src/components/PillPlayer.tsx",
+                                 "apps/mobile/src/components/about/UpdatePanel.tsx",
+                                 "apps/mobile/src/components/browse/BrowseShelf.tsx",
+                                 "apps/mobile/src/components/connect/ConnectMiniPlayer.tsx",
+                                 "apps/mobile/src/components/library/SavedQuickPicks.tsx",
+                                 "apps/mobile/src/components/miniPlayerSurface.test.ts",
+                                 "apps/mobile/src/components/player/MiniSongMenu.test.ts",
+                                 "apps/mobile/src/components/player/MiniSongMenu.tsx",
+                                 "apps/mobile/src/components/search/SearchCategories.tsx",
+                                 "apps/mobile/src/components/search/SearchCategoryResults.test.ts",
+                                 "apps/mobile/src/components/search/SearchCategoryResults.tsx",
+                                 "apps/mobile/src/components/stream/DiscoveryCollection.tsx",
+                                 "apps/mobile/src/components/stream/StreamHome.tsx",
+                                 "apps/mobile/src/components/stream/shortcutGrid.test.ts",
+                                 "apps/mobile/src/components/stream/shortcutGrid.ts",
+                                 "apps/mobile/src/constants/allegraTheme.ts",
+                                 "apps/mobile/src/database/db.ts",
+                                 "apps/mobile/src/database/generatedPlaylistQueries.test.ts",
+                                 "apps/mobile/src/database/generatedPlaylistQueries.ts",
+                                 "apps/mobile/src/hooks/useLiveQuickPicks.ts",
+                                 "apps/mobile/src/navigation/TabNavigator.tsx",
+                                 "apps/mobile/src/screens/CatalogAlbumScreen.tsx",
+                                 "apps/mobile/src/screens/NowPlayingScreen.tsx",
+                                 "apps/mobile/src/screens/PlaylistsScreen.tsx",
+                                 "apps/mobile/src/screens/QuickPicksScreen.tsx",
+                                 "apps/mobile/src/screens/SearchScreen.tsx",
+                                 "apps/mobile/src/screens/StreamScreen.tsx",
+                                 "apps/mobile/src/services/lyricsScanWorker.test.ts",
+                                 "apps/mobile/src/services/search/catalogSearch.ts",
+                                 "apps/mobile/src/services/stream/liveQuickPicks.test.ts",
+                                 "apps/mobile/src/services/stream/liveQuickPicks.ts",
+                                 "apps/mobile/src/services/stream/moodRecommendations.test.ts",
+                                 "apps/mobile/src/services/stream/moodRecommendations.ts",
+                                 "apps/mobile/src/services/updateWatcher.test.ts",
+                                 "apps/mobile/src/services/updateWatcher.ts",
+                                 "apps/mobile/src/store/quickPicksStore.test.ts",
+                                 "apps/mobile/src/store/quickPicksStore.ts",
+                                 "apps/mobile/src/store/searchSessionStore.test.ts",
+                                 "apps/mobile/src/store/searchSessionStore.ts",
+                                 "apps/mobile/src/types/navigation.ts",
+                                 "apps/mobile/src/ui/CollectionCard.tsx",
+                                 "apps/mobile/src/ui/PlaybackButton.tsx"
+                             ],
+        "recentCommits":  [
+                              "c7dd4301 feat(mobile): add Quick Picks, search categories and native transport controls",
+                              "6f149b8f test(mobile): remove trailing blank line from song menu coverage",
+                              "d1bfccac merge: include independent lyrics downloads in the 1.50.0 release",
+                              "b63e75e8 merge: include live update checks in the 1.50.0 release"
+                          ],
+        "version":  "1.50.0"
+    },
+    {
+        "path":  "C:/dev/allegra-mobile-lane",
+        "branch":  "fix/mobile-one-devices-sheet",
+        "head":  "1f58d23e9ad7a7da70bbbe817e5e001fc23b99f4",
+        "status":  [
+                       " M apps/mobile/src/components/connect/ConnectDropdown.tsx",
+                       "?? apps/mobile/src/components/connect/ConnectDropdown.test.tsx"
+                   ],
+        "diffStat":  [
+                         " .../src/components/connect/ConnectDropdown.tsx     | 48 ++++++++--------------",
+                         " 1 file changed, 18 insertions(+), 30 deletions(-)"
+                     ],
+        "changedSinceMain":  [
+
+                             ],
+        "recentCommits":  [
+                              "1f58d23e fix(mobile): calmer Jump back in tiles, slim fullscreen lyrics, Download again after delete (1.64.3) (#120)",
+                              "23e09000 Merge pull request #121 from peterish8/chore/api-diagnostics",
+                              "eb35a412 chore(api): add redacted correlation logging to the stream path",
+                              "3db71a77 Merge pull request #118 from peterish8/chore/ci-pin-actions"
+                          ],
+        "version":  "1.64.3"
+    },
+    {
+        "path":  "C:/dev/allegra-track-version",
+        "branch":  "feat/shared-track-version",
+        "head":  "88c69ef365f28114a6cb7d60af807f2bc79cb9bd",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+                                 "apps/api/src/shared/trackVersion.ts",
+                                 "apps/mobile/app.json",
+                                 "packages/shared/trackVersion.test.ts",
+                                 "packages/shared/trackVersion.ts",
+                                 "scripts/sync-shared.mjs"
+                             ],
+        "recentCommits":  [
+                              "88c69ef3 fix(shared): cap title length before peeling version brackets",
+                              "5f1c5f35 feat(shared): add track version tags for matching",
+                              "9e898611 Merge pull request #124 from peterish8/feat/lastfm-rules",
+                              "90beda16 chore(mobile): bump version to 1.64.5"
+                          ],
+        "version":  "1.64.6"
+    },
+    {
+        "path":  "C:/dev/allegra-web-recovery",
+        "branch":  "fix/web-midsong-recovery",
+        "head":  "1d7b44af637172a25f4ef2db0c1f0610e8a1e9ee",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+
+                             ],
+        "recentCommits":  [
+                              "1d7b44af fix(web): keep a listener\u0027s seek made during a mid-song reload",
+                              "f750ec97 fix(web): resume a song after a mid-stream error",
+                              "804841d1 Merge pull request #125 from peterish8/fix/stream-resolver-memory",
+                              "e509de17 fix(mobile): save downloads under the song title alone (1.64.4) (#122)"
+                          ],
+        "version":  "1.64.4"
+    },
+    {
+        "path":  "C:/Users/nithy/.t3/worktrees/allegra/t3-194afcaf-c859279f9eb95409",
+        "branch":  "t3/stream-updates-dropdown",
+        "head":  "6a7873a552e22cd3d48caa84a71975c299096187",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+
+                             ],
+        "recentCommits":  [
+                              "6a7873a5 Merge pull request #129 from peterish8/fix/web-midsong-recovery",
+                              "9e898611 Merge pull request #124 from peterish8/feat/lastfm-rules",
+                              "1d7b44af fix(web): keep a listener\u0027s seek made during a mid-song reload",
+                              "f750ec97 fix(web): resume a song after a mid-stream error"
+                          ],
+        "version":  "1.64.5"
+    },
+    {
+        "path":  "C:/Users/nithy/.t3/worktrees/allegra/t3-215f79ea-2de6c3af239fa799",
+        "branch":  "fix/mobile-mini-player-polish",
+        "head":  "c6b9f1fefa27be56412bd63fe870a5245b5a7523",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+                                 "apps/mobile/src/components/LyricsResumePill.tsx",
+                                 "apps/mobile/src/components/MiniPlayer.tsx",
+                                 "apps/mobile/src/components/MiniScrubber.tsx",
+                                 "apps/mobile/src/components/TimelineScrubber.tsx",
+                                 "apps/mobile/src/components/YtMiniPlayer.tsx",
+                                 "apps/mobile/src/constants/classicBarThemes.ts",
+                                 "apps/mobile/src/designGuards.baseline.json"
+                             ],
+        "recentCommits":  [
+                              "c6b9f1fe fix(mobile): mini-player family uses Tactile, theme tokens, scaleY scrubber track and Reduce Motion",
+                              "9e898611 Merge pull request #124 from peterish8/feat/lastfm-rules",
+                              "90beda16 chore(mobile): bump version to 1.64.5",
+                              "efc0e7e4 fix(api): accept a fully accepted scrobble batch with no per-entry detail"
+                          ],
+        "version":  "1.64.5"
+    },
+    {
+        "path":  "C:/Users/nithy/.t3/worktrees/allegra/t3-617ae0f1-5303f8b3145ce152",
+        "branch":  "fix/mobile-luvlink-import-polish",
+        "head":  "b75fb9494ac8b9ea0613dcbac5846c9d08ed8c8a",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+                                 "apps/mobile/src/components/import/SpotifyCrate.tsx",
+                                 "apps/mobile/src/components/import/SpotifySyncPanel.test.ts",
+                                 "apps/mobile/src/components/import/SpotifySyncPanel.tsx",
+                                 "apps/mobile/src/components/luvLink/LuvLinkHost.tsx",
+                                 "apps/mobile/src/components/luvLink/LuvLinkLegacyPanel.tsx",
+                                 "apps/mobile/src/components/luvLink/LuvLinkPanel.tsx",
+                                 "apps/mobile/src/designGuards.baseline.json",
+                                 "apps/mobile/src/screens/LuvLinkScreen.tsx"
+                             ],
+        "recentCommits":  [
+                              "b75fb949 fix(mobile): polish LuvLink and Spotify import controls",
+                              "804841d1 Merge pull request #125 from peterish8/fix/stream-resolver-memory",
+                              "e509de17 fix(mobile): save downloads under the song title alone (1.64.4) (#122)",
+                              "b2ba83f4 fix(api): keep stream cache keys case-sensitive and back off dead songs"
+                          ],
+        "version":  "1.64.4"
+    },
+    {
+        "path":  "C:/Users/nithy/.t3/worktrees/allegra/t3-8451adb0-8c16b28a6e7fe2cf",
+        "branch":  "feat/mobile-found-online-lyrics",
+        "head":  "2c84f040a4278ac39c747ab7c5396fe4c518bd7d",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+                                 "apps/mobile/src/components/LyricsResumePill.tsx",
+                                 "apps/mobile/src/components/NowPlayingLyricsArea.tsx",
+                                 "apps/mobile/src/components/SynchronizedLyrics.tsx",
+                                 "apps/mobile/src/components/connect/ConnectRemotePlayer.tsx",
+                                 "apps/mobile/src/screens/NowPlayingScreen.tsx",
+                                 "apps/mobile/src/services/LyricaService.test.ts",
+                                 "apps/mobile/src/services/LyricaService.ts",
+                                 "apps/mobile/src/services/lyrics/foundOnlineLyrics.test.ts",
+                                 "apps/mobile/src/services/lyrics/foundOnlineLyrics.ts",
+                                 "apps/mobile/src/services/lyrics/foundOnlineLyricsApi.ts",
+                                 "apps/mobile/src/services/lyrics/lyricsPicker.ts",
+                                 "apps/mobile/src/services/lyrics/lyricsUpgrade.ts",
+                                 "apps/mobile/src/services/lyricsScanWorker.test.ts",
+                                 "apps/mobile/src/services/lyricsScanWorker.ts",
+                                 "apps/mobile/src/services/stream/StreamService.ts"
+                             ],
+        "recentCommits":  [
+                              "2c84f040 feat(mobile): show Found online plain lyrics",
+                              "804841d1 Merge pull request #125 from peterish8/fix/stream-resolver-memory",
+                              "e509de17 fix(mobile): save downloads under the song title alone (1.64.4) (#122)",
+                              "b2ba83f4 fix(api): keep stream cache keys case-sensitive and back off dead songs"
+                          ],
+        "version":  "1.64.4"
+    },
+    {
+        "path":  "C:/Users/nithy/.t3/worktrees/allegra/t3-978e65c4-cf4d18c36ef240d9",
+        "branch":  "fix/mobile-nav-label-scaling",
+        "head":  "8d6065b4a82ba15c9c36af633b8031f85302d163",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+                                 "apps/mobile/android/app/src/main/java/com/lyricflow/app/views/NativeTabBarView.kt",
+                                 "apps/mobile/android/app/src/main/java/com/lyricflow/app/views/TabBarGeometry.kt",
+                                 "apps/mobile/android/app/src/test/java/com/lyricflow/app/views/TabBarGeometryTest.kt",
+                                 "apps/mobile/src/navigation/v6Shell.test.ts"
+                             ],
+        "recentCommits":  [
+                              "8d6065b4 fix(mobile): scale native tab labels with system text",
+                              "804841d1 Merge pull request #125 from peterish8/fix/stream-resolver-memory",
+                              "e509de17 fix(mobile): save downloads under the song title alone (1.64.4) (#122)",
+                              "b2ba83f4 fix(api): keep stream cache keys case-sensitive and back off dead songs"
+                          ],
+        "version":  "1.64.4"
+    },
+    {
+        "path":  "C:/Users/nithy/.t3/worktrees/allegra/t3-a40e9216-8ae8d8ad69defaca",
+        "branch":  "fix/mobile-luvs-motion",
+        "head":  "f49fef05ee839e3ee6663ce8dd74eb3d25f97f12",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+                                 "apps/mobile/src/components/luvs/LuvControls.tsx",
+                                 "apps/mobile/src/components/luvs/TasteExplorer.tsx",
+                                 "apps/mobile/src/components/luvs/luvsMotion.test.ts",
+                                 "apps/mobile/src/components/luvs/luvsMotion.ts",
+                                 "apps/mobile/src/constants/allegraTheme.ts",
+                                 "apps/mobile/src/designGuards.baseline.json",
+                                 "apps/mobile/src/screens/LuvsScreen.tsx"
+                             ],
+        "recentCommits":  [
+                              "f49fef05 fix(mobile): honor reduced motion in Luvs",
+                              "804841d1 Merge pull request #125 from peterish8/fix/stream-resolver-memory",
+                              "e509de17 fix(mobile): save downloads under the song title alone (1.64.4) (#122)",
+                              "b2ba83f4 fix(api): keep stream cache keys case-sensitive and back off dead songs"
+                          ],
+        "version":  "1.64.4"
+    },
+    {
+        "path":  "C:/Users/nithy/.t3/worktrees/allegra/t3-d695b735-0fa0ae89d26a85cd",
+        "branch":  "chore/mobile-library-drop-albums",
+        "head":  "e509de1767d34dd3d58308e0d7bbb1c6b65042af",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+
+                             ],
+        "recentCommits":  [
+                              "e509de17 fix(mobile): save downloads under the song title alone (1.64.4) (#122)",
+                              "1f58d23e fix(mobile): calmer Jump back in tiles, slim fullscreen lyrics, Download again after delete (1.64.3) (#120)",
+                              "23e09000 Merge pull request #121 from peterish8/chore/api-diagnostics",
+                              "eb35a412 chore(api): add redacted correlation logging to the stream path"
+                          ],
+        "version":  "1.64.4"
+    },
+    {
+        "path":  "C:/Users/nithy/.t3/worktrees/allegra/t3-e0109042-c4f2e9754b70e46c",
+        "branch":  "fix/mobile-player-connect-polish",
+        "head":  "e509de1767d34dd3d58308e0d7bbb1c6b65042af",
+        "status":  [
+                       " M apps/mobile/src/components/InstrumentalWaveform.tsx",
+                       " M apps/mobile/src/components/NowPlayingBackground.tsx",
+                       " M apps/mobile/src/components/NowPlayingControls.tsx",
+                       " M apps/mobile/src/components/NowPlayingLyricsArea.tsx",
+                       " M apps/mobile/src/components/SynchronizedLyrics.tsx",
+                       " M apps/mobile/src/components/connect/ConnectDeviceSheet.tsx",
+                       " M apps/mobile/src/components/connect/ConnectDropdown.tsx",
+                       " M apps/mobile/src/components/connect/ConnectNoticeHost.tsx",
+                       " M apps/mobile/src/components/connect/ConnectRemotePlayer.tsx",
+                       " M apps/mobile/src/components/player/AmbientMode.tsx",
+                       " M apps/mobile/src/components/player/AppleBackdrop.tsx",
+                       " M apps/mobile/src/components/player/AppleSlider.tsx",
+                       " M apps/mobile/src/components/player/GlowBackground.tsx",
+                       " M apps/mobile/src/components/player/LyricsPicker.tsx",
+                       " M apps/mobile/src/components/player/PlayerExtras.tsx",
+                       " M apps/mobile/src/components/player/UpNextPanel.tsx",
+                       " M apps/mobile/src/components/player/YouTubeBackdrop.tsx",
+                       " M apps/mobile/src/components/player/glowMath.test.ts",
+                       " M apps/mobile/src/components/player/glowMath.ts",
+                       " M apps/mobile/src/designGuards.baseline.json",
+                       " M apps/mobile/src/designGuards.test.ts",
+                       "?? apps/mobile/src/components/connect/ConnectDropdown.test.ts"
+                   ],
+        "diffStat":  [
+                         " .../mobile/src/components/InstrumentalWaveform.tsx | 13 +++--",
+                         " .../mobile/src/components/NowPlayingBackground.tsx | 13 +++--",
+                         " apps/mobile/src/components/NowPlayingControls.tsx  |  7 ++-",
+                         " .../mobile/src/components/NowPlayingLyricsArea.tsx | 64 ++++++++++++----------",
+                         " apps/mobile/src/components/SynchronizedLyrics.tsx  | 16 ++++--",
+                         " .../src/components/connect/ConnectDeviceSheet.tsx  | 22 ++++----",
+                         " .../src/components/connect/ConnectDropdown.tsx     | 44 +++++----------",
+                         " .../src/components/connect/ConnectNoticeHost.tsx   | 16 +++---",
+                         " .../src/components/connect/ConnectRemotePlayer.tsx | 40 +++++++-------",
+                         " apps/mobile/src/components/player/AmbientMode.tsx  | 12 ++--",
+                         " .../mobile/src/components/player/AppleBackdrop.tsx | 15 +++--",
+                         " apps/mobile/src/components/player/AppleSlider.tsx  |  8 ++-",
+                         " .../src/components/player/GlowBackground.tsx       | 13 +++--",
+                         " apps/mobile/src/components/player/LyricsPicker.tsx | 10 ++--",
+                         " apps/mobile/src/components/player/PlayerExtras.tsx | 22 ++++----",
+                         " apps/mobile/src/components/player/UpNextPanel.tsx  | 28 +++++++---",
+                         " .../src/components/player/YouTubeBackdrop.tsx      |  5 +-",
+                         " apps/mobile/src/components/player/glowMath.test.ts |  8 ++-",
+                         " apps/mobile/src/components/player/glowMath.ts      |  4 ++",
+                         " apps/mobile/src/designGuards.baseline.json         | 19 -------",
+                         " apps/mobile/src/designGuards.test.ts               |  5 +-",
+                         " 21 files changed, 205 insertions(+), 179 deletions(-)"
+                     ],
+        "changedSinceMain":  [
+
+                             ],
+        "recentCommits":  [
+                              "e509de17 fix(mobile): save downloads under the song title alone (1.64.4) (#122)",
+                              "1f58d23e fix(mobile): calmer Jump back in tiles, slim fullscreen lyrics, Download again after delete (1.64.3) (#120)",
+                              "23e09000 Merge pull request #121 from peterish8/chore/api-diagnostics",
+                              "eb35a412 chore(api): add redacted correlation logging to the stream path"
+                          ],
+        "version":  "1.64.4"
+    },
+    {
+        "path":  "C:/Users/nithy/.t3/worktrees/allegra/t3-fbad25f8-4a2b2ecc71dc236c",
+        "branch":  "fix/mobile-blend-polish",
+        "head":  "018cb438b50c927149b3812b3ff6aedf44f8405d",
+        "status":  [
+
+                   ],
+        "diffStat":  [
+
+                     ],
+        "changedSinceMain":  [
+                                 "apps/mobile/src/components/blend/BlendParts.tsx",
+                                 "apps/mobile/src/components/blend/BlendScreen.confirmation.test.ts",
+                                 "apps/mobile/src/components/blend/BlendStage.tsx",
+                                 "apps/mobile/src/components/blend/BlendStoryPlayer.tsx",
+                                 "apps/mobile/src/designGuards.baseline.json",
+                                 "apps/mobile/src/screens/BlendJoinScreen.tsx",
+                                 "apps/mobile/src/screens/BlendScreen.tsx"
+                             ],
+        "recentCommits":  [
+                              "018cb438 fix(mobile): polish Blend screens",
+                              "804841d1 Merge pull request #125 from peterish8/fix/stream-resolver-memory",
+                              "e509de17 fix(mobile): save downloads under the song title alone (1.64.4) (#122)",
+                              "b2ba83f4 fix(api): keep stream cache keys case-sensitive and back off dead songs"
+                          ],
+        "version":  "1.64.4"
+    }
+]

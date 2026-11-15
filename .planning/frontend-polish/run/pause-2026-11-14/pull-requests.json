@@ -1,0 +1,828 @@
+﻿[
+    {
+        "headRefName":  "feat/mobile-player-transition",
+        "headRefOid":  "d6c5d4fea86babe58ace94474fb1f9a0340f8109",
+        "mergeCommit":  null,
+        "mergeStateStatus":  "DIRTY",
+        "number":  84,
+        "reviewDecision":  "",
+        "state":  "OPEN",
+        "statusCheckRollup":  [
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-12T20:16:52Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43298247396/job/131462297442",
+                                      "name":  "Typecheck, lint, test, build",
+                                      "startedAt":  "2026-11-12T20:14:21Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-12T20:50:24Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43298247384/job/131473210823",
+                                      "name":  "Build APK",
+                                      "startedAt":  "2026-11-12T20:33:01Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-12T20:17:46Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43298247531/job/131462362396",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-12T20:14:28Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-12T20:35:36Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43298247384/job/131473211081",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-12T20:33:01Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-12T20:18:00Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43298247531/job/131462362915",
+                                      "name":  "Kotlin unit tests",
+                                      "startedAt":  "2026-11-12T20:14:27Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-12T20:53:22Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43298247384/job/131473211115",
+                                      "name":  "Opens on an emulator",
+                                      "startedAt":  "2026-11-12T20:33:01Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-12T20:53:22Z",
+                                      "conclusion":  "SKIPPED",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43298247384/job/131484905649",
+                                      "name":  "Publish main APK",
+                                      "startedAt":  "2026-11-12T20:53:23Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "StatusContext",
+                                      "context":  "Vercel",
+                                      "startedAt":  "2026-11-12T20:17:34Z",
+                                      "state":  "SUCCESS",
+                                      "targetUrl":  "https://vercel.com/pratzys-projects/allegra/FsphNKTqdJj3USMCQA5whAQqjAef"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-12T20:17:34Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://vercel.com/github",
+                                      "name":  "Vercel Preview Comments",
+                                      "startedAt":  "2026-11-12T20:17:34Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  ""
+                                  }
+                              ],
+        "title":  "feat(mobile): player opens like Apple Music\u0027s, Create opens as a full-width sheet (1.51.0)",
+        "url":  "https://github.com/peterish8/allegra/pull/84"
+    },
+    {
+        "headRefName":  "feat/shared-track-version",
+        "headRefOid":  "88c69ef365f28114a6cb7d60af807f2bc79cb9bd",
+        "mergeCommit":  null,
+        "mergeStateStatus":  "UNSTABLE",
+        "number":  123,
+        "reviewDecision":  "",
+        "state":  "OPEN",
+        "statusCheckRollup":  [
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493632682/job/132120917799",
+                                      "name":  "Build APK",
+                                      "startedAt":  "2026-11-13T19:36:19Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:38:38Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493632635/job/132120917099",
+                                      "name":  "Typecheck, lint, test, build",
+                                      "startedAt":  "2026-11-13T19:35:59Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:39:30Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493632598/job/132120917556",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:36:14Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493632682/job/132120918263",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:37:40Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493632598/job/132120916971",
+                                      "name":  "Kotlin unit tests",
+                                      "startedAt":  "2026-11-13T19:36:16Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493632682/job/132120918273",
+                                      "name":  "Opens on an emulator",
+                                      "startedAt":  "2026-11-13T19:37:28Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "StatusContext",
+                                      "context":  "Vercel",
+                                      "startedAt":  "2026-11-13T19:35:18Z",
+                                      "state":  "PENDING",
+                                      "targetUrl":  "https://vercel.com/pratzys-projects/allegra/6qVqF68BkMCvnWD1Fi4CcPAwL9Uo"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:35:19Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://vercel.com/github",
+                                      "name":  "Vercel Preview Comments",
+                                      "startedAt":  "2026-11-13T19:35:19Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  ""
+                                  }
+                              ],
+        "title":  "feat(shared): add track version tags for matching",
+        "url":  "https://github.com/peterish8/allegra/pull/123"
+    },
+    {
+        "headRefName":  "feat/lastfm-rules",
+        "headRefOid":  "90beda16699f5601e32f7c718f6f0b787100c6b8",
+        "mergeCommit":  {
+                            "oid":  "9e898611ac2e7213d0f07396166130ed33b7ec8f"
+                        },
+        "mergeStateStatus":  "UNKNOWN",
+        "number":  124,
+        "reviewDecision":  "",
+        "state":  "MERGED",
+        "statusCheckRollup":  [
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:18:45Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43490672071/job/132110710352",
+                                      "name":  "Typecheck, lint, test, build",
+                                      "startedAt":  "2026-11-13T19:16:47Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:30:30Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43490671863/job/132110709823",
+                                      "name":  "Build APK",
+                                      "startedAt":  "2026-11-13T19:16:47Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:19:23Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43490671994/job/132110709192",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:16:47Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:19:03Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43490671863/job/132110709429",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:16:47Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:20:33Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43490671994/job/132110709625",
+                                      "name":  "Kotlin unit tests",
+                                      "startedAt":  "2026-11-13T19:16:48Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:32:20Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43490671863/job/132110709706",
+                                      "name":  "Opens on an emulator",
+                                      "startedAt":  "2026-11-13T19:16:48Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:32:20Z",
+                                      "conclusion":  "SKIPPED",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43490671863/job/132119270147",
+                                      "name":  "Publish main APK",
+                                      "startedAt":  "2026-11-13T19:32:21Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "StatusContext",
+                                      "context":  "Vercel",
+                                      "startedAt":  "2026-11-13T19:18:20Z",
+                                      "state":  "SUCCESS",
+                                      "targetUrl":  "https://vercel.com/pratzys-projects/allegra/8SkA2fbY3zybBtj9zAnezs1Lwxt2"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:18:21Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://vercel.com/github",
+                                      "name":  "Vercel Preview Comments",
+                                      "startedAt":  "2026-11-13T19:18:21Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  ""
+                                  }
+                              ],
+        "title":  "feat(api): add Last.fm signing and scrobble rules",
+        "url":  "https://github.com/peterish8/allegra/pull/124"
+    },
+    {
+        "headRefName":  "fix/stream-resolver-memory",
+        "headRefOid":  "b2ba83f465ddcde4e729eb7c82c27d8d0faffa0a",
+        "mergeCommit":  {
+                            "oid":  "804841d153247551da9c85003cf2570aea089924"
+                        },
+        "mergeStateStatus":  "UNKNOWN",
+        "number":  125,
+        "reviewDecision":  "",
+        "state":  "MERGED",
+        "statusCheckRollup":  [
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:07:35Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43488773370/job/132104106111",
+                                      "name":  "Typecheck, lint, test, build",
+                                      "startedAt":  "2026-11-13T19:05:00Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "CI"
+                                  },
+                                  {
+                                      "__typename":  "StatusContext",
+                                      "context":  "Vercel",
+                                      "startedAt":  "2026-11-13T19:06:27Z",
+                                      "state":  "SUCCESS",
+                                      "targetUrl":  "https://vercel.com/pratzys-projects/allegra/5MsP1TQ74Tx8x3dNz16QTrfXJyhP"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:06:29Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://vercel.com/github",
+                                      "name":  "Vercel Preview Comments",
+                                      "startedAt":  "2026-11-13T19:06:29Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  ""
+                                  }
+                              ],
+        "title":  "fix(api): keep stream cache keys case-sensitive and back off dead songs",
+        "url":  "https://github.com/peterish8/allegra/pull/125"
+    },
+    {
+        "headRefName":  "feat/mobile-found-online-lyrics",
+        "headRefOid":  "2c84f040a4278ac39c747ab7c5396fe4c518bd7d",
+        "mergeCommit":  null,
+        "mergeStateStatus":  "UNSTABLE",
+        "number":  126,
+        "reviewDecision":  "",
+        "state":  "OPEN",
+        "statusCheckRollup":  [
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:24:17Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43491591336/job/132113884605",
+                                      "name":  "Typecheck, lint, test, build",
+                                      "startedAt":  "2026-11-13T19:22:32Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:35:28Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43491591172/job/132113881221",
+                                      "name":  "Build APK",
+                                      "startedAt":  "2026-11-13T19:22:32Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:25:18Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43491591175/job/132113880987",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:22:31Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:25:05Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43491591172/job/132113881767",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:22:31Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:26:43Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43491591175/job/132113881395",
+                                      "name":  "Kotlin unit tests",
+                                      "startedAt":  "2026-11-13T19:22:31Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43491591172/job/132113881716",
+                                      "name":  "Opens on an emulator",
+                                      "startedAt":  "2026-11-13T19:22:31Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "StatusContext",
+                                      "context":  "Vercel",
+                                      "startedAt":  "2026-11-13T19:24:08Z",
+                                      "state":  "SUCCESS",
+                                      "targetUrl":  "https://vercel.com/pratzys-projects/allegra/BGq57UvfrTkvYr7yKPA8jnsmnpMY"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:24:09Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://vercel.com/github",
+                                      "name":  "Vercel Preview Comments",
+                                      "startedAt":  "2026-11-13T19:24:09Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  ""
+                                  }
+                              ],
+        "title":  "feat(mobile): show Found online plain lyrics",
+        "url":  "https://github.com/peterish8/allegra/pull/126"
+    },
+    {
+        "headRefName":  "fix/mobile-blend-polish",
+        "headRefOid":  "018cb438b50c927149b3812b3ff6aedf44f8405d",
+        "mergeCommit":  null,
+        "mergeStateStatus":  "UNSTABLE",
+        "number":  127,
+        "reviewDecision":  "",
+        "state":  "OPEN",
+        "statusCheckRollup":  [
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492176392/job/132115909314",
+                                      "name":  "Build APK",
+                                      "startedAt":  "2026-11-13T19:26:15Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:28:28Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492176275/job/132115908460",
+                                      "name":  "Typecheck, lint, test, build",
+                                      "startedAt":  "2026-11-13T19:26:15Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:29:32Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492176747/job/132115912900",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:26:16Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:29:01Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492176392/job/132115909454",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:26:15Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:30:41Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492176747/job/132115912503",
+                                      "name":  "Kotlin unit tests",
+                                      "startedAt":  "2026-11-13T19:26:16Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492176392/job/132115908860",
+                                      "name":  "Opens on an emulator",
+                                      "startedAt":  "2026-11-13T19:26:15Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "StatusContext",
+                                      "context":  "Vercel",
+                                      "startedAt":  "2026-11-13T19:26:05Z",
+                                      "state":  "SUCCESS",
+                                      "targetUrl":  "https://vercel.com/pratzys-projects/allegra/DSd5qBKorwMGBbZZfjEW3iHHqkfE"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:26:14Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://vercel.com/github",
+                                      "name":  "Vercel Preview Comments",
+                                      "startedAt":  "2026-11-13T19:26:14Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  ""
+                                  }
+                              ],
+        "title":  "fix(mobile): polish Blend screens",
+        "url":  "https://github.com/peterish8/allegra/pull/127"
+    },
+    {
+        "headRefName":  "fix/mobile-nav-label-scaling",
+        "headRefOid":  "8d6065b4a82ba15c9c36af633b8031f85302d163",
+        "mergeCommit":  null,
+        "mergeStateStatus":  "UNSTABLE",
+        "number":  128,
+        "reviewDecision":  "",
+        "state":  "OPEN",
+        "statusCheckRollup":  [
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492441659/job/132116849458",
+                                      "name":  "Build APK",
+                                      "startedAt":  "2026-11-13T19:27:58Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:29:55Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492441548/job/132116848604",
+                                      "name":  "Typecheck, lint, test, build",
+                                      "startedAt":  "2026-11-13T19:27:58Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:30:35Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492441480/job/132116849170",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:27:57Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:30:55Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492441659/job/132116849912",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:27:58Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:31:42Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492441480/job/132116848887",
+                                      "name":  "Kotlin unit tests",
+                                      "startedAt":  "2026-11-13T19:27:58Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492441659/job/132116849972",
+                                      "name":  "Opens on an emulator",
+                                      "startedAt":  "2026-11-13T19:27:57Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "StatusContext",
+                                      "context":  "Vercel",
+                                      "startedAt":  "2026-11-13T19:29:32Z",
+                                      "state":  "SUCCESS",
+                                      "targetUrl":  "https://vercel.com/pratzys-projects/allegra/2sYpZ85XvtjLAKTpqA9GNjazxXFY"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:29:33Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://vercel.com/github",
+                                      "name":  "Vercel Preview Comments",
+                                      "startedAt":  "2026-11-13T19:29:33Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  ""
+                                  }
+                              ],
+        "title":  "fix(mobile): scale native tab labels with system text",
+        "url":  "https://github.com/peterish8/allegra/pull/128"
+    },
+    {
+        "headRefName":  "fix/web-midsong-recovery",
+        "headRefOid":  "1d7b44af637172a25f4ef2db0c1f0610e8a1e9ee",
+        "mergeCommit":  {
+                            "oid":  "6a7873a552e22cd3d48caa84a71975c299096187"
+                        },
+        "mergeStateStatus":  "UNKNOWN",
+        "number":  129,
+        "reviewDecision":  "",
+        "state":  "MERGED",
+        "statusCheckRollup":  [
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:32:36Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43492770506/job/132117998750",
+                                      "name":  "Typecheck, lint, test, build",
+                                      "startedAt":  "2026-11-13T19:30:05Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "CI"
+                                  },
+                                  {
+                                      "__typename":  "StatusContext",
+                                      "context":  "Vercel",
+                                      "startedAt":  "2026-11-13T19:31:57Z",
+                                      "state":  "SUCCESS",
+                                      "targetUrl":  "https://vercel.com/pratzys-projects/allegra/HLM6sNVc2ure9VELi4YVDTkaWoza"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:31:58Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://vercel.com/github",
+                                      "name":  "Vercel Preview Comments",
+                                      "startedAt":  "2026-11-13T19:31:58Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  ""
+                                  }
+                              ],
+        "title":  "fix(web): resume a song after a mid-stream error",
+        "url":  "https://github.com/peterish8/allegra/pull/129"
+    },
+    {
+        "headRefName":  "fix/mobile-luvs-motion",
+        "headRefOid":  "f49fef05ee839e3ee6663ce8dd74eb3d25f97f12",
+        "mergeCommit":  null,
+        "mergeStateStatus":  "UNSTABLE",
+        "number":  130,
+        "reviewDecision":  "",
+        "state":  "OPEN",
+        "statusCheckRollup":  [
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493161938/job/132119308936",
+                                      "name":  "Build APK",
+                                      "startedAt":  "2026-11-13T19:32:28Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:35:00Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493161834/job/132119307613",
+                                      "name":  "Typecheck, lint, test, build",
+                                      "startedAt":  "2026-11-13T19:32:27Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:35:57Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493161908/job/132119308934",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:32:28Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:35:07Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493161938/job/132119309471",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:32:28Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:36:13Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493161908/job/132119309356",
+                                      "name":  "Kotlin unit tests",
+                                      "startedAt":  "2026-11-13T19:32:27Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493161938/job/132119309627",
+                                      "name":  "Opens on an emulator",
+                                      "startedAt":  "2026-11-13T19:32:28Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "StatusContext",
+                                      "context":  "Vercel",
+                                      "startedAt":  "2026-11-13T19:33:42Z",
+                                      "state":  "SUCCESS",
+                                      "targetUrl":  "https://vercel.com/pratzys-projects/allegra/G6E7cMjGb2CGKb524G8BxvjyVKnr"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:33:43Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://vercel.com/github",
+                                      "name":  "Vercel Preview Comments",
+                                      "startedAt":  "2026-11-13T19:33:43Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  ""
+                                  }
+                              ],
+        "title":  "fix(mobile): honor reduced motion in Luvs",
+        "url":  "https://github.com/peterish8/allegra/pull/130"
+    },
+    {
+        "headRefName":  "fix/mobile-luvlink-import-polish",
+        "headRefOid":  "b75fb9494ac8b9ea0613dcbac5846c9d08ed8c8a",
+        "mergeCommit":  null,
+        "mergeStateStatus":  "UNSTABLE",
+        "number":  131,
+        "reviewDecision":  "",
+        "state":  "OPEN",
+        "statusCheckRollup":  [
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493306584/job/132119810065",
+                                      "name":  "Build APK",
+                                      "startedAt":  "2026-11-13T19:35:41Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:37:25Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493306562/job/132119809162",
+                                      "name":  "Typecheck, lint, test, build",
+                                      "startedAt":  "2026-11-13T19:35:03Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:36:12Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493306585/job/132119809144",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:33:21Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:38:13Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493306584/job/132119809418",
+                                      "name":  "Secrets, lint, typecheck, test",
+                                      "startedAt":  "2026-11-13T19:35:09Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:39:46Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493306585/job/132119809626",
+                                      "name":  "Kotlin unit tests",
+                                      "startedAt":  "2026-11-13T19:35:31Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  "Mobile CI"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "0001-01-01T00:00:00Z",
+                                      "conclusion":  "",
+                                      "detailsUrl":  "https://github.com/peterish8/allegra/actions/runs/43493306584/job/132119810041",
+                                      "name":  "Opens on an emulator",
+                                      "startedAt":  "2026-11-13T19:35:10Z",
+                                      "status":  "IN_PROGRESS",
+                                      "workflowName":  "Mobile APK"
+                                  },
+                                  {
+                                      "__typename":  "StatusContext",
+                                      "context":  "Vercel",
+                                      "startedAt":  "2026-11-13T19:37:50Z",
+                                      "state":  "SUCCESS",
+                                      "targetUrl":  "https://vercel.com/pratzys-projects/allegra/9cZHamFDtJi6xEte1dkmo6zaj2fa"
+                                  },
+                                  {
+                                      "__typename":  "CheckRun",
+                                      "completedAt":  "2026-11-13T19:37:51Z",
+                                      "conclusion":  "SUCCESS",
+                                      "detailsUrl":  "https://vercel.com/github",
+                                      "name":  "Vercel Preview Comments",
+                                      "startedAt":  "2026-11-13T19:37:51Z",
+                                      "status":  "COMPLETED",
+                                      "workflowName":  ""
+                                  }
+                              ],
+        "title":  "fix(mobile): polish LuvLink and Spotify import controls",
+        "url":  "https://github.com/peterish8/allegra/pull/131"
+    }
+]

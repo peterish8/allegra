@@ -1,0 +1,1383 @@
+From c6b9f1fefa27be56412bd63fe870a5245b5a7523 Mon Sep 17 00:00:00 2001
+From: peterish8 <selftrust.6886@gmail.com>
+Date: Sat, 14 Nov 2026 00:11:41 +0530
+Subject: [PATCH] fix(mobile): mini-player family uses Tactile, theme tokens,
+ scaleY scrubber track and Reduce Motion
+
+---
+ .../src/components/LyricsResumePill.tsx       |  16 +-
+ apps/mobile/src/components/MiniPlayer.tsx     | 369 ++++++++++--------
+ apps/mobile/src/components/MiniScrubber.tsx   |  15 +-
+ .../src/components/TimelineScrubber.tsx       |  61 +--
+ apps/mobile/src/components/YtMiniPlayer.tsx   | 173 ++++----
+ apps/mobile/src/constants/classicBarThemes.ts |  31 ++
+ apps/mobile/src/designGuards.baseline.json    |  24 +-
+ 7 files changed, 386 insertions(+), 303 deletions(-)
+ create mode 100644 apps/mobile/src/constants/classicBarThemes.ts
+
+diff --git a/apps/mobile/src/components/LyricsResumePill.tsx b/apps/mobile/src/components/LyricsResumePill.tsx
+index c3ebf7bf..d07a0137 100644
+--- a/apps/mobile/src/components/LyricsResumePill.tsx
++++ b/apps/mobile/src/components/LyricsResumePill.tsx
+@@ -1,8 +1,9 @@
+ import React from 'react';
+-import { Pressable, StyleSheet, Text } from 'react-native';
++import { StyleSheet, Text } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+ import { Frosted } from './allegra/Frosted';
+-import { Signal } from '../constants/allegraTheme';
++import { Tactile } from './allegra/motion';
++import { Signal, TypeScale } from '../constants/allegraTheme';
+ 
+ interface LyricsResumePillProps {
+   icon: React.ComponentProps<typeof Ionicons>['name'];
+@@ -14,7 +15,8 @@ interface LyricsResumePillProps {
+ 
+ /** The frosted pill floating over the lyrics: back to the playing line, or the plain-text auto-scroll switch. */
+ export const LyricsResumePill: React.FC<LyricsResumePillProps> = ({ icon, label, accessibilityLabel, onPress, hitSlop }) => (
+-  <Pressable
++  <Tactile
++    wrapperStyle={styles.place}
+     style={styles.pill}
+     onPress={onPress}
+     hitSlop={hitSlop}
+@@ -24,15 +26,17 @@ export const LyricsResumePill: React.FC<LyricsResumePillProps> = ({ icon, label,
+     <Frosted radius={18} intensity={50} tint={0.35} />
+     <Ionicons name={icon} size={14} color={Signal.wave} />
+     <Text style={styles.text}>{label}</Text>
+-  </Pressable>
++  </Tactile>
+ );
+ 
+ const styles = StyleSheet.create({
+   // Floating over the lyrics, clear of the transport row below.
+-  pill: {
++  place: {
+     position: 'absolute',
+     alignSelf: 'center',
+     bottom: 16,
++  },
++  pill: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     gap: 6,
+@@ -43,7 +47,7 @@ const styles = StyleSheet.create({
+   },
+   text: {
+     color: Signal.ink,
+-    fontSize: 13,
++    fontSize: TypeScale.meta,
+     fontWeight: '600',
+   },
+ });
+diff --git a/apps/mobile/src/components/MiniPlayer.tsx b/apps/mobile/src/components/MiniPlayer.tsx
+index f68d2a4f..8befaad0 100644
+--- a/apps/mobile/src/components/MiniPlayer.tsx
++++ b/apps/mobile/src/components/MiniPlayer.tsx
+@@ -31,13 +31,15 @@ import TimelineScrubber from './TimelineScrubber';
+ import { YtMiniPlayer } from './YtMiniPlayer';
+ const { Gesture, GestureDetector } = GestureHandler;
+ 
+-import { Glass, Motion, Signal } from '../constants/allegraTheme';
++import { Control, Glass, Motion, OnMedia, Signal, Surface, TypeScale } from '../constants/allegraTheme';
++import { CLASSIC_BAR_SCRIM, CLASSIC_BAR_SONG_FALLBACK, classicBarStops } from '../constants/classicBarThemes';
++import { Tactile, TactileRow } from './allegra/motion';
+ import { planLyricsSwap } from './player/lyricsSwap';
+ import { getGradientColors } from '../constants/gradients';
+ import { CLASSIC_MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from '../constants/layout';
+ import { usePlayer } from '../contexts/PlayerContext';
+ import { useIsSongLiked } from '../hooks/useIsSongLiked';
+-import { PILL_STACK_GAP, pillBarInset, pillBarTop } from '../navigation/tabs';
++import { PILL_STACK_GAP, pillBarTop } from '../navigation/tabs';
+ import { useConnect } from '../services/connect/ConnectProvider';
+ import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
+ import { handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/luvLink/sync';
+@@ -48,8 +50,6 @@ import { useSongsStore } from '../store/songsStore';
+ import { diag } from '../utils/diag';
+ import Artwork from './allegra/Artwork';
+ 
+-const PILL_RADIUS = 22;
+-
+ // Tallest the classic bar's blurred artwork ever needs to be — the full-expand
+ // stage is 0.915 of the screen, with headroom so the image is never the thing
+ // that runs out. Held constant so the Android blur bitmap is computed once.
+@@ -94,7 +94,7 @@ interface TrackInfoProps {
+ }
+ const TrackInfo = memo(({ title, artist, coverImageUri, onPress, onBodyPress }: TrackInfoProps) => (
+   <>
+-    <Pressable onPress={(e) => { e.stopPropagation(); onPress(); }} accessibilityRole="button" accessibilityLabel={`Open player, ${title || 'Untitled'}`}>
++    <Tactile onPress={(e) => { e.stopPropagation(); onPress(); }} accessibilityRole="button" accessibilityLabel={`Open player, ${title || 'Untitled'}`}>
+       <Artwork
+         uri={coverImageUri}
+         title={title || 'Untitled'}
+@@ -102,13 +102,18 @@ const TrackInfo = memo(({ title, artist, coverImageUri, onPress, onBodyPress }:
+         size={48}
+         style={styles.coverThumbnail}
+       />
+-    </Pressable>
+-    <Pressable onPress={(e) => { e.stopPropagation(); onBodyPress(); }} style={styles.info}>
++    </Tactile>
++    <TactileRow
++      onPress={(e) => { e.stopPropagation(); onBodyPress(); }}
++      style={styles.info}
++      wrapperStyle={styles.info}
++      pressedColor={Glass.fillLight}
++    >
+       <Text style={styles.title} numberOfLines={1}>{title}</Text>
+       <Text style={styles.artist} numberOfLines={1}>
+         {artist || 'Unknown Artist'}
+       </Text>
+-    </Pressable>
++    </TactileRow>
+   </>
+ ));
+ TrackInfo.displayName = 'TrackInfo';
+@@ -123,6 +128,8 @@ interface PlaybackControlsProps {
+ }
+ // Width the skip buttons occupy once fully grown (24px icon + 4px padding each side).
+ const SKIP_BUTTON_WIDTH = 32;
++// The 32 dp glyph is padded out to a 48 dp touch target without moving the transport row.
++const SKIP_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 } as const;
+ 
+ const PlaybackControls = memo(({
+   playing, onToggle, onSkipBack, onSkipForward, animatedButtonStyle, showSkipButtons = true,
+@@ -134,9 +141,11 @@ const PlaybackControls = memo(({
+   // moved the play button and title row on every expand/collapse.
+   const skipProgress = useSharedValue(showSkipButtons ? 1 : 0);
+   useEffect(() => {
+-    skipProgress.value = reduceMotion
+-      ? withTiming(showSkipButtons ? 1 : 0, { duration: Motion.duration.fast })
+-      : withSpring(showSkipButtons ? 1 : 0, Motion.spring.tactile);
++    if (reduceMotion) {
++      skipProgress.value = showSkipButtons ? 1 : 0;
++    } else {
++      skipProgress.value = withSpring(showSkipButtons ? 1 : 0, Motion.spring.tactile);
++    }
+   }, [reduceMotion, showSkipButtons, skipProgress]);
+ 
+   const skipBackStyle = useAnimatedStyle(() => ({
+@@ -159,16 +168,17 @@ const PlaybackControls = memo(({
+     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+       <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipBackStyle]}>
+         <NativeSkip direction={-1} enabled={nativeSkip && showSkipButtons}>
+-          <Pressable
++          <Tactile
+             onPress={(e) => { e.stopPropagation(); if (!(nativeSkip && showSkipButtons)) onSkipBack(e); }}
+             style={styles.controlButton}
++            hitSlop={SKIP_HIT_SLOP}
+             accessibilityRole="button"
+             accessibilityLabel="Previous song"
+             accessibilityElementsHidden={!showSkipButtons}
+             importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
+           >
+-            <Ionicons name="play-skip-back" size={24} color="#fff" />
+-          </Pressable>
++            <Ionicons name="play-skip-back" size={24} color={OnMedia.primary} />
++          </Tactile>
+         </NativeSkip>
+       </Animated.View>
+       <Animated.View style={animatedButtonStyle}>
+@@ -176,16 +186,17 @@ const PlaybackControls = memo(({
+       </Animated.View>
+       <Animated.View pointerEvents={showSkipButtons ? 'auto' : 'none'} style={[styles.skipWrap, skipForwardStyle]}>
+         <NativeSkip direction={1} enabled={nativeSkip && showSkipButtons}>
+-          <Pressable
++          <Tactile
+             onPress={(e) => { e.stopPropagation(); if (!(nativeSkip && showSkipButtons)) onSkipForward(e); }}
+             style={styles.controlButton}
++            hitSlop={SKIP_HIT_SLOP}
+             accessibilityRole="button"
+             accessibilityLabel="Next song"
+             accessibilityElementsHidden={!showSkipButtons}
+             importantForAccessibility={showSkipButtons ? 'auto' : 'no-hide-descendants'}
+           >
+-            <Ionicons name="play-skip-forward" size={24} color="#fff" />
+-          </Pressable>
++            <Ionicons name="play-skip-forward" size={24} color={OnMedia.primary} />
++          </Tactile>
+         </NativeSkip>
+       </Animated.View>
+     </View>
+@@ -238,13 +249,17 @@ export const MiniPlayer: React.FC = () => {
+       e?.stopPropagation();
+       if (!currentSong) return;
+ 
+-      playButtonScale.value = withSequence(
+-          withTiming(0.82, { duration: Motion.duration.instant }),
+-          withSpring(1, Motion.spring.tactile)
+-      );
++      if (reduceMotion) {
++        playButtonScale.value = 1;
++      } else {
++        playButtonScale.value = withSequence(
++            withTiming(0.82, { duration: Motion.duration.instant }),
++            withSpring(1, Motion.spring.tactile)
++        );
++      }
+ 
+       requestPlayback(!usePlayerStore.getState().isPlaying);
+-  }, [currentSong, requestPlayback, playButtonScale]);
++  }, [currentSong, requestPlayback, playButtonScale, reduceMotion]);
+ 
+ 
+   const songActions = useSongActions();
+@@ -267,11 +282,10 @@ export const MiniPlayer: React.FC = () => {
+   // With the floating pill tab bar, the collapsed player is a matching pill
+   // just above it (Apple Music style) and widens into the sheet as it expands.
+   const pillMode = navBarStyle === 'modern-pill';
+-  const pillInset = pillBarInset(Dimensions.get('window').width);
+ 
+   const gradientColors = currentSong?.gradientId
+     ? getGradientColors(currentSong.gradientId)
+-    : ['#222', '#111'];
++    : CLASSIC_BAR_SONG_FALLBACK;
+ 
+   // Local state for persistent lyrics (Cross-fade support)
+   const [displayedSong, setDisplayedSong] = useState(currentSong);
+@@ -292,11 +306,21 @@ export const MiniPlayer: React.FC = () => {
+       expanded,
+     });
+     if (swap === 'fade') {
++      if (reduceMotion) {
++        cancelAnimation(transitionOpacity);
++        setDisplayedSong(currentSong);
++        transitionOpacity.value = 1;
++        return;
++      }
+       // Fade out -> swap -> fade in. A new timing replaces this one (its callback then gets finished=false).
+       transitionOpacity.value = withTiming(0, { duration: LYRICS_SWAP_MS }, (finished) => {
+         if (finished) {
+           runOnJS(showLatestSong)();
+-          transitionOpacity.value = withTiming(1, { duration: LYRICS_SWAP_MS });
++          if (reduceMotion) {
++            transitionOpacity.value = 1;
++          } else {
++            transitionOpacity.value = withTiming(1, { duration: LYRICS_SWAP_MS });
++          }
+         }
+       });
+     } else if (swap === 'cut') {
+@@ -307,7 +331,11 @@ export const MiniPlayer: React.FC = () => {
+       // Same song, new object (lyrics landed, or a skip away and back): call off any fade still running and bring
+       // the lines back — even when the shared value still reads 1, so a pending fade-out cannot finish on us.
+       cancelAnimation(transitionOpacity);
+-      transitionOpacity.value = withTiming(1, { duration: LYRICS_SWAP_MS });
++      if (reduceMotion) {
++        transitionOpacity.value = 1;
++      } else {
++        transitionOpacity.value = withTiming(1, { duration: LYRICS_SWAP_MS });
++      }
+       if (currentSong !== displayedSong) setDisplayedSong(currentSong);
+     }
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+@@ -320,17 +348,7 @@ export const MiniPlayer: React.FC = () => {
+   // decodes video. Album-art backgrounds only; theme gradients stay flat.
+   const canvas = useCanvasArtwork(expanded && !useThemeBg ? currentSong : null);
+ 
+-  const themePlayerColors: [string, string, string] = (() => {
+-    switch (activeBgMode) {
+-      case 'song-gradient': return [gradientColors[0] || '#111', gradientColors[1] || '#333', gradientColors[2] || gradientColors[0] || '#111'] as [string, string, string];
+-      case 'purest-black': return ['#000000', '#000000', '#000000'];
+-      case 'grey':         return ['#121212', '#212121', '#121212'];
+-      case 'theme-blue':   return ['#0A1628', '#1A3A6B', '#2F8CFF'];
+-      case 'theme-subtle': return ['#0A0A0A', '#1F1F1F', '#0A0A0A'];
+-      case 'aurora':       return ['#000000', '#EA7980', '#1D728F'];
+-      default:             return ['#080808', '#0A0A0A', '#080808'];
+-    }
+-  })();
++  const themePlayerColors = classicBarStops(activeBgMode, gradientColors);
+ 
+   // Seek lock timeout (isSeeking shared value lives in positionBus)
+   const seekLockTimeout = useRef<NodeJS.Timeout | null>(null);
+@@ -402,20 +420,34 @@ export const MiniPlayer: React.FC = () => {
+   useEffect(() => {
+     if (expanded && ytVideoPreview && currentSong?.youtubeVideoId) {
+       setShowYtButton(true);
+-      ytButtonOpacity.value = reduceMotion
+-        ? withTiming(1, { duration: Motion.duration.fast })
+-        : withSpring(1, Motion.spring.breathe);
+-      ytButtonScale.value = reduceMotion ? 1 : withSpring(1, Motion.spring.breathe);
++      if (reduceMotion) {
++        ytButtonOpacity.value = 1;
++        ytButtonScale.value = 1;
++      } else {
++        ytButtonOpacity.value = withSpring(1, Motion.spring.breathe);
++        ytButtonScale.value = withSpring(1, Motion.spring.breathe);
++      }
+       if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current);
+       ytButtonTimer.current = setTimeout(() => {
+-        ytButtonOpacity.value = withTiming(0, { duration: Motion.duration.fast });
+-        if (!reduceMotion) ytButtonScale.value = withTiming(0.6, { duration: Motion.duration.fast });
+-        setTimeout(() => setShowYtButton(false), Motion.duration.fast);
++        if (reduceMotion) {
++          ytButtonOpacity.value = 0;
++          ytButtonScale.value = 0.6;
++          setShowYtButton(false);
++        } else {
++          ytButtonOpacity.value = withTiming(0, { duration: Motion.duration.fast });
++          ytButtonScale.value = withTiming(0.6, { duration: Motion.duration.fast });
++          setTimeout(() => setShowYtButton(false), Motion.duration.fast);
++        }
+       }, 5000);
+     } else {
+       if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current);
+-      ytButtonOpacity.value = withTiming(0, { duration: Motion.duration.fast });
+-      if (!reduceMotion) ytButtonScale.value = withTiming(0.6, { duration: Motion.duration.fast });
++      if (reduceMotion) {
++        ytButtonOpacity.value = 0;
++        ytButtonScale.value = 0.6;
++      } else {
++        ytButtonOpacity.value = withTiming(0, { duration: Motion.duration.fast });
++        ytButtonScale.value = withTiming(0.6, { duration: Motion.duration.fast });
++      }
+       setShowYtButton(false);
+     }
+     return () => { if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current); };
+@@ -423,8 +455,9 @@ export const MiniPlayer: React.FC = () => {
+   }, [expanded, reduceMotion, ytVideoPreview, currentSong?.youtubeVideoId]);
+ 
+   // Classic Height Animation — three stages: collapsed → half → full (95%).
+-  // Height lives on the SHELL (not only content) so overflow clips cleanly and
+-  // the box never spills into the tab-bar strip when collapsed.
++  // Keep the shell at its full static height and reveal it with a bottom-anchored
++  // scale. The content counter-scales so text and the transport row stay at their
++  // normal size while the shell clips the lyrics during collapse.
+   const classicHeightForProgress = () => {
+     'worklet';
+     const halfHeight = screenHeight * CLASSIC_HALF_RATIO;
+@@ -444,71 +477,32 @@ export const MiniPlayer: React.FC = () => {
+     return baseHeight + fullExtension;
+   };
+ 
+-  // Content fills the shell (styles.classicContent has flex:1); shell owns the
+-  // animated height and always clips to it.
++  const classicFullHeight = screenHeight * CLASSIC_FULL_RATIO;
++
+   const animatedClassicShellStyle = useAnimatedStyle(() => {
+-    const e = expansionProgress.value;
+-    // The classic bar is a plain rectangle at every stage (the listener asked for
+-    // a classic bar: no rounded corners collapsed, half or full).
+-    if (!pillMode) {
+-      return {
+-        height: classicHeightForProgress(),
+-        // Square on every corner, said outright so no rounding carried over from elsewhere shows.
+-        borderRadius: 0,
+-        overflow: 'hidden' as const,
+-      };
+-    }
+-    const halfR = interpolate(e, [0, 0.35, 1], [PILL_RADIUS, 16, 28], Extrapolation.CLAMP);
+-    const fullR = interpolate(classicFullProgress.value, [0, 1], [0, 6], Extrapolation.CLAMP);
+-    // Whole pixels only: a rounded corner + overflow:hidden makes Android rebuild
+-    // the clip path whenever the radius changes. Reanimated diffs the style object
+-    // per prop, so quantising means most frames don't touch it at all. Sub-pixel
+-    // radius is not visible either way.
+-    const r = Math.round(halfR + fullR);
+-    // Pill: inset like the tab bar and rounded all round while collapsed; the
+-    // sides and bottom corners open out as it grows into the sheet.
+-    const side = Math.round(pillInset * (1 - Math.min(1, e * 2)));
+-    const bottomR = Math.round(PILL_RADIUS * (1 - Math.min(1, e * 2)));
+     return {
+-      height: classicHeightForProgress(),
+-      left: side,
+-      right: side,
+-      borderTopLeftRadius: r,
+-      borderTopRightRadius: r,
+-      borderBottomLeftRadius: bottomR,
+-      borderBottomRightRadius: bottomR,
+-      overflow: 'hidden' as const,
++      transform: [{ scaleY: classicHeightForProgress() / classicFullHeight }],
+     };
+   });
+ 
+-  // Classic lyrics height + opacity.
+-  //
+-  // The height follows ONLY classicFullProgress — never expansionProgress. That
+-  // split is the whole point:
+-  //   · collapse (expansionProgress 1→0, classicFullProgress stays 0): height is
+-  //     CONSTANT, so the ~60-row lyric subtree is never re-measured while the bar
+-  //     closes. Yoga keeps its cached layout, the ScrollView's onLayout never
+-  //     fires into JS, and the shell simply clips the block. This is the jank fix.
+-  //   · half↔full (classicFullProgress 0→1): height grows in lockstep with the
+-  //     shell, so the lyric area always fills the bar. Pinning this to the settled
+-  //     React state instead was wrong — setClassicFullExpanded only fires at
+-  //     gesture end, so the whole drag ran with the half height and left a dead
+-  //     band above the lyrics that popped shut on release.
++  const animatedClassicContentStyle = useAnimatedStyle(() => ({
++    transform: [{ scaleY: classicFullHeight / classicHeightForProgress() }],
++  }));
++
++  // The lyric viewport stays at its full-stage layout height. Its parent shell
++  // clips the hidden rows during collapse, so Yoga and the ScrollView never
++  // remeasure while the listener drags between stages.
+   const animatedClassicLyricsStyle = useAnimatedStyle(() => {
+-    const halfLyricsH = screenHeight * CLASSIC_HALF_RATIO - CLASSIC_TRANSPORT_H;
+-    const fullExtension = interpolate(
+-      classicFullProgress.value,
+-      [0, 1],
+-      [0, screenHeight * (CLASSIC_FULL_RATIO - CLASSIC_HALF_RATIO)],
+-      Extrapolation.CLAMP,
+-    );
+     const expandOp = interpolate(expansionProgress.value, [0.25, 0.75], [0, 1], Extrapolation.CLAMP);
+     return {
+-      height: halfLyricsH + fullExtension,
+       opacity: expandOp * transitionOpacity.value,
+     };
+   });
+ 
++  const animatedClassicOverlayStyle = useAnimatedStyle(() => ({
++    transform: [{ scaleY: classicFullHeight / classicHeightForProgress() }],
++  }));
++
+   // Classic artwork scrim — collapsed is near-solid black (readable mini bar).
+   // Half/full open dissolve almost all of it so cover colour stays vivid;
+   // a thin residual keeps white lyric text readable.
+@@ -561,6 +555,17 @@ export const MiniPlayer: React.FC = () => {
+   const openNowPlayingRef = useRef<() => void>(() => {});
+   const requestOpenNowPlaying = useCallback(() => openNowPlayingRef.current(), []);
+ 
++  const settleClassicStage = (expansion: number, full: number) => {
++    'worklet';
++    if (reduceMotion) {
++      expansionProgress.value = expansion;
++      classicFullProgress.value = full;
++    } else {
++      expansionProgress.value = withSpring(expansion);
++      classicFullProgress.value = withSpring(full);
++    }
++  };
++
+   const buildStageGesture = () => Gesture.Pan()
+     .activeOffsetY([-5, 5])
+     .activeOffsetX([-80, 80])
+@@ -651,26 +656,21 @@ export const MiniPlayer: React.FC = () => {
+         // collapsed = (0, 0) · half = (1, 0) · full = (1, 1).
+         if (!classicFullExpandedSV.value) {
+           if (trans < -50 || vel < -500) {
+-            expansionProgress.value = withSpring(1);
+-            classicFullProgress.value = withSpring(1);
++            settleClassicStage(1, 1);
+             runOnJS(setClassicFullExpanded)(true);
+           } else if (trans > 50 || vel > 500) {
+-            expansionProgress.value = withSpring(0);
+-            classicFullProgress.value = withSpring(0);
++            settleClassicStage(0, 0);
+             runOnJS(setExpanded)(false);
+             runOnJS(setClassicFullExpanded)(false);
+           } else {
+-            expansionProgress.value = withSpring(1);
+-            classicFullProgress.value = withSpring(0);
++            settleClassicStage(1, 0);
+           }
+         } else {
+           if (trans > 50 || vel > 500) {
+-            expansionProgress.value = withSpring(1);
+-            classicFullProgress.value = withSpring(0);
++            settleClassicStage(1, 0);
+             runOnJS(setClassicFullExpanded)(false);
+           } else {
+-            expansionProgress.value = withSpring(1);
+-            classicFullProgress.value = withSpring(1);
++            settleClassicStage(1, 1);
+           }
+         }
+       }
+@@ -694,13 +694,18 @@ export const MiniPlayer: React.FC = () => {
+       // while it's focused and releases it as it closes. A global hide set
+       // here was never cleared, so the pill vanished after the player closed.
+       openPlayerSheet(currentSong.id, typeof velocity === 'number' ? velocity : 0);
+-      expansionProgress.value = withSpring(0);
+-      classicFullProgress.value = withSpring(0);
++      if (reduceMotion) {
++        expansionProgress.value = 0;
++        classicFullProgress.value = 0;
++      } else {
++        expansionProgress.value = withSpring(0);
++        classicFullProgress.value = withSpring(0);
++      }
+       setExpanded(false);
+       setClassicFullExpanded(false);
+     }
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [currentSong]);
++  }, [currentSong, reduceMotion]);
+   openNowPlayingRef.current = openNowPlaying;
+   // Fluid player: the sheet opens at the start of a drag from the pill and follows the finger (PillPlayer).
+   const openNowPlayingTracking = useCallback(() => {
+@@ -789,6 +794,9 @@ export const MiniPlayer: React.FC = () => {
+     styles.barContainer,
+     {
+       bottom: tabChromeH,
++      height: classicFullHeight,
++      overflow: 'hidden' as const,
++      transformOrigin: 'center bottom' as const,
+       // No elevation — Android elevates above the in-navigator tab bar otherwise.
+       elevation: 0,
+       zIndex: 10,
+@@ -838,27 +846,58 @@ export const MiniPlayer: React.FC = () => {
+               <Animated.View style={[StyleSheet.absoluteFill, animatedClassicScrimStyle]}>
+                 {/* Soft tint only — expanded opacity is tiny so colour stays vivid. */}
+                 <LinearGradient
+-                  colors={['rgba(0,0,0,0.4)', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.4)']}
++                  colors={CLASSIC_BAR_SCRIM}
+                   locations={[0, 0.5, 1]}
+                   style={StyleSheet.absoluteFill}
+                 />
+               </Animated.View>
+             </>
+           ) : (
+-            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />
++            <View style={[StyleSheet.absoluteFill, { backgroundColor: Surface.deep }]} />
+           )}
+           <CanvasVideoLayer canvas={canvas} playing={storePlaying} scrimStrength={0.85} />
+         </View>
+ 
+-      {/* Scrubber on the top edge of the transport row — same collapsed/half/full. */}
+-         <View pointerEvents="box-none" style={[styles.classicScrubberOverride, pillMode && styles.pillScrubber]}>
+-           <TimelineScrubber
+-              currentTime={positionSV}
+-              duration={durationSV}
+-              onSeek={handleClassicLyricSeek}
+-              showTimeLabels={false}
+-           />
+-         </View>
++      <Animated.View
++        pointerEvents="box-none"
++        style={[StyleSheet.absoluteFill, styles.classicOverlay, animatedClassicOverlayStyle]}
++      >
++        {/* Scrubber stays pinned to the transport row while the shell scales. */}
++        <View pointerEvents="box-none" style={styles.classicScrubberOverride}>
++          <TimelineScrubber
++            currentTime={positionSV}
++            duration={durationSV}
++            onSeek={handleClassicLyricSeek}
++            showTimeLabels={false}
++          />
++        </View>
++
++        {/* Beta: YouTube video preview button — floats above play/pause row. */}
++        {showYtButton && (
++          <Animated.View
++            style={[
++              styles.ytPreviewBtn,
++              {
++                opacity: ytButtonOpacity,
++                transform: [{ scale: ytButtonScale }],
++              },
++            ]}
++          >
++            <Tactile
++              onPress={() => {
++                if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current);
++                setShowYtButton(false);
++                setShowYtMini(true);
++              }}
++              accessibilityRole="button"
++              accessibilityLabel="Watch the video"
++              style={[styles.ytPreviewBtnInner, { backgroundColor: Glass.fillLight }]}
++            >
++              <Ionicons name="logo-youtube" size={18} color={Signal.ink} />
++            </Tactile>
++          </Animated.View>
++        )}
++      </Animated.View>
+ 
+       <AnimatedPressable
+         onPress={!expanded ? onBarPress : undefined}
+@@ -866,6 +905,7 @@ export const MiniPlayer: React.FC = () => {
+         style={[
+           styles.content,
+           styles.classicContent,
++          animatedClassicContentStyle,
+         ]}
+       >
+         {/* No detector around the whole column: that stole every vertical drag over the lyrics
+@@ -885,13 +925,13 @@ export const MiniPlayer: React.FC = () => {
+                             onBodyPress={onBarPress}
+                         />
+                         {/* Like the currently playing song without leaving the bar. */}
+-                        <Pressable
++                        <Tactile
+                             onPress={(e) => {
+                                 e.stopPropagation();
+                                 if (currentSong) toggleLike(currentSong.id);
+                             }}
+                             hitSlop={12}
+-                            style={{ paddingHorizontal: 8 }}
++                            style={styles.likeButton}
+                             accessibilityRole="button"
+                             accessibilityLabel={isLiked ? 'Remove from liked songs' : 'Add to liked songs'}
+                             accessibilityState={{ selected: isLiked }}
+@@ -899,9 +939,9 @@ export const MiniPlayer: React.FC = () => {
+                             <Ionicons
+                                 name={isLiked ? 'checkmark-circle' : 'add-circle-outline'}
+                                 size={24}
+-                                color={isLiked ? Signal.wave : '#fff'}
++                                color={isLiked ? Signal.wave : OnMedia.primary}
+                             />
+-                        </Pressable>
++                        </Tactile>
+                         <PlaybackControls
+                             playing={storePlaying}
+                             onToggle={togglePlay}
+@@ -913,7 +953,13 @@ export const MiniPlayer: React.FC = () => {
+                     </View>
+                   </GestureDetector>
+ 
+-                    <Animated.View style={[styles.classicLyricsContainer, animatedClassicLyricsStyle]}>
++                    <Animated.View
++                      style={[
++                        styles.classicLyricsContainer,
++                        { height: classicFullHeight - CLASSIC_TRANSPORT_H },
++                        animatedClassicLyricsStyle,
++                      ]}
++                    >
+                         {/* edgeFade uses native ScrollView fadingEdgeLength (no
+                             MaskedView rebuild) so lyric text soft-dissolves at
+                             the top/bottom instead of a black scrim. */}
+@@ -948,33 +994,6 @@ export const MiniPlayer: React.FC = () => {
+                         <View style={styles.dragHandle} />
+                     </Animated.View>
+ 
+-                        {/* Beta: YouTube video preview button — floats above play/pause row */}
+-                        {showYtButton && (
+-                          <Animated.View
+-                            style={[
+-                              styles.ytPreviewBtn,
+-                              {
+-                                opacity: ytButtonOpacity,
+-                                transform: [{ scale: ytButtonScale }],
+-                              },
+-                            ]}
+-                          >
+-                            <Pressable
+-                              onPress={() => {
+-                                if (ytButtonTimer.current) clearTimeout(ytButtonTimer.current);
+-                                setShowYtButton(false);
+-                                setShowYtMini(true);
+-                              }}
+-                              hitSlop={8}
+-                              accessibilityRole="button"
+-                              accessibilityLabel="Watch the video"
+-                            >
+-                              <View style={[styles.ytPreviewBtnInner, { backgroundColor: Glass.fillLight }]}>
+-                                <Ionicons name="logo-youtube" size={18} color={Signal.ink} />
+-                              </View>
+-                            </Pressable>
+-                          </Animated.View>
+-                        )}
+                 </View>
+       </AnimatedPressable>
+       {showYtMini && currentSong?.youtubeVideoId && (
+@@ -1012,9 +1031,15 @@ const styles = StyleSheet.create({
+     alignItems: 'stretch',
+     paddingHorizontal: 0,
+     overflow: 'hidden',
+-    // Fill shell height from animatedClassicShellStyle
++    transformOrigin: 'center bottom',
++    // Fill the shell's static max height; animatedClassicContentStyle counter-scales it.
+     flex: 1,
+   },
++  classicOverlay: {
++    zIndex: 20,
++    elevation: 20,
++    transformOrigin: 'center bottom',
++  },
+   classicTransportRow: {
+     flexDirection: 'row',
+     alignItems: 'center',
+@@ -1029,8 +1054,6 @@ const styles = StyleSheet.create({
+   // the track paints from the wrapper's y=0 downward. left/right 0 makes it span the
+   // real screen width at runtime — the scrubber measures itself via onLayout, so no
+   // width is hardcoded anywhere.
+-  // Keeps the track clear of the pill's rounded corners.
+-  pillScrubber: { left: 18, right: 18 },
+   classicScrubberOverride: {
+     position: 'absolute',
+     bottom: CLASSIC_TRANSPORT_H - CLASSIC_SCRUBBER_HIT_H,
+@@ -1042,8 +1065,8 @@ const styles = StyleSheet.create({
+     elevation: 0,
+   },
+   expandedLyricText: {
+-    color: '#fff',
+-    fontSize: 23,
++    color: OnMedia.primary,
++    fontSize: TypeScale.detail,
+     lineHeight: 28,
+     marginVertical: 10,
+     textAlign: 'center',
+@@ -1055,7 +1078,7 @@ const styles = StyleSheet.create({
+     marginLeft: -20,
+     width: 40,
+     height: 4,
+-    backgroundColor: 'rgba(255,255,255,0.2)',
++    backgroundColor: Glass.hairlineStrong,
+     borderRadius: 2
+   },
+   content: {
+@@ -1080,8 +1103,7 @@ const styles = StyleSheet.create({
+     right: 0,
+   },
+   classicLyricsContainer: {
+-    // Height comes from `classicLyricsHeight` (stage-pinned, not shell-driven).
+-    // flexShrink must stay 0 so the shell clipping the block never resizes it.
++    // A fixed max-stage height keeps the lyric ScrollView layout stable; the shell clips it.
+     flexShrink: 0,
+     width: '100%',
+     backgroundColor: 'transparent', // Transparent to show blurred background
+@@ -1094,9 +1116,9 @@ const styles = StyleSheet.create({
+     zIndex: 50,
+   },
+   ytPreviewBtnInner: {
+-    width: 38,
+-    height: 38,
+-    borderRadius: 19,
++    width: Control.target,
++    height: Control.target,
++    borderRadius: Control.target / 2,
+     alignItems: 'center',
+     justifyContent: 'center',
+   },
+@@ -1113,18 +1135,21 @@ const styles = StyleSheet.create({
+     justifyContent: 'center',
+   },
+   title: {
+-    fontSize: 14,
++    fontSize: TypeScale.body,
+     fontWeight: '600',
+-    color: '#fff',
++    color: OnMedia.primary,
+   },
+   artist: {
+-    fontSize: 12,
+-    color: '#888',
++    fontSize: TypeScale.caption,
++    color: OnMedia.muted,
+     marginTop: 2,
+   },
+   controlButton: {
+     padding: 4,
+   },
++  likeButton: {
++    paddingHorizontal: 8,
++  },
+   // Always reserves transport space; visibility changes use opacity and transform.
+   skipWrap: {
+     width: SKIP_BUTTON_WIDTH,
+diff --git a/apps/mobile/src/components/MiniScrubber.tsx b/apps/mobile/src/components/MiniScrubber.tsx
+index bdce1148..9192388f 100644
+--- a/apps/mobile/src/components/MiniScrubber.tsx
++++ b/apps/mobile/src/components/MiniScrubber.tsx
+@@ -9,7 +9,7 @@
+ import React from 'react';
+ import { StyleSheet, View } from 'react-native';
+ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
++import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
+ import { Glass, Motion, Radius, Signal } from '../constants/allegraTheme';
+ import { scrubFraction, SCRUB_REST_SCALE } from '../playback/miniScrub';
+ import * as Haptics from '../utils/haptics';
+@@ -32,6 +32,7 @@ export interface MiniScrubberProps {
+ }
+ 
+ export const MiniScrubber: React.FC<MiniScrubberProps> = ({ positionSV, durationSV, enabled, onCommit, active, height, accessibility }) => {
++  const reduce = useReducedMotion();
+   const width = useSharedValue(1);
+   /** The finger's place along the line, -1 when nothing holds it. */
+   const held = useSharedValue(-1);
+@@ -45,13 +46,21 @@ export const MiniScrubber: React.FC<MiniScrubberProps> = ({ positionSV, duration
+   const pan = Gesture.Pan().enabled(enabled).hitSlop(SCRUB_HIT_SLOP).activeOffsetX([-3, 3]).failOffsetY([-24, 24])
+     .onBegin(e => {
+       held.value = scrubFraction(e.x, width.value);
+-      active.value = withSpring(1, Motion.spring.tactile);
++      if (reduce) {
++        active.value = 1;
++      } else {
++        active.value = withSpring(1, Motion.spring.tactile);
++      }
+     })
+     .onStart(() => { runOnJS(tick)(); })
+     .onUpdate(e => { held.value = scrubFraction(e.x, width.value); })
+     .onEnd(e => { runOnJS(finish)(scrubFraction(e.x, width.value)); })
+     .onFinalize((_e, success) => {
+-      active.value = withSpring(0, Motion.spring.tactile);
++      if (reduce) {
++        active.value = 0;
++      } else {
++        active.value = withSpring(0, Motion.spring.tactile);
++      }
+       if (!success) held.value = -1;
+     });
+   const tap = Gesture.Tap().enabled(enabled).hitSlop(SCRUB_HIT_SLOP).maxDuration(250)
+diff --git a/apps/mobile/src/components/TimelineScrubber.tsx b/apps/mobile/src/components/TimelineScrubber.tsx
+index ff57d4a1..171700f2 100644
+--- a/apps/mobile/src/components/TimelineScrubber.tsx
++++ b/apps/mobile/src/components/TimelineScrubber.tsx
+@@ -10,10 +10,11 @@ import Animated, {
+   useDerivedValue,
+   useAnimatedReaction,
+   SharedValue,
+-  Easing,
+   interpolate,
+   Extrapolation,
++  useReducedMotion,
+ } from 'react-native-reanimated';
++import { Glass, Motion, OnMedia, TypeScale } from '../constants/allegraTheme';
+ import { formatTimeSV } from '../playback/positionBus';
+ 
+ export interface TimelineScrubberProps {
+@@ -28,9 +29,12 @@ export interface TimelineScrubberProps {
+ }
+ 
+ /** One shared morph clock for track + thumb — no desynced withTimings. */
+-const MORPH_IN_MS = 150;
+-const MORPH_OUT_MS = 170;
+-const MORPH_EASE = Easing.bezier(0.25, 0.1, 0.25, 1);
++const MORPH_IN_MS = Motion.duration.fast;
++const MORPH_OUT_MS = Motion.duration.fast;
++const MORPH_EASE = Motion.ease.standard;
++/** The track's full (scrubbing) thickness, and how thin it rests (3.5 / 14). */
++const TRACK_FULL = 14;
++const REST_SCALE = 0.25;
+ 
+ const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
+   currentTime,
+@@ -155,12 +159,22 @@ const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
+     [],
+   );
+ 
++  // Reduce Motion: the line thickens and thins at once, so the scrub still reads without any easing.
++  const reduce = useReducedMotion();
+   const morphIn = () => {
+     'worklet';
++    if (reduce) {
++      scrubUI.value = 1;
++      return;
++    }
+     scrubUI.value = withTiming(1, { duration: MORPH_IN_MS, easing: MORPH_EASE });
+   };
+   const morphOut = () => {
+     'worklet';
++    if (reduce) {
++      scrubUI.value = 0;
++      return;
++    }
+     scrubUI.value = withTiming(0, { duration: MORPH_OUT_MS, easing: MORPH_EASE });
+   };
+ 
+@@ -210,10 +224,12 @@ const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
+       dragProgress.value = newProgress;
+       // Tap = instant jump (no drag hold). One sequence — calling morphIn() then
+       // morphOut() in the same frame just cancels the first, so nothing pulsed.
+-      scrubUI.value = withSequence(
+-        withTiming(1, { duration: MORPH_IN_MS, easing: MORPH_EASE }),
+-        withTiming(0, { duration: MORPH_OUT_MS, easing: MORPH_EASE }),
+-      );
++      if (!reduce) {
++        scrubUI.value = withSequence(
++          withTiming(1, { duration: MORPH_IN_MS, easing: MORPH_EASE }),
++          withTiming(0, { duration: MORPH_OUT_MS, easing: MORPH_EASE }),
++        );
++      }
+       runOnJS(handleSeekCommit)(newProgress);
+       runOnJS(startSettleWindow)();
+     });
+@@ -221,28 +237,24 @@ const TimelineScrubber: React.FC<TimelineScrubberProps> = ({
+   const composedGesture = Gesture.Race(panGesture, tapGesture);
+ 
+   // Track height + always-pill corners from one scrubUI clock.
++  // The track is laid out at its full (scrubbing) thickness and thinned by scaleY from the top edge, so the
++  // thickening is a transform and never a layout pass.
+   const trackStyle = useAnimatedStyle(() => {
+     'worklet';
+-    const h = interpolate(scrubUI.value, [0, 1], [3.5, 14], Extrapolation.CLAMP);
+     return {
+-      height: h,
+-      borderRadius: h / 2,
++      transform: [{ scaleY: interpolate(scrubUI.value, [0, 1], [REST_SCALE, 1], Extrapolation.CLAMP) }],
+     };
+   });
+ 
+   const fillStyle = useAnimatedStyle(() => {
+     'worklet';
+     const p = Math.max(0, Math.min(1, displayProgress.value));
+-    const h = interpolate(scrubUI.value, [0, 1], [3.5, 14], Extrapolation.CLAMP);
+     // A full-width bar slid left inside the clipped track: progress moves by
+     // transform, so playback never triggers a layout pass (a %-width did,
+     // several times a second, which is what made old phones stutter).
+     return {
+       transform: [{ translateX: (p - 1) * trackWidthSV.value }],
+       opacity: trackWidthSV.value > 0 ? 1 : 0, // unmeasured: don't flash a full bar
+-      // Leading edge of fill is always a soft cap (reads as curve while scrubbing).
+-      borderTopRightRadius: h / 2,
+-      borderBottomRightRadius: h / 2,
+     };
+   });
+ 
+@@ -343,26 +355,31 @@ const styles = StyleSheet.create({
+     top: 0,
+     height: 16,
+     borderRadius: 8,
+-    backgroundColor: 'rgba(255,255,255,0.14)',
++    backgroundColor: Glass.selected,
+   },
+   trackBase: {
+     width: '100%',
++    height: TRACK_FULL,
++    borderRadius: TRACK_FULL / 2,
+     overflow: 'hidden',
+-    // Relative in the top-aligned trackWrapper (not absolute center)
++    // Thinned by scaleY from the top edge; relative in the top-aligned trackWrapper (not absolute center)
++    transformOrigin: 'top',
+   },
++  // The leading edge is a soft cap (reads as a curve while scrubbing).
+   fillBase: {
+     width: '100%',
+     height: '100%',
++    borderRadius: TRACK_FULL / 2,
+   },
+   // Unplayed remainder: low enough that the blurred cover art reads through it and
+   // it feels part of the artwork, high enough to still register as a line. The
+   // affordance is carried by the contrast against the solid white played portion,
+   // not by this being bright in its own right.
+   classicTrackBg: {
+-    backgroundColor: 'rgba(255,255,255,0.14)',
++    backgroundColor: Glass.selected,
+   },
+   classicFill: {
+-    backgroundColor: '#FFFFFF',
++    backgroundColor: OnMedia.primary,
+   },
+   timeContainer: {
+     flexDirection: 'row',
+@@ -371,10 +388,10 @@ const styles = StyleSheet.create({
+     paddingHorizontal: 2,
+   },
+   timeText: {
+-    fontSize: 12,
+-    color: 'rgba(255,255,255,0.5)',
++    fontSize: TypeScale.caption,
++    color: OnMedia.muted,
+     fontVariant: ['tabular-nums'],
+-    fontWeight: '500',
++    fontWeight: '600',
+   },
+ });
+ 
+diff --git a/apps/mobile/src/components/YtMiniPlayer.tsx b/apps/mobile/src/components/YtMiniPlayer.tsx
+index e12eac68..b734d2cf 100644
+--- a/apps/mobile/src/components/YtMiniPlayer.tsx
++++ b/apps/mobile/src/components/YtMiniPlayer.tsx
+@@ -1,16 +1,10 @@
+-import React, { useRef, useState, useEffect } from 'react';
+-import {
+-  Animated,
+-  Dimensions,
+-  Modal,
+-  PanResponder,
+-  Pressable,
+-  StyleSheet,
+-  Text,
+-  View,
+-} from 'react-native';
++import React, { useEffect, useMemo, useRef, useState } from 'react';
++import { Dimensions, Modal, PanResponder, StyleSheet, Text, View, type ViewStyle } from 'react-native';
++import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+ import YoutubeIframe from 'react-native-youtube-iframe';
+ import { Ionicons } from '@expo/vector-icons';
++import { Control, Motion, OnMedia, Surface, TypeScale } from '../constants/allegraTheme';
++import { Tactile } from './allegra/motion';
+ 
+ const { width: SW, height: SH } = Dimensions.get('window');
+ const CARD_W_SMALL = 260;
+@@ -19,6 +13,9 @@ const CARD_H_SMALL = CARD_W_SMALL * (9 / 16);
+ const CARD_H_LARGE = CARD_W_LARGE * (9 / 16);
+ const INITIAL_X = SW - CARD_W_SMALL - 16;
+ const INITIAL_Y = SH * 0.35;
++const EDGE = 16;
++/** The card pops by this much when it changes size, so the jump between the two sizes reads as one move. */
++const SIZE_POP = 0.94;
+ 
+ interface Props {
+   videoId: string;
+@@ -28,98 +25,113 @@ interface Props {
+   onDismiss?: () => void;
+ }
+ 
++/**
++ * The floating video card. It moves by transform only (a finger drag, a snap to the nearest edge, an entrance pop),
++ * so no frame lays the card out again; the two sizes switch at once with a small scale pop. Reduce Motion drops the
++ * springs and the pop: the card still appears, snaps and resizes, in place.
++ */
+ export const YtMiniPlayer: React.FC<Props> = ({ videoId, songTitle, onClose, onOpen, onDismiss }) => {
+-  const pan = useRef(new Animated.ValueXY({ x: INITIAL_X, y: INITIAL_Y })).current;
++  const reduce = useReducedMotion();
++  const x = useSharedValue(INITIAL_X);
++  const y = useSharedValue(INITIAL_Y);
++  const grabX = useRef(INITIAL_X);
++  const grabY = useRef(INITIAL_Y);
++  const entry = useSharedValue(0); // 0 = hidden, 1 = visible
++  const pop = useSharedValue(1);
+   const [expanded, setExpanded] = useState(false);
+   const [playing, setPlaying] = useState(true);
+-
+-  // All JS driver — no mixing
+-  const entryAnim = useRef(new Animated.Value(0)).current; // 0=hidden, 1=visible
+-  const animW = useRef(new Animated.Value(CARD_W_SMALL)).current;
+-  const animH = useRef(new Animated.Value(CARD_H_SMALL)).current;
+-
+-  const entryScale = entryAnim.interpolate({ inputRange: [0, 1], outputRange: [0.72, 1] });
+-  const entryOpacity = entryAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
++  const expandedRef = useRef(expanded);
++  expandedRef.current = expanded;
+ 
+   useEffect(() => {
+-    Animated.spring(entryAnim, {
+-      toValue: 1, damping: 18, stiffness: 260, useNativeDriver: false,
+-    }).start();
++    if (reduce) {
++      entry.value = 1;
++    } else {
++      entry.value = withSpring(1, Motion.spring.sheet);
++    }
+     onOpen?.();
+     return () => { onDismiss?.(); };
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, []);
+ 
++  const firstSize = useRef(true);
+   useEffect(() => {
+-    const targetW = expanded ? CARD_W_LARGE : CARD_W_SMALL;
+-    const targetH = expanded ? CARD_H_LARGE : CARD_H_SMALL;
+-    Animated.parallel([
+-      Animated.spring(animW, { toValue: targetW, damping: 20, stiffness: 280, useNativeDriver: false }),
+-      Animated.spring(animH, { toValue: targetH, damping: 20, stiffness: 280, useNativeDriver: false }),
+-    ]).start();
++    if (firstSize.current) { firstSize.current = false; return; }
+     if (expanded) {
+-      Animated.spring(pan, {
+-        toValue: { x: 16, y: (pan.y as any)._value },
+-        damping: 20, stiffness: 280, useNativeDriver: false,
+-      }).start();
++      if (reduce) {
++        x.value = EDGE;
++      } else {
++        x.value = withSpring(EDGE, Motion.spring.sheet);
++      }
+     }
++    if (reduce) return;
++    pop.value = SIZE_POP;
++    pop.value = withSpring(1, Motion.spring.tactile);
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [expanded]);
+ 
+   const handleClose = () => {
+-    Animated.timing(entryAnim, { toValue: 0, duration: 150, useNativeDriver: false }).start(() => onClose());
++    entry.value = withTiming(0, { duration: reduce ? 0 : Motion.duration.fast }, finished => {
++      if (finished) runOnJS(onClose)();
++    });
+   };
+ 
+-  const panResponder = useRef(
++  const panResponder = useMemo(() =>
+     PanResponder.create({
+-      onStartShouldSetPanResponder: () => !expanded,
++      onStartShouldSetPanResponder: () => !expandedRef.current,
+       onPanResponderGrant: () => {
+-        pan.setOffset({ x: (pan.x as any)._value, y: (pan.y as any)._value });
+-        pan.setValue({ x: 0, y: 0 });
++        grabX.current = x.value;
++        grabY.current = y.value;
++      },
++      onPanResponderMove: (_e, g) => {
++        x.value = grabX.current + g.dx;
++        y.value = grabY.current + g.dy;
+       },
+-      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], { useNativeDriver: false }),
+       onPanResponderRelease: () => {
+-        pan.flattenOffset();
+-        const currentX = (pan.x as any)._value;
+-        const snapX = currentX < SW / 2 ? 16 : SW - CARD_W_SMALL - 16;
+-        Animated.spring(pan, {
+-          toValue: { x: snapX, y: (pan.y as any)._value },
+-          useNativeDriver: false, damping: 22, stiffness: 300,
+-        }).start();
++        const snapX = x.value < SW / 2 ? EDGE : SW - CARD_W_SMALL - EDGE;
++        if (reduce) {
++          x.value = snapX;
++        } else {
++          x.value = withSpring(snapX, Motion.spring.settle);
++        }
+       },
+-    })
+-  ).current;
++    }),
++  // x and y are stable shared values; the live preference is the only input.
++  // eslint-disable-next-line react-hooks/exhaustive-deps
++  [reduce]);
++
++  const card = useAnimatedStyle((): ViewStyle => ({
++    opacity: entry.value,
++    transform: [
++      { translateX: x.value },
++      { translateY: y.value },
++      { scale: (reduce ? 1 : 0.72 + 0.28 * entry.value) * pop.value },
++    ],
++  }));
+ 
+   return (
+     <Modal transparent animationType="none" visible onRequestClose={handleClose} statusBarTranslucent>
+       <Animated.View
+-        style={[
+-          styles.card,
+-          {
+-            transform: [...pan.getTranslateTransform(), { scale: entryScale }],
+-            opacity: entryOpacity,
+-            width: animW,
+-          },
+-        ]}
++        style={[styles.card, { width: expanded ? CARD_W_LARGE : CARD_W_SMALL }, card]}
+         {...panResponder.panHandlers}
+       >
+         {/* Header */}
+         <View style={styles.header}>
+-          <Ionicons name="logo-youtube" size={14} color="#FF0000" />
++          <Ionicons name="logo-youtube" size={14} color={OnMedia.primary} />
+           <Text style={styles.title} numberOfLines={1}>{songTitle}</Text>
+-          <Pressable onPress={() => setPlaying(p => !p)} hitSlop={8} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={playing ? 'Pause video' : 'Play video'}>
+-            <Ionicons name={playing ? 'pause' : 'play'} size={14} color="#aaa" />
+-          </Pressable>
+-          <Pressable onPress={() => setExpanded(e => !e)} hitSlop={8} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={expanded ? 'Make the video smaller' : 'Make the video bigger'} accessibilityState={{ expanded }}>
+-            <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={14} color="#aaa" />
+-          </Pressable>
+-          <Pressable onPress={handleClose} hitSlop={8} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel="Close the video">
+-            <Ionicons name="close" size={16} color="#aaa" />
+-          </Pressable>
++          <Tactile onPress={() => setPlaying(p => !p)} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={playing ? 'Pause video' : 'Play video'}>
++            <Ionicons name={playing ? 'pause' : 'play'} size={16} color={OnMedia.muted} />
++          </Tactile>
++          <Tactile onPress={() => setExpanded(e => !e)} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={expanded ? 'Make the video smaller' : 'Make the video bigger'} accessibilityState={{ expanded }}>
++            <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={16} color={OnMedia.muted} />
++          </Tactile>
++          <Tactile onPress={handleClose} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel="Close the video">
++            <Ionicons name="close" size={18} color={OnMedia.muted} />
++          </Tactile>
+         </View>
+ 
+         {/* Player */}
+-        <Animated.View style={[styles.playerBox, { height: animH }]}>
++        <View style={[styles.playerBox, { height: expanded ? CARD_H_LARGE : CARD_H_SMALL }]}>
+           <YoutubeIframe
+             videoId={videoId}
+             height={expanded ? CARD_H_LARGE : CARD_H_SMALL}
+@@ -134,7 +146,7 @@ export const YtMiniPlayer: React.FC<Props> = ({ videoId, songTitle, onClose, onO
+               mediaPlaybackRequiresUserAction: false,
+             }}
+           />
+-        </Animated.View>
++        </View>
+       </Animated.View>
+     </Modal>
+   );
+@@ -143,34 +155,39 @@ export const YtMiniPlayer: React.FC<Props> = ({ videoId, songTitle, onClose, onO
+ const styles = StyleSheet.create({
+   card: {
+     position: 'absolute',
++    left: 0,
++    top: 0,
+     borderRadius: 14,
+-    backgroundColor: '#111',
++    backgroundColor: Surface.deep,
+     overflow: 'hidden',
+     elevation: 14,
+-    shadowColor: '#000',
++    shadowColor: Surface.scrim,
+     shadowOffset: { width: 0, height: 6 },
+     shadowOpacity: 0.55,
+     shadowRadius: 12,
+   },
+   header: {
+-    height: 38,
++    height: Control.target,
+     flexDirection: 'row',
+     alignItems: 'center',
+-    paddingHorizontal: 10,
+-    gap: 6,
+-    backgroundColor: '#1a1a1a',
++    paddingLeft: 10,
++    backgroundColor: Surface.raised,
+   },
+   title: {
+     flex: 1,
+-    fontSize: 12,
+-    color: '#ddd',
++    marginLeft: 6,
++    fontSize: TypeScale.caption,
++    color: OnMedia.secondary,
+     fontWeight: '600',
+   },
+   headerBtn: {
+-    paddingHorizontal: 4,
++    width: Control.target,
++    height: Control.target,
++    alignItems: 'center',
++    justifyContent: 'center',
+   },
+   playerBox: {
+-    backgroundColor: '#000',
++    backgroundColor: Surface.scrim,
+     overflow: 'hidden',
+   },
+ });
+diff --git a/apps/mobile/src/constants/classicBarThemes.ts b/apps/mobile/src/constants/classicBarThemes.ts
+new file mode 100644
+index 00000000..0e79b20f
+--- /dev/null
++++ b/apps/mobile/src/constants/classicBarThemes.ts
+@@ -0,0 +1,31 @@
++/**
++ * The classic player bar's flat theme backgrounds: three stops each, top to bottom. They are the picker's palette
++ * (Settings, Player), not UI chrome, so they live here with the other design constants.
++ */
++export type ClassicBarStops = [string, string, string];
++
++export const CLASSIC_BAR_THEMES = {
++  'purest-black': ['#000000', '#000000', '#000000'],
++  grey: ['#121212', '#212121', '#121212'],
++  'theme-blue': ['#0A1628', '#1A3A6B', '#2F8CFF'],
++  'theme-subtle': ['#0A0A0A', '#1F1F1F', '#0A0A0A'],
++  aurora: ['#000000', '#EA7980', '#1D728F'],
++} as const satisfies Record<string, ClassicBarStops>;
++
++/** The bar's fallback, and the stops under a song with no gradient of its own. */
++export const CLASSIC_BAR_DEFAULT: ClassicBarStops = ['#080808', '#0A0A0A', '#080808'];
++/** A song with no gradient of its own: the two stops its bar starts from. */
++export const CLASSIC_BAR_SONG_FALLBACK: readonly string[] = ['#222222', '#111111'];
++
++/** The soft tint over the classic bar's cover wash: top, middle, bottom. Kept faint so the cover's colour stays vivid. */
++export const CLASSIC_BAR_SCRIM: ClassicBarStops = ['rgba(0,0,0,0.4)', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.4)'];
++
++/** The three stops for a background mode; a song's own gradient colours feed `song-gradient`. */
++export const classicBarStops = (mode: string, songColors: readonly string[]): ClassicBarStops => {
++  if (mode === 'song-gradient') {
++    const [a, b, c] = songColors;
++    return [a || '#111111', b || '#333333', c || a || '#111111'];
++  }
++  const theme = (CLASSIC_BAR_THEMES as Record<string, ClassicBarStops>)[mode];
++  return theme ?? CLASSIC_BAR_DEFAULT;
++};
+diff --git a/apps/mobile/src/designGuards.baseline.json b/apps/mobile/src/designGuards.baseline.json
+index eec60ea1..33b15181 100644
+--- a/apps/mobile/src/designGuards.baseline.json
++++ b/apps/mobile/src/designGuards.baseline.json
+@@ -14,8 +14,6 @@
+     "components/luvLink/LuvLinkHost.tsx": 2,
+     "components/luvLink/LuvLinkLegacyPanel.tsx": 6,
+     "components/luvs/LaneRail.tsx": 1,
+-    "components/LyricsResumePill.tsx": 1,
+-    "components/MiniPlayer.tsx": 6,
+     "components/ModernDeleteModal.tsx": 3,
+     "components/MoreMenu.tsx": 1,
+     "components/NowPlayingLyricsArea.tsx": 1,
+@@ -28,7 +26,6 @@
+     "components/Toast.tsx": 1,
+     "components/VoiceMicButton.tsx": 1,
+     "components/VoiceSearchCard.tsx": 1,
+-    "components/YtMiniPlayer.tsx": 3,
+     "screens/BlendJoinScreen.tsx": 2,
+     "screens/LuvLinkScreen.tsx": 1
+   },
+@@ -41,8 +38,7 @@
+     "components/blend/BlendStage.tsx": 3,
+     "components/blend/BlendStoryPlayer.tsx": 4,
+     "components/import/SpotifyCrate.tsx": 1,
+-    "components/import/SpotifySyncPanel.tsx": 2,
+-    "components/TimelineScrubber.tsx": 1
++    "components/import/SpotifySyncPanel.tsx": 2
+   },
+   "tracking": {
+     "components/luvLink/LuvLinkPanel.tsx": 2
+@@ -78,7 +74,6 @@
+     "components/luvs/LuvControls.tsx": 2,
+     "components/luvs/TasteCard.tsx": 5,
+     "components/LuvsVaultModal.tsx": 1,
+-    "components/MiniPlayer.tsx": 34,
+     "components/ModernDeleteModal.tsx": 2,
+     "components/MoreMenu.tsx": 7,
+     "components/NowPlayingControls.tsx": 10,
+@@ -107,11 +102,9 @@
+     "components/stream/StreamHome.tsx": 3,
+     "components/stream/trackRowPayload.ts": 1,
+     "components/SynchronizedLyrics.tsx": 3,
+-    "components/TimelineScrubber.tsx": 4,
+     "components/Toast.tsx": 1,
+     "components/VoiceMicButton.tsx": 11,
+     "components/VoiceSearchCard.tsx": 5,
+-    "components/YtMiniPlayer.tsx": 9,
+     "hooks/useNowPlayingLogic.ts": 6,
+     "navigation/TabNavigator.tsx": 2,
+     "navigation/theme.ts": 2,
+@@ -146,8 +139,6 @@
+     "components/luvs/LaneRail.tsx": 2,
+     "components/luvs/LuvControls.tsx": 1,
+     "components/LuvsVaultModal.tsx": 4,
+-    "components/LyricsResumePill.tsx": 1,
+-    "components/MiniPlayer.tsx": 3,
+     "components/ModernDeleteModal.tsx": 4,
+     "components/MoreMenu.tsx": 3,
+     "components/NativeSynchronizedLyrics.tsx": 1,
+@@ -168,10 +159,8 @@
+     "components/stream/StreamHome.tsx": 4,
+     "components/stream/StreamItems.tsx": 2,
+     "components/SynchronizedLyrics.tsx": 1,
+-    "components/TimelineScrubber.tsx": 1,
+     "components/Toast.tsx": 1,
+     "components/VoiceSearchCard.tsx": 10,
+-    "components/YtMiniPlayer.tsx": 1,
+     "widget/SongWidget.tsx": 13
+   },
+   "motionLiteral": {
+@@ -186,9 +175,7 @@
+     "components/player/SeekRipple.tsx": 2,
+     "components/stream/DownloadButton.tsx": 2,
+     "components/stream/SavedBadge.tsx": 1,
+-    "components/TimelineScrubber.tsx": 4,
+     "components/VoiceMicButton.tsx": 7,
+-    "components/YtMiniPlayer.tsx": 11,
+     "navigation/TabNavigator.tsx": 4,
+     "screens/LuvsScreen.tsx": 2,
+     "screens/NowPlayingScreen.tsx": 4
+@@ -211,8 +198,6 @@
+     "components/luvLink/LuvLinkHost.tsx": 1,
+     "components/luvs/LuvControls.tsx": 1,
+     "components/luvs/TasteExplorer.tsx": 1,
+-    "components/MiniPlayer.tsx": 1,
+-    "components/MiniScrubber.tsx": 1,
+     "components/MoreMenu.tsx": 1,
+     "components/nav/CreateSheet.tsx": 1,
+     "components/nav/ProfileMenu.tsx": 1,
+@@ -234,11 +219,9 @@
+     "components/stream/DownloadButton.tsx": 1,
+     "components/stream/SavedBadge.tsx": 1,
+     "components/SynchronizedLyrics.tsx": 1,
+-    "components/TimelineScrubber.tsx": 1,
+     "components/Toast.tsx": 1,
+     "components/VoiceMicButton.tsx": 1,
+     "components/VoiceSearchCard.tsx": 1,
+-    "components/YtMiniPlayer.tsx": 1,
+     "hooks/useHeaderGlow.ts": 1,
+     "navigation/usePlayerSheetMotion.ts": 1,
+     "screens/BlendScreen.tsx": 1,
+@@ -254,9 +237,6 @@
+   "layoutAnim": {
+     "components/allegra/infoTours.tsx": 5,
+     "components/allegra/motion.tsx": 1,
+-    "components/MiniPlayer.tsx": 5,
+-    "components/NowPlayingControls.tsx": 1,
+-    "components/TimelineScrubber.tsx": 2,
+-    "components/YtMiniPlayer.tsx": 2
++    "components/NowPlayingControls.tsx": 1
+   }
+ }
+-- 
+2.51.1.windows.1
+

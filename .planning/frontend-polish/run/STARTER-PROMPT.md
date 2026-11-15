@@ -70,3 +70,8 @@ Only through the harness question tool, only for the cases in `full-send` "Askin
 ## 10. Reporting
 
 After each merge, one ledger line. When every card is merged, parked or dropped, run the `FINAL` card and finish with one message: PR links and versions of everything merged, the guard numbers before and after, what is parked for me (W9, P6, any HOLD) and why, decisions you made on my behalf, what remains unproved, and my phone checklist from `OWNER-TODO.md`. Then stop. Do not start new scope.
+
+
+## Update 2026-11-14
+
+The orchestrator seat moved on. Current state, decisions and work order: [HANDOFF-2026-11-14-orchestrator.md](HANDOFF-2026-11-14-orchestrator.md) and [STARTER-PROMPT-orchestrator-2026-11-14.md](STARTER-PROMPT-orchestrator-2026-11-14.md).

@@ -1,0 +1,15 @@
+ M .planning/frontend-polish/run/LEDGER.md
+ M .planning/frontend-polish/run/OWNER-TODO.md
+ M .planning/frontend-polish/run/STARTER-PROMPT.md
+ M apps/web/src/lib/connectView.test.ts
+ M apps/web/src/lib/playIntent.test.ts
+ M apps/web/src/lib/skipRules.test.ts
+?? .planning/echo-backend-port/
+?? .planning/frontend-polish/run/HANDOFF-2026-11-14-orchestrator.md
+?? .planning/frontend-polish/run/STARTER-PROMPT-orchestrator-2026-11-14.md
+?? .planning/frontend-polish/run/pause-2026-11-14/
+?? .planning/frontend-polish/run/tasks/ALBUM-DOWNLOAD.md
+?? .planning/frontend-polish/run/tasks/ALBUM.md
+?? .planning/frontend-polish/run/tasks/LYRICS-GESTURE.md
+?? .planning/frontend-polish/run/tasks/PLAYER-TRANSITION.md
+?? .planning/frontend-polish/run/tasks/SYNC.md
