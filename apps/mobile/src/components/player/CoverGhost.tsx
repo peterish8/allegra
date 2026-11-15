@@ -1,5 +1,5 @@
 /**
- * The cover on its way between the mini player and the player (Fluid player, 1.49.0). One picture, drawn above the
+ * The cover on its way between the mini player and the player (1.49.0). One picture, drawn above the
  * sheet, whose rectangle and corner radius follow the sheet's progress: it starts on the mini player's cover (measured
  * by the pill into `playerCoverFrom`) and ends on the player's cover (a card, or the hero), growing and moving as the
  * finger drags. It is only on screen between the ends: at 0 the mini cover is the cover, at 1 the player's own cover is,

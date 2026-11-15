@@ -14,8 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { usePlaybackStatus } from '../hooks/usePlaybackStatus';
 import { playerCoverFrom, playerDrag, playerSheetProgress, createSheetProgress } from '../navigation/sheetProgress';
-import { miniContentOpacity } from '../navigation/playerTransition';
-import { useSettingsStore } from '../store/settingsStore';
+import { miniContentOpacity, miniRideY } from '../navigation/playerTransition';
 import { MINI_COVER_SIZE, SEEK_BAND_HEIGHT, miniRowHeight, shellNavHeight } from '../navigation/v6Shell';
 import { MINI_CONTENT_SIDE_INSET, MINI_PLAY_OFFSET, MINI_ROW_PADDING_RIGHT, miniShellOutline } from '../navigation/miniShell';
 import { miniPlayerLabel } from '../playback/miniPlayerLabel';
@@ -36,7 +35,7 @@ import { ShellFrost } from '../constants/allegraTheme';
 interface Props {
   title: string; artist?: string; coverImageUri?: string; playing: boolean; bottom: number; sheetUp?: boolean;
   onOpen: (velocity?: number) => void;
-  /** Fluid player: open the sheet under a finger that is still dragging. */
+  /** Open the sheet under a finger that is still dragging (the sheet follows it both ways). */
   onOpenTracking?: () => void;
   onTogglePlay: () => void; onNext: () => void; onPrevious: () => void;
   onSeek?: (time: number) => Promise<void>;
@@ -73,8 +72,9 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   const seekGeneration = useRef(0);
   const track = useRef(songId); track.current = songId;
   const gestureSong = useRef(songId);
-  // Fluid player (Settings, off by default): a drag up from here opens the sheet at once and the sheet follows the finger.
-  const fluid = useSettingsStore(s => s.fluidPlayer) && !!onOpenTracking;
+  // A drag up from here opens the sheet at once and the sheet follows the finger both ways (owner, 1.69.0: always,
+  // not behind a setting). Only an owner with no tracking open falls back to opening on release.
+  const tracksFinger = !!onOpenTracking;
   const restY = Math.max(height, Dimensions.get('screen').height) - bottom - SEEK_BAND_HEIGHT - miniRowHeight(fontScale);
   // The pill stays drawn while the finger is down, even once the sheet is up: its drag is what moves the sheet.
   const [fingerDown, setFingerDown] = useState(false);
@@ -215,11 +215,17 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
         playerDrag.ended.value += 1;
       }
     });
-  const open = fluid ? fluidOpen : classicOpen;
+  const open = tracksFinger ? fluidOpen : classicOpen;
   const infoGesture = Gesture.Race(open, swipe);
   const following = useAnimatedStyle(() => ({ opacity: fade.value, transform: [{ translateX: shift.value }] }));
   const createOpen = useShellMenuStore(s => s.createOpen);
-  const createDim = useAnimatedStyle(() => ({ opacity: miniContentOpacity(playerSheetProgress.value) * (1 - Math.min(1, createSheetProgress.value * 2)) }));
+  // The pill rides the sheet's top edge (navigation/playerTransition miniRideY) and fades off it over the first 18%,
+  // so opening and closing show one surface: it lands on the sheet's resting stub with it, never over a sheet still
+  // sliding above it. Pan translation comes from the raw pointer, so moving the pill under a dragging finger is safe.
+  const createDim = useAnimatedStyle(() => ({
+    opacity: miniContentOpacity(playerSheetProgress.value) * (1 - Math.min(1, createSheetProgress.value * 2)),
+    transform: [{ translateY: miniRideY(playerSheetProgress.value, restY, reduceMotion) }],
+  }));
 
   if (keyboard) return null;
   const rowHeight = miniRowHeight(fontScale);

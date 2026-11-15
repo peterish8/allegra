@@ -45,7 +45,7 @@ import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playe
 import { shouldExitLyricsFullscreen, shouldOpenLyricsFullscreen, startsInFooter } from '../navigation/lyricsGesture';
 import { fullscreenClearance } from '../components/player/fullscreenFooter';
 import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from '../navigation/usePlayerSheetMotion';
-import { cardCoverRect, heroCoverRect, playerContentOpacity } from '../navigation/playerTransition';
+import { cardCoverRect, heroCoverRect, playerContentOpacity, sheetYForDrag } from '../navigation/playerTransition';
 import { SHEET_TOP_RADIUS } from '../navigation/miniShell';
 import { shouldCloseSheet } from '../navigation/sheetClose';
 import { playerCoverFrom } from '../navigation/sheetProgress';
@@ -111,9 +111,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const restY = pillNav ? screenH - shellNavHeight(windowH, insets.bottom, fontScale) - SEEK_BAND_HEIGHT - miniRowHeight(fontScale) : playerSheetRest(windowW, screenH, insets.bottom, pillNav).y;
   // Opened out of the system island: its native launch surface grows over the app, so the sheet is
   // already open in the first frame instead of rising a second time inside it.
-  const fluid = useSettingsStore(s => s.fluidPlayer);
   const revealPill = useCallback(() => setMiniPlayerHiddenSource('NowPlaying', false), [setMiniPlayerHiddenSource]);
-  const { holdRoute, sheetY, progress, closing, animateClose, controls: sheetControls } = usePlayerSheetMotion(restY, route.params.instant === true, fluid, reduceMotion, revealPill);
+  const { holdRoute, sheetY, progress, closing, animateClose, controls: sheetControls } = usePlayerSheetMotion(restY, route.params.instant === true, reduceMotion, revealPill);
   // Where to go once the sheet is gone (the artist line opens their page).
   const afterClose = useRef<{ kind: 'artist'; name: string } | { kind: 'album'; params: BrowseStackParamList['CatalogAlbum'] } | null>(null);
   useEffect(() => {
@@ -243,9 +242,8 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
         upNext.value = Math.min(1, Math.max(0, 1 - e.translationY / upNextTravel));
         return;
       }
-      const y = grabY.value + e.translationY;
-      // Past the top it resists instead of detaching; it never goes below the pill.
-      sheetY.value = y >= 0 ? Math.min(y, restY) : rubberBand(y, 120);
+      // 1:1 with the finger both ways; past the top it resists instead of detaching; never below the pill.
+      sheetY.value = sheetYForDrag(grabY.value, e.translationY, restY);
     })
     .onEnd(e => {
       'worklet';
@@ -310,8 +308,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     .onStart(() => { 'worklet'; reverseActive.value = true; grabY.value = beginSheetDrag(sheetControls); })
     .onUpdate(event => {
       'worklet';
-      const y = grabY.value + event.translationY;
-      sheetY.value = y >= 0 ? Math.min(y, restY) : rubberBand(y, 120);
+      sheetY.value = sheetYForDrag(grabY.value, event.translationY, restY);
     })
     .onEnd(event => { 'worklet'; settleSheet(sheetControls, event.velocityY); })
     .onFinalize((_event, success) => {

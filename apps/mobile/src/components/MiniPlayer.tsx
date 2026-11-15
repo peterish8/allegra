@@ -707,7 +707,7 @@ export const MiniPlayer: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSong, reduceMotion]);
   openNowPlayingRef.current = openNowPlaying;
-  // Fluid player: the sheet opens at the start of a drag from the pill and follows the finger (PillPlayer).
+  // The sheet opens at the start of a drag from the pill and follows the finger (PillPlayer).
   const openNowPlayingTracking = useCallback(() => {
     if (currentSong) openPlayerSheet(currentSong.id, 0, true);
   }, [currentSong]);

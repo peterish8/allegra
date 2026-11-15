@@ -27,9 +27,10 @@ jest.mock('./playerSheet', () => ({ takeOpenTracking: () => false, takeOpenVeloc
 jest.mock('./sheetProgress', () => ({ playerSheetProgress: { value: 0 }, playerDrag: { mounted: { value: false }, tracking: { value: false }, y: { value: 0 }, velocity: { value: 0 }, ended: { value: 0 } } }));
 
 import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from './usePlayerSheetMotion';
+import { sheetYForDrag } from './playerTransition';
 
 function mount(reduced = false, revealMini = jest.fn()) {
-  const motion = usePlayerSheetMotion(600, false, true, reduced, revealMini);
+  const motion = usePlayerSheetMotion(600, false, reduced, revealMini);
   mockEffects.splice(0).forEach(effect => effect());
   return motion;
 }
@@ -94,6 +95,36 @@ it('settles a cancelled drag from its current position and retains dismissal und
   settleSheet(motion.controls, 0);
   expect(motion.closing.value).toBe(true);
   mockCompletions[0](true);
+  drainJS();
+  expect(mockSetHold).toHaveBeenCalledWith(false);
+});
+
+// Regression (1.69.0): a close can be caught mid-flight and turned around from the frame it is on.
+it('turns a close around from the current frame when grabbed, and reopens without removing the route', () => {
+  const motion = mount();
+  motion.animateClose(600);
+  motion.sheetY.value = 350; // the spring's current frame when the finger lands
+  const grab = beginSheetDrag(motion.controls);
+  expect(grab).toBe(350);
+  expect(motion.closing.value).toBe(false);
+  motion.sheetY.value = sheetYForDrag(grab, -100, 600);
+  expect(motion.sheetY.value).toBe(250);
+  settleSheet(motion.controls, -200);
+  mockCompletions.forEach(done => done(true));
+  drainJS();
+  expect(motion.sheetY.value).toBe(0);
+  expect(mockSetHold).not.toHaveBeenCalled();
+});
+
+it('closes onto the mini player when a reversal ends heading down', () => {
+  const motion = mount();
+  const grab = beginSheetDrag(motion.controls);
+  motion.sheetY.value = sheetYForDrag(grab, 500, 600);
+  motion.sheetY.value = sheetYForDrag(grab, 380, 600); // came back up a little
+  settleSheet(motion.controls, 300);
+  expect(motion.closing.value).toBe(true);
+  expect(motion.sheetY.value).toBe(600);
+  mockCompletions[mockCompletions.length - 1](true);
   drainJS();
   expect(mockSetHold).toHaveBeenCalledWith(false);
 });

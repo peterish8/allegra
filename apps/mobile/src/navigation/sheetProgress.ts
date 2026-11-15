@@ -25,7 +25,7 @@ export const useTabBarPushStyle = (distance: number) => {
 };
 
 /**
- * Fluid player (1.49.0, Settings → Fluid player): the finger's side of the hand-over from the mini player to the
+ * The finger's side of the hand-over from the mini player to the
  * sheet. The mini player's drag writes `y` (the sheet's top edge, as NowPlayingScreen's `sheetY`: 0 = open, the rest
  * position = on the pill) while `tracking`; the sheet, mounted a few pixels into the drag, follows it. On release the
  * pill bumps `ended` with the finger's `velocity`, and the sheet settles (navigation/playerTransition `settleTarget`).

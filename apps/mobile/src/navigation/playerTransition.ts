@@ -1,5 +1,5 @@
 /**
- * The maths of the fluid player transition (1.49.0, Settings → Fluid player): where a release settles, and where the
+ * The maths of the player transition (finger-tracked since 1.49.0, always on since 1.69.0): where a release settles, and where the
  * cover is on its way from the mini player to the player. Pure numbers, so the rules are tested; the gestures and
  * the drawing are in PillPlayer, NowPlayingScreen and components/player/CoverGhost.
  *
@@ -35,6 +35,41 @@ const clamp01 = (v: number): number => {
   'worklet';
   return Math.min(1, Math.max(0, v));
 };
+
+/** How far past the open edge the sheet may be pulled before it stops giving (points, rubber band). */
+export const SHEET_OVERPULL = 120;
+
+/**
+ * The sheet's top edge under a finger: where it was grabbed plus how far the finger has moved since, 1:1 in both
+ * directions with no easing. It never goes below the mini player (`restY`) and resists past the open edge instead
+ * of detaching. Every drag of the sheet (from the mini player, down to close, back up mid-close) uses this, so
+ * reversing direction mid-drag simply moves the sheet back, at any speed.
+ */
+export function sheetYForDrag(grabY: number, dy: number, restY: number): number {
+  'worklet';
+  const y = grabY + dy;
+  if (y >= 0) return Math.min(y, restY);
+  const a = -y;
+  return -((a * SHEET_OVERPULL * 0.55) / (SHEET_OVERPULL + 0.55 * a));
+}
+
+/** The sheet's progress (0 on the mini player, 1 open) for a top edge at `sheetY`. */
+export function sheetProgressAt(sheetY: number, restY: number): number {
+  'worklet';
+  return clamp01(1 - sheetY / Math.max(1, restY));
+}
+
+/**
+ * The mini player rides the sheet's top edge: it moves up with the sheet as it opens and comes back down with it,
+ * so at every frame the pill and the sheet's top are one surface. Parked at rest while the sheet slid, it was
+ * drawn over a sheet still above it at the end of every close (two stacked players). Reduce Motion keeps it still
+ * (the sheet fades instead of sliding).
+ */
+export function miniRideY(progress: number, restY: number, reduceMotion: boolean): number {
+  'worklet';
+  const p = clamp01(progress);
+  return reduceMotion || p === 0 ? 0 : -p * restY;
+}
 
 export const lerp = (from: number, to: number, t: number): number => {
   'worklet';

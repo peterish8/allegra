@@ -1,4 +1,4 @@
-import { cardCoverRect, coverFrame, coverRadius, ghostVisible, heroCoverRect, miniContentOpacity, playerContentOpacity, settleTarget, type Rect } from './playerTransition';
+import { SHEET_OVERPULL, cardCoverRect, coverFrame, coverRadius, ghostVisible, heroCoverRect, miniContentOpacity, miniRideY, playerContentOpacity, settleTarget, sheetProgressAt, sheetYForDrag, type Rect } from './playerTransition';
 
 const mini: Rect = { x: 8, y: 700, width: 48, height: 48 };
 const card: Rect = { x: 20, y: 120, width: 340, height: 340 };
@@ -99,5 +99,74 @@ describe('where the cover lands', () => {
 
   it('puts the hero across the top of the screen', () => {
     expect(heroCoverRect(360, 400)).toEqual({ x: 0, y: 0, width: 360, height: 400 });
+  });
+});
+
+// Regression (1.69.0): the sheet must track the finger 1:1 both ways at any speed, settle on release by position and
+// velocity, turn around mid-flight, and end on exactly one mini player (the pill rode nothing and was drawn over a
+// sheet still sliding above it at the end of every close).
+describe('the sheet under a finger', () => {
+  const restY = 600;
+
+  it('follows the finger continuously in both directions, whatever the step size', () => {
+    const grab = 0;
+    let previous = sheetProgressAt(sheetYForDrag(grab, 0, restY), restY);
+    expect(previous).toBe(1);
+    // Down in uneven steps (slow, then a fast jump), then back up over the same path.
+    const path = [3, 7, 20, 90, 260, 300, 420, 300, 120, 40, 5, 0];
+    for (let i = 0; i < path.length; i++) {
+      const p = sheetProgressAt(sheetYForDrag(grab, path[i], restY), restY);
+      expect(p).toBeCloseTo(1 - path[i] / restY, 6);
+      const goingDown = i === 0 || path[i] > path[i - 1];
+      if (goingDown) expect(p).toBeLessThan(previous); else expect(p).toBeGreaterThan(previous);
+      previous = p;
+    }
+  });
+
+  it('carries on from where it was grabbed, so a grab mid-spring never jumps', () => {
+    expect(sheetYForDrag(240, 0, restY)).toBe(240);
+    expect(sheetYForDrag(240, -100, restY)).toBe(140);
+    expect(sheetYForDrag(240, 100, restY)).toBe(340);
+  });
+
+  it('stops at the mini player and resists past the open edge instead of detaching', () => {
+    expect(sheetYForDrag(500, 400, restY)).toBe(restY);
+    const over = sheetYForDrag(0, -400, restY);
+    expect(over).toBeLessThan(0);
+    expect(over).toBeGreaterThan(-SHEET_OVERPULL);
+    expect(Math.abs(sheetYForDrag(0, -40, restY))).toBeLessThan(40);
+    expect(sheetProgressAt(over, restY)).toBe(1);
+  });
+
+  it('settles on release by position and velocity, including after a reversal', () => {
+    // Dragged most of the way down, then pushed back up: the upward release reopens it.
+    const y = sheetYForDrag(0, 420, restY);
+    expect(settleTarget(sheetProgressAt(y, restY), 0, restY)).toBe('closed');
+    expect(settleTarget(sheetProgressAt(sheetYForDrag(y, -40, restY), restY), -900, restY)).toBe('open');
+    // A short, fast flick down closes; a slow short drag springs back open.
+    expect(settleTarget(sheetProgressAt(sheetYForDrag(0, 30, restY), restY), 1200, restY)).toBe('closed');
+    expect(settleTarget(sheetProgressAt(sheetYForDrag(0, 30, restY), restY), 100, restY)).toBe('open');
+  });
+
+  it('keeps the mini player on the sheet’s top edge at every point of the travel', () => {
+    for (const p of [0, 0.02, 0.09, 0.18, 0.5, 0.9, 1]) {
+      const sheetTop = restY * (1 - p);
+      expect(restY + miniRideY(p, restY, false)).toBeCloseTo(sheetTop, 6);
+    }
+  });
+
+  it('ends on one full-width mini player: in place, fully shown, the sheet gone under it', () => {
+    expect(miniRideY(0, restY, false)).toBe(0);
+    expect(miniContentOpacity(0)).toBe(1);
+    expect(sheetProgressAt(restY, restY)).toBe(0);
+    expect(ghostVisible(0)).toBe(false);
+    // Over the last 18% of a close the pill comes in, but it is riding the sheet, never parked under it.
+    expect(miniContentOpacity(0.09)).toBeGreaterThan(0);
+    expect(restY + miniRideY(0.09, restY, false)).toBeCloseTo(restY * 0.91, 6);
+  });
+
+  it('keeps the pill still under Reduce Motion, where the sheet fades instead of sliding', () => {
+    expect(miniRideY(0.5, restY, true)).toBe(0);
+    expect(miniRideY(0, restY, true)).toBe(0);
   });
 });

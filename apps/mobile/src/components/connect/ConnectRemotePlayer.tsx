@@ -25,7 +25,7 @@ import { Radius, Signal } from '../../constants/allegraTheme';
 import { Tactile, TactileRow } from '../../ui';
 import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from '../../navigation/usePlayerSheetMotion';
 import { playerCoverFrom } from '../../navigation/sheetProgress';
-import { cardCoverRect, heroCoverRect, playerContentOpacity } from '../../navigation/playerTransition';
+import { cardCoverRect, heroCoverRect, playerContentOpacity, sheetYForDrag } from '../../navigation/playerTransition';
 import { SHEET_TOP_RADIUS } from '../../navigation/miniShell';
 import { MiniPlayerGlow } from '../MiniPlayerGlow';
 import CoverGhost from '../player/CoverGhost';
@@ -55,7 +55,6 @@ import NowPlayingHeader from '../NowPlayingHeader';
 import NowPlayingLyricsArea, { fullCoverHeight, CONTROLS_CLEARANCE, HEADER_CLEARANCE, LYRICS_MORPH_MS } from '../NowPlayingLyricsArea';
 import type { SynchronizedLyricsRef } from '../SynchronizedLyrics';
 import Artwork from '../allegra/Artwork';
-import { rubberBand } from '../allegra/physics';
 import { PlayerSheet, SheetScrollView } from '../player/PlayerSheet';
 
 const { Gesture, GestureDetector } = GestureHandler;
@@ -104,9 +103,8 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
 
   // ── Sheet: grow out of the pill, follow the finger, shrink back ──────────
   const restY = pillNav ? screenH - shellNavHeight(windowH, insets.bottom, fontScale) - SEEK_BAND_HEIGHT - miniRowHeight(fontScale) : playerSheetRest(windowW, screenH, insets.bottom, pillNav).y;
-  const fluid = useSettingsStore(s => s.fluidPlayer);
   const revealPill = useCallback(() => setMiniPlayerHiddenSource('NowPlaying', false), [setMiniPlayerHiddenSource]);
-  const { holdRoute, sheetY, progress, animateClose, controls: sheetControls } = usePlayerSheetMotion(restY, route.params.instant === true, fluid, reduceMotion, revealPill);
+  const { holdRoute, sheetY, progress, animateClose, controls: sheetControls } = usePlayerSheetMotion(restY, route.params.instant === true, reduceMotion, revealPill);
   const afterClose = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (holdRoute) return;
@@ -237,8 +235,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
     })
     .onUpdate(e => {
       'worklet';
-      const y = grabY.value + e.translationY;
-      sheetY.value = y >= 0 ? Math.min(y, restY) : rubberBand(y, 120);
+      sheetY.value = sheetYForDrag(grabY.value, e.translationY, restY);
     })
     .onEnd(e => {
       'worklet';
@@ -263,8 +260,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
     .onStart(() => { 'worklet'; reverseActive.value = true; grabY.value = beginSheetDrag(sheetControls); })
     .onUpdate(event => {
       'worklet';
-      const y = grabY.value + event.translationY;
-      sheetY.value = y >= 0 ? Math.min(y, restY) : rubberBand(y, 120);
+      sheetY.value = sheetYForDrag(grabY.value, event.translationY, restY);
     })
     .onEnd(event => { 'worklet'; settleSheet(sheetControls, event.velocityY); })
     .onFinalize((_event, success) => {

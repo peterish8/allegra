@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReduceMotion, SharedValue, cancelAnimation, runOnJS, useAnimatedReaction, useDerivedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Motion } from '../constants/allegraTheme';
-import { rubberBand } from '../components/allegra/physics';
 import { takeOpenTracking, takeOpenVelocity } from './playerSheet';
-import { settleTarget } from './playerTransition';
+import { settleTarget, sheetProgressAt, sheetYForDrag } from './playerTransition';
 import { playerDrag, playerSheetProgress } from './sheetProgress';
 
 /**
@@ -47,14 +46,18 @@ export function settleSheet(sheet: SheetControls, velocity: number): void {
 }
 
 /** Presentation only. Audio, seeking and queue ownership stay outside this hook. */
-export function usePlayerSheetMotion(restY: number, instant: boolean, fluid: boolean, reduceMotion: boolean, revealMini: () => void) {
+/**
+ * A drag from the mini player always opens the sheet under the finger (owner, 1.69.0: the sheet follows the finger
+ * both ways at any speed). `takeOpenTracking` is true only for that drag; a tap or a deep link opens on a spring.
+ */
+export function usePlayerSheetMotion(restY: number, instant: boolean, reduceMotion: boolean, revealMini: () => void) {
   const [holdRoute, setHoldRoute] = useState(true);
-  const [opening] = useState(() => ({ tracking: takeOpenTracking() && fluid && playerDrag.tracking.value, velocity: takeOpenVelocity() }));
+  const [opening] = useState(() => ({ tracking: takeOpenTracking() && playerDrag.tracking.value, velocity: takeOpenVelocity() }));
   const tracked = useSharedValue(opening.tracking);
   const sheetY = useSharedValue(instant ? 0 : opening.tracking ? Math.min(restY, Math.max(0, playerDrag.y.value)) : restY);
   const closing = useSharedValue(false);
   const generation = useSharedValue(0);
-  const progress = useDerivedValue(() => Math.min(1, Math.max(0, 1 - sheetY.value / Math.max(1, restY))));
+  const progress = useDerivedValue(() => sheetProgressAt(sheetY.value, restY));
   const mounted = useRef(true);
   const finishClose = useCallback((expected: number) => {
     // A cancelled spring may already have queued its JS callback. A new grab invalidates it.
@@ -82,7 +85,7 @@ export function usePlayerSheetMotion(restY: number, instant: boolean, fluid: boo
   );
   useAnimatedReaction(() => progress.value, p => { playerSheetProgress.value = p; });
   useAnimatedReaction(() => playerDrag.y.value, y => {
-    if (tracked.value) sheetY.value = y >= 0 ? Math.min(y, restY) : rubberBand(y, 120);
+    if (tracked.value) sheetY.value = sheetYForDrag(y, 0, restY);
   });
   useAnimatedReaction(() => playerDrag.ended.value, (count, previous) => {
     if (previous === null || count === previous || !tracked.value) return;
