@@ -81,12 +81,12 @@ const RecentVersions: React.FC<{ entries: readonly ReleaseHistoryEntry[]; onRoll
           <Tactile
             onPress={() => onRollback(entry)}
             accessibilityRole="button"
-            accessibilityLabel={'Install version ' + entry.version}
+            accessibilityLabel={'Roll back to version ' + entry.version}
             style={styles.rollbackButton}
             pressScale={0.97}
           >
             <Ionicons name="arrow-undo" size={15} color={Signal.wave} />
-            <Text style={styles.rollbackText}>Install version {entry.version}</Text>
+            <Text style={styles.rollbackText}>Roll back to {entry.version}</Text>
           </Tactile>
         ) : null}
       </View>

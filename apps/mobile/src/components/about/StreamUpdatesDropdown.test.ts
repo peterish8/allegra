@@ -11,6 +11,9 @@ it('uses the branded button and keeps the updates-only dropdown accessible and d
   expect(source).toContain('accessibilityLabel="Dismiss updates"');
   expect(source).toContain('nestedScrollEnabled');
   expect(source).toContain('<UpdatePanel visible={open} dropdown onClose={close} />');
+  expect(source).toContain('backgroundColor: Surface.deep');
+  expect(source).toContain('backgroundColor: Glass.scrim');
+  expect(source).not.toContain('Frosted');
 });
 
 it('avoids a modal fade when Reduce Motion is enabled', () => {

@@ -5,8 +5,8 @@ import { PROFILE_GROUPS, aboutRowTitle, profileButtonLabel, profileInitial } fro
 import { useShellMenuStore } from '../store/shellMenuStore';
 
 // Owner, 1.42.0: Spotify's positions. Tabs Stream, Search, Library, Create; Luvs in the Create (+) sheet; the You tab
-// becomes the profile menu behind your picture at the top left of Search and Library. Stream has
-// Connect on the left and the LuvLyrics updates menu on the right.
+// becomes the profile menu behind your picture at the top left of Stream, Search and Library. Stream keeps
+// Connect beside the LuvLyrics updates menu on the right.
 const SRC = path.join(__dirname, '..');
 const read = (...parts: string[]): string => fs.readFileSync(path.join(SRC, ...parts), 'utf8');
 const code = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
@@ -90,11 +90,13 @@ describe('the bar and the headers are wired', () => {
     expect(v6).toMatch(/if \(action === 'luvs'\) navigation\.navigate\('Luvs'\)/);
   });
 
-  it('Stream shows Devices and Updates; Search and Library keep the profile menu', () => {
+  it('Stream puts the profile at left and Devices beside Updates on the right', () => {
     const stream = code(read('screens', 'StreamScreen.tsx'));
+    expect(stream).toMatch(/<ProfileButton \/>/);
     expect(stream).toMatch(/<ConnectDropdown \/>/);
     expect(stream).toMatch(/<StreamUpdatesDropdown/);
-    expect(stream).not.toMatch(/<ProfileButton \/>/);
+    expect(stream.indexOf('<ProfileButton />')).toBeLessThan(stream.indexOf('<RecentSwitch'));
+    expect(stream.indexOf('<ConnectDropdown />')).toBeLessThan(stream.indexOf('<StreamUpdatesDropdown'));
     expect(stream).not.toMatch(/luvlyrics-logo-white-mark/);
     expect(stream).not.toMatch(/<AboutSheet/);
     expect(code(read('screens', 'SearchScreen.tsx'))).toMatch(/<ProfileButton \/>/);

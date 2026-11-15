@@ -8,13 +8,17 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Motion, Space } from '../../constants/allegraTheme';
 import type { RecentView } from '../../services/stream/recentItems';
-import { Chip, Text } from '../../ui';
+import { Segmented, Text } from '../../ui';
 import { ShortcutGrid, type TrackItem } from './StreamHome';
 
+const RECENT_OPTIONS = [
+  { value: 'songs', label: 'Songs' },
+  { value: 'playlists', label: 'Playlists' },
+] as const satisfies readonly { value: RecentView; label: string }[];
+
 export const RecentSwitch: React.FC<{ view: RecentView; onChange: (view: RecentView) => void }> = ({ view, onChange }) => (
-  <View style={styles.switch} accessibilityRole="radiogroup" accessibilityLabel="Recent: songs or playlists">
-    <Chip label="Songs" selected={view === 'songs'} onPress={() => onChange('songs')} accessibilityLabel="Recent songs" />
-    <Chip label="Playlists" selected={view === 'playlists'} onPress={() => onChange('playlists')} accessibilityLabel="Recent playlists" />
+  <View style={styles.switch}>
+    <Segmented<RecentView> value={view} options={RECENT_OPTIONS} onChange={onChange} label="Recent: songs or playlists" />
   </View>
 );
 
@@ -66,6 +70,6 @@ export const RecentShelf: React.FC<ShelfProps> = ({ view, songs, playlists, onPr
 };
 
 const styles = StyleSheet.create({
-  switch: { flexDirection: 'row', alignItems: 'center', gap: Space.xs, flexShrink: 1 },
+  switch: { width: 164, flexShrink: 1 },
   empty: { paddingHorizontal: Space.md, paddingVertical: Space.lg },
 });
