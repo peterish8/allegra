@@ -2,6 +2,7 @@ import { Router } from 'express';
 
 import type { CatalogService } from '../catalog/catalog.js';
 import type { UnifiedSong } from '../types.js';
+import { chatCompletionsUrl, type AiProvider } from '../lib/aiProviders.js';
 import { createLogger } from '../lib/logger.js';
 import { asRecord } from './common.js';
 
@@ -18,7 +19,7 @@ const MAX_SOURCE_PLAYLISTS = 2;
 const MAX_SOURCE_TRACKS = 40;
 const MAX_MESSAGES = 8;
 
-type Provider = 'openai' | 'openrouter' | 'gemini';
+type Provider = AiProvider;
 type Goal = 'mix' | 'playlist';
 type DraftOperation = 'replace' | 'extend' | 'keep' | 'remove';
 type Reaction = 'neutral' | 'curious' | 'excited' | 'dreamy' | 'confused';
@@ -226,11 +227,7 @@ function parseHistory(value: unknown): DjRequest['history'] | null {
 }
 
 async function runDjTurn(catalog: CatalogService, input: DjRequest, signal: AbortSignal, fetchImpl: FetchLike) {
-  const endpoint = input.provider === 'openai'
-    ? 'https://api.openai.com/v1/chat/completions'
-    : input.provider === 'gemini'
-      ? 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
-      : 'https://openrouter.ai/api/v1/chat/completions';
+  const endpoint = chatCompletionsUrl(input.provider);
   const messages: Record<string, unknown>[] = [
     { role: 'system', content: systemPrompt(input) },
     ...input.history.map(({ role, content }) => ({ role, content })),

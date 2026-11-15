@@ -5,6 +5,7 @@ import type { DjCloudProvider, DjExploration, DjGoal, DjPlaylistSource, DjSessio
 import { leadArtist, readArtistRules } from '@shared/djLocal';
 import type { UnifiedSong } from '@shared/types';
 
+import { setAiKey } from '../lib/aiKeyVault';
 import { requestDjTurn } from '../lib/api';
 import { parseDjAction, type DjAction, type DjActionResult } from '../lib/djActions';
 import { customChat, normalizeEndpoint } from '../lib/djCustom';
@@ -249,6 +250,13 @@ export function useDjSessionState(inputs: DjSessionInputs): DjSession {
   const setEndpoint = useCallback((next: string): void => {
     storeChoice({ provider, model, endpoint: next.slice(0, 300) });
   }, [model, provider, storeChoice]);
+
+  // Lyric translation can use the same key (memory only, lib/aiKeyVault). Nothing here touches playback.
+  useEffect(() => {
+    const key = apiKey.trim();
+    const cloud = provider === 'openai' || provider === 'openrouter' || provider === 'gemini';
+    setAiKey(cloud && key ? { provider, apiKey: key, model } : null);
+  }, [apiKey, model, provider]);
 
   // The conversation survives a reload of this tab. Reasons are trimmed to the newest few dozen.
   useEffect(() => {

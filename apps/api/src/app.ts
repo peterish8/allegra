@@ -124,6 +124,9 @@ export function createApp(options: AppOptions): Express {
   app.use('/api/lyrics/sync', express.json({ limit: '512kb', inflate: false }));
   // 24,000 characters of pasted words, some of them several bytes long.
   app.use('/api/lyrics/paste', express.json({ limit: '128kb', inflate: false }));
+  // Up to 400 lines of 500 characters to translate, in scripts several bytes a character.
+  app.use('/api/lyrics/translate', express.json({ limit: '256kb', inflate: false }));
+  app.use('/api/ai/translate-lyrics', express.json({ limit: '256kb', inflate: false }));
   app.use(express.json({ limit: '32kb', inflate: false }));
 
   app.get('/api/health', (_request, response) => {

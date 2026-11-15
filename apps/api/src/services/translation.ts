@@ -5,6 +5,15 @@ import { decodeHtml } from '../lib/decodeHtml.js';
 import { fetchWithTimeout } from '../lib/fetchWithTimeout.js';
 import { isoLanguage } from '../lib/languages.js';
 import type { LyricLine } from '../types.js';
+import { LlmTranslator, type AiKey, type TranslationMode } from './translationLlm.js';
+
+/** Romanised and pronunciation lyrics need a model; MyMemory only translates. */
+export class AiKeyRequiredError extends Error {
+  public constructor() {
+    super('AI key required');
+    this.name = 'AiKeyRequiredError';
+  }
+}
 
 const HIT_TTL_SECONDS = 2_592_000; // 30 days, same as a lyrics cache hit
 const MISS_TTL_SECONDS = 600;
@@ -53,6 +62,7 @@ export class TranslationService {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly llm: LlmTranslator;
 
   public constructor(
     private readonly cache: CacheStore,
@@ -61,6 +71,7 @@ export class TranslationService {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? TIMEOUT_MS;
+    this.llm = new LlmTranslator(this.fetchImpl);
   }
 
   public get isAvailable(): boolean {
@@ -77,17 +88,21 @@ export class TranslationService {
     title: string,
     artist: string,
     targetLanguage = 'English',
-    sourceLanguage?: string
+    sourceLanguage?: string,
+    request: { readonly mode?: TranslationMode; readonly ai?: AiKey } = {}
   ): Promise<TranslationResult | null> {
     if (lines.length === 0) return null;
+    const mode = request.mode ?? 'translate';
+    if (!request.ai && mode !== 'translate') throw new AiKeyRequiredError();
     const target = isoLanguage(targetLanguage) ?? 'en';
     const source = isoLanguage(sourceLanguage) ?? 'autodetect';
-    if (source === target) return { lines: [...lines], provider: 'none' };
+    if (mode === 'translate' && source === target) return { lines: [...lines], provider: 'none' };
 
     const bodyHash = createHash('sha256')
       .update(lines.map((line) => line.text).join('\n'))
       .digest('hex')
       .slice(0, 16);
+    if (request.ai) return this.translateWithKey(lines, request.ai, mode, targetLanguage, sourceLanguage, source, target, bodyHash);
     const key = cacheKey('translate', 'mymemory-v1', title, artist, source, target, String(lines.length), bodyHash);
 
     return cachedLookup(this.cache, {
@@ -113,6 +128,43 @@ export class TranslationService {
             return text === undefined || text === line.text ? line : { timestamp: line.timestamp, text, lineOrder: line.lineOrder };
           }),
           provider: primary ? 'mymemory' : 'libretranslate'
+        };
+      }
+    });
+  }
+
+  /**
+   * The listener's own AI key. Cached across listeners by provider, model, mode, languages and the body (lyrics
+   * translations are not personal); the key itself is never part of the cache key, a log or the result.
+   */
+  private async translateWithKey(
+    lines: readonly LyricLine[],
+    ai: AiKey,
+    mode: TranslationMode,
+    targetLanguage: string,
+    sourceLanguage: string | undefined,
+    source: string,
+    target: string,
+    bodyHash: string
+  ): Promise<TranslationResult | null> {
+    const provider = `${ai.provider}:${ai.model}`;
+    const key = cacheKey('translate', 'llm-v1', ai.provider, ai.model, mode, source, target, String(lines.length), bodyHash);
+    return cachedLookup(this.cache, {
+      key,
+      hitTtlSeconds: HIT_TTL_SECONDS,
+      missTtlSeconds: MISS_TTL_SECONDS,
+      load: async () => {
+        const unique = [...new Set(lines.map((line) => line.text.trim()))].filter((text) => text && text !== INSTRUMENTAL);
+        if (unique.length === 0) return { lines: [...lines], provider };
+        const out = await this.llm.translate(unique, mode, targetLanguage, sourceLanguage, ai);
+        if (!out) return null;
+        const translated = new Map(unique.map((text, index) => [text, out[index]!] as const));
+        return {
+          lines: lines.map((line) => {
+            const text = translated.get(line.text.trim());
+            return text === undefined || text === line.text ? line : { timestamp: line.timestamp, text, lineOrder: line.lineOrder };
+          }),
+          provider
         };
       }
     });

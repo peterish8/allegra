@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { MemoryCacheStore } from '../lib/cache.js';
 import type { LyricLine } from '../types.js';
-import { packBatches, TranslationService } from './translation.js';
+import { AiKeyRequiredError, packBatches, TranslationService } from './translation.js';
 
 function lines(...texts: string[]): LyricLine[] {
   return texts.map((text, index) => ({ text, timestamp: index * 5, lineOrder: index }));
@@ -114,4 +114,31 @@ test('batches stay under the provider limit in bytes, not characters', () => {
   const batches = packBatches([devanagari, devanagari, 'short']);
   assert.deepEqual(batches.map((batch) => batch.length), [1, 2]);
   for (const batch of batches) assert.ok(Buffer.byteLength(batch.join('\n'), 'utf8') <= 450);
+});
+
+test('romanised lyrics without a key are refused before any request', async () => {
+  const { fetchImpl, requests } = fakeMyMemory();
+  await assert.rejects(new TranslationService(new MemoryCacheStore(), { fetchImpl }).translate(lines('a'), 'S', 'A', 'English', 'tamil', { mode: 'romanize' }), AiKeyRequiredError);
+  assert.equal(requests.length, 0);
+});
+
+test('the AI path caches by provider, model and mode, never by the key', async () => {
+  let calls = 0;
+  const fetchImpl = (async (_input: URL | string, init?: RequestInit) => {
+    calls += 1;
+    const sent = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
+    const sentLines = (JSON.parse(sent.messages[1]!.content) as { lines: string[] }).lines;
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: sentLines.map((l) => `${l}!`) }) } }] }), { status: 200 });
+  }) as typeof fetch;
+  const cache = new MemoryCacheStore();
+  const service = new TranslationService(cache, { fetchImpl });
+  const one = { provider: 'openai', apiKey: 'sk-first-listener', model: 'm1' } as const;
+  const first = await service.translate(lines('x', 'y'), 'S', 'A', 'English', 'tamil', { mode: 'translate', ai: one });
+  assert.deepEqual(first?.lines.map((line) => line.text), ['x!', 'y!']);
+  // Another listener's key, same provider, model and mode: served from the cache.
+  await service.translate(lines('x', 'y'), 'S', 'A', 'English', 'tamil', { mode: 'translate', ai: { ...one, apiKey: 'sk-second-listener' } });
+  assert.equal(calls, 1);
+  // Another mode is another entry.
+  await service.translate(lines('x', 'y'), 'S', 'A', 'English', 'tamil', { mode: 'transcribe', ai: one });
+  assert.equal(calls, 2);
 });

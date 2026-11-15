@@ -80,6 +80,7 @@ import { ImportChip } from './components/import/ImportChip';
 import { lockScroll } from './lib/scrollLock';
 import { DEFAULT_PALETTE, extractPalette, shadePalette, paletteBrightness } from './lib/palette';
 import type { Palette } from './lib/palette';
+import { currentAiKey, subscribeAiKey } from './lib/aiKeyVault';
 import { ApiError, resolveApiUrl, applyLibraryOps, ensureSession, fetchAlbum, fetchArtist, searchAlbums, fetchArtistFaces, fetchAiRecommendations, fetchHome, fetchLyrics, fetchLyricsAlternatives, fetchRecentlyPlayed, fetchSharedPlaylist, fetchSongsByRefs, fetchSuggestions, recordRecentlyPlayed, saveSharedPlaylist, searchSongs, translateLyrics } from './lib/api';
 import { isLyricsUpgrade, LYRICS_UPGRADE_DELAYS_MS, wantsLyricsUpgrade } from './lib/lyricsUpgrade';
 import { catalogSongId, shouldStartRadio, uniqueByIdentity } from './lib/songIdentity';
@@ -175,6 +176,9 @@ export default function App() {
   const [translating, setTranslating] = useState(false);
   const [translateError, setTranslateError] = useState<string | null>(null);
   const [translateProvider, setTranslateProvider] = useState<string | null>(null);
+  const [translateMode, setTranslateMode] = useState<'translate' | 'romanize'>('translate');
+  // The DJ's key, memory only (lib/aiKeyVault): lyric translation may use it.
+  const aiKey = useSyncExternalStore(subscribeAiKey, currentAiKey, () => null);
   const [playerMode, setPlayerMode] = useState<PlayerMode>('mini');
   const [djLive, setDjLive] = useState(false);
   const [albumSeed, setAlbumSeed] = useState<UnifiedSong | null>(null);
@@ -1762,19 +1766,21 @@ export default function App() {
     setTranslateProvider(null);
   };
 
-  const toggleTranslate = (): void => {
+  // With an AI key in the DJ, translation uses it (and romanised lyrics become possible); without one, MyMemory.
+  const runTranslation = (mode: 'translate' | 'romanize'): void => {
     const song = playerSong;
     if (!song || lyrics.length === 0) return;
-    if (translatedLyrics) {
+    if (translatedLyrics && translateMode === mode) {
       setShowTranslated((current) => !current);
       return;
     }
     setTranslating(true);
     setTranslateError(null);
-    void translateLyrics(song, lyrics)
+    void translateLyrics(song, lyrics, 'English', undefined, { mode, ai: aiKey })
       .then((response) => {
         setTranslatedLyrics(response.lines);
         setTranslateProvider(response.provider);
+        setTranslateMode(mode);
         setShowTranslated(true);
       })
       .catch((error: unknown) => {
@@ -1782,6 +1788,8 @@ export default function App() {
       })
       .finally(() => setTranslating(false));
   };
+  const toggleTranslate = (): void => runTranslation('translate');
+  const toggleRomanize = aiKey ? (): void => runTranslation('romanize') : undefined;
 
   const pageTransition = reduced ? { duration: motionTokens.duration.instant } : undefined;
   // The catalog's whole album when the seed has an id (`GET /api/albums/:id`); the songs already loaded,
@@ -2410,6 +2418,8 @@ export default function App() {
           translateError,
           translateProvider,
           onToggleTranslate: toggleTranslate,
+          translateMode,
+          ...(toggleRomanize ? { onToggleRomanize: toggleRomanize } : {}),
           source: lyricsPayload?.source,
           matchReason: lyricsPayload?.matchReason,
           alternatives: lyricsAlternatives,

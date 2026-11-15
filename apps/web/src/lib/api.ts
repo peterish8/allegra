@@ -8,6 +8,7 @@ import type { SpotifySourcePlaylist, SpotifyStatus, SpotifySyncStep } from '@sha
 import type { ListenExit } from '@shared/listenSignal';
 import type { DjTurnRequest, DjTurnResponse } from '@shared/dj';
 import type { RadioTaste } from '@shared/radio';
+import type { AiKeyChoice } from './aiKeyVault';
 import { TYPEAHEAD_LIMIT } from '@shared/typeahead';
 import type { LyricsSourcesResponse, LyricsSyncRequest, LyricsSyncResult } from '@shared/lyricSync';
 import { readLocalTiming } from './lyricAlign/localTiming';
@@ -551,12 +552,19 @@ export async function translateLyrics(
   song: UnifiedSong,
   lines: readonly LyricLine[],
   targetLanguage = 'English',
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: { readonly mode?: 'translate' | 'romanize' | 'transcribe'; readonly ai?: AiKeyChoice | null } = {}
 ): Promise<{ lines: LyricLine[]; provider: string }> {
-  return request('/api/ai/translate-lyrics', {
+  // `ai` is the listener's own key: the API forwards it for this request and never stores or logs it.
+  return request('/api/lyrics/translate', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ title: song.title, artist: song.artist, lines, targetLanguage }),
+    body: JSON.stringify({
+      title: song.title, artist: song.artist, lines, targetLanguage,
+      ...(song.language ? { language: song.language } : {}),
+      ...(options.mode && options.mode !== 'translate' ? { mode: options.mode } : {}),
+      ...(options.ai ? { ai: options.ai } : {})
+    }),
     signal
   });
 }

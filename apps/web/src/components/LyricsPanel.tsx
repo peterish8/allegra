@@ -53,6 +53,10 @@ interface LyricsPanelProps {
   readonly translateError?: string | null;
   readonly translateProvider?: string | null;
   readonly onToggleTranslate?: () => void;
+  /** What the lines under the lyrics are: a translation, or how the words sound in Latin letters. */
+  readonly translateMode?: 'translate' | 'romanize';
+  /** Set only while the listener has an AI key in the DJ: shows "Romanised lyrics" in the lyrics menu. */
+  readonly onToggleRomanize?: () => void;
   readonly hideBackdrop?: boolean;
   /** Soft-focus stage: active line stays near the optical center (default true). */
   readonly softFocus?: boolean;
@@ -120,6 +124,8 @@ export function LyricsPanel({
   translateError = null,
   translateProvider = null,
   onToggleTranslate,
+  translateMode = 'translate',
+  onToggleRomanize,
   hideBackdrop = false,
   softFocus = true,
   karaokeActive = false,
@@ -611,10 +617,10 @@ export function LyricsPanel({
             variant="ghost"
             icon={translating ? LoaderCircle : Languages}
             onClick={onToggleTranslate}
-            aria-label={translated ? 'Show original lyrics' : 'Translate lyrics to English'}
+            aria-label={translated && translateMode === 'translate' ? 'Show original lyrics' : 'Translate lyrics to English'}
             className="ytm-lyrics__translate-button"
           >
-            {translating ? 'Translating…' : translated ? 'Original' : 'Translate'}
+            {translating ? 'Translating…' : translated && translateMode === 'translate' ? 'Original' : 'Translate'}
           </TactileButton>
         ) : null}
         {onLoadAlternatives ? (
@@ -791,7 +797,11 @@ export function LyricsPanel({
 
       {translateError ? <p className="ytm-lyrics__alert" role="alert">{translateError}</p> : null}
       {translated && translateProvider ? (
-        <p className="ytm-lyrics__note">Translated by {translateProvider} — meaning, not word-for-word.</p>
+        <p className="ytm-lyrics__note">
+          {translateMode === 'romanize'
+            ? `Romanised with your AI key (${translateProvider}). The lyrics were sent to that provider.`
+            : `Translated by ${translateProvider} — meaning, not word-for-word.`}
+        </p>
       ) : null}
 
       {softFocus && !plain && !compact && !loading && !error && lines.length > 0 ? (
@@ -904,7 +914,13 @@ export function LyricsPanel({
               {showTranslate ? (
                 <button type="button" className="lyrics-dock__item" onClick={(event) => runFromMenu(event, onToggleTranslate)}>
                   {translating ? <LoaderCircle size={16} aria-hidden="true" /> : <Languages size={16} aria-hidden="true" />}
-                  {translating ? 'Translating…' : translated ? 'Show original' : 'Translate'}
+                  {translating ? 'Translating…' : translated && translateMode === 'translate' ? 'Show original' : 'Translate'}
+                </button>
+              ) : null}
+              {showTranslate && onToggleRomanize ? (
+                <button type="button" className="lyrics-dock__item" onClick={(event) => runFromMenu(event, onToggleRomanize)}>
+                  <Languages size={16} aria-hidden="true" />
+                  {translated && translateMode === 'romanize' ? 'Show original' : 'Romanised lyrics'}
                 </button>
               ) : null}
               {onLoadAlternatives ? (
