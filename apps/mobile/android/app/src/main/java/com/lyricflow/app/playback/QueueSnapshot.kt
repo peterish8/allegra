@@ -57,6 +57,8 @@ data class QueueSnapshot(
                             "artist" to item.optString("artist"),
                             "album" to item.optString("album"),
                             "artworkUri" to item.optString("artworkUri"),
+                            // Added in 1.69.0 without a version bump: an older file has none and decodes as 0 (unknown).
+                            "durationSec" to item.optString("durationSec"),
                         )
                     )
                     if (spec != null) items.add(spec)

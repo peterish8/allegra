@@ -174,6 +174,10 @@ const App: React.FC = () => {
           // Optional ListenBrainz copy of the history: loads the saved link and sends what is waiting.
           runWhenIdle('listenbrainz', () => import('./services/listenbrainz/listenbrainzSync').then(m => m.startListenbrainzSync()), 900);
 
+          // Song cache ceiling (Android): native keeps its own copy, so a value saved by an older build reaches it here.
+          runWhenIdle('song cache limit', () => Promise.all([import('./store/settingsStore'), import('./services/NativeAudioPlayer')])
+            .then(([s, n]) => n.NativeAudioPlayer.setStreamCacheLimitMb(Number(s.useSettingsStore.getState().streamCacheLimitMb))), 1200);
+
           // Build or verify the FTS5 search index (Android only; no-op on iOS).
           runWhenIdle('search index', () => ensureSearchIndex(), 600);
 

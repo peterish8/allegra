@@ -9,6 +9,8 @@ export type NativeQueueItem = {
   artist: string;
   album: string;
   artworkUri: string;
+  /** The catalog's length in whole seconds as a string, '0' when unknown (the early-end guard reads it). Optional: older engines omit it. */
+  durationSec?: string;
 };
 
 export type NativeRepeat = 'off' | 'all' | 'one';
@@ -39,6 +41,9 @@ type MainPlayerNative = {
   refreshStatus?: () => void;
   setPlaybackParameters?: (speed: number, pitch: number) => boolean;
   setRepeatOne?: (on: boolean) => boolean;
+  setStreamCacheLimitMb?: (mb: number) => Promise<number>;
+  getStreamCacheInfo?: () => Promise<{ usedBytes: number; limitMb: number }>;
+  clearStreamCache?: (keepKey: string | null) => Promise<boolean>;
   openEqualizer?: () => boolean;
   setRingtone?: (path: string, title: string) => Promise<RingtoneResult>;
   // The queue engine (Echo Music's design, in Kotlin). Every answer is true only once the change was applied.
@@ -69,6 +74,8 @@ export type PlayerMetadata = {
   album: string;
   artworkUri: string;
   mediaId?: string;
+  /** Whole seconds as a string; see NativeQueueItem.durationSec. */
+  durationSec?: string;
 };
 
 /**
@@ -309,6 +316,24 @@ export const NativeAudioPlayer = {
   setRepeatOne(on: boolean): boolean {
     if (!this.isAvailable() || !MainPlayerModule?.setRepeatOne) return false;
     try { return MainPlayerModule.setRepeatOne(on); } catch { return false; }
+  },
+
+  /** Settings → Song cache ceiling (MB). Returns the value applied; the input back when the module is missing. */
+  async setStreamCacheLimitMb(mb: number): Promise<number> {
+    if (!this.isAvailable() || !MainPlayerModule?.setStreamCacheLimitMb) return mb;
+    try { return await MainPlayerModule.setStreamCacheLimitMb(mb); } catch { return mb; }
+  },
+
+  /** How much the song cache holds and its ceiling. Zeros when unavailable (iOS, tests, an older build). */
+  async getStreamCacheInfo(): Promise<{ usedBytes: number; limitMb: number }> {
+    if (!this.isAvailable() || !MainPlayerModule?.getStreamCacheInfo) return { usedBytes: 0, limitMb: 0 };
+    try { return await MainPlayerModule.getStreamCacheInfo(); } catch { return { usedBytes: 0, limitMb: 0 }; }
+  },
+
+  /** Clears the song cache except `keepKey` (the playing song's key, `streamCacheKeyFor`). */
+  async clearStreamCache(keepKey: string | null): Promise<boolean> {
+    if (!this.isAvailable() || !MainPlayerModule?.clearStreamCache) return false;
+    try { return await MainPlayerModule.clearStreamCache(keepKey); } catch { return false; }
   },
 
   /** The phone's equalizer panel for our audio session. False when there is none. */

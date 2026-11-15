@@ -1,6 +1,7 @@
 package com.lyricflow.app.playback
 
 import android.net.Uri
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -21,6 +22,7 @@ import java.util.concurrent.Executors
 private const val TAG = "QueueEngine"
 private const val SAVE_DELAY_MS = 1_500L
 private const val META_MAX = 500
+private const val EXTRA_DURATION_SEC = "durationSec"
 
 /**
  * The whole queue lives here, inside the player service — not in JavaScript. This is Echo Music's design
@@ -74,9 +76,13 @@ class QueueEngine(
                     .setArtist(clip(spec.artist))
                     .setAlbumTitle(clip(spec.album))
                     .apply { if (spec.artworkUri.isNotEmpty() && QueueItemSpec.isAllowedUri(spec.artworkUri)) setArtworkUri(Uri.parse(spec.artworkUri)) }
+                    .setExtras(Bundle().apply { putInt(EXTRA_DURATION_SEC, spec.durationSec) })
                     .build()
             )
+            .apply { StreamCacheKey.of(spec.id, spec.uri)?.let { setCustomCacheKey(it) } }
             .build()
+
+    private fun catalogSecondsOf(item: MediaItem): Int = item.mediaMetadata.extras?.getInt(EXTRA_DURATION_SEC) ?: 0
 
     private fun specOf(item: MediaItem): QueueItemSpec = QueueItemSpec(
         id = item.mediaId,
@@ -85,6 +91,7 @@ class QueueEngine(
         artist = item.mediaMetadata.artist?.toString().orEmpty(),
         album = item.mediaMetadata.albumTitle?.toString().orEmpty(),
         artworkUri = item.mediaMetadata.artworkUri?.toString().orEmpty(),
+        durationSec = catalogSecondsOf(item),
     )
 
     // -- Reading the playlist ----------------------------------------------------------------------------------
@@ -326,8 +333,51 @@ class QueueEngine(
         scheduleSave()
     }
 
+    // -- Early-end guard (1.69.0): a stream that stops early must not become a skip -----------------------------
+
+    private val cutoff = CutoffGuard()
+
+    /** A cut being undone: the auto-advance away from [mediaId] and the seek back to it are not reported to JS. */
+    private data class Undoing(val mediaId: String, val index: Int)
+    private var undoing: Undoing? = null
+
+    private fun windowDurationMs(index: Int): Long {
+        val timeline = player.currentTimeline
+        if (index < 0 || index >= timeline.windowCount) return -1
+        val ms = timeline.getWindow(index, Timeline.Window()).durationMs
+        return if (ms == C.TIME_UNSET) -1 else ms
+    }
+
+    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+        if (reason != Player.DISCONTINUITY_REASON_AUTO_TRANSITION) return
+        val item = oldPosition.mediaItem ?: return
+        val index = oldPosition.mediaItemIndex
+        if (index < 0 || index >= player.mediaItemCount || player.getMediaItemAt(index).mediaId != item.mediaId) return
+        val verdict = cutoff.judge(item.mediaId, oldPosition.positionMs, windowDurationMs(index), catalogSecondsOf(item))
+        if (verdict is CutoffGuard.Verdict.Resume) {
+            // Media id and positions only: stream URLs are signed and never logged.
+            Log.w(TAG, "cutoff id=${item.mediaId} at=${verdict.positionMs}ms attempt=${verdict.attempt}")
+            undoing = Undoing(item.mediaId, index)
+            player.seekTo(index, verdict.positionMs)
+        }
+    }
+
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         val id = mediaItem?.mediaId
+        val pending = undoing
+        if (pending != null) {
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && id != pending.mediaId) {
+                // The advance being undone: JS must not see a phantom skip (listen tracker, lyrics, history).
+                queueChanged(); scheduleSave(); return
+            }
+            if (id == pending.mediaId) {
+                // The seek back to the same song.
+                undoing = null
+                queueChanged(); scheduleSave(); return
+            }
+            undoing = null
+        }
+        cutoff.onTrack(id)
         if (!id.isNullOrEmpty() && reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
             val reasonName = when (reason) {
                 Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> "auto"
@@ -342,6 +392,18 @@ class QueueEngine(
 
     override fun onPlaybackStateChanged(playbackState: Int) {
         if (playbackState == Player.STATE_ENDED) {
+            val item = player.currentMediaItem
+            if (item != null) {
+                val duration = if (player.duration == C.TIME_UNSET) -1 else player.duration
+                val verdict = cutoff.judge(item.mediaId, player.currentPosition, duration, catalogSecondsOf(item))
+                if (verdict is CutoffGuard.Verdict.Resume) {
+                    Log.w(TAG, "cutoff id=${item.mediaId} at=${verdict.positionMs}ms attempt=${verdict.attempt} (last item)")
+                    player.seekTo(player.currentMediaItemIndex, verdict.positionMs)
+                    player.prepare()
+                    scheduleSave()
+                    return
+                }
+            }
             when (QueueMath.endAction(repeatKind(), player.mediaItemCount)) {
                 EndAction.RESTART_AND_PLAY -> {
                     player.seekTo(firstInOrder(), 0L)

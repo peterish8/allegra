@@ -12,6 +12,9 @@ const settingsStorage = createDebouncedStorage(1000);
 
 type Theme = 'dark' | 'light' | 'auto';
 export type LyricsAlign = 'left' | 'center' | 'right';
+/** Settings → Playback → Song cache: the on-disk ceiling for streamed songs, in MB (Kotlin `StreamCache.ALLOWED_LIMITS_MB`). */
+export type StreamCacheLimit = '128' | '256' | '512' | '1024' | '2048';
+export const STREAM_CACHE_LIMITS: readonly StreamCacheLimit[] = ['128', '256', '512', '1024', '2048'];
 /** How the sung line lights up: letter by letter as it is sung (Echo Music's karaoke fill), or the whole line at once. */
 export type LyricsHighlight = 'letters' | 'lines';
 type LineSpacing = 'compact' | 'normal' | 'relaxed';
@@ -165,6 +168,9 @@ interface SettingsState {
   setSkipDuration: (duration: 10 | 15 | 30) => void;
   setKeepScreenOn: (enabled: boolean) => void;
   setAutoQueueRefill: (enabled: boolean) => void;
+  /** Android: how much streamed audio is kept on the phone (1.69.0). Native keeps its own copy; boot sends this one. */
+  streamCacheLimitMb: StreamCacheLimit;
+  setStreamCacheLimitMb: (limit: StreamCacheLimit) => void;
   setListeningStats: (enabled: boolean) => void;
   setHapticsEnabled: (enabled: boolean) => void;
   setShowTimeRemaining: (show: boolean) => void;
@@ -308,6 +314,8 @@ export const useSettingsStore = create<SettingsState>()(
       setSkipDuration: (skipDuration) => set({ skipDuration }),
       setKeepScreenOn: (keepScreenOn) => set({ keepScreenOn }),
       setAutoQueueRefill: (autoQueueRefill) => set({ autoQueueRefill }),
+      streamCacheLimitMb: '512',
+      setStreamCacheLimitMb: (streamCacheLimitMb) => set({ streamCacheLimitMb }),
       setNativeMiniSwipe: (nativeMiniSwipe) => set({ nativeMiniSwipe }),
       setListeningStats: (listeningStats) => set({ listeningStats }),
       setHapticsEnabled: (hapticsEnabled) => set({ hapticsEnabled }),

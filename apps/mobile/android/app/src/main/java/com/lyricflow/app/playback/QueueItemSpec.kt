@@ -11,6 +11,8 @@ data class QueueItemSpec(
     val artist: String = "",
     val album: String = "",
     val artworkUri: String = "",
+    /** The catalog's length in whole seconds, 0 when unknown. Only [CutoffGuard] reads it. */
+    val durationSec: Int = 0,
 ) {
     companion object {
         /**
@@ -28,9 +30,13 @@ data class QueueItemSpec(
             val id = map["id"].orEmpty()
             val uri = map["uri"].orEmpty()
             if (id.isBlank() || !isAllowedUri(uri)) return null
-            return QueueItemSpec(id, uri, map["title"].orEmpty(), map["artist"].orEmpty(), map["album"].orEmpty(), map["artworkUri"].orEmpty())
+            val durationSec = map["durationSec"]?.toIntOrNull()?.coerceIn(0, 86_400) ?: 0
+            return QueueItemSpec(id, uri, map["title"].orEmpty(), map["artist"].orEmpty(), map["album"].orEmpty(), map["artworkUri"].orEmpty(), durationSec)
         }
     }
 
-    fun toMap(): Map<String, String> = mapOf("id" to id, "uri" to uri, "title" to title, "artist" to artist, "album" to album, "artworkUri" to artworkUri)
+    fun toMap(): Map<String, String> = mapOf(
+        "id" to id, "uri" to uri, "title" to title, "artist" to artist, "album" to album, "artworkUri" to artworkUri,
+        "durationSec" to durationSec.toString(),
+    )
 }

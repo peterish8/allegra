@@ -31,8 +31,13 @@ export const toNativeItem = (song: Song): NativeQueueItem | null => {
     artist: song.artist || 'Unknown Artist',
     album: song.album || '',
     artworkUri: song.coverImageUri || '',
+    durationSec: durationSecOf(song),
   };
 };
+
+/** The catalog length in whole seconds for the native early-end guard ('0' = unknown). Duration is always seconds. */
+export const durationSecOf = (song: Pick<Song, 'duration'>): string =>
+  String(Number.isFinite(song.duration) ? Math.max(0, Math.round(song.duration)) : 0);
 
 export const toNativeItems = (songs: readonly Song[]): NativeQueueItem[] =>
   songs.flatMap(song => {
@@ -60,7 +65,7 @@ export const songFromNative = (item: NativeQueueItem, now: string = new Date().t
   artist: item.artist || undefined,
   album: item.album || undefined,
   gradientId: 'dynamic',
-  duration: 0,
+  duration: Number(item.durationSec) || 0,
   dateCreated: now,
   dateModified: now,
   playCount: 0,
@@ -234,6 +239,7 @@ export const nativeQueue = {
       album: song.album || '',
       artworkUri: song.coverImageUri || '',
       mediaId: song.id,
+      durationSec: durationSecOf(song),
     });
   },
 

@@ -26,6 +26,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import com.lyricflow.app.playback.QueueEngine
 import com.lyricflow.app.playback.QueueItemSpec
+import com.lyricflow.app.playback.StreamCache
 import com.lyricflow.app.playback.QueueMath.RepeatKind
 import com.lyricflow.app.playback.resumePlayback
 import com.lyricflow.app.services.PlaybackService
@@ -185,6 +186,26 @@ class MainPlayerModule : Module() {
         Function("setRepeatOne") { on: Boolean ->
             val engine = PlayerBridge.getEngine() ?: return@Function false
             mainHandler.post { engine.setRepeat(if (on) RepeatKind.ONE else RepeatKind.ALL) }
+            true
+        }
+
+        /** Settings → Playback → Song cache: the ceiling in MB, saved natively and applied at once (disk work, off main). */
+        AsyncFunction("setStreamCacheLimitMb") { mb: Int ->
+            val context = appContext.reactContext ?: return@AsyncFunction StreamCache.clampLimit(mb)
+            StreamCache.setLimitMb(context, mb)
+        }
+
+        AsyncFunction("getStreamCacheInfo") {
+            val context = appContext.reactContext
+            mapOf(
+                "usedBytes" to StreamCache.usedBytes().toDouble(),
+                "limitMb" to (if (context != null) StreamCache.limitMb(context) else StreamCache.DEFAULT_LIMIT_MB),
+            )
+        }
+
+        /** Settings → Clear song cache: every cached song but [keepKey], the one playing. */
+        AsyncFunction("clearStreamCache") { keepKey: String? ->
+            StreamCache.clear(keepKey)
             true
         }
 

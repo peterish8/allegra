@@ -8,6 +8,8 @@ import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -15,6 +17,9 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import com.lyricflow.app.playback.ResumingDataSource
+import com.lyricflow.app.playback.StreamCache
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -45,6 +50,8 @@ private val RETRY_TOKEN = Any()
  * Media3 owns the notification and the foreground promotion; we must not call
  * startForeground() ourselves or the two will fight.
  */
+// The song cache (CacheDataSource) is one of Media3's unstable APIs.
+@OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
@@ -269,14 +276,24 @@ class PlaybackService : MediaSessionService() {
                     .setPrioritizeTimeOverSizeThresholds(true)
                     .build()
             )
+            // https streams go through the on-disk song cache (StreamCache), with a resume layer under it that reopens
+            // a body that ends early at the byte it stopped at. file:// and content:// never reach this stack.
+            // A broken cache file falls back to the network instead of stopping playback.
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(
                     DefaultDataSource.Factory(
                         this,
-                        DefaultHttpDataSource.Factory()
-                            .setAllowCrossProtocolRedirects(true)
-                            .setConnectTimeoutMs(15_000)
-                            .setReadTimeoutMs(20_000)
+                        CacheDataSource.Factory()
+                            .setCache(StreamCache.get(this))
+                            .setUpstreamDataSourceFactory(
+                                ResumingDataSource.Factory(
+                                    DefaultHttpDataSource.Factory()
+                                        .setAllowCrossProtocolRedirects(true)
+                                        .setConnectTimeoutMs(15_000)
+                                        .setReadTimeoutMs(20_000)
+                                )
+                            )
+                            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
                     )
                 )
             )

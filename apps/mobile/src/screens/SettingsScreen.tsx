@@ -36,6 +36,7 @@ import DownloadsFolderRows from '../components/settings/DownloadsFolderRows';
 import SettingsGlow from '../components/settings/SettingsGlow';
 import * as Kit from '../components/settings/SettingsKit';
 import { Action, Choice, JumpChips, Row, Section, SettingsAccordion } from '../components/settings/SettingsKit';
+import { SongCacheSettings } from '../components/settings/SongCacheSettings';
 import { ShortcutSettings } from '../components/settings/ShortcutSettings';
 import { Control, Glass, Motion, Radius, Signal, Space, Surface } from '../constants/allegraTheme';
 import { Colors } from '../constants/colors';
@@ -366,6 +367,7 @@ const SettingsScreen: React.FC<Props> = ({ route, navigation }) => {
           />
           <Kit.Switch label="Keep screen on" hint="While Now Playing is open." value={settings.keepScreenOn} onChange={settings.setKeepScreenOn} />
           <Kit.Switch label="Keep playing similar songs" hint="When the queue is about to end, songs like the one playing are added." value={settings.autoQueueRefill ?? true} onChange={settings.setAutoQueueRefill} />
+          <SongCacheSettings />
           <Kit.Switch label="Native mini player swipes" hint="Android only. Swiping the mini player to skip runs in Kotlin like the island, so it stays instant while the app is busy. Try it, and turn it off if a swipe feels wrong." value={settings.nativeMiniSwipe ?? false} onChange={settings.setNativeMiniSwipe} />
           <Kit.Switch label="Haptics" hint="Little taps you feel on buttons and swipes." value={settings.hapticsEnabled ?? true} onChange={settings.setHapticsEnabled} />
         </Section>

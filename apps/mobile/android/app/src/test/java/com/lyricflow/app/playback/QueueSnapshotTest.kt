@@ -70,4 +70,24 @@ class QueueSnapshotTest {
         val back = QueueSnapshot.decode(snapshot().copy(index = 0, items = many).encode())!!
         assertEquals(QueueSnapshot.MAX_ITEMS, back.items.size)
     }
+
+    @Test
+    fun `durationSec round-trips with the queue`() {
+        val timed = snapshot().copy(items = songs.mapIndexed { i, s -> s.copy(durationSec = 200 + i) })
+        assertEquals(listOf(200, 201, 202), QueueSnapshot.decode(timed.encode())!!.items.map { it.durationSec })
+    }
+
+    @Test
+    fun `a file saved before durationSec existed decodes it as zero, same version`() {
+        val old = """{"v":1,"index":0,"positionMs":0,"shuffle":false,"repeat":"off","items":[{"id":"a","uri":"file:///a.mp3"}]}"""
+        assertEquals(0, QueueSnapshot.decode(old)!!.items.single().durationSec)
+        assertEquals(1, QueueSnapshot.VERSION)
+    }
+
+    @Test
+    fun `a nonsense durationSec is clamped to whole seconds within a day`() {
+        assertEquals(0, QueueItemSpec.fromMap(mapOf("id" to "a", "uri" to "file:///a", "durationSec" to "-5"))!!.durationSec)
+        assertEquals(86_400, QueueItemSpec.fromMap(mapOf("id" to "a", "uri" to "file:///a", "durationSec" to "999999"))!!.durationSec)
+        assertEquals(0, QueueItemSpec.fromMap(mapOf("id" to "a", "uri" to "file:///a", "durationSec" to "abc"))!!.durationSec)
+    }
 }
