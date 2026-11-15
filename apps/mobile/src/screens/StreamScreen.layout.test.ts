@@ -8,7 +8,7 @@ const nodes: ts.Node[] = [];
 const visit = (node: ts.Node) => { nodes.push(node); ts.forEachChild(node, visit); };
 visit(file);
 
-// Stream's Devices and Updates controls stay reachable while feed sections hydrate or scroll.
+// Stream's profile, Connect and Updates controls stay reachable while feed sections hydrate or scroll.
 it('keeps the Stream Connect entry outside the scrolling or recycled feed', () => {
   const devices = nodes.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === 'ConnectDropdown');
   expect(devices).toBeDefined();
@@ -26,7 +26,24 @@ it('replaces the Stream explanation with the LuvLyrics updates dropdown', () => 
   expect(source).toContain('<StreamUpdatesDropdown');
   expect(source).not.toContain('About Stream');
   expect(source).not.toContain('STREAM_TOUR');
+  const leadStart = source.indexOf('<View style={styles.headerLead}>');
+  const actionsStart = source.indexOf('<View style={styles.headerActions}>');
+  const actionsEnd = source.indexOf('</View>', actionsStart);
+  const lead = source.slice(leadStart, actionsStart);
+  const actions = source.slice(actionsStart, actionsEnd);
+  expect(lead).toContain('<ProfileButton />');
+  expect(lead).toContain('<RecentSwitch');
+  expect(lead).not.toContain('<ConnectDropdown />');
+  expect(actions.indexOf('<ConnectDropdown />')).toBeLessThan(actions.indexOf('<StreamUpdatesDropdown'));
   expect(source.indexOf('<ConnectDropdown />')).toBeLessThan(source.indexOf('<StreamUpdatesDropdown'));
+});
+
+it('keeps Songs and Playlists in one fixed-width segmented control', () => {
+  const recent = fs.readFileSync(path.join(__dirname, '../components/stream/RecentShelf.tsx'), 'utf8');
+  expect(recent).toContain('<Segmented<RecentView> value={view} options={RECENT_OPTIONS}');
+  expect(recent).toContain("{ value: 'songs', label: 'Songs' }");
+  expect(recent).toContain("{ value: 'playlists', label: 'Playlists' }");
+  expect(recent).toContain('switch: { width: 164, flexShrink: 1 }');
 });
 
 const flashList = () => nodes.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === 'FlashList') as ts.JsxSelfClosingElement;

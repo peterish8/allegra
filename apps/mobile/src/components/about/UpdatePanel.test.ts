@@ -18,7 +18,8 @@ it('keeps release note categories and shows a real empty state instead of invent
   expect(source).toContain('Version {entry.version}');
   expect(source).toContain('index === 0 ? <Text style={styles.latestBadge}>Latest</Text> : null');
   expect(source).toContain('entry.rollbackUrl && onRollback');
-  expect(source).toContain('Install version {entry.version}');
+  expect(source).toContain('Roll back to {entry.version}');
+  expect(source).toContain("accessibilityLabel={'Roll back to version ' + entry.version}");
   expect(source).toContain('<ConfirmSheet');
   expect(source).toContain('Install version ${rollback.version}?');
   expect(source).not.toContain('Alert.alert(');

@@ -27,6 +27,7 @@ import { Toast } from '../components/Toast';
 import { AuraMood } from '../components/allegra/MusicFlowField';
 import { PrimaryButton, SectionHeading } from '../components/allegra/home';
 import { RiseIn } from '../components/allegra/motion';
+import { ProfileButton } from '../components/nav/ProfileButton';
 import { Control } from '../ui';
 import { useHeaderGlow } from '../hooks/useHeaderGlow';
 import { BrowseShelf } from '../components/browse/BrowseShelf';
@@ -71,7 +72,7 @@ import { countOf } from '../utils/formatters';
 import * as Haptics from '../utils/haptics';
 import { shuffled } from '../utils/shuffle';
 
-const HEADER_HEIGHT = 52;
+const HEADER_HEIGHT = 56;
 const HOME_END_THRESHOLD = 0.6;
 const MOODS = [
   { label: 'Chill', query: 'chill lofi' },
@@ -459,14 +460,15 @@ const StreamScreen: React.FC = () => {
   return (
     <AppScreen style={styles.screen} staticGlow={false}>
       <HeaderGlow {...glow.props} />
-      {/* Keep Connect and Updates reachable while feed sections hydrate or scroll. */}
+      {/* Keep profile, Connect and Updates reachable while feed sections hydrate or scroll. */}
       <View style={{ paddingTop: insets.top + Space.xs }}>
         <View style={styles.header}>
           <View style={styles.headerLead}>
-            <ConnectDropdown />
+            <ProfileButton />
             <RecentSwitch view={recentView} onChange={setRecentView} />
           </View>
           <View style={styles.headerActions}>
+            <ConnectDropdown />
             <StreamUpdatesDropdown topOffset={insets.top + Space.xs + HEADER_HEIGHT + Space.xs} rightOffset={GUTTER} />
           </View>
         </View>
@@ -534,7 +536,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bg },
   content: {},
   header: { height: HEADER_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: GUTTER },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Space.xs },
   // The picture sits in its 48dp target at the gutter's edge, so the title keeps Spotify's spacing from it.
   headerLead: { flexDirection: 'row', alignItems: 'center', gap: Space.xs, marginLeft: -Space.sm, flexShrink: 1 },
   search: {
