@@ -1,0 +1,66 @@
+{
+  "entries": [
+    {
+      "version": "1.66.0",
+      "description": "A smoother player, easier Connect controls, and recent app updates in Stream.",
+      "changelog": [
+        {
+          "title": "New",
+          "items": [
+            "Tap the LuvLyrics logo in Stream to read the four latest updates."
+          ]
+        },
+        {
+          "title": "Improved",
+          "items": [
+            "Player animations now follow your phone's reduced-motion setting.",
+            "Connect controls now live in one easy-to-find panel."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.65.0",
+      "description": "Find lyrics for more songs and enjoy easier controls across the app.",
+      "changelog": [
+        {
+          "title": "New",
+          "items": [
+            "Find lyrics for more versions of the same song."
+          ]
+        },
+        {
+          "title": "Improved",
+          "items": [
+            "The small player and import controls are easier to use.",
+            "Text and animations work more naturally across the app."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.64.5",
+      "description": "Last.fm keeps better track of the songs you listen to.",
+      "changelog": [
+        {
+          "title": "Improved",
+          "items": [
+            "Last.fm now keeps your listening history more reliably."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.64.4",
+      "description": "Downloaded songs are easier to find.",
+      "changelog": [
+        {
+          "title": "Fixed",
+          "items": [
+            "Downloaded songs now use their song title as the file name."
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -3,9 +3,9 @@
  * `apk-latest` release of the public Allegra repo (root .github/workflows/mobile-apk.yml);
  * this reads that release and hands back where to download it and what changed.
  *
- * Like Echo Music's updater, the release carries everything the update screen shows: its date and
- * the APK's size come from GitHub, the version from the release title, and what changed from a
- * `changelog.json` asset CI builds from the commit subjects (scripts/mobile-release-notes.mjs).
+ * The release carries the information the update screen shows: its date and the APK's size come
+ * from GitHub, the version from the release title, and listener-written notes from the
+ * `changelog.json` and `update-history.json` assets built by CI.
  * A release without that file falls back to its own text.
  */
 const RELEASE_API = 'https://api.github.com/repos/peterish8/allegra/releases/tags/apk-latest';
@@ -14,6 +14,8 @@ export const RELEASES_URL = 'https://github.com/peterish8/allegra/releases/tag/a
 /** Every release, newest first. */
 export const ALL_RELEASES_URL = 'https://github.com/peterish8/allegra/releases';
 export const LATEST_APK_URL = 'https://github.com/peterish8/allegra/releases/download/apk-latest/LuvLyrics.apk';
+/** The latest four listener-written release summaries, newest first. */
+export const UPDATE_HISTORY_URL = 'https://github.com/peterish8/allegra/releases/download/apk-latest/update-history.json';
 
 export interface ChangelogSection {
   readonly title: string;
@@ -41,6 +43,12 @@ export interface LatestBuild {
   /** Where the release's own `changelog.json` lives, when it has one. */
   changelogUrl: string | null;
   notes: ReleaseNotes;
+}
+
+/** One of the recent versions shown in Stream's updates dropdown. */
+export interface ReleaseHistoryEntry {
+  readonly version: string;
+  readonly notes: ReleaseNotes;
 }
 
 /** The APK on this phone. CI stamps both (mobile-apk.yml); a local build has neither. */
@@ -124,6 +132,26 @@ export const parseChangelog = (json: unknown): ReleaseNotes | null => {
     if (lines.length > 0) sections.push({ title: title.trim(), items: lines });
   }
   return { description: typeof description === 'string' && description.trim() ? description.trim() : null, sections };
+};
+
+/** Recent listener-facing notes from the release's optional `update-history.json` asset. */
+export const parseReleaseHistory = (json: unknown): readonly ReleaseHistoryEntry[] | null => {
+  if (!json || typeof json !== 'object') return null;
+  const entries = (json as { entries?: unknown }).entries;
+  if (!Array.isArray(entries)) return null;
+  const seen = new Set<string>();
+  const parsed: ReleaseHistoryEntry[] = [];
+  for (const entry of entries) {
+    if (parsed.length === 4) break;
+    if (!entry || typeof entry !== 'object') continue;
+    const version = (entry as { version?: unknown }).version;
+    if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version) || seen.has(version)) continue;
+    const notes = parseChangelog(entry);
+    if (!notes || (!notes.description && notes.sections.length === 0)) continue;
+    parsed.push({ version, notes });
+    seen.add(version);
+  }
+  return parsed.length > 0 ? parsed : null;
 };
 
 /** Pure: the newest build from GitHub's release JSON, or null if it has none. */
@@ -256,3 +284,7 @@ const fetchFromApi = async (): Promise<LatestBuild | null> => {
 };
 
 export const fetchLatestBuild = async (): Promise<LatestBuild | null> => (await fetchFromAssets()) ?? (await fetchFromApi());
+
+/** Reads the small recent-version copy file from the release downloads (no API request). */
+export const fetchReleaseHistory = async (): Promise<readonly ReleaseHistoryEntry[] | null> =>
+  parseReleaseHistory(await fetchJson(UPDATE_HISTORY_URL, 'application/json'));

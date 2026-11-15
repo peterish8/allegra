@@ -308,20 +308,16 @@ jobs:
           name: LuvLyrics-apk
           path: apps/mobile
 
-      # The release carries what the app's update screen shows (apps/mobile/src/services/appUpdate.ts),
-      # as Echo Music's does: the version, the date and size (from the release and its APK), and
-      # changelog.json — what changed since the previous build, from the commit subjects.
+      # The release carries what the app's update screen shows (apps/mobile/src/services/appUpdate.ts):
+      # the version, date and size, current changelog, and four listener-written version summaries.
       - name: Publish to the apk-latest release
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          PREVIOUS="$(gh release view apk-latest --json targetCommitish --jq .targetCommitish 2>/dev/null || true)"
-          case "$PREVIOUS" in *[!0-9a-f]*) PREVIOUS="" ;; esac
-          [ "${#PREVIOUS}" -eq 40 ] || PREVIOUS=""
           VERSION="$(node -p "require('./apps/mobile/app.json').expo.version")"
-          node scripts/mobile-release-notes.mjs --from "$PREVIOUS" --to "$GITHUB_SHA" --version "$VERSION" --out "$RUNNER_TEMP/notes"
+          node scripts/mobile-release-notes.mjs --to "$GITHUB_SHA" --version "$VERSION" --history apps/mobile/update-history.json --out "$RUNNER_TEMP/notes"
           {
             cat "$RUNNER_TEMP/notes/notes.md"
             echo
@@ -329,7 +325,7 @@ jobs:
             echo "Direct link: https://github.com/${GITHUB_REPOSITORY}/releases/download/apk-latest/LuvLyrics.apk"
           } > "$RUNNER_TEMP/notes/release-body.md"
           gh release delete apk-latest --yes --cleanup-tag || true
-          gh release create apk-latest apps/mobile/LuvLyrics.apk apps/mobile/LuvLyricsIsland.apk "$RUNNER_TEMP/notes/changelog.json" \
+          gh release create apk-latest apps/mobile/LuvLyrics.apk apps/mobile/LuvLyricsIsland.apk "$RUNNER_TEMP/notes/changelog.json" "$RUNNER_TEMP/notes/update-history.json" \
             --prerelease \
             --target "$GITHUB_SHA" \
             --title "LuvLyrics $VERSION — latest build" \

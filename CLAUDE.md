@@ -162,6 +162,14 @@ Three apps ship from this repo (table in `README.md`): the website (Vercel), All
 and LuvLyrics for Android (`mobile-apk.yml` → `apk-latest`). The desktop app wraps the live site:
 put features in the website, not in `apps/desktop`, unless only a native window can do them.
 
+## Phone update copy
+
+Release notes in LuvLyrics (Stream or About -> Updates) are listener-facing. Use short, specific, everyday
+English that explains what changed or what someone can now do. Keep implementation names, conventional-commit
+prefixes, PR numbers, build details, and engineering jargon out of phone copy. Describe a fix by its visible
+result. Keep `apps/mobile/update-history.json` in version order, newest first, with up to four releases. CI
+publishes this copy with `apk-latest`; it does not put commit subjects in the phone.
+
 ## Commits
 
 Conventional commits: `feat(api):`, `fix(web):`, `chore(infra):`. Short imperative subject; body only

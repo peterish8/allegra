@@ -1,4 +1,4 @@
-import { buildFromAssets, CHANGELOG_URL, checkedAgo, fetchLatestBuild, formatSize, latestReleaseNotes, LATEST_APK_URL, NO_NOTES, notesFromBody, parseChangelog, parseRelease, releasedAgo, shouldAutoCheck, standingOf, type LatestBuild } from './appUpdate';
+import { buildFromAssets, CHANGELOG_URL, checkedAgo, fetchLatestBuild, fetchReleaseHistory, formatSize, latestReleaseNotes, LATEST_APK_URL, NO_NOTES, notesFromBody, parseChangelog, parseRelease, parseReleaseHistory, releasedAgo, shouldAutoCheck, standingOf, UPDATE_HISTORY_URL, type LatestBuild } from './appUpdate';
 
 describe('parseRelease', () => {
   it('reads the date and the APK from a release', () => {
@@ -146,6 +146,35 @@ describe('parseChangelog', () => {
   });
 });
 
+describe('parseReleaseHistory', () => {
+  const entry = (version: string, item: string) => ({ version, description: null, changelog: [{ title: 'New', items: [item] }] });
+
+  it('reads at most four recent versions in newest-first order', () => {
+    expect(parseReleaseHistory({ entries: [
+      entry('1.66.0', 'See recent updates in Stream.'),
+      entry('1.65.0', 'Find lyrics for more versions of a song.'),
+      entry('1.64.5', 'Last.fm listening updates work more reliably.'),
+      entry('1.64.4', 'Find downloads by their song title.'),
+      entry('1.64.3', 'Download a song again after removing it.'),
+    ] })).toEqual([
+      { version: '1.66.0', notes: { description: null, sections: [{ title: 'New', items: ['See recent updates in Stream.'] }] } },
+      { version: '1.65.0', notes: { description: null, sections: [{ title: 'New', items: ['Find lyrics for more versions of a song.'] }] } },
+      { version: '1.64.5', notes: { description: null, sections: [{ title: 'New', items: ['Last.fm listening updates work more reliably.'] }] } },
+      { version: '1.64.4', notes: { description: null, sections: [{ title: 'New', items: ['Find downloads by their song title.'] }] } },
+    ]);
+  });
+
+  it('skips invalid and duplicate versions and rejects an empty history', () => {
+    expect(parseReleaseHistory({ entries: [
+      entry('latest', 'Do not guess a version.'),
+      entry('1.66.0', 'A clear update.'),
+      entry('1.66.0', 'Do not show a duplicate.'),
+    ] })).toHaveLength(1);
+    expect(parseReleaseHistory({ entries: [] })).toBeNull();
+    expect(parseReleaseHistory(null)).toBeNull();
+  });
+});
+
 describe('notesFromBody', () => {
   it('turns a release text into sections, leaving out its title and footer', () => {
     const body = [
@@ -256,6 +285,28 @@ describe('fetchLatestBuild', () => {
   it('is null, not a throw, when nothing can be reached', async () => {
     global.fetch = jest.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch;
     expect(await fetchLatestBuild()).toBeNull();
+  });
+});
+
+describe('fetchReleaseHistory', () => {
+  const realFetch = global.fetch;
+  afterEach(() => { global.fetch = realFetch; });
+
+  it('loads the release history from the static asset without a GitHub API call', async () => {
+    const entries = [{ version: '1.66.0', description: null, changelog: [{ title: 'New', items: ['See updates in Stream.'] }] }];
+    const calls: string[] = [];
+    global.fetch = jest.fn(async (url: RequestInfo | URL) => {
+      calls.push(String(url));
+      return { ok: true, status: 200, json: async () => ({ entries }) } as Response;
+    }) as unknown as typeof fetch;
+
+    expect(await fetchReleaseHistory()).toEqual([{ version: '1.66.0', notes: { description: null, sections: [{ title: 'New', items: ['See updates in Stream.'] }] } }]);
+    expect(calls).toEqual([UPDATE_HISTORY_URL]);
+  });
+
+  it('returns null when the optional asset is not available', async () => {
+    global.fetch = jest.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch;
+    expect(await fetchReleaseHistory()).toBeNull();
   });
 });
 

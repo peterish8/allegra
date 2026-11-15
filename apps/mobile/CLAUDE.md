@@ -29,6 +29,10 @@ that affect skip or seek, check the active queue owner and track transitions.
   Keep the release eligibility check separate from package and signer checks. The
   [audit backlog](../../audit/FIX-BACKLOG.md) records known retry and staged-install gaps.
   Feature-branch APKs are downloaded by hand from the Actions run; only `main` publishes `apk-latest`.
+- Phone update copy: maintain `apps/mobile/update-history.json` (current version first, latest four entries).
+  Write for listeners in simple English; never copy conventional-commit subjects or internal implementation
+  terms into notes. The Stream logo opens this updates-only view, which reads the `update-history.json` release
+  asset; `scripts/mobile-release-notes.mjs` creates that asset and the current `changelog.json`.
 - Connect and library sync with Allegra web: `../../.planning/connect-and-sync/PLAN.md`.
 
 ## V6 frontend maintenance
@@ -250,7 +254,7 @@ because a streamed song can arrive before its audio link resolves.
 - The download queue changes on every progress tick, so screens read its shape, not the array: `useQueueShape()` (ids + status; progress does not count) for lists and `useDownloadItem(id)` for a row (`store/downloadQueueSelectors`). `BackgroundDownloader` no longer holds the screen awake — downloads run in WorkManager. Its `mounted` ref replaced a per-effect `isActive` flag that the next queue change flipped off, which had dropped progress writes and the parallel lyrics result
 - Luvs has one native player pool, keyed by URL (`LuvsPlayerModule.byUrl`); each warm player is held to a 10–20s buffer, built 80ms apart, and only the next clip is warmed under Battery Saver. The index-keyed `updateActiveIndex` path is gone from Kotlin (iOS still uses the JS index pool in `LuvsBufferManager`)
 - Now Playing's covers come from `player/coverImages` (`useCoverImage`, `prefetchCover`), never Skia's `useImage`: that hook keeps returning the previous cover until the next one decodes, so a screen keyed on the uri took the old image as the new song's and the backdrop stayed on the last song until the player was reopened. `AppleBackdrop` tracks the decoded image itself, and `prepareNextInQueue` prefetches the next song's cover so a skip finds it ready and the backdrop changes with the title
-- Updates (About → Updates), after Echo Music's update screen: CI publishes `apk-latest` with `changelog.json` beside the APK (`scripts/mobile-release-notes.mjs` builds it from the conventional-commit subjects since the previous build; tests in `tests/infra`), `services/appUpdate` reads size, version, date and notes from the release, `store/updateStore` keeps the auto-check switch, last check and the newer build found, and `services/updateCheck.checkInBackground` (boot job, at most every 6 hours) marks the About button. A failed look is never recorded as a check
+- Updates (About → Updates), after Echo Music's update screen: CI publishes `apk-latest` with `changelog.json` beside the APK (`scripts/mobile-release-notes.mjs` reads listener-written notes from `apps/mobile/update-history.json`; tests in `tests/infra`), `services/appUpdate` reads size, version, date and notes from the release, `store/updateStore` keeps the auto-check switch, last check and the newer build found, and `services/updateCheck.checkInBackground` (boot job, at most every 6 hours) marks the About button. A failed look is never recorded as a check
 - Opening lyrics must not pair layout and exiting animations. V6 removes the volume row; do not restore it
   to satisfy historical layout notes. Preserve the regression guard against the Reanimated layout/exiting
   crash and verify the actual lyrics-toggle path as well as deep-link entry. See the current verification plan.
