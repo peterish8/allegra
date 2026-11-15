@@ -1,8 +1,33 @@
 {
   "entries": [
     {
+      "version": "1.69.0",
+      "description": "A smoother player, more lyric choices, and saved streams you can replay offline",
+      "changelog": [
+        {
+          "title": "New",
+          "items": [
+            "Choose how much space LuvLyrics uses to save streamed songs, then replay saved songs without using data",
+            "Translate lyrics or read them in Roman letters using an AI key you add",
+            "Choose a Tamil or English lyric match when the song page has both"
+          ]
+        },
+        {
+          "title": "Improved",
+          "items": [
+            "The player follows your finger up or down and settles smoothly, ending on one mini player",
+            "Stream puts your profile at the top left and Devices with the LuvLyrics logo at the top right",
+            "Songs and Playlists stay the same size when selected",
+            "New versions appear in About more reliably"
+          ]
+        }
+      ]
+    },
+    {
       "version": "1.68.2",
-      "description": "New versions show up in About again, and every change from 1.68.0 and 1.68.1 is in this build",
+      "sourceCommit": "65e90b5756edbc4c177e4613ae3479021fa691e0",
+      "rollbackAsset": "LuvLyrics-rollback-1.68.2.apk",
+      "description": "App updates appear more reliably, with clearer Search messages and easier controls",
       "changelog": [
         {
           "title": "New",
@@ -51,23 +76,6 @@
           "items": [
             "Connect ListenBrainz in Settings to keep a copy of what you listen to on your own profile",
             "Your full history stays on this phone, and nothing is sent until you connect"
-          ]
-        }
-      ]
-    },
-    {
-      "version": "1.67.0",
-      "sourceCommit": "610c689f967b9a62f4a57db56f9f404c5273f1ff",
-      "rollbackAsset": "LuvLyrics-rollback-1.67.0.apk",
-      "description": "Closing the player and reading messages is smoother and clearer",
-      "changelog": [
-        {
-          "title": "Improved",
-          "items": [
-            "Closing the player now lands on one full-width mini-player",
-            "Error messages are written in plain words and counts read correctly, such as 1 song",
-            "Library tabs stay steady when you switch between them",
-            "The lyrics editor asks before you drop unsaved changes"
           ]
         }
       ]
