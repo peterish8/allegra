@@ -175,7 +175,7 @@ export class LyricsService {
 
   /** Server-held sync sources: providers and sites are asked together, with provenance kept for saving. */
   public async sources(title: string, artist: string, duration: number, song: SongHints): Promise<LyricSource[]> {
-    const providerLookup = this.alternatives(title, artist, duration, false, song);
+    const providerLookup = this.collectAlternatives(title, artist, duration, false, song, false);
     const siteSettled = await withinBudget(this.siteVersions(title, artist, song), this.budgetMs);
     // Words already found online must not wait for every slow provider. No background work is
     // required for correctness: another request can repeat any provider lookup that was late.
@@ -397,17 +397,31 @@ export class LyricsService {
     syncedOnly: boolean,
     song: SongHints = {}
   ): Promise<LyricsPayload[]> {
-    // Listener-synced versions lead (and are never cached here); JioSaavn's own text comes next,
-    // then the providers'. Unsynced site words are reserved for the finder and plain playback fallback.
+    return this.collectAlternatives(title, artist, duration, syncedOnly, song, true);
+  }
+
+  /** The sync finder fetches sites separately to retain their private provenance. */
+  private async collectAlternatives(
+    title: string,
+    artist: string,
+    duration: number | undefined,
+    syncedOnly: boolean,
+    song: SongHints,
+    includeSites: boolean
+  ): Promise<LyricsPayload[]> {
+    // Listener syncs lead, followed by JioSaavn, providers and explicit online alternatives.
     const saavn = syncedOnly ? null : this.saavnFallback(song.ref, duration);
-    const [shared, saavnSettled, providers] = await Promise.all([
+    const [shared, saavnSettled, providers, siteSettled] = await Promise.all([
       this.verified(song.ref, title, artist, duration).then((view) => verifiedPayloads(view, duration)),
       saavn ? withinBudget(saavn, this.budgetMs) : Promise.resolve(null),
-      this.providerAlternatives(title, artist, duration, syncedOnly)
+      this.providerAlternatives(title, artist, duration, syncedOnly),
+      includeSites && !syncedOnly
+        ? withinBudget(this.siteVersions(title, artist, song), this.budgetMs)
+        : Promise.resolve(null)
     ]);
     const fromSaavn = saavnSettled && saavnSettled !== LATE ? [saavnSettled] : [];
     const seen = new Set<string>();
-    return [...shared, ...fromSaavn, ...providers]
+    return [...shared, ...fromSaavn, ...providers, ...sitePayloads(siteSettled === LATE ? null : siteSettled, duration)]
       .filter((payload) => {
         const fingerprint = lyricsFingerprint(payload);
         if (!fingerprint || seen.has(fingerprint)) {

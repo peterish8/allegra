@@ -407,7 +407,8 @@ test('a lyric site answers Mozhiye when providers and JioSaavn have nothing, nev
   assert.deepEqual(asked[0], { title: 'Mozhiye', artist: 'Sai Abhyankkar, Sid Sriram, Karthik Netha', film: 'Baththa', language: 'tamil' });
 
   const versions = await service.alternatives('Mozhiye (From "Baththa")', 'Sai Abhyankkar, Sid Sriram, Karthik Netha', 232, false, hints);
-  assert.deepEqual(versions.map((version) => version.source), [], 'raw site text is not an Other lyrics version');
+  assert.deepEqual(versions.map((version) => version.source), ['Found online (English)', 'Found online (Tamil)']);
+  assert.ok(versions.every(version => version.type === 'plain' && version.lines.every(line => !line.words?.length)));
   const candidates = await service.sources('Mozhiye (From "Baththa")', 'Sai Abhyankkar, Sid Sriram, Karthik Netha', 232, hints);
   assert.deepEqual(candidates.map(candidate => candidate.script), ['latin', 'native']);
   assert.ok(!JSON.stringify([payload, versions]).includes('tamil2lyrics'), 'the site name never reaches a listener');
@@ -454,7 +455,7 @@ test('JioSaavn\'s own lyrics still beat a lyric site', async () => {
   const song = { ref: 'saavn:Abc123', language: 'tamil' };
   assert.equal((await service.find('Some Song', 'Some Singer', 240, false, song))?.source, 'JioSaavn');
   const versions = await service.alternatives('Some Song', 'Some Singer', 240, false, song);
-  assert.deepEqual(versions.map((version) => version.source), ['JioSaavn']);
+  assert.deepEqual(versions.map((version) => version.source), ['JioSaavn', 'Found online (English)', 'Found online (Tamil)']);
 });
 
 const slowLrclib = (ms: number) => new LrclibProvider({
@@ -488,4 +489,48 @@ test('the sync finder shows site words without waiting the whole budget for a sl
     { ref: MOZHIYE.ref, album: 'Mozhiye (From "Baththa")', language: 'tamil' });
   assert.ok(Date.now() - started < 2_000, `answered in ${Date.now() - started} ms`);
   assert.deepEqual(candidates.map(candidate => candidate.origin), ['site', 'site']);
+});
+
+
+test('online alternatives retain both scripts and film hints beside synced providers', async () => {
+  const asked: SiteQuery[] = [];
+  const service = new LyricsService(new LrclibProvider({
+    baseUrl: 'https://lrclib.test/api',
+    fetchImpl: async input => String(input).includes('/get?')
+      ? json({ trackName: 'Example', syncedLyrics: '[00:01.00]Timed example' }) : json([])
+  }), new MemoryCacheStore(), { lyricSites: fakeSite(asked, [
+    { script: 'latin', language: 'ta', text: 'Sample words\nMore words' },
+    { script: 'native', language: 'ta', text: '\u0bb5\u0ba3\u0b95\u0bcd\u0b95\u0bae\u0bcd\n\u0b89\u0bb2\u0b95\u0bae\u0bcd' }
+  ]) });
+  const versions = await service.alternatives('Example', 'Singer', 120, false, { album: 'Scene (Original Motion Picture Soundtrack)', language: 'tamil' });
+  assert.deepEqual(asked, [{ title: 'Example', artist: 'Singer', film: 'Scene', language: 'tamil' }]);
+  assert.deepEqual(versions.map(v => v.type), ['synced', 'plain', 'plain']);
+  assert.deepEqual(versions.slice(1).map(v => v.source), ['Found online (English)', 'Found online (Tamil)']);
+  assert.ok(versions.slice(1).every(v => v.lines.every(line => !line.words)));
+  assert.ok(!JSON.stringify(versions).includes('tamil2lyrics'));
+});
+
+test('online alternatives skip unsupported and synced-only requests and fail softly on misses and deadlines', async () => {
+  const asked: SiteQuery[] = [];
+  const service = new LyricsService(emptyLrclib(), new MemoryCacheStore(), { lyricSites: fakeSite(asked) });
+  assert.deepEqual(await service.alternatives('Example', 'Singer', 120, true, { language: 'tamil' }), []);
+  assert.deepEqual(await service.alternatives('Example', 'Singer', 120, false, { language: 'english' }), []);
+  assert.equal(asked.length, 0);
+  for (const find of [async () => null, async () => { throw new Error('offline'); }, () => new Promise<null>(() => undefined)]) {
+    const sites = new LyricSites([{ languages: ['tamil'], find }], new MemoryCacheStore());
+    const empty = new LyricsService(emptyLrclib(), new MemoryCacheStore(), { lyricSites: sites, budgetMs: 20 });
+    assert.deepEqual(await empty.alternatives('Example', 'Singer', 120, false, { language: 'tamil' }), []);
+  }
+});
+
+test('equivalent provider and site plain alternatives deduplicate while distinct scripts remain', async () => {
+  const service = new LyricsService(emptyLrclib(), new MemoryCacheStore(), {
+    saavnLyrics: saavnAnswer('Sample words'),
+    lyricSites: fakeSite([], [
+      { script: 'latin', language: 'ta', text: 'Sample words' },
+      { script: 'native', language: 'ta', text: '\u0bb5\u0ba3\u0b95\u0bcd\u0b95\u0bae\u0bcd \u0b89\u0bb2\u0b95\u0bae\u0bcd' }
+    ])
+  });
+  const versions = await service.alternatives('Example', 'Singer', 120, false, { ref: 'saavn:Example', language: 'tamil' });
+  assert.deepEqual(versions.map(v => v.source), ['JioSaavn', 'Found online (Tamil)']);
 });

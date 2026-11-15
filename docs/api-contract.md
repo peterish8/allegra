@@ -284,7 +284,7 @@ below; when they have nothing and the ref is a Saavn song, **JioSaavn's own plai
 Owner clarification (2026-10-17): keep raw site words readable here as the plain fallback while
 listener alignment is being built. After the ~3 s provider grace period, JioSaavn plain words
 lead, followed by site text labelled "Found online (English)" / "Found online (Tamil)".
-Site names and URLs never reach the listener. Unsynced site text is excluded from Other lyrics.
+Site names and URLs never reach the listener. Other lyrics explicitly requests matching site variants as plain text, within the request budget.
 
 Sources: LRCLIB first, then Better Lyrics, LyricsPlus, Unison, Lyrica and KuGou asked together (each
 optional, synced preferred, in that order on a tie). **Answers within ~11 s**: a lookup still running
@@ -302,7 +302,7 @@ standard envelope, return `Cache-Control: no-store`, and have independent rate-l
   source, url: null, script: 'latin' | 'native', language, lines: string[], synced: boolean }`.
   Providers precede sites; already timed versions are marked `synced`. Site labels are
   "Found online"; actual names and URLs stay server-side. Raw site text is also readable as
-  the plain Now Playing fallback, but excluded from alternatives. Candidates are cached for 24 hours.
+  the plain Now Playing fallback, and in explicitly requested alternatives (except `syncedOnly` lookups). Candidates are cached for 24 hours.
   IDs are content hashes bound to the recording and source; a cold instance re-fetches the
   canonical candidate and verifies its hash before accepting a submission.
 - `POST /api/lyrics/sync` accepts exactly `{ ref, versions: [{ candidateId, script,
@@ -336,8 +336,9 @@ Runs only when the listener opens **Other lyrics**. Returns up to six usable, de
 
 With `ref`, the list **starts with every listener-synced version** (English, then the song's own
 script) and then JioSaavn's plain lyrics for a Saavn song, ahead of the providers' six. Those leading
-items are never cached with the list, so a new sync shows up within a minute. Raw site words
-are reserved for the sync finder and do not appear in this list.
+items are never cached with the list, so a new sync shows up within a minute. Matching site variants follow as plain text labelled "Found online (English)" / "Found online (Tamil)".
+Site names and URLs remain private. Site lookup preserves album/language hints, skips unsupported
+languages and `syncedOnly` requests, and shares the request budget; failures leave other versions usable.
 
 ### `GET /api/lyrics/verified` — additive
 `ref`? or `title` + `artist`, `duration`? (one of `ref` / `title` required, else `400`)
