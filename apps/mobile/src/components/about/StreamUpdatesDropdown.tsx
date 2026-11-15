@@ -35,8 +35,9 @@ export function StreamUpdatesDropdown({ topOffset, rightOffset }: Props): React.
         pressScale={0.96}
         style={styles.trigger}
       >
+        {/* Owner, 1.69.0: the black-and-white LuvLyrics mark, a full disc the size of the Devices button beside it. */}
         <Image
-          source={require('../../../assets/luvlyrics_logo_med.png')}
+          source={require('../../../assets/luvlyrics-icon-monochrome.png')}
           contentFit="cover"
           transition={0}
           style={styles.logo}
@@ -85,11 +86,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Glass.fillLight,
+    overflow: 'hidden',
+    backgroundColor: Signal.bg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Glass.hairline,
   },
-  logo: { width: 30, height: 30, borderRadius: 8 },
+  // The mark's own black fills the circle; the heart sits in the middle at the Devices glyph's visual weight.
+  logo: { width: 40, height: 40 },
   backdrop: { backgroundColor: Glass.scrim },
   dropdown: {
     position: 'absolute',
