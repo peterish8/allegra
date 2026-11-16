@@ -45,13 +45,14 @@ interface Props {
   onMore?: () => void;
   liked?: boolean;
   onToggleLike?: () => void;
+  onSave?: () => void;
 }
 
 /** A skip that never lands (the queue's last song, a rejected remote command) gives the content back after this. */
 const SKIP_SETTLE_MS = 1200;
 
 const time = (value: number) => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
-export default function PillPlayer({ title, artist, coverImageUri, playing, remote, sheetUp, onOpen, onOpenTracking, onTogglePlay, onNext, onPrevious, onSeek, onRetry, onMore, liked, onToggleLike }: Props) {
+export default function PillPlayer({ title, artist, coverImageUri, playing, remote, sheetUp, onOpen, onOpenTracking, onTogglePlay, onNext, onPrevious, onSeek, onRetry, onMore, liked, onToggleLike, onSave }: Props) {
   const { height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
@@ -271,9 +272,9 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
           close to the right edge. Each slot is 44 wide and answers a 48dp touch. */}
       <View style={styles.actions}>
         {/* Spotify's saved mark: a filled tick in a circle once saved, an outlined plus before. */}
-        {onToggleLike ? (
-          <Tactile onPress={onToggleLike} haptic="select" pressScale={0.9} hitSlop={ACTION_SLOP} accessibilityRole="button"
-            accessibilityLabel={liked ? 'Remove from Liked songs' : 'Add to Liked songs'} accessibilityState={{ selected: !!liked }} style={styles.action}>
+        {onSave || onToggleLike ? (
+          <Tactile onPress={onSave ?? onToggleLike} haptic="select" pressScale={0.9} hitSlop={ACTION_SLOP} accessibilityRole="button"
+            accessibilityLabel={onSave ? 'Save in playlists' : liked ? 'Remove from Liked songs' : 'Add to Liked songs'} accessibilityState={onSave ? undefined : { selected: !!liked }} style={styles.action}>
             <Ionicons name={liked ? 'checkmark-circle' : 'add-circle-outline'} size={ACTION_GLYPH} color={Signal.ink} />
           </Tactile>
         ) : null}

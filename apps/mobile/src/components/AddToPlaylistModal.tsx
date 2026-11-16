@@ -3,7 +3,6 @@ import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navig
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, FlatList, StyleSheet, TextInput, View, type ListRenderItem } from 'react-native';
-import { fromMobileId } from '@shared/songRef';
 import { displayPlaylistName } from '../utils/sentenceCase';
 import { Glass, Radius, Signal, Space, Typography } from '../constants/allegraTheme';
 import * as playlistQueries from '../database/playlistQueries';
@@ -12,6 +11,7 @@ import { addOnlineSongToPlaylist } from '../services/sync/onlinePlaylist';
 import { StreamService } from '../services/stream/StreamService';
 import { toStreamSong } from '../services/stream/streamSong';
 import { filterSavedPlaylists, snapshotForStreamSong, sortSavedPlaylists, type PlaylistSort } from './savedIn';
+import { canonicalSongRef, isSongAlreadySaved, saveSelectedPlaylists } from './savedInBehavior';
 import { usePlayerStore } from '../store/playerStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSongsStore } from '../store/songsStore';
@@ -38,6 +38,7 @@ export const AddToPlaylistModal = () => {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<Route>();
   const { playlistId: targetPlaylistId, songId: targetSongId } = route.params || {};
+  const songMetadata = route.params?.songMetadata;
   const mode: Mode = targetPlaylistId ? 'ADD_SONGS_TO_PLAYLIST' : 'ADD_SONG_TO_PLAYLISTS';
   const setMiniPlayerHiddenSource = usePlayerStore(state => state.setMiniPlayerHiddenSource);
   const currentSong = usePlayerStore(state => state.currentSong);
@@ -75,16 +76,18 @@ export const AddToPlaylistModal = () => {
         if (targetSongId) {
           if (songs.length === 0) await fetchSongs();
           const librarySongs = useSongsStore.getState().songs;
-          const ref = fromMobileId(targetSongId);
-          const localCopy = ref ? librarySongs.find(song => song.originId === ref) : librarySongs.find(song => song.id === targetSongId);
+          const localCopy = librarySongs.find(song => song.id === targetSongId);
+          const matchingCurrent = currentSong?.id === targetSongId ? currentSong : undefined;
+          const ref = canonicalSongRef(targetSongId, localCopy, matchingCurrent);
+          const equivalentCopy = localCopy ?? (ref ? librarySongs.find(song => song.originId === ref) : undefined);
           const onlineLikes = ref ? await getOnlineLikes() : [];
           const memberships = await Promise.all(usePlaylistStore.getState().playlists.map(async playlist => {
-            const localMembership = localCopy ? await playlistQueries.isSongInPlaylist(playlist.id, localCopy.id) : false;
+            const localMembership = equivalentCopy ? await playlistQueries.isSongInPlaylist(playlist.id, equivalentCopy.id) : false;
             if (!ref) return localMembership ? playlist.id : null;
             const onlineMembership = playlist.id === usePlaylistStore.getState().defaultPlaylistId
               ? onlineLikes.some(song => song.ref === ref)
               : (await getOnlinePlaylistSongs(playlist.id)).some(song => song.ref === ref);
-            return localMembership || onlineMembership ? playlist.id : null;
+            return isSongAlreadySaved(localMembership, onlineMembership) ? playlist.id : null;
           }));
           setExistingItems(new Set(memberships.filter((id): id is string => id !== null)));
         }
@@ -95,7 +98,7 @@ export const AddToPlaylistModal = () => {
     } finally {
       setLoading(false);
     }
-  }, [mode, targetPlaylistId, targetSongId, songs, fetchSongs, fetchPlaylists]);
+  }, [mode, targetPlaylistId, targetSongId, songs, fetchSongs, fetchPlaylists, currentSong]);
 
   useEffect(() => { loadData().catch(() => {}); }, [loadData]);
 
@@ -128,21 +131,28 @@ export const AddToPlaylistModal = () => {
       if (mode === 'ADD_SONGS_TO_PLAYLIST' && targetPlaylistId) {
         await addSongsToPlaylist(targetPlaylistId, Array.from(selectedItems));
       } else if (targetSongId) {
-        const ref = fromMobileId(targetSongId);
         if (songs.length === 0) await fetchSongs();
         const librarySongs = useSongsStore.getState().songs;
-        const localCopy = ref ? librarySongs.find(song => song.originId === ref) : librarySongs.find(song => song.id === targetSongId);
+        const localCopy = librarySongs.find(song => song.id === targetSongId);
+        const matchingCurrent = currentSong?.id === targetSongId ? currentSong : undefined;
+        const ref = canonicalSongRef(targetSongId, localCopy, matchingCurrent);
+        const equivalentCopy = localCopy ?? (ref ? librarySongs.find(song => song.originId === ref) : undefined);
         const streamSong = currentSong?.id === targetSongId
           ? currentSong
-          : librarySongs.find(song => song.id === targetSongId) ?? (StreamService.catalogFor(targetSongId) ? toStreamSong(StreamService.catalogFor(targetSongId)!) : undefined);
-        const snapshot = ref && !localCopy && streamSong ? snapshotForStreamSong(streamSong) : null;
-        if (ref && !localCopy && !snapshot) throw new Error('Song details are no longer available');
-        for (const id of selectedItems) {
-          if (localCopy) await addSongToPlaylist(id, localCopy.id);
+          : equivalentCopy ?? (songMetadata?.id === targetSongId
+            ? songMetadata
+            : StreamService.catalogFor(targetSongId) ? toStreamSong(StreamService.catalogFor(targetSongId)!) : undefined);
+        const snapshot = ref && !equivalentCopy && streamSong ? snapshotForStreamSong(streamSong) : null;
+        if (ref && !equivalentCopy && !snapshot) throw new Error('Song details are no longer available');
+        const attempt = await saveSelectedPlaylists(Array.from(selectedItems), existingItems, async id => {
+          if (equivalentCopy) await addSongToPlaylist(id, equivalentCopy.id);
           else if (snapshot) {
-            if (await addOnlineSongToPlaylist(id, snapshot) === 'error') throw new Error('Could not save this song');
+            const result = await addOnlineSongToPlaylist(id, snapshot);
+            if (result === 'error') throw new Error('Could not save this song');
           } else throw new Error('Song is no longer available');
-        }
+        });
+        if (attempt.saved.length > 0) setExistingItems(previous => new Set([...previous, ...attempt.saved]));
+        if (attempt.failed) throw new Error('Could not save this song');
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       finish();

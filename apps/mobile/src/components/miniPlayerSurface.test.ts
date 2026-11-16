@@ -105,9 +105,11 @@ describe('mini player and navigation controls', () => {
     expect(pill).toMatch(/name=\{liked \? 'checkmark-circle' : 'add-circle-outline'\} size=\{ACTION_GLYPH\}/);
   });
 
-  it('the local mini player passes song options and the heart; the Connect one passes song options', () => {
+  it('the local mini player routes its saved mark to Saved in; the Connect one keeps its own song options', () => {
     const mini = code(read('MiniPlayer.tsx'));
-    expect(mini).toMatch(/onMore=\{\(\) => songActions\.open\(currentSong, \{ current: true \}\)\}\s*\n\s*liked=\{isLiked\}\s*\n\s*onToggleLike=/);
+    expect(mini).toMatch(/onMore=\{\(\) => songActions\.open\(currentSong, \{ current: true \}\)\}\s*\n\s*liked=\{isLiked\}\s*\n\s*onSave=\{openSavedIn\}/);
+    expect(mini).toContain('routeSongToSaved(currentSong');
+    expect(mini).toContain('accessibilityLabel="Save in playlists"');
     expect(code(read('connect', 'ConnectMiniPlayer.tsx'))).toMatch(/onMore=\{\(\) => setMenuOpen\(true\)\}/);
   });
 

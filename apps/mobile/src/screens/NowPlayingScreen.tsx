@@ -1,5 +1,6 @@
 import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
 import { fromMobileId, parseSongRef } from '@shared/songRef';
+import { routeSongToSaved } from '../components/savedInBehavior';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -62,7 +63,6 @@ import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { notifyIslandAppShownAfterDraw } from '../services/NativeDynamicIsland';
 import { refetchCurrent, setAsRingtone, shareSong, shuffleUpcoming } from '../services/player/playerMenuActions';
 import { StreamService } from '../services/stream/StreamService';
-import { isStreamSongId } from '../services/stream/streamSong';
 import { useLuvLinkStore } from '../store/luvLinkStore';
 import { usePlaybackModesStore } from '../store/playbackModesStore';
 import { playerControls, usePlayerStore } from '../store/playerStore';
@@ -772,7 +772,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const onMenuAction = useCallback(async (action: PlayerMenuAction) => {
     const song = currentSong;
     if (!song) return;
-    const stream = isStreamSongId(song.id);
     switch (action) {
       case 'radio': {
         setSheet(null);
@@ -783,8 +782,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       }
       case 'add':
         setSheet(null);
-        if (stream) say(StreamService.save(song.id) ? 'Downloading — once it’s saved you can add it to a playlist' : 'Couldn’t save this song');
-        else navigation.navigate('AddToPlaylist', { songId: song.id });
+        routeSongToSaved(song, savedRoute => navigation.navigate(savedRoute.name, savedRoute.params));
         return;
       case 'share':
         shareSong(song);

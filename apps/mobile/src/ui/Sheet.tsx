@@ -119,6 +119,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
     if (visible) {
       swiped.current = false;
       setMounted(true);
+      setExpanded(false);
       drag.value = 0;
       scrolled.value = 0;
       shown.value = reduce ? withTiming(1, { duration: Motion.duration.base }) : withSpring(1, Motion.spring.open);
@@ -204,7 +205,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       <GestureDetector gesture={pan}>
         <Animated.View
           onLayout={e => { travel.value = e.nativeEvent.layout.height + EDGE * 2; }}
-          style={[styles.card, (tall || expanded) && styles.tall, { paddingBottom: insets.bottom + Space.sm }, card]}
+          style={[styles.card, expandable && !expanded && styles.compact, (tall || expanded) && styles.tall, expandable && expanded && styles.expanded, { paddingBottom: insets.bottom + Space.sm }, card]}
           accessibilityViewIsModal
         >
           {surface === 'player'
@@ -246,7 +247,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Space.md,
     paddingTop: Space.sm - 2,
   },
+  compact: { height: '50%', maxHeight: '50%' },
   tall: { maxHeight: '88%' },
+  expanded: { height: '88%' },
   tint: { ...StyleSheet.absoluteFillObject, opacity: 0.6 },
   untitled: { height: Space.sm },
   grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: Radius.pill, backgroundColor: Glass.grabber },

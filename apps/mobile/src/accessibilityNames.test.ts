@@ -66,7 +66,7 @@ it('the play button names itself Play or Pause, in React Native and in Kotlin', 
 
 it('the classic mini player names its transport and like buttons', () => {
   const mini = fs.readFileSync(path.join(SRC, 'components', 'MiniPlayer.tsx'), 'utf8');
-  for (const label of ['"Previous song"', '"Next song"',"'Remove from liked songs' : 'Add to liked songs'", '"Watch the video"']) {
+  for (const label of ['"Previous song"', '"Next song"', 'accessibilityLabel="Save in playlists"', '"Watch the video"']) {
     expect(mini).toContain(label);
   }
 });

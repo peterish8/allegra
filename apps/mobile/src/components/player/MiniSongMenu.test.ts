@@ -77,6 +77,11 @@ test('The mini player sheet downloads directly without opening the full player',
   expect(mockSave).toHaveBeenCalledWith(song.id);
   expect(mockNavigate).not.toHaveBeenCalled();
 });
+test('Add to playlist opens Saved in for a stream song without downloading first', () => {
+  render().find(n => n.label === 'Add to playlist')?.onPress?.();
+  expect(mockNavigate).toHaveBeenCalledWith('AddToPlaylist', { songId: song.id, songMetadata: expect.objectContaining({ title: song.title, artist: song.artist }) });
+  expect(mockSave).not.toHaveBeenCalled();
+});
 test.each(['queued', 'downloading', 'saved'])('Download is disabled when %s', phase => {
   mockPhase.phase = phase;
   const button = render().find(n => n.label === (phase === 'saved' ? 'Downloaded on this phone' : 'Downloading…'));
@@ -119,6 +124,10 @@ test('Delete is the last row and the library rows close the sheet before they ac
   rows.at(-1)?.onPress?.();
   expect(onClose).toHaveBeenCalled();
   expect(library.remove).toHaveBeenCalled();
+});
+test('Add to playlist opens Saved in for a local song', () => {
+  renderFile().nodes.find(n => n.label === 'Add to playlist')?.onPress?.();
+  expect(mockNavigate).toHaveBeenCalledWith('AddToPlaylist', { songId: fileSong.id });
 });
 
 test('Remove from this playlist only shows when the host passes it, and Play next only when it can queue', () => {
