@@ -15,16 +15,16 @@
  * closes the sheet before the player (see NowPlayingScreen).
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, ScrollViewProps, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Keyboard, Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, ScrollViewProps, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
-import Animated, { runOnJS, SharedValue, useAnimatedKeyboard, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { runOnJS, SharedValue, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Frosted from '../components/allegra/Frosted';
 import type { AuraPalette } from '../components/allegra/palette';
 import { releaseSpring } from '../components/allegra/physics';
 import { Glass, Motion, Radius, Signal, Space, Surface, Typography } from '../constants/allegraTheme';
 import { shouldCloseSheet } from '../navigation/sheetClose';
-import { sheetExpansionCancelTarget, sheetExpansionDrag, sheetExpansionTarget } from './sheetExpansion';
+import { sheetExpansionCancelTarget, sheetExpansionDrag, sheetExpansionTarget, sheetKeyboardGeometry, shouldCloseExpandableSheet } from './sheetExpansion';
 import * as Haptics from '../utils/haptics';
 import { diag } from '../utils/diag';
 import { CoverGlow } from './Screen';
@@ -102,7 +102,7 @@ export interface SheetProps {
 
 export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = false, expandable = false, palette, surface = palette ? 'player' : 'deep', presentation = 'modal', keyboard = false, tintUri, children }) => {
   const insets = useSafeAreaInsets();
-  const { height: windowH } = useWindowDimensions();
+  const { height: windowH, width: windowW } = useWindowDimensions();
   const reduce = useReducedMotion();
   const [mounted, setMounted] = useState(visible);
   const [expanded, setExpanded] = useState(false);
@@ -113,7 +113,32 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
   const scrolled = useSharedValue(0);
   // Until the card is measured, assume it is as tall as the screen: it starts off-screen either way.
   const travel = useSharedValue(windowH);
-  const kb = useAnimatedKeyboard();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [fullWindowH, setFullWindowH] = useState(windowH);
+  const previousWindow = useRef({ width: windowW, height: windowH });
+  const currentWindowH = useRef(windowH);
+  currentWindowH.current = windowH;
+  useEffect(() => {
+    const previous = previousWindow.current;
+    if (windowW !== previous.width) setFullWindowH(windowH);
+    else if (keyboardHeight === 0 && windowH > fullWindowH) setFullWindowH(windowH);
+    previousWindow.current = { width: windowW, height: windowH };
+  }, [windowH, windowW, keyboardHeight, fullWindowH]);
+  useEffect(() => {
+    if (!keyboard) return;
+    const update = (event: { endCoordinates: { height: number } }) => setKeyboardHeight(Math.max(0, event.endCoordinates.height));
+    const show = Keyboard.addListener('keyboardDidShow', update);
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+      setFullWindowH(currentWindowH.current);
+    });
+    return () => { show.remove(); hide.remove(); };
+  }, [keyboard]);
+  const geometry = sheetKeyboardGeometry(windowH, fullWindowH, keyboardHeight, insets.top, tall || expandable ? 0.88 : 0.7);
+  const expansionTravel = keyboard ? geometry.expansionTravel : windowH * 0.38;
+  const keyboardFrame = keyboard
+    ? { bottom: geometry.keyboardOffset, maxHeight: geometry.maxHeight, ...(expandable ? { height: geometry.maxHeight } : {}) }
+    : undefined;
   /** Set when a swipe closed the sheet: its spring is already running, `visible` turning false must not restart it. */
   const swiped = useRef(false);
   const list = useMemo(() => Gesture.Native(), []);
@@ -150,10 +175,9 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
     opacity: SCRIM * shown.value * (1 - Math.min(1, drag.value / Math.max(1, travel.value))),
   }));
   const card = useAnimatedStyle(() => {
-    const lift = keyboard ? -kb.height.value : 0;
-    const expansionOffset = expandable ? (1 - expansion.value) * windowH * 0.38 : 0;
-    if (reduce) return { opacity: shown.value, transform: [{ translateY: drag.value + lift + expansionOffset }] };
-    return { transform: [{ translateY: (1 - shown.value) * travel.value + drag.value + lift + expansionOffset }] };
+    const expansionOffset = expandable ? (1 - expansion.value) * expansionTravel : 0;
+    if (reduce) return { opacity: shown.value, transform: [{ translateY: drag.value + expansionOffset }] };
+    return { transform: [{ translateY: (1 - shown.value) * travel.value + drag.value + expansionOffset }] };
   });
 
   // Swiping down closes this sheet and nothing else. It activates at 6pt, inside Android's 8dp touch slop, so
@@ -173,7 +197,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
     .onUpdate(e => {
       'worklet';
       if (expandable) {
-        const next = sheetExpansionDrag(expansionAtStart.value, e.translationY, windowH * 0.38);
+        const next = sheetExpansionDrag(expansionAtStart.value, e.translationY, expansionTravel);
         expansion.value = next.progress;
         drag.value = next.closeDrag;
       } else {
@@ -182,7 +206,11 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
     })
     .onEnd(e => {
       'worklet';
-      if (!shouldCloseSheet(e.translationY, e.velocityY)) {
+      const closeDrag = expandable ? sheetExpansionDrag(expansionAtStart.value, e.translationY, expansionTravel).closeDrag : e.translationY;
+      const shouldClose = expandable
+        ? shouldCloseExpandableSheet(expansion.value, closeDrag, e.velocityY)
+        : shouldCloseSheet(e.translationY, e.velocityY);
+      if (!shouldClose) {
         if (expandable && (expansionAtStart.value > 0 || e.translationY < 0)) {
           const target = sheetExpansionTarget(expansion.value, e.translationY, e.velocityY);
           runOnJS(setExpanded)(target === 1);
@@ -195,8 +223,8 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       }
       runOnJS(diag)('sheet', `swipe close dy ${e.translationY.toFixed(0)} vy ${e.velocityY.toFixed(0)}`);
       // Fold the drag into `shown`, then let the spring carry on at the finger's speed.
-      const distance = Math.max(1, travel.value);
-      shown.value = Math.max(0, shown.value - drag.value / distance);
+      const closeDistance = Math.max(1, travel.value);
+      shown.value = Math.max(0, shown.value - drag.value / closeDistance);
       drag.value = 0;
       if (expandable) expansion.value = reduce ? 0 : withSpring(0, Motion.spring.sheet);
       const finish = (finished?: boolean) => {
@@ -205,7 +233,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       };
       shown.value = reduce
         ? 0
-        : withSpring(0, { ...releaseSpring(-e.velocityY / distance, e.velocityY), ...CLOSE_REST }, finish);
+        : withSpring(0, { ...releaseSpring(-e.velocityY / closeDistance, e.velocityY), ...CLOSE_REST }, finish);
       runOnJS(closedBySwipe)();
     })
     .onFinalize((_e, success) => {
@@ -230,7 +258,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       <GestureDetector gesture={pan}>
         <Animated.View
           onLayout={e => { travel.value = e.nativeEvent.layout.height + EDGE * 2; }}
-          style={[styles.card, (tall || expandable) && styles.tall, expandable && styles.expandable, { paddingBottom: insets.bottom + Space.sm }, card]}
+          style={[styles.card, (tall || expandable) && styles.tall, expandable && styles.expandable, { paddingBottom: insets.bottom + Space.sm }, keyboardFrame, card]}
           accessibilityViewIsModal
         >
           {surface === 'player'
