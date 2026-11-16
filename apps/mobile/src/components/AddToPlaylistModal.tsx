@@ -1,17 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, FlatList, StyleSheet, TextInput, View, type ListRenderItem } from 'react-native';
 import { displayPlaylistName } from '../utils/sentenceCase';
 import { Glass, Radius, Signal, Space, Typography } from '../constants/allegraTheme';
 import * as playlistQueries from '../database/playlistQueries';
-import { getOnlineLikes, getOnlinePlaylistSongs } from '../database/syncQueries';
+import { getOnlineLikes, getOnlinePlaylistSongs, removeOnlinePlaylistSong } from '../database/syncQueries';
 import { addOnlineSongToPlaylist } from '../services/sync/onlinePlaylist';
+import { removeOnlineLikeByRef } from '../services/sync/onlineLike';
+import { record } from '../services/sync/LibrarySync';
+import { playlistItemOp } from '../services/sync/plan';
+import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { StreamService } from '../services/stream/StreamService';
 import { toStreamSong } from '../services/stream/streamSong';
 import { filterSavedPlaylists, snapshotForStreamSong, sortSavedPlaylists, type PlaylistSort } from './savedIn';
-import { canonicalSongRef, isSongAlreadySaved, saveSelectedPlaylists } from './savedInBehavior';
+import { applyPlaylistMembershipChanges, canonicalSongRef, desiredPlaylistMembership, isSongAlreadySaved } from './savedInBehavior';
 import { usePlayerStore } from '../store/playerStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSongsStore } from '../store/songsStore';
@@ -56,6 +60,9 @@ export const AddToPlaylistModal = () => {
   const [sort, setSort] = useState<PlaylistSort>('custom');
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [existingItems, setExistingItems] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const loadGeneration = useRef(0);
 
   useFocusEffect(useCallback(() => {
     setMiniPlayerHiddenSource('AddToPlaylist', true);
@@ -63,13 +70,14 @@ export const AddToPlaylistModal = () => {
   }, [setMiniPlayerHiddenSource]));
 
   const loadData = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setLoadError(false);
     try {
       if (mode === 'ADD_SONGS_TO_PLAYLIST' && targetPlaylistId) {
         if (songs.length === 0) await fetchSongs();
         const currentSongs = await playlistQueries.getPlaylistSongs(targetPlaylistId);
-        setExistingItems(new Set(currentSongs.map(song => song.id)));
+        if (generation === loadGeneration.current) setExistingItems(new Set(currentSongs.map(song => song.id)));
       } else {
         await fetchPlaylists();
         if (usePlaylistStore.getState().error) throw new Error('Playlists could not be loaded');
@@ -89,18 +97,22 @@ export const AddToPlaylistModal = () => {
               : (await getOnlinePlaylistSongs(playlist.id)).some(song => song.ref === ref);
             return isSongAlreadySaved(localMembership, onlineMembership) ? playlist.id : null;
           }));
-          setExistingItems(new Set(memberships.filter((id): id is string => id !== null)));
+          if (generation === loadGeneration.current) setExistingItems(new Set(memberships.filter((id): id is string => id !== null)));
         }
       }
     } catch (error) {
       console.error('Failed to load playlist memberships', error);
-      setLoadError(true);
+      if (generation === loadGeneration.current) setLoadError(true);
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
     }
   }, [mode, targetPlaylistId, targetSongId, songs, fetchSongs, fetchPlaylists, currentSong]);
 
-  useEffect(() => { loadData().catch(() => {}); }, [loadData]);
+  useEffect(() => {
+    const generation = loadGeneration;
+    loadData().catch(() => {});
+    return () => { generation.current++; };
+  }, [loadData]);
 
   const data = useMemo<Item[]>(() => {
     if (mode === 'ADD_SONGS_TO_PLAYLIST') {
@@ -111,7 +123,6 @@ export const AddToPlaylistModal = () => {
   }, [mode, songs, playlists, searchQuery, sort]);
 
   const toggleSelection = useCallback((id: string) => {
-    if (existingItems.has(id)) return;
     setSaveError(false);
     Haptics.selectionAsync().catch(() => {});
     setSelectedItems(previous => {
@@ -119,12 +130,15 @@ export const AddToPlaylistModal = () => {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  }, [existingItems]);
+  }, []);
 
-  const finish = () => safeGoBack(navigation);
+  const finish = () => { if (!savingRef.current) safeGoBack(navigation); };
   const retryLoad = () => { loadData().catch(() => {}); };
   const handleDone = async () => {
+    if (savingRef.current) return;
     if (selectedItems.size === 0) { finish(); return; }
+    savingRef.current = true;
+    setSaving(true);
     setLoading(true);
     setSaveError(false);
     try {
@@ -144,29 +158,57 @@ export const AddToPlaylistModal = () => {
             : StreamService.catalogFor(targetSongId) ? toStreamSong(StreamService.catalogFor(targetSongId)!) : undefined);
         const snapshot = ref && !equivalentCopy && streamSong ? snapshotForStreamSong(streamSong) : null;
         if (ref && !equivalentCopy && !snapshot) throw new Error('Song details are no longer available');
-        const attempt = await saveSelectedPlaylists(Array.from(selectedItems), existingItems, async id => {
-          if (equivalentCopy) await addSongToPlaylist(id, equivalentCopy.id);
-          else if (snapshot) {
-            const result = await addOnlineSongToPlaylist(id, snapshot);
-            if (result === 'error') throw new Error('Could not save this song');
-          } else throw new Error('Song is no longer available');
-        });
-        if (attempt.saved.length > 0) setExistingItems(previous => new Set([...previous, ...attempt.saved]));
-        if (attempt.failed) throw new Error('Could not save this song');
+        const attempt = await applyPlaylistMembershipChanges(Array.from(selectedItems), existingItems,
+          async id => {
+            if (equivalentCopy) await addSongToPlaylist(id, equivalentCopy.id);
+            else if (snapshot) {
+              const result = await addOnlineSongToPlaylist(id, snapshot);
+              if (result === 'error') throw new Error('Could not save this song');
+            } else throw new Error('Song is no longer available');
+          },
+          async id => {
+            const isLiked = id === usePlaylistStore.getState().defaultPlaylistId;
+            // Remove the online side first. If local removal later fails, retry can safely
+            // observe the missing online row and continue with the local membership.
+            if (ref) {
+              if (isLiked) {
+                if ((await getOnlineLikes()).some(song => song.ref === ref)) await removeOnlineLikeByRef(ref);
+              } else if ((await getOnlinePlaylistSongs(id)).some(song => song.ref === ref)) {
+                await removeOnlinePlaylistSong(id, ref);
+                const at = Date.now();
+                record(playlistItemOp(id, ref, false, at));
+                useOnlineLibraryStore.getState().bumpPlaylists();
+              }
+            }
+            if (equivalentCopy && await playlistQueries.isSongInPlaylist(id, equivalentCopy.id)) {
+              await usePlaylistStore.getState().removeSongFromPlaylist(id, equivalentCopy.id);
+            }
+          });
+        if (attempt.changed.length > 0) {
+          const completed = new Set(attempt.changed.map(change => change.id));
+          setExistingItems(previous => {
+            const next = new Set(previous);
+            for (const change of attempt.changed) change.present ? next.add(change.id) : next.delete(change.id);
+            return next;
+          });
+          setSelectedItems(previous => new Set([...previous].filter(id => !completed.has(id))));
+        }
+        if (attempt.failed) throw new Error('Could not update this song');
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      finish();
+      safeGoBack(navigation);
     } catch (error) {
       console.error('Failed to save song to playlists', error);
       setSaveError(true);
       setLoading(false);
-      // Reflect any successful additions from a partial save before retrying.
-      await loadData();
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
   const renderSong = (item: Song) => {
-    const selected = selectedItems.has(item.id);
+    const selected = desiredPlaylistMembership(item.id, existingItems, selectedItems);
     const existing = existingItems.has(item.id);
     if (viewMode === 'grid') return <TactileRow style={[styles.gridItem, (selected || existing) && styles.selected]} onPress={() => toggleSelection(item.id)} disabled={existing}
       accessibilityRole="checkbox" accessibilityLabel={item.title} accessibilityState={{ checked: selected || existing, disabled: existing }}>
@@ -187,14 +229,14 @@ export const AddToPlaylistModal = () => {
 
   const renderPlaylist = (item: Playlist) => {
     const existing = existingItems.has(item.id);
-    const selected = selectedItems.has(item.id) || existing;
-    return <TactileRow style={[styles.row, selected && styles.selected]} onPress={() => toggleSelection(item.id)} disabled={existing}
-      accessibilityRole="checkbox" accessibilityLabel={displayPlaylistName(item.name)} accessibilityState={{ checked: selected, disabled: existing }}>
+    const selected = desiredPlaylistMembership(item.id, existingItems, selectedItems);
+    return <TactileRow style={[styles.row, selected && styles.selected]} onPress={() => toggleSelection(item.id)}
+      accessibilityRole="checkbox" accessibilityLabel={displayPlaylistName(item.name)} accessibilityState={{ checked: selected }}>
       <View style={styles.rowLead}>
         {item.isDefault
           ? <View style={[styles.artwork, styles.likedArtwork]}><Ionicons name="heart" size={22} color={Signal.ink} /></View>
           : <Artwork uri={item.coverImageUri} title={item.name} size={48} style={styles.artwork} />}
-        <View style={styles.labelGroup}><Text variant="row" numberOfLines={1}>{displayPlaylistName(item.name)}</Text><Text variant="secondary" tone="muted" numberOfLines={1}>{existing ? 'Already saved here' : `${item.songCount ?? 0} songs`}</Text></View>
+        <View style={styles.labelGroup}><Text variant="row" numberOfLines={1}>{displayPlaylistName(item.name)}</Text><Text variant="secondary" tone="muted" numberOfLines={1}>{existing ? 'Saved here · tap to remove' : `${item.songCount ?? 0} songs`}</Text></View>
       </View>
       <Ionicons name={selected ? 'checkmark-circle' : 'add-circle-outline'} size={25} color={selected ? Signal.wave : Signal.inkMuted} />
     </TactileRow>;
@@ -205,14 +247,14 @@ export const AddToPlaylistModal = () => {
   const header = mode === 'ADD_SONG_TO_PLAYLISTS' ? (
     <>
       <View style={styles.savedHeader}>
-        <Button label="Cancel" variant="plain" size="sm" onPress={finish} />
+        <Button label="Cancel" variant="plain" size="sm" onPress={finish} disabled={saving} />
         <Text variant="detail" accessibilityRole="header">Saved in</Text>
-        <Button label="Done" variant="plain" size="sm" onPress={handleDone} busy={loading && !loadError} />
+        <Button label="Done" variant="plain" size="sm" onPress={handleDone} busy={saving} disabled={loading || saving} />
       </View>
       <View style={styles.actions}>
         <Button label="New playlist" icon="add" variant="plain" size="sm" onPress={openCreate} />
       </View>
-      {saveError ? <Text variant="secondary" tone="danger" accessibilityRole="alert">Couldn’t save this song. Check your connection and try again.</Text> : null}
+      {saveError ? <Text variant="secondary" tone="danger" accessibilityRole="alert">Couldn’t update where this song is saved. Check your connection and try again.</Text> : null}
     </>
   ) : (
     <>

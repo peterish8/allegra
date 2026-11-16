@@ -1,4 +1,4 @@
-import { canonicalSongRef, isSongAlreadySaved, routeSongToSaved, saveSelectedPlaylists } from './savedInBehavior';
+import { applyPlaylistMembershipChanges, canonicalSongRef, desiredPlaylistMembership, isSongAlreadySaved, routeSongToSaved, saveSelectedPlaylists } from './savedInBehavior';
 
 describe('Saved sheet routing and playlist retry behavior', () => {
   it('routes a local song to Saved in by its local identity', () => {
@@ -32,6 +32,32 @@ describe('Saved sheet routing and playlist retry behavior', () => {
     expect(isSongAlreadySaved(true, false)).toBe(true);
     expect(isSongAlreadySaved(false, true)).toBe(true);
     expect(isSongAlreadySaved(false, false)).toBe(false);
+  });
+
+  it('toggles an existing membership off and an absent one on until Done', () => {
+    const existing = new Set(['liked', 'mix-a']);
+    const changed = new Set(['liked', 'mix-b']);
+    expect(desiredPlaylistMembership('liked', existing, changed)).toBe(false);
+    expect(desiredPlaylistMembership('mix-a', existing, changed)).toBe(true);
+    expect(desiredPlaylistMembership('mix-b', existing, changed)).toBe(true);
+  });
+
+  it('retains partial membership changes and stops when a write fails', async () => {
+    const add = jest.fn(async (id: string) => { if (id === 'mix-b') throw new Error('offline'); });
+    const remove = jest.fn(async () => undefined);
+    const result = await applyPlaylistMembershipChanges(['mix-a', 'mix-b', 'mix-c'], new Set(), add, remove);
+    expect(result).toEqual({ changed: [{ id: 'mix-a', present: true }], failed: true });
+    expect(add.mock.calls.map(([id]) => id)).toEqual(['mix-a', 'mix-b']);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('retains a completed removal when a later removal fails', async () => {
+    const add = jest.fn(async () => undefined);
+    const remove = jest.fn(async (id: string) => { if (id === 'mix-b') throw new Error('offline'); });
+    const result = await applyPlaylistMembershipChanges(['mix-a', 'mix-b'], new Set(['mix-a', 'mix-b']), add, remove);
+    expect(result).toEqual({ changed: [{ id: 'mix-a', present: false }], failed: true });
+    expect(remove.mock.calls.map(([id]) => id)).toEqual(['mix-a', 'mix-b']);
+    expect(add).not.toHaveBeenCalled();
   });
 
   it('retries only failed playlist additions after a mixed save result', async () => {

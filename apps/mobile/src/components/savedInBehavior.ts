@@ -1,5 +1,7 @@
-import { fromMobileId, parseSongRef, type SongRef } from '@shared/songRef';
+import { fromMobileId } from '@shared/songRef';
 import type { Song } from '../types/song';
+
+export { canonicalSongRef } from '../utils/songIdentity';
 
 export type SaveableSong = Pick<Song, 'id' | 'title'> & Partial<Pick<Song, 'artist' | 'album' | 'duration' | 'coverImageUri' | 'coverRemoteUri'>>;
 
@@ -38,22 +40,33 @@ export function routeSongToSaved(
   return true;
 }
 
-export function canonicalSongRef(targetSongId: string, localCopy?: Pick<Song, 'id' | 'originId'>, currentSong?: Pick<Song, 'id' | 'originId'>): SongRef | null {
-  const targetRef = fromMobileId(targetSongId) ?? (parseSongRef(targetSongId) ? targetSongId as SongRef : null);
-  if (targetRef) return targetRef;
-  if (localCopy?.id === targetSongId) {
-    const ref = localCopy.originId ? parseSongRef(localCopy.originId) : null;
-    if (ref) return `${ref.source}:${ref.id}`;
-  }
-  if (currentSong?.id === targetSongId) {
-    const ref = currentSong.originId ? parseSongRef(currentSong.originId) : null;
-    if (ref) return `${ref.source}:${ref.id}`;
-  }
-  return null;
-}
-
 export function isSongAlreadySaved(locally: boolean, online: boolean): boolean {
   return locally || online;
+}
+
+/** The UI stores only changes from the loaded membership snapshot. */
+export function desiredPlaylistMembership(id: string, existingIds: ReadonlySet<string>, changedIds: ReadonlySet<string>): boolean {
+  return existingIds.has(id) !== changedIds.has(id);
+}
+
+/** Apply changed memberships in order, stopping at the first failure so completed work can be retained. */
+export async function applyPlaylistMembershipChanges(
+  changedIds: readonly string[],
+  existingIds: ReadonlySet<string>,
+  add: (playlistId: string) => Promise<void>,
+  remove: (playlistId: string) => Promise<void>,
+): Promise<{ changed: Array<{ id: string; present: boolean }>; failed: boolean }> {
+  const changed: Array<{ id: string; present: boolean }> = [];
+  for (const id of changedIds) {
+    const present = !existingIds.has(id);
+    try {
+      await (present ? add : remove)(id);
+      changed.push({ id, present });
+    } catch {
+      return { changed, failed: true };
+    }
+  }
+  return { changed, failed: false };
 }
 
 /** Save selected targets one at a time, stopping on failure and remembering completed ones for retry. */

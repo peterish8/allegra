@@ -2,7 +2,7 @@
 // streamed song, and the account's online likes. The stores are replaced with their state only.
 const mockLiked = new Set<string>();
 // A new array per test: libraryLookup caches its map by the songs array.
-let mockSongs: Array<{ id: string; title: string; artist: string; audioUri: string }> = [];
+let mockSongs: Array<{ id: string; title: string; artist: string; audioUri: string; originId?: string }> = [];
 const mockOnline = new Set<string>();
 
 jest.mock('../store/playlistStore', () => ({
@@ -35,6 +35,11 @@ describe('isSongLikedNow', () => {
     expect(isSongLikedNow({ id: 'song-1', title: 'Halo', artist: 'Beyonce' })).toBe(true);
   });
 
+  it('preserves a downloaded song local like when it also has a catalog origin', () => {
+    mockLiked.add('download-9');
+    expect(isSongLikedNow({ id: 'download-9', title: 'Tum Hi Ho', artist: 'Arijit Singh', originId: 'saavn:abc123' })).toBe(true);
+  });
+
   it('counts the liked library copy of a streamed song', () => {
     mockSongs.push({ id: 'download-9', title: 'Tum Hi Ho', artist: 'Arijit Singh', audioUri: 'file:///9.mp3' });
     mockLiked.add('download-9');
@@ -44,6 +49,11 @@ describe('isSongLikedNow', () => {
   it('counts an online like of a streamed song', () => {
     mockOnline.add('saavn:abc123');
     expect(isSongLikedNow(stream)).toBe(true);
+  });
+
+  it('counts an online like through a downloaded song originId', () => {
+    mockOnline.add('saavn:abc123');
+    expect(isSongLikedNow({ id: 'download-9', title: 'Tum Hi Ho', artist: 'Arijit Singh', originId: 'saavn:abc123' })).toBe(true);
   });
 
   it('does not look for a library copy of a song that is not streamed', () => {
