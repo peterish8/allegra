@@ -6,8 +6,9 @@
  * - follows the finger down, with the scrim fading by how far it has travelled,
  * - a flick shut keeps the finger's speed, a slow drag past the line closes, anything else settles back,
  * - its list scrolls first; a drag down at the top of the list moves the sheet (`SheetScrollView`),
+ * - expandable sheets grow under an upward drag and settle on the UI thread,
  * - travel is the card's measured height, so a short sheet doesn't wait on distance nobody sees,
- * - Reduce Motion: it fades in place.
+ * - Reduce Motion: it settles without animated travel.
  *
  * `presentation="modal"` (default) draws above everything, tab bar and pill included, in a native modal
  * (back button closes it). The player's own sheets pass `inline`: they must stay inside the player so a drag
@@ -16,13 +17,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, ScrollViewProps, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
-import Animated, { runOnJS, SharedValue, useAnimatedKeyboard, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { runOnJS, SharedValue, useAnimatedKeyboard, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Frosted from '../components/allegra/Frosted';
 import type { AuraPalette } from '../components/allegra/palette';
 import { releaseSpring } from '../components/allegra/physics';
 import { Glass, Motion, Radius, Signal, Space, Surface, Typography } from '../constants/allegraTheme';
 import { shouldCloseSheet } from '../navigation/sheetClose';
+import { sheetExpansionCancelTarget, sheetExpansionDrag, sheetExpansionTarget } from './sheetExpansion';
 import * as Haptics from '../utils/haptics';
 import { diag } from '../utils/diag';
 import { CoverGlow } from './Screen';
@@ -106,6 +108,8 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
   const [expanded, setExpanded] = useState(false);
   const shown = useSharedValue(0);
   const drag = useSharedValue(0);
+  const expansion = useSharedValue(0);
+  const expansionAtStart = useSharedValue(0);
   const scrolled = useSharedValue(0);
   // Until the card is measured, assume it is as tall as the screen: it starts off-screen either way.
   const travel = useSharedValue(windowH);
@@ -121,18 +125,20 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       setMounted(true);
       setExpanded(false);
       drag.value = 0;
+      expansion.value = 0;
       scrolled.value = 0;
-      shown.value = reduce ? withTiming(1, { duration: Motion.duration.base }) : withSpring(1, Motion.spring.open);
+      shown.value = reduce ? 1 : withSpring(1, Motion.spring.open);
     } else if (mounted && !swiped.current) {
       const done = (finished?: boolean) => {
         'worklet';
         if (finished) runOnJS(setMounted)(false);
       };
-      shown.value = reduce
-        ? withTiming(0, { duration: Motion.duration.fast }, done)
-        : withSpring(0, { ...Motion.spring.open, ...CLOSE_REST }, done);
+      if (reduce) {
+        shown.value = 0;
+        setMounted(false);
+      } else shown.value = withSpring(0, { ...Motion.spring.open, ...CLOSE_REST }, done);
     }
-  }, [visible, mounted, reduce, shown, drag, scrolled]);
+  }, [visible, mounted, reduce, shown, drag, expansion, scrolled]);
 
   const closedBySwipe = useCallback(() => {
     swiped.current = true;
@@ -145,34 +151,46 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
   }));
   const card = useAnimatedStyle(() => {
     const lift = keyboard ? -kb.height.value : 0;
-    if (reduce) return { opacity: shown.value, transform: [{ translateY: drag.value + lift }] };
-    return { transform: [{ translateY: (1 - shown.value) * travel.value + drag.value + lift }] };
+    const expansionOffset = expandable ? (1 - expansion.value) * windowH * 0.38 : 0;
+    if (reduce) return { opacity: shown.value, transform: [{ translateY: drag.value + lift + expansionOffset }] };
+    return { transform: [{ translateY: (1 - shown.value) * travel.value + drag.value + lift + expansionOffset }] };
   });
 
   // Swiping down closes this sheet and nothing else. It activates at 6pt, inside Android's 8dp touch slop, so
   // on a list at the top it wins before the list starts scrolling and the list's touch is cancelled.
-  const canExpand = expandable && !expanded;
-  const panGesture = Gesture.Pan().activeOffsetY(canExpand ? [-8, 6] : 6);
-  if (!canExpand) panGesture.failOffsetY(-8);
+  const panGesture = Gesture.Pan().activeOffsetY(expandable && !expanded ? [-8, 6] : 6);
+  if (!expandable || expanded) panGesture.failOffsetY(-8);
   const pan = panGesture
     .failOffsetX([-22, 22])
+    .onBegin(() => {
+      'worklet';
+      expansionAtStart.value = expansion.value;
+    })
     .onTouchesDown((_e, state) => {
       'worklet';
       if (scrolled.value > 2) state.fail();
     })
     .onUpdate(e => {
       'worklet';
-      drag.value = Math.max(0, e.translationY);
+      if (expandable) {
+        const next = sheetExpansionDrag(expansionAtStart.value, e.translationY, windowH * 0.38);
+        expansion.value = next.progress;
+        drag.value = next.closeDrag;
+      } else {
+        drag.value = Math.max(0, e.translationY);
+      }
     })
     .onEnd(e => {
       'worklet';
-        if (canExpand && e.translationY < -56) {
-          runOnJS(setExpanded)(true);
-          drag.value = 0;
+      if (!shouldCloseSheet(e.translationY, e.velocityY)) {
+        if (expandable && (expansionAtStart.value > 0 || e.translationY < 0)) {
+          const target = sheetExpansionTarget(expansion.value, e.translationY, e.velocityY);
+          runOnJS(setExpanded)(target === 1);
+          expansion.value = reduce ? target : withSpring(target, Motion.spring.sheet);
+          drag.value = reduce ? 0 : withSpring(0, Motion.spring.settle);
           return;
         }
-      if (!shouldCloseSheet(e.translationY, e.velocityY)) {
-        drag.value = withSpring(0, releaseSpring(0, e.velocityY));
+        drag.value = reduce ? 0 : withSpring(0, releaseSpring(0, e.velocityY));
         return;
       }
       runOnJS(diag)('sheet', `swipe close dy ${e.translationY.toFixed(0)} vy ${e.velocityY.toFixed(0)}`);
@@ -180,19 +198,26 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       const distance = Math.max(1, travel.value);
       shown.value = Math.max(0, shown.value - drag.value / distance);
       drag.value = 0;
+      if (expandable) expansion.value = reduce ? 0 : withSpring(0, Motion.spring.sheet);
       const finish = (finished?: boolean) => {
         'worklet';
         if (finished) runOnJS(setMounted)(false);
       };
       shown.value = reduce
-        ? withTiming(0, { duration: Motion.duration.fast }, finish)
+        ? 0
         : withSpring(0, { ...releaseSpring(-e.velocityY / distance, e.velocityY), ...CLOSE_REST }, finish);
       runOnJS(closedBySwipe)();
     })
     .onFinalize((_e, success) => {
       'worklet';
       // A pan the list's scroll cancels never reaches onEnd: settle back instead of staying where it was let go.
-      if (!success && drag.value > 0) drag.value = withSpring(0, Motion.spring.settle);
+      if (!success) {
+        if (drag.value > 0) drag.value = reduce ? 0 : withSpring(0, Motion.spring.settle);
+        if (expandable && expansion.value !== expansionAtStart.value) {
+          const resting = sheetExpansionCancelTarget(expansionAtStart.value);
+          expansion.value = reduce ? resting : withSpring(resting, Motion.spring.sheet);
+        }
+      }
     });
 
   if (!mounted) return null;
@@ -205,7 +230,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       <GestureDetector gesture={pan}>
         <Animated.View
           onLayout={e => { travel.value = e.nativeEvent.layout.height + EDGE * 2; }}
-          style={[styles.card, expandable && !expanded && styles.compact, (tall || expanded) && styles.tall, expandable && expanded && styles.expanded, { paddingBottom: insets.bottom + Space.sm }, card]}
+          style={[styles.card, (tall || expandable) && styles.tall, expandable && styles.expandable, { paddingBottom: insets.bottom + Space.sm }, card]}
           accessibilityViewIsModal
         >
           {surface === 'player'
@@ -247,9 +272,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Space.md,
     paddingTop: Space.sm - 2,
   },
-  compact: { height: '50%', maxHeight: '50%' },
   tall: { maxHeight: '88%' },
-  expanded: { height: '88%' },
+  expandable: { height: '88%' },
   tint: { ...StyleSheet.absoluteFillObject, opacity: 0.6 },
   untitled: { height: Space.sm },
   grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: Radius.pill, backgroundColor: Glass.grabber },

@@ -9,7 +9,7 @@ import type { SongSnapshot } from '@shared/songRef';
 
 import { getOnlinePlaylistSongs, removeOnlinePlaylistSong, upsertOnlinePlaylistSong } from '../../database/syncQueries';
 import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
-import { usePlaylistStore } from '../../store/playlistStore';
+import { reconcileRemovedPlaylistSong, usePlaylistStore } from '../../store/playlistStore';
 import { record } from './LibrarySync';
 import { toggleOnlineLike } from './onlineLike';
 import { playlistItemOp } from './plan';
@@ -24,11 +24,15 @@ export async function removeOnlineSongFromPlaylist(playlistId: string, ref: Song
   const present = existing.some(row => row.ref === ref);
   if (present) {
     await removeOnlinePlaylistSong(playlistId, ref);
+  }
+  // The queue uses the same stream:<ref> id as the online playlist row. Reconcile only after the
+  // database confirms the row is gone; this also repairs a stale queue on an idempotent retry.
+  reconcileRemovedPlaylistSong(playlistId, `stream:${ref}`);
+  if (present) {
     const at = Date.now();
     record(playlistItemOp(playlistId, ref, false, at));
     useOnlineLibraryStore.getState().bumpPlaylists();
   }
-  // Also reconcile when a prior retry already removed the row but the refresh failed.
   await playlists.fetchPlaylists();
   return present;
 }

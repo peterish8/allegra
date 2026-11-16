@@ -5,6 +5,7 @@ const mockRecord = jest.fn();
 const mockToggleLike = jest.fn();
 const mockFetchPlaylists = jest.fn(async () => undefined);
 const mockBump = jest.fn();
+const mockReconcileQueue = jest.fn();
 let likedRefs = new Set<string>();
 
 jest.mock('../../database/syncQueries', () => ({
@@ -19,6 +20,7 @@ jest.mock('../../store/onlineLibraryStore', () => ({
 }));
 jest.mock('../../store/playlistStore', () => ({
   usePlaylistStore: { getState: () => ({ defaultPlaylistId: 'liked', fetchPlaylists: mockFetchPlaylists }) },
+  reconcileRemovedPlaylistSong: (...args: unknown[]) => mockReconcileQueue(...args),
 }));
 
 import type { SongRef, SongSnapshot } from '@shared/songRef';
@@ -40,6 +42,7 @@ describe('removeOnlineSongFromPlaylist', () => {
     await expect(removeOnlineSongFromPlaylist('road', song.ref)).resolves.toBe(true);
 
     expect(mockRemoveOnline).toHaveBeenCalledWith('road', song.ref);
+    expect(mockReconcileQueue).toHaveBeenCalledWith('road', 'stream:saavn:abc');
     expect(mockRecord).toHaveBeenCalledWith(expect.objectContaining({ op: 'playlist_remove', playlistId: 'road', ref: song.ref }));
     expect(mockBump).toHaveBeenCalled();
     expect(mockFetchPlaylists).toHaveBeenCalled();
@@ -49,8 +52,20 @@ describe('removeOnlineSongFromPlaylist', () => {
     mockGetOnline.mockResolvedValue([]);
     await expect(removeOnlineSongFromPlaylist('road', song.ref)).resolves.toBe(false);
     expect(mockRemoveOnline).not.toHaveBeenCalled();
+    expect(mockReconcileQueue).toHaveBeenCalledWith('road', 'stream:saavn:abc');
     expect(mockRecord).not.toHaveBeenCalled();
     expect(mockFetchPlaylists).toHaveBeenCalled();
+  });
+
+  it('leaves the active queue intact when the online row cannot be removed', async () => {
+    mockGetOnline.mockResolvedValue([{ ref: 'saavn:abc', title: 'Kesariya', duration: 268, at: 1 }]);
+    mockRemoveOnline.mockRejectedValue(new Error('disk unavailable'));
+
+    await expect(removeOnlineSongFromPlaylist('road', song.ref)).rejects.toThrow('disk unavailable');
+
+    expect(mockReconcileQueue).not.toHaveBeenCalled();
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(mockFetchPlaylists).not.toHaveBeenCalled();
   });
 });
 

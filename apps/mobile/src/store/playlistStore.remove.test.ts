@@ -7,7 +7,7 @@ jest.mock('../database/queries', () => ({}));
 jest.mock('./playerStore', () => ({ usePlayerStore: { getState: () => ({ currentPlaylistId: mockCurrentPlaylistId, removeFromQueue: mockRemoveFromQueue }) } }));
 jest.mock('../services/sync/recordLocal', () => ({ recordMembership: jest.fn(), recordPlaylistChange: jest.fn(), recordPlaylistDelete: jest.fn() }));
 
-import { usePlaylistStore } from './playlistStore';
+import { reconcileRemovedPlaylistSong, usePlaylistStore } from './playlistStore';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -29,6 +29,21 @@ test('removing a song from another playlist leaves the active playback queue alo
   mockCurrentPlaylistId = 'different-list';
 
   await usePlaylistStore.getState().removeSongFromPlaylist('active-list', 'song-1');
+
+  expect(mockRemoveFromQueue).not.toHaveBeenCalled();
+});
+
+test('queue reconciliation preserves exact local and online song identities', () => {
+  reconcileRemovedPlaylistSong('active-list', 'local-song-id');
+  reconcileRemovedPlaylistSong('active-list', 'stream:saavn:abc');
+
+  expect(mockRemoveFromQueue.mock.calls).toEqual([['local-song-id'], ['stream:saavn:abc']]);
+});
+
+test('removing an online item from an inactive playlist leaves the current queue alone', () => {
+  mockCurrentPlaylistId = 'different-list';
+
+  reconcileRemovedPlaylistSong('active-list', 'stream:saavn:abc');
 
   expect(mockRemoveFromQueue).not.toHaveBeenCalled();
 });
