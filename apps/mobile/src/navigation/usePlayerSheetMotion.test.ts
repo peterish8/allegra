@@ -27,7 +27,7 @@ jest.mock('react-native-reanimated', () => ({
   withSpring: (target: number, _config: unknown, done?: (finished: boolean) => void) => { if (done) mockCompletions.push(done); return target; },
   withTiming: (target: number, _config: unknown, done?: (finished: boolean) => void) => { if (done) mockCompletions.push(done); return target; },
 }));
-jest.mock('../constants/allegraTheme', () => ({ Motion: { spring: { player: {} }, duration: { fast: 160 } } }));
+jest.mock('../constants/allegraTheme', () => ({ Motion: { spring: { open: { stiffness: 400 }, fling: { stiffness: 1500 } }, duration: { fast: 160 } } }));
 jest.mock('../components/allegra/physics', () => ({ rubberBand: (y: number) => y }));
 jest.mock('./playerSheet', () => ({ takeOpenTracking: () => mockOpening.tracking, takeOpenVelocity: () => mockOpening.velocity }));
 jest.mock('./sheetProgress', () => {
@@ -35,15 +35,14 @@ jest.mock('./sheetProgress', () => {
   return {
     playerSheetProgress: { value: 0 },
     playerSheetSession: { value: 0 },
-    playerCoverHandoff: { value: false },
     nextSheetSession: () => { last += 1; return last; },
-    playerDrag: { mounted: { value: false }, tracking: { value: false }, y: { value: 0 }, velocity: { value: 0 }, ended: { value: 0 } },
+    playerDrag: { tracking: { value: false }, y: { value: 0 }, velocity: { value: 0 }, ended: { value: 0 } },
   };
 });
 
-import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from './usePlayerSheetMotion';
+import { beginSheetDrag, settleSheet, sheetSpring, usePlayerSheetMotion } from './usePlayerSheetMotion';
 import { sheetYForDrag } from './playerTransition';
-import { playerCoverHandoff, playerDrag, playerSheetProgress, playerSheetSession } from './sheetProgress';
+import { playerDrag, playerSheetProgress, playerSheetSession } from './sheetProgress';
 
 function mount(reduced = false, revealMini = jest.fn(), ridesPill = true) {
   const motion = usePlayerSheetMotion(600, false, reduced, revealMini, ridesPill);
@@ -55,8 +54,8 @@ function publish() { mockMappers.forEach(run => run()); }
 beforeEach(() => {
   mockSetHold.mockClear(); mockEffects.length = 0; mockCleanups.length = 0; mockJS.length = 0; mockCompletions.length = 0;
   mockMappers.length = 0; mockOpening.tracking = false; mockOpening.velocity = 0;
-  playerSheetSession.value = 0; playerSheetProgress.value = 0; playerCoverHandoff.value = false;
-  playerDrag.tracking.value = false; playerDrag.y.value = 0; playerDrag.velocity.value = 0; playerDrag.mounted.value = false;
+  playerSheetSession.value = 0; playerSheetProgress.value = 0;
+  playerDrag.tracking.value = false; playerDrag.y.value = 0; playerDrag.velocity.value = 0;
 });
 
 it('reveals the mini only after the close completes, and never for an interrupted close', () => {
@@ -138,6 +137,13 @@ it('turns a close around from the current frame when grabbed, and reopens withou
   expect(mockSetHold).not.toHaveBeenCalled();
 });
 
+it('lands a flick on the fast spring and a tap or slow release on the softer one, from the finger’s speed', () => {
+  expect(sheetSpring(1200)).toEqual({ stiffness: 1500, velocity: 1200 });
+  expect(sheetSpring(-1200)).toEqual({ stiffness: 1500, velocity: -1200 });
+  expect(sheetSpring(300)).toEqual({ stiffness: 400, velocity: 300 });
+  expect(sheetSpring(0)).toEqual({ stiffness: 400, velocity: 0 });
+});
+
 // 2026-11-16: the close handoff. These cover the four regressions the Android plan names.
 describe('the close hand-over', () => {
   it('hands the bar to the riding mini player on the frame the close lands, before JS removes the route', () => {
@@ -209,21 +215,14 @@ describe('the close hand-over', () => {
     oldCleanups.forEach(cleanup => cleanup());
     expect(playerSheetSession.value).toBe(fresh.session);
     expect(playerSheetProgress.value).toBe(1);
-    expect(playerDrag.mounted.value).toBe(true);
   });
 
   it('releases the hand-over when the owning sheet goes', () => {
-    mount();
-    expect(playerCoverHandoff.value).toBe(true);
+    const motion = mount();
+    expect(playerSheetSession.value).toBe(motion.session);
     mockCleanups.forEach(cleanup => cleanup());
     expect(playerSheetSession.value).toBe(0);
-    expect(playerCoverHandoff.value).toBe(false);
     expect(playerSheetProgress.value).toBe(0);
-  });
-
-  it('never flies the cover under Reduce Motion', () => {
-    mount(true);
-    expect(playerCoverHandoff.value).toBe(false);
   });
 
   // Regression: a flick that lifted before the route mounted opened from rest whatever its direction.

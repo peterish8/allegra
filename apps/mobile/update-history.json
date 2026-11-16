@@ -2,13 +2,14 @@
   "entries": [
     {
       "version": "1.69.3",
-      "description": "Opening and closing the player is smoother, with one mini player at the bottom",
+      "description": "Opening and closing the player is quicker and cleaner, with one cover and one mini player",
       "changelog": [
         {
           "title": "Fixed",
           "items": [
+            "Opening and closing the player is one smooth fade, with no second copy of the cover on screen",
             "Closing the player no longer shows two mini players for a moment",
-            "The song cover moves between the mini player and the player in one piece and lands exactly on the mini player's cover",
+            "The player opens and closes faster, and a quick swipe lands quicker still",
             "Moving artwork fades back to the still cover as you close the player, and comes back if you pull the player open again",
             "A quick swipe on the mini player now goes the way you swiped, even if you let go before the player appeared"
           ]

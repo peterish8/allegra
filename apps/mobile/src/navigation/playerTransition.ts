@@ -1,17 +1,12 @@
 /**
- * The maths of the player transition (finger-tracked since 1.49.0, always on since 1.69.0): where a release settles, and where the
- * cover is on its way from the mini player to the player. Pure numbers, so the rules are tested; the gestures and
- * the drawing are in PillPlayer, NowPlayingScreen and components/player/CoverGhost.
+ * The maths of the player sheet (finger-tracked since 1.49.0, always on since 1.69.0): where a release settles, how
+ * the sheet follows a finger, and what fades when. Pure numbers, so the rules are tested; the gestures and the drawing
+ * are in PillPlayer and NowPlayingScreen.
  *
- * `progress` is playerSheetProgress: 0 resting on the mini player, 1 full screen.
+ * One sheet, one motion (1.69.3): the sheet slides from the mini player's top edge carrying the player's own artwork,
+ * and the mini player rides that edge and fades. No separate cover flies between the two, so there is never a second
+ * cover, thumbnail or bar on screen. `progress` is playerSheetProgress: 0 resting on the mini player, 1 full screen.
  */
-
-export interface Rect {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
 
 /** A release faster than this (px/s) decides the direction whatever the distance. */
 export const FLING_VELOCITY = 800;
@@ -71,106 +66,26 @@ export function miniRideY(progress: number, restY: number, reduceMotion: boolean
   return reduceMotion || p === 0 ? 0 : -p * restY;
 }
 
-export const lerp = (from: number, to: number, t: number): number => {
-  'worklet';
-  return from + (to - from) * t;
-};
-
-/** The cover's rectangle `progress` of the way from the mini player's cover to its place in the player. */
-export function coverFrame(progress: number, from: Rect, to: Rect): Rect {
-  'worklet';
-  // Use the sheet's own progress so the cover cannot race ahead of its surface.
-  const t = clamp01(progress);
-  return { x: lerp(from.x, to.x, t), y: lerp(from.y, to.y, t), width: lerp(from.width, to.width, t), height: lerp(from.height, to.height, t) };
-}
-
-/** The cover's corner radius on the way: eased, so it keeps the mini cover's corners until the cover has grown. */
-export function coverRadius(progress: number, fromRadius: number, toRadius: number): number {
-  'worklet';
-  const t = clamp01(progress);
-  return lerp(fromRadius, toRadius, t * t);
-}
-
-/**
- * The mini player's own contents (title, buttons) fade out over the first 18%, so the growing cover never sits on
- * top of its text (the overlap in the reference's second frame). 1 = fully shown.
- */
+/** The mini player's own contents (cover, title, buttons) fade off the sheet's edge over the first 18%. 1 = shown. */
 export const miniContentOpacity = (progress: number): number => {
   'worklet';
   return 1 - clamp01(progress / 0.18);
 };
 
 /**
- * The player's own contents (title, controls) fade in late, after the cover has arrived: 0 until 34%, 1 at 72%.
- * Both tap expansion and fluid dragging use this choreography.
+ * The player's contents (its artwork, title, controls) fade in on the sheet from 18%, exactly where the mini player
+ * has finished leaving its edge, to 40%, and out the same way on a close: one continuous hand-over, one surface at a
+ * time, never two players or two covers.
  */
 export const playerContentOpacity = (progress: number): number => {
   'worklet';
-  return clamp01((progress - 0.34) / 0.38);
+  return clamp01((progress - 0.18) / 0.22);
 };
-
-/** The moving cover shows while the sheet is between the ends; at either end the real cover (or the mini one) is. */
-export const ghostVisible = (progress: number): boolean => {
-  'worklet';
-  return progress > 0.001 && progress < 0.999;
-};
-
-/** Geometry the moving cover can use: finite, with a size. A missing or late measurement is never "usable". */
-export function isUsableRect(rect: Rect | null | undefined): boolean {
-  'worklet';
-  return !!rect && Number.isFinite(rect.x) && Number.isFinite(rect.y) && Number.isFinite(rect.width)
-    && Number.isFinite(rect.height) && rect.width > 0 && rect.height > 0;
-}
-
-/**
- * Who draws the song's thumbnail near the bottom bar at `progress`. The moving cover owns it between the ends while
- * a hand-over runs; otherwise the mini player's own cover does. Exactly one, at every frame, from one shared number.
- */
-export function thumbnailOwner(progress: number, handoff: boolean): 'moving' | 'mini' {
-  'worklet';
-  return handoff && ghostVisible(progress) ? 'moving' : 'mini';
-}
-
-/**
- * The mini player's cover at `progress`: its resting rectangle carried up with the pill as it rides the sheet's
- * edge (miniRideY). The moving cover starts from here, so at the closed end it lands on the pill's cover exactly.
- */
-export function riddenCoverRect(from: Rect, progress: number, restY: number, reduceMotion: boolean): Rect {
-  'worklet';
-  return { x: from.x, y: from.y + miniRideY(progress, restY, reduceMotion), width: from.width, height: from.height };
-}
-
-/**
- * The moving cover is the same picture in two clips laid over the same rectangle: one cut to the mini cover's
- * corners (exact at the mini player), one to the player's corners (exact in the player). Transforms scale a clip's
- * corners with it, so neither shape is right at both ends. The player's clip fades in under the mini clip early in
- * the flight, while both are small, and only then does the mini clip fade out. The picture is opaque throughout;
- * only the corners change.
- */
-export function ghostClipOpacity(progress: number): { mini: number; player: number } {
-  'worklet';
-  const p = clamp01(progress);
-  return { player: clamp01((p - 0.02) / 0.06), mini: 1 - clamp01((p - 0.08) / 0.06) };
-}
-
-/**
- * The scale for a square picture laid out at `max(layout.width, layout.height)` and centred in a clip laid out at
- * `layout`, so that with the clip scaled onto `frame` the picture covers the frame like `contentFit: cover` does.
- * The mini cover is square and a hero is tall, so the crop changes along the way and matches both ends.
- */
-export function coverPictureScale(frame: Rect, layout: Rect): { x: number; y: number } {
-  'worklet';
-  const sx = Math.max(0.0001, frame.width / Math.max(1, layout.width));
-  const sy = Math.max(0.0001, frame.height / Math.max(1, layout.height));
-  const side = Math.max(1, layout.width, layout.height);
-  const fill = Math.max(frame.width, frame.height);
-  return { x: fill / (side * sx), y: fill / (side * sy) };
-}
 
 /**
  * A ready Canvas video shows only near the open end: it fades out over the first tenth of a close (into the still
- * cover under it, which the moving cover then carries down) and back in on a reopen. Opacity only, so a ready video
- * keeps decoding through a reversal and never restarts.
+ * cover under it) and back in on a reopen. Opacity only, so a ready video keeps decoding through a reversal and
+ * never restarts.
  */
 export const canvasSheetGate = (progress: number): number => {
   'worklet';
@@ -190,19 +105,10 @@ export function sheetOpeningStart(instant: boolean, dragOpen: boolean, dragY: nu
 }
 
 /** Room the title, buttons and seek bar take under the card (NowPlayingLyricsArea's Stage uses the same number). */
-export const CARD_CONTROLS_ROOM = 360;
-export const CARD_MAX = 342;
+const CARD_CONTROLS_ROOM = 360;
+const CARD_MAX = 342;
 const CARD_SIDE = 24;
 
 /** The artwork card's side in pixels: the screen's width less its margins, never over 342, never taller than the room. */
 export const cardSize = (width: number, screenH: number, paddingTop: number): number =>
   Math.min(width - CARD_SIDE * 2, CARD_MAX, Math.max(160, screenH - paddingTop - CARD_CONTROLS_ROOM));
-
-/** Where the square artwork card sits in the player: centred, `paddingTop` from the top. */
-export function cardCoverRect(width: number, screenH: number, paddingTop: number): Rect {
-  const side = cardSize(width, screenH, paddingTop);
-  return { x: (width - side) / 2, y: paddingTop, width: side, height: side };
-}
-
-/** Where the full-width hero (the Apple style, and Canvas inside it) sits: the top of the screen, `heroH` tall. */
-export const heroCoverRect = (width: number, heroH: number): Rect => ({ x: 0, y: 0, width, height: heroH });

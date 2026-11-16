@@ -2,8 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ReduceMotion, SharedValue, cancelAnimation, runOnJS, runOnUI, startMapper, stopMapper, useAnimatedReaction, useDerivedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Motion } from '../constants/allegraTheme';
 import { takeOpenTracking, takeOpenVelocity } from './playerSheet';
-import { settleTarget, sheetOpeningStart, sheetProgressAt, sheetYForDrag } from './playerTransition';
-import { nextSheetSession, playerCoverHandoff, playerDrag, playerSheetProgress, playerSheetSession } from './sheetProgress';
+import { FLING_VELOCITY, settleTarget, sheetOpeningStart, sheetProgressAt, sheetYForDrag } from './playerTransition';
+import { nextSheetSession, playerDrag, playerSheetProgress, playerSheetSession } from './sheetProgress';
 
 /**
  * What the UI-thread worklets below need. Gesture callbacks call `beginSheetDrag(sheet)` and
@@ -21,6 +21,15 @@ export interface SheetControls {
   restY: number;
   reduceMotion: boolean;
   animateClose: (velocity?: number) => void;
+}
+
+/**
+ * The sheet's spring (mobile CLAUDE.md): critically damped, so it never overshoots; 400 on a tap or a slow release,
+ * 1500 on a flick (faster than FLING_VELOCITY), so a quick swipe lands fast. It starts from the finger's speed.
+ */
+export function sheetSpring(velocity: number) {
+  'worklet';
+  return { ...(Math.abs(velocity) > FLING_VELOCITY ? Motion.spring.fling : Motion.spring.open), velocity };
 }
 
 /** A grab (during an open, a close or a rest): stop the spring, invalidate its late callback, return where the sheet is. */
@@ -46,7 +55,7 @@ export function settleSheet(sheet: SheetControls, velocity: number): void {
   sheet.generation.value += 1;
   sheet.sheetY.value = sheet.reduceMotion
     ? withTiming(0, { duration: Motion.duration.fast, reduceMotion: ReduceMotion.Never })
-    : withSpring(0, { ...Motion.spring.player, velocity });
+    : withSpring(0, sheetSpring(velocity));
 }
 
 /**
@@ -100,7 +109,7 @@ export function usePlayerSheetMotion(restY: number, instant: boolean, reduceMoti
     };
     sheetY.value = reduceMotion
       ? withTiming(restY, { duration: Motion.duration.fast, reduceMotion: ReduceMotion.Never }, done)
-      : withSpring(restY, { ...Motion.spring.player, velocity }, done);
+      : withSpring(restY, sheetSpring(velocity), done);
   }, [closing, generation, finishClose, sheetY, handedOff, reduceMotion, restY, ridesPill]);
   const sheet = useMemo<SheetControls>(
     () => ({ sheetY, progress, closing, generation, tracked, handedOff, restY, reduceMotion, animateClose }),
@@ -112,8 +121,7 @@ export function usePlayerSheetMotion(restY: number, instant: boolean, reduceMoti
   // Claim the hand-over before the first frame, so the publisher below writes from it.
   useLayoutEffect(() => {
     playerSheetSession.value = session;
-    playerCoverHandoff.value = ridesPill && !reduceMotion;
-  }, [session, ridesPill, reduceMotion]);
+  }, [session]);
   // Publish the progress through a mapper that names `playerSheetProgress` as its output: Reanimated sorts every
   // mapper that reads it (the pill, the tab bar, Create) after this one, so they draw the same frame as the sheet.
   // A reaction declares no outputs, and its readers could lag a frame behind (two players for a frame).
@@ -134,7 +142,6 @@ export function usePlayerSheetMotion(restY: number, instant: boolean, reduceMoti
   });
   useEffect(() => {
     mounted.current = true;
-    playerDrag.mounted.value = true;
     if (!instant) {
       if (opening.tracked) {
         // A quick release can beat route mounting: settle once from the captured position and velocity. Checked on
@@ -147,7 +154,7 @@ export function usePlayerSheetMotion(restY: number, instant: boolean, reduceMoti
         })();
       } else sheetY.value = reduceMotion
         ? withTiming(0, { duration: Motion.duration.fast, reduceMotion: ReduceMotion.Never })
-        : withSpring(0, { ...Motion.spring.player, velocity: -opening.velocity });
+        : withSpring(0, sheetSpring(-opening.velocity));
     }
     return () => {
       mounted.current = false;
@@ -156,8 +163,6 @@ export function usePlayerSheetMotion(restY: number, instant: boolean, reduceMoti
       // A newer sheet may already own the hand-over (rapid reopen): leave its progress and flags alone.
       if (playerSheetSession.value !== session) return;
       playerSheetSession.value = 0;
-      playerCoverHandoff.value = false;
-      playerDrag.mounted.value = false;
       playerSheetProgress.value = 0;
     };
     // The route opens once. Layout changes must not replay its entrance.

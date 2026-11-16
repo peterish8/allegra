@@ -13,8 +13,8 @@ import Animated, { runOnJS, useAnimatedReaction, useAnimatedStyle, useReducedMot
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { usePlaybackStatus } from '../hooks/usePlaybackStatus';
-import { NO_COVER_RECT, playerCoverFrom, playerCoverHandoff, playerDrag, playerSheetProgress, createSheetProgress } from '../navigation/sheetProgress';
-import { isUsableRect, miniContentOpacity, miniRideY, thumbnailOwner } from '../navigation/playerTransition';
+import { playerDrag, playerSheetProgress, createSheetProgress } from '../navigation/sheetProgress';
+import { miniContentOpacity, miniRideY } from '../navigation/playerTransition';
 import { MINI_COVER_SIZE, SEEK_BAND_HEIGHT, miniRowHeight, shellNavHeight } from '../navigation/v6Shell';
 import { MINI_CONTENT_SIDE_INSET, MINI_PLAY_OFFSET, MINI_ROW_PADDING_RIGHT, miniShellOutline } from '../navigation/miniShell';
 import { miniPlayerLabel } from '../playback/miniPlayerLabel';
@@ -79,35 +79,10 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   // The pill stays drawn while the finger is down, even once the sheet is up: its drag is what moves the sheet.
   const [fingerDown, setFingerDown] = useState(false);
   useAnimatedReaction(() => playerDrag.tracking.value, (now, before) => { if (now !== before) runOnJS(setFingerDown)(now); });
-  const coverRef = useRef<View>(null);
-  // The moving cover starts from this pill's cover, measured only while it rests (no sheet over it, no skip slide):
-  // a measurement taken while it rides the sheet would put the cover's start mid-screen. Layout that changes under a
-  // sheet throws the cached rectangle away; the sheet then opens and closes without the moving cover, and the pill
-  // measures again once the sheet is gone. A missing measurement never holds the open back.
-  const coverStale = useRef(false);
-  const measureCover = (after?: () => void) => {
-    const view = coverRef.current;
-    if (!view || playerSheetProgress.value !== 0 || shift.value !== 0) {
-      if (playerSheetProgress.value !== 0) {
-        coverStale.current = true;
-        playerCoverFrom.value = NO_COVER_RECT;
-      }
-      after?.();
-      return;
-    }
-    view.measureInWindow((x, y, width, h) => {
-      const rect = { x, y, width, height: h };
-      playerCoverFrom.value = isUsableRect(rect) ? { ...rect, radius: Radius.cover } : NO_COVER_RECT;
-      coverStale.current = !isUsableRect(rect);
-      after?.();
-    });
-  };
-  const remeasureIfStale = () => { if (coverStale.current) measureCover(); };
-  useAnimatedReaction(() => playerSheetProgress.value === 0, (rest, before) => { if (rest && before === false) runOnJS(remeasureIfStale)(); });
-  // Gone (a classic bar, Luvs, the keyboard): its cached rectangle describes nothing on screen any more.
-  useEffect(() => () => { playerCoverFrom.value = NO_COVER_RECT; }, []);
-  const beginTracking = () => { measureCover(onOpenTracking); };
-  const openMeasured = () => measureCover(() => onOpen());
+  // One motion (1.69.3): the sheet carries the player's own artwork, and this pill (cover included) fades off its
+  // top edge. Nothing is measured and no second cover flies between them.
+  const beginTracking = () => { onOpenTracking?.(); };
+  const openPlayer = () => onOpen();
   const enabled = !!onSeek && Number.isFinite(duration) && duration > 0 && !loading;
   useEffect(() => { seekGeneration.current++; gestureSong.current = songId; }, [songId, loading]);
   const commit = async (seconds: number, startedOn = track.current) => {
@@ -208,7 +183,7 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
       } else resetGesture();
     })
     .onFinalize((_e, success) => { 'worklet'; if (!success && !skipInFlight.value) resetGesture(); });
-  const classicOpen = Gesture.Pan().activeOffsetY(-20).failOffsetX([-20, 20]).runOnJS(true).onEnd(e => { if (e.translationY < -24) measureCover(() => onOpen(Math.max(0, -e.velocityY))); });
+  const classicOpen = Gesture.Pan().activeOffsetY(-20).failOffsetX([-20, 20]).runOnJS(true).onEnd(e => { if (e.translationY < -24) onOpen(Math.max(0, -e.velocityY)); });
   const fluidOpen = Gesture.Pan().activeOffsetY(-10).failOffsetX([-20, 20])
     .onStart(() => {
       'worklet';
@@ -246,17 +221,12 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
     opacity: miniContentOpacity(playerSheetProgress.value) * (1 - Math.min(1, createSheetProgress.value * 2)),
     transform: [{ translateY: miniRideY(playerSheetProgress.value, restY, reduceMotion) }],
   }));
-  // One thumbnail: while the sheet's moving cover flies, it is the song's thumbnail and this cover steps aside; it
-  // lands exactly here (playerTransition riddenCoverRect) and this cover takes over on the same frame.
-  const ownCoverStyle = useAnimatedStyle(() => ({
-    opacity: thumbnailOwner(playerSheetProgress.value, playerCoverHandoff.value && isUsableRect(playerCoverFrom.value)) === 'mini' ? 1 : 0,
-  }));
 
   if (keyboard) return null;
   const rowHeight = miniRowHeight(fontScale);
   // The Create sheet is up: the pill is part of the dimmed page under it, and a tap on it reaches the page's scrim
   // (which closes the sheet) instead of opening the player.
-  return <Animated.View accessibilityElementsHidden={createOpen || sheetUp} importantForAccessibility={createOpen || sheetUp ? 'no-hide-descendants' : 'auto'} pointerEvents={createOpen || (sheetUp && !fingerDown) ? 'none' : 'auto'} onLayout={() => measureCover()} style={[styles.shell, { bottom }, createDim]}>
+  return <Animated.View accessibilityElementsHidden={createOpen || sheetUp} importantForAccessibility={createOpen || sheetUp ? 'no-hide-descendants' : 'auto'} pointerEvents={createOpen || (sheetUp && !fingerDown) ? 'none' : 'auto'} style={[styles.shell, { bottom }, createDim]}>
     {/* 1.41.0: the mini player has its own soft, frosted cover glow; the navigation keeps the shell material. */}
     <MiniPlayerGlow uri={coverImageUri} active={!sheetUp && !createOpen} />
     <MiniScrubber positionSV={positionSV} durationSV={durationSV} enabled={enabled} active={scrubbing} height={SEEK_BAND_HEIGHT}
@@ -272,12 +242,12 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
       <GestureDetector gesture={infoGesture}><View style={styles.main} onLayout={e => setInfoWidth(e.nativeEvent.layout.width)}>
         {/* Owner, 2026-11-13: no ••• on the mini player; a long press opens the song's actions instead. */}
         <NativeSwipeSkip enabled={nativeSwipe} songKey={`${displayed.songId ?? ''}|${displayed.title}`} style={{ height: rowHeight }}>
-        <Tactile onPress={openMeasured} onLongPress={onMore} delayLongPress={350} pressScale={0.985} accessibilityRole="button" accessibilityLabel={miniPlayerLabel(displayed.title)} accessibilityHint={displayed.artist ? `By ${displayed.artist}` : undefined}
+        <Tactile onPress={openPlayer} onLongPress={onMore} delayLongPress={350} pressScale={0.985} accessibilityRole="button" accessibilityLabel={miniPlayerLabel(displayed.title)} accessibilityHint={displayed.artist ? `By ${displayed.artist}` : undefined}
           accessibilityActions={[{ name: 'activate' }, { name: 'next', label: 'Next song' }, { name: 'previous', label: 'Previous song' }, ...(onMore ? [{ name: 'longpress', label: 'Song options' }] : [])]}
-          onAccessibilityAction={e => { const a = e.nativeEvent.actionName; if (a === 'next') onNext(); else if (a === 'previous') onPrevious(); else if (a === 'longpress') onMore?.(); else openMeasured(); }}
+          onAccessibilityAction={e => { const a = e.nativeEvent.actionName; if (a === 'next') onNext(); else if (a === 'previous') onPrevious(); else if (a === 'longpress') onMore?.(); else openPlayer(); }}
           style={[styles.info, { height: rowHeight }]}>
           <Animated.View style={[styles.follow, following]}>
-            <Animated.View ref={coverRef} onLayout={() => measureCover()} style={[styles.cover, ownCoverStyle]}><Artwork uri={displayed.coverImageUri} title={displayed.title} artist={displayed.artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></Animated.View>
+            <View style={styles.cover}><Artwork uri={displayed.coverImageUri} title={displayed.title} artist={displayed.artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></View>
             {/* 1.43.0 (owner's Spotify screenshot): the title in bold, scrolling slowly when it doesn't fit, with the
                 artist on its own line under it. */}
             <View style={styles.copy}>

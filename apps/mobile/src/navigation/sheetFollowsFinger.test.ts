@@ -37,12 +37,11 @@ describe('the player sheet follows the finger', () => {
     expect(read('components/PillPlayer.tsx')).toMatch(/translateY: miniRideY\(playerSheetProgress\.value, restY, reduceMotion\)/);
   });
 
-  // Owner-approved 2026-11-12: a tap shares the artwork with the player too (Apple Music).
-  it('shares the artwork on a tap as well as on a drag', () => {
-    const sheet = read('screens/NowPlayingScreen.tsx');
-    expect(sheet).toMatch(/!reduceMotion && pillNav && currentSong \? \(\s*<CoverGhost/);
+  // Owner, 1.69.3: a tap and a drag open the same one sheet, with no measuring before the open (it never waits).
+  it('opens at once on a tap as well as on a drag', () => {
     const pill = read('components/PillPlayer.tsx');
-    expect(pill).toMatch(/const openMeasured = \(\) => measureCover\(\(\) => onOpen\(\)\);/);
-    expect(pill).toMatch(/measureCover\(\(\) => onOpen\(Math\.max\(0, -e\.velocityY\)\)\)/);
+    expect(pill).toMatch(/const openPlayer = \(\) => onOpen\(\);/);
+    expect(pill).toMatch(/const beginTracking = \(\) => \{ onOpenTracking\?\.\(\); \};/);
+    expect(pill).toMatch(/onEnd\(e => \{ if \(e\.translationY < -24\) onOpen\(Math\.max\(0, -e\.velocityY\)\); \}\)/);
   });
 });
