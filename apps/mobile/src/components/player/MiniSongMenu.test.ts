@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Song } from '../../types/song';
-jest.mock('react', () => ({ ...jest.requireActual('react'), useState: (value: unknown) => [value, jest.fn()] }));
+const mockSetState = jest.fn();
+jest.mock('react', () => ({ ...jest.requireActual('react'), useState: (value: unknown) => [value, mockSetState] }));
 jest.mock('react-native', () => ({ Platform: { OS: 'android' }, StyleSheet: { create: (s: unknown) => s }, View: 'View' }));
 jest.mock('./RecentCovers', () => ({ RecentCovers: 'RecentCovers' }));
 jest.mock('../../ui', () => ({
@@ -8,6 +9,7 @@ jest.mock('../../ui', () => ({
   Space: { sm: 8, md: 16, lg: 24 }, Control: { target: 48 }, identityMeta: (...parts: string[]) => parts.join(' · '),
 }));
 const mockSave = jest.fn((..._args: unknown[]) => true);
+const mockToggleLike = jest.fn();
 const mockNavigate = jest.fn();
 const mockPhase = { phase: 'idle' };
 jest.mock('../../hooks/useDownloadState', () => ({ useDownloadState: () => mockPhase }));
@@ -21,13 +23,14 @@ jest.mock('../../services/stream/StreamService', () => ({ StreamService: {
   append: (...args: unknown[]) => mockAppend(...args),
 } }));
 jest.mock('../../store/playerStore', () => ({ usePlayerStore: { getState: () => mockPlayer } }));
-jest.mock('../../store/songsStore', () => ({ useSongsStore: { getState: () => ({ toggleLike: jest.fn() }) } }));
+jest.mock('../../store/songsStore', () => ({ useSongsStore: { getState: () => ({ toggleLike: (...args: unknown[]) => mockToggleLike(...args) }) } }));
 jest.mock('../../store/playbackModesStore', () => ({ usePlaybackModesStore: Object.assign((select: (s: unknown) => unknown) => select({ repeatOne: false }), { getState: () => ({ setRepeatOne: jest.fn() }) }) }));
 jest.mock('../../services/NativeAudioPlayer', () => ({ NativeAudioPlayer: { isAvailable: () => true } }));
 jest.mock('../../services/player/playerMenuActions', () => ({ canSetRingtone: () => false, shareSong: jest.fn(), refetchCurrent: jest.fn(), setAsRingtone: jest.fn(), shuffleUpcoming: jest.fn() }));
 jest.mock('../../services/connect/ConnectProvider', () => ({ useConnect: () => ({ openDevices: jest.fn() }) }));
 jest.mock('../../services/connect/songMatcher', () => ({ matchConnectSong: jest.fn() }));
-jest.mock('../../services/sync/onlineLike', () => ({ toggleOnlineLike: jest.fn() }));
+const mockToggleOnlineLike = jest.fn();
+jest.mock('../../services/sync/onlineLike', () => ({ toggleOnlineLike: (...args: unknown[]) => mockToggleOnlineLike(...args) }));
 jest.mock('../../utils/navigationService', () => ({ navigationRef: { isReady: () => true, navigate: (...args: unknown[]) => mockNavigate(...args) } }));
 import { MiniSongMenu } from './MiniSongMenu';
 
@@ -97,6 +100,22 @@ test('Remote playback keeps local audio controls out of its song sheet', () => {
   expect(labels).toContain('Connect devices');
   expect(labels).not.toContain('Reload audio');
   expect(labels).not.toContain('Shuffle upcoming songs');
+});
+
+test('Like reports a failed local update instead of presenting a silent success', async () => {
+  mockToggleLike.mockResolvedValue('error');
+  renderFile().nodes.find(n => n.label === 'Like')?.onPress?.();
+  await Promise.resolve();
+  expect(mockToggleLike).toHaveBeenCalledWith(fileSong.id);
+  expect(mockSetState).toHaveBeenCalledWith('Could not update Liked songs. Try again.');
+});
+
+test('Like reports an unsuccessful online toggle', async () => {
+  mockToggleOnlineLike.mockResolvedValue('error');
+  render(true).find(n => n.label === 'Like')?.onPress?.();
+  await Promise.resolve();
+  expect(mockToggleOnlineLike).toHaveBeenCalled();
+  expect(mockSetState).toHaveBeenCalledWith('Could not update Liked songs. Try again.');
 });
 
 // A song file on this phone, long-pressed in Library or a playlist (owner, 2026-11-13: the same sheet as everywhere).

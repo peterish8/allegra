@@ -8,7 +8,7 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, usePreventRemove } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Dimensions, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Dimensions, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -81,11 +81,22 @@ function useRemoteLike(song: SongSnapshot | undefined): { liked: boolean; toggle
   const copyId = useSongsStore(state => (key ? libraryLookup(state.songs).get(key)?.id : undefined));
   const copyLiked = usePlaylistStore(state => (copyId ? state.likedSongIds.has(copyId) : false));
   const onlineLiked = useOnlineLibraryStore(state => (song ? state.likedRefs.has(song.ref) : false));
-  const toggle = useCallback(() => {
+  const toggle = useCallback(async () => {
     if (!song) return;
-    const done = copyId ? useSongsStore.getState().toggleLike(copyId) : toggleOnlineLike(song);
-    done.catch(() => undefined);
-  }, [song, copyId]);
+    try {
+      if (onlineLiked) {
+        const result = await toggleOnlineLike(song);
+        if (result !== 'unliked') throw new Error('online unlike failed');
+        if (copyId && copyLiked && await useSongsStore.getState().toggleLike(copyId) !== 'unliked') {
+          throw new Error('local unlike failed');
+        }
+      } else if (copyId && copyLiked) {
+        if (await useSongsStore.getState().toggleLike(copyId) !== 'unliked') throw new Error('local unlike failed');
+      } else if (await toggleOnlineLike(song) !== 'liked') throw new Error('online like failed');
+    } catch {
+      Alert.alert('Couldn’t update Liked songs', 'Check your connection and try again.');
+    }
+  }, [song, copyId, copyLiked, onlineLiked]);
   return { liked: copyLiked || onlineLiked, toggle };
 }
 

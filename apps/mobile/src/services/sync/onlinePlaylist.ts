@@ -7,7 +7,7 @@
  */
 import type { SongSnapshot } from '@shared/songRef';
 
-import { getOnlinePlaylistSongs, upsertOnlinePlaylistSong } from '../../database/syncQueries';
+import { getOnlinePlaylistSongs, removeOnlinePlaylistSong, upsertOnlinePlaylistSong } from '../../database/syncQueries';
 import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
 import { usePlaylistStore } from '../../store/playlistStore';
 import { record } from './LibrarySync';
@@ -15,6 +15,23 @@ import { toggleOnlineLike } from './onlineLike';
 import { playlistItemOp } from './plan';
 
 export type AddResult = 'added' | 'exists' | 'error';
+
+/** Remove an online-only playlist item and refresh the playlist's count and cover metadata. */
+export async function removeOnlineSongFromPlaylist(playlistId: string, ref: SongSnapshot['ref']): Promise<boolean> {
+  const playlists = usePlaylistStore.getState();
+  if (!playlistId || playlistId === playlists.defaultPlaylistId) return false;
+  const existing = await getOnlinePlaylistSongs(playlistId);
+  const present = existing.some(row => row.ref === ref);
+  if (present) {
+    await removeOnlinePlaylistSong(playlistId, ref);
+    const at = Date.now();
+    record(playlistItemOp(playlistId, ref, false, at));
+    useOnlineLibraryStore.getState().bumpPlaylists();
+  }
+  // Also reconcile when a prior retry already removed the row but the refresh failed.
+  await playlists.fetchPlaylists();
+  return present;
+}
 
 /** Generic playlist add (the archived DJ draft used it first). Add an editable DJ draft to a playlist with a single local refresh after its bounded items are saved. */
 export async function addOnlineSongsToPlaylist(playlistId: string, songs: readonly SongSnapshot[]): Promise<boolean> {

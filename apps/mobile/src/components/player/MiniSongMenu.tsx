@@ -116,8 +116,10 @@ export function MiniSongMenu({ song, visible, onClose, remote, current = true, c
   };
   const toggleLike = async () => {
     try {
-      if (remote) await toggleOnlineLike(remote);
-      else await useSongsStore.getState().toggleLike(song.id);
+      const result = remote
+        ? await toggleOnlineLike(remote)
+        : await useSongsStore.getState().toggleLike(song.id);
+      if (result === 'error') setNotice('Could not update Liked songs. Try again.');
     } catch { setNotice('Could not update Liked songs. Try again.'); }
   };
   const artistPage = () => {

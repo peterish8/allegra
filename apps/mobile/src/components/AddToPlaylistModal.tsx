@@ -2,16 +2,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Dimensions, FlatList, StyleSheet, TextInput, View, type ListRenderItem } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, TextInput, View, useWindowDimensions, type ListRenderItem } from 'react-native';
 import { displayPlaylistName } from '../utils/sentenceCase';
 import { Glass, Radius, Signal, Space, Typography } from '../constants/allegraTheme';
 import * as playlistQueries from '../database/playlistQueries';
-import { getOnlineLikes, getOnlinePlaylistSongs, removeOnlinePlaylistSong } from '../database/syncQueries';
-import { addOnlineSongToPlaylist } from '../services/sync/onlinePlaylist';
+import { getOnlineLikes, getOnlinePlaylistSongs } from '../database/syncQueries';
+import { addOnlineSongToPlaylist, removeOnlineSongFromPlaylist } from '../services/sync/onlinePlaylist';
 import { removeOnlineLikeByRef } from '../services/sync/onlineLike';
-import { record } from '../services/sync/LibrarySync';
-import { playlistItemOp } from '../services/sync/plan';
-import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { StreamService } from '../services/stream/StreamService';
 import { toStreamSong } from '../services/stream/streamSong';
 import { filterSavedPlaylists, snapshotForStreamSong, sortSavedPlaylists, type PlaylistSort } from './savedIn';
@@ -31,14 +28,14 @@ type Route = RouteProp<RootStackParamList, 'AddToPlaylist'>;
 type Mode = 'ADD_SONGS_TO_PLAYLIST' | 'ADD_SONG_TO_PLAYLISTS';
 type Item = Song | Playlist;
 const isSong = (item: Item): item is Song => 'title' in item;
-const GRID_ITEM_WIDTH = (Dimensions.get('window').width - 48 - 12) / 3;
-
 /** The playlist-page mode remains a song picker; its list shares the sheet's drag/scroll handoff. */
 function SheetList<T>(props: React.ComponentProps<typeof FlatList<T>>) {
   return <SheetScrollable><FlatList<T> {...props} /></SheetScrollable>;
 }
 
 export const AddToPlaylistModal = () => {
+  const { width: windowWidth } = useWindowDimensions();
+  const gridItemWidth = Math.max(0, (windowWidth - 48 - 12) / 3);
   const navigation = useNavigation<Navigation>();
   const route = useRoute<Route>();
   const { playlistId: targetPlaylistId, songId: targetSongId } = route.params || {};
@@ -172,13 +169,11 @@ export const AddToPlaylistModal = () => {
             // observe the missing online row and continue with the local membership.
             if (ref) {
               if (isLiked) {
-                if ((await getOnlineLikes()).some(song => song.ref === ref)) await removeOnlineLikeByRef(ref);
-              } else if ((await getOnlinePlaylistSongs(id)).some(song => song.ref === ref)) {
-                await removeOnlinePlaylistSong(id, ref);
-                const at = Date.now();
-                record(playlistItemOp(id, ref, false, at));
-                useOnlineLibraryStore.getState().bumpPlaylists();
-              }
+                if ((await getOnlineLikes()).some(song => song.ref === ref)) {
+                  await removeOnlineLikeByRef(ref);
+                }
+                await usePlaylistStore.getState().fetchPlaylists();
+              } else await removeOnlineSongFromPlaylist(id, ref);
             }
             if (equivalentCopy && await playlistQueries.isSongInPlaylist(id, equivalentCopy.id)) {
               await usePlaylistStore.getState().removeSongFromPlaylist(id, equivalentCopy.id);
@@ -210,9 +205,9 @@ export const AddToPlaylistModal = () => {
   const renderSong = (item: Song) => {
     const selected = desiredPlaylistMembership(item.id, existingItems, selectedItems);
     const existing = existingItems.has(item.id);
-    if (viewMode === 'grid') return <TactileRow style={[styles.gridItem, (selected || existing) && styles.selected]} onPress={() => toggleSelection(item.id)} disabled={existing}
+    if (viewMode === 'grid') return <TactileRow style={[styles.gridItem, { width: gridItemWidth }, (selected || existing) && styles.selected]} onPress={() => toggleSelection(item.id)} disabled={existing}
       accessibilityRole="checkbox" accessibilityLabel={item.title} accessibilityState={{ checked: selected || existing, disabled: existing }}>
-      <View style={styles.gridImage}><Artwork uri={item.coverImageUri} title={item.title} artist={item.artist} size={GRID_ITEM_WIDTH} style={StyleSheet.absoluteFill} />
+      <View style={[styles.gridImage, { width: gridItemWidth - Space.xs, height: gridItemWidth - Space.xs }]}><Artwork uri={item.coverImageUri} title={item.title} artist={item.artist} size={gridItemWidth - Space.xs} style={StyleSheet.absoluteFill} />
         {selected || existing ? <View style={styles.checkOverlay}><Ionicons name="checkmark-circle" size={24} color={Signal.wave} /></View> : null}
       </View>
       <Text variant="caption" numberOfLines={1} align="center" style={styles.gridText}>{item.title}</Text>
@@ -231,7 +226,7 @@ export const AddToPlaylistModal = () => {
     const existing = existingItems.has(item.id);
     const selected = desiredPlaylistMembership(item.id, existingItems, selectedItems);
     return <TactileRow style={[styles.row, selected && styles.selected]} onPress={() => toggleSelection(item.id)}
-      accessibilityRole="checkbox" accessibilityLabel={displayPlaylistName(item.name)} accessibilityState={{ checked: selected }}>
+      accessibilityRole="checkbox" accessibilityLabel={displayPlaylistName(item.name)} accessibilityHint={existing ? 'Already saved here. Tap to remove.' : 'Tap to save this song here.'} accessibilityState={{ checked: selected }}>
       <View style={styles.rowLead}>
         {item.isDefault
           ? <View style={[styles.artwork, styles.likedArtwork]}><Ionicons name="heart" size={22} color={Signal.ink} /></View>
@@ -248,7 +243,10 @@ export const AddToPlaylistModal = () => {
     <>
       <View style={styles.savedHeader}>
         <Button label="Cancel" variant="plain" size="sm" onPress={finish} disabled={saving} />
-        <Text variant="detail" accessibilityRole="header">Saved in</Text>
+        <View style={styles.savedTitle}>
+          <Text variant="detail" accessibilityRole="header">Saved in</Text>
+          {selectedItems.size > 0 ? <Text variant="caption" tone="muted">{selectedItems.size} changes</Text> : null}
+        </View>
         <Button label="Done" variant="plain" size="sm" onPress={handleDone} busy={saving} disabled={loading || saving} />
       </View>
       <View style={styles.actions}>
@@ -275,7 +273,10 @@ export const AddToPlaylistModal = () => {
       {mode === 'ADD_SONG_TO_PLAYLISTS' ? <Button label={sort === 'custom' ? 'Sort' : 'A–Z'} icon="swap-vertical" variant="secondary" size="sm" onPress={() => setSort(value => value === 'custom' ? 'name' : 'custom')} /> : null}
     </View>
     {loadError ? <View style={styles.empty}><Text variant="body" tone="danger" accessibilityRole="alert">{mode === 'ADD_SONG_TO_PLAYLISTS' ? 'Couldn’t load saved playlists.' : 'Couldn’t load songs already in this playlist.'} Try again.</Text><Button label="Try again" onPress={retryLoad} /></View>
-      : loading ? <ActivityIndicator color={Signal.wave} size="large" style={styles.loading} />
+      : loading ? <View style={styles.loading} accessibilityRole="progressbar" accessibilityLabel={mode === 'ADD_SONG_TO_PLAYLISTS' ? 'Loading your playlists' : 'Checking songs in this playlist'} accessibilityState={{ busy: true }}>
+        <ActivityIndicator color={Signal.wave} size="large" accessible={false} />
+        <Text variant="secondary" tone="muted">{mode === 'ADD_SONG_TO_PLAYLISTS' ? 'Loading your playlists…' : 'Checking songs in this playlist…'}</Text>
+      </View>
       : data.length === 0 ? <View style={styles.empty}><Text variant="body" tone="muted">{searchQuery ? 'No playlists match your search' : mode === 'ADD_SONG_TO_PLAYLISTS' ? 'Create a playlist to save this song' : 'No songs found'}</Text>{!searchQuery && mode === 'ADD_SONG_TO_PLAYLISTS' ? <Button label="New playlist" icon="add" onPress={openCreate} /> : null}</View>
       : <SheetList<Item> key={viewMode} data={data} keyExtractor={item => item.id} numColumns={mode === 'ADD_SONGS_TO_PLAYLIST' && viewMode === 'grid' ? 3 : 1}
         renderItem={renderItem} contentContainerStyle={styles.listContent} initialNumToRender={20} />}
@@ -285,13 +286,14 @@ export const AddToPlaylistModal = () => {
 
 const styles = StyleSheet.create({
   savedHeader: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  savedTitle: { alignItems: 'center', justifyContent: 'center', gap: Space.xxs },
   actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Space.xs },
   reverseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Space.xs },
   searchBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: Space.xs, backgroundColor: Glass.fillLight, borderRadius: Radius.pill, paddingLeft: Space.md, paddingRight: Space.xs, marginBottom: Space.sm },
   searchInput: { flex: 1, minHeight: 48, color: Signal.ink, ...Typography.body },
   listContent: { paddingBottom: Space.md },
-  gridItem: { width: GRID_ITEM_WIDTH, marginBottom: Space.sm, alignItems: 'center', padding: Space.xxs },
-  gridImage: { width: GRID_ITEM_WIDTH - Space.xs, height: GRID_ITEM_WIDTH - Space.xs, borderRadius: Radius.thumb, overflow: 'hidden', marginBottom: Space.xs },
+  gridItem: { marginBottom: Space.sm, alignItems: 'center', padding: Space.xxs },
+  gridImage: { borderRadius: Radius.thumb, overflow: 'hidden', marginBottom: Space.xs },
   gridText: { width: '100%' },
   checkOverlay: { position: 'absolute', top: Space.xs, right: Space.xs, backgroundColor: Glass.scrimHeavy, borderRadius: Radius.pill },
   row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Space.sm, paddingVertical: Space.xs, paddingHorizontal: Space.xs, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Glass.hairline },
@@ -301,7 +303,7 @@ const styles = StyleSheet.create({
   likedArtwork: { alignItems: 'center', justifyContent: 'center', backgroundColor: Signal.accentDeep },
   labelGroup: { flex: 1, gap: Space.xxs },
   empty: { alignItems: 'center', gap: Space.sm, padding: Space.lg },
-  loading: { marginVertical: Space.xl },
+  loading: { minHeight: 144, alignItems: 'center', justifyContent: 'center', gap: Space.sm, paddingHorizontal: Space.md },
   footer: { paddingTop: Space.xs },
 });
 
