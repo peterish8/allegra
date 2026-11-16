@@ -2,9 +2,10 @@ import { makeMutable, useAnimatedStyle, useReducedMotion } from 'react-native-re
 
 /**
  * How far the player sheet is open: 0 = resting on the pill, 1 = full screen.
- * NowPlayingScreen writes it every frame (open, drag, close); the pill reads
- * it to hand over to the sheet — it fades as the sheet grows out of it and
- * rides the sheet's top edge, and comes back the same way.
+ * The owning sheet publishes it through a mapper that declares it as its output
+ * (usePlayerSheetMotion), so every reader (the pill, the tab bar, Create) is
+ * sorted after it and draws the same frame as the sheet. The pill fades as the
+ * sheet grows out of it and rides the sheet's top edge, and comes back the same way.
  */
 export const playerSheetProgress = makeMutable(0);
 
@@ -29,15 +30,30 @@ export const useTabBarPushStyle = (distance: number) => {
  * sheet. The mini player's drag writes `y` (the sheet's top edge, as NowPlayingScreen's `sheetY`: 0 = open, the rest
  * position = on the pill) while `tracking`; the sheet, mounted a few pixels into the drag, follows it. On release the
  * pill bumps `ended` with the finger's `velocity`, and the sheet settles (navigation/playerTransition `settleTarget`).
- * `mounted` is true while the sheet screen exists, so a flick that ends before it mounted opens it the classic way.
+ * A flick that ends before the sheet mounted settles from its last `y` and `velocity` (`sheetOpeningStart`).
  */
 export const playerDrag = {
   tracking: makeMutable(false),
   y: makeMutable(0),
   velocity: makeMutable(0),
   ended: makeMutable(0),
-  mounted: makeMutable(false),
 };
 
-/** The mini player's cover in window coordinates (measured by the pill), where the moving cover starts. */
-export const playerCoverFrom = makeMutable({ x: 0, y: 0, width: 0, height: 0, radius: 0 });
+/**
+ * The sheet that owns `playerSheetProgress` and the hand-over flags: 0 when no player sheet is mounted. Each mounted
+ * sheet takes a new id. An old sheet's late cleanup, close callback or progress write is ignored once a newer one
+ * owns the hand-over, so it can never reset progress or reveal the mini player over the new session.
+ */
+export const playerSheetSession = makeMutable(0);
+let lastSheetSession = 0;
+/** A fresh session id (JS thread). */
+export const nextSheetSession = (): number => {
+  lastSheetSession += 1;
+  return lastSheetSession;
+};
+
+/** True when `session` may release what the player sheet holds: it still owns the hand-over, or no sheet does. */
+export const isSheetSessionFree = (session: number): boolean => {
+  const owner = playerSheetSession.value;
+  return owner === session || owner === 0;
+};

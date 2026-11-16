@@ -7,10 +7,7 @@ import { Dimensions, StatusBar, StyleSheet, useWindowDimensions, View } from 're
 import * as GestureHandler from 'react-native-gesture-handler';
 import Animated, {
   Easing,
-  Extrapolation,
-  interpolate,
   runOnJS,
-  useAnimatedReaction,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -25,7 +22,7 @@ import { useNativeSkip } from '../components/NativeSkip';
 import NowPlayingBackground from '../components/NowPlayingBackground';
 import NowPlayingControls from '../components/NowPlayingControls';
 import NowPlayingHeader from '../components/NowPlayingHeader';
-import NowPlayingLyricsArea, { fullCoverHeight, CONTROLS_CLEARANCE, HEADER_CLEARANCE, LYRICS_MORPH_MS } from '../components/NowPlayingLyricsArea';
+import NowPlayingLyricsArea, { CONTROLS_CLEARANCE, HEADER_CLEARANCE, LYRICS_MORPH_MS } from '../components/NowPlayingLyricsArea';
 import AmbientMode from '../components/player/AmbientMode';
 import { prefetchCover } from '../components/player/coverImages';
 import { isCoverFull, SEEK_STEP_S, seekSide, seekTarget } from '../components/player/coverStage';
@@ -38,21 +35,17 @@ import { PlayerSheet, SleepTimerList } from '../components/player/PlayerSheet';
 import SeekRipple, { SeekPulse } from '../components/player/SeekRipple';
 import UpNextPanel from '../components/player/UpNextPanel';
 import { Toast } from '../components/Toast';
-import { Glass, Motion, Radius } from '../constants/allegraTheme';
+import { Motion } from '../constants/allegraTheme';
 import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
 import { useNowPlayingLogic } from '../hooks/useNowPlayingLogic';
 import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
 import { shouldExitLyricsFullscreen, shouldOpenLyricsFullscreen, startsInFooter } from '../navigation/lyricsGesture';
 import { fullscreenClearance } from '../components/player/fullscreenFooter';
 import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from '../navigation/usePlayerSheetMotion';
-import { cardCoverRect, heroCoverRect, playerContentOpacity, sheetYForDrag } from '../navigation/playerTransition';
+import { playerContentOpacity, sheetYForDrag } from '../navigation/playerTransition';
 import { SHEET_TOP_RADIUS } from '../navigation/miniShell';
 import { shouldCloseSheet } from '../navigation/sheetClose';
-import { playerCoverFrom } from '../navigation/sheetProgress';
-import { MiniPlayerGlow } from '../components/MiniPlayerGlow';
-import CoverGhost from '../components/player/CoverGhost';
-import { DOCK_THUMB } from '../components/player/lyricsMorph';
-import { heroHeight as playerHeroHeight } from '../components/player/AppleBackdrop';
+import { isSheetSessionFree } from '../navigation/sheetProgress';
 import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { shellNavHeight, SEEK_BAND_HEIGHT, miniRowHeight } from '../navigation/v6Shell';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
@@ -112,11 +105,12 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // Opened out of the system island: its native launch surface grows over the app, so the sheet is
   // already open in the first frame instead of rising a second time inside it.
   const revealPill = useCallback(() => setMiniPlayerHiddenSource('NowPlaying', false), [setMiniPlayerHiddenSource]);
-  const { holdRoute, sheetY, progress, closing, animateClose, controls: sheetControls } = usePlayerSheetMotion(restY, route.params.instant === true, reduceMotion, revealPill);
+  const { holdRoute, shouldLeave, sheetY, progress, closing, handedOff, animateClose, controls: sheetControls, session } = usePlayerSheetMotion(restY, route.params.instant === true, reduceMotion, revealPill, pillNav);
   // Where to go once the sheet is gone (the artist line opens their page).
   const afterClose = useRef<{ kind: 'artist'; name: string } | { kind: 'album'; params: BrowseStackParamList['CatalogAlbum'] } | null>(null);
   useEffect(() => {
-    if (holdRoute) return;
+    // Grabbed again between the close landing and this effect: the sheet is reopening, keep the route.
+    if (holdRoute || !shouldLeave()) return;
     safeGoBack(navigation);
     const destination = afterClose.current;
     afterClose.current = null;
@@ -124,7 +118,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       if (destination.kind === 'artist') navigationRef.navigate('Main', { screen: 'Browse', params: { screen: 'Artist', params: { name: destination.name } } });
       else navigationRef.navigate('Main', { screen: 'Browse', params: { screen: 'CatalogAlbum', params: destination.params } });
     }
-  }, [holdRoute, navigation]);
+  }, [holdRoute, shouldLeave, navigation]);
 
   // Ambient mode (player menu): back leaves ambient first, then the player.
   const [ambient, setAmbient] = useState(false);
@@ -333,22 +327,17 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const sheetStyle = useAnimatedStyle(() => {
     const p = progress.value;
     return {
-      opacity: reduceMotion ? p : 1,
+      // Closed and handed over: the mini player owns the bar on this frame, whenever JS removes the route.
+      opacity: handedOff.value ? 0 : reduceMotion ? p : 1,
       transform: [{ translateY: reduceMotion ? 0 : sheetY.value + (1 - p) * barTop }] as const,
     };
   });
-  // Tap and drag share the same artwork handoff for card, full-cover and hero layouts.
-  const coverLanding = useSettingsStore(s => (!isCardPlayerBackground(s.playerBackground) && s.appleMusicInspired ? 'hero' : isCoverFull(s.playerBackground, s.appleMusicInspired, s.playerCoverFull) ? 'full' : 'card'));
-  const movingCover = !reduceMotion && playerCoverFrom.value.width > 0;
-  const miniSurfaceStyle = useAnimatedStyle(() => ({ opacity: 1 - playerContentOpacity(progress.value) }));
-  // The rising surface's glass: a soft sheen from its top edge and a hairline rim, gone once the player has arrived.
-  const sheenStyle = useAnimatedStyle(() => ({ opacity: reduceMotion ? 0 : 1 - Math.min(1, Math.max(0, (progress.value - 0.3) / 0.45)) }));
+  // One motion (1.69.3): the sheet carries the player's own artwork and fades its contents in over 15–40% while the
+  // mini player fades off its top edge. Nothing flies separately, so there is one cover and one bar at every frame.
+  // The sheet is a plain surface: it never paints its own copy of the mini player's glow, sheen or rim.
   const playerFadeStyle = useAnimatedStyle(() => ({
-    opacity: reduceMotion ? 1 : movingCover ? playerContentOpacity(progress.value) : interpolate(progress.value, [0.15, 0.4], [0, 1], Extrapolation.CLAMP),
+    opacity: reduceMotion ? 1 : playerContentOpacity(progress.value),
   }));
-  const landingRect = coverLanding === 'hero'
-    ? heroCoverRect(windowW, playerHeroHeight(windowW, screenH))
-    : coverLanding === 'full' ? heroCoverRect(windowW, fullCoverHeight(windowW, screenH)) : cardCoverRect(windowW, screenH, insets.top + HEADER_CLEARANCE + 24);
   // The page underneath dims on Echo's curve: nothing for the first tenth, then fast, then easing off.
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: (reduceMotion ? 0 : PAGE_DIM) * Math.min(1, 1.4 * Math.sqrt(Math.max(0, progress.value - 0.1))),
@@ -368,9 +357,10 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
     React.useCallback(() => {
       setMiniPlayerHiddenSource('NowPlaying', true);
       return () => {
-        setMiniPlayerHiddenSource('NowPlaying', false);
+        // A newer player sheet holds the same flag: an old one leaving must not reveal the mini player over it.
+        if (isSheetSessionFree(session)) setMiniPlayerHiddenSource('NowPlaying', false);
       };
-    }, [setMiniPlayerHiddenSource])
+    }, [setMiniPlayerHiddenSource, session])
   );
 
   const {
@@ -412,14 +402,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const lyricsP = useSharedValue(showLyrics ? 1 : 0);
   const dockX = useSharedValue(0);
   const dockY = useSharedValue(0);
-  // The thumbnail's centre as plain numbers: the moving cover (CoverGhost) takes a rectangle prop, and under
-  // lyrics the cover lives in that thumbnail, so it must fly there and not to the big cover.
-  const [dockCenter, setDockCenter] = useState({ x: 0, y: 0 });
-  useAnimatedReaction(
-    () => dockY.value,
-    y => { if (y > 0) runOnJS(setDockCenter)({ x: dockX.value, y }); },
-    [dockX, dockY],
-  );
   useEffect(() => {
     const target = showLyrics || lyricsFullscreen ? 1 : 0;
     // Fullscreen rides the same cover -> lyrics morph (opacity only under Reduce Motion).
@@ -895,9 +877,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // so the lifted title reads over it.
   const stageBackStyle = useAnimatedStyle(() => ({ opacity: 1 - 0.75 * upNext.value }));
   const upNextShadeStyle = useAnimatedStyle(() => ({ opacity: upNext.value }));
-  // With lyrics up (regular or fullscreen) the cover is the title's thumbnail, so the sheet's cover lands there.
-  const ghostOnDock = (showLyrics || lyricsFullscreen) && dockCenter.y > 0;
-  const dockRect = { x: dockCenter.x - DOCK_THUMB / 2, y: dockCenter.y - DOCK_THUMB / 2, width: DOCK_THUMB, height: DOCK_THUMB };
 
   return (
     <View style={styles.root}>
@@ -913,11 +892,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           if (h > 0) setFrameHeight(h);
         }}
       >
-        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, miniSurfaceStyle]}><MiniPlayerGlow uri={currentSong?.coverImageUri} active={false} /></Animated.View>
-        <Animated.View pointerEvents="none" style={[styles.surfaceSheen, sheenStyle]}>
-          <LinearGradient colors={Glass.sheen} style={StyleSheet.absoluteFill} />
-          <View style={styles.surfaceRim} />
-        </Animated.View>
         <Animated.View style={[styles.playerLayer, playerFadeStyle]}>
         <NowPlayingBackground
           coverImageUri={swipeSource?.coverImageUri ?? currentSong?.coverImageUri}
@@ -927,6 +901,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
           canvas={ambient || swipePreview ? null : canvas}
           playing={storePlaying}
           shift={stageX}
+          sheetProgress={progress}
         />
 
         {!lyricsFullscreen ? (
@@ -951,7 +926,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
         <Animated.View style={[styles.contentArea, stageBackStyle]}>
           <NowPlayingLyricsArea
-            transitionProgress={movingCover ? progress : undefined}
             showLyrics={showLyrics}
             processedLyrics={processedLyrics}
             lyricSource={currentSong?.lyricSource}
@@ -1081,17 +1055,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       </Animated.View>
       </GestureDetector>
       </Animated.View>
-      {movingCover && currentSong ? (
-        <CoverGhost
-          progress={progress}
-          to={ghostOnDock ? dockRect : landingRect}
-          toRadius={ghostOnDock ? Radius.thumb : coverLanding === 'card' ? Radius.panel : 0}
-          fadeOut={!ghostOnDock && coverLanding !== 'card'}
-          uri={currentSong.coverImageUri}
-          title={currentSong.title}
-          artist={currentSong.artist}
-        />
-      ) : null}
     </View>
   );
 };
@@ -1124,21 +1087,6 @@ const styles = StyleSheet.create({
     // The mini player's outline (navigation/miniShell): the close lands on exactly the pill's shape.
     borderTopLeftRadius: SHEET_TOP_RADIUS,
     borderTopRightRadius: SHEET_TOP_RADIUS,
-  },
-  surfaceSheen: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 240,
-  },
-  surfaceRim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: StyleSheet.hairlineWidth * 2,
-    backgroundColor: Glass.sheenRim,
   },
   playerLayer: {
     ...StyleSheet.absoluteFillObject,

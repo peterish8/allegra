@@ -1,17 +1,12 @@
 /**
- * The maths of the player transition (finger-tracked since 1.49.0, always on since 1.69.0): where a release settles, and where the
- * cover is on its way from the mini player to the player. Pure numbers, so the rules are tested; the gestures and
- * the drawing are in PillPlayer, NowPlayingScreen and components/player/CoverGhost.
+ * The maths of the player sheet (finger-tracked since 1.49.0, always on since 1.69.0): where a release settles, how
+ * the sheet follows a finger, and what fades when. Pure numbers, so the rules are tested; the gestures and the drawing
+ * are in PillPlayer and NowPlayingScreen.
  *
- * `progress` is playerSheetProgress: 0 resting on the mini player, 1 full screen.
+ * One sheet, one motion (1.69.3): the sheet slides from the mini player's top edge carrying the player's own artwork,
+ * and the mini player rides that edge and fades. No separate cover flies between the two, so there is never a second
+ * cover, thumbnail or bar on screen. `progress` is playerSheetProgress: 0 resting on the mini player, 1 full screen.
  */
-
-export interface Rect {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
 
 /** A release faster than this (px/s) decides the direction whatever the distance. */
 export const FLING_VELOCITY = 800;
@@ -71,64 +66,49 @@ export function miniRideY(progress: number, restY: number, reduceMotion: boolean
   return reduceMotion || p === 0 ? 0 : -p * restY;
 }
 
-export const lerp = (from: number, to: number, t: number): number => {
-  'worklet';
-  return from + (to - from) * t;
-};
-
-/** The cover's rectangle `progress` of the way from the mini player's cover to its place in the player. */
-export function coverFrame(progress: number, from: Rect, to: Rect): Rect {
-  'worklet';
-  // Use the sheet's own progress so the cover cannot race ahead of its surface.
-  const t = clamp01(progress);
-  return { x: lerp(from.x, to.x, t), y: lerp(from.y, to.y, t), width: lerp(from.width, to.width, t), height: lerp(from.height, to.height, t) };
-}
-
-/** The cover's corner radius on the way: eased, so it keeps the mini cover's corners until the cover has grown. */
-export function coverRadius(progress: number, fromRadius: number, toRadius: number): number {
-  'worklet';
-  const t = clamp01(progress);
-  return lerp(fromRadius, toRadius, t * t);
-}
-
-/**
- * The mini player's own contents (title, buttons) fade out over the first 18%, so the growing cover never sits on
- * top of its text (the overlap in the reference's second frame). 1 = fully shown.
- */
+/** The mini player's own contents (cover, title, buttons) fade off the sheet's edge over the first 18%. 1 = shown. */
 export const miniContentOpacity = (progress: number): number => {
   'worklet';
   return 1 - clamp01(progress / 0.18);
 };
 
 /**
- * The player's own contents (title, controls) fade in late, after the cover has arrived: 0 until 34%, 1 at 72%.
- * Both tap expansion and fluid dragging use this choreography.
+ * The player's contents (its artwork, title, controls) fade in on the sheet from 18%, exactly where the mini player
+ * has finished leaving its edge, to 40%, and out the same way on a close: one continuous hand-over, one surface at a
+ * time, never two players or two covers.
  */
 export const playerContentOpacity = (progress: number): number => {
   'worklet';
-  return clamp01((progress - 0.34) / 0.38);
+  return clamp01((progress - 0.18) / 0.22);
 };
 
-/** The moving cover shows while the sheet is between the ends; at either end the real cover (or the mini one) is. */
-export const ghostVisible = (progress: number): boolean => {
+/**
+ * A ready Canvas video shows only near the open end: it fades out over the first tenth of a close (into the still
+ * cover under it) and back in on a reopen. Opacity only, so a ready video keeps decoding through a reversal and
+ * never restarts.
+ */
+export const canvasSheetGate = (progress: number): number => {
   'worklet';
-  return progress > 0.001 && progress < 0.999;
+  // Written as p·10 − 9 (not (p − 0.9) / 0.1) so the open end is exactly 1, not 0.9999…
+  return clamp01(progress * 10 - 9);
 };
+
+/**
+ * Where a sheet starts when its route mounts. A drag from the mini player hands over the finger's last position
+ * even when the finger lifted before the route mounted (a quick flick): the sheet starts there and settles once
+ * with the release velocity instead of opening from rest. A tap or link opens from rest on a spring.
+ */
+export function sheetOpeningStart(instant: boolean, dragOpen: boolean, dragY: number, restY: number): { y: number; tracked: boolean } {
+  if (instant) return { y: 0, tracked: false };
+  if (dragOpen) return { y: Math.min(restY, Math.max(0, Number.isFinite(dragY) ? dragY : restY)), tracked: true };
+  return { y: restY, tracked: false };
+}
 
 /** Room the title, buttons and seek bar take under the card (NowPlayingLyricsArea's Stage uses the same number). */
-export const CARD_CONTROLS_ROOM = 360;
-export const CARD_MAX = 342;
+const CARD_CONTROLS_ROOM = 360;
+const CARD_MAX = 342;
 const CARD_SIDE = 24;
 
 /** The artwork card's side in pixels: the screen's width less its margins, never over 342, never taller than the room. */
 export const cardSize = (width: number, screenH: number, paddingTop: number): number =>
   Math.min(width - CARD_SIDE * 2, CARD_MAX, Math.max(160, screenH - paddingTop - CARD_CONTROLS_ROOM));
-
-/** Where the square artwork card sits in the player: centred, `paddingTop` from the top. */
-export function cardCoverRect(width: number, screenH: number, paddingTop: number): Rect {
-  const side = cardSize(width, screenH, paddingTop);
-  return { x: (width - side) / 2, y: paddingTop, width: side, height: side };
-}
-
-/** Where the full-width hero (the Apple style, and Canvas inside it) sits: the top of the screen, `heroH` tall. */
-export const heroCoverRect = (width: number, heroH: number): Rect => ({ x: 0, y: 0, width, height: heroH });

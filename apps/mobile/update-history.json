@@ -1,6 +1,22 @@
 {
   "entries": [
     {
+      "version": "1.69.3",
+      "description": "Opening and closing the player is quicker and cleaner, with one cover and one mini player",
+      "changelog": [
+        {
+          "title": "Fixed",
+          "items": [
+            "Opening and closing the player is one smooth fade, with no second copy of the cover on screen",
+            "Closing the player no longer shows two mini players for a moment",
+            "The player opens and closes faster, and a quick swipe lands quicker still",
+            "Moving artwork fades back to the still cover as you close the player, and comes back if you pull the player open again",
+            "A quick swipe on the mini player now goes the way you swiped, even if you let go before the player appeared"
+          ]
+        }
+      ]
+    },
+    {
       "version": "1.69.2",
       "description": "A tidier Stream header and profile menu, a smoother updates menu, and a bottom bar that fades into the page",
       "changelog": [
@@ -15,7 +31,9 @@
             "Removed leftover code the app no longer uses"
           ]
         }
-      ]
+      ],
+      "sourceCommit": "9b380b64dfa55812fe17e92382a74bd8e86688c7",
+      "rollbackAsset": "LuvLyrics-rollback-1.69.2.apk"
     },
     {
       "version": "1.69.1",
@@ -55,31 +73,6 @@
       ],
       "sourceCommit": "1a6bb6ca9a870d9ffab38474fc337876fa306852",
       "rollbackAsset": "LuvLyrics-rollback-1.69.0.apk"
-    },
-    {
-      "version": "1.68.2",
-      "description": "New versions show up in About again, and every change from 1.68.0 and 1.68.1 is in this build",
-      "changelog": [
-        {
-          "title": "New",
-          "items": [
-            "Connect ListenBrainz in Settings to keep a copy of what you listen to on your own profile",
-            "Your full history stays on this phone, and nothing is sent until you connect"
-          ]
-        },
-        {
-          "title": "Improved",
-          "items": [
-            "The app finds new versions reliably, so updates show up in About",
-            "Search tells you when the catalog cannot be reached, with a Try again button",
-            "The close button on the info card works",
-            "Small buttons are easier to tap, including the info buttons and filter chips",
-            "Text in Search and the Now Playing controls no longer gets cut off at larger sizes"
-          ]
-        }
-      ],
-      "sourceCommit": "65e90b5756edbc4c177e4613ae3479021fa691e0",
-      "rollbackAsset": "LuvLyrics-rollback-1.68.2.apk"
     }
   ]
 }

@@ -25,3 +25,30 @@ export const canvasSourcePlan = (canvas: Pick<CanvasArtwork, 'url' | 'isHls'> | 
   canvas
     ? { kind: 'load', source: { uri: canvas.url, contentType: canvas.isHls ? 'hls' : 'auto' } }
     : { kind: 'clear', afterMs: SOURCE_CLEAR_DELAY_MS };
+
+/** The address a loaded source names (expo-video's `sourceLoad` payload), or null when it names none. */
+export const sourceUri = (source: unknown): string | null => {
+  if (typeof source === 'string') return source;
+  if (source && typeof source === 'object' && typeof (source as { uri?: unknown }).uri === 'string') return (source as { uri: string }).uri;
+  return null;
+};
+
+const sameAddress = (a: string, b: string): boolean => {
+  if (a === b) return true;
+  try { return decodeURI(a) === decodeURI(b); } catch { return false; }
+};
+
+/**
+ * Whether a player event belongs to the clip this layer is loading. A late event from a clip that was skipped,
+ * closed or replaced (it names another address) must never size or reveal the new clip over the still cover. An
+ * event that names no address is taken to follow the latest load, which is the order the player reports them in.
+ */
+export const clipEventApplies = (eventUri: string | null, loadingUrl: string | null): boolean =>
+  loadingUrl !== null && (eventUri === null || sameAddress(eventUri, loadingUrl));
+
+/**
+ * A first frame can start the reveal only for the clip on show, once that clip's own source has loaded. Until then
+ * the still cover under the layer is what shows: a slow, failed or stale video stays on the poster.
+ */
+export const firstFrameCounts = (load: { url: string | null; loaded: boolean }, shownUrl: string | null | undefined): boolean =>
+  load.loaded && load.url !== null && !!shownUrl && sameAddress(load.url, shownUrl);

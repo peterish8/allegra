@@ -44,7 +44,7 @@ import type { VideoTrack } from 'expo-video';
 import { CanvasArtwork } from '../services/canvas/types';
 import { Motion } from '../constants/allegraTheme';
 import { diag } from '../utils/diag';
-import { PLAYER_RELEASE_DELAY_MS, canvasSourcePlan } from './canvasPlayerPlan';
+import { PLAYER_RELEASE_DELAY_MS, canvasSourcePlan, clipEventApplies, firstFrameCounts, sourceUri } from './canvasPlayerPlan';
 
 // expo-video needs its native module, which Android only gets if it is listed
 // in android/app/src/main/java/expo/modules/ExpoModulesPackageList.kt. A build
@@ -157,14 +157,34 @@ const CanvasVideo: React.FC<CanvasVideoLayerProps & { lib: ExpoVideo }> = ({
   }, [incoming?.url]);
 
   const player = useCanvasPlayer(lib);
+  // Which clip the player is loading and whether its own source has loaded. Player events are checked against it, so
+  // a late event from a skipped, closed or replaced clip can neither size nor reveal the next one.
+  const load = useRef<{ url: string | null; loaded: boolean }>({ url: null, loaded: false });
+  // A first frame that arrived before its source reported in; it counts once the source does.
+  const earlyFrame = useRef<string | null>(null);
+  const [firstFrame, setFirstFrame] = useState(false);
+  const markLoaded = useCallback((url: string) => {
+    if (load.current.url !== url) return;
+    load.current = { url, loaded: true };
+    if (earlyFrame.current === url) {
+      earlyFrame.current = null;
+      setFirstFrame(true);
+    }
+  }, []);
   // Clips change on the one player, in place. Gone (cover tapped to a card, lyrics opened, a song with no canvas):
   // the view below unmounts first, then the player lets the clip go once the surface has detached.
   useEffect(() => {
     const plan = canvasSourcePlan(canvas);
+    earlyFrame.current = null;
     if (plan.kind === 'load') {
-      player.replaceAsync(plan.source).catch(() => diag('canvas', `could not load ${plan.source.uri}`));
+      const url = plan.source.uri;
+      load.current = { url, loaded: false };
+      player.replaceAsync(plan.source)
+        .then(() => markLoaded(url))
+        .catch(() => diag('canvas', `could not load ${url}`));
       return undefined;
     }
+    load.current = { url: null, loaded: false };
     player.pause();
     const timer = setTimeout(() => {
       player.replaceAsync(null).catch(() => undefined);
@@ -178,7 +198,6 @@ const CanvasVideo: React.FC<CanvasVideoLayerProps & { lib: ExpoVideo }> = ({
   const [video, setVideo] = useState<{ width: number; height: number } | null>(null);
 
   // New canvas: hide until it is ready to show, forget the old track size.
-  const [firstFrame, setFirstFrame] = useState(false);
   // The clip already dissolved in. A clip reveals once: a pause, or the song
   // changing under it, must never replay the reveal — that cancelled the
   // outgoing clip's fade-out and brought it back over the next song.
@@ -204,15 +223,18 @@ const CanvasVideo: React.FC<CanvasVideoLayerProps & { lib: ExpoVideo }> = ({
       }
     };
     const onLoad = player.addListener('sourceLoad', e => {
+      const loading = load.current.url;
+      if (!clipEventApplies(sourceUri(e.videoSource), loading)) return;
       const largest = [...e.availableVideoTracks].sort((a, b) => b.size.width * b.size.height - a.size.width * a.size.height)[0];
       adopt(largest);
+      if (loading) markLoaded(loading);
     });
-    const onTrack = player.addListener('videoTrackChange', e => adopt(e.videoTrack));
+    const onTrack = player.addListener('videoTrackChange', e => { if (load.current.loaded) adopt(e.videoTrack); });
     return () => {
       onLoad.remove();
       onTrack.remove();
     };
-  }, [player]);
+  }, [player, markLoaded]);
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -306,9 +328,12 @@ const CanvasVideo: React.FC<CanvasVideoLayerProps & { lib: ExpoVideo }> = ({
         fullscreenOptions={NO_FULLSCREEN}
         allowsPictureInPicture={false}
         onFirstFrameRender={() => {
-          diag('canvas', `first frame: ${canvas.url}`);
-          // Not shown yet — the reveal effect waits until the clip is moving.
-          setFirstFrame(true);
+          // Not shown yet — the reveal effect waits until the clip is moving. A frame from an earlier clip, or one
+          // drawn before this clip's source reported in, never starts it early.
+          if (firstFrameCounts(load.current, canvas.url)) {
+            diag('canvas', `first frame: ${canvas.url}`);
+            setFirstFrame(true);
+          } else if (load.current.url === canvas.url) earlyFrame.current = canvas.url;
         }}
       />
       <LinearGradient
