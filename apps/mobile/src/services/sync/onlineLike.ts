@@ -4,7 +4,7 @@
  * to the account; a like is not a download. A copy already in the library is liked directly by
  * the caller instead (songsStore.toggleLike).
  */
-import type { SongSnapshot } from '@shared/songRef';
+import type { SongRef, SongSnapshot } from '@shared/songRef';
 
 import { removeOnlineLike, upsertOnlineLike } from '../../database/syncQueries';
 import { useOnlineLibraryStore } from '../../store/onlineLibraryStore';
@@ -27,4 +27,12 @@ export async function toggleOnlineLike(song: SongSnapshot): Promise<'liked' | 'u
   } catch {
     return 'error';
   }
+}
+
+/** Remove an online like by its canonical identity, including when the phone has a downloaded copy. */
+export async function removeOnlineLikeByRef(ref: SongRef): Promise<void> {
+  const at = Date.now();
+  await removeOnlineLike(ref);
+  record(likeOp(ref, false, at));
+  await useOnlineLibraryStore.getState().load();
 }

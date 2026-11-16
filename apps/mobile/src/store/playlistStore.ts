@@ -10,6 +10,12 @@ import * as songQueries from '../database/queries';
 import { usePlayerStore } from './playerStore';
 import { recordMembership, recordPlaylistChange, recordPlaylistDelete } from '../services/sync/recordLocal';
 
+/** Keep an active playlist queue in step with an exact local or stream song identity. */
+export function reconcileRemovedPlaylistSong(playlistId: string, songId: string): void {
+  const player = usePlayerStore.getState();
+  if (player.currentPlaylistId === playlistId) player.removeFromQueue(songId);
+}
+
 interface PlaylistState {
   // State
   playlists: Playlist[];
@@ -201,7 +207,7 @@ export const usePlaylistStore = create<PlaylistState>((set, get) => ({
       // CRITICAL: Queue sync to prevent ghost songs
       const playerState = usePlayerStore.getState();
       if (playerState.currentPlaylistId === playlistId) {
-        playerState.removeFromQueue(songId);
+        reconcileRemovedPlaylistSong(playlistId, songId);
         if (__DEV__) console.log(`[PLAYLIST_STORE] Removed ${songId} from active playlist queue`);
       }
       

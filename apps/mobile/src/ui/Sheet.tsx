@@ -6,23 +6,25 @@
  * - follows the finger down, with the scrim fading by how far it has travelled,
  * - a flick shut keeps the finger's speed, a slow drag past the line closes, anything else settles back,
  * - its list scrolls first; a drag down at the top of the list moves the sheet (`SheetScrollView`),
+ * - expandable sheets grow under an upward drag and settle on the UI thread,
  * - travel is the card's measured height, so a short sheet doesn't wait on distance nobody sees,
- * - Reduce Motion: it fades in place.
+ * - Reduce Motion: it settles without animated travel.
  *
  * `presentation="modal"` (default) draws above everything, tab bar and pill included, in a native modal
  * (back button closes it). The player's own sheets pass `inline`: they must stay inside the player so a drag
  * closes the sheet before the player (see NowPlayingScreen).
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, ScrollViewProps, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Keyboard, Modal, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, ScrollViewProps, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as GestureHandler from 'react-native-gesture-handler';
-import Animated, { runOnJS, SharedValue, useAnimatedKeyboard, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { runOnJS, SharedValue, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Frosted from '../components/allegra/Frosted';
 import type { AuraPalette } from '../components/allegra/palette';
 import { releaseSpring } from '../components/allegra/physics';
 import { Glass, Motion, Radius, Signal, Space, Surface, Typography } from '../constants/allegraTheme';
 import { shouldCloseSheet } from '../navigation/sheetClose';
+import { sheetExpansionCancelTarget, sheetExpansionDrag, sheetExpansionTarget, sheetKeyboardGeometry, shouldCloseExpandableSheet } from './sheetExpansion';
 import * as Haptics from '../utils/haptics';
 import { diag } from '../utils/diag';
 import { CoverGlow } from './Screen';
@@ -91,22 +93,52 @@ export interface SheetProps {
   presentation?: 'modal' | 'inline';
   /** Lift above the keyboard (sheets with a text field). */
   keyboard?: boolean;
+  /** Let an initially compact sheet expand when the listener swipes up. */
+  expandable?: boolean;
   /** A faint glow of this cover across the top (an actions sheet for a song or a mix). */
   tintUri?: string;
   children: React.ReactNode;
 }
 
-export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = false, palette, surface = palette ? 'player' : 'deep', presentation = 'modal', keyboard = false, tintUri, children }) => {
+export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = false, expandable = false, palette, surface = palette ? 'player' : 'deep', presentation = 'modal', keyboard = false, tintUri, children }) => {
   const insets = useSafeAreaInsets();
-  const { height: windowH } = useWindowDimensions();
+  const { height: windowH, width: windowW } = useWindowDimensions();
   const reduce = useReducedMotion();
   const [mounted, setMounted] = useState(visible);
+  const [expanded, setExpanded] = useState(false);
   const shown = useSharedValue(0);
   const drag = useSharedValue(0);
+  const expansion = useSharedValue(0);
+  const expansionAtStart = useSharedValue(0);
   const scrolled = useSharedValue(0);
   // Until the card is measured, assume it is as tall as the screen: it starts off-screen either way.
   const travel = useSharedValue(windowH);
-  const kb = useAnimatedKeyboard();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [fullWindowH, setFullWindowH] = useState(windowH);
+  const previousWindow = useRef({ width: windowW, height: windowH });
+  const currentWindowH = useRef(windowH);
+  currentWindowH.current = windowH;
+  useEffect(() => {
+    const previous = previousWindow.current;
+    if (windowW !== previous.width) setFullWindowH(windowH);
+    else if (keyboardHeight === 0 && windowH > fullWindowH) setFullWindowH(windowH);
+    previousWindow.current = { width: windowW, height: windowH };
+  }, [windowH, windowW, keyboardHeight, fullWindowH]);
+  useEffect(() => {
+    if (!keyboard) return;
+    const update = (event: { endCoordinates: { height: number } }) => setKeyboardHeight(Math.max(0, event.endCoordinates.height));
+    const show = Keyboard.addListener('keyboardDidShow', update);
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+      setFullWindowH(currentWindowH.current);
+    });
+    return () => { show.remove(); hide.remove(); };
+  }, [keyboard]);
+  const geometry = sheetKeyboardGeometry(windowH, fullWindowH, keyboardHeight, insets.top, tall || expandable ? 0.88 : 0.7);
+  const expansionTravel = keyboard ? geometry.expansionTravel : windowH * 0.38;
+  const keyboardFrame = keyboard
+    ? { bottom: geometry.keyboardOffset, maxHeight: geometry.maxHeight, ...(expandable ? { height: geometry.maxHeight } : {}) }
+    : undefined;
   /** Set when a swipe closed the sheet: its spring is already running, `visible` turning false must not restart it. */
   const swiped = useRef(false);
   const list = useMemo(() => Gesture.Native(), []);
@@ -116,19 +148,22 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
     if (visible) {
       swiped.current = false;
       setMounted(true);
+      setExpanded(false);
       drag.value = 0;
+      expansion.value = 0;
       scrolled.value = 0;
-      shown.value = reduce ? withTiming(1, { duration: Motion.duration.base }) : withSpring(1, Motion.spring.open);
+      shown.value = reduce ? 1 : withSpring(1, Motion.spring.open);
     } else if (mounted && !swiped.current) {
       const done = (finished?: boolean) => {
         'worklet';
         if (finished) runOnJS(setMounted)(false);
       };
-      shown.value = reduce
-        ? withTiming(0, { duration: Motion.duration.fast }, done)
-        : withSpring(0, { ...Motion.spring.open, ...CLOSE_REST }, done);
+      if (reduce) {
+        shown.value = 0;
+        setMounted(false);
+      } else shown.value = withSpring(0, { ...Motion.spring.open, ...CLOSE_REST }, done);
     }
-  }, [visible, mounted, reduce, shown, drag, scrolled]);
+  }, [visible, mounted, reduce, shown, drag, expansion, scrolled]);
 
   const closedBySwipe = useCallback(() => {
     swiped.current = true;
@@ -140,49 +175,77 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
     opacity: SCRIM * shown.value * (1 - Math.min(1, drag.value / Math.max(1, travel.value))),
   }));
   const card = useAnimatedStyle(() => {
-    const lift = keyboard ? -kb.height.value : 0;
-    if (reduce) return { opacity: shown.value, transform: [{ translateY: drag.value + lift }] };
-    return { transform: [{ translateY: (1 - shown.value) * travel.value + drag.value + lift }] };
+    const expansionOffset = expandable ? (1 - expansion.value) * expansionTravel : 0;
+    if (reduce) return { opacity: shown.value, transform: [{ translateY: drag.value + expansionOffset }] };
+    return { transform: [{ translateY: (1 - shown.value) * travel.value + drag.value + expansionOffset }] };
   });
 
   // Swiping down closes this sheet and nothing else. It activates at 6pt, inside Android's 8dp touch slop, so
   // on a list at the top it wins before the list starts scrolling and the list's touch is cancelled.
-  const pan = Gesture.Pan()
-    .activeOffsetY(6)
-    .failOffsetY(-8)
+  const panGesture = Gesture.Pan().activeOffsetY(expandable && !expanded ? [-8, 6] : 6);
+  if (!expandable || expanded) panGesture.failOffsetY(-8);
+  const pan = panGesture
     .failOffsetX([-22, 22])
+    .onBegin(() => {
+      'worklet';
+      expansionAtStart.value = expansion.value;
+    })
     .onTouchesDown((_e, state) => {
       'worklet';
       if (scrolled.value > 2) state.fail();
     })
     .onUpdate(e => {
       'worklet';
-      drag.value = Math.max(0, e.translationY);
+      if (expandable) {
+        const next = sheetExpansionDrag(expansionAtStart.value, e.translationY, expansionTravel);
+        expansion.value = next.progress;
+        drag.value = next.closeDrag;
+      } else {
+        drag.value = Math.max(0, e.translationY);
+      }
     })
     .onEnd(e => {
       'worklet';
-      if (!shouldCloseSheet(e.translationY, e.velocityY)) {
-        drag.value = withSpring(0, releaseSpring(0, e.velocityY));
+      const closeDrag = expandable ? sheetExpansionDrag(expansionAtStart.value, e.translationY, expansionTravel).closeDrag : e.translationY;
+      const shouldClose = expandable
+        ? shouldCloseExpandableSheet(expansion.value, closeDrag, e.velocityY)
+        : shouldCloseSheet(e.translationY, e.velocityY);
+      if (!shouldClose) {
+        if (expandable && (expansionAtStart.value > 0 || e.translationY < 0)) {
+          const target = sheetExpansionTarget(expansion.value, e.translationY, e.velocityY);
+          runOnJS(setExpanded)(target === 1);
+          expansion.value = reduce ? target : withSpring(target, Motion.spring.sheet);
+          drag.value = reduce ? 0 : withSpring(0, Motion.spring.settle);
+          return;
+        }
+        drag.value = reduce ? 0 : withSpring(0, releaseSpring(0, e.velocityY));
         return;
       }
       runOnJS(diag)('sheet', `swipe close dy ${e.translationY.toFixed(0)} vy ${e.velocityY.toFixed(0)}`);
       // Fold the drag into `shown`, then let the spring carry on at the finger's speed.
-      const distance = Math.max(1, travel.value);
-      shown.value = Math.max(0, shown.value - drag.value / distance);
+      const closeDistance = Math.max(1, travel.value);
+      shown.value = Math.max(0, shown.value - drag.value / closeDistance);
       drag.value = 0;
+      if (expandable) expansion.value = reduce ? 0 : withSpring(0, Motion.spring.sheet);
       const finish = (finished?: boolean) => {
         'worklet';
         if (finished) runOnJS(setMounted)(false);
       };
       shown.value = reduce
-        ? withTiming(0, { duration: Motion.duration.fast }, finish)
-        : withSpring(0, { ...releaseSpring(-e.velocityY / distance, e.velocityY), ...CLOSE_REST }, finish);
+        ? 0
+        : withSpring(0, { ...releaseSpring(-e.velocityY / closeDistance, e.velocityY), ...CLOSE_REST }, finish);
       runOnJS(closedBySwipe)();
     })
     .onFinalize((_e, success) => {
       'worklet';
       // A pan the list's scroll cancels never reaches onEnd: settle back instead of staying where it was let go.
-      if (!success && drag.value > 0) drag.value = withSpring(0, Motion.spring.settle);
+      if (!success) {
+        if (drag.value > 0) drag.value = reduce ? 0 : withSpring(0, Motion.spring.settle);
+        if (expandable && expansion.value !== expansionAtStart.value) {
+          const resting = sheetExpansionCancelTarget(expansionAtStart.value);
+          expansion.value = reduce ? resting : withSpring(resting, Motion.spring.sheet);
+        }
+      }
     });
 
   if (!mounted) return null;
@@ -195,7 +258,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       <GestureDetector gesture={pan}>
         <Animated.View
           onLayout={e => { travel.value = e.nativeEvent.layout.height + EDGE * 2; }}
-          style={[styles.card, tall && styles.tall, { paddingBottom: insets.bottom + Space.sm }, card]}
+          style={[styles.card, (tall || expandable) && styles.tall, expandable && styles.expandable, { paddingBottom: insets.bottom + Space.sm }, keyboardFrame, card]}
           accessibilityViewIsModal
         >
           {surface === 'player'
@@ -238,6 +301,7 @@ const styles = StyleSheet.create({
     paddingTop: Space.sm - 2,
   },
   tall: { maxHeight: '88%' },
+  expandable: { height: '88%' },
   tint: { ...StyleSheet.absoluteFillObject, opacity: 0.6 },
   untitled: { height: Space.sm },
   grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: Radius.pill, backgroundColor: Glass.grabber },

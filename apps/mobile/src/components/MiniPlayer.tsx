@@ -20,6 +20,8 @@ import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
 import { createSheetProgress } from '../navigation/sheetProgress';
 import { useShellMenuStore } from '../store/shellMenuStore';
 import { openPlayerSheet } from '../navigation/playerSheet';
+import { navigationRef } from '../utils/navigationService';
+import { routeSongToSaved } from './savedInBehavior';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
 import CanvasVideoLayer from './CanvasVideoLayer';
 import PillPlayer from './PillPlayer';
@@ -46,7 +48,6 @@ import { handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/
 import { skipBackward as sharedSkipBackward, skipForward as sharedSkipForward } from '../services/player/skipControls';
 import { beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldPlayAfterLoad, takeResumePosition, usePlayerStore } from '../store/playerStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useSongsStore } from '../store/songsStore';
 import { diag } from '../utils/diag';
 import Artwork from './allegra/Artwork';
 
@@ -222,7 +223,6 @@ export const MiniPlayer: React.FC = () => {
   const classicBarBgMode = useSettingsStore(state => state.classicBarBgMode);
   const insets = useSafeAreaInsets();
   const navBarStyle = useSettingsStore(state => state.navBarStyle);
-  const toggleLike = useSongsStore(state => state.toggleLike);
   const isLiked = useIsSongLiked(currentSong?.id, currentSong);
 
   // The pill stays mounted under the player sheet so it can hand over to it
@@ -263,6 +263,9 @@ export const MiniPlayer: React.FC = () => {
 
 
   const songActions = useSongActions();
+  const openSavedIn = useCallback(() => {
+    if (navigationRef.isReady()) routeSongToSaved(currentSong, route => navigationRef.navigate(route.name, route.params));
+  }, [currentSong]);
   const [expanded, setExpanded] = useState(false);
   const [classicFullExpanded, setClassicFullExpanded] = useState(false);
   const [lyricExpandedAt, setLyricExpandedAt] = useState(0);
@@ -782,7 +785,7 @@ export const MiniPlayer: React.FC = () => {
         onSeek={handleClassicLyricSeek}
         onMore={() => songActions.open(currentSong, { current: true })}
         liked={isLiked}
-        onToggleLike={() => { void toggleLike(currentSong.id); }}
+        onSave={openSavedIn}
       />
       {songActions.element}
       </>
@@ -924,16 +927,16 @@ export const MiniPlayer: React.FC = () => {
                             onPress={onBarPress}
                             onBodyPress={onBarPress}
                         />
-                        {/* Like the currently playing song without leaving the bar. */}
+                        {/* Open the Saved sheet for the currently playing song. */}
                         <Tactile
                             onPress={(e) => {
                                 e.stopPropagation();
-                                if (currentSong) toggleLike(currentSong.id);
+                                openSavedIn();
                             }}
                             hitSlop={12}
                             style={styles.likeButton}
                             accessibilityRole="button"
-                            accessibilityLabel={isLiked ? 'Remove from liked songs' : 'Add to liked songs'}
+                            accessibilityLabel="Save in playlists"
                             accessibilityState={{ selected: isLiked }}
                         >
                             <Ionicons

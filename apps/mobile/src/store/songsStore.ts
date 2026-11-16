@@ -11,6 +11,7 @@ import { nativeSearch } from '../services/NativeSearch';
 import { libraryLookup, matchKey } from '../utils/downloadState';
 import { reconcileSongs } from './songsReconcile';
 import { fromMobileId } from '@shared/songRef';
+import { canonicalSongRef } from '../utils/songIdentity';
 
 // Deliberately no static import of './playerStore' here: playerStore imports this
 // module, and a back-edge evaluated at init left playerStore half-initialised
@@ -307,6 +308,22 @@ export const useSongsStore = create<SongsState>()((set, get) => ({
          }
          try {
              const { usePlaylistStore } = await import('./playlistStore');
+             const localSong = get().songs.find(song => song.id === songId);
+             const ref = localSong ? canonicalSongRef(songId, localSong) : null;
+             if (ref) {
+                 const { useOnlineLibraryStore } = await import('./onlineLibraryStore');
+                 if (useOnlineLibraryStore.getState().likedRefs.has(ref)) {
+                     const { toggleOnlineLike } = await import('../services/sync/onlineLike');
+                     const result = await toggleOnlineLike({
+                         ref, title: localSong.title, artist: localSong.artist ?? '',
+                         artwork: localSong.coverRemoteUri ?? '', duration: localSong.duration,
+                     });
+                     if (result !== 'unliked') return 'error';
+                     // The menu's heart may represent both the phone's playlist row and the account like.
+                     // Remove the local membership too when it exists; never create one just to unlike online.
+                     if (!usePlaylistStore.getState().likedSongIds.has(songId)) return 'unliked';
+                 }
+             }
              const wasLiked = usePlaylistStore.getState().likedSongIds.has(songId);
              await usePlaylistStore.getState().toggleLiked(songId);
              if (usePlaylistStore.getState().likedSongIds.has(songId) === wasLiked) return 'error';
