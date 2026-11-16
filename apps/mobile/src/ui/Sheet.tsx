@@ -91,16 +91,19 @@ export interface SheetProps {
   presentation?: 'modal' | 'inline';
   /** Lift above the keyboard (sheets with a text field). */
   keyboard?: boolean;
+  /** Let an initially compact sheet expand when the listener swipes up. */
+  expandable?: boolean;
   /** A faint glow of this cover across the top (an actions sheet for a song or a mix). */
   tintUri?: string;
   children: React.ReactNode;
 }
 
-export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = false, palette, surface = palette ? 'player' : 'deep', presentation = 'modal', keyboard = false, tintUri, children }) => {
+export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = false, expandable = false, palette, surface = palette ? 'player' : 'deep', presentation = 'modal', keyboard = false, tintUri, children }) => {
   const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
   const reduce = useReducedMotion();
   const [mounted, setMounted] = useState(visible);
+  const [expanded, setExpanded] = useState(false);
   const shown = useSharedValue(0);
   const drag = useSharedValue(0);
   const scrolled = useSharedValue(0);
@@ -147,9 +150,10 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
 
   // Swiping down closes this sheet and nothing else. It activates at 6pt, inside Android's 8dp touch slop, so
   // on a list at the top it wins before the list starts scrolling and the list's touch is cancelled.
-  const pan = Gesture.Pan()
-    .activeOffsetY(6)
-    .failOffsetY(-8)
+  const canExpand = expandable && !expanded;
+  const panGesture = Gesture.Pan().activeOffsetY(canExpand ? [-8, 6] : 6);
+  if (!canExpand) panGesture.failOffsetY(-8);
+  const pan = panGesture
     .failOffsetX([-22, 22])
     .onTouchesDown((_e, state) => {
       'worklet';
@@ -161,6 +165,11 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
     })
     .onEnd(e => {
       'worklet';
+        if (canExpand && e.translationY < -56) {
+          runOnJS(setExpanded)(true);
+          drag.value = 0;
+          return;
+        }
       if (!shouldCloseSheet(e.translationY, e.velocityY)) {
         drag.value = withSpring(0, releaseSpring(0, e.velocityY));
         return;
@@ -195,7 +204,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       <GestureDetector gesture={pan}>
         <Animated.View
           onLayout={e => { travel.value = e.nativeEvent.layout.height + EDGE * 2; }}
-          style={[styles.card, tall && styles.tall, { paddingBottom: insets.bottom + Space.sm }, card]}
+          style={[styles.card, (tall || expanded) && styles.tall, { paddingBottom: insets.bottom + Space.sm }, card]}
           accessibilityViewIsModal
         >
           {surface === 'player'
