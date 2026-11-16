@@ -14,6 +14,7 @@ import Animated, {
   Easing,
   cancelAnimation,
   useAnimatedStyle,
+  useDerivedValue,
   useReducedMotion,
   useSharedValue,
   withTiming,
@@ -24,10 +25,9 @@ import type { SongSnapshot } from '@shared/songRef';
 import { Radius, Signal } from '../../constants/allegraTheme';
 import { Tactile, TactileRow } from '../../ui';
 import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from '../../navigation/usePlayerSheetMotion';
-import { playerCoverFrom } from '../../navigation/sheetProgress';
-import { cardCoverRect, heroCoverRect, playerContentOpacity, sheetYForDrag } from '../../navigation/playerTransition';
+import { isSheetSessionFree, playerCoverFrom, playerCoverHandoff } from '../../navigation/sheetProgress';
+import { cardCoverRect, heroCoverRect, isUsableRect, playerContentOpacity, sheetYForDrag } from '../../navigation/playerTransition';
 import { SHEET_TOP_RADIUS } from '../../navigation/miniShell';
-import { MiniPlayerGlow } from '../MiniPlayerGlow';
 import CoverGhost from '../player/CoverGhost';
 import { heroHeight } from '../player/AppleBackdrop';
 import { isCoverFull } from '../player/coverStage';
@@ -104,18 +104,18 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
   // ── Sheet: grow out of the pill, follow the finger, shrink back ──────────
   const restY = pillNav ? screenH - shellNavHeight(windowH, insets.bottom, fontScale) - SEEK_BAND_HEIGHT - miniRowHeight(fontScale) : playerSheetRest(windowW, screenH, insets.bottom, pillNav).y;
   const revealPill = useCallback(() => setMiniPlayerHiddenSource('NowPlaying', false), [setMiniPlayerHiddenSource]);
-  const { holdRoute, sheetY, progress, animateClose, controls: sheetControls } = usePlayerSheetMotion(restY, route.params.instant === true, reduceMotion, revealPill);
+  const { holdRoute, shouldLeave, sheetY, progress, handedOff, animateClose, controls: sheetControls, session } = usePlayerSheetMotion(restY, route.params.instant === true, reduceMotion, revealPill, pillNav);
   const afterClose = useRef<(() => void) | null>(null);
   useEffect(() => {
-    if (holdRoute) return;
+    if (holdRoute || !shouldLeave()) return;
     safeGoBack(navigation);
     const open = afterClose.current; afterClose.current = null; open?.();
-  }, [holdRoute, navigation]);
+  }, [holdRoute, shouldLeave, navigation]);
 
   useFocusEffect(useCallback(() => {
     setMiniPlayerHiddenSource('NowPlaying', true);
-    return () => setMiniPlayerHiddenSource('NowPlaying', false);
-  }, [setMiniPlayerHiddenSource]));
+    return () => { if (isSheetSessionFree(session)) setMiniPlayerHiddenSource('NowPlaying', false); };
+  }, [setMiniPlayerHiddenSource, session]));
 
   const [queueOpen, setQueueOpen] = useState(false);
   const queueRef = useRef(queueOpen);
@@ -278,14 +278,15 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
   const sheetStyle = useAnimatedStyle(() => {
     const p = progress.value;
     return {
-      opacity: reduceMotion ? p : 1,
+      opacity: handedOff.value ? 0 : reduceMotion ? p : 1,
       transform: [{ translateY: reduceMotion ? 0 : sheetY.value + (1 - p) * barTop }] as const,
     };
   });
   const coverLanding = useSettingsStore(s => (!isCardPlayerBackground(s.playerBackground) && s.appleMusicInspired ? 'hero' : isCoverFull(s.playerBackground, s.appleMusicInspired, s.playerCoverFull) ? 'full' : 'card'));
-  const movingCover = !reduceMotion && playerCoverFrom.value.width > 0;
+  // As in NowPlayingScreen: decided on the UI thread, never by reading a shared value during render.
+  const coverInFlight = useDerivedValue(() => playerCoverHandoff.value && isUsableRect(playerCoverFrom.value));
+  const handoffProgress = useDerivedValue(() => (coverInFlight.value ? progress.value : 1));
   const landingRect = coverLanding === 'hero' ? heroCoverRect(windowW, heroHeight(windowW, screenH)) : coverLanding === 'full' ? heroCoverRect(windowW, fullCoverHeight(windowW, screenH)) : cardCoverRect(windowW, screenH, insets.top + HEADER_CLEARANCE + 24);
-  const miniSurfaceStyle = useAnimatedStyle(() => ({ opacity: 1 - playerContentOpacity(progress.value) }));
   const playerFadeStyle = useAnimatedStyle(() => ({
     opacity: reduceMotion ? 1 : playerContentOpacity(progress.value),
   }));
@@ -301,7 +302,6 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
       <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, styles.sheetClip, sheetClipStyle]}>
       <GestureDetector gesture={Gesture.Race(dismissGesture, reverseGesture)}>
         <Animated.View style={[styles.container, sheetStyle]} onLayout={e => { frameH.value = e.nativeEvent.layout.height; }}>
-          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, miniSurfaceStyle]}><MiniPlayerGlow uri={artwork} active={false} /></Animated.View>
         <Animated.View style={[styles.playerLayer, playerFadeStyle]}>
             <NowPlayingBackground coverImageUri={artwork} gradientColors={colors} showLyrics={showLyrics} playing={playing} />
             <NowPlayingHeader
@@ -316,7 +316,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
               <>
                 <View style={styles.contentArea}>
                   <NowPlayingLyricsArea
-            transitionProgress={movingCover ? progress : undefined}
+            transitionProgress={reduceMotion ? undefined : handoffProgress}
                     showLyrics={showLyrics}
                     processedLyrics={lyrics}
                     lyricSource={lyricSource}
@@ -462,7 +462,7 @@ export const ConnectRemotePlayer: React.FC<Props> = ({ navigation, route }) => {
         </Animated.View>
       </GestureDetector>
       </Animated.View>
-      {movingCover && song ? <CoverGhost progress={progress} to={landingRect} toRadius={coverLanding === 'card' ? Radius.panel : 0} fadeOut={coverLanding !== 'card'} uri={artwork} title={song.title} artist={song.artist} /> : null}
+      {!reduceMotion && pillNav && song ? <CoverGhost progress={progress} restY={restY} to={landingRect} toRadius={coverLanding === 'card' ? Radius.panel : 0} fadeOut={coverLanding !== 'card'} uri={artwork} title={song.title} artist={song.artist} /> : null}
     </View>
   );
 };

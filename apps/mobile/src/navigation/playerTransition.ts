@@ -115,6 +115,80 @@ export const ghostVisible = (progress: number): boolean => {
   return progress > 0.001 && progress < 0.999;
 };
 
+/** Geometry the moving cover can use: finite, with a size. A missing or late measurement is never "usable". */
+export function isUsableRect(rect: Rect | null | undefined): boolean {
+  'worklet';
+  return !!rect && Number.isFinite(rect.x) && Number.isFinite(rect.y) && Number.isFinite(rect.width)
+    && Number.isFinite(rect.height) && rect.width > 0 && rect.height > 0;
+}
+
+/**
+ * Who draws the song's thumbnail near the bottom bar at `progress`. The moving cover owns it between the ends while
+ * a hand-over runs; otherwise the mini player's own cover does. Exactly one, at every frame, from one shared number.
+ */
+export function thumbnailOwner(progress: number, handoff: boolean): 'moving' | 'mini' {
+  'worklet';
+  return handoff && ghostVisible(progress) ? 'moving' : 'mini';
+}
+
+/**
+ * The mini player's cover at `progress`: its resting rectangle carried up with the pill as it rides the sheet's
+ * edge (miniRideY). The moving cover starts from here, so at the closed end it lands on the pill's cover exactly.
+ */
+export function riddenCoverRect(from: Rect, progress: number, restY: number, reduceMotion: boolean): Rect {
+  'worklet';
+  return { x: from.x, y: from.y + miniRideY(progress, restY, reduceMotion), width: from.width, height: from.height };
+}
+
+/**
+ * The moving cover is the same picture in two clips laid over the same rectangle: one cut to the mini cover's
+ * corners (exact at the mini player), one to the player's corners (exact in the player). Transforms scale a clip's
+ * corners with it, so neither shape is right at both ends. The player's clip fades in under the mini clip early in
+ * the flight, while both are small, and only then does the mini clip fade out. The picture is opaque throughout;
+ * only the corners change.
+ */
+export function ghostClipOpacity(progress: number): { mini: number; player: number } {
+  'worklet';
+  const p = clamp01(progress);
+  return { player: clamp01((p - 0.02) / 0.06), mini: 1 - clamp01((p - 0.08) / 0.06) };
+}
+
+/**
+ * The scale for a square picture laid out at `max(layout.width, layout.height)` and centred in a clip laid out at
+ * `layout`, so that with the clip scaled onto `frame` the picture covers the frame like `contentFit: cover` does.
+ * The mini cover is square and a hero is tall, so the crop changes along the way and matches both ends.
+ */
+export function coverPictureScale(frame: Rect, layout: Rect): { x: number; y: number } {
+  'worklet';
+  const sx = Math.max(0.0001, frame.width / Math.max(1, layout.width));
+  const sy = Math.max(0.0001, frame.height / Math.max(1, layout.height));
+  const side = Math.max(1, layout.width, layout.height);
+  const fill = Math.max(frame.width, frame.height);
+  return { x: fill / (side * sx), y: fill / (side * sy) };
+}
+
+/**
+ * A ready Canvas video shows only near the open end: it fades out over the first tenth of a close (into the still
+ * cover under it, which the moving cover then carries down) and back in on a reopen. Opacity only, so a ready video
+ * keeps decoding through a reversal and never restarts.
+ */
+export const canvasSheetGate = (progress: number): number => {
+  'worklet';
+  // Written as p·10 − 9 (not (p − 0.9) / 0.1) so the open end is exactly 1, not 0.9999…
+  return clamp01(progress * 10 - 9);
+};
+
+/**
+ * Where a sheet starts when its route mounts. A drag from the mini player hands over the finger's last position
+ * even when the finger lifted before the route mounted (a quick flick): the sheet starts there and settles once
+ * with the release velocity instead of opening from rest. A tap or link opens from rest on a spring.
+ */
+export function sheetOpeningStart(instant: boolean, dragOpen: boolean, dragY: number, restY: number): { y: number; tracked: boolean } {
+  if (instant) return { y: 0, tracked: false };
+  if (dragOpen) return { y: Math.min(restY, Math.max(0, Number.isFinite(dragY) ? dragY : restY)), tracked: true };
+  return { y: restY, tracked: false };
+}
+
 /** Room the title, buttons and seek bar take under the card (NowPlayingLyricsArea's Stage uses the same number). */
 export const CARD_CONTROLS_ROOM = 360;
 export const CARD_MAX = 342;

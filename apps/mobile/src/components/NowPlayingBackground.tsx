@@ -34,6 +34,7 @@ import { CanvasArtwork } from '../services/canvas/types';
 import { isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
 import { useAppActive } from '../hooks/useAppActive';
 import { diag } from '../utils/diag';
+import { canvasSheetGate } from '../navigation/playerTransition';
 
 interface NowPlayingBackgroundProps {
   coverImageUri?: string;
@@ -47,6 +48,12 @@ interface NowPlayingBackgroundProps {
   shift?: SharedValue<number>;
   /** The queued artwork that enters from the other side during a cover swipe. */
   incomingCoverImageUri?: string;
+  /**
+   * The player sheet's progress (0 closed, 1 open). A ready canvas and its wash show only near the open end
+   * (`canvasSheetGate`): the still cover under them carries every open and close, and a reversal brings the same
+   * ready video back without restarting it.
+   */
+  sheetProgress?: SharedValue<number>;
 }
 
 const CROSSFADE_MS = 600;
@@ -62,6 +69,7 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
   onCanvasVisibleChange,
   shift,
   incomingCoverImageUri,
+  sheetProgress,
 }) => {
   const { frame, onLayout } = usePlayerFrame();
   const reduceMotion = useReducedMotion();
@@ -126,10 +134,11 @@ const NowPlayingBackground: React.FC<NowPlayingBackgroundProps> = ({
     if (reduceMotion) washOpacity.value = canvasShown ? 1 : 0;
     else washOpacity.value = withTiming(canvasShown ? 1 : 0, { duration: CROSSFADE_MS });
   }, [canvasShown, washOpacity, reduceMotion]);
-  const washStyle = useAnimatedStyle(() => ({ opacity: washOpacity.value }));
+  const washStyle = useAnimatedStyle(() => ({ opacity: washOpacity.value * (sheetProgress ? canvasSheetGate(sheetProgress.value) : 1) }));
   const heroFollow = useAnimatedStyle(() => {
     const x = shift ? shift.value : 0;
-    return { opacity: 1 - 0.6 * Math.min(1, Math.abs(x) / Math.max(1, width)), transform: [{ translateX: x }] as const };
+    const gate = sheetProgress ? canvasSheetGate(sheetProgress.value) : 1;
+    return { opacity: gate * (1 - 0.6 * Math.min(1, Math.abs(x) / Math.max(1, width))), transform: [{ translateX: x }] as const };
   });
   // The outgoing artwork follows the finger through `shift`. Its queued neighbour mirrors that move,
   // beginning just beyond the opposite edge, so the full-bleed Apple hero feels like one continuous strip.

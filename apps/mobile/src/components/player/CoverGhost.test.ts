@@ -26,9 +26,19 @@ function animatedStyleKeys(): { keys: string[]; callbacks: number } {
       else keys.push('<spread or computed>');
     }
   };
-  const visit = (node: ts.Node) => {
+  // The callbacks themselves, and the worklet helpers they return from (`clipStyle`, `pictureStyle`).
+  const styleFunction = (node: ts.Node): ts.ArrowFunction | ts.FunctionExpression | undefined => {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'useAnimatedStyle') {
       const fn = node.arguments[0];
+      return fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) ? fn : undefined;
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && /Style$/.test(node.name.text) && node.initializer
+      && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) return node.initializer;
+    return undefined;
+  };
+  const visit = (node: ts.Node) => {
+    if (styleFunction(node)) {
+      const fn = styleFunction(node);
       if (fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) {
         callbacks += 1;
         const visitReturns = (n: ts.Node) => {
@@ -53,8 +63,11 @@ describe('CoverGhost', () => {
     expect(keys.filter(key => !ALLOWED.has(key))).toEqual([]);
   });
 
-  it('is laid out at its final size, not resized by the animation', () => {
+  // 2026-11-16: two clips carry the corners, each laid out once: one at the destination with the player's radius, one
+  // at the mini cover's size with its radius. Only transforms and opacity move them.
+  it('is laid out at fixed sizes, not resized by the animation', () => {
     const text = fs.readFileSync(FILE, 'utf8');
-    expect(text).toMatch(/style=\{\[styles\.ghost, \{ width: to\.width, height: to\.height, borderRadius: toRadius \}, style\]\}/);
+    expect(text).toMatch(/style=\{\[styles\.ghost, \{ width: to\.width, height: to\.height, borderRadius: toRadius \}, playerClip\]\}/);
+    expect(text).toMatch(/style=\{\[styles\.ghost, \{ width: MINI_LAYOUT\.width, height: MINI_LAYOUT\.height, borderRadius: Radius\.cover \}, miniClip\]\}/);
   });
 });

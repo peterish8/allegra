@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { PLAYER_RELEASE_DELAY_MS, SOURCE_CLEAR_DELAY_MS, canvasSourcePlan } from './canvasPlayerPlan';
+import { PLAYER_RELEASE_DELAY_MS, SOURCE_CLEAR_DELAY_MS, canvasSourcePlan, clipEventApplies, firstFrameCounts, sourceUri } from './canvasPlayerPlan';
 
 // Owner report (1.41.0): tapping the Apple Music style's full canvas down to the card closed the app on some phones.
 // expo-video's `useVideoPlayer(source)` releases the old player during render whenever the source changes, while the
@@ -42,5 +42,42 @@ describe('canvasSourcePlan', () => {
   it('clears a gone clip after a pause, never at once', () => {
     expect(canvasSourcePlan(null)).toEqual({ kind: 'clear', afterMs: SOURCE_CLEAR_DELAY_MS });
     expect(SOURCE_CLEAR_DELAY_MS).toBeGreaterThan(0);
+  });
+});
+
+// 2026-11-16 regression: a late event from the clip before (a skip, a close, a reopen) must never size or reveal the
+// next clip over the still cover. Until the shown clip's own source has loaded, the poster is what shows.
+describe('late canvas readiness', () => {
+  const a = 'https://cdn.example/a.mp4';
+  const b = 'https://cdn.example/b.mp4';
+
+  it('reads the address a loaded source names', () => {
+    expect(sourceUri(a)).toBe(a);
+    expect(sourceUri({ uri: b, contentType: 'auto' })).toBe(b);
+    expect(sourceUri(null)).toBeNull();
+    expect(sourceUri(7)).toBeNull();
+  });
+
+  it('drops a source-loaded event from the previous clip, and anything once no clip is loading', () => {
+    expect(clipEventApplies(a, b)).toBe(false);
+    expect(clipEventApplies(b, b)).toBe(true);
+    expect(clipEventApplies(encodeURI('https://cdn.example/b c.mp4'), 'https://cdn.example/b c.mp4')).toBe(true);
+    expect(clipEventApplies(a, null)).toBe(false);
+    expect(clipEventApplies(null, b)).toBe(true);
+  });
+
+  it('counts a first frame only for the shown clip once its own source has loaded', () => {
+    expect(firstFrameCounts({ url: b, loaded: false }, b)).toBe(false);
+    expect(firstFrameCounts({ url: a, loaded: true }, b)).toBe(false);
+    expect(firstFrameCounts({ url: null, loaded: false }, b)).toBe(false);
+    expect(firstFrameCounts({ url: b, loaded: true }, null)).toBe(false);
+    expect(firstFrameCounts({ url: b, loaded: true }, b)).toBe(true);
+  });
+
+  it('wires the checks into the layer: sizes, first frames and track changes all go through them', () => {
+    expect(code).toMatch(/if \(!clipEventApplies\(sourceUri\(e\.videoSource\), loading\)\) return;/);
+    expect(code).toMatch(/if \(firstFrameCounts\(load\.current, canvas\.url\)\)/);
+    expect(code).toMatch(/addListener\('videoTrackChange', e => \{ if \(load\.current\.loaded\) adopt\(e\.videoTrack\); \}\)/);
+    expect(code).toMatch(/load\.current = \{ url, loaded: false \};/);
   });
 });

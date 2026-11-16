@@ -13,8 +13,8 @@ import Animated, { runOnJS, useAnimatedReaction, useAnimatedStyle, useReducedMot
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { usePlaybackStatus } from '../hooks/usePlaybackStatus';
-import { playerCoverFrom, playerDrag, playerSheetProgress, createSheetProgress } from '../navigation/sheetProgress';
-import { miniContentOpacity, miniRideY } from '../navigation/playerTransition';
+import { NO_COVER_RECT, playerCoverFrom, playerCoverHandoff, playerDrag, playerSheetProgress, createSheetProgress } from '../navigation/sheetProgress';
+import { isUsableRect, miniContentOpacity, miniRideY, thumbnailOwner } from '../navigation/playerTransition';
 import { MINI_COVER_SIZE, SEEK_BAND_HEIGHT, miniRowHeight, shellNavHeight } from '../navigation/v6Shell';
 import { MINI_CONTENT_SIDE_INSET, MINI_PLAY_OFFSET, MINI_ROW_PADDING_RIGHT, miniShellOutline } from '../navigation/miniShell';
 import { miniPlayerLabel } from '../playback/miniPlayerLabel';
@@ -80,12 +80,32 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
   const [fingerDown, setFingerDown] = useState(false);
   useAnimatedReaction(() => playerDrag.tracking.value, (now, before) => { if (now !== before) runOnJS(setFingerDown)(now); });
   const coverRef = useRef<View>(null);
+  // The moving cover starts from this pill's cover, measured only while it rests (no sheet over it, no skip slide):
+  // a measurement taken while it rides the sheet would put the cover's start mid-screen. Layout that changes under a
+  // sheet throws the cached rectangle away; the sheet then opens and closes without the moving cover, and the pill
+  // measures again once the sheet is gone. A missing measurement never holds the open back.
+  const coverStale = useRef(false);
   const measureCover = (after?: () => void) => {
-    coverRef.current?.measureInWindow((x, y, width, h) => {
-      if (width > 0) playerCoverFrom.value = { x, y, width, height: h, radius: Radius.cover };
+    const view = coverRef.current;
+    if (!view || playerSheetProgress.value !== 0 || shift.value !== 0) {
+      if (playerSheetProgress.value !== 0) {
+        coverStale.current = true;
+        playerCoverFrom.value = NO_COVER_RECT;
+      }
+      after?.();
+      return;
+    }
+    view.measureInWindow((x, y, width, h) => {
+      const rect = { x, y, width, height: h };
+      playerCoverFrom.value = isUsableRect(rect) ? { ...rect, radius: Radius.cover } : NO_COVER_RECT;
+      coverStale.current = !isUsableRect(rect);
       after?.();
     });
   };
+  const remeasureIfStale = () => { if (coverStale.current) measureCover(); };
+  useAnimatedReaction(() => playerSheetProgress.value === 0, (rest, before) => { if (rest && before === false) runOnJS(remeasureIfStale)(); });
+  // Gone (a classic bar, Luvs, the keyboard): its cached rectangle describes nothing on screen any more.
+  useEffect(() => () => { playerCoverFrom.value = NO_COVER_RECT; }, []);
   const beginTracking = () => { measureCover(onOpenTracking); };
   const openMeasured = () => measureCover(() => onOpen());
   const enabled = !!onSeek && Number.isFinite(duration) && duration > 0 && !loading;
@@ -226,12 +246,17 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
     opacity: miniContentOpacity(playerSheetProgress.value) * (1 - Math.min(1, createSheetProgress.value * 2)),
     transform: [{ translateY: miniRideY(playerSheetProgress.value, restY, reduceMotion) }],
   }));
+  // One thumbnail: while the sheet's moving cover flies, it is the song's thumbnail and this cover steps aside; it
+  // lands exactly here (playerTransition riddenCoverRect) and this cover takes over on the same frame.
+  const ownCoverStyle = useAnimatedStyle(() => ({
+    opacity: thumbnailOwner(playerSheetProgress.value, playerCoverHandoff.value && isUsableRect(playerCoverFrom.value)) === 'mini' ? 1 : 0,
+  }));
 
   if (keyboard) return null;
   const rowHeight = miniRowHeight(fontScale);
   // The Create sheet is up: the pill is part of the dimmed page under it, and a tap on it reaches the page's scrim
   // (which closes the sheet) instead of opening the player.
-  return <Animated.View accessibilityElementsHidden={createOpen || sheetUp} importantForAccessibility={createOpen || sheetUp ? 'no-hide-descendants' : 'auto'} pointerEvents={createOpen || (sheetUp && !fingerDown) ? 'none' : 'auto'} style={[styles.shell, { bottom }, createDim]}>
+  return <Animated.View accessibilityElementsHidden={createOpen || sheetUp} importantForAccessibility={createOpen || sheetUp ? 'no-hide-descendants' : 'auto'} pointerEvents={createOpen || (sheetUp && !fingerDown) ? 'none' : 'auto'} onLayout={() => measureCover()} style={[styles.shell, { bottom }, createDim]}>
     {/* 1.41.0: the mini player has its own soft, frosted cover glow; the navigation keeps the shell material. */}
     <MiniPlayerGlow uri={coverImageUri} active={!sheetUp && !createOpen} />
     <MiniScrubber positionSV={positionSV} durationSV={durationSV} enabled={enabled} active={scrubbing} height={SEEK_BAND_HEIGHT}
@@ -252,7 +277,7 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
           onAccessibilityAction={e => { const a = e.nativeEvent.actionName; if (a === 'next') onNext(); else if (a === 'previous') onPrevious(); else if (a === 'longpress') onMore?.(); else openMeasured(); }}
           style={[styles.info, { height: rowHeight }]}>
           <Animated.View style={[styles.follow, following]}>
-            <View ref={coverRef} onLayout={() => measureCover()} style={styles.cover}><Artwork uri={displayed.coverImageUri} title={displayed.title} artist={displayed.artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></View>
+            <Animated.View ref={coverRef} onLayout={() => measureCover()} style={[styles.cover, ownCoverStyle]}><Artwork uri={displayed.coverImageUri} title={displayed.title} artist={displayed.artist} size={MINI_COVER_SIZE} style={StyleSheet.absoluteFill} /></Animated.View>
             {/* 1.43.0 (owner's Spotify screenshot): the title in bold, scrolling slowly when it doesn't fit, with the
                 artist on its own line under it. */}
             <View style={styles.copy}>

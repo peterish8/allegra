@@ -12,9 +12,10 @@ describe('the player sheet follows the finger', () => {
     expect(pill).toMatch(/const tracksFinger = !!onOpenTracking;/);
     expect(pill).toMatch(/const open = tracksFinger \? fluidOpen : classicOpen;/);
     expect(pill).not.toMatch(/fluidPlayer/);
-    expect(read('navigation/usePlayerSheetMotion.ts')).toMatch(/takeOpenTracking\(\) && playerDrag\.tracking\.value/);
+    // A drag open is a drag open even when the finger lifted before the route mounted (closeHandoff.test).
+    expect(read('navigation/usePlayerSheetMotion.ts')).toMatch(/const dragOpen = takeOpenTracking\(\);/);
     for (const sheet of ['screens/NowPlayingScreen.tsx', 'components/connect/ConnectRemotePlayer.tsx']) {
-      expect(read(sheet)).toMatch(/usePlayerSheetMotion\(restY, route\.params\.instant === true, reduceMotion, revealPill\)/);
+      expect(read(sheet)).toMatch(/usePlayerSheetMotion\(restY, route\.params\.instant === true, reduceMotion, revealPill, pillNav\)/);
     }
   });
 
@@ -39,7 +40,7 @@ describe('the player sheet follows the finger', () => {
   // Owner-approved 2026-11-12: a tap shares the artwork with the player too (Apple Music).
   it('shares the artwork on a tap as well as on a drag', () => {
     const sheet = read('screens/NowPlayingScreen.tsx');
-    expect(sheet).toMatch(/const movingCover = !reduceMotion && playerCoverFrom\.value\.width > 0;/);
+    expect(sheet).toMatch(/!reduceMotion && pillNav && currentSong \? \(\s*<CoverGhost/);
     const pill = read('components/PillPlayer.tsx');
     expect(pill).toMatch(/const openMeasured = \(\) => measureCover\(\(\) => onOpen\(\)\);/);
     expect(pill).toMatch(/measureCover\(\(\) => onOpen\(Math\.max\(0, -e\.velocityY\)\)\)/);

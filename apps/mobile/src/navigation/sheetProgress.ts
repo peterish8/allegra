@@ -2,9 +2,10 @@ import { makeMutable, useAnimatedStyle, useReducedMotion } from 'react-native-re
 
 /**
  * How far the player sheet is open: 0 = resting on the pill, 1 = full screen.
- * NowPlayingScreen writes it every frame (open, drag, close); the pill reads
- * it to hand over to the sheet — it fades as the sheet grows out of it and
- * rides the sheet's top edge, and comes back the same way.
+ * The owning sheet publishes it through a mapper that declares it as its output
+ * (usePlayerSheetMotion), so every reader (the pill, the tab bar, Create) is
+ * sorted after it and draws the same frame as the sheet. The pill fades as the
+ * sheet grows out of it and rides the sheet's top edge, and comes back the same way.
  */
 export const playerSheetProgress = makeMutable(0);
 
@@ -39,5 +40,37 @@ export const playerDrag = {
   mounted: makeMutable(false),
 };
 
-/** The mini player's cover in window coordinates (measured by the pill), where the moving cover starts. */
+/**
+ * The mini player's cover in window coordinates, measured by the pill while it rests (no sheet over it). This is
+ * where the moving cover starts. A width of 0 means "no usable geometry": the sheet still opens and closes, with no
+ * moving cover. The pill clears it when it unmounts or its layout changes while a sheet is up.
+ */
 export const playerCoverFrom = makeMutable({ x: 0, y: 0, width: 0, height: 0, radius: 0 });
+
+/** The geometry `playerCoverFrom` holds when nothing usable is cached. */
+export const NO_COVER_RECT = { x: 0, y: 0, width: 0, height: 0, radius: 0 } as const;
+
+/**
+ * The sheet that owns `playerSheetProgress` and the hand-over flags: 0 when no player sheet is mounted. Each mounted
+ * sheet takes a new id. An old sheet's late cleanup, close callback or progress write is ignored once a newer one
+ * owns the hand-over, so it can never reset progress or reveal the mini player over the new session.
+ */
+export const playerSheetSession = makeMutable(0);
+let lastSheetSession = 0;
+/** A fresh session id (JS thread). */
+export const nextSheetSession = (): number => {
+  lastSheetSession += 1;
+  return lastSheetSession;
+};
+
+/** True when `session` may release what the player sheet holds: it still owns the hand-over, or no sheet does. */
+export const isSheetSessionFree = (session: number): boolean => {
+  const owner = playerSheetSession.value;
+  return owner === session || owner === 0;
+};
+
+/**
+ * True while the owning sheet flies one cover between the mini player and the player (pill navigation, motion on).
+ * The pill hides its own cover exactly while that moving cover shows, so one thumbnail is on screen at every frame.
+ */
+export const playerCoverHandoff = makeMutable(false);
