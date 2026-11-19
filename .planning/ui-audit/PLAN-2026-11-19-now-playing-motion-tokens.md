@@ -10,11 +10,11 @@ order. Phases 1 and 2 are bugs. Phases 3–5 pay down token debt and depend on P
 
 ## Ground rules (from CLAUDE.md)
 
-- [ ] Animate `transform` and `opacity` only, with every duration and easing taken from a token. Reduced motion collapses to opacity and never removes a feature.
-- [ ] Don't regress the playback invariants: the single `<audio>` stays in the layout, play/pause goes through `requestPlayback`, and a seek resumes playback.
-- [ ] One commit per item or small group, as a conventional commit (`fix(web): …`, `refactor(web): …`, `chore(web): …`).
-- [ ] Re-grep before deleting anything; another task may have started using it.
-- [ ] Before every push: `npm run typecheck`, `npm run lint` and `npm test` all exit 0.
+- [x] Animate `transform` and `opacity` only, with every duration and easing taken from a token. Reduced motion collapses to opacity and never removes a feature.
+- [x] Don't regress the playback invariants: the single `<audio>` stays in the layout, play/pause goes through `requestPlayback`, and a seek resumes playback.
+- [x] One commit per item or small group, as a conventional commit (`fix(web): …`, `refactor(web): …`, `chore(web): …`).
+- [x] Re-grep before deleting anything; another task may have started using it.
+- [x] Before every push: `npm run typecheck`, `npm run lint` and `npm test` all exit 0.
 
 ---
 
@@ -239,16 +239,18 @@ order. Phases 1 and 2 are bugs. Phases 3–5 pay down token debt and depend on P
 - [x] Replace `Easing.out(Easing.quad)` with the `Motion.ease.*` curves.
 - [x] Confirm each of these respects reduce-motion (fade only).
   > Note: SeekRipple drops its nudge, AppleBackdrop's hero fade and the info tour use reduce-motion branches, and the waveform shows a still bar. The download ring's progress ease and the waiting arc (a spinner) are not gated, as with web spinners.
-- [ ] `npm run mobile:check`. Record any physical-phone evidence in `.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md`.
+- [x] `npm run mobile:check`. Record any physical-phone evidence in `.planning/mobile-ui-review/IMPLEMENTATION-STATUS.md`.
+  > Note: Passes (231 suites, 1845 tests). No physical-phone evidence was gathered, so `IMPLEMENTATION-STATUS.md` is unchanged.
 
 ---
 
 ## Verification (every phase)
 
-- [ ] `npm run typecheck` → exit 0
-- [ ] `npm run lint` → exit 0, including the new motion and colour checks
-- [ ] `npm test` → all green, including the new tests for Escape, wash contrast, token parity and token contrast
+- [x] `npm run typecheck` → exit 0
+- [x] `npm run lint` → exit 0, including the new motion and colour checks
+- [x] `npm test` → all green, including the new tests for Escape, wash contrast, token parity and token contrast
 - [ ] Browser on **:5173** (not :8080) at **360 / 768 / 1280 / 1920**, for each of:
+  > Note: Done with Playwright's Chromium against the dev server with fixture API data: the player (open view, queue, lyrics, lyrics focus on desktop) at 360 / 768 / 1280 / 1920, with and without reduced motion, by a computed-style diff before and after each CSS change; screenshots for a pale cover, a long title with and without reduced motion, and the karaoke popover with Escape. Not done: swipe gestures, rapid Next/Prev, route changes and hover states.
   - [ ] open and close the player (button, swipe down, Escape)
   - [ ] Next/Prev by button and by swipe, including rapid skipping (5 taps)
   - [ ] lyrics tab, lyrics focus (double-click the cover), hiding the lyrics
@@ -257,8 +259,11 @@ order. Phases 1 and 2 are bugs. Phases 3–5 pay down token debt and depend on P
   - [ ] a pale cover and a dark cover (contrast)
   - [ ] all of the above again with OS **reduce motion** on
 - [ ] Playback survives: music keeps playing through every route change, pause stays paused, and seeking resumes.
+  > Note: Not exercised: the fixture audio is a silent clip, and no change touched the audio element, `requestPlayback` or seek.
 - [ ] Profile the cover swipe and the player open on a **real phone** (CLAUDE.md requires a real device for hero transitions).
+  > Note: Not possible here (no phone).
 - [ ] Run `/ponytail-session-allegra level=full` at the end, and put its one-line result in the PR.
+  > Note: That skill does not exist; `ponytail-anycodebase` (scope=session, level=full, mode=apply) was run instead over the files changed in this task. See the final report.
 
 ## Suggested PR split
 
