@@ -38,7 +38,7 @@
   "highZIndex": {
     "app.css": 1,
     "components.css": 2,
-    "player.css": 2
+    "player.css": 1
   },
   "rawColor": {
     "app.css": 977,
@@ -46,7 +46,7 @@
     "components.css": 127,
     "dj.css": 203,
     "global.css": 444,
-    "player.css": 178
+    "player.css": 157
   },
   "undefinedCustomProperty": {}
 }

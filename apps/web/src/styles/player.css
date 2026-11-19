@@ -11,25 +11,6 @@
     .mini-player-state { display: none; }
   }
 
-  /* Mini player — allegra-v2 shell */
-
-  .mini-player {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    height: clamp(72px, 5.2vw, 82px);
-    padding: 0 20px;
-    background: rgba(11, 11, 12, 0.92);
-    backdrop-filter: blur(18px) saturate(140%);
-    -webkit-backdrop-filter: blur(18px) saturate(140%);
-    border-top: 1px solid rgba(255,255,255,0.06);
-  }
-
   .ctrl-play {
     display: grid;
     place-items: center;
@@ -340,10 +321,6 @@
     min-width: 10.5rem;
   }
 
-  .np-live-karaoke-btn.is-busy {
-    opacity: 0.85;
-  }
-
   .np-live-karaoke-btn.is-on {
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--wave) 45%, transparent);
   }
@@ -607,9 +584,7 @@
 .player-sidepanel.is-lyrics .panel-title,
 .player-sidepanel.is-lyrics .ytm-lyrics__heading { display: none; }
 
-.player-sidepanel.is-lyrics .ytm-lyrics__chrome { justify-content: flex-end; padding: 0 0 4px; }
-
-.player-sidepanel.is-lyrics .ytm-lyrics__chrome .tactile-control { min-height: 32px; padding: 0 12px; font-size: 12px; opacity: 0.6; transition: opacity var(--d-fast) var(--ease-standard); }
+.player-sidepanel.is-lyrics .ytm-lyrics__chrome .tactile-control { min-height: 32px; padding: 0 12px; font-size: 12px; transition: opacity var(--d-fast) var(--ease-standard); }
 
 /* karaoke chrome visible on lyrics */
 
@@ -650,7 +625,7 @@
 
 /* ---------- Apple Music player bar ----------
  * Floating frosted capsule: transport left, a track capsule with scrubber in the middle,
- * volume / lyrics / queue right. Replaces the flat legacy .mini-player styling. */
+ * volume / lyrics / queue right. The capsule's own fill, rim and blur are in the liquid glass rule below. */
 
 .mini-player {
   --ink: #f5f5f7;
@@ -672,24 +647,12 @@
   gap: 18px;
   margin: 0;
   padding: 0 16px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 22px;
-  background: rgba(24, 24, 28, 0.62);
-  box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   color: var(--ink);
-  backdrop-filter: blur(30px) saturate(170%);
   transform: translateX(-50%);
 }
 
 .mini-player.is-queue-open { z-index: 41; }
-
-.mini-player {
-  border-color: rgba(255, 255, 255, 0.16);
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.015) 46%),
-    rgba(15, 18, 23, 0.78);
-  box-shadow: 0 26px 70px -24px rgba(0, 0, 0, 0.82), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
 
 @media (max-width: 1100px) {
   .mini-player { grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; }
@@ -697,11 +660,9 @@
 
 @media (max-width: 900px) {
   .mini-player {
-    bottom: max(12px, env(safe-area-inset-bottom, 0px));
     width: calc(100% - 24px);
     height: 64px;
     grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 6px;
     padding: 0 10px;
     border-radius: 20px;
   }
@@ -1003,8 +964,6 @@
 
 .listening-world .np-artist .np-link:hover { color: #fff; }
 
-.listening-world .listening-progress .progress-time { color: rgba(255, 255, 255, 0.92); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.35); }
-
 .listening-world .np-controls svg,
 .listening-world .np-actions svg,
 .listening-world .np-btns svg { color: #fff; }
@@ -1063,23 +1022,16 @@
 
 /* ---------- Big player controls: crisp white, clear grouping ---------- */
 
-.listening-world .listening-progress { gap: 8px 12px; }
-
-.listening-world .listening-progress .progress-range { --track-height: 8px; --thumb-size: 16px; --track-rest: rgba(255, 255, 255, 0.3); --track-done: #fff; }
-
 .listening-world .listening-progress .progress-time {
   color: #fff;
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  text-shadow: none;
   opacity: 0.95;
 }
 
 /* Transport: skip buttons are bare icons, play is the one solid, bright shape. */
-
-.listening-world .np-btns { gap: 22px; }
 
 .listening-world .np-btns .tactile-icon-control {
   width: 52px;
@@ -1114,19 +1066,8 @@
 
 /* Actions: one quiet pill holding the three secondary controls. */
 
-.listening-world .np-actions {
-  align-self: center;
-  gap: 2px;
-  padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
-}
-
 .listening-world .np-actions .tactile-icon-control,
 .listening-world .np-actions > button {
-  width: 44px;
-  height: 44px;
   border: 0;
   border-radius: 50%;
   background: transparent;
@@ -1159,7 +1100,12 @@
 
 .listening-world .listening-progress { gap: 10px 12px; }
 
-.listening-world .listening-progress .progress-range { --track-rest: rgba(255, 255, 255, 0.4); }
+.listening-world .listening-progress .progress-range {
+  --track-height: 8px;
+  --thumb-size: 16px;
+  --track-done: #fff;
+  --track-rest: rgba(255, 255, 255, 0.4);
+}
 
 .listening-world .listening-progress .progress-time { text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4); }
 
@@ -1171,7 +1117,6 @@
 
 .listening-world .np-actions {
   align-self: center;
-  gap: 30px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -1756,26 +1701,19 @@
     isolation: isolate;
     display: grid;
     grid-template-columns: 22px minmax(0, 1fr) auto minmax(0, 1fr) 22px;
-    grid-template-rows: minmax(0, 1fr) 20px 8px auto auto 10px;
     column-gap: 24px;
     row-gap: 0;
     align-items: center;
     max-width: none;
-    padding: 4px 20px 18px;
     overflow: hidden;
   }
   .listening-world .listening-body::before {
     content: '';
     grid-column: 1 / -1;
-    grid-row: 3 / -1;
     align-self: stretch;
     z-index: -1;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 22px;
-    background: rgba(255, 255, 255, 0.08);
     -webkit-backdrop-filter: blur(28px) saturate(1.5);
     backdrop-filter: blur(28px) saturate(1.5);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 18px 40px -24px rgba(0, 0, 0, 0.6);
   }
   .listening-world .now-playing { display: contents; }
 
@@ -1833,7 +1771,6 @@
     grid-row: 4 / span 2;
     justify-self: start;
     width: 100%;
-    max-width: 360px;
     text-align: left;
   }
   .listening-world .np-dock-cover {
@@ -1865,9 +1802,6 @@
   .listening-world .ctrl-play { width: 44px; height: 44px; }
   .listening-world .np-btns .tactile-icon-control { width: 36px; height: 36px; }
   .listening-world .np-controls > :first-child {
-    grid-column: 3;
-    grid-row: 5;
-    width: min(620px, 42vw);
     margin-top: 2px;
   }
   /* Times sit either side of the bar on one line instead of a row beneath it. */
@@ -1879,8 +1813,6 @@
   .listening-world .listening-progress .progress-range {
     grid-row: 1;
     grid-column: 2;
-    --track-height: 4px;
-    --thumb-size: 12px;
   }
   .listening-world .listening-progress .progress-time:first-of-type { grid-row: 1; grid-column: 1; text-align: right; }
   .listening-world .listening-progress .progress-time:last-of-type { grid-row: 1; grid-column: 3; text-align: left; }
@@ -1909,14 +1841,13 @@
  * word per line and pushed the actions out. Stack it: info and actions, then transport, then scrubber. */
 
 @media (min-width: 901px) and (max-width: 1240px) {
-  .listening-world .listening-body { grid-template-rows: minmax(0, 1fr) 20px 8px auto auto auto 10px; }
   .listening-world :is(.np-meta, .np-dock-cover) { grid-column: 2 / 4; grid-row: 4; align-self: center; margin-top: 10px; }
   .listening-world .listening-body .np-meta { width: min(340px, 100% - 62px); max-width: none; margin-left: 62px; padding-left: 0; }
   .listening-world .listening-body .np-artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .listening-world .listening-body .np-actions { gap: 2px; }
   .listening-world .np-actions { grid-column: 3 / 5; grid-row: 4; align-self: center; margin-top: 10px; }
-  .listening-world .np-btns { grid-column: 2 / 5; grid-row: 5; margin-top: 4px; }
-  .listening-world .np-controls > :first-child { grid-column: 2 / 5; grid-row: 6; justify-self: center; width: min(620px, 100%); }
+  .listening-world .np-btns { grid-column: 2 / 5; margin-top: 4px; }
+  .listening-world .np-controls > :first-child { justify-self: center; }
 }
 
 /* Wide player: the lyric actions sit behind a ⋯ in the top bar's right corner, level with Back and
