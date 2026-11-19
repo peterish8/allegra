@@ -165,7 +165,7 @@ export const BlendScreen: React.FC = () => {
   ].filter(Boolean).join(' · ');
 
   return (
-    <AppScreen style={s.screen} staticGlow={false}>
+    <AppScreen style={s.screen}>
       <FlatList
         data={detail.state === 'ready' ? tracks : []}
         // Keyed by the lens too: switching person re-deals the list (rows rise in, a 40ms stagger).

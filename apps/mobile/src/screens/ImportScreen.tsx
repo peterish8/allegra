@@ -64,10 +64,10 @@ export const ImportScreen: React.FC = () => {
     <Button label={label} onPress={onPress} variant={primary ? 'primary' : 'glass'} block disabled={disabled} />
   );
 
-  if (!token || !accountKey) return <AppSafeArea staticGlow={false} style={{ flex: 1, backgroundColor: Signal.bg, padding: GUTTER }}><UIText variant="page" accessibilityRole="header">Bring your music</UIText><UIText variant="body" tone="secondary" style={{ marginTop: Space.xs }}>{account.loading ? 'Loading your account…' : 'Sign in to import playlists into your library.'}</UIText>{!account.loading ? <View style={{ marginTop: Space.lg - Space.xxs }}>{button('Sign in', () => void account.signInWithGoogle(), true)}</View> : null}</AppSafeArea>;
+  if (!token || !accountKey) return <AppSafeArea style={{ flex: 1, backgroundColor: Signal.bg, padding: GUTTER }}><UIText variant="page" accessibilityRole="header">Bring your music</UIText><UIText variant="body" tone="secondary" style={{ marginTop: Space.xs }}>{account.loading ? 'Loading your account…' : 'Sign in to import playlists into your library.'}</UIText>{!account.loading ? <View style={{ marginTop: Space.lg - Space.xxs }}>{button('Sign in', () => void account.signInWithGoogle(), true)}</View> : null}</AppSafeArea>;
 
   return (
-    <AppSafeArea style={{ flex: 1, backgroundColor: Signal.bg }} edges={['top']} staticGlow={false}>
+    <AppSafeArea style={{ flex: 1, backgroundColor: Signal.bg }} edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: Space.sm, paddingBottom: bottom, gap: Space.sm }}>
         <InfoTitleRow><UIText variant="page" accessibilityRole="header">Bring your music</UIText><InfoTour label="How importing works" steps={IMPORT_TOUR} scene={importScene} /></InfoTitleRow>
         <SpotifySyncPanel key={accountKey} accountKey={accountKey} token={token} />

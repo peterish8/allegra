@@ -74,7 +74,7 @@ export const BlendsScreen: React.FC = () => {
 
   if (!token) {
     return (
-      <AppSafeArea style={s.screen} edges={['top']} staticGlow={false}>
+      <AppSafeArea style={s.screen} edges={['top']}>
         <Text style={s.title} accessibilityRole="header">Blends</Text>
         <View style={s.panel}>
           <Text style={s.panelBody}>{BLEND_TEXT.signin}</Text>
@@ -88,7 +88,7 @@ export const BlendsScreen: React.FC = () => {
 
   const today = utcDay(Date.now());
   return (
-    <AppSafeArea style={s.screen} edges={['top']} staticGlow={false}>
+    <AppSafeArea style={s.screen} edges={['top']}>
       <FlatList
         data={blends}
         keyExtractor={(blend) => blend.id}
