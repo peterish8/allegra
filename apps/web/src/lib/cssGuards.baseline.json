@@ -1,14 +1,12 @@
 {
   "rawDuration": {
-    "app.css": 55,
+    "app.css": 43,
     "blend.css": 1,
     "components.css": 7,
     "global.css": 7,
-    "player.css": 10
+    "player.css": 5
   },
-  "rawBezier": {
-    "app.css": 2
-  },
+  "rawBezier": {},
   "bannedTransition": {
     "app.css": 6,
     "components.css": 1,
@@ -41,12 +39,12 @@
     "player.css": 1
   },
   "rawColor": {
-    "app.css": 977,
+    "app.css": 927,
     "blend.css": 152,
     "components.css": 127,
     "dj.css": 203,
     "global.css": 444,
-    "player.css": 157
+    "player.css": 127
   },
   "undefinedCustomProperty": {}
 }

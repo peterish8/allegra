@@ -49,27 +49,6 @@
     pointer-events: none;
   }
 
-  .listening-world__atmosphere .music-background {
-    position: absolute;
-    inset: 0;
-  }
-
-  /* One warm lift from the floor so the transport row sits in light, not on a flat wall. */
-
-  .listening-world__glow {
-    position: absolute;
-    inset: auto 0 0;
-    height: 46%;
-    background: linear-gradient(
-      0deg,
-      color-mix(in srgb, var(--art-primary, #d9e66a) 20%, transparent) 0%,
-      color-mix(in srgb, var(--art-primary, #d9e66a) 7%, transparent) 42%,
-      transparent 82%
-    );
-    opacity: 0.6;
-    pointer-events: none;
-  }
-
   .listening-world__shell {
     position: relative;
     z-index: 1;
@@ -497,13 +476,6 @@
   .app-shell:has(.now-playing-bar, .mini-player) {
     --dock: calc(84px + env(safe-area-inset-bottom, 0px));
   }
-}
-
-/* Reading lyrics: pull the floor glow back so the words keep the contrast. */
-
-.listening-world.is-lyrics .listening-world__glow {
-  height: 40%;
-  opacity: 0.42;
 }
 
 .player-sidepanel {
@@ -1162,86 +1134,6 @@
   .listening-world :is(.np-btns, .np-actions) .tactile-icon-control:not(:disabled):is(:hover, :active),
   .listening-world .np-btns .ctrl-play:hover { transform: none; }
 }
-
-/* ---------- Lyrics stage: the cover's colour over black, and a background that visibly moves ---------- */
-
-.listening-world .music-bg-base {
-  background: linear-gradient(
-    152deg,
-    color-mix(in srgb, var(--music-primary, #5b9dff) 26%, #050608) 0%,
-    color-mix(in srgb, var(--music-secondary, #7f6bff) 18%, #050608) 48%,
-    #040507 100%
-  );
-}
-
-.listening-world .ambient-blob { opacity: 0.6; }
-
-.listening-world .blob-5 { opacity: 0.4; }
-
-.listening-world .music-background__darkness {
-  background:
-    linear-gradient(180deg, rgba(3, 4, 7, 0.34) 0%, rgba(3, 4, 7, 0.16) 30%, rgba(3, 4, 7, 0.2) 66%, rgba(3, 4, 7, 0.5) 100%),
-    radial-gradient(ellipse 110% 90% at 50% 46%, rgba(3, 4, 7, 0) 0%, rgba(3, 4, 7, 0.36) 100%);
-}
-
-.listening-world .music-background__lyric-field { background: linear-gradient(to right, transparent 0%, rgba(3, 4, 7, 0.22) 46%, rgba(3, 4, 7, 0.4) 100%); }
-
-.listening-world .listening-world__glow { opacity: 0.28; }
-
-/* Same closed loops, roughly three times quicker, so the colour is seen to travel. */
-
-.listening-world .blob-1 { animation-duration: 15s; }
-
-.listening-world .blob-2 { animation-duration: 19s; }
-
-.listening-world .blob-3 { animation-duration: 23s; }
-
-.listening-world .blob-4 { animation-duration: 27s; }
-
-.listening-world .blob-5 { animation-duration: 31s; }
-
-/* ---------- Lyrics stage colour fields, rebuilt to survive zoom and resize ----------
- * The old fields were 30vmax elements whose blurred child was scaled 3.4x and screen-blended.
- * Browsers rasterise that in tiles, and after a zoom change the tile seams showed as hard
- * rectangles. These are plain gradients that fade to zero before their own edge: no filter,
- * no scale on the paint layer, no blend mode. Motion is translate only, in viewport units. */
-
-.listening-world .ambient-blob {
-  width: 84vmax;
-  height: 84vmax;
-  margin: -42vmax 0 0 -42vmax;
-  mix-blend-mode: normal;
-  backface-visibility: visible;
-}
-
-.listening-world .ambient-blob::before {
-  inset: 0;
-  border-radius: 0;
-  filter: none;
-  transform: none;
-}
-
-.listening-world .blob-1::before { background: radial-gradient(closest-side, rgba(var(--music-primary-rgb, 91, 157, 255), 0.62) 0%, rgba(var(--music-primary-rgb, 91, 157, 255), 0.3) 45%, rgba(var(--music-primary-rgb, 91, 157, 255), 0) 100%); }
-
-.listening-world .blob-2::before { background: radial-gradient(closest-side, rgba(var(--music-secondary-rgb, 127, 107, 255), 0.58) 0%, rgba(var(--music-secondary-rgb, 127, 107, 255), 0.28) 45%, rgba(var(--music-secondary-rgb, 127, 107, 255), 0) 100%); }
-
-.listening-world .blob-3::before { background: radial-gradient(closest-side, rgba(var(--music-accent-rgb, 65, 216, 255), 0.5) 0%, rgba(var(--music-accent-rgb, 65, 216, 255), 0.24) 45%, rgba(var(--music-accent-rgb, 65, 216, 255), 0) 100%); }
-
-.listening-world .blob-4::before { background: radial-gradient(closest-side, rgba(var(--music-primary-rgb, 91, 157, 255), 0.5) 0%, rgba(var(--music-secondary-rgb, 127, 107, 255), 0.26) 45%, rgba(var(--music-secondary-rgb, 127, 107, 255), 0) 100%); }
-
-.listening-world .blob-5::before { background: radial-gradient(closest-side, rgba(var(--music-deep-rgb, 8, 9, 11), 0.7) 0%, rgba(var(--music-deep-rgb, 8, 9, 11), 0.32) 45%, rgba(var(--music-deep-rgb, 8, 9, 11), 0) 100%); }
-
-.listening-world .ambient-blob { opacity: 1; }
-
-.listening-world .blob-1 { animation-name: lyric-drift-1; animation-duration: var(--d-lyric-drift-1); }
-
-.listening-world .blob-2 { animation-name: lyric-drift-2; animation-duration: var(--d-lyric-drift-2); }
-
-.listening-world .blob-3 { animation-name: lyric-drift-3; animation-duration: var(--d-lyric-drift-3); }
-
-.listening-world .blob-4 { animation-name: lyric-drift-4; animation-duration: var(--d-lyric-drift-4); }
-
-.listening-world .blob-5 { animation-name: lyric-drift-5; animation-duration: var(--d-lyric-drift-5); }
 
 /* ---------- Phone player: three zones, never a long scroll ----------
  * Cover:                  header · art (absorbs the slack) · title · scrubber · transport · actions
@@ -2013,13 +1905,3 @@
 }
 
 @keyframes np-marquee { from { transform: translateX(0); } to { transform: translateX(calc(var(--marquee-shift, 50%) * -1)); } }
-
-@keyframes lyric-drift-1 { 0%, 100% { transform: translate3d(0, 0, 0); } 25% { transform: translate3d(34vw, 14vh, 0); } 50% { transform: translate3d(12vw, 40vh, 0); } 75% { transform: translate3d(-22vw, 22vh, 0); } }
-
-@keyframes lyric-drift-2 { 0%, 100% { transform: translate3d(0, 0, 0); } 25% { transform: translate3d(-30vw, -20vh, 0); } 50% { transform: translate3d(-44vw, 12vh, 0); } 75% { transform: translate3d(-12vw, 28vh, 0); } }
-
-@keyframes lyric-drift-3 { 0%, 100% { transform: translate3d(0, 0, 0); } 25% { transform: translate3d(-32vw, 22vh, 0); } 50% { transform: translate3d(-48vw, -8vh, 0); } 75% { transform: translate3d(-14vw, -26vh, 0); } }
-
-@keyframes lyric-drift-4 { 0%, 100% { transform: translate3d(0, 0, 0); } 25% { transform: translate3d(34vw, -20vh, 0); } 50% { transform: translate3d(48vw, 10vh, 0); } 75% { transform: translate3d(16vw, 30vh, 0); } }
-
-@keyframes lyric-drift-5 { 0%, 100% { transform: translate3d(0, 0, 0); } 25% { transform: translate3d(-24vw, 20vh, 0); } 50% { transform: translate3d(18vw, 34vh, 0); } 75% { transform: translate3d(30vw, -14vh, 0); } }
