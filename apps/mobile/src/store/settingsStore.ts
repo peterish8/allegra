@@ -248,9 +248,9 @@ const DEFAULT_SETTINGS = {
   defaultGradientId: 'aurora',
   lyricsSize: 28,
   lyricsAlign: 'left' as LyricsAlign,
-  lyricsHighlight: 'letters' as LyricsHighlight,
+  lyricsHighlight: 'lines' as LyricsHighlight,
   autoScrollPlainLyrics: true,
-  lineSpacing: 'normal' as LineSpacing,
+  lineSpacing: 'compact' as LineSpacing,
   scrollSpeed: 'medium' as ScrollSpeed,
   skipDuration: 15 as const,
   keepScreenOn: true,
@@ -416,7 +416,7 @@ export const useSettingsStore = create<SettingsState>()(
             ? LYRICS_PRESET_SIZE[lyricsFontSize as keyof typeof LYRICS_PRESET_SIZE] ?? 28
             : clampLyricsSize(state.lyricsSize ?? 28),
           lyricsAlign: state.lyricsAlign ?? 'left',
-          lyricsHighlight: state.lyricsHighlight === 'lines' ? 'lines' : 'letters',
+          lyricsHighlight: state.lyricsHighlight === 'letters' ? 'letters' : 'lines',
           playerBackground: normalizePlayerBackground(state.playerBackground),
           // v2: hold-to-talk became the default. The old default was 'tap',
           // which kept listening after the finger lifted.
