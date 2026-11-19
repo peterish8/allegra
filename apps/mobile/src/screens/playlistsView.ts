@@ -14,12 +14,13 @@ export type PlaylistsBody = 'placeholder' | 'empty' | 'grid';
 export const playlistsBody = (isLoading: boolean, count: number): PlaylistsBody =>
   count > 0 ? 'grid' : isLoading ? 'placeholder' : 'empty';
 
-export const PLAYLIST_QUICK_ACTIONS = [
+/** What the ••• menu offers for playlists (Library's menu, and the Playlists page's own when it stands alone). */
+export const PLAYLIST_MENU_ACTIONS = [
   { id: 'create', label: PlaylistsStrings.newPlaylist, icon: 'add' },
   { id: 'import', label: PlaylistsStrings.importFromSpotify, icon: 'cloud-download-outline' },
 ] as const;
 
-export type PlaylistQuickActionId = (typeof PLAYLIST_QUICK_ACTIONS)[number]['id'];
+export type PlaylistMenuActionId = (typeof PLAYLIST_MENU_ACTIONS)[number]['id'];
 
 /** The playlists a search keeps (case-insensitive, by name); the quick row stays whatever was typed. */
 export const filterPlaylists = <T extends { readonly name: string }>(playlists: readonly T[], query: string): T[] => {

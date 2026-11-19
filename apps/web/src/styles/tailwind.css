@@ -33,6 +33,7 @@
   --color-accent-ink: var(--accent-ink);
   --color-accent-wash: var(--accent-wash);
   --color-accent-line: var(--accent-line);
+  --color-icon-active: var(--icon-active);
 
   --color-field-start: var(--field-start);
   --color-field-end: var(--field-end);
@@ -92,6 +93,6 @@
 }
 
 @utility focus-ring {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }

@@ -46,28 +46,27 @@ The current visual direction is a deep ocean canvas carrying a family of soft-bl
 
 ```css
 :root {
-  /* Duration — scaled to perceived distance */
-  --d-instant: 100ms;   /* state flip: toggle, checkbox           */
-  --d-fast:    160ms;   /* hover, press, tooltip                  */
-  --d-base:    240ms;   /* most transitions — the default         */
-  --d-slow:    400ms;   /* panels, sheets, drawers                */
-  --d-cine:    700ms;   /* the hero transition. Used ONCE.        */
+  /* Duration of a change of state */
+  --d-instant: 100ms;       /* state flip: toggle, checkbox            */
+  --d-fast: 160ms;          /* hover, press, tooltip                   */
+  --d-base: 240ms;          /* most transitions: the default           */
+  --d-panel: 300ms;         /* panels, sheets, modals                  */
+  --d-slow: 400ms;          /* larger moves                            */
+  --d-song-change: 900ms;   /* one song's colours into the next's      */
 
   /* Easing */
-  --e-standard:   cubic-bezier(0.4, 0.0, 0.2, 1);   /* moves within view   */
-  --e-decelerate: cubic-bezier(0.0, 0.0, 0.2, 1);   /* enters the view     */
-  --e-accelerate: cubic-bezier(0.4, 0.0, 1.0, 1);   /* exits the view      */
-  --e-emphasis:   cubic-bezier(0.2, 0.0, 0.0, 1.0); /* the hero moment     */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);    /* moves within view   */
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);    /* enters the view     */
+  --ease-accelerate: cubic-bezier(0.4, 0, 1, 1);    /* exits the view      */
+  --ease-press: cubic-bezier(0.2, 0, 0, 1);         /* a press (--ease-tactile) */
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);   /* moving or resizing on screen */
 
-  --stagger: 40ms;      /* between siblings; cap the cascade at 8 items    */
-
-  /* Depth — elevation is blur + shadow + scale, moving together */
-  --z-base:  0px;
-  --z-raise: 4px;
-  --z-float: 16px;
-  --z-modal: 32px;
+  /* Loops: --d-loop-* (one cycle), --d-spin, --d-shimmer, --d-drift. Breathing loops ease with
+     --ease-standard; spinners and marquees are linear. */
 }
 ```
+
+`src/motion/index.ts` holds the same numbers for Motion (JS). `src/lib/motionTokens.test.ts` fails if the two drift apart, and `src/lib/cssGuards.test.ts` (run by `npm run lint` and `npm test`) fails on a raw duration, `cubic-bezier()` or bare `ease` keyword in a stylesheet.
 
 **Springs** (Framer Motion) — for anything a finger touches:
 ```ts
@@ -219,11 +218,13 @@ Target: **60 fps** on the hero transition on a real phone. Check it in DevTools 
 ```css
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
+    animation-duration: var(--d-reduced) !important;
+    transition-property: opacity, color, background-color, border-color /* … fades only */ !important;
+    transition-duration: var(--d-instant) !important;
   }
 }
 ```
+Fades (opacity and colour) keep transitioning at `--d-instant`, so a modal, sheet, toast or lyric line fades instead of snapping. Anything that moves (transform, translate, scale) is dropped from `transition-property` and jumps to its end. Spinners are exempt: a loading indicator that stops reads as a hang. The real block is at the end of `app.css`.
 In Framer Motion, `useReducedMotion()` → swap every transform variant for opacity-only. **The shared-element transition becomes a crossfade**, not a disabled feature. The app must remain fully usable, and it's a genuine accessibility answer if a judge asks.
 
 ---

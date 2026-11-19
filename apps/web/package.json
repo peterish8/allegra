@@ -10,7 +10,7 @@
     "dev": "next dev --port 5173",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "eslint . && node --import tsx --test src/lib/cssGuards.test.ts src/lib/motionTokens.test.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test --test-reporter=spec \"src/lib/**/*.test.ts\""
   },

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const css = readFileSync(new URL('../styles/app.css', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../styles/player.css', import.meta.url), 'utf8');
 
 test('the now playing title and credits drift right to left', () => {
   const keyframes = css.match(/@keyframes np-marquee\s*\{\s*from\s*\{([^}]*)\}\s*to\s*\{([^}]*)\}/);

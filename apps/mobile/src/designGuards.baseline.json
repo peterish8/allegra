@@ -138,14 +138,9 @@
   },
   "motionLiteral": {
     "components/connect/ConnectRemotePlayer.tsx": 4,
-    "components/InstrumentalWaveform.tsx": 1,
     "components/NowPlayingControls.tsx": 7,
     "components/player/AmbientMode.tsx": 2,
-    "components/player/AppleBackdrop.tsx": 1,
-    "components/player/SeekRipple.tsx": 2,
-    "components/stream/DownloadButton.tsx": 2,
-    "components/stream/SavedBadge.tsx": 1,
-    "components/VoiceMicButton.tsx": 7,
+    "components/VoiceMicButton.tsx": 5,
     "navigation/TabNavigator.tsx": 4,
     "screens/NowPlayingScreen.tsx": 4
   },

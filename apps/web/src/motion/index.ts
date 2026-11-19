@@ -1,15 +1,20 @@
 import type { Transition, Variants } from 'motion/react';
 
 export const motionTokens = {
-  marquee: { pixelsPerSecond: 36, gap: 48, minimumDuration: 8 },
+  /** `holdSeconds`: a long title rests this long before its first lap, so it can be read. */
+  marquee: { pixelsPerSecond: 36, gap: 48, minimumDuration: 8, holdSeconds: 1.5 },
   duration: {
     none: 0,
     micro: 0.01,
     instant: 0.1,
     fast: 0.16,
     base: 0.24,
-    panel: 0.24,
+    panel: 0.3,
+    /** The player sheet leaving: shorter than it took to arrive. */
+    sheetExit: 0.22,
     slow: 0.4,
+    /** One song's colours (the player wash, the aura, the app shell) dissolving into the next's. */
+    songChange: 0.9,
     cinematic: 0.7,
     /** A cover flying from its row into the transfer crate. */
     flight: 0.28,
@@ -64,9 +69,13 @@ export const motionTokens = {
     accelerate: [0.4, 0, 1, 1] as const,
     emphasis: [0.2, 0, 0, 1] as const,
     tactile: [0.2, 0, 0, 1] as const,
+    /** Something moving or resizing while it stays on screen. */
+    inOut: [0.77, 0, 0.175, 1] as const,
     linear: 'linear' as const,
     fold: [0.4, 0, 0.9, 0.55] as const
   },
+  /** How long a transient note (a toast-like label) stays up before it fades. */
+  hold: { note: 1.6 },
   stagger: 0.04
 } as const;
 

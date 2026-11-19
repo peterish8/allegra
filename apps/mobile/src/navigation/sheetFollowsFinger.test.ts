@@ -36,12 +36,14 @@ describe('the player sheet follows the finger', () => {
     expect(read('components/PillPlayer.tsx')).toMatch(/translateY: miniRideY\(playerSheetProgress\.value, restY, reduceMotion\)/);
   });
 
-  // Owner-approved 2026-11-12: a tap shares the artwork with the player too (Apple Music).
-  it('shares the artwork on a tap as well as on a drag', () => {
-    const sheet = read('screens/NowPlayingScreen.tsx');
-    expect(sheet).toMatch(/const movingCover = !reduceMotion && playerCoverFrom\.value\.width > 0;/);
-    const pill = read('components/PillPlayer.tsx');
-    expect(pill).toMatch(/const openMeasured = \(\) => measureCover\(\(\) => onOpen\(\)\);/);
-    expect(pill).toMatch(/measureCover\(\(\) => onOpen\(Math\.max\(0, -e\.velocityY\)\)\)/);
+  // Owner request 2026-11-19: no cover flies between the pill and the player. The sheet slides with its own contents.
+  it('opens and closes as one plain slide, with no cover travelling on its own path', () => {
+    for (const file of ['screens/NowPlayingScreen.tsx', 'components/connect/ConnectRemotePlayer.tsx', 'components/PillPlayer.tsx', 'components/NowPlayingLyricsArea.tsx']) {
+      expect(read(file)).not.toMatch(/CoverGhost|playerCoverFrom|movingCover|artworkHandoff|transitionProgress/);
+    }
+    expect(read('components/PillPlayer.tsx')).toMatch(/onOpen\(Math\.max\(0, -e\.velocityY\)\)/);
+    for (const file of ['screens/NowPlayingScreen.tsx', 'components/connect/ConnectRemotePlayer.tsx']) {
+      expect(read(file)).toMatch(/interpolate\(progress\.value, \[0\.15, 0\.4\], \[0, 1\], Extrapolation\.CLAMP\)/);
+    }
   });
 });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { mixInto, parseHex, playerWash, WASH_BASE } from './playerWash';
+import { glowAlpha, MIN_TEXT_CONTRAST, mixInto, parseHex, playerWash, WASH_BASE, whiteContrast } from './playerWash';
 
 describe('the full player wash (YouTube Music recipe)', () => {
   it('reads three- and six-digit hex, and refuses anything else', () => {
@@ -30,5 +30,24 @@ describe('the full player wash (YouTube Music recipe)', () => {
 
   it('falls back to the default blue for a palette it cannot read, so the player is never bare', () => {
     assert.match(playerWash({ primary: 'not-a-colour', secondary: 'nope' }), /rgba\(91, 157, 255, 0\.55\)/);
+  });
+
+  describe('white text over a pale cover', () => {
+    // The top right is where the main glow pools, so it is the brightest point under the lyrics.
+    for (const [name, hex] of [['pale yellow', '#fff25c'], ['white', '#ffffff'], ['mid grey', '#9a9a9a']] as const) {
+      it(`keeps the brightest point of a ${name} wash at ${MIN_TEXT_CONTRAST}:1 against white text`, () => {
+        const primary = parseHex(hex)!;
+        const alpha = glowAlpha(primary);
+        assert.ok(whiteContrast(primary, alpha) >= MIN_TEXT_CONTRAST, `${name}: ${whiteContrast(primary, alpha).toFixed(2)}:1 at alpha ${alpha}`);
+        assert.match(playerWash({ primary: hex, secondary: hex }), new RegExp(`at 78% 8%, rgba\\(\\d+, \\d+, \\d+, ${alpha}\\)`));
+      });
+    }
+
+    it('lowers the glow for a pale cover, and leaves a dark one at the full 55%', () => {
+      assert.ok(glowAlpha(parseHex('#fff25c')!) < 0.55);
+      assert.ok(whiteContrast(parseHex('#fff25c')!, 0.55) < MIN_TEXT_CONTRAST, 'the unlowered glow must have been too bright');
+      assert.equal(glowAlpha(parseHex('#7a3cff')!), 0.55);
+      assert.equal(glowAlpha(parseHex('#5b9dff')!), 0.55);
+    });
   });
 });

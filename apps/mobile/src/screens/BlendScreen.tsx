@@ -37,6 +37,7 @@ import { watchStaleBlend } from '../services/blend/staleRefresh';
 import { StreamService } from '../services/stream/StreamService';
 import type { LibraryStackParamList } from '../types/navigation';
 import { Button, ConfirmSheet, Tactile } from '../ui';
+import { PageBack } from '../components/nav/PageBack';
 import { countOf } from '../utils/formatters';
 import { shuffled } from '../utils/shuffle';
 
@@ -137,6 +138,7 @@ export const BlendScreen: React.FC = () => {
   if (error || !detail) {
     return (
       <SafeAreaView style={s.screen} edges={['top']}>
+        <PageBack />
         <View style={s.panel}>
           <Text style={s.panelBody}>{error ?? (!account.loading && !account.signedIn ? 'Sign in to see this Blend.' : 'Loading your Blend…')}</Text>
           {error && token ? <Tactile accessibilityRole="button" accessibilityLabel="Retry loading Blend" onPress={() => { setError(null); void load(); }}><Text style={s.panelBody}>Try again</Text></Tactile> : null}
@@ -172,6 +174,7 @@ export const BlendScreen: React.FC = () => {
         keyExtractor={(track) => `${filter ?? 'all'}:${track.song.ref}`}
         ListHeaderComponent={
           <View style={{ paddingTop: insets.top + Space.sm }}>
+            <PageBack />
             <RiseIn style={styles.hero}>
               <BlendStage
                 key={revealing ? 'reveal' : 'stage'}

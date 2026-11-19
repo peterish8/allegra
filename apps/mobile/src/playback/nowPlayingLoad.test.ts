@@ -156,6 +156,19 @@ describe('when Now Playing really loads the song', () => {
     expect(commands).toEqual(['play']);
   });
 
+  it('plays the restored song when it is picked after another song loaded first', async () => {
+    usePlayerStore.getState().setInitialSong(a);
+    // The listener picks b before the restored song ever loaded.
+    usePlayerStore.setState({ currentSong: b, currentSongId: 'b', loadedAudioId: null });
+    await open('b');
+    expect(commands).toEqual(['play']);
+    // Then taps a: it must play, not load paused as if it were still the launch restore.
+    usePlayerStore.setState({ currentSong: a, currentSongId: 'a', loadedAudioId: null });
+    commands.length = 0;
+    await open('a');
+    expect(commands).toEqual(['play']);
+  });
+
   it('waits for a tap when the song was handed over paused', async () => {
     usePlayerStore.getState().setPlaylistQueue('connect', [a], 0, false);
     usePlayerStore.setState({ loadedAudioId: null });

@@ -162,11 +162,14 @@ export function endAudioLoad(songId: string): void {
 // The song restored at launch (last played) loads paused; every other load
 // plays. Keyed to that song, so a fresh install's first tap still plays.
 let restoredSongId: string | null = null;
-/** True once, for the load of the song restored at launch. */
+/**
+ * True once, for the load of the song restored at launch. Any load ends the rule: when another song loaded
+ * first (a pick before the restore finished), a later tap on the restored song must play it, not load it paused.
+ */
 export function takeRestoredLoad(songId: string): boolean {
-  if (restoredSongId !== songId) return false;
+  const restored = restoredSongId === songId;
   restoredSongId = null;
-  return true;
+  return restored;
 }
 
 /**

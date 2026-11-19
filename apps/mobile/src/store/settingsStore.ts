@@ -76,6 +76,8 @@ export const normalizeLibraryStartTab = (tab: unknown): LibraryStartTab =>
  * The default used to be âˆ’1.2, a leftover from the first player, which lit every line 1.2 seconds after it
  * began and showed "Timing âˆ’1.2s" on a fresh install.
  */
+/** Lyrics text size, in points, for new installs and Reset to defaults. */
+export const DEFAULT_LYRICS_SIZE = 24;
 export const DEFAULT_LYRICS_DELAY = 0;
 /** The old default. A saved value of exactly this was never chosen, so settings v5 moves it to in sync. */
 const OLD_DEFAULT_LYRICS_DELAY = -1.2;
@@ -246,11 +248,11 @@ interface SettingsState {
 const DEFAULT_SETTINGS = {
   theme: 'dark' as Theme,
   defaultGradientId: 'aurora',
-  lyricsSize: 28,
+  lyricsSize: DEFAULT_LYRICS_SIZE,
   lyricsAlign: 'left' as LyricsAlign,
-  lyricsHighlight: 'letters' as LyricsHighlight,
+  lyricsHighlight: 'lines' as LyricsHighlight,
   autoScrollPlainLyrics: true,
-  lineSpacing: 'normal' as LineSpacing,
+  lineSpacing: 'compact' as LineSpacing,
   scrollSpeed: 'medium' as ScrollSpeed,
   skipDuration: 15 as const,
   keepScreenOn: true,
@@ -413,10 +415,10 @@ export const useSettingsStore = create<SettingsState>()(
           hidePlayerVolume: true,
           // v3: the Small / Medium / Large text size became a size in points.
           lyricsSize: version < 3
-            ? LYRICS_PRESET_SIZE[lyricsFontSize as keyof typeof LYRICS_PRESET_SIZE] ?? 28
-            : clampLyricsSize(state.lyricsSize ?? 28),
+            ? LYRICS_PRESET_SIZE[lyricsFontSize as keyof typeof LYRICS_PRESET_SIZE] ?? DEFAULT_LYRICS_SIZE
+            : clampLyricsSize(state.lyricsSize ?? DEFAULT_LYRICS_SIZE),
           lyricsAlign: state.lyricsAlign ?? 'left',
-          lyricsHighlight: state.lyricsHighlight === 'lines' ? 'lines' : 'letters',
+          lyricsHighlight: state.lyricsHighlight === 'letters' ? 'letters' : 'lines',
           playerBackground: normalizePlayerBackground(state.playerBackground),
           // v2: hold-to-talk became the default. The old default was 'tap',
           // which kept listening after the finger lifted.
@@ -443,7 +445,7 @@ export const useSettingsStore = create<SettingsState>()(
 export const LYRICS_SIZE_MIN = 20;
 export const LYRICS_SIZE_MAX = 44;
 export const clampLyricsSize = (size: number): number =>
-  Math.round(Math.min(LYRICS_SIZE_MAX, Math.max(LYRICS_SIZE_MIN, Number.isFinite(size) ? size : 28)));
+  Math.round(Math.min(LYRICS_SIZE_MAX, Math.max(LYRICS_SIZE_MIN, Number.isFinite(size) ? size : DEFAULT_LYRICS_SIZE)));
 /** The old presets, for settings saved before sizes were custom. */
 const LYRICS_PRESET_SIZE = { small: 24, medium: 28, large: 34 } as const;
 

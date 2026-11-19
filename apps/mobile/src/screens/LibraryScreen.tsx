@@ -21,6 +21,7 @@ import { filterLibraryCollections, indexLibraryCollections } from './libraryColl
 import { CollectionCard, Control, EmptyState, HeaderGlow, IconButton, ListRow, PageHeader, Radius, Sheet, SheetOption, Signal, SongRow, Space, Surface, Tactile, Text, TextButton, Typography, useBottomClearance } from '../ui';
 import { ProfileButton } from '../components/nav/ProfileButton';
 import PlaylistsScreen from './PlaylistsScreen';
+import { PLAYLIST_MENU_ACTIONS } from './playlistsView';
 
 type Nav = NativeStackNavigationProp<LibraryStackParamList & RootStackParamList & TabParamList>;
 type Tab = 'Songs' | 'Playlists' | 'Artists' | 'Albums';
@@ -118,7 +119,10 @@ export default function LibraryScreen() {
       />}
       <Sheet visible={sortOpen} onClose={() => setSortOpen(false)} title="Sort songs by">{(Object.keys(LABELS) as Sort[]).map(value => <SheetOption key={value} label={LABELS[value]} selected={sort === value} onPress={() => changeSort(value)} />)}<Text variant="meta" tone="secondary">Kept for next time.</Text></Sheet>
       <Sheet visible={menuOpen} onClose={() => setMenuOpen(false)} title="Library">
-        <SheetOption icon="cloud-download-outline" label="Import from Spotify" onPress={() => { setMenuOpen(false); navigation.navigate('Import'); }} />
+        {PLAYLIST_MENU_ACTIONS.map(action => (
+          <SheetOption key={action.id} icon={action.icon} label={action.label}
+            onPress={() => { setMenuOpen(false); if (action.id === 'import') navigation.navigate('Import'); else navigation.navigate('CreatePlaylist'); }} />
+        ))}
         <SheetOption icon="people-outline" label="Blends" onPress={() => { setMenuOpen(false); navigation.navigate('Blends'); }} />
         <SheetOption icon="phone-portrait-outline" label="Add songs from this phone" onPress={() => { setMenuOpen(false); openPhone(); }} />
         <SheetOption icon="eye-off-outline" label="Hidden songs" onPress={() => { setMenuOpen(false); navigation.navigate('Settings', { action: 'hidden-songs' }); }} />

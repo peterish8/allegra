@@ -24,12 +24,12 @@ import { usePlaylistStore } from '../store/playlistStore';
 import { LibraryStackParamList, RootStackParamList } from '../types/navigation';
 import { Playlist, Song } from '../types/song';
 import {
-  Chip, ChipRow, ConfirmSheet, EmptyState, GUTTER, IconButton, Placeholder, Sheet, SheetOption, Signal, Space, Tactile, Text,
+  ConfirmSheet, EmptyState, GUTTER, IconButton, Placeholder, Sheet, SheetOption, Signal, Space, Tactile, Text,
   useBottomClearance,
 } from '../ui';
 import { countOf } from '../utils/formatters';
 import { displayPlaylistName } from '../utils/sentenceCase';
-import { filterPlaylists, PLAYLIST_QUICK_ACTIONS, playlistsBody, type PlaylistQuickActionId } from './playlistsView';
+import { filterPlaylists, PLAYLIST_MENU_ACTIONS, playlistsBody, type PlaylistMenuActionId } from './playlistsView';
 
 /** The grid's side padding and each card's margin: two folders share what is left of the width. */
 const GRID_PADDING = Space.sm;
@@ -112,11 +112,13 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
     navigation.navigate('CreatePlaylist');
   };
 
-  const handleImport = () => {
-    navigation.navigate('Import');
+  // Standing alone (not inside Library) the page has its own ••• menu with Library's playlist actions.
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const openMenuAction = (id: PlaylistMenuActionId) => {
+    setMenuOpen(false);
+    if (id === 'import') navigation.navigate('Import');
+    else handleCreatePlaylist();
   };
-
-  const quickActionPress: Record<PlaylistQuickActionId, () => void> = { create: handleCreatePlaylist, import: handleImport };
 
   // A long press opens the playlist's actions; deleting asks first.
   const [selectedPlaylist, setSelectedPlaylist] = React.useState<Playlist | null>(null);
@@ -162,15 +164,9 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
             <Text variant="page" accessibilityRole="header">Playlists</Text>
             <InfoTour label="About playlists" steps={PLAYLISTS_TOUR} scene={playlistsScene} />
           </InfoTitleRow>
+          <IconButton icon="ellipsis-vertical" label="Playlist options" onPress={() => setMenuOpen(true)} />
           </>}
         </View>
-
-        {/* Always the first thing on the page, whatever the playlist count: nothing to scroll past. */}
-        <ChipRow gutter={GUTTER} style={styles.quickActions}>
-          {PLAYLIST_QUICK_ACTIONS.map(action => (
-            <Chip key={action.id} icon={action.icon} label={action.label} onPress={quickActionPress[action.id]} />
-          ))}
-        </ChipRow>
 
         {body === 'placeholder' ? (
           <View style={[styles.grid, styles.placeholderGrid]}>
@@ -223,6 +219,11 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
         )}
       </SafeAreaView>
 
+      <Sheet visible={menuOpen} onClose={() => setMenuOpen(false)} title="Playlists">
+        {PLAYLIST_MENU_ACTIONS.map(action => (
+          <SheetOption key={action.id} icon={action.icon} label={action.label} onPress={() => openMenuAction(action.id)} />
+        ))}
+      </Sheet>
       <Sheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title={selectedName}>
         <SheetOption label="Rename playlist" icon="pencil-outline" onPress={handleRename} />
         <SheetOption
@@ -257,7 +258,6 @@ const styles = StyleSheet.create({
     paddingVertical: Space.sm,
   },
   titleFlex: { flex: 1 },
-  quickActions: { flexGrow: 0 },
   grid: { paddingHorizontal: GRID_PADDING },
   placeholderGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   placeholderLine: { marginTop: Space.sm },

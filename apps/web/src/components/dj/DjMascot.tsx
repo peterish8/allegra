@@ -68,7 +68,7 @@ function Tint({ slots, className }: { readonly slots: Slots; readonly className:
 
 /**
  * A surface washed in the playing song's colours (never its artwork). `className` draws the wash from
- * `--m-a`, `--m-b` and `--m-c`; a new song's colours cross-fade in over `--d-atmosphere`.
+ * `--m-a`, `--m-b` and `--m-c`; a new song's colours cross-fade in over `--d-song-change`.
  */
 export function DjTint({ palette, className }: { readonly palette: Palette; readonly className: string }) {
   const slots = useColourSlots(palette);

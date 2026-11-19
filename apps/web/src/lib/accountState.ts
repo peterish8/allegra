@@ -23,6 +23,15 @@ export function isResolvingAccount(state: AccountSnapshot): boolean {
   return state.signedIn && (state.profile === null || state.profile.isGuest);
 }
 
+/**
+ * How long to wait before asking again for a signed-in listener's profile that came back as the guest (or not at
+ * all): 400ms, doubling, never more than 8s. The server can take a while to accept a token Convex has just issued,
+ * so the app keeps asking at this pace instead of giving up and leaving the chip on "Checking…".
+ */
+export function accountRetryDelayMs(attempt: number): number {
+  return Math.min(8000, 400 * 2 ** Math.max(0, attempt));
+}
+
 const KEY = 'allegra:last-account';
 
 /** Minimal slice of `Storage`, so this can be tested without a browser. */

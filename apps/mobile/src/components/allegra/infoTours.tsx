@@ -9,7 +9,7 @@ import React, { useEffect } from 'react';
 import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { cancelAnimation, Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
 
 import { BLEND_MAX_MEMBERS } from '@shared/blendLimits';
 
@@ -179,7 +179,7 @@ export const searchScene: TourScene = (step) => {
 export const PLAYLISTS_TOUR: readonly TourStep[] = [
   { title: 'All your playlists', body: 'Every playlist you made, here or on the website, in one grid.' },
   { title: 'Liked Songs first', body: 'Every heart you tap collects in Liked Songs, always at the top.' },
-  { title: 'Make a new one', body: 'The plus button at the top starts a new playlist.' },
+  { title: 'Make a new one', body: 'The three dots at the top start a new playlist or bring one in from Spotify.' },
   { title: 'Hold for more', body: 'Long-press a playlist for its options, like rename and delete.' },
 ];
 
@@ -302,7 +302,7 @@ const OrbitLight: React.FC<{ tone: string; at: Orbit | null; start: number }> = 
   }, [at, lift, o, phase, r, reduce, size, start]);
   useEffect(() => {
     if (reduce) return undefined;
-    spin.value = withRepeat(withTiming(TURN, { duration: 9000, easing: Easing.linear }), -1, false);
+    spin.value = withRepeat(withTiming(TURN, { duration: Motion.duration.drift, easing: Motion.ease.linear }), -1, false);
     return () => cancelAnimation(spin);
   }, [reduce, spin]);
   const anim = useAnimatedStyle((): ViewStyle => {

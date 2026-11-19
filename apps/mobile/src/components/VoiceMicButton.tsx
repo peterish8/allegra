@@ -17,7 +17,6 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { Platform, Pressable, StyleSheet, View, ViewStyle } from 'react-native';
 import Animated, {
   cancelAnimation,
-  Easing,
   useAnimatedReaction,
   useAnimatedStyle,
   useReducedMotion,
@@ -91,7 +90,7 @@ export const VoiceMicButton: React.FC<Props> = ({ style, variant = 'floating' })
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       if (!reduce) {
         pulse.value = 0;
-        pulse.value = withRepeat(withTiming(1, { duration: 1400, easing: Easing.out(Easing.quad) }), -1, false);
+        pulse.value = withRepeat(withTiming(1, { duration: Motion.duration.pulse, easing: Motion.ease.decelerate }), -1, false);
       }
     } else {
       cancelAnimation(pulse);
@@ -111,7 +110,7 @@ export const VoiceMicButton: React.FC<Props> = ({ style, variant = 'floating' })
     arc.value = withTiming(isThinking ? 1 : 0, { duration: Motion.duration.base });
     if (isThinking && !reduce) {
       spin.value = 0;
-      spin.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.linear }), -1, false);
+      spin.value = withRepeat(withTiming(1, { duration: Motion.duration.spin, easing: Motion.ease.linear }), -1, false);
     } else {
       cancelAnimation(spin);
     }

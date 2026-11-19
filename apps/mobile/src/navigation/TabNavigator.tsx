@@ -11,7 +11,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { BrowseStackParamList, LibraryStackParamList, TabParamList } from '../types/navigation';
 
 import { V6TabBar } from '../components/V6TabBar';
-import { Motion, Signal } from '../constants/allegraTheme';
+import { Motion } from '../constants/allegraTheme';
 import ArtistScreen from '../screens/ArtistScreen';
 import CatalogAlbumScreen from '../screens/CatalogAlbumScreen';
 import ArtistReleasesScreen from '../screens/ArtistReleasesScreen';
@@ -54,7 +54,6 @@ const STACK_OPTIONS = {
   contentStyle: stackContentStyle,
   freezeOnBlur: true,
 } as const;
-const BLEND_HEADER = { headerShown: true, headerStyle: { backgroundColor: Signal.bg }, headerTintColor: Signal.ink, headerShadowVisible: false } as const;
 
 /**
  * iOS keeps the token-based fade. Android switches native scenes immediately:
@@ -84,10 +83,11 @@ const LibraryStackScreen: React.FC<BottomTabScreenProps<TabParamList, 'Library'>
       <LibraryStack.Screen name="Playlists" component={PlaylistsScreen} />
       {/* From the right, like Playlists before it: drilling down keeps one direction. */}
       <LibraryStack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} options={{ animation: 'slide_from_right' }} />
-      <LibraryStack.Screen name="Blends" component={BlendsScreen} options={BLEND_HEADER} />
-      <LibraryStack.Screen name="Blend" component={BlendScreen} options={BLEND_HEADER} />
-      <LibraryStack.Screen name="BlendJoin" component={BlendJoinScreen} options={{ ...BLEND_HEADER, title: 'Join a Blend' }} />
-      <LibraryStack.Screen name="Import" component={ImportScreen} options={{ ...BLEND_HEADER, title: 'Import Spotify' }} />
+      {/* These pages draw their own back arrow (PageBack) over the cover glow; a system bar cut the glow into a band. */}
+      <LibraryStack.Screen name="Blends" component={BlendsScreen} />
+      <LibraryStack.Screen name="Blend" component={BlendScreen} />
+      <LibraryStack.Screen name="BlendJoin" component={BlendJoinScreen} />
+      <LibraryStack.Screen name="Import" component={ImportScreen} />
       <LibraryStack.Screen name="SharedPlaylist" component={SharedPlaylistScreen} options={{ animation: 'slide_from_right' }} />
     </LibraryStack.Navigator>
   );
