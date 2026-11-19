@@ -41,6 +41,21 @@ The stable action color is soft chartreuse, not neon lime:
 
 Chartreuse is used for primary buttons, selected states, progress, active controls, and focus emphasis. It is deliberately quiet enough to sit over dark artwork and bright enough to remain a clear action signal. Coral remains a supporting brand color for warmth and song-state emphasis; it is not a replacement for the primary action color.
 
+### Accent roles
+
+Each accent has one job. Reach for the role, not for the colour you like.
+
+| Accent | Token | Job |
+| --- | --- | --- |
+| Coral | `--accent`, `--icon-active` | Brand and primary action. The glyph of an active icon button (`--icon-active`, 3:1 or better on the page and on raised surfaces). |
+| Chartreuse | `--wave` | Playback state, and the focus ring inside the player (`--focus-ring` is chartreuse there and coral everywhere else). |
+| Blue | `--stage-blue*` | Connect and the stage only. |
+| Violet | Blend tones (`--tone-*`) | Blend only. |
+
+Buttons that already use `--wave` as their fill (`.btn-primary`) predate this table; whether they move to coral is an open design call, so they were left as they are.
+
+One focus-ring token, `--focus-ring`, feeds every focus outline (`focus-ring` in `tailwind.css` and the player's controls). Do not write a `color-mix` ring or a fallback colour in a component.
+
 Do not introduce a new one-off accent for a component. Add a semantic token only when the role cannot be expressed by the existing system.
 
 ### Brand mark

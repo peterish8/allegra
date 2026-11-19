@@ -19,14 +19,13 @@
   --surface-glass: rgba(24, 29, 32, 0.72);
   --surface-glass-heavy: rgba(18, 21, 23, 0.94);
   --surface-soft: #1d2026;
-  --surface-inverse: #101216;
   --surface-base: var(--surface);
 
   /* Text: high-contrast cool white */
   --ink: #f4f1ea;
   --ink-soft: #d1d0c9;
-  --ink-muted: #8e9498;
-  --ink-faint: #8a939a;
+  --ink-muted: #99a0a4;
+  --ink-faint: #828a8f;
   /* Aliases for the LuvLink page, which reads the --text-* names. */
   --text-primary: var(--ink);
   --text-secondary: var(--ink-soft);
@@ -43,32 +42,55 @@
   --accent-bright: #ffaaa0;
   --accent-deep: #783e44;
   --accent-ink: #121416;
+  /* The glyph colour of an active icon button: 3:1 or better on the page and on raised surfaces. */
+  --icon-active: var(--accent);
+  /* The focus outline everywhere; inside the player (see player.css) it turns chartreuse. */
+  --focus-ring: var(--accent);
   --accent-wash: rgba(238, 107, 95, 0.14);
   --accent-glow: rgba(238, 107, 95, 0.32);
   --accent-line: rgba(238, 107, 95, 0.42);
-  --accent-blue: #a8ddff;
-  --accent-violet: #8298ff;
-  --accent-cobalt: #276ee8;
-  --accent-green: #8bdcca;
-  --accent-soft: rgba(111, 193, 255, 0.13);
-  --accent-border: rgba(111, 193, 255, 0.5);
+  /* Deprecated alias for --stage-cobalt; delete once nothing reads it. */
+  --accent-cobalt: var(--stage-cobalt);
   /* Stable action color — soft chartreuse, not neon lime */
   --wave: #d9e66a;
   --wave-ink: #17180d;
   --vibe-lime: var(--wave);
-  --vibe-blue: #7bafd4;
-
-  /* Gradients */
-  --gradient-glass: linear-gradient(135deg, rgba(37, 43, 48, 0.92) 0%, rgba(18, 21, 23, 0.96) 100%);
-  --gradient-glow: radial-gradient(circle at center, rgba(238, 107, 95, 0.22) 0%, transparent 70%);
 
   /* Stage backdrop fields */
   --field-start: #283039;
   --field-end: #0c1014;
   --glass-highlight: rgba(255, 255, 255, 0.12);
-  --glass-surface: rgba(15, 23, 42, 0.65);
-  --glass-strong: rgba(10, 15, 28, 0.85);
-  --edge-glow: rgba(255, 255, 255, 0.08);
+  --glass-surface: var(--surface-glass);
+  --glass-strong: var(--surface-glass-heavy);
+
+  /* Pure white and black: the two inks every translucent white or black in the stylesheets starts from, as
+     color-mix(in srgb, var(--white) 16%, transparent). The only colour literals live in this file. */
+  --white: #fff;
+  --black: #000;
+  /* The player sits on the cover's colours, so its ink is white and its shadows black, graded by opacity. */
+  --on-art: var(--white);
+  --on-art-muted: rgba(255, 255, 255, 0.9);
+  --on-art-faint: rgba(255, 255, 255, 0.66);
+  --on-art-track-rest: rgba(255, 255, 255, 0.4);
+  --on-art-track-done: var(--white);
+  --on-art-shadow: var(--black);
+
+  /* Dark glass under the player's chrome, and the player bar's ink: opacity is added where they are used. */
+  --scrim-rail: #101011;
+  --scrim-sheet: #14141a;
+  --scrim-card: #0e0e12;
+  --scrim-bar: #1a1c22;
+  --scrim-deep: #030407;
+  --scrim-night: #08080c;
+  --bar-ink: #f5f5f7;
+  /* The play disc in the player is a white pearl with a black glyph; the plain play button is flat. */
+  --play-disc-fill: linear-gradient(145deg, #fffefb 0%, #e2e5ec 100%);
+  --play-disc-ink: #0b0c10;
+  --play-btn-fill: #f5f5f5;
+  --play-btn-ink: #080808;
+  /* Colours the player shows until a cover supplies its own. */
+  --art-fallback: #5b9dff;
+  --panel-accent-fallback: #6cb9f5;
 
   /* Backdrop Blur tokens */
   --blur-sm: 8px;
@@ -84,7 +106,6 @@
   --space-md: 24px;
   --space-lg: 32px;
   --space-xl: 48px;
-  --space-2xl: 64px;
 
   /* Radius: Ultra-modern rounded panels & pill-shaped controls */
   --radius-panel: 24px;
@@ -96,8 +117,9 @@
   --shadow-panel: inset 0 1px 0 var(--glass-highlight), 0 20px 40px -15px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border);
   --shadow-lift: inset 0 1px 0 var(--glass-highlight), 0 12px 32px -6px rgba(0, 0, 0, 0.5);
   --shadow-card: 0 24px 70px rgba(0, 0, 0, 0.42);
-  --shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 2px 0 #34536d, 0 8px 20px rgba(0, 0, 0, 0.42);
-  --shadow-glow: 0 0 30px rgba(56, 189, 248, 0.25);
+  /* Deprecated alias for --tactile-shadow; delete once nothing reads it. */
+  --shadow-button: var(--tactile-shadow);
+  --shadow-glow-blue: 0 0 30px rgba(56, 189, 248, 0.25);
   --shadow-floating-nav: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 16px 36px -10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.1);
 
   /* Type scale */
@@ -171,7 +193,7 @@
   /* Ambient float of decorative shapes (Blend orbs): slow enough to read as breathing, not motion. */
   --d-drift: 9s;
   /* Member colours in a Blend: bright enough to carry dark initials, distinct from one another. */
-  --tone-sky: #6fc1ff;
+  --tone-sky: var(--stage-blue);
   --tone-lilac: #b8a6ff;
   --tone-mint: #7fdcc0;
   --tone-coral: #ee6b5f;
@@ -180,7 +202,6 @@
   /* Shorthand transitions — color/opacity/transform only (never layout props) */
   --transition-fast: color var(--d-fast) var(--ease-standard), background-color var(--d-fast) var(--ease-standard), border-color var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard), transform var(--d-fast) var(--ease-standard);
   --transition-base: color var(--d-base) var(--ease-standard), background-color var(--d-base) var(--ease-standard), border-color var(--d-base) var(--ease-standard), opacity var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-standard);
-  --transition-smooth: color var(--d-panel) var(--ease-decelerate), background-color var(--d-panel) var(--ease-decelerate), opacity var(--d-panel) var(--ease-decelerate), transform var(--d-panel) var(--ease-decelerate);
 
   /* How deep the now-playing cover sits when it turns away in 3D. */
   --perspective-cover: 900px;
@@ -204,12 +225,10 @@
   --primary-fill: #f5f0e4;
   --primary-fill-hover: #fffaf0;
   --primary-ink: #0b0c0f;
-  --primary-edge: #918b7d;
   --stage-blue: #6fc1ff;
   --stage-blue-soft: rgba(111, 193, 255, 0.16);
   --stage-blue-line: rgba(111, 193, 255, 0.48);
   --stage-cobalt: #276ee8;
-  --stage-violet: #788aff;
   --stage-shadow: 0 26px 80px rgba(0, 0, 0, 0.48);
   --tactile-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48), 0 2px 0 #35536d, 0 9px 22px rgba(0, 0, 0, 0.42);
 
@@ -218,17 +237,12 @@
   --workspace-panel: #151619;
   --workspace-panel-raised: #1c1d21;
   --workspace-line: rgba(255, 255, 255, 0.09);
-  --workspace-line-strong: rgba(255, 255, 255, 0.16);
   --workspace-muted: #96979d;
-  --workspace-soft: #c5c6ca;
   --workspace-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
 
   /* Listening room */
   --listen-bg: var(--bg);
-  --listen-rail: var(--bg-deep);
   --listen-surface: var(--surface-raised);
-  --listen-surface-raised: var(--surface-raised);
-  --listen-surface-soft: rgba(255, 255, 255, 0.58);
   --listen-ink: var(--ink);
   --listen-muted: var(--ink-muted);
   --listen-faint: var(--ink-faint);
