@@ -114,6 +114,9 @@ export const ConsentSheet: React.FC<{
 export const blendStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Signal.bg },
   title: { color: Signal.ink, fontSize: 28, fontWeight: '700', paddingHorizontal: Space.md, paddingTop: Space.md },
+  /** A page title beside its back arrow (PageBack): the row carries the padding, the title none. */
+  titleRow: { paddingHorizontal: Space.md, paddingTop: Space.md, paddingBottom: Space.sm },
+  titleInRow: { padding: 0, paddingHorizontal: 0, paddingTop: 0 },
   lead: { color: Signal.inkMuted, fontSize: 14, paddingHorizontal: Space.md, paddingTop: Space.xs, paddingBottom: Space.md },
   panel: { marginHorizontal: Space.md, marginBottom: Space.sm, padding: Space.md, borderRadius: Radius.panel, backgroundColor: Glass.fill, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline, gap: Space.xs },
   panelTitle: { color: Signal.ink, fontSize: 17, fontWeight: '700' },

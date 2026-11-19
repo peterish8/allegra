@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,6 +10,9 @@ import { useAccount } from '../services/account/AccountProvider';
 import { acceptInvite, previewInvite } from '../services/blend/blendApi';
 import type { LibraryStackParamList } from '../types/navigation';
 import { Tactile } from '../ui';
+import { AppSafeArea } from '../components/AppScreen';
+import { InfoTitleRow } from '../components/allegra/InfoTour';
+import { PageBack } from '../components/nav/PageBack';
 
 export default function BlendJoinScreen() {
   const { params: { code } } = useRoute<RouteProp<LibraryStackParamList, 'BlendJoin'>>();
@@ -47,8 +49,8 @@ export default function BlendJoinScreen() {
     await AsyncStorage.removeItem('allegra:pending-blend-invite').catch(() => undefined);
     navigation.replace('Blend', { blendId: result.data.id });
   };
-  return <SafeAreaView style={s.screen} edges={['top']}>
-    <Text style={s.title} accessibilityRole="header">Blend with a friend</Text>
+  return <AppSafeArea style={s.screen} edges={['top']}>
+    <InfoTitleRow style={s.titleRow}><PageBack /><Text style={[s.title, s.titleInRow]} accessibilityRole="header">Blend with a friend</Text></InfoTitleRow>
     <View style={s.panel}>
       <Text style={s.panelBody}>{preview ? `${preview.inviterName} invited you to a playlist made from both your tastes.` : error ?? 'Loading the invite…'}</Text>
       {preview?.full ? <Text style={s.note}>{BLEND_TEXT.full}</Text> : preview ? <>
@@ -60,5 +62,5 @@ export default function BlendJoinScreen() {
       {preview && error ? <Text style={s.note} accessibilityRole="alert">{error}</Text> : null}
     </View>
     <ConsentSheet visible={consent} mode="join" inviterName={preview?.inviterName} busy={busy} error={error} onConfirm={() => void join()} onCancel={() => setConsent(false)} />
-  </SafeAreaView>;
+  </AppSafeArea>;
 }

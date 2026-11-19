@@ -1,4 +1,5 @@
 import { AppSafeArea } from '../components/AppScreen';
+import { PageBack } from '../components/nav/PageBack';
 /**
  * Blends on the phone: the account's Blends, and "Create a Blend" (consent, then the system share
  * sheet with the invite link). Same API and copy as the website.
@@ -17,7 +18,7 @@ import type { BlendSummary } from '@shared/blendView';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { BLENDS_TOUR, blendsLights, blendsScene } from '../components/allegra/infoTours';
 import { ConsentSheet, MemberDiscs, blendStyles as s } from '../components/blend/BlendParts';
-import { Signal, Space } from '../constants/allegraTheme';
+import { Signal } from '../constants/allegraTheme';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { useAccount } from '../services/account/AccountProvider';
 import { createBlend, inviteUrl, listBlends } from '../services/blend/blendApi';
@@ -75,7 +76,7 @@ export const BlendsScreen: React.FC = () => {
   if (!token) {
     return (
       <AppSafeArea style={s.screen} edges={['top']}>
-        <Text style={s.title} accessibilityRole="header">Blends</Text>
+        <InfoTitleRow style={s.titleRow}><PageBack /><Text style={[s.title, s.titleInRow]} accessibilityRole="header">Blends</Text></InfoTitleRow>
         <View style={s.panel}>
           <Text style={s.panelBody}>{BLEND_TEXT.signin}</Text>
           <Tactile style={s.primary} wrapperStyle={s.selfStart} onPress={() => void account.signInWithGoogle()} accessibilityRole="button">
@@ -94,7 +95,7 @@ export const BlendsScreen: React.FC = () => {
         keyExtractor={(blend) => blend.id}
         ListHeaderComponent={
           <>
-            <InfoTitleRow style={{ paddingHorizontal: Space.md, paddingTop: Space.md, paddingBottom: Space.sm }}><Text style={[s.title, { padding: 0, paddingHorizontal: 0, paddingTop: 0 }]} accessibilityRole="header">Blends</Text><InfoTour label="What is a Blend?" steps={BLENDS_TOUR} scene={blendsScene} persist={blendsLights} /></InfoTitleRow>
+            <InfoTitleRow style={s.titleRow}><PageBack /><Text style={[s.title, s.titleInRow]} accessibilityRole="header">Blends</Text><InfoTour label="What is a Blend?" steps={BLENDS_TOUR} scene={blendsScene} persist={blendsLights} /></InfoTitleRow>
             <View style={s.panel}>
               <Tactile style={s.primary} wrapperStyle={s.selfStart} onPress={() => setConsent(true)} accessibilityRole="button">
                 <Text style={s.primaryText}>Create a Blend</Text>
