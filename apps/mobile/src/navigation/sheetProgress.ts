@@ -38,6 +38,3 @@ export const playerDrag = {
   ended: makeMutable(0),
   mounted: makeMutable(false),
 };
-
-/** The mini player's cover in window coordinates (measured by the pill), where the moving cover starts. */
-export const playerCoverFrom = makeMutable({ x: 0, y: 0, width: 0, height: 0, radius: 0 });

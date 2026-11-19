@@ -105,8 +105,6 @@ const FullCover: React.FC<{
 };
 
 interface NowPlayingLyricsAreaProps {
-  /** The shared artwork owns the picture until it reaches this stage. */
-  transitionProgress?: SharedValue<number>;
   showLyrics: boolean;
   processedLyrics: ProcessedLyric[];
   lyricSource?: string;
@@ -226,7 +224,6 @@ const Stage: React.FC<{
 
 const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
   showLyrics,
-  transitionProgress,
   processedLyrics,
   lyricSource,
   duration,
@@ -322,26 +319,23 @@ const NowPlayingLyricsArea: React.FC<NowPlayingLyricsAreaProps> = ({
     return { opacity: t, transform: [{ translateY: 28 * (1 - t) }] };
   });
 
-  const artworkHandoff = useAnimatedStyle(() => ({ opacity: transitionProgress && transitionProgress.value < 0.999 ? 0 : 1 }));
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {/* Mounted in fullscreen too: it has flown into the title's thumbnail, and it flies back out on exit. */}
-      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, artworkHandoff]}>
-        <Stage
-          mode={mode}
-          width={width}
-          screenH={screenH}
-          paddingTop={insets.top + HEADER_CLEARANCE + 24}
-          uri={coverImageUri}
-          title={songTitle ?? ''}
-          artist={songArtist}
-          onBlack={onBlack}
-          stageX={stageX}
-          lyricsP={lyricsP}
-          dockX={dockX}
-          dockY={dockY}
-        />
-      </Animated.View>
+      {/* Mounted in fullscreen too: the cover shrinks into the title's thumbnail and grows back on exit. */}
+      <Stage
+        mode={mode}
+        width={width}
+        screenH={screenH}
+        paddingTop={insets.top + HEADER_CLEARANCE + 24}
+        uri={coverImageUri}
+        title={songTitle ?? ''}
+        artist={songArtist}
+        onBlack={onBlack}
+        stageX={stageX}
+        lyricsP={lyricsP}
+        dockX={dockX}
+        dockY={dockY}
+      />
       {lyricsMounted ? (
         // Apple Music's lyrics view: the lines own the space between the header
         // and the controls, and the sung line's centre rides at 35% of that

@@ -10,7 +10,6 @@ import Animated, {
   Extrapolation,
   interpolate,
   runOnJS,
-  useAnimatedReaction,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -25,7 +24,7 @@ import { useNativeSkip } from '../components/NativeSkip';
 import NowPlayingBackground from '../components/NowPlayingBackground';
 import NowPlayingControls from '../components/NowPlayingControls';
 import NowPlayingHeader from '../components/NowPlayingHeader';
-import NowPlayingLyricsArea, { fullCoverHeight, CONTROLS_CLEARANCE, HEADER_CLEARANCE, LYRICS_MORPH_MS } from '../components/NowPlayingLyricsArea';
+import NowPlayingLyricsArea, { CONTROLS_CLEARANCE, HEADER_CLEARANCE, LYRICS_MORPH_MS } from '../components/NowPlayingLyricsArea';
 import AmbientMode from '../components/player/AmbientMode';
 import { prefetchCover } from '../components/player/coverImages';
 import { isCoverFull, SEEK_STEP_S, seekSide, seekTarget } from '../components/player/coverStage';
@@ -38,21 +37,17 @@ import { PlayerSheet, SleepTimerList } from '../components/player/PlayerSheet';
 import SeekRipple, { SeekPulse } from '../components/player/SeekRipple';
 import UpNextPanel from '../components/player/UpNextPanel';
 import { Toast } from '../components/Toast';
-import { Glass, Motion, Radius } from '../constants/allegraTheme';
+import { Glass, Motion } from '../constants/allegraTheme';
 import { useCanvasArtwork } from '../hooks/useCanvasArtwork';
 import { useNowPlayingLogic } from '../hooks/useNowPlayingLogic';
 import { handlePlayerBack, registerPlayerBackHandler } from '../navigation/playerBack';
 import { shouldExitLyricsFullscreen, shouldOpenLyricsFullscreen, startsInFooter } from '../navigation/lyricsGesture';
 import { fullscreenClearance } from '../components/player/fullscreenFooter';
 import { beginSheetDrag, settleSheet, usePlayerSheetMotion } from '../navigation/usePlayerSheetMotion';
-import { cardCoverRect, heroCoverRect, playerContentOpacity, sheetYForDrag } from '../navigation/playerTransition';
+import { miniGlowOpacity, sheetYForDrag } from '../navigation/playerTransition';
 import { SHEET_TOP_RADIUS } from '../navigation/miniShell';
 import { shouldCloseSheet } from '../navigation/sheetClose';
-import { playerCoverFrom } from '../navigation/sheetProgress';
 import { MiniPlayerGlow } from '../components/MiniPlayerGlow';
-import CoverGhost from '../components/player/CoverGhost';
-import { DOCK_THUMB } from '../components/player/lyricsMorph';
-import { heroHeight as playerHeroHeight } from '../components/player/AppleBackdrop';
 import { playerSheetRest, tabBarTopFromBottom } from '../navigation/tabs';
 import { shellNavHeight, SEEK_BAND_HEIGHT, miniRowHeight } from '../navigation/v6Shell';
 import { durationSV, isSeeking, positionSV } from '../playback/positionBus';
@@ -337,18 +332,12 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       transform: [{ translateY: reduceMotion ? 0 : sheetY.value + (1 - p) * barTop }] as const,
     };
   });
-  // Tap and drag share the same artwork handoff for card, full-cover and hero layouts.
-  const coverLanding = useSettingsStore(s => (!isCardPlayerBackground(s.playerBackground) && s.appleMusicInspired ? 'hero' : isCoverFull(s.playerBackground, s.appleMusicInspired, s.playerCoverFull) ? 'full' : 'card'));
-  const movingCover = !reduceMotion && playerCoverFrom.value.width > 0;
-  const miniSurfaceStyle = useAnimatedStyle(() => ({ opacity: 1 - playerContentOpacity(progress.value) }));
+  const miniSurfaceStyle = useAnimatedStyle(() => ({ opacity: 1 - miniGlowOpacity(progress.value) }));
   // The rising surface's glass: a soft sheen from its top edge and a hairline rim, gone once the player has arrived.
   const sheenStyle = useAnimatedStyle(() => ({ opacity: reduceMotion ? 0 : 1 - Math.min(1, Math.max(0, (progress.value - 0.3) / 0.45)) }));
   const playerFadeStyle = useAnimatedStyle(() => ({
-    opacity: reduceMotion ? 1 : movingCover ? playerContentOpacity(progress.value) : interpolate(progress.value, [0.15, 0.4], [0, 1], Extrapolation.CLAMP),
+    opacity: reduceMotion ? 1 : interpolate(progress.value, [0.15, 0.4], [0, 1], Extrapolation.CLAMP),
   }));
-  const landingRect = coverLanding === 'hero'
-    ? heroCoverRect(windowW, playerHeroHeight(windowW, screenH))
-    : coverLanding === 'full' ? heroCoverRect(windowW, fullCoverHeight(windowW, screenH)) : cardCoverRect(windowW, screenH, insets.top + HEADER_CLEARANCE + 24);
   // The page underneath dims on Echo's curve: nothing for the first tenth, then fast, then easing off.
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: (reduceMotion ? 0 : PAGE_DIM) * Math.min(1, 1.4 * Math.sqrt(Math.max(0, progress.value - 0.1))),
@@ -412,14 +401,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const lyricsP = useSharedValue(showLyrics ? 1 : 0);
   const dockX = useSharedValue(0);
   const dockY = useSharedValue(0);
-  // The thumbnail's centre as plain numbers: the moving cover (CoverGhost) takes a rectangle prop, and under
-  // lyrics the cover lives in that thumbnail, so it must fly there and not to the big cover.
-  const [dockCenter, setDockCenter] = useState({ x: 0, y: 0 });
-  useAnimatedReaction(
-    () => dockY.value,
-    y => { if (y > 0) runOnJS(setDockCenter)({ x: dockX.value, y }); },
-    [dockX, dockY],
-  );
   useEffect(() => {
     const target = showLyrics || lyricsFullscreen ? 1 : 0;
     // Fullscreen rides the same cover -> lyrics morph (opacity only under Reduce Motion).
@@ -895,9 +876,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   // so the lifted title reads over it.
   const stageBackStyle = useAnimatedStyle(() => ({ opacity: 1 - 0.75 * upNext.value }));
   const upNextShadeStyle = useAnimatedStyle(() => ({ opacity: upNext.value }));
-  // With lyrics up (regular or fullscreen) the cover is the title's thumbnail, so the sheet's cover lands there.
-  const ghostOnDock = (showLyrics || lyricsFullscreen) && dockCenter.y > 0;
-  const dockRect = { x: dockCenter.x - DOCK_THUMB / 2, y: dockCenter.y - DOCK_THUMB / 2, width: DOCK_THUMB, height: DOCK_THUMB };
 
   return (
     <View style={styles.root}>
@@ -951,7 +929,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
 
         <Animated.View style={[styles.contentArea, stageBackStyle]}>
           <NowPlayingLyricsArea
-            transitionProgress={movingCover ? progress : undefined}
             showLyrics={showLyrics}
             processedLyrics={processedLyrics}
             lyricSource={currentSong?.lyricSource}
@@ -1081,17 +1058,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       </Animated.View>
       </GestureDetector>
       </Animated.View>
-      {movingCover && currentSong ? (
-        <CoverGhost
-          progress={progress}
-          to={ghostOnDock ? dockRect : landingRect}
-          toRadius={ghostOnDock ? Radius.thumb : coverLanding === 'card' ? Radius.panel : 0}
-          fadeOut={!ghostOnDock && coverLanding !== 'card'}
-          uri={currentSong.coverImageUri}
-          title={currentSong.title}
-          artist={currentSong.artist}
-        />
-      ) : null}
     </View>
   );
 };
