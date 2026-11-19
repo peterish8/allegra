@@ -1,6 +1,6 @@
 jest.mock('react-native', () => ({ AppState: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) } }));
 
-import { DEFAULT_LYRICS_DELAY, isCardPlayerBackground, lyricsTextStyle, migrateLyricsDelay, normalizeMiniPlayerBackground, normalizePlayerBackground, playerBackgroundChange } from './settingsStore';
+import { DEFAULT_LYRICS_DELAY, DEFAULT_LYRICS_SIZE, isCardPlayerBackground, lyricsTextStyle, migrateLyricsDelay, normalizeMiniPlayerBackground, normalizePlayerBackground, playerBackgroundChange } from './settingsStore';
 
 describe('lyrics timing', () => {
   it('starts in sync', () => {
@@ -63,7 +63,7 @@ describe('lyricsTextStyle', () => {
   it('keeps a custom size in range', () => {
     expect(lyricsTextStyle(90, 'normal').fontSize).toBe(44);
     expect(lyricsTextStyle(4, 'normal').fontSize).toBe(20);
-    expect(lyricsTextStyle(Number.NaN, 'normal').fontSize).toBe(28);
+    expect(lyricsTextStyle(Number.NaN, 'normal').fontSize).toBe(DEFAULT_LYRICS_SIZE);
   });
 });
 
