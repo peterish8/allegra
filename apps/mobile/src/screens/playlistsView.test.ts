@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { filterPlaylists, PLAYLIST_QUICK_ACTIONS, playlistsBody } from './playlistsView';
+import { filterPlaylists, PLAYLIST_MENU_ACTIONS, playlistsBody } from './playlistsView';
 
 const playlists = (count: number) => Array.from({ length: count }, (_, i) => ({ id: `p${i}`, name: `Playlist ${i}` }));
 
@@ -14,8 +14,8 @@ describe('Playlists page: what it shows for any number of playlists', () => {
   });
 
   it('offers a new playlist and Spotify import, in that order, in plain sentence case', () => {
-    expect(PLAYLIST_QUICK_ACTIONS.map(action => action.id)).toEqual(['create', 'import']);
-    expect(PLAYLIST_QUICK_ACTIONS.map(action => action.label)).toEqual(['New playlist', 'Import from Spotify']);
+    expect(PLAYLIST_MENU_ACTIONS.map(action => action.id)).toEqual(['create', 'import']);
+    expect(PLAYLIST_MENU_ACTIONS.map(action => action.label)).toEqual(['New playlist', 'Import from Spotify']);
   });
 
   it('filters by name without touching the actions, with zero, a few or fifty-plus playlists', () => {
@@ -29,27 +29,27 @@ describe('Playlists page: what it shows for any number of playlists', () => {
   });
 });
 
-// Owner report: "Import Spotify Playlist" sat at the bottom, behind however many playlists there were. The actions are
-// a fixed row above the list in the page's own markup, so their place does not depend on the count.
-describe('Playlists page: the quick actions come first', () => {
-  const source = fs.readFileSync(path.join(__dirname, 'PlaylistsScreen.tsx'), 'utf8');
+// Owner (2026-11-19): New playlist and Import from Spotify are menu actions, not a row of buttons on the page. They live in
+// Library's ••• menu, and the Playlists page carries the same menu when it stands alone.
+describe('Playlists actions live in the ••• menu', () => {
+  const page = fs.readFileSync(path.join(__dirname, 'PlaylistsScreen.tsx'), 'utf8');
+  const library = fs.readFileSync(path.join(__dirname, 'LibraryScreen.tsx'), 'utf8');
 
-  it('draws the action row above the loading, empty and grid states, outside the list', () => {
-    const row = source.indexOf('<ChipRow');
-    expect(row).toBeGreaterThan(-1);
-    expect(row).toBeLessThan(source.indexOf("body === 'placeholder'"));
-    expect(row).toBeLessThan(source.indexOf("body === 'empty'"));
-    expect(row).toBeLessThan(source.indexOf('<FlatList'));
+  it('draws no action row on the page', () => {
+    expect(page).not.toMatch(/<ChipRow/);
   });
 
   it('never puts content that can change size in the list header', () => {
-    expect(source).not.toMatch(/ListHeaderComponent/);
-    expect(source).not.toMatch(/ListFooterComponent/);
+    expect(page).not.toMatch(/ListHeaderComponent/);
+    expect(page).not.toMatch(/ListFooterComponent/);
   });
 
-  it('opens the Spotify import and the playlist editor', () => {
-    expect(source).toMatch(/navigation\.navigate\('Import'\)/);
-    expect(source).toMatch(/navigation\.navigate\('CreatePlaylist'\)/);
-    expect(source).toMatch(/PLAYLIST_QUICK_ACTIONS\.map/);
+  it('offers both actions from Library\'s menu and the standalone page\'s menu', () => {
+    for (const source of [page, library]) {
+      expect(source).toMatch(/PLAYLIST_MENU_ACTIONS\.map/);
+      expect(source).toMatch(/navigation\.navigate\('Import'\)/);
+    }
+    expect(library).toMatch(/navigation\.navigate\('CreatePlaylist'\)/);
+    expect(page).toMatch(/navigation\.navigate\('CreatePlaylist'\)/);
   });
 });

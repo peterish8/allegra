@@ -179,7 +179,7 @@ export const searchScene: TourScene = (step) => {
 export const PLAYLISTS_TOUR: readonly TourStep[] = [
   { title: 'All your playlists', body: 'Every playlist you made, here or on the website, in one grid.' },
   { title: 'Liked Songs first', body: 'Every heart you tap collects in Liked Songs, always at the top.' },
-  { title: 'Make a new one', body: 'The plus button at the top starts a new playlist.' },
+  { title: 'Make a new one', body: 'The three dots at the top start a new playlist or bring one in from Spotify.' },
   { title: 'Hold for more', body: 'Long-press a playlist for its options, like rename and delete.' },
 ];
 
