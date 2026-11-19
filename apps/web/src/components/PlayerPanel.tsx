@@ -43,6 +43,7 @@ import { playerWash } from '../lib/playerWash';
 import { usePlayhead, type Playhead } from '../lib/playhead';
 import { PlayerTime } from './PlayheadViews';
 import { tapHaptic } from '../lib/haptics';
+import { listenForEscape } from '../lib/escapeLayer';
 import { createDoubleTap } from '../lib/karaokeMix';
 import { coverageGradient, coverageRuns, karaokeButtonAriaLabel, karaokeButtonLabel } from '../lib/karaokeView';
 import { blockCopy } from '../lib/liveKaraoke';
@@ -1016,21 +1017,23 @@ export function MarqueeText({ text, children = text }: { readonly text: string; 
 function KaraokeStatus({ karaoke }: { readonly karaoke: LiveKaraokeController }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const infoButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // Close on outside press or Escape; a popover that can only be closed by its own button traps focus.
+  // Escape is swallowed in the capture phase so the player behind it stays open (the next Escape closes it).
   useEffect(() => {
     if (!open) return undefined;
     const onPointerDown = (event: PointerEvent): void => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
     };
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpen(false);
-    };
     document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
+    const stopEscape = listenForEscape(document, () => {
+      setOpen(false);
+      infoButtonRef.current?.focus();
+    });
     return () => {
       document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
+      stopEscape();
     };
   }, [open]);
 
@@ -1089,6 +1092,7 @@ function KaraokeStatus({ karaoke }: { readonly karaoke: LiveKaraokeController })
         {summary}
         {hasDetail ? (
           <button
+            ref={infoButtonRef}
             type="button"
             className="np-info-btn"
             aria-label="More about karaoke status"
