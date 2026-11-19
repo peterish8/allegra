@@ -10,11 +10,11 @@ import Animated, {
   withTiming,
   withDelay,
   withSequence,
-  Easing,
   cancelAnimation,
   useReducedMotion,
   SharedValue,
 } from 'react-native-reanimated';
+import { Motion } from '../constants/allegraTheme';
 
 interface InstrumentalWaveformProps {
   active: boolean;
@@ -23,17 +23,12 @@ interface InstrumentalWaveformProps {
   style?: ViewStyle;
 }
 
-const EASE = Easing.inOut(Easing.sin);
+const EASE = Motion.ease.standard;
 
 type BarSpec = { min: number; max: number; duration: number; delay: number };
 
-const SPECS: BarSpec[] = [
-  { min: 8, max: 22, duration: 420, delay: 0 },
-  { min: 12, max: 34, duration: 360, delay: 80 },
-  { min: 16, max: 42, duration: 300, delay: 40 },
-  { min: 12, max: 34, duration: 380, delay: 120 },
-  { min: 8, max: 22, duration: 440, delay: 60 },
-];
+const HEIGHTS = [[8, 22], [12, 34], [16, 42], [12, 34], [8, 22]] as const;
+const SPECS: BarSpec[] = HEIGHTS.map(([min, max], i) => ({ min, max, duration: Motion.duration.waveBars[i]!, delay: Motion.delay.waveBars[i]! }));
 
 function Bar({
   active,
@@ -65,8 +60,8 @@ function Bar({
       );
     } else {
       h.value = withTiming(Math.max(4, min * scale * 0.45), {
-        duration: 280,
-        easing: Easing.out(Easing.quad),
+        duration: Motion.duration.base,
+        easing: Motion.ease.decelerate,
       });
     }
   }, [active, reduceMotion, min, max, duration, delay, scale, h]);

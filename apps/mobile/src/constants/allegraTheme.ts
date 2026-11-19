@@ -250,6 +250,9 @@ export const Motion = {
     flight: 280, // a cover flying from its row into the transfer crate
     deal: 320, // a finished sleeve dealt out of the crate
     morph: 460, // one surface becoming another (lyrics opening, fullscreen)
+    spin: 900, // one turn of a waiting or thinking arc
+    pulse: 1400, // one ring of the voice button's listening pulse
+    waveBars: [420, 360, 300, 380, 440] as readonly number[], // one beat of each instrumental-waveform bar, left to right
     drift: 9000, // one leg of the header glow's slow drift (Stream, Library)
     scan: 1600, // the scanner's light crossing its frame, one way
     luvsPulse: 560,
@@ -266,6 +269,10 @@ export const Motion = {
     luvsArtworkFade: 500,
     luvsHintIn: 400,
     luvsHintOut: 300,
+  },
+  /** Start offsets (ms) that keep neighbouring loops out of step. */
+  delay: {
+    waveBars: [0, 80, 40, 120, 60] as readonly number[],
   },
   ease: {
     standard: Easing.bezier(0.4, 0, 0.2, 1),

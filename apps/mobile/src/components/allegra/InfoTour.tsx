@@ -156,13 +156,13 @@ export const InfoTour: React.FC<{
     shown.value = reduce ? withTiming(1, { duration: Motion.duration.base }) : withSpring(1, Motion.spring.sheet);
   };
   const finish = useCallback(() => {
-    shown.value = withTiming(0, { duration: reduce ? Motion.duration.base : 600, easing: Easing.linear }, (done) => {
+    shown.value = withTiming(0, { duration: reduce ? Motion.duration.base : Motion.duration.cinematic, easing: Motion.ease.linear }, (done) => {
       if (!done) return;
       runOnJS(setVisible)(false);
       if (folding.value === 1) {
-        bounce.value = withSequence(withTiming(1.35, { duration: 140 }), withSpring(1, Motion.spring.tactile));
+        bounce.value = withSequence(withTiming(1.35, { duration: Motion.duration.fast }), withSpring(1, Motion.spring.tactile));
         ring.value = 0;
-        ring.value = withTiming(1, { duration: 600 });
+        ring.value = withTiming(1, { duration: Motion.duration.cinematic });
       }
     });
   }, [bounce, folding, reduce, ring, shown]);

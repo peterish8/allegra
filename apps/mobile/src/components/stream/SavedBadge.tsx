@@ -7,7 +7,7 @@ import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
-import Animated, { Easing, FadeOut, useAnimatedProps, useSharedValue, withTiming, ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeOut, useAnimatedProps, useSharedValue, withTiming, ZoomIn } from 'react-native-reanimated';
 import { Motion, Signal } from '../../constants/allegraTheme';
 import { useDownloadState, DownloadTarget } from '../../hooks/useDownloadState';
 
@@ -22,7 +22,7 @@ export const SavedBadge: React.FC<{ song: DownloadTarget; small?: boolean }> = (
 
   const fill = useSharedValue(progress);
   useEffect(() => {
-    fill.value = withTiming(progress, { duration: 260, easing: Easing.out(Easing.quad) });
+    fill.value = withTiming(progress, { duration: Motion.duration.base, easing: Motion.ease.decelerate });
   }, [progress, fill]);
   const ringProps = useAnimatedProps(() => ({ strokeDashoffset: c * (1 - Math.max(0.06, fill.value)) }));
 

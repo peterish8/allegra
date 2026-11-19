@@ -19,7 +19,6 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import Animated, {
   cancelAnimation,
-  Easing,
   FadeOut,
   useAnimatedProps,
   useAnimatedStyle,
@@ -80,7 +79,7 @@ export const DownloadButton: React.FC<{
   // The ring eases between the store's throttled progress ticks.
   const fill = useSharedValue(progress);
   useEffect(() => {
-    fill.value = withTiming(progress, { duration: 260, easing: Easing.out(Easing.quad) });
+    fill.value = withTiming(progress, { duration: Motion.duration.base, easing: Motion.ease.decelerate });
   }, [progress, fill]);
   const ringProps = useAnimatedProps(() => ({ strokeDashoffset: C * (1 - fill.value) }));
 
@@ -89,7 +88,7 @@ export const DownloadButton: React.FC<{
   useEffect(() => {
     if (phase === 'queued') {
       spin.value = 0;
-      spin.value = withRepeat(withTiming(360, { duration: 900, easing: Easing.linear }), -1, false);
+      spin.value = withRepeat(withTiming(360, { duration: Motion.duration.spin, easing: Motion.ease.linear }), -1, false);
     } else {
       cancelAnimation(spin);
       spin.value = 0;

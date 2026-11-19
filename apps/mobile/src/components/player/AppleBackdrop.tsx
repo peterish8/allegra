@@ -210,7 +210,7 @@ const AppleBackdropSkia: React.FC<AppleBackdropProps> = ({ uri, palette, showHer
   const hero = useSharedValue(showHero ? 1 : 0);
   useEffect(() => {
     if (reduceMotion) hero.value = showHero ? 1 : 0;
-    else hero.value = withTiming(showHero ? 1 : 0, { duration: 500, easing: Motion.ease.standard });
+    else hero.value = withTiming(showHero ? 1 : 0, { duration: Motion.duration.slow, easing: Motion.ease.standard });
   }, [showHero, hero, reduceMotion]);
   const heroOpacity = useDerivedValue(() => hero.value * (shift ? 1 - 0.6 * Math.min(1, Math.abs(shift.value) / Math.max(1, width)) : 1));
   const heroShift = useDerivedValue(() => [{ translateX: shift ? shift.value : 0 }]);

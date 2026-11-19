@@ -38,7 +38,7 @@ const Half: React.FC<{ side: -1 | 1; pulse: SeekPulse | null; width: number; hei
       withTiming(1, { duration: Motion.duration.instant, reduceMotion: keep }),
       withDelay(HOLD_MS, withTiming(0, { duration: Motion.duration.slow, easing: Motion.ease.standard, reduceMotion: keep }), keep),
     );
-    if (!reduce) nudge.value = withSequence(withTiming(side * 6, { duration: 90 }), withTiming(0, { duration: 180, easing: Motion.ease.decelerate }));
+    if (!reduce) nudge.value = withSequence(withTiming(side * 6, { duration: Motion.duration.instant }), withTiming(0, { duration: Motion.duration.fast, easing: Motion.ease.decelerate }));
   }, [mine, side, shown, nudge, reduce]);
   const wash = useAnimatedStyle(() => ({ opacity: shown.value }));
   const mark = useAnimatedStyle(() => ({ opacity: shown.value, transform: [{ translateX: nudge.value }] }));

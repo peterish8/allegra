@@ -9,7 +9,7 @@ import React, { useEffect } from 'react';
 import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { cancelAnimation, Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
 
 import { BLEND_MAX_MEMBERS } from '@shared/blendLimits';
 
@@ -302,7 +302,7 @@ const OrbitLight: React.FC<{ tone: string; at: Orbit | null; start: number }> = 
   }, [at, lift, o, phase, r, reduce, size, start]);
   useEffect(() => {
     if (reduce) return undefined;
-    spin.value = withRepeat(withTiming(TURN, { duration: 9000, easing: Easing.linear }), -1, false);
+    spin.value = withRepeat(withTiming(TURN, { duration: Motion.duration.drift, easing: Motion.ease.linear }), -1, false);
     return () => cancelAnimation(spin);
   }, [reduce, spin]);
   const anim = useAnimatedStyle((): ViewStyle => {
