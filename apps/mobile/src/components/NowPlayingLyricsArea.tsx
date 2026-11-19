@@ -49,7 +49,7 @@ const clamp01 = (v: number) => {
   return Math.min(1, Math.max(0, v));
 };
 /** The full-bleed cover's height: YouTube Music's, a little taller than wide, never past 62% of the screen. */
-export const fullCoverHeight = (width: number, height: number): number => Math.round(Math.min(width * 1.15, height * 0.62));
+const fullCoverHeight = (width: number, height: number): number => Math.round(Math.min(width * 1.15, height * 0.62));
 
 /**
  * The full cover for the card styles: edge to edge from the top of the
