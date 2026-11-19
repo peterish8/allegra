@@ -1,6 +1,29 @@
 {
   "entries": [
     {
+      "version": "1.70.3",
+      "description": "A cleaner player slide, a steadier return to the app, and tidier lyric defaults",
+      "changelog": [
+        {
+          "title": "Fixed",
+          "items": [
+            "Opening and closing the player is now a clean slide. The cover no longer jumps across the screen",
+            "Coming back to the app keeps your place and shows Play, instead of a retry button",
+            "Tapping a song after reopening the app plays it straight away",
+            "Import and Blend pages now have the same soft cover glow as the rest of the app, with no stray coloured band"
+          ]
+        },
+        {
+          "title": "Improved",
+          "items": [
+            "The Import page now explains both ways to bring your Spotify music",
+            "New installs and Reset now start lyrics at size 24, line by line, with tight spacing",
+            "New playlist and Import from Spotify are now in the Library menu (the three dots), so the playlists page is cleaner"
+          ]
+        }
+      ]
+    },
+    {
       "version": "1.70.2",
       "description": "A much smaller download, with the same features",
       "changelog": [
@@ -11,7 +34,9 @@
             "Removed an unused part that only older builds of Your DJ needed"
           ]
         }
-      ]
+      ],
+      "sourceCommit": "7a894a987de8d6a979f8ad5e0b5d0ab00e2a385a",
+      "rollbackAsset": "LuvLyrics-rollback-1.70.2.apk"
     },
     {
       "version": "1.70.1",
@@ -67,20 +92,6 @@
       ],
       "sourceCommit": "a8a9460fe4ce2055edcb8f3b6080cb5d3d55c5e1",
       "rollbackAsset": "LuvLyrics-rollback-1.70.0.apk"
-    },
-    {
-      "version": "1.69.1",
-      "description": "Large display size keeps the full screen and bottom navigation visible",
-      "changelog": [
-        {
-          "title": "Fixed",
-          "items": [
-            "Large display size no longer cuts off the right edge or bottom navigation on affected phones"
-          ]
-        }
-      ],
-      "sourceCommit": "c2ca5e7a50d974678d7707b3df1374bb1843b9fa",
-      "rollbackAsset": "LuvLyrics-rollback-1.69.1.apk"
     }
   ]
 }
