@@ -70,7 +70,6 @@
   /* The player sits on the cover's colours, so its ink is white and its shadows black, graded by opacity. */
   --on-art: var(--white);
   --on-art-muted: rgba(255, 255, 255, 0.9);
-  --on-art-faint: rgba(255, 255, 255, 0.66);
   --on-art-track-rest: rgba(255, 255, 255, 0.4);
   --on-art-track-done: var(--white);
   --on-art-shadow: var(--black);

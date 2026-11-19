@@ -19,7 +19,6 @@ import { Loop, Part, Stage, useTick, type Scene } from '../infoScenes';
 import { DjMascot, type DjMascotEmotion } from './DjMascot';
 
 const TOUR_PALETTE: Palette = { primary: '#e0894a', secondary: '#9a5aa0', tertiary: '#4a72a8' };
-const COVERS = TOUR_COVERS;
 
 export const DJ_TOUR: readonly TourStep[] = [
   { title: 'Meet your DJ', body: 'A companion that picks music with you. It sits at the heart of the page, nods along to the beat and takes on the colours of the song that is playing.', icon: Sparkles, pose: 'lift' },
@@ -158,9 +157,9 @@ export const djScene: Scene = (step, reduced) => (
       </Part>
     </> : step === 5 ? (
       <Part reduced={reduced} y={-6} from={{ y: 24, scale: 0.94 }} className="dj-tour__queue">
-        <span className="dj-tour__row is-now" style={{ '--cover': COVERS[0] } as CSSProperties}><b /><span><strong>Kesariya</strong><small>Now playing</small></span><Heart size={11} /></span>
+        <span className="dj-tour__row is-now" style={{ '--cover': TOUR_COVERS[0] } as CSSProperties}><b /><span><strong>Kesariya</strong><small>Now playing</small></span><Heart size={11} /></span>
         {[1, 2].map((i) => (
-          <Part key={i} reduced={reduced} delay={0.15 + i * 0.12} from={{ x: 30, y: 0 }} className="dj-tour__row" style={{ '--cover': COVERS[i] } as CSSProperties}>
+          <Part key={i} reduced={reduced} delay={0.15 + i * 0.12} from={{ x: 30, y: 0 }} className="dj-tour__row" style={{ '--cover': TOUR_COVERS[i] } as CSSProperties}>
             <em>{i}</em><b /><span><strong>{['Tum Hi Ho', 'Shayad'][i - 1]}</strong><small>Same singer, slower</small></span>
           </Part>
         ))}
@@ -174,7 +173,7 @@ export const djScene: Scene = (step, reduced) => (
       <Part reduced={reduced} x={62} y={60} delay={0.5} className="dj-tour__pill">Playlist · save it</Part>
     </> : step === 7 ? <>
       <Part reduced={reduced} x={-110} className="dj-tour__search"><Search size={20} /></Part>
-      <Loop reduced={reduced} className="dj-tour__flying" style={{ x: -60, background: COVERS[2] }} animate={{ x: [-70, 34], opacity: [0, 1, 1, 0], scale: [0.7, 1, 1, 0.5] }} duration={1.8} times={[0, 0.2, 0.7, 1]} />
+      <Loop reduced={reduced} className="dj-tour__flying" style={{ x: -60, background: TOUR_COVERS[2] }} animate={{ x: [-70, 34], opacity: [0, 1, 1, 0], scale: [0.7, 1, 1, 0.5] }} duration={1.8} times={[0, 0.2, 0.7, 1]} />
       <Mascot reduced={reduced} emotion="happy" x={76} size={96} />
     </> : step === 9 ? <>
       {/* Voice on this device: hear, speak, then the browser's Allow. */}

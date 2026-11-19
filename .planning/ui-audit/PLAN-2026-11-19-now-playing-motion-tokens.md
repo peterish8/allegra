@@ -198,7 +198,7 @@ order. Phases 1 and 2 are bugs. Phases 3–5 pay down token debt and depend on P
 
 ### 4.6 Replace hard-coded colours, the player first
 - [x] Player: add `--on-art` (#fff), `--on-art-muted` (rgba 255/255/255 0.9), `--on-art-faint` (0.66), `--on-art-track-rest`, `--on-art-track-done` and `--on-art-shadow`, and replace every `#fff` / `rgba(255,255,255,…)` in `player.css`.
-  > Note: The player has no colour literals left. Translucent whites and blacks are `color-mix(in srgb, var(--on-art) N%, transparent)`.
+  > Note: The player has no colour literals left. Translucent whites and blacks are `color-mix(in srgb, var(--on-art) N%, transparent)`. `--on-art-faint` was added and then removed again: nothing used the 0.66 step.
 - [x] `--primary-fill` for the play disc gradient (`app.css:5132`) instead of `#fffefb` / `#e2e5ec`.
   > Note: Named `--play-disc-fill` (the existing `--primary-fill` is a flat cream, not this gradient).
 - [ ] Then work through the rest by file: `app.css` (344 hex / 784 rgba), `global.css` (146/298), `dj.css`, `components.css`, `blend.css`. Track the remaining counts in this plan.

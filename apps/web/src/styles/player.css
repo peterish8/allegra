@@ -1,7 +1,6 @@
 /*
  * The now-playing screen: the full-screen player sheet, its cover, controls, progress bar, tabs and side panel,
- * and the player bar (.mini-player). Moved here from app.css, components.css and global.css so that
- * everything that styles the player is in one place.
+ * and the player bar (.mini-player). Everything that styles the player lives here.
  */
 
 @layer legacy {

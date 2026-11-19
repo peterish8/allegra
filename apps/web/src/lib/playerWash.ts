@@ -57,7 +57,7 @@ export const MIN_TEXT_CONTRAST = 4.5;
 const toHex = ({ r, g, b }: Rgb): string => `#${[r, g, b].map((c) => Math.round(c).toString(16).padStart(2, '0')).join('')}`;
 
 /** The wash at the centre of its main glow, the brightest point under the lyrics: the glow over the base gradient. */
-export function washPeak(primary: Rgb, glowAlpha: number): Rgb {
+function washPeak(primary: Rgb, glowAlpha: number): Rgb {
   const base = parseHex(WASH_BASE)!;
   const top = mixRgb(primary, base, BASE_TOP);
   const mid = mixRgb(primary, base, BASE_MID);
