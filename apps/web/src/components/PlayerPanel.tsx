@@ -105,6 +105,14 @@ const coverDeck: Variants = {
   exit: (dir: 1 | -1) => ({ opacity: 0, x: `${dir * -58}%`, scale: 0.84, rotateY: dir * 26, transition: { duration: motionTokens.duration.base, ease: motionTokens.ease.accelerate } })
 };
 
+/** The sheet's exit. `custom` is true when a swipe let go with speed: that keeps the spring, otherwise it eases in. */
+const sheetVariants: Variants = {
+  exit: (thrown: boolean) => ({
+    y: '100%',
+    transition: thrown ? spring.sheet : { duration: motionTokens.duration.sheetExit, ease: motionTokens.ease.accelerate }
+  })
+};
+
 /** Reduced motion keeps the change, drops the travel. */
 const coverFade: Variants = {
   enter: { opacity: 0 },
@@ -172,7 +180,7 @@ export function PlayerPanel({
     const previous = onPrevious();
     coverIntent.current = previous && previous.id !== song?.id ? -1 : null;
   };
-  const [tab, setTab] = useState<ListeningTab>(mode === 'workspace' ? 'lyrics' : 'lyrics');
+  const [tab, setTab] = useState<ListeningTab>('lyrics');
   const upNext = queue.filter((item) => item.id !== song?.id).slice(0, 8);
   const related = (suggestions.length > 0 ? suggestions : upNext).slice(0, 6);
   const artists = song ? creditedArtists(song.artist) : [];
@@ -205,7 +213,7 @@ export function PlayerPanel({
   const [noteShown, setNoteShown] = useState(false);
   useEffect(() => {
     if (!noteShown) return undefined;
-    const timer = window.setTimeout(() => setNoteShown(false), 1600);
+    const timer = window.setTimeout(() => setNoteShown(false), motionTokens.hold.note * 1000);
     return () => window.clearTimeout(timer);
   }, [noteShown, highlightNote]);
   const tapLyricsTab = (): void => {
@@ -313,13 +321,18 @@ export function PlayerPanel({
     onOpenImmersive();
   };
 
-  // Rise from bottom on open; sink fully off-screen on close (YT Music reveal).
+  // Rise from the bottom on a spring; close quicker with an ease-in. A swipe that lets go with speed
+  // keeps the spring, so the sheet carries on from where the finger threw it.
   const sheetTransition = reduced
     ? { duration: motionTokens.duration.instant }
     : spring.sheet;
+  const thrownClosed = useRef(false);
+  useEffect(() => {
+    if (song) thrownClosed.current = false;
+  }, [song]);
 
   return (
-    <AnimatePresence>
+    <AnimatePresence custom={thrownClosed.current}>
       {song ? (
         <motion.div
           key="listening-world"
@@ -335,9 +348,12 @@ export function PlayerPanel({
               '--art-secondary': palette.secondary
             } as CSSProperties
           }
-          initial={reduced ? { opacity: 0 } : { y: '100vh' }}
-          animate={reduced ? { opacity: 1 } : { y: '0vh' }}
-          exit={reduced ? { opacity: 0 } : { y: '100vh' }}
+          // Percent of the sheet's own height: `100vh` overshoots on phones whose toolbars come and go.
+          initial={reduced ? { opacity: 0 } : { y: '100%' }}
+          animate={reduced ? { opacity: 1 } : { y: '0%' }}
+          exit={reduced ? { opacity: 0 } : 'exit'}
+          variants={sheetVariants}
+          custom={thrownClosed.current}
           transition={sheetTransition}
           drag={swipeToDismissEnabled ? 'y' : false}
           dragControls={dragControls}
@@ -345,7 +361,10 @@ export function PlayerPanel({
           dragConstraints={{ top: 0, bottom: 0 }}
           dragElastic={{ top: 0, bottom: 0.55 }}
           onDragEnd={(_event, info) => {
-            if (info.offset.y > 120 || info.velocity.y > 500) onCollapse();
+            if (info.offset.y > 120 || info.velocity.y > 500) {
+              thrownClosed.current = info.velocity.y > 500;
+              onCollapse();
+            }
           }}
         >
           <div className="listening-world__atmosphere" aria-hidden="true">
@@ -451,7 +470,7 @@ export function PlayerPanel({
                   dragConstraints={{ left: 0, right: 0 }}
                   dragElastic={0.35}
                   dragSnapToOrigin
-                  style={{ touchAction: 'pan-y', perspective: 900 }}
+                  style={{ touchAction: 'pan-y' }}
                   onDragEnd={(_, info) => {
                     // Swipe the cover left for the next track, right for the previous one.
                     if (info.offset.x < -80 || info.velocity.x < -450) goNext();
@@ -525,7 +544,7 @@ export function PlayerPanel({
                   className="np-meta"
                   initial={reduced ? { opacity: 0 } : { opacity: 0, x: coverDir.current * 8 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: motionTokens.duration.base, ease: motionTokens.ease.decelerate, delay: reduced ? 0 : motionTokens.duration.fast }}
+                  transition={{ duration: motionTokens.duration.base, ease: motionTokens.ease.decelerate, delay: reduced ? 0 : motionTokens.delay.scene }}
                 >
                   <h2 id="player-title" className="np-title">
                     <MarqueeText text={song.title}>
@@ -977,14 +996,19 @@ const MARQUEE_SPEED = motionTokens.marquee.pixelsPerSecond;
 const MARQUEE_GAP = motionTokens.marquee.gap;
 
 /**
- * One-line title or credits. Overflow drifts right to left in a seamless loop, translateX only.
- * Reduced motion falls back to an ellipsis.
+ * One-line title or credits. Overflow waits a moment, then drifts right to left in a seamless loop,
+ * translateX only; hovering or focusing it pauses the drift. Reduced motion shows an ellipsis instead.
  */
 export function MarqueeText({ text, children = text }: { readonly text: string; readonly children?: ReactNode }) {
   const frameRef = useRef<HTMLSpanElement | null>(null);
   const measureRef = useRef<HTMLSpanElement | null>(null);
   const [overflow, setOverflow] = useState<number | null>(null);
+  const reduced = useReducedMotion();
+  const lap = overflow !== null && !reduced ? overflow + MARQUEE_GAP : null;
+  const duration = lap === null ? 0 : Math.round(Math.max(motionTokens.marquee.minimumDuration, lap / MARQUEE_SPEED));
 
+  // `duration` is a dependency because the track below is remounted when it changes: the observer
+  // has to move to the new measuring element.
   useEffect(() => {
     const frame = frameRef.current;
     const measure = measureRef.current;
@@ -998,15 +1022,23 @@ export function MarqueeText({ text, children = text }: { readonly text: string; 
     observer.observe(frame);
     observer.observe(measure);
     return () => observer.disconnect();
-  }, [text]);
+  }, [text, duration]);
 
-  const style = overflow ? ({ '--marquee-duration': `${Math.max(motionTokens.marquee.minimumDuration, (overflow + MARQUEE_GAP) / MARQUEE_SPEED)}s`, '--marquee-shift': `${overflow + MARQUEE_GAP}px` } as CSSProperties) : undefined;
+  const style =
+    lap === null
+      ? undefined
+      : ({
+          '--marquee-duration': `${duration}s`,
+          '--marquee-shift': `${lap}px`,
+          '--marquee-hold': `${motionTokens.marquee.holdSeconds}s`
+        } as CSSProperties);
 
   return (
-    <span ref={frameRef} className={`np-marquee${overflow ? ' is-scrolling' : ''}`} style={style}>
-      <span className="np-marquee__track">
+    <span ref={frameRef} className={`np-marquee${lap === null ? '' : ' is-scrolling'}`} style={style}>
+      {/* Keyed on the rounded duration: a resize that changes the pace restarts the lap instead of jumping mid-way. */}
+      <span key={duration} className="np-marquee__track">
         <span ref={measureRef} className="np-marquee__item">{children}</span>
-        {overflow ? <span className="np-marquee__item" aria-hidden="true">{text}</span> : null}
+        {lap === null ? null : <span className="np-marquee__item" aria-hidden="true">{text}</span>}
       </span>
     </span>
   );
