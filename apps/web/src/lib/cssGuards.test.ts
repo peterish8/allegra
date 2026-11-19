@@ -192,15 +192,14 @@ function baselineFromCounts(
   return baseline;
 }
 
+/** Debt may move between style sheets (a split or a merge), so the total per rule may fall but never rise. */
 function baselineIncreases(current: CssBaseline, previous: CssBaseline): string[] {
   const increases: string[] = [];
+  const total = (files: Record<string, number> | undefined): number => Object.values(files ?? {}).reduce((sum, count) => sum + count, 0);
   for (const rule of RULES) {
-    const files = new Set([...Object.keys(current[rule] ?? {}), ...Object.keys(previous[rule] ?? {})]);
-    for (const file of files) {
-      const before = previous[rule]?.[file] ?? 0;
-      const after = current[rule]?.[file] ?? 0;
-      if (after > before) increases.push(`${rule}/${file}: ${before} -> ${after}`);
-    }
+    const before = total(previous[rule]);
+    const after = total(current[rule]);
+    if (after > before) increases.push(`${rule}: ${before} -> ${after}`);
   }
   const previousProperties = previous.undefinedCustomProperty ?? {};
   const currentProperties = current.undefinedCustomProperty ?? {};

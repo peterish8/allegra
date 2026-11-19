@@ -2706,7 +2706,6 @@ body,
 .now-playing-bar .mobile-track-button span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .now-playing-bar .mobile-track-button strong { color: var(--ink); font-size: 13px; font-weight: 600; }
 .now-playing-bar .mobile-track-button span { color: var(--ink-muted); font-size: 11px; }
-.mini-player-state { color: var(--ink-faint); font-size: 10px; letter-spacing: 0.01em; }
 
 /* Expanded player: one floating glass instrument, not a generic modal sheet. */
 .player-layer {
@@ -2821,7 +2820,6 @@ body,
 
 @media (max-width: 620px) {
   .now-playing-bar { min-height: 60px; border-radius: 18px; }
-  .mini-player-state { display: none; }
   .player-panel { padding: 16px 16px 32px; }
   .player-main { gap: 24px; padding: 42px 0 30px; }
   .player-art-stage { width: min(72vw, 300px); margin: 0 auto; }
