@@ -109,10 +109,11 @@ order. Phases 1 and 2 are bugs. Phases 3–5 pay down token debt and depend on P
 - [x] Delete the glass-card declarations for `.np-controls` (`app.css:5101–5111`) that `5182–5191` immediately undoes.
 
 ### 2.9 Merge the now-playing CSS into one place
-- [ ] Create `apps/web/src/styles/player.css`, imported once after `app.css`.
-- [ ] Move every `.listening-world`, `.np-*`, `.ctrl-play`, `.listening-progress`, `.player-tabs`/`.ptab` and `.player-sidepanel` rule there, from `app.css`, `components.css` and `global.css`.
+- [x] Create `apps/web/src/styles/player.css`, imported once after `app.css`.
+- [x] Move every `.listening-world`, `.np-*`, `.ctrl-play`, `.listening-progress`, `.player-tabs`/`.ptab` and `.player-sidepanel` rule there, from `app.css`, `components.css` and `global.css`.
 - [ ] Collapse rules that are set more than once (`.np-controls`, `.np-actions`, blob opacity and duration) into one declaration each.
-- [ ] Do the same for `.mini-player` (4 definitions: `app.css:2318, 2738, 4858`, `components.css:1232`).
+  > Note: Partly done. Declarations a later rule of the same selector overrides are gone (44 removed), and the dead legacy `.mini-player` rule and its `border-color` are deleted. The remaining same-selector rules each carry different properties; merging them moves declarations past other rules of equal specificity (a first attempt changed `.np-meta` to 380px and the phone bar's grid), so they stay as separate rules. Blob rules went with 5.1.
+- [x] Do the same for `.mini-player` (4 definitions: `app.css:2318, 2738, 4858`, `components.css:1232`).
 - **Done when:** `grep -c "listening-world" styles/app.css` is 0, and the visual check at 360/768/1280/1920 matches before/after screenshots.
 
 ---
@@ -188,9 +189,10 @@ order. Phases 1 and 2 are bugs. Phases 3–5 pay down token debt and depend on P
 ## Phase 5 — Dead CSS and `!important` (P2)
 
 ### 5.1 The old music-background system
-- [ ] Re-grep `ambient-blob|blob-[1-5]|music-bg|music-background|listening-world__glow|lyric-drift` across `apps/web/src` and `apps/web/app`. As of 2026-11-19, no markup uses these classes.
-- [ ] Delete `app.css` ~1774–2050 (`.music-background`, `.music-bg-*`, `.ambient-blob`, `.blob-*`, the `music-bg-fade-in` keyframes and their phone media block) and ~5249–5350 (the `.listening-world` overrides and the `lyric-drift-1..5` keyframes).
-- [ ] Delete `--d-lyric-drift-1..5`, and `--music-*-rgb` if nothing else reads them (check `DynamicAura`, `MusicFlowShader` and `palette.ts` first).
+- [x] Re-grep `ambient-blob|blob-[1-5]|music-bg|music-background|listening-world__glow|lyric-drift` across `apps/web/src` and `apps/web/app`. As of 2026-11-19, no markup uses these classes.
+- [x] Delete `app.css` ~1774–2050 (`.music-background`, `.music-bg-*`, `.ambient-blob`, `.blob-*`, the `music-bg-fade-in` keyframes and their phone media block) and ~5249–5350 (the `.listening-world` overrides and the `lyric-drift-1..5` keyframes).
+- [x] Delete `--d-lyric-drift-1..5`, and `--music-*-rgb` if nothing else reads them (check `DynamicAura`, `MusicFlowShader` and `palette.ts` first).
+  > Note: Grep found three more unused systems with no markup anywhere in `apps/web/src` or `apps/web/app`: `.fluid*` (and its `fluid-in`/`fluid-turn` keyframes), `.artwork-bg*` (with `artwork-fade-in`, `artwork-spin-*`, `artwork-orbit-*`) and the `--fluid-*`, `--artwork-bg-*`, `--music-*` tokens. They went in the same commit. A computed-style diff of every element in the player (bar, player, queue, lyrics-full) at 360/768/1280/1920, with and without reduced motion, matched before and after.
 - **Done when:** the build passes, and screenshots at 360/768/1280/1920 match before and after.
 
 ### 5.2 `!important`
