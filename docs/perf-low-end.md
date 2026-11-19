@@ -17,6 +17,15 @@ ART needs a moment to compile after first launch. To measure the profile's effec
 `adb shell cmd package compile -f -m speed-profile com.lyricflow.app`. To measure without it:
 `adb shell cmd package compile -f -m verify com.lyricflow.app`.
 
+## Compare two builds on an emulator (CI)
+
+`.github/workflows/mobile-bench.yml` (Actions → Mobile benchmark → Run workflow, or any PR that changes it) builds
+the base ref and the head as x86_64 release APKs and runs `.github/scripts/mobile-bench.sh` on one emulator: 12 cold
+starts per build, fresh after install and again after `speed-profile` dexopt, timing the first frame (`am start -W`)
+and React's first drawn screen, then flings the Settings page with animations on for frame times. The job summary
+has the table (`scripts/mobile-bench-report.mjs`); a change within either side's interquartile spread is marked
+"within noise". It answers "is head faster than base on the same machine", not "how fast is it on a phone".
+
 ## Run it
 
 All scripts live in `apps/mobile/scripts/perf/`.
