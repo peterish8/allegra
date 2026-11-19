@@ -9,10 +9,12 @@ export const motionTokens = {
     instant: 0.1,
     fast: 0.16,
     base: 0.24,
-    panel: 0.24,
+    panel: 0.3,
     /** The player sheet leaving: shorter than it took to arrive. */
     sheetExit: 0.22,
     slow: 0.4,
+    /** One song's colours (the player wash, the aura, the app shell) dissolving into the next's. */
+    songChange: 0.9,
     cinematic: 0.7,
     /** A cover flying from its row into the transfer crate. */
     flight: 0.28,
@@ -67,6 +69,8 @@ export const motionTokens = {
     accelerate: [0.4, 0, 1, 1] as const,
     emphasis: [0.2, 0, 0, 1] as const,
     tactile: [0.2, 0, 0, 1] as const,
+    /** Something moving or resizing while it stays on screen. */
+    inOut: [0.77, 0, 0.175, 1] as const,
     linear: 'linear' as const,
     fold: [0.4, 0, 0.9, 0.55] as const
   },

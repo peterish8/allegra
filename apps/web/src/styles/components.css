@@ -154,7 +154,7 @@ body::before { display: none; }
   border-radius: 50%;
   background: var(--accent-bright);
   box-shadow: 0 0 8px var(--accent);
-  animation: pulse-orbit 2.4s infinite ease-in-out;
+  animation: pulse-orbit var(--d-loop-pulse-slow) infinite var(--ease-standard);
 }
 
 @keyframes pulse-orbit {
@@ -575,7 +575,7 @@ body::before { display: none; }
 .status-dot.is-playing {
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
-  animation: pulse-dot 1.8s infinite ease-in-out;
+  animation: pulse-dot var(--d-loop-pulse) infinite var(--ease-standard);
 }
 
 @keyframes pulse-dot {
@@ -588,7 +588,7 @@ body::before { display: none; }
   inset: 0;
   border-radius: 22px;
   box-shadow: inset 0 0 40px color-mix(in srgb, var(--wave, #38bdf8) 45%, transparent);
-  animation: glow-pulse 2.8s infinite alternate ease-in-out;
+  animation: glow-pulse var(--d-loop-glow) infinite alternate var(--ease-standard);
   pointer-events: none;
 }
 
@@ -745,7 +745,7 @@ body::before { display: none; }
   transform-origin: left center;
   background: var(--accent);
   box-shadow: 0 0 12px var(--accent-glow);
-  transition: transform 0.2s linear;
+  transition: transform var(--d-base) linear;
   pointer-events: none;
 }
 
@@ -796,7 +796,7 @@ body::before { display: none; }
   color: var(--accent-ink);
   box-shadow: 0 4px 16px rgba(56, 189, 248, 0.4);
   cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease;
+  transition: transform var(--d-fast) var(--ease-standard), background var(--d-fast) var(--ease-standard);
 }
 
 .play-orb-sm:hover {
@@ -1011,7 +1011,7 @@ body::before { display: none; }
   border-radius: var(--radius-control);
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.04) 75%);
   background-size: 200% 100%;
-  animation: shimmer 1.6s infinite linear;
+  animation: shimmer var(--d-shimmer) infinite linear;
 }
 
 @keyframes shimmer {
@@ -1635,8 +1635,10 @@ body::before { display: none; }
 .karaoke-mix__model-copy > span:last-child { display: grid; min-width: 0; gap: 3px; }
 .karaoke-mix__model-copy strong { color: rgba(255, 255, 255, 0.92); font-size: 0.73rem; font-weight: 600; }
 .karaoke-mix__model-copy small { color: rgba(255, 255, 255, 0.58); font-size: 0.64rem; line-height: 1.25; }
-.karaoke-mix__model-action { flex: none; min-width: 66px; min-height: 34px; padding: 0 10px; border: 0; border-radius: 10px; background: #f2767c; color: #211417; font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: filter var(--d-fast) var(--ease-standard), transform var(--d-fast) var(--ease-press); }
-.karaoke-mix__model-action:hover:not(:disabled) { filter: brightness(1.08); }
+.karaoke-mix__model-action { flex: none; min-width: 66px; min-height: 34px; padding: 0 10px; border: 0; border-radius: 10px; background: #f2767c; color: #211417; font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: transform var(--d-fast) var(--ease-press); position: relative; isolation: isolate; }
+/* The hover lift is a white layer fading in behind the label, not a brightness filter. */
+.karaoke-mix__model-action::before { position: absolute; z-index: -1; inset: 0; border-radius: inherit; background: rgba(255, 255, 255, 0.14); content: ''; opacity: 0; pointer-events: none; transition: opacity var(--d-fast) var(--ease-standard); }
+.karaoke-mix__model-action:hover:not(:disabled)::before { opacity: 1; }
 .karaoke-mix__model-action:active:not(:disabled) { transform: scale(0.96); }
 .karaoke-mix__model-action:disabled { cursor: wait; opacity: 0.65; }
 .karaoke-mix__model-action:focus-visible { outline: 2px solid var(--wave); outline-offset: 2px; }

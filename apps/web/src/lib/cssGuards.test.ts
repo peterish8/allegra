@@ -12,6 +12,7 @@ const baselineFile = join(src, 'lib', 'cssGuards.baseline.json');
 const RULES = [
   'rawDuration',
   'rawBezier',
+  'bareEase',
   'bannedTransition',
   'filterTransition',
   'ungatedHoverTransform',
@@ -93,6 +94,7 @@ function emptyCounts(): RuleCounts {
   return {
     rawDuration: 0,
     rawBezier: 0,
+    bareEase: 0,
     bannedTransition: 0,
     filterTransition: 0,
     ungatedHoverTransform: 0,
@@ -130,6 +132,8 @@ function countCssViolations(name: string, source: string): RuleCounts {
   const motionProperty = /^(?:-webkit-)?(?:transition|animation)(?:-|$)/i;
   const forbiddenTransitionProperty = /\b(?:all|box-shadow|filter|width|height|top|left|right|bottom|margin(?:-[\w-]+)?|padding(?:-[\w-]+)?|border-radius)\b/gi;
   const rawDuration = /(?<![\w.-])-?(?:\d+(?:\.\d+)?|\.\d+)\s*(?:ms|s)\b/gi;
+  // `ease`, `ease-in`, `ease-out`, `ease-in-out` as a word of its own; `var(--ease-in-out)` is not one.
+  const bareEase = /(?<![\w-])(?:ease-in-out|ease-in|ease-out|ease)(?![\w-])/gi;
   const colorLiteral = /#[\da-f]{3,4}(?:[\da-f]{2}){0,2}\b|rgba?\(\s*[^)]*\)/gi;
 
   root.walkDecls((declaration) => {
@@ -138,6 +142,7 @@ function countCssViolations(name: string, source: string): RuleCounts {
 
     if (motionProperty.test(declaration.prop)) {
       counts.rawDuration += value.match(rawDuration)?.length ?? 0;
+      counts.bareEase += value.match(bareEase)?.length ?? 0;
     }
     if (name !== 'tokens.css') {
       counts.rawBezier += value.match(/cubic-bezier\s*\(/gi)?.length ?? 0;
@@ -300,7 +305,10 @@ describe('CSS guards', () => {
     const filterScratch = countCssViolations('scratch.css', '.button { transition: filter 120ms; }');
     assert.equal(filterScratch.filterTransition, 1);
 
-    const cleaned = countCssViolations('scratch.css', '.button:hover { transition: opacity var(--d-fast); }');
+    const keyword = countCssViolations('scratch.css', '.button { transition: opacity var(--d-fast) ease; animation: pulse var(--d-loop-pulse) ease-in-out infinite; }');
+    assert.equal(keyword.bareEase, 2);
+
+    const cleaned = countCssViolations('scratch.css', '.button:hover { transition: opacity var(--d-fast) var(--ease-standard); animation: pulse var(--d-loop-pulse) var(--ease-in-out) infinite; }');
     assert.deepEqual(cleaned, emptyCounts());
   });
 

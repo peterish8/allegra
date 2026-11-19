@@ -378,7 +378,7 @@ export function PlayerPanel({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: reduced ? motionTokens.duration.base : motionTokens.duration.cinematic, ease: motionTokens.ease.standard }}
+                transition={{ duration: reduced ? motionTokens.duration.base : motionTokens.duration.songChange, ease: motionTokens.ease.standard }}
               />
             </AnimatePresence>
           </div>

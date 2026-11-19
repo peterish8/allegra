@@ -77,7 +77,7 @@ body::after,
   display: block;
   overflow: hidden;
   pointer-events: none;
-  transition: --aura-primary 900ms var(--ease-standard), --aura-secondary 900ms var(--ease-standard), --aura-tertiary 900ms var(--ease-standard);
+  transition: --aura-primary var(--d-song-change) var(--ease-standard), --aura-secondary var(--d-song-change) var(--ease-standard), --aura-tertiary var(--d-song-change) var(--ease-standard);
   background:
     radial-gradient(72% 58% at 72% 18%, color-mix(in srgb, var(--aura-primary) 18%, transparent), transparent 72%),
     radial-gradient(58% 48% at 18% 76%, color-mix(in srgb, var(--aura-secondary) 12%, transparent), transparent 76%),
@@ -263,11 +263,10 @@ body::after,
 }
 
 .nav-link svg { width: 18px; height: 18px; flex: 0 0 18px; }
-.dj-nav-icon { position: relative; display: block; width: 18px; height: 18px; flex: 0 0 18px; overflow: visible; border-radius: 50%; background: radial-gradient(ellipse 75% 82% at 52% 76%, rgba(255, 145, 47, 0.9) 0%, rgba(255, 190, 90, 0.64) 40%, rgba(255, 223, 161, 0.2) 68%, transparent 100%); filter: drop-shadow(0 0 3px rgba(255, 166, 66, 0.26)); transition: filter var(--d-fast) var(--ease-standard); }
+.dj-nav-icon { position: relative; display: block; width: 18px; height: 18px; flex: 0 0 18px; overflow: visible; border-radius: 50%; background: radial-gradient(ellipse 75% 82% at 52% 76%, rgba(255, 145, 47, 0.9) 0%, rgba(255, 190, 90, 0.64) 40%, rgba(255, 223, 161, 0.2) 68%, transparent 100%); }
 .dj-nav-icon__eye { position: absolute; display: block; width: 4px; height: 6px; border-radius: 55% 45% 48% 52%; background: #fff; box-shadow: 0 1px 3px rgba(180, 92, 20, 0.18); }
 .dj-nav-icon__eye--left { top: 6px; left: 4px; transform: rotate(10deg); }
 .dj-nav-icon__eye--right { top: 8px; right: 3px; transform: rotate(13deg); }
-.nav-link:is(:hover, .is-active) .dj-nav-icon { filter: drop-shadow(0 0 5px rgba(255, 174, 77, 0.7)); }
 .nav-link:hover { background: rgba(255, 255, 255, 0.07); color: #fff; transform: none; }
 .nav-link.is-active { background: linear-gradient(90deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0)); color: #fff; box-shadow: none; }
 .nav-link.is-active::before { position: absolute; top: 7px; bottom: 7px; left: 0; width: 3px; border-radius: 0 4px 4px 0; background: var(--art-primary, var(--wave)); box-shadow: 0 0 12px color-mix(in srgb, var(--art-primary, var(--wave)) 55%, transparent); content: ''; }
@@ -285,8 +284,8 @@ body::after,
 /* While the app is still finding out whether this is a guest or an account, the chip holds its shape and
  * says nothing about it: two quiet bars where the name would be. Opacity only, and still under Reduce Motion. */
 .session-chip.is-pending .session-avatar { background: rgba(255, 255, 255, 0.1); }
-.session-skeleton { display: block; width: 64px; height: 9px; border-radius: 5px; background: rgba(255, 255, 255, 0.16); animation: session-pending 1.4s ease-in-out infinite; }
-.session-skeleton.is-short { width: 96px; height: 7px; margin-top: 5px; opacity: 0.7; animation-delay: 0.15s; }
+.session-skeleton { display: block; width: 64px; height: 9px; border-radius: 5px; background: rgba(255, 255, 255, 0.16); animation: session-pending var(--d-loop-pending) var(--ease-standard) infinite; }
+.session-skeleton.is-short { width: 96px; height: 7px; margin-top: 5px; opacity: 0.7; animation-delay: var(--delay-scene); }
 @keyframes session-pending { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .session-skeleton { animation: none; } }
 
@@ -459,7 +458,7 @@ body::after,
 @property --aura-secondary { syntax: '<color>'; inherits: true; initial-value: #7bafd4; }
 @property --aura-tertiary { syntax: '<color>'; inherits: true; initial-value: #c4dd74; }
 
-.app-shell { transition: --art-primary 900ms var(--ease-standard), --art-secondary 900ms var(--ease-standard), --art-tertiary 900ms var(--ease-standard); }
+.app-shell { transition: --art-primary var(--d-song-change) var(--ease-standard), --art-secondary var(--d-song-change) var(--ease-standard), --art-tertiary var(--d-song-change) var(--ease-standard); }
 
 .hero-banner {
   --a: color-mix(in oklab, var(--art-primary) 78%, #000);
@@ -1068,7 +1067,7 @@ body::after,
   background: linear-gradient(90deg, transparent, var(--art-primary, #9f8cff), var(--art-secondary, #65d9dd), transparent);
   transform: scaleX(0.22);
   transform-origin: center;
-  animation: lyrics-loading-scan 1.8s var(--ease-in-out, ease-in-out) infinite;
+  animation: lyrics-loading-scan var(--d-loop-pulse) var(--ease-in-out) infinite;
 }
 
 .lyrics-loading-orbit {
@@ -1086,7 +1085,7 @@ body::after,
   border-right-color: transparent;
   border-radius: 50%;
   box-shadow: 0 0 22px color-mix(in srgb, var(--art-primary, #9f8cff) 26%, transparent);
-  animation: lyrics-loading-orbit 1.8s linear infinite;
+  animation: lyrics-loading-orbit var(--d-loop-pulse) linear infinite;
 }
 
 .lyrics-loading-core {
@@ -1105,13 +1104,12 @@ body::after,
 .lyrics-loading-copy span { overflow: hidden; color: var(--ink-muted, #a1a1a6); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 
 .lyrics-loading-wave { display: flex; height: 24px; align-items: center; gap: 3px; }
-.lyrics-loading-wave span { display: block; width: 3px; height: 10px; border-radius: 999px; background: linear-gradient(180deg, var(--art-secondary, #65d9dd), var(--art-primary, #9f8cff)); opacity: 0.82; transform: scaleY(0.65); animation: lyrics-loading-wave 1.1s ease-in-out infinite; }
-.lyrics-loading-wave span:nth-child(2) { animation-delay: 100ms; }
-.lyrics-loading-wave span:nth-child(3) { animation-delay: 200ms; }
-.lyrics-loading-wave span:nth-child(4) { animation-delay: 300ms; }
-.lyrics-loading-wave span:nth-child(5) { animation-delay: 200ms; }
-.lyrics-loading-wave span:nth-child(6) { animation-delay: 100ms; }
-.lyrics-loading-wave span:nth-child(7) { animation-delay: 0ms; }
+.lyrics-loading-wave span { display: block; width: 3px; height: 10px; border-radius: 999px; background: linear-gradient(180deg, var(--art-secondary, #65d9dd), var(--art-primary, #9f8cff)); opacity: 0.82; transform: scaleY(0.65); animation: lyrics-loading-wave var(--d-loop-wave) var(--ease-standard) infinite; }
+.lyrics-loading-wave span:nth-child(2) { animation-delay: var(--d-step); }
+.lyrics-loading-wave span:nth-child(3) { animation-delay: calc(var(--d-step) * 2); }
+.lyrics-loading-wave span:nth-child(4) { animation-delay: calc(var(--d-step) * 3); }
+.lyrics-loading-wave span:nth-child(5) { animation-delay: calc(var(--d-step) * 2); }
+.lyrics-loading-wave span:nth-child(6) { animation-delay: var(--d-step); }
 
 @keyframes lyrics-loading-orbit { to { transform: rotate(360deg); } }
 @keyframes lyrics-loading-wave { 50% { opacity: 1; transform: scaleY(1.7); } }
@@ -1243,15 +1241,15 @@ body::after,
   text-align: center;
 }
 .library-loading-emblem { position: relative; display: grid; width: 58px; height: 58px; flex: 0 0 auto; place-items: center; margin-bottom: 2px; border: 1px solid var(--border-strong); border-radius: 50%; background: radial-gradient(circle at 35% 25%, rgba(238, 107, 95, 0.2), rgba(238, 107, 95, 0.04) 70%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 30px rgba(238, 107, 95, 0.08); }
-.library-loading-orbit { position: absolute; inset: -6px; border: 1px solid var(--border); border-radius: 50%; animation: library-loading-orbit 5s linear infinite; }
+.library-loading-orbit { position: absolute; inset: -6px; border: 1px solid var(--border); border-radius: 50%; animation: library-loading-orbit var(--d-loop-orbit) linear infinite; }
 .library-loading-orbit::before { position: absolute; top: 2px; left: 50%; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-bright); box-shadow: 0 0 12px var(--accent-glow); content: ""; transform: translateX(-50%); }
 .library-loading-disc { display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: var(--surface-raised); color: var(--accent-bright); }
 .library-loading-equalizer { position: absolute; bottom: -7px; left: 50%; display: flex; height: 19px; align-items: center; gap: 3px; padding: 0 7px; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); background: var(--surface-raised); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.22); transform: translateX(-50%); }
-.library-loading-equalizer span { display: block; width: 3px; height: var(--equalizer-height, 7px); border-radius: 3px; background: var(--wave); animation: library-loading-equalize 650ms var(--ease-standard) infinite alternate; }
-.library-loading-equalizer span:nth-child(2) { --equalizer-height: 11px; animation-delay: 90ms; }
-.library-loading-equalizer span:nth-child(3) { --equalizer-height: 6px; animation-delay: 180ms; }
-.library-loading-equalizer span:nth-child(4) { --equalizer-height: 12px; animation-delay: 270ms; }
-.library-loading-equalizer span:nth-child(5) { --equalizer-height: 8px; animation-delay: 360ms; }
+.library-loading-equalizer span { display: block; width: 3px; height: var(--equalizer-height, 7px); border-radius: 3px; background: var(--wave); animation: library-loading-equalize var(--d-loop-equalize) var(--ease-standard) infinite alternate; }
+.library-loading-equalizer span:nth-child(2) { --equalizer-height: 11px; animation-delay: var(--d-step); }
+.library-loading-equalizer span:nth-child(3) { --equalizer-height: 6px; animation-delay: calc(var(--d-step) * 2); }
+.library-loading-equalizer span:nth-child(4) { --equalizer-height: 12px; animation-delay: calc(var(--d-step) * 3); }
+.library-loading-equalizer span:nth-child(5) { --equalizer-height: 8px; animation-delay: calc(var(--d-step) * 4); }
 .library-loading-copy { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .library-loading-eyebrow { color: var(--wave); font-size: 10px; font-weight: 600; letter-spacing: 0.01em; line-height: 1.2; }
 .library-loading-state h2 { font-size: 18px; letter-spacing: var(--tracking-title); }
@@ -2353,7 +2351,7 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   letter-spacing: -0.02em;
 }
 /* Still looking for a photo: a slow breath, so the slot reads as loading rather than empty. */
-.artist-card-initial.is-pending { animation: artist-face-pulse 1.8s var(--ease-standard) infinite; }
+.artist-card-initial.is-pending { animation: artist-face-pulse var(--d-loop-pulse) var(--ease-standard) infinite; }
 @keyframes artist-face-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.62; }
@@ -2362,13 +2360,13 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   .artist-card-initial.is-pending { animation: none; }
 }
 .artist-card-photo img,
-.artist-card-photo .artwork { display: block; width: 100%; height: 100%; border-radius: 0; object-fit: cover; object-position: 50% 20%; transition: transform 500ms var(--ease-standard); }
+.artist-card-photo .artwork { display: block; width: 100%; height: 100%; border-radius: 0; object-fit: cover; object-position: 50% 20%; transition: transform calc(var(--d-slow) * 1.25) var(--ease-standard); }
 @media (hover: hover) and (pointer: fine) {
   .artist-card:hover .artist-card-photo img,
   .artist-card:hover .artist-card-photo .artwork { transform: scale(1.06); }
 }
 .artist-card-shade { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.18) 55%, transparent 100%); }
-.artist-card-copy { position: absolute; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; gap: 2px; padding: 14px; transform: translateY(6px); transition: transform 300ms var(--ease-standard); }
+.artist-card-copy { position: absolute; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; gap: 2px; padding: 14px; transform: translateY(6px); transition: transform var(--d-panel) var(--ease-standard); }
 .artist-card:hover .artist-card-copy,
 .artist-card:focus-visible .artist-card-copy { transform: none; }
 .artist-card-copy strong { overflow: hidden; font-size: 15px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
@@ -2718,10 +2716,26 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   color: var(--wave-ink);
   font-weight: 600;
   box-shadow: 0 10px 28px -12px rgba(217, 230, 106, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  transition: transform var(--d-fast) var(--ease-standard), filter var(--d-fast) var(--ease-standard);
+  transition: transform var(--d-fast) var(--ease-standard);
+  position: relative;
+  isolation: isolate;
 }
 
-.btn-primary:hover { filter: brightness(1.06); box-shadow: 0 14px 34px -12px rgba(217, 230, 106, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
+/* The hover lift is a white layer fading in behind the label, not a brightness filter. */
+.btn-primary::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.12);
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--d-fast) var(--ease-standard);
+}
+
+.btn-primary:hover::before { opacity: 1; }
+.btn-primary:hover { box-shadow: 0 14px 34px -12px rgba(217, 230, 106, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
 .btn-primary:active { transform: scale(0.97); }
 
 .btn-glass,
@@ -2767,7 +2781,7 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   .collection-page,
   .artist-page,
   .album-page,
-  .browse-grid { animation: page-in 0.4s var(--ease-decelerate) both; }}
+  .browse-grid { animation: page-in var(--d-slow) var(--ease-decelerate) both; }}
 
 @keyframes page-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 
@@ -2879,7 +2893,7 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .cmdk-foot kbd { padding: 2px 7px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 6px; background: rgba(255, 255, 255, 0.07); color: rgba(255, 255, 255, 0.62); font-family: var(--font-mono, monospace); font-size: 11px; }
 
 .cmdk-cancel { display: none; }
-.cmdk-spinner { width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.18); border-top-color: #fff; border-radius: 50%; animation: cmdk-spin 0.7s linear infinite; }
+.cmdk-spinner { width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.18); border-top-color: #fff; border-radius: 50%; animation: cmdk-spin var(--d-loop-spin-fast) linear infinite; }
 @keyframes cmdk-spin { to { transform: rotate(360deg); } }
 
 .cmdk-body { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 8px; scrollbar-width: thin; }
@@ -2905,9 +2919,6 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
   .cmdk-input-row kbd, .cmdk-row kbd { display: none; }
   .cmdk-cancel { display: inline-flex; min-height: 44px; align-items: center; padding: 0 4px; border: 0; background: none; color: rgba(255, 255, 255, 0.72); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .cmdk-spinner { animation-duration: 1.6s; }}
 
 /* ---------- Lists sit on a pane of glass, so rows read as part of the same surface ---------- */
 .track-list,
@@ -3229,7 +3240,7 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 ====== */
 
 /* ---------- Home ---------- */
-.home-page { display: flex; min-width: 0; flex-direction: column; gap: 38px; container: browse / inline-size; animation: page-in 0.4s var(--ease-decelerate) both; }
+.home-page { display: flex; min-width: 0; flex-direction: column; gap: 38px; container: browse / inline-size; animation: page-in var(--d-slow) var(--ease-decelerate) both; }
 
 /* Quick picks: the compact half of the band — two columns of what they reach for. */
 
@@ -3490,7 +3501,7 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .auth-body h2 { margin: 18px 0 8px; font-size: 26px; font-weight: 600; letter-spacing: -0.035em; }
 .auth-lede { margin: 0 0 20px; color: rgba(255, 255, 255, 0.62); font-size: 14px; line-height: 1.5; }
 .auth-form { display: flex; flex-direction: column; gap: 14px; }
-.auth-submit { width: 100%; min-width: min(100%, 168px); min-height: 50px; margin-top: 4px; padding-inline: 24px; border-radius: 999px; font-size: 15px; white-space: nowrap; transition: transform var(--d-fast) var(--ease-press), filter var(--d-fast) var(--ease-standard), background-color var(--d-base) var(--ease-standard); }
+.auth-submit { width: 100%; min-width: min(100%, 168px); min-height: 50px; margin-top: 4px; padding-inline: 24px; border-radius: 999px; font-size: 15px; white-space: nowrap; transition: transform var(--d-fast) var(--ease-press), background-color var(--d-base) var(--ease-standard); }
 @media (hover: hover) and (pointer: fine) {
   .auth-submit:not(:disabled):hover { transform: translateY(-1px); }
 }
@@ -3499,8 +3510,7 @@ button.top-song-album:hover { color: var(--ink); text-decoration: underline; tex
 .auth-hint { margin: 8px 0 0; color: rgba(255, 255, 255, 0.5); font-size: 12px; }
 .auth-form .auth-hint { margin-top: -6px; }
 /* Google requires its mark to keep its own colours, so the button stays light. */
-.auth-google { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 50px; margin: 4px 0 16px; padding-inline: 24px; border-radius: 999px; background: #fff; color: #1f1f1f; font-size: 15px; font-weight: 500; white-space: nowrap; transition: transform var(--d-fast) var(--ease-press), filter var(--d-fast) var(--ease-standard); }
-.auth-google:not(:disabled):hover { filter: brightness(0.97); }
+.auth-google { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 50px; margin: 4px 0 16px; padding-inline: 24px; border-radius: 999px; background: #fff; color: #1f1f1f; font-size: 15px; font-weight: 500; white-space: nowrap; transition: transform var(--d-fast) var(--ease-press); }
 @media (hover: hover) and (pointer: fine) {
   .auth-google:not(:disabled):hover { transform: translateY(-1px); }
 }
@@ -4085,11 +4095,11 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   transform: scaleY(0.22);
   transform-origin: center;
 }
-.ytm-lyrics__line.is-active .lyric-wave i { animation: lyric-wave 1.15s ease-in-out infinite; }
-.ytm-lyrics__line.is-active .lyric-wave i:nth-child(2) { animation-delay: -0.85s; }
-.ytm-lyrics__line.is-active .lyric-wave i:nth-child(3) { animation-delay: -0.55s; }
-.ytm-lyrics__line.is-active .lyric-wave i:nth-child(4) { animation-delay: -0.3s; }
-.ytm-lyrics__line.is-active .lyric-wave i:nth-child(5) { animation-delay: -0.7s; }
+.ytm-lyrics__line.is-active .lyric-wave i { animation: lyric-wave var(--d-loop-wave) var(--ease-standard) infinite; }
+.ytm-lyrics__line.is-active .lyric-wave i:nth-child(2) { animation-delay: calc(var(--d-loop-wave) * -0.75); }
+.ytm-lyrics__line.is-active .lyric-wave i:nth-child(3) { animation-delay: calc(var(--d-loop-wave) * -0.5); }
+.ytm-lyrics__line.is-active .lyric-wave i:nth-child(4) { animation-delay: calc(var(--d-loop-wave) * -0.25); }
+.ytm-lyrics__line.is-active .lyric-wave i:nth-child(5) { animation-delay: calc(var(--d-loop-wave) * -0.6); }
 @keyframes lyric-wave { 0%, 100% { transform: scaleY(0.22); } 45% { transform: scaleY(1); } 70% { transform: scaleY(0.5); } }
 .am-meta > strong { width: 100%; min-width: 0; }
 
@@ -4100,7 +4110,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 /* Artist with no photo yet: a monogram plate, never a song cover masquerading as a face. */
 .artist-portrait--monogram { display: grid; place-items: center; background: linear-gradient(150deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)); }
 .artist-portrait--monogram span { color: rgba(255, 255, 255, 0.85); font-size: clamp(64px, 9cqw, 104px); font-weight: 600; letter-spacing: -0.04em; }
-.artist-portrait--monogram.is-loading span { animation: portrait-breathe 1.6s ease-in-out infinite; }
+.artist-portrait--monogram.is-loading span { animation: portrait-breathe var(--d-loop-pulse) var(--ease-standard) infinite; }
 @keyframes portrait-breathe { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .artist-portrait--monogram.is-loading span { animation: none; } }
 
@@ -4321,11 +4331,11 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .ytm-lyrics__state--loading { display: grid; height: 100%; place-items: center; }
 .lyrics-fetch { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; }
 .lyrics-fetch p { margin: 0; color: rgba(255, 255, 255, 0.85); font-size: 15px; font-weight: 500; letter-spacing: 0.02em; }
-.lyric-wave--live i { animation: lyric-wave 1.15s ease-in-out infinite; }
-.lyric-wave--live i:nth-child(2) { animation-delay: -0.85s; }
-.lyric-wave--live i:nth-child(3) { animation-delay: -0.55s; }
-.lyric-wave--live i:nth-child(4) { animation-delay: -0.3s; }
-.lyric-wave--live i:nth-child(5) { animation-delay: -0.7s; }
+.lyric-wave--live i { animation: lyric-wave var(--d-loop-wave) var(--ease-standard) infinite; }
+.lyric-wave--live i:nth-child(2) { animation-delay: calc(var(--d-loop-wave) * -0.75); }
+.lyric-wave--live i:nth-child(3) { animation-delay: calc(var(--d-loop-wave) * -0.5); }
+.lyric-wave--live i:nth-child(4) { animation-delay: calc(var(--d-loop-wave) * -0.25); }
+.lyric-wave--live i:nth-child(5) { animation-delay: calc(var(--d-loop-wave) * -0.6); }
 @media (prefers-reduced-motion: reduce) { .lyric-wave--live i { animation: none; transform: scaleY(0.6); } }
 
 /* No lyrics / couldn't load: centred in the lyric column, a small mark over a title, one line of
@@ -5413,7 +5423,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     inset 0 0 0 2px rgba(0, 0, 0, 0.55);
   transform: rotate(-5deg);
   transition: transform var(--d-panel) var(--ease-decelerate);
-  animation: apk-float calc(var(--d-atmosphere) * 3) ease-in-out infinite alternate;
+  animation: apk-float var(--d-loop-float) var(--ease-standard) infinite alternate;
 }
 @media (hover: hover) and (pointer: fine) {
   .apk-card:hover .apk-card__device { transform: rotate(-1deg); }
@@ -5494,7 +5504,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   white-space: nowrap;
 }
 .apk-card__eq { display: inline-flex; height: 12px; align-items: flex-end; gap: 2px; }
-.apk-card__eq i { display: block; width: 2.5px; height: 100%; border-radius: 1px; background: var(--wave); transform: scaleY(0.4); transform-origin: bottom; animation: apk-eq var(--d-shimmer) ease-in-out infinite alternate; }
+.apk-card__eq i { display: block; width: 2.5px; height: 100%; border-radius: 1px; background: var(--wave); transform: scaleY(0.4); transform-origin: bottom; animation: apk-eq var(--d-shimmer) var(--ease-standard) infinite alternate; }
 .apk-card__eq i:nth-child(2) { animation-delay: calc(var(--d-shimmer) * -0.3); }
 .apk-card__eq i:nth-child(3) { animation-delay: calc(var(--d-shimmer) * -0.6); }
 .apk-card__eq i:nth-child(4) { animation-delay: calc(var(--d-shimmer) * -0.9); }
@@ -6140,7 +6150,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   transform: translateX(-110%);
   pointer-events: none;
 }
-.auth-google:not(:disabled):hover { filter: none; }
 @media (hover: hover) and (pointer: fine) {
   .auth-google:not(:disabled):hover { transform: translateY(-2px) scale(1.01); }
   .auth-google:not(:disabled):hover::after { transform: translateX(260%); }
@@ -6314,7 +6323,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   max-height: 1500px;
   border-radius: 50%;
   will-change: transform;
-  animation: glow-room-drift 20s ease-in-out infinite alternate;
+  animation: glow-room-drift var(--d-loop-glow-drift) var(--ease-standard) infinite alternate;
 }
 .glow-room__blob--a {
   left: -30vw;
@@ -6325,7 +6334,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   right: -30vw;
   top: -45vw;
   background: radial-gradient(circle, color-mix(in srgb, var(--aura-secondary) 70%, transparent) 0%, transparent 62%);
-  animation-duration: 26s;
+  animation-duration: var(--d-loop-glow-drift-slow);
   animation-direction: alternate-reverse;
 }
 @keyframes glow-room-drift {
@@ -6502,8 +6511,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .dj-nav-icon {
   isolation: isolate;
   background: transparent;
-  filter: none;
-  transition: filter var(--d-slow) var(--ease-decelerate);
 }
 .dj-nav-icon::before {
   position: absolute;
@@ -6519,16 +6526,11 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .dj-nav-icon__eye {
   background: #a5a5aa;
   box-shadow: none;
-  transition: background-color var(--d-slow) var(--ease-standard), filter var(--d-slow) var(--ease-standard), transform calc(var(--d-slow) * 1.25) var(--ease-decelerate);
-}
-.nav-link.is-active:not(:hover):not(:focus-visible) .dj-nav-icon { filter: none; }
-.nav-link:is(:hover, :focus-visible) .dj-nav-icon {
-  filter: drop-shadow(0 0 5px rgba(255, 174, 77, .38));
+  transition: background-color var(--d-slow) var(--ease-standard), transform calc(var(--d-slow) * 1.25) var(--ease-decelerate);
 }
 .nav-link:is(:hover, :focus-visible) .dj-nav-icon::before { opacity: 1; scale: 1; }
 .nav-link:is(:hover, :focus-visible) .dj-nav-icon__eye {
   background: #fff;
-  filter: drop-shadow(0 0 2px rgba(255, 246, 222, .7));
 }
 .nav-link:focus-visible .dj-nav-icon__eye--left { transform: rotate(-4deg) translateY(-1px); }
 .nav-link:focus-visible .dj-nav-icon__eye--right { transform: rotate(18deg) translateY(1px); }
@@ -6581,11 +6583,25 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .picks-preview__columns { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* =========================================================================
+   Reduced motion. Nothing is disabled, everything collapses to opacity.
+
+   Keep this block last and outside every @layer. A plain `*` rule has the lowest
+   specificity, so without `!important` any class that sets `animation` wins over it, and
+   inside `@layer legacy` (where it used to live) it also lost to all unlayered CSS.
+   `!important` declarations beat every normal declaration, whatever its layer or specificity.
+   ========================================================================= */
+
 @media (prefers-reduced-motion: reduce) {
+  /* Nothing moves, everything still changes: only fades (opacity and colour) keep transitioning, at --d-instant,
+   * so a modal, sheet, toast, tab or lyric line fades instead of snapping. A transition on transform, translate,
+   * scale or any other movement is dropped from the list, so it jumps to its end. Keyframe animations finish at once. */
   *, *::before, *::after {
     animation-duration: var(--d-reduced) !important;
     animation-iteration-count: 1 !important;
-    transition-duration: var(--d-reduced) !important;
+    transition-property: opacity, color, background, background-color, border-color, fill, stroke, --aura-primary, --aura-secondary, --aura-tertiary, --art-primary, --art-secondary, --art-tertiary !important;
+    transition-duration: var(--d-instant) !important;
+    transition-delay: var(--d-reduced) !important;
     scroll-behavior: auto !important;
   }
   .spin,
@@ -6606,7 +6622,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .am-dj.is-awake::after,
   .dj-m-orbit i,
   .dj-now[data-playing='true'] .dj-now-dot {
-    animation-duration: var(--d-atmosphere) !important;
+    animation-duration: var(--d-loop-live) !important;
     animation-iteration-count: infinite !important;
   }
 

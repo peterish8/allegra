@@ -54,9 +54,9 @@
   -webkit-backdrop-filter: blur(22px) saturate(150%); backdrop-filter: blur(22px) saturate(150%);
 }
 
-/* A cross-fading wash of the song's colours. Two slots, one visible; a new song fades in over --d-atmosphere. */
+/* A cross-fading wash of the song's colours. Two slots, one visible; a new song fades in over --d-song-change. */
 .dj-tint { position: absolute; z-index: -1; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; }
-.dj-m-slot { position: absolute; inset: 0; opacity: 0; transition: opacity var(--d-atmosphere) var(--ease-standard); }
+.dj-m-slot { position: absolute; inset: 0; opacity: 0; transition: opacity var(--d-song-change) var(--ease-standard); }
 .dj-m-slot[data-on='true'] { opacity: 1; }
 .dj-m-slot > span { position: absolute; inset: 0; border-radius: 50%; }
 .dj-tint .dj-m-slot > span { border-radius: 0; }
@@ -101,9 +101,9 @@
 .dj-bubble .dj-word { display: inline-block; white-space: pre; }
 .dj-bubble-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .dj-dots { display: inline-flex; gap: 4px; margin-left: 2px; vertical-align: middle; }
-.dj-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-muted); animation: dj-dot var(--d-atmosphere) var(--ease-standard) infinite; }
-.dj-dots i:nth-child(2) { animation-delay: calc(var(--d-atmosphere) * .18); }
-.dj-dots i:nth-child(3) { animation-delay: calc(var(--d-atmosphere) * .36); }
+.dj-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-muted); animation: dj-dot var(--d-loop-live) var(--ease-standard) infinite; }
+.dj-dots i:nth-child(2) { animation-delay: calc(var(--d-loop-live) * .18); }
+.dj-dots i:nth-child(3) { animation-delay: calc(var(--d-loop-live) * .36); }
 @keyframes dj-dot { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 
 /* Pill buttons the DJ offers (first-run choice, Undo, Start this set). */
@@ -164,7 +164,7 @@
 }
 .dj-gear-button:hover, .dj-mic-button:hover { color: var(--ink); background: var(--dj-hover); }
 /* The mic says where it is: ready (plain), listening (warm and pulsing), writing it down (a spinner). */
-.dj-mic-button[data-state='listening'] { color: #fff; background: #dc7568; animation: dj-mic-pulse var(--d-atmosphere) var(--ease-standard) infinite alternate; }
+.dj-mic-button[data-state='listening'] { color: #fff; background: #dc7568; animation: dj-mic-pulse var(--d-loop-live) var(--ease-standard) infinite alternate; }
 .dj-mic-button[data-state='writing'] { color: var(--ink); background: rgba(255, 255, 255, .12); cursor: progress; }
 .dj-send-button.is-stop { color: #111214; background: var(--ink); }
 /* Send: a plain arrow in a white circle; faint until there is something to send. */
@@ -349,7 +349,7 @@
 }
 .dj-session-vibe { overflow: hidden; text-overflow: ellipsis; }
 .dj-session-live { display: inline-flex; flex: none; align-items: center; gap: 6px; color: var(--ink); }
-.dj-session-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--wave); animation: dj-live var(--d-atmosphere) var(--ease-standard) infinite alternate; }
+.dj-session-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--wave); animation: dj-live var(--d-loop-live) var(--ease-standard) infinite alternate; }
 
 .dj-note { margin: 0; color: var(--ink-muted); font-size: 12px; }
 
@@ -470,7 +470,7 @@
 .dj-now-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); }
 .dj-now-label { overflow: hidden; white-space: nowrap; }
 .dj-now-badge { padding: 1px 6px; border: 1px solid rgba(255, 255, 255, .2); border-radius: 999px; color: var(--ink); font-size: 9px; letter-spacing: .08em; }
-.dj-now[data-playing='true'] .dj-now-dot { background: var(--wave); animation: dj-live var(--d-atmosphere) var(--ease-standard) infinite alternate; }
+.dj-now[data-playing='true'] .dj-now-dot { background: var(--wave); animation: dj-live var(--d-loop-live) var(--ease-standard) infinite alternate; }
 .dj-now-copy strong, .dj-now-copy small, .dj-now-copy em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dj-now-copy strong { font-size: 15px; font-weight: 600; }
 .dj-now-copy small { color: var(--ink-soft, var(--ink-muted)); font-size: 12.5px; }
@@ -756,7 +756,7 @@
 /* The mini mascot has no loop: it breathes and blinks on its own. */
 .dj-m--mini .dj-m-kick { animation: dj-m-mini-breathe var(--d-drift) var(--ease-standard) infinite alternate; }
 .dj-m--mini .dj-m-eye { animation: dj-m-blink calc(var(--d-drift) * .6) var(--ease-standard) infinite; }
-.dj-m--mini[data-playing='true'] .dj-m-dance { animation: dj-m-mini-sway calc(var(--d-atmosphere) * 1.4) var(--ease-standard) infinite alternate; }
+.dj-m--mini[data-playing='true'] .dj-m-dance { animation: dj-m-mini-sway calc(var(--d-loop-live) * 1.4) var(--ease-standard) infinite alternate; }
 @keyframes dj-m-mini-breathe { from { scale: 1; } to { scale: 1.05; } }
 @keyframes dj-m-mini-sway { from { rotate: -6deg; } to { rotate: 6deg; } }
 @keyframes dj-m-blink { 0%, 92%, 100% { scale: 1 1; } 95% { scale: 1 .08; } }
@@ -797,7 +797,7 @@
   .dj-m-glow { opacity: min(.6, calc(var(--m-glow-base) + var(--dj-bass, 0) * .15 + var(--dj-onset, 0) * .2)); }
   .dj-m-floor > span { translate: none; scale: none; }
   .dj-m-stage-glow .dj-m-slot > span, .dj-m--mini .dj-m-kick, .dj-m--mini .dj-m-eye, .dj-m--mini[data-playing='true'] .dj-m-dance { animation: none; }
-  .dj-m-orbit i { animation: dj-m-note-glow var(--d-atmosphere) var(--ease-standard) infinite alternate; }
+  .dj-m-orbit i { animation: dj-m-note-glow var(--d-loop-live) var(--ease-standard) infinite alternate; }
   .dj-m-eye, .dj-m-eyes { transition: opacity var(--d-base) var(--ease-standard); }
   .dj-m-core::before, .dj-m-core::after { animation: none; }
   .dj-m-smile { transition: opacity var(--d-base) var(--ease-standard); }
@@ -898,10 +898,10 @@
 /* "Hey DJ": an ear that glows while it waits for the wake phrase. */
 .dj-wake-button.is-on { color: #15170c; background: color-mix(in srgb, var(--wave) 85%, transparent); }
 .dj-wake-button.is-on:hover { color: #15170c; background: var(--wave); }
-.dj-quick-icon.is-listening { color: #fff; background: #dc7568; animation: dj-mic-pulse var(--d-atmosphere) var(--ease-standard) infinite alternate; }
+.dj-quick-icon.is-listening { color: #fff; background: #dc7568; animation: dj-mic-pulse var(--d-loop-live) var(--ease-standard) infinite alternate; }
 .am-dj.is-awake::after {
   position: absolute; inset: 2px; border: 1.5px solid color-mix(in srgb, var(--wave) 80%, transparent); border-radius: 50%; content: '';
-  animation: dj-live var(--d-atmosphere) var(--ease-standard) infinite alternate; pointer-events: none;
+  animation: dj-live var(--d-loop-live) var(--ease-standard) infinite alternate; pointer-events: none;
 }
 .am-btn.am-dj { position: relative; }
 
