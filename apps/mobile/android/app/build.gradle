@@ -221,6 +221,10 @@ dependencies {
     implementation "androidx.media3:media3-session:$media3"
     implementation "androidx.media3:media3-ui:$media3"
 
+    // Installs src/main/baseline-prof.txt on first launch. The APK is sideloaded, so without this
+    // ART never sees the profile and the startup path is interpreted until background dexopt runs.
+    implementation "androidx.profileinstaller:profileinstaller:1.4.1"
+
     // WorkManager Kotlin runtime for Module C
     implementation "androidx.work:work-runtime-ktx:2.9.0"
 

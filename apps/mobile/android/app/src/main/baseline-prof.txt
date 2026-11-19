@@ -1,0 +1,29 @@
+# ART Baseline Profile for LuvLyrics (human-readable source; AGP compiles it into
+# assets/dexopt/baseline.prof of the release APK and rewrites it through R8's mapping).
+#
+# The APK is sideloaded, so Play never ships cloud profiles for it: without this file every
+# cold start runs the Kotlin and Java startup path in the interpreter/JIT until the phone's
+# idle background dexopt eventually catches up. androidx.profileinstaller (app/build.gradle)
+# writes this profile at first launch so ART compiles these methods ahead of time.
+#
+# Media3 and the AndroidX libraries ship their own profiles; these rules cover what does not.
+# Hermes and the JS bundle are native/bytecode and are not affected by this file.
+#
+# H = hot, S = run at startup, P = run after startup. Wildcards are expanded at build time.
+
+# This app: MainApplication/MainActivity, startup preloader, native views, player bridge,
+# queue engine and playback service.
+HSPLcom/lyricflow/app/**->**(**)**
+Lcom/lyricflow/app/**;
+
+# React Native host, Fabric mounting, TurboModules and the Hermes bridge glue.
+HSPLcom/facebook/react/**->**(**)**
+Lcom/facebook/react/**;
+
+# Expo modules core (module registry, JSI decorators, view managers).
+HSPLexpo/modules/**->**(**)**
+Lexpo/modules/**;
+
+# Reanimated, Worklets, Gesture Handler and Screens: every frame of every gesture runs here.
+HSPLcom/swmansion/**->**(**)**
+Lcom/swmansion/**;
