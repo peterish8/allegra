@@ -1345,16 +1345,16 @@
 
   .listening-world.is-lyrics .ytm-lyrics--softfocus .ytm-lyrics__line {
     padding: 0.28em 0;
-    font-size: calc(clamp(24px, 7vw, 32px) * var(--lyrics-scale, 1)) !important;
-    line-height: 1.28 !important;
+    font-size: calc(clamp(24px, 7vw, 32px) * var(--lyrics-scale, 1));
+    line-height: 1.28;
     text-wrap: balance;
-    filter: none !important;
+    filter: none;
     opacity: max(var(--lyric-fade, 0.34), 0.34);
     -webkit-tap-highlight-color: transparent;
   }
 
   .listening-world.is-lyrics .ytm-lyrics--softfocus .ytm-lyrics__line.is-past { opacity: 0.3; }
-  .listening-world.is-lyrics .ytm-lyrics--softfocus .ytm-lyrics__line.is-active { filter: none !important; }
+  .listening-world.is-lyrics .ytm-lyrics--softfocus .ytm-lyrics__line.is-active { filter: none; }
 
   /* While the reader is scrolling by hand, everything must be legible. */
   .listening-world.is-lyrics .ytm-lyrics.is-user-scrolling .ytm-lyrics__line:not(.is-active) { opacity: 0.58; }
@@ -1432,7 +1432,7 @@
 
   /* Like, plus (lyrics only) Karaoke and Translate. Everything else lives on the cover. */
   .listening-world:is(.is-lyrics, .is-panel) .np-actions { gap: 22px; }
-  .listening-world:is(.is-lyrics, .is-panel) .np-actions > :not(.np-action--like):not(.np-action--tool) { display: none !important; }
+  .listening-world:is(.is-lyrics, .is-panel) .np-actions > :not(.np-action--like):not(.np-action--tool) { display: none; }
   .listening-world.is-lyrics .np-actions > .np-action--tool { display: inline-flex; }
   .listening-world .np-action--tool.is-busy { opacity: 0.6; }
   .listening-world .np-action--tool .lucide-loader-circle { animation: spin var(--d-spin) linear infinite; }
@@ -1491,7 +1491,7 @@
 @media (max-width: 900px) {
   /* Mini bar: art + title, prev/play/next, lyrics + queue. No heart. */
   .mini-player .am-now > .tactile-icon-control {
-    display: none !important;
+    display: none;
   }
 
   .mini-player {
