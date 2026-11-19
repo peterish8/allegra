@@ -87,7 +87,7 @@ const LibraryStackScreen: React.FC<BottomTabScreenProps<TabParamList, 'Library'>
       <LibraryStack.Screen name="Blends" component={BlendsScreen} options={BLEND_HEADER} />
       <LibraryStack.Screen name="Blend" component={BlendScreen} options={BLEND_HEADER} />
       <LibraryStack.Screen name="BlendJoin" component={BlendJoinScreen} options={{ ...BLEND_HEADER, title: 'Join a Blend' }} />
-      <LibraryStack.Screen name="Import" component={ImportScreen} options={{ ...BLEND_HEADER, title: 'Import Spotify' }} />
+      <LibraryStack.Screen name="Import" component={ImportScreen} options={{ ...BLEND_HEADER, title: '' }} />
       <LibraryStack.Screen name="SharedPlaylist" component={SharedPlaylistScreen} options={{ animation: 'slide_from_right' }} />
     </LibraryStack.Navigator>
   );

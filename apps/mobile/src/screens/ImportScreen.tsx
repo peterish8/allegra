@@ -81,6 +81,9 @@ export const ImportScreen: React.FC = () => {
         ) : null}
         {step === 'choose' || step === 'error' ? (
           <Panel style={styles.card}>
+            {/* The second way in, named as on the website, so it does not read as a second Spotify import. */}
+            <UIText variant="row" accessibilityRole="header">Spotify data download</UIText>
+            <UIText variant="secondary" tone="secondary">Works for any Spotify account. In Spotify, open Account, then Privacy settings, and request Account data. Spotify emails a ZIP within a few days.</UIText>
             {step === 'error' && error ? <UIText variant="body" tone="danger" accessibilityRole="alert">{error}</UIText> : null}
             {checkpoint?.stage === 'saving' && step === 'error' ? button('Resume saving', () => startSave(checkpoint), true, busy) : null}
             {step === 'error' && bundle ? button('Continue matching', () => match(), true, busy) : null}
