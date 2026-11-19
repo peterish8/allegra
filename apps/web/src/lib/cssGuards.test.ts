@@ -74,6 +74,7 @@ const RUNTIME_CUSTOM_PROPERTY_ALLOWLIST: Record<string, string> = {
   '--lyrics-scroll-top': 'LyricsPanel measures the active panel top offset.',
   '--m-a': 'DjMascot supplies the primary mascot palette color.',
   '--marquee-duration': 'PlayerPanel calculates duration from the overflowing title width.',
+  '--marquee-hold': 'PlayerPanel supplies how long a long title rests before its first lap.',
   '--marquee-shift': 'PlayerPanel supplies the overflowing title translation distance.',
   '--m-b': 'DjMascot supplies the secondary mascot palette color.',
   '--m-c': 'DjMascot supplies the tertiary mascot palette color.',

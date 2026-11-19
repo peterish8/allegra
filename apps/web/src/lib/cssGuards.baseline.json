@@ -1,13 +1,12 @@
 {
   "rawDuration": {
-    "app.css": 66,
+    "app.css": 65,
     "blend.css": 1,
-    "components.css": 8,
+    "components.css": 7,
     "global.css": 7
   },
   "rawBezier": {
-    "app.css": 2,
-    "components.css": 1
+    "app.css": 2
   },
   "bannedTransition": {
     "app.css": 6,
@@ -38,7 +37,7 @@
     "components.css": 4
   },
   "rawColor": {
-    "app.css": 1128,
+    "app.css": 1121,
     "blend.css": 152,
     "components.css": 161,
     "dj.css": 203,

@@ -118,6 +118,9 @@
   --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
   --ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
   --ease-press: cubic-bezier(0.2, 0, 0, 1);
+  /* How far a pressed control shrinks: the play disc, then the smaller icon buttons. */
+  --press-scale: 0.96;
+  --press-scale-small: 0.95;
   /* A small overshoot: a pressed control springing back past rest and settling. */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-in-out: ease-in-out;
@@ -159,6 +162,9 @@
   --transition-fast: color var(--d-fast) var(--ease-standard), background-color var(--d-fast) var(--ease-standard), border-color var(--d-fast) var(--ease-standard), opacity var(--d-fast) var(--ease-standard), transform var(--d-fast) var(--ease-standard);
   --transition-base: color var(--d-base) var(--ease-standard), background-color var(--d-base) var(--ease-standard), border-color var(--d-base) var(--ease-standard), opacity var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-standard);
   --transition-smooth: color var(--d-panel) var(--ease-decelerate), background-color var(--d-panel) var(--ease-decelerate), opacity var(--d-panel) var(--ease-decelerate), transform var(--d-panel) var(--ease-decelerate);
+
+  /* How deep the now-playing cover sits when it turns away in 3D. */
+  --perspective-cover: 900px;
 
   /* Layout */
   --shell-width: 1280px;

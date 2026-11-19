@@ -1535,12 +1535,15 @@ body::before { display: none; }
   align-items: center;
   justify-content: center;
   gap: 28px;
+  /* The cover turns in 3D relative to its parent, so the depth is set here as well as on the cover itself. */
+  perspective: var(--perspective-cover);
 }
 
 .np-art {
   position: relative;
   width: min(100%, 380px);
   aspect-ratio: 1;
+  perspective: var(--perspective-cover);
 }
 
 /* The sleeve. Clipping and shadow live here, not on the frame, so a cover can travel past the
@@ -1851,16 +1854,23 @@ body::before { display: none; }
   text-shadow: none !important;
   opacity: var(--lyric-fade, 0.26);
   transform: none !important;
-  /* Opacity only — never fight the ambient compositor with per-line springs. */
-  transition: opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1) !important;
+  /* Opacity and scale ease together, so the sung line neither snaps nor races its fade. */
+  transition: opacity var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-decelerate) !important;
 }
 
+/* The !important here is deliberate: a layered !important outranks any normal rule in the unlayered
+   app.css, which is what keeps this rule above the phone and desktop stage overrides. */
 .ytm-lyrics--softfocus .ytm-lyrics__line.is-active {
   opacity: 1 !important;
   transform: scale(1.025) !important;
   transform-origin: left center;
   /* One soft halo so the sung line lifts off the ambient wash — no filter, no layout cost. */
   text-shadow: 0 0 26px rgba(255, 255, 255, 0.22) !important;
+}
+
+/* Reduced motion: the sung line brightens (opacity) but does not grow. */
+@media (prefers-reduced-motion: reduce) {
+  .ytm-lyrics--softfocus .ytm-lyrics__line.is-active { transform: none !important; }
 }
 
 /* Letter by letter (SweepWords in LyricsPanel.tsx): the sung line's unsung letters rest dim and a

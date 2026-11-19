@@ -4573,7 +4573,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 
 .ctrl-play:active,
-.ctrl-play[data-pressed='true'] { transform: scale(0.94); }
+.ctrl-play[data-pressed='true'] { transform: scale(var(--press-scale)); }
 
 .ctrl-play:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--wave, #d9e66a) 72%, white);
@@ -4817,7 +4817,9 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 9%, #000 91%, transparent 100%);
   mask-image: linear-gradient(90deg, transparent 0, #000 9%, #000 91%, transparent 100%);
 }
-.np-marquee.is-scrolling .np-marquee__track { animation: np-marquee var(--marquee-duration, 14s) linear infinite; }
+/* The track waits --marquee-hold before its first lap, and rests while it is hovered or focused (WCAG 2.2.2). */
+.np-marquee.is-scrolling .np-marquee__track { animation: np-marquee var(--marquee-duration) linear var(--marquee-hold) infinite; }
+.np-marquee.is-scrolling:is(:hover, :focus-within) .np-marquee__track { animation-play-state: paused; }
 @keyframes np-marquee { from { transform: translateX(0); } to { transform: translateX(calc(var(--marquee-shift, 50%) * -1)); } }
 .am-meta > strong, .am-meta > .np-marquee { width: 100%; min-width: 0; }
 .am-meta .np-marquee__track, .am-meta .np-marquee__item { max-width: none; overflow: visible; }
@@ -4827,9 +4829,11 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 
 @media (prefers-reduced-motion: reduce) {
   .ytm-lyrics__line.is-active .lyric-wave i { animation: none; transform: scaleY(0.6); }
-  .np-marquee.is-scrolling { -webkit-mask-image: none; mask-image: none; }
-  .np-marquee.is-scrolling .np-marquee__track { animation: none; }
-  .np-marquee { text-overflow: ellipsis; }
+  /* MarqueeText draws no animation and no second copy here: the title simply ends in an ellipsis. */
+  .np-marquee__track { display: block; max-width: 100%; }
+  .np-marquee__item,
+  .am-meta .np-marquee__item { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .np-marquee .np-link--title { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 }
 
 /* ---------- Player sheet legibility: title as wide as the cover, everything white ---------- */
@@ -4844,7 +4848,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .listening-world .listening-progress .progress-time { color: rgba(255, 255, 255, 0.92); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.35); }
 .listening-world .np-controls svg,
 .listening-world .np-actions svg,
-.listening-world .np-btns svg { color: #fff; filter: drop-shadow(0 1px 6px rgba(0, 0, 0, 0.35)); }
+.listening-world .np-btns svg { color: #fff; }
 .listening-world .np-actions .tactile-icon-control,
 .listening-world .np-btns .tactile-icon-control { color: #fff; border-color: rgba(255, 255, 255, 0.28); background: rgba(255, 255, 255, 0.14); }
 .listening-world .np-actions .tactile-icon-control:hover,
@@ -5102,20 +5106,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   --lyric-fade: 0.85;
 }
 
-/* ---------- Big player controls: dark glass card, crisp white, clear grouping ---------- */
-.listening-world .np-controls {
-  align-items: stretch;
-  gap: 14px;
-  width: min(100%, 420px);
-  padding: 18px 22px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 28px;
-  background: linear-gradient(180deg, rgba(10, 12, 16, 0.44), rgba(10, 12, 16, 0.34));
-  box-shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  -webkit-backdrop-filter: blur(26px) saturate(150%);
-  backdrop-filter: blur(26px) saturate(150%);
-}
-
+/* ---------- Big player controls: crisp white, clear grouping ---------- */
 .listening-world .listening-progress { gap: 8px 12px; }
 .listening-world .listening-progress .progress-range { --track-height: 8px; --thumb-size: 16px; --track-rest: rgba(255, 255, 255, 0.3); --track-done: #fff; }
 .listening-world .listening-progress .progress-time {
@@ -5178,13 +5169,14 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 .listening-world .np-actions .tactile-icon-control:hover,
 .listening-world .np-actions > button:hover { background: rgba(255, 255, 255, 0.16); }
 .listening-world .np-actions .tactile-icon-control.text-accent-deep { color: var(--wave, #d9e66a); }
-.listening-world .np-actions svg { width: 20px; height: 20px; filter: none; }
+.listening-world .np-actions svg { width: 20px; height: 20px; }
 
 .listening-world .np-title .np-link,
 .listening-world .np-title .np-link--title { color: #fff; opacity: 1; }
 
 /* ---------- Big player controls, unwrapped: bare controls, even rhythm ---------- */
 .listening-world .np-controls {
+  align-items: stretch;
   gap: 26px;
   width: min(100%, 420px);
   padding: 0;
@@ -5194,13 +5186,11 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-.listening-world .np-controls { --np-lift: drop-shadow(0 1px 8px rgba(0, 0, 0, 0.32)); }
 .listening-world .listening-progress { gap: 10px 12px; }
 .listening-world .listening-progress .progress-range { --track-rest: rgba(255, 255, 255, 0.4); }
 .listening-world .listening-progress .progress-time { text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4); }
 
 .listening-world .np-btns { justify-content: center; gap: 30px; }
-.listening-world .np-btns svg { filter: var(--np-lift); }
 
 /* The one solid shape: a white disc with a black glyph. */
 .listening-world .ctrl-play svg { color: #0b0c10; filter: none; }
@@ -5213,7 +5203,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   border-radius: 0;
   background: none;
 }
-.listening-world .np-actions svg { filter: var(--np-lift); }
 .listening-world .np-actions .tactile-icon-control,
 .listening-world .np-actions > button { width: 44px; height: 44px; }
 
@@ -5233,7 +5222,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   .listening-world :is(.np-btns, .np-actions) .tactile-icon-control:not(:disabled):hover > svg { opacity: 1; }
 }
 .listening-world :is(.np-btns, .np-actions) .tactile-icon-control:focus-visible > svg { opacity: 1; }
-.listening-world :is(.np-btns, .np-actions) .tactile-icon-control:not(:disabled):active { transform: scale(0.92); }
+.listening-world :is(.np-btns, .np-actions) .tactile-icon-control:not(:disabled):active { transform: scale(var(--press-scale-small)); }
 .listening-world :is(.np-btns, .np-actions) .tactile-icon-control:not(:disabled):active > svg { opacity: 0.7; }
 .listening-world :is(.np-btns, .np-actions) .tactile-icon-control:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--wave, #d9e66a) 72%, white);
@@ -7199,6 +7188,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   /* Keep the timing controls anchored at the right edge while the lyric column moves to centre. */
   .listening-world.is-lyrics-full .player-sidepanel .lyrics-dock { right: calc(-50% + 14px); }
   .listening-world.is-lyrics-full .ytm-lyrics__line { text-align: center; }
+  .listening-world.is-lyrics-full .ytm-lyrics__line.is-active { transform-origin: center; }
   .listening-world.is-lyrics-full .player-sidepanel.is-lyrics .ytm-lyrics__note,
   .listening-world.is-lyrics-full .player-sidepanel.is-lyrics .ytm-lyrics__alert { align-self: center; text-align: center; }
   .listening-world.is-lyrics-full .np-art { pointer-events: none; }
@@ -7207,6 +7197,8 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
    * transform Motion writes on .np-art, so the two never fight; the size stays put, so it is one clean
    * slide. Same duration and curve as the cover-away move above. */
   .listening-world .listening-body { container-type: inline-size; }
+  /* .now-playing is display: contents here, so the cover's 3D depth comes from the grid that holds it. */
+  .listening-world .listening-body { perspective: var(--perspective-cover); }
   .listening-world .np-art { transition: translate var(--d-slow) var(--ease-press); }
   .listening-world.is-solo .np-art { translate: 25cqw 0; }
   .listening-world .player-sidepanel { transition: transform var(--d-slow) var(--ease-press), opacity var(--d-base) var(--ease-standard); }
