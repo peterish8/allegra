@@ -141,7 +141,9 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (!isSeeking.value) {
           positionSV.value = position;
         }
-        durationSV.value = duration;
+        // A last report from a player that is already gone (the service released) carries no length: keep the
+        // song's, so the scrubber holds its place instead of collapsing to 0:00.
+        if (duration > 0) durationSV.value = duration;
       }
 
       // Scrubber/lyrics read positionSV. Zustand only needs ~1 Hz for modals / bridge.
@@ -149,8 +151,9 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (now - lastZustandUpdateRef.current >= 1000) {
         lastZustandUpdateRef.current = now;
         const posStore = usePositionStore.getState();
-        if (posStore.position !== position || posStore.duration !== duration) {
-          posStore.updateProgress(position, duration);
+        const knownDuration = duration > 0 ? duration : posStore.duration;
+        if (posStore.position !== position || posStore.duration !== knownDuration) {
+          posStore.updateProgress(position, knownDuration);
         }
       }
 
@@ -187,7 +190,10 @@ const AndroidPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // The status already says paused; pick the song up where it stopped.
     const errorSub = NativeAudioPlayer.addListener('onPlaybackError', (event: { reason?: PlaybackLoss; position?: number }) => {
       if (!event?.reason) return;
-      usePlayerStore.getState().reportPlaybackError(event.reason);
+      // `released` is Android closing an idle service after the app left the screen, not a failure: the song and its
+      // place are kept, the button stays Play, and a tap reloads it there (`recoverPlayback('tapped')`). Reporting it
+      // as an error turned Play into the retry icon on every return to the app.
+      if (event.reason !== 'released') usePlayerStore.getState().reportPlaybackError(event.reason);
       if (androidPerformance.trace.enabled) {
         androidPerformance.playbackFailed(usePlayerStore.getState().currentSongId);
       }
