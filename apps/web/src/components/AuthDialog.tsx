@@ -59,6 +59,8 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
     return () => window.clearTimeout(timer);
   }, [open, resolvingNow]);
   const resolving = resolvingNow && !gaveUp;
+  // Convex holds a Google session but the profile has not come through yet: never offer to sign in again.
+  const accountSlow = resolvingNow && gaveUp && signIn.signedIn;
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -197,6 +199,23 @@ export function AuthDialog({ open, account, onClose }: AuthDialogProps) {
               <div className="auth-body" role="status" aria-live="polite">
                 <h2>Checking your account…</h2>
                 <p className="auth-lede">One moment. If you are signed in, your library comes up here.</p>
+              </div>
+            ) : accountSlow ? (
+              <div className="auth-body" role="status" aria-live="polite">
+                <h2>Your account is taking a moment</h2>
+                <p className="auth-lede">You are signed in. Allegra keeps trying and your library appears here as soon as it loads.</p>
+                <button
+                  type="button"
+                  className="btn-glass tactile-control auth-submit"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    await account.refresh();
+                    setBusy(false);
+                  }}
+                >
+                  {busy ? 'Trying…' : 'Try again'}
+                </button>
               </div>
             ) : (
               <div className="auth-body">

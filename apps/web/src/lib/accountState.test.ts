@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { accountDisplayName, isResolvingAccount, recallAccountName, rememberAccountName, type KeyValueStore } from './accountState.ts';
+import { accountDisplayName, accountRetryDelayMs, isResolvingAccount, recallAccountName, rememberAccountName, type KeyValueStore } from './accountState.ts';
 
 const guest = { isGuest: true };
 const member = { isGuest: false };
@@ -23,6 +23,11 @@ test('a Google session whose profile is still the old guest one is still being w
 test('a settled guest and a settled account are both answers', () => {
   assert.equal(isResolvingAccount({ loading: false, signedIn: false, ready: true, profile: guest }), false);
   assert.equal(isResolvingAccount({ loading: false, signedIn: true, ready: true, profile: member }), false);
+});
+
+test('a signed-in profile is asked for again on a doubling wait that never passes 8s', () => {
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 40].map(accountRetryDelayMs), [400, 800, 1600, 3200, 6400, 8000, 8000, 8000]);
+  assert.equal(accountRetryDelayMs(-3), 400);
 });
 
 function memoryStore(): KeyValueStore & { readonly data: Map<string, string> } {

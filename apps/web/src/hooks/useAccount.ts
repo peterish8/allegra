@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AccountProfile, TasteSummary, UnifiedSong } from '@shared/types';
 import { LISTEN_RULES, listenVerdict, type ListenVerdict } from '@shared/listenSignal';
 
+import { accountRetryDelayMs } from '../lib/accountState';
 import { advanceListen, restartsListen, startListen, type ListenProgress } from '../lib/listenProgress';
 import type { Playhead } from '../lib/playhead';
 import { ensureSession, fetchProfile, fetchTaste, seedTaste, sendListenSignal, startGuestSession, updateDisplayName } from '../lib/api';
@@ -89,26 +90,59 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
     };
   }, [refresh]);
 
+  // Signing in or out: load who it is now, then let the app reload everything personal.
   const wasSignedIn = useRef(signedIn);
   useEffect(() => {
     if (wasSignedIn.current === signedIn) return;
     wasSignedIn.current = signedIn;
+    void refresh().then(() => changed.current());
+  }, [signedIn, refresh]);
+
+  // Convex says there is a Google session but the profile we hold is still the guest (or none): the server has not
+  // accepted the new token yet, or the request failed. Keep asking on a backing-off timer until the account
+  // arrives, and at once when the tab comes back into view or online. A fixed number of tries used to give up
+  // after about two seconds and left the chip on "Checking…" until the profile was opened by hand.
+  const awaitingAccount = ready && signedIn && (profile === null || profile.isGuest);
+  useEffect(() => {
+    if (!awaitingAccount) return undefined;
     let cancelled = false;
-    const run = async (): Promise<void> => {
-      for (let attempt = 0; attempt < 6; attempt += 1) {
-        if (cancelled) return;
-        const next = await refresh();
+    let attempt = 0;
+    let timer: number | undefined;
+    let asking = false;
+    const tryNow = async (): Promise<void> => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = undefined;
+      if (cancelled || asking) return;
+      if (document.visibilityState === 'hidden') return; // The visibility listener asks again when it is seen.
+      asking = true;
+      const next = await refresh();
+      asking = false;
+      if (cancelled) return;
+      if (next && !next.isGuest) {
         changed.current();
-        if (!signedIn) break;
-        if (next && !next.isGuest) break;
-        await new Promise((resolve) => window.setTimeout(resolve, 400));
+        return;
       }
+      timer = window.setTimeout(() => void tryNow(), accountRetryDelayMs(attempt));
+      attempt += 1;
     };
-    void run();
+    const askAgain = (): void => {
+      if (document.visibilityState === 'hidden') return;
+      attempt = 0;
+      void tryNow();
+    };
+    timer = window.setTimeout(() => void tryNow(), accountRetryDelayMs(attempt));
+    attempt += 1;
+    document.addEventListener('visibilitychange', askAgain);
+    window.addEventListener('focus', askAgain);
+    window.addEventListener('online', askAgain);
     return () => {
       cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', askAgain);
+      window.removeEventListener('focus', askAgain);
+      window.removeEventListener('online', askAgain);
     };
-  }, [signedIn, refresh]);
+  }, [awaitingAccount, refresh]);
 
   const afterSessionChange = useCallback(async (): Promise<void> => {
     await refresh();
