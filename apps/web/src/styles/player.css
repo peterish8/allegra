@@ -947,6 +947,10 @@
 
 .listening-world .np-actions .tactile-icon-control:hover,
 .listening-world .np-btns .tactile-icon-control:hover { background: color-mix(in srgb, var(--on-art) 24%, transparent); color: var(--on-art); }
+/* Playback state inside the player is chartreuse (DESIGN.md accent roles): shuffle, repeat, mute and the lyrics tools
+ * that are on. The white above would otherwise hide which ones are. */
+.listening-world :is(.np-btns, .np-actions) .tactile-icon-control.text-icon-active,
+.listening-world :is(.np-btns, .np-actions) .tactile-icon-control.text-icon-active svg { color: var(--wave); }
 
 /* ---------- Player bar: liquid glass + hover micro-interactions ----------
  * Lighter fill, deeper blur and a specular rim so the artwork behind shows through; every
@@ -1464,7 +1468,6 @@
 
 @media (max-width: 900px) and (prefers-reduced-motion: reduce) {
   .listening-world .player-sidepanel.is-lyrics { transition: none; transform: none; }
-  .listening-world .np-action--tool .lucide-loader-circle { animation: none; }
 }
 
 /* Apple Music Canvas is real editorial motion artwork, not a colour animation. The video stays
