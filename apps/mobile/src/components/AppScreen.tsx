@@ -10,7 +10,10 @@ export const AppScreen: React.FC<ViewProps & { staticGlow?: boolean }> = props =
   return <Screen {...props} coverUri={coverUri} />;
 };
 
-/** Safe-area binding for utility screens; content stays transparent above the shared glow. */
-export const AppSafeArea: React.FC<React.ComponentProps<typeof SafeAreaView>> = ({ children, style, ...props }) => (
-  <AppScreen><SafeAreaView {...props} style={[style, { flex: 1, backgroundColor: 'transparent' }]}>{children}</SafeAreaView></AppScreen>
+/**
+ * Safe-area binding for utility screens; content stays transparent above the shared glow. `staticGlow={false}` for a
+ * page under a solid navigation bar: the bar hides the glow's top and leaves a tinted band below it.
+ */
+export const AppSafeArea: React.FC<React.ComponentProps<typeof SafeAreaView> & { staticGlow?: boolean }> = ({ children, style, staticGlow, ...props }) => (
+  <AppScreen staticGlow={staticGlow}><SafeAreaView {...props} style={[style, { flex: 1, backgroundColor: 'transparent' }]}>{children}</SafeAreaView></AppScreen>
 );
