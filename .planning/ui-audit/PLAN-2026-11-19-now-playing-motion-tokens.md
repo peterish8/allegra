@@ -22,32 +22,34 @@ order. Phases 1 and 2 are bugs. Phases 3–5 pay down token debt and depend on P
 
 ### 1.1 Escape on the karaoke info popover closes the whole player
 - **File:** `apps/web/src/components/PlayerPanel.tsx` (`KaraokeStatus`, the keydown effect at about line 1026)
-- [ ] Register the popover's `keydown` listener in the capture phase (`document.addEventListener('keydown', fn, true)`), copying the approach in `PlaylistMenu.tsx:37`.
-- [ ] On Escape, call `event.stopPropagation()` and `event.preventDefault()`, then `setOpen(false)`.
-- [ ] Return focus to the ⓘ button when the popover closes.
-- [ ] Remove the listener with the same `capture` flag in the cleanup.
-- [ ] Test: render the player with the karaoke popover open, press Escape, and assert the popover closed and `onCollapse` was **not** called.
+- [x] Register the popover's `keydown` listener in the capture phase (`document.addEventListener('keydown', fn, true)`), copying the approach in `PlaylistMenu.tsx:37`.
+- [x] On Escape, call `event.stopPropagation()` and `event.preventDefault()`, then `setOpen(false)`.
+- [x] Return focus to the ⓘ button when the popover closes.
+- [x] Remove the listener with the same `capture` flag in the cleanup.
+- [x] Test: render the player with the karaoke popover open, press Escape, and assert the popover closed and `onCollapse` was **not** called.
+  > Note: The suite has no DOM (node --test over src/lib), so the test drives the shared listener (lib/escapeLayer.ts) with a document and a window and checks the player's handler never runs, plus a source check that KaraokeStatus uses it and refocuses the button. A browser check is still worth doing in e2e.
 - **Done when:** with the popover open, Escape closes only the popover, and a second Escape closes the player.
 
 ### 1.2 A CSS transition fights Motion on the phone cover
 - **File:** `apps/web/src/styles/app.css:5452`
-- [ ] Delete `.listening-world .np-art { transition: opacity …, transform … }` inside `@media (max-width: 900px)`. Motion owns that element's opacity and transform.
-- [ ] Remove the dead `transform: none` on `.np-art` in the `max-width: 900px and reduced-motion` block (an inline Motion style always beats it).
-- [ ] Confirm the desktop `translate` transition (`app.css:7212`) stays. It's a separate property, so it doesn't clash.
+- [x] Delete `.listening-world .np-art { transition: opacity …, transform … }` inside `@media (max-width: 900px)`. Motion owns that element's opacity and transform.
+- [x] Remove the dead `transform: none` on `.np-art` in the `max-width: 900px and reduced-motion` block (an inline Motion style always beats it).
+- [x] Confirm the desktop `translate` transition (`app.css:7212`) stays. It's a separate property, so it doesn't clash.
 - **Done when:** at 360px, a swipe on the cover tracks the finger with no lag. A Performance recording of a Next swipe shows no long transition tails on `.np-art`.
 
 ### 1.3 The cover slide is clipped into a square on phones
 - **Files:** `apps/web/src/styles/app.css:5948`, `PlayerPanel.tsx` (`AppleMotionArtwork`)
-- [ ] Remove `overflow: hidden` and `isolation: isolate` from `.listening-world:not(.is-lyrics):not(.is-panel) .np-art`.
-- [ ] The video is already inside `.np-art__slide`, which clips and rounds it, so the frame doesn't need clipping. Check that `.np-art__canvas` gets the slide's corner radius.
-- [ ] If the video still overflows anywhere, add `.np-art:has(.np-art__canvas) { overflow: hidden }` instead of clipping every cover.
+- [x] Remove `overflow: hidden` and `isolation: isolate` from `.listening-world:not(.is-lyrics):not(.is-panel) .np-art`.
+- [x] The video is already inside `.np-art__slide`, which clips and rounds it, so the frame doesn't need clipping. Check that `.np-art__canvas` gets the slide's corner radius.
+- [x] If the video still overflows anywhere, add `.np-art:has(.np-art__canvas) { overflow: hidden }` instead of clipping every cover.
+  > Note: Not needed: the slide clips and rounds the canvas, so no fallback rule was added.
 - **Done when:** at 360 and 768px, Next/Prev covers slide past the frame edge with rounded corners and shadow intact, with and without a motion-video cover.
 
 ### 1.4 The reduced-motion rule for the play button and scrubber thumb never applies
 - **File:** `apps/web/src/styles/app.css:~4596`
-- [ ] Split the selector list into three rules: `::-webkit-slider-thumb {}`, `::-moz-range-thumb {}` and `.ctrl-play {}`. Each browser drops a whole selector list that contains a pseudo-element it doesn't know.
-- [ ] Per hard rule 7, keep opacity changes and remove only the scale: under reduced motion, `.ctrl-play:active, .ctrl-play[data-pressed='true'] { transform: none; opacity: 0.8; }`.
-- [ ] Do the same for `.tactile-icon-control:active` in the player (`app.css:5226`): no scale under reduced motion, just an opacity dip.
+- [x] Split the selector list into three rules: `::-webkit-slider-thumb {}`, `::-moz-range-thumb {}` and `.ctrl-play {}`. Each browser drops a whole selector list that contains a pseudo-element it doesn't know.
+- [x] Per hard rule 7, keep opacity changes and remove only the scale: under reduced motion, `.ctrl-play:active, .ctrl-play[data-pressed='true'] { transform: none; opacity: 0.8; }`.
+- [x] Do the same for `.tactile-icon-control:active` in the player (`app.css:5226`): no scale under reduced motion, just an opacity dip.
 - **Done when:** in Chrome and Firefox with "reduce motion" on, DevTools shows the rule applied, and a press dims the button without scaling it.
 
 ---
@@ -56,53 +58,55 @@ order. Phases 1 and 2 are bugs. Phases 3–5 pay down token debt and depend on P
 
 ### 2.1 Perspective sits on the wrong element
 - **File:** `PlayerPanel.tsx:453`, `components.css` (`.now-playing`)
-- [ ] Move `perspective: 900` from `.np-art`'s inline style to `.now-playing` (desktop and phone).
-- [ ] Keep `perspective` on `.np-art` as well, so the cover deck inside it keeps its depth. Turn the number into a token (`--perspective-cover: 900px`).
+- [x] Move `perspective: 900` from `.np-art`'s inline style to `.now-playing` (desktop and phone).
+- [x] Keep `perspective` on `.np-art` as well, so the cover deck inside it keeps its depth. Turn the number into a token (`--perspective-cover: 900px`).
+  > Note: --perspective-cover is set on .now-playing, on .np-art and, on desktop where .now-playing is display: contents, on .listening-body.
 - **Done when:** at 1280px, the lyrics-focus move shows the sleeve turning away in 3D instead of squashing flat.
 
 ### 2.2 The active lyric line snaps its scale and scales off-centre
 - **File:** `apps/web/src/styles/components.css:~1855`
-- [ ] Change the line transition to `opacity var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-decelerate)` (this also removes the hard-coded `0.35s cubic-bezier`).
-- [ ] Keep `!important` only where the comment explains the `@layer legacy` reason, and note the reason beside each one.
-- [ ] Add `.listening-world.is-lyrics-full .ytm-lyrics__line.is-active { transform-origin: center; }`.
-- [ ] Reduced motion: no scale on the active line, opacity only.
+- [x] Change the line transition to `opacity var(--d-base) var(--ease-standard), transform var(--d-base) var(--ease-decelerate)` (this also removes the hard-coded `0.35s cubic-bezier`).
+- [x] Keep `!important` only where the comment explains the `@layer legacy` reason, and note the reason beside each one.
+- [x] Add `.listening-world.is-lyrics-full .ytm-lyrics__line.is-active { transform-origin: center; }`.
+- [x] Reduced motion: no scale on the active line, opacity only.
 - **Done when:** at 1280px and 360px, the line change eases both opacity and scale, and centred lines grow from their centre.
 
 ### 2.3 Title and artist marquee: hold, pause, and a reduced-motion ellipsis
 - **Files:** `PlayerPanel.tsx` (`MarqueeText`), `app.css:4807–4846`, `motion/index.ts`
-- [ ] Add `motionTokens.marquee.holdSeconds` (about 1.5) and use it as `animation-delay` before the first lap.
-- [ ] Pause on `:hover` and `:focus-within` (`animation-play-state: paused`). This covers WCAG 2.2.2.
-- [ ] Reduced motion: don't render the second `aria-hidden` copy. Put `overflow: hidden; text-overflow: ellipsis; max-width: 100%` on `.np-marquee__item` so the ellipsis actually shows.
-- [ ] When the duration changes on resize, keep the animation in step (key the track on the rounded duration) so it doesn't jump.
+- [x] Add `motionTokens.marquee.holdSeconds` (about 1.5) and use it as `animation-delay` before the first lap.
+- [x] Pause on `:hover` and `:focus-within` (`animation-play-state: paused`). This covers WCAG 2.2.2.
+- [x] Reduced motion: don't render the second `aria-hidden` copy. Put `overflow: hidden; text-overflow: ellipsis; max-width: 100%` on `.np-marquee__item` so the ellipsis actually shows.
+- [x] When the duration changes on resize, keep the animation in step (key the track on the rounded duration) so it doesn't jump.
 - **Done when:** a long title waits, then scrolls; hovering stops it; reduced motion shows `Title…` with a visible ellipsis.
 
 ### 2.4 Sheet exit: shorter, and the right height on phones
 - **Files:** `PlayerPanel.tsx:337–339`, `motion/index.ts`
-- [ ] Use `y: '100%'` instead of `'100vh'` for `initial` and `exit` (`100vh` is wrong on phones with dynamic browser toolbars).
-- [ ] Add `motionTokens.duration.sheetExit` (about 0.22) with `ease.accelerate`. Keep `spring.sheet` for opening and for a drag-release snap.
-- [ ] A swipe-dismiss that releases with speed keeps the spring, so the motion continues the throw.
+- [x] Use `y: '100%'` instead of `'100vh'` for `initial` and `exit` (`100vh` is wrong on phones with dynamic browser toolbars).
+- [x] Add `motionTokens.duration.sheetExit` (about 0.22) with `ease.accelerate`. Keep `spring.sheet` for opening and for a drag-release snap.
+- [x] A swipe-dismiss that releases with speed keeps the spring, so the motion continues the throw.
 - **Done when:** the player opens with the spring and closes faster with ease-in, and on a phone nothing shows below the sheet while it moves.
 
 ### 2.5 Press scale floors
 - **File:** `app.css:4570` (`.ctrl-play` 0.94 → 0.96) and `app.css:5226` (icons 0.92 → 0.95)
-- [ ] Add a `--press-scale: 0.96` token (and `--press-scale-small: 0.95`) and use it in both places.
+- [x] Add a `--press-scale: 0.96` token (and `--press-scale-small: 0.95`) and use it in both places.
 
 ### 2.6 Hard-coded numbers in PlayerPanel
-- [ ] `PlayerPanel.tsx:207`: replace `1600` with `motionTokens.hold.note` (a new token group `hold`, in ms or s, documented).
-- [ ] `PlayerPanel.tsx:527`: use `motionTokens.delay.scene` (or a new `delay.meta`), not `duration.fast`, for the delay.
-- [ ] `PlayerPanel.tsx:174`: simplify `useState<ListeningTab>(mode === 'workspace' ? 'lyrics' : 'lyrics')` to `useState<ListeningTab>('lyrics')`.
+- [x] `PlayerPanel.tsx:207`: replace `1600` with `motionTokens.hold.note` (a new token group `hold`, in ms or s, documented).
+- [x] `PlayerPanel.tsx:527`: use `motionTokens.delay.scene` (or a new `delay.meta`), not `duration.fast`, for the delay.
+- [x] `PlayerPanel.tsx:174`: simplify `useState<ListeningTab>(mode === 'workspace' ? 'lyrics' : 'lyrics')` to `useState<ListeningTab>('lyrics')`.
 
 ### 2.7 Readability on pale covers
 - **Files:** `apps/web/src/lib/playerWash.ts`, `playerWash.test.ts`
-- [ ] Add a helper that lowers the main-glow alpha (layer 2) until white text over the brightest point of the wash is at least **4.5:1** (use `palette.ts`'s luminance function).
-- [ ] Unit tests with pale yellow `#fff25c`, white `#ffffff` and a mid grey: assert the top-right composite is ≥ 4.5:1 against `#fff`.
-- [ ] Keep the function pure. No animation changes.
+- [x] Add a helper that lowers the main-glow alpha (layer 2) until white text over the brightest point of the wash is at least **4.5:1** (use `palette.ts`'s luminance function).
+- [x] Unit tests with pale yellow `#fff25c`, white `#ffffff` and a mid grey: assert the top-right composite is ≥ 4.5:1 against `#fff`.
+- [x] Keep the function pure. No animation changes.
 - **Done when:** the tests pass, and at 1280px the lyrics over a white or yellow album cover stay readable.
 
 ### 2.8 Lighter paint cost for player icons
 - **File:** `app.css:5153–5160, 5192–5208`
-- [ ] Replace the per-icon `filter: drop-shadow` with a single soft scrim behind the controls row (a static gradient, never animated), or drop it where the wash is already dark.
-- [ ] Delete the glass-card declarations for `.np-controls` (`app.css:5101–5111`) that `5182–5191` immediately undoes.
+- [x] Replace the per-icon `filter: drop-shadow` with a single soft scrim behind the controls row (a static gradient, never animated), or drop it where the wash is already dark.
+  > Note: Dropped the per-icon drop-shadow rather than adding a scrim: the controls sit on the lower half of the wash, which fades to near-black.
+- [x] Delete the glass-card declarations for `.np-controls` (`app.css:5101–5111`) that `5182–5191` immediately undoes.
 
 ### 2.9 Merge the now-playing CSS into one place
 - [ ] Create `apps/web/src/styles/player.css`, imported once after `app.css`.
