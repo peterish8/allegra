@@ -29,8 +29,7 @@ export function isResolvingAccount(state: AccountSnapshot): boolean {
  * so the app keeps asking at this pace instead of giving up and leaving the chip on "Checking…".
  */
 export function accountRetryDelayMs(attempt: number): number {
-  const step = Math.max(0, Math.floor(attempt));
-  return Math.min(8000, 400 * 2 ** Math.min(step, 5));
+  return Math.min(8000, 400 * 2 ** Math.max(0, attempt));
 }
 
 const KEY = 'allegra:last-account';

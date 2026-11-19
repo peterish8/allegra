@@ -109,6 +109,10 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
     let attempt = 0;
     let timer: number | undefined;
     let asking = false;
+    const schedule = (): void => {
+      timer = window.setTimeout(() => void tryNow(), accountRetryDelayMs(attempt));
+      attempt += 1;
+    };
     const tryNow = async (): Promise<void> => {
       if (timer !== undefined) window.clearTimeout(timer);
       timer = undefined;
@@ -122,16 +126,14 @@ export function useAccount(signedIn: boolean, onSessionChange: () => void): Acco
         changed.current();
         return;
       }
-      timer = window.setTimeout(() => void tryNow(), accountRetryDelayMs(attempt));
-      attempt += 1;
+      schedule();
     };
     const askAgain = (): void => {
       if (document.visibilityState === 'hidden') return;
       attempt = 0;
       void tryNow();
     };
-    timer = window.setTimeout(() => void tryNow(), accountRetryDelayMs(attempt));
-    attempt += 1;
+    schedule();
     document.addEventListener('visibilitychange', askAgain);
     window.addEventListener('focus', askAgain);
     window.addEventListener('online', askAgain);
