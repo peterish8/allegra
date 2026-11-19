@@ -12,16 +12,14 @@ import { useEffect, useState, type CSSProperties } from 'react';
 
 import { LOCAL_SPEECH_MB } from '../../lib/djLocalSpeech';
 import { LOCAL_VOICE_MB } from '../../lib/djWhisper';
+import { TOUR_COVERS } from '../../lib/colors';
 import type { Palette } from '../../lib/palette';
 import type { TourStep } from '../InfoTour';
 import { Loop, Part, Stage, useTick, type Scene } from '../infoScenes';
 import { DjMascot, type DjMascotEmotion } from './DjMascot';
 
 const TOUR_PALETTE: Palette = { primary: '#e0894a', secondary: '#9a5aa0', tertiary: '#4a72a8' };
-const COVERS = [
-  'linear-gradient(145deg, #ee6b5f, #783e44)', 'linear-gradient(145deg, #d9e66a, #5a6a1e)', 'linear-gradient(145deg, #7bafd4, #2f4d66)',
-  'linear-gradient(145deg, #c58bd8, #4d2f66)', 'linear-gradient(145deg, #f2b66d, #7a4a1e)'
-] as const;
+const COVERS = TOUR_COVERS;
 
 export const DJ_TOUR: readonly TourStep[] = [
   { title: 'Meet your DJ', body: 'A companion that picks music with you. It sits at the heart of the page, nods along to the beat and takes on the colours of the song that is playing.', icon: Sparkles, pose: 'lift' },

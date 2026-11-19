@@ -7,6 +7,7 @@ import type { BlendDetail } from '@shared/blendView';
 
 import { orbReach, orbSeat } from '@shared/blendOrbs';
 import { artistName, storyText, wrapText } from '../../lib/blendText';
+import { BRAND, SHARE_CARD } from '../../lib/colors';
 import type { Palette } from '../../lib/palette';
 
 export const SHARE_SIZE = { width: 1080, height: 1920, margin: 96 } as const;
@@ -32,7 +33,7 @@ function drawDisc(ctx: CanvasRenderingContext2D, x: number, y: number, radius: n
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fillStyle = fill;
   ctx.fill();
-  ctx.fillStyle = '#0e0e10';
+  ctx.fillStyle = SHARE_CARD.ground;
   ctx.font = `700 ${Math.round(radius * 0.8)}px Geist, system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -44,13 +45,13 @@ export async function drawStoryCard(ctx: CanvasRenderingContext2D, story: Story,
   const gradient = ctx.createLinearGradient(0, 0, width, height);
   gradient.addColorStop(0, palette.primary);
   gradient.addColorStop(0.55, palette.secondary);
-  gradient.addColorStop(1, '#0e0e10');
+  gradient.addColorStop(1, SHARE_CARD.ground);
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 
-  const colours = [palette.tertiary, '#f2f2f4', palette.secondary, palette.primary, '#d9e66a', '#8f8f98'];
+  const colours = [palette.tertiary, SHARE_CARD.disc, palette.secondary, palette.primary, BRAND.wave, SHARE_CARD.discMuted];
   detail.members.slice(0, 6).forEach((member, index) => {
-    drawDisc(ctx, margin + 80 + index * 120, margin + 80, 64, member.initials, colours[index % colours.length] ?? '#f2f2f4');
+    drawDisc(ctx, margin + 80 + index * 120, margin + 80, 64, member.initials, colours[index % colours.length] ?? SHARE_CARD.disc);
   });
 
   const text = storyText(story, detail);
@@ -71,7 +72,7 @@ export async function drawStoryCard(ctx: CanvasRenderingContext2D, story: Story,
     y += 480;
   }
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = SHARE_CARD.ink;
   const headlineSize = artwork ? 76 : 96;
   ctx.font = `800 ${headlineSize}px Geist, system-ui, sans-serif`;
   const headlineLimit = Math.max(1, Math.min(5, Math.floor((height - margin - 340 - y) / (headlineSize + 20))));
@@ -90,7 +91,7 @@ export async function drawStoryCard(ctx: CanvasRenderingContext2D, story: Story,
     }
   }
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = SHARE_CARD.ink;
   ctx.font = '800 64px Geist, system-ui, sans-serif';
   ctx.fillText('Allegra', margin, height - margin);
   ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
@@ -157,8 +158,8 @@ function rgbOf(ctx: CanvasRenderingContext2D, colour: string): readonly [number,
   const custom = /^var\((--[\w-]+)\)$/.exec(colour.trim());
   const resolved = custom?.[1] ? getComputedStyle(document.documentElement).getPropertyValue(custom[1]).trim() : colour;
   // The canvas normalises any colour it accepts to #rrggbb (opaque) or rgba(…).
-  ctx.fillStyle = '#ffffff';
-  ctx.fillStyle = resolved || '#ffffff';
+  ctx.fillStyle = SHARE_CARD.ink;
+  ctx.fillStyle = resolved || SHARE_CARD.ink;
   const normal = String(ctx.fillStyle);
   const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(normal);
   if (hex) return [parseInt(hex[1] ?? 'ff', 16), parseInt(hex[2] ?? 'ff', 16), parseInt(hex[3] ?? 'ff', 16)];
@@ -175,8 +176,8 @@ export function drawMatchCard(ctx: CanvasRenderingContext2D, detail: BlendDetail
   const group = detail.members.length > 2;
   const background = ctx.createLinearGradient(0, 0, width, height);
   background.addColorStop(0, palette.primary);
-  background.addColorStop(0.5, '#121216');
-  background.addColorStop(1, '#0a0a0c');
+  background.addColorStop(0.5, SHARE_CARD.groundTop);
+  background.addColorStop(1, SHARE_CARD.groundDeep);
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, width, height);
 
@@ -203,7 +204,7 @@ export function drawMatchCard(ctx: CanvasRenderingContext2D, detail: BlendDetail
     const seat = seats[index] ?? { x: 0, y: 0 };
     const x = centre.x + seat.x * orb;
     const y = centre.y + seat.y * orb;
-    const [r, g, b] = rgbOf(ctx, tones.get(member.userId) ?? '#ffffff');
+    const [r, g, b] = rgbOf(ctx, tones.get(member.userId) ?? SHARE_CARD.ink);
     const light = ctx.createRadialGradient(x, y, 0, x, y, orb / 2);
     light.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
     light.addColorStop(0.42, `rgba(${r}, ${g}, ${b}, 0.82)`);
@@ -217,7 +218,7 @@ export function drawMatchCard(ctx: CanvasRenderingContext2D, detail: BlendDetail
   ctx.restore();
 
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = SHARE_CARD.ink;
   ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
   ctx.shadowBlur = 40;
   ctx.font = '800 240px Geist, system-ui, sans-serif';
@@ -254,7 +255,7 @@ export function drawMatchCard(ctx: CanvasRenderingContext2D, detail: BlendDetail
     ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
     ctx.font = '600 44px Geist, system-ui, sans-serif';
     ctx.fillText('The artist that brings you together', centre.x, y);
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = SHARE_CARD.ink;
     ctx.font = '800 84px Geist, system-ui, sans-serif';
     for (const part of wrapText(artistName(together, detail.tracks), width - margin * 2, (value) => ctx.measureText(value).width, 2)) {
       y += 104;
@@ -263,7 +264,7 @@ export function drawMatchCard(ctx: CanvasRenderingContext2D, detail: BlendDetail
   }
 
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = SHARE_CARD.ink;
   ctx.font = '800 64px Geist, system-ui, sans-serif';
   ctx.fillText('Allegra', margin, height - margin);
   ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';

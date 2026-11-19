@@ -14,16 +14,14 @@ import { AnimatePresence, motion, type Transition } from 'motion/react';
 import { Check, FileText, Heart, Link2, Lock, Mic, Music2, Play, RefreshCw, Search, Share2, ShieldCheck } from 'lucide-react';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 
+import { BRAND, TOUR_COVERS } from '../lib/colors';
 import { motionTokens, spring } from '../motion';
 
-const CORAL = '#ee6b5f';
-const BLUE = '#7bafd4';
+const CORAL = BRAND.accent;
+const BLUE = BRAND.blue;
 const WAVE = 'var(--wave)';
 const TONES = [CORAL, WAVE, BLUE] as const;
-const cover = (index: number): string => [
-  'linear-gradient(145deg, #ee6b5f, #783e44)', 'linear-gradient(145deg, #d9e66a, #5a6a1e)', 'linear-gradient(145deg, #7bafd4, #2f4d66)',
-  'linear-gradient(145deg, #c58bd8, #4d2f66)', 'linear-gradient(145deg, #f2b66d, #7a4a1e)'
-][index % 5]!;
+const cover = (index: number): string => TOUR_COVERS[index % TOUR_COVERS.length]!;
 
 export type Scene = (step: number, reduced: boolean) => ReactNode;
 

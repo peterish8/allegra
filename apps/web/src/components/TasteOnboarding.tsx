@@ -8,6 +8,7 @@ import { MUSIC_GENRES } from '@shared/genres';
 
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { fetchArtistFaces } from '../lib/api';
+import { BRAND } from '../lib/colors';
 import type { Palette } from '../lib/palette';
 import { motionTokens, spring } from '../motion';
 import { MusicFlowShader } from './shader/MusicFlowShader';
@@ -23,14 +24,15 @@ import { MusicFlowShader } from './shader/MusicFlowShader';
  * From here on taste is learned from listening, so this is only ever asked once.
  */
 
-// Cycled per genre, in JS form of the same tokens DESIGN.md defines: --wave, --accent, --vibe-blue, --accent-bright, --accent-deep.
-const GENRE_ACCENTS = ['#d9e66a', '#ee6b5f', '#7bafd4', '#ffaaa0', '#783e44'] as const;
+// Cycled per genre, from the product colours in lib/colors.ts: wave, accent, blue, accent-bright, accent-deep.
+const { wave, accent, blue, accentBright, accentDeep } = BRAND;
+const GENRE_ACCENTS = [wave, accent, blue, accentBright, accentDeep] as const;
 const ONBOARDING_PALETTES: readonly Palette[] = [
-  { primary: '#d9e66a', secondary: '#7bafd4', tertiary: '#ee6b5f' },
-  { primary: '#ee6b5f', secondary: '#ffaaa0', tertiary: '#7bafd4' },
-  { primary: '#7bafd4', secondary: '#d9e66a', tertiary: '#783e44' },
-  { primary: '#ffaaa0', secondary: '#ee6b5f', tertiary: '#d9e66a' },
-  { primary: '#783e44', secondary: '#ffaaa0', tertiary: '#7bafd4' }
+  { primary: wave, secondary: blue, tertiary: accent },
+  { primary: accent, secondary: accentBright, tertiary: blue },
+  { primary: blue, secondary: wave, tertiary: accentDeep },
+  { primary: accentBright, secondary: accent, tertiary: wave },
+  { primary: accentDeep, secondary: accentBright, tertiary: blue }
 ];
 const BUBBLE_SIZES = ['md', 'lg', 'sm'] as const;
 
