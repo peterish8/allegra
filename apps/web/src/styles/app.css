@@ -4594,9 +4594,14 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .listening-progress .progress-range::-webkit-slider-thumb,
-  .listening-progress .progress-range::-moz-range-thumb,
+  /* One rule per engine: a browser drops a whole selector list when one selector holds a
+   * pseudo-element it does not know, so the list used to apply nowhere. */
+  .listening-progress .progress-range::-webkit-slider-thumb { transition: none; }
+  .listening-progress .progress-range::-moz-range-thumb { transition: none; }
   .ctrl-play { transition: none; }
+  /* A press dims the play button instead of scaling it. */
+  .ctrl-play:active,
+  .ctrl-play[data-pressed='true'] { transform: none; opacity: 0.8; }
   .ctrl-play-wait { animation-duration: 2s; }
 }
 
@@ -5235,7 +5240,8 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .listening-world :is(.np-btns, .np-actions) .tactile-icon-control:is(:hover, :active),
+  /* Same specificity as the hover and press rules above, which sit earlier: no scale, the glyph still dims. */
+  .listening-world :is(.np-btns, .np-actions) .tactile-icon-control:not(:disabled):is(:hover, :active),
   .listening-world .np-btns .ctrl-play:hover { transform: none; }
 }
 
@@ -5447,10 +5453,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
     gap: 0;
     overflow: hidden;
     padding: 0 0 12px;
-  }
-
-  .listening-world .np-art {
-    transition: opacity var(--d-panel, 0.24s) var(--ease-standard), transform var(--d-panel, 0.24s) var(--ease-decelerate);
   }
 
   /* ----- Cover: one screen. The art gives up height before anything else does. ----- */
@@ -5744,7 +5746,6 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 }
 
 @media (max-width: 900px) and (prefers-reduced-motion: reduce) {
-  .listening-world .np-art,
   .listening-world .player-sidepanel.is-lyrics { transition: none; transform: none; }
   .listening-world .np-action--tool .lucide-loader-circle { animation: none; }
 }
@@ -5945,10 +5946,7 @@ button.session-chip:hover { background: rgba(255, 255, 255, 0.11); }
 /* Apple Music Canvas is real editorial motion artwork, not a colour animation. The video stays
  * inside its release cover and only exists on phones after the server verifies an Apple match. */
 @media (max-width: 900px) {
-  .listening-world:not(.is-lyrics):not(.is-panel) .np-art {
-    overflow: hidden;
-    isolation: isolate;
-  }
+  /* The slide (.np-art__slide) clips and rounds the video; the frame must not, or a sliding cover is cut square. */
   .listening-world:not(.is-lyrics):not(.is-panel) .np-art__canvas {
     position: absolute;
     z-index: 2;

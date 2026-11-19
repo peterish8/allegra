@@ -1,6 +1,6 @@
 {
   "rawDuration": {
-    "app.css": 68,
+    "app.css": 66,
     "blend.css": 1,
     "components.css": 8,
     "global.css": 7
@@ -19,7 +19,6 @@
     "components.css": 1,
     "global.css": 1
   },
-  "undefinedCustomProperty": {},
   "ungatedHoverTransform": {
     "app.css": 21,
     "blend.css": 1,
@@ -44,5 +43,6 @@
     "components.css": 161,
     "dj.css": 203,
     "global.css": 444
-  }
+  },
+  "undefinedCustomProperty": {}
 }
