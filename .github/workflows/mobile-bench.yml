@@ -1,0 +1,138 @@
+name: Mobile benchmark
+
+# Startup and frame-time comparison of two LuvLyrics builds on one emulator: the base (main, or the PR's base) and
+# the head. Runs by hand from the Actions tab, and on a PR that changes the benchmark itself. Emulator numbers compare
+# builds against each other; they are not a phone's numbers (docs/perf-low-end.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Ref to compare against
+        default: main
+      runs:
+        description: Cold starts per build and state
+        default: "12"
+  pull_request:
+    paths:
+      - ".github/workflows/mobile-bench.yml"
+      - ".github/scripts/mobile-bench.sh"
+      - "scripts/mobile-bench-report.mjs"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.side }} (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        side: [base, head]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ matrix.side == 'base' && (github.event.pull_request.base.sha || inputs.base || 'main') || github.sha }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install
+        working-directory: apps/mobile
+        run: npm ci
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+
+      - name: Signing key
+        run: |
+          mkdir -p /tmp/tpl && cd /tmp/tpl
+          npm pack expo-template-bare-minimum@sdk-54 --silent
+          tar -xzf expo-template-bare-minimum-*.tgz package/android/app/debug.keystore
+          cp package/android/app/debug.keystore "$GITHUB_WORKSPACE/apps/mobile/android/app/debug.keystore"
+
+      # Benchmark builds only: log when React has drawn its first screen, in ms since the process started. The same
+      # line goes into both sides, so it measures the builds and not the marker.
+      - name: Add the ready marker
+        run: |
+          F=apps/mobile/android/app/src/main/java/com/lyricflow/app/modules/StartupModule.kt
+          grep -q 'Function("markHealthy") {' "$F"
+          sed -i 's|Function("markHealthy") {|Function("markHealthy") {\n            android.util.Log.i("LLBench", "ready " + (android.os.SystemClock.uptimeMillis() - android.os.Process.getStartUptimeMillis()))|' "$F"
+          grep -n 'LLBench' "$F"
+
+      - name: Build release APK (x86_64)
+        working-directory: apps/mobile/android
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -PreactNativeArchitectures=x86_64 \
+            "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/${{ matrix.side }}.apk"
+          unzip -l "$GITHUB_WORKSPACE/${{ matrix.side }}.apk" | grep -E 'dexopt/baseline' || echo "no baseline profile in ${{ matrix.side }}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bench-apk-${{ matrix.side }}
+          path: ${{ matrix.side }}.apk
+          retention-days: 3
+
+  bench:
+    name: Benchmark on an emulator
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: bench-apk-*
+          merge-multiple: true
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run the benchmark
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          cores: 4
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            adb shell setprop debug.hwui.renderer skiavk
+            bash .github/scripts/mobile-bench.sh base.apk base bench ${{ inputs.runs || '12' }}
+            bash .github/scripts/mobile-bench.sh head.apk head bench ${{ inputs.runs || '12' }}
+
+      - name: Report
+        if: always()
+        run: |
+          node scripts/mobile-bench-report.mjs bench/bench.tsv base head | tee bench/report.md
+          { echo "## LuvLyrics benchmark (emulator, base vs head)"; echo; cat bench/report.md; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: mobile-bench
+          path: bench/
+          retention-days: 14

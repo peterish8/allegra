@@ -2,12 +2,15 @@
   "expo": {
     "name": "LuvLyrics",
     "slug": "lyricflow",
-    "version": "1.70.3",
+    "version": "1.71.0",
     "orientation": "portrait",
     "icon": "./assets/luvlyrics-icon-white.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "jsEngine": "hermes",
+    "experiments": {
+      "reactCompiler": true
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",

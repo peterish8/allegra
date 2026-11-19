@@ -132,6 +132,13 @@ jobs:
       - name: Collect APK
         run: cp android/app/build/outputs/apk/release/app-release.apk LuvLyrics.apk
 
+      # The compiled ART profile (from android/app/src/main/baseline-prof.txt) must ship, or cold
+      # start runs the Kotlin/RN startup path interpreted. profileinstaller writes it on first launch.
+      - name: Verify Baseline Profile is in the APK
+        run: |
+          unzip -l LuvLyrics.apk | grep -E 'assets/dexopt/baseline\.prof$'
+          unzip -l LuvLyrics.apk | grep -E 'assets/dexopt/baseline\.profm$'
+
       # The island is an optional add-on (apps/island): its own small app, so LuvLyrics itself declares no
       # accessibility service. Same signer as LuvLyrics (the app only talks to an add-on it shares a signature
       # with), built and unit-tested here, and published beside LuvLyrics.apk.

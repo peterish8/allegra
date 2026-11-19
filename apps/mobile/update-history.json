@@ -1,8 +1,24 @@
 {
   "entries": [
     {
+      "version": "1.71.0",
+      "description": "A quicker, smoother app on every phone",
+      "changelog": [
+        {
+          "title": "Improved",
+          "items": [
+            "LuvLyrics opens faster, especially the first few times after an update",
+            "Screens redraw less while music plays, so scrolling and the player feel smoother",
+            "Animations and swipes are steadier on Android"
+          ]
+        }
+      ]
+    },
+    {
       "version": "1.70.3",
       "description": "A cleaner player slide, a steadier return to the app, and tidier lyric defaults",
+      "sourceCommit": "77fdbe759effca04786beaed00af335c7f4c2836",
+      "rollbackAsset": "LuvLyrics-rollback-1.70.3.apk",
       "changelog": [
         {
           "title": "Fixed",
@@ -58,40 +74,6 @@
       ],
       "sourceCommit": "63824476ae639e7b87432befbcd2ec0acab629e0",
       "rollbackAsset": "LuvLyrics-rollback-1.70.1.apk"
-    },
-    {
-      "version": "1.70.0",
-      "description": "A cleaner home-screen widget that plays your playlists, Spotify imports that come back whole, and a tidier Stream header and profile menu",
-      "changelog": [
-        {
-          "title": "Fixed",
-          "items": [
-            "Tapping a playlist on the home-screen widget now plays it, including playlists made on the website or on another device",
-            "When a playlist can't start, the widget says why, and you can tap the message to open it in the app",
-            "The widget's play, skip and like buttons keep working after you swipe the app away",
-            "Importing a Spotify playlist again after you deleted it brings back every song, in the same order as Spotify",
-            "Lyrics found online, such as Tamil lyric sites, now show up in seconds instead of after a long wait, including in the lyrics picker"
-          ]
-        },
-        {
-          "title": "Improved",
-          "items": [
-            "The Now playing widget is a compact dark card with the cover, song, time and play controls",
-            "The playlist widget is simpler, with cover art and short labels",
-            "Playlists opens with New playlist and Import from Spotify at the top",
-            "The Transfer button sits above your Spotify playlists, so you no longer scroll past them",
-            "The Songs and Playlists switch in Stream is a little smaller and slides smoothly, and the six tiles under it slide with it",
-            "Swipe the tiles in Stream's Jump back in to switch between Songs and Playlists, and the switch follows your finger",
-            "Connect devices opens on a solid dark sheet instead of a see-through one",
-            "The updates menu from the LuvLyrics logo shows Update and Install at the top, and Recent updates folds open with an arrow",
-            "The profile menu is a neater side menu, without Blends, LuvLink and Connect devices, which Create and the Stream header already have",
-            "The bottom bar fades into the page instead of sitting on a solid black block",
-            "Removed leftover code the app no longer uses"
-          ]
-        }
-      ],
-      "sourceCommit": "a8a9460fe4ce2055edcb8f3b6080cb5d3d55c5e1",
-      "rollbackAsset": "LuvLyrics-rollback-1.70.0.apk"
     }
   ]
 }

@@ -2,6 +2,7 @@ package com.lyricflow.app
 
 import android.app.Application
 import android.content.res.Configuration
+import android.os.StrictMode
 
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -42,6 +43,13 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // Debug builds only: log disk and network work on the main thread, the usual source of a dropped frame or an
+    // ANR in Kotlin code (queue snapshots, caches, preferences). Logs, never crashes; release is untouched.
+    if (BuildConfig.DEBUG) {
+      StrictMode.setThreadPolicy(
+        StrictMode.ThreadPolicy.Builder().detectDiskReads().detectDiskWrites().detectNetwork().penaltyLog().build(),
+      )
+    }
     // Display size (startup/DisplayScale): React Native reads this density when it starts below.
     runCatching { DisplayScale.apply(this) }
     // First: MainActivity's constructor reads it to decide whether this start opens the rescue screen.
