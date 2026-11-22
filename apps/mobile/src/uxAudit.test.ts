@@ -32,10 +32,15 @@ it('a selected style never changes the font weight, which would re-flow its neig
   expect(found).toEqual([]);
 });
 
-it('the Library tabs keep their underline space, so picking a tab moves nothing', () => {
+it('the Library tabs never move when one is picked: the underline floats over them and moves by transform', () => {
+  // 2026-11: the tabs swipe (SwipeTabs). Their underline is one absolute bar, slid and stretched by transform, so a
+  // tab's own box never gains or loses a border when it is picked.
   const library = fs.readFileSync(path.join(SRC, 'screens', 'LibraryScreen.tsx'), 'utf8');
-  expect(library).toMatch(/\btab:\s*\{[^}]*borderBottomWidth: 2[^}]*borderColor: 'transparent'/);
-  expect(library).toMatch(/\bselected:\s*\{\s*borderColor: Signal\.wave\s*\}/);
+  const tabs = fs.readFileSync(path.join(SRC, 'ui', 'SwipePager.tsx'), 'utf8');
+  expect(library).toMatch(/<SwipeTabs tabs=\{TABS\}/);
+  expect(tabs).toMatch(/\btab:\s*\{(?![^}]*border)[^}]*\}/);
+  expect(tabs).toMatch(/\bunderline:\s*\{\s*position: 'absolute'/);
+  expect(tabs).toMatch(/transform: \[\{ translateX: frame\.left \+ frame\.width \/ 2 - 0\.5 \}, \{ scaleX: Math\.max\(0, frame\.width\) \}\]/);
 });
 
 // Text-scale audit (TEXT-SCALE-FINDINGS.md): these boxes grow with their text. `minHeight` keeps the number they had,

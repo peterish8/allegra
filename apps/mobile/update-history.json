@@ -2,13 +2,20 @@
   "entries": [
     {
       "version": "1.73.0",
-      "description": "Download a song right from where you save it",
+      "description": "Swipe through your Library, see playlists as a list, and download from where you save",
       "changelog": [
         {
           "title": "New",
           "items": [
-            "Tap the plus in the mini player and you can now download the song from the same place you pick its playlists",
-            "The download keeps going after you close it, and shows its progress there whenever you open it again"
+            "Swipe left or right in Library to move between Songs, Playlists, Artists and Albums",
+            "Playlists can now be shown as a list as well as a grid. Tap the button beside the count to switch, and we remember your choice",
+            "Tap the plus in the mini player and you can now download the song from the same place you pick its playlists"
+          ]
+        },
+        {
+          "title": "Improved",
+          "items": [
+            "The line under the Library tabs slides along with your finger as you swipe"
           ]
         }
       ]
