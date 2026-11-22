@@ -26,6 +26,8 @@
     {
       "version": "1.71.0",
       "description": "A quicker, smoother app on every phone",
+      "sourceCommit": "00b8f56f7f3e108422d1994b7557c1bcacfebde9",
+      "rollbackAsset": "LuvLyrics-rollback-1.71.0.apk",
       "changelog": [
         {
           "title": "Improved",
