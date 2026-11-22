@@ -304,6 +304,11 @@ export const Motion = {
   },
   /** Release speed (pt/s) above which a drag counts as a flick. */
   flingVelocity: 800,
+  /**
+   * How far a surface may be pulled past its open edge (the `rubberBand` dimension, pt): it resists more the
+   * further it goes and never travels further than this. Sheets give the most; a side menu or a hanging panel less.
+   */
+  stretch: { sheet: 72, menu: 40, panel: 32 },
   /** A tapped control confirms within this window, independent of any IO. */
   ackMs: 120,
   /** The transfer ticker: at most this many visual updates a second; screen readers every summaryMs. */

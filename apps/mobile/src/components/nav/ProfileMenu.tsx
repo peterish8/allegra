@@ -30,7 +30,7 @@ const SCRIM_OPACITY = 0.62;
 /** The panel runs this far past the left edge, so a pull past open rubber-bands with no gap behind it. */
 const SKIRT = 48;
 /** How far a pull past open may stretch (the rubber band's dimension, pt). */
-const STRETCH = 40;
+const STRETCH = Motion.stretch.menu;
 /** A thrown close counts as finished once it is this close to shut and this slow (in panel widths). */
 const CLOSE_REST = { restDisplacementThreshold: 0.002, restSpeedThreshold: 0.02 } as const;
 

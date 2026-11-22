@@ -7,10 +7,10 @@
  * download, as online rows synced to the account (`onlineLike`, `onlinePlaylist`) — unless the library already
  * holds a copy, which then stands for it, as the heart does (`useSongLikeState`).
  */
-import type { SongSnapshot } from '@shared/songRef';
+import { toMobileId, type SongSnapshot } from '@shared/songRef';
 
-import * as playlistQueries from '../database/playlistQueries';
-import { getOnlinePlaylistSongs } from '../database/syncQueries';
+import { getPlaylistIdsForSong } from '../database/playlistQueries';
+import { getOnlinePlaylistIdsForRef } from '../database/syncQueries';
 import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSongsStore } from '../store/songsStore';
@@ -38,47 +38,63 @@ function targetOf(song: Song): Target | null {
 /** Whether "Saved in" can save this song at all (a stream needs a catalog ref). */
 export const canSaveIn = (song: Song): boolean => targetOf(song) !== null;
 
+/** Whether the song is in Liked songs right now (the stores, which every like writes through). */
+function likedNow(target: Target): boolean {
+  return target.kind === 'library'
+    ? usePlaylistStore.getState().likedSongIds.has(target.songId)
+    : useOnlineLibraryStore.getState().likedRefs.has(target.snapshot.ref);
+}
+
+/** The playlists other than Liked songs that hold it: one read, whatever the number of playlists. */
+async function playlistIdsFor(target: Target): Promise<string[]> {
+  const ids = target.kind === 'library'
+    ? await getPlaylistIdsForSong(target.songId)
+    : await getOnlinePlaylistIdsForRef(target.snapshot.ref);
+  const liked = usePlaylistStore.getState().defaultPlaylistId;
+  return ids.filter(id => id !== liked);
+}
+
 /** The ids of the playlists (Liked songs included, by its id) that hold the song now. */
 export async function loadSavedIn(song: Song): Promise<Set<string>> {
   const store = usePlaylistStore.getState();
   if (store.playlists.length === 0 || !store.defaultPlaylistId) await store.fetchPlaylists();
-  const { playlists, defaultPlaylistId, likedSongIds } = usePlaylistStore.getState();
   const target = targetOf(song);
   if (!target) return new Set();
-  const held = await Promise.all(playlists.map(async playlist => {
-    if (target.kind === 'library') {
-      if (playlist.id === defaultPlaylistId) return likedSongIds.has(target.songId) ? playlist.id : null;
-      return (await playlistQueries.isSongInPlaylist(playlist.id, target.songId)) ? playlist.id : null;
-    }
-    if (playlist.id === defaultPlaylistId) return useOnlineLibraryStore.getState().likedRefs.has(target.snapshot.ref) ? playlist.id : null;
-    const rows = await getOnlinePlaylistSongs(playlist.id);
-    return rows.some(row => row.ref === target.snapshot.ref) ? playlist.id : null;
-  }));
-  return new Set(held.filter((id): id is string => id !== null));
-}
-
-/** Whether the song is in any playlist other than Liked songs (the mini player's tick counts those too). */
-export async function isInAnyPlaylist(song: Song): Promise<boolean> {
-  const held = await loadSavedIn(song);
+  const held = new Set(await playlistIdsFor(target));
   const liked = usePlaylistStore.getState().defaultPlaylistId;
-  return [...held].some(id => id !== liked);
+  if (liked && likedNow(target)) held.add(liked);
+  return held;
 }
 
 /**
- * Saves the edits. Returns false when any change failed (the ones that worked stay). The Liked songs change goes
- * first: it is the one the mini player's tick reads, so it settles before the slower playlist writes.
+ * Whether the song is in any playlist other than Liked songs (the mini player's tick; Liked comes from the heart's
+ * own state). One indexed read per song change — never loads the playlists itself.
+ */
+export async function isInAnyPlaylist(song: Song): Promise<boolean> {
+  const target = targetOf(song);
+  return target ? (await playlistIdsFor(target)).length > 0 : false;
+}
+
+/**
+ * Saves the edits. Returns false when any change failed (the ones that worked stay; the caller re-reads `before`
+ * so a retry only redoes what didn't land). The Liked songs change goes first: it is the one the mini player's tick
+ * reads, so it settles before the slower playlist writes.
+ *
+ * Liked is set to the state the listener chose, never toggled: the likes API is a toggle, so it is only called when
+ * the song's live state differs. A retry or a second Done can therefore never un-like a song the first one liked.
  */
 export async function applySavedIn(song: Song, before: ReadonlySet<string>, after: ReadonlySet<string>): Promise<boolean> {
   const target = targetOf(song);
   if (!target) return false;
   const { add, remove } = membershipChanges(before, after);
   const liked = usePlaylistStore.getState().defaultPlaylistId;
-  const likeChange = liked !== null && (add.includes(liked) || remove.includes(liked));
   let ok = true;
 
-  if (likeChange) {
-    if (target.kind === 'library') ok = (await useSongsStore.getState().toggleLike(target.songId)) !== 'error' && ok;
-    else ok = (await toggleOnlineLike(target.snapshot)) !== 'error' && ok;
+  if (liked !== null && likedNow(target) !== after.has(liked)) {
+    const result = target.kind === 'library'
+      ? await useSongsStore.getState().toggleLike(target.songId)
+      : await toggleOnlineLike(target.snapshot);
+    ok = result !== 'error';
   }
 
   const store = usePlaylistStore.getState();
@@ -89,7 +105,8 @@ export async function applySavedIn(song: Song, before: ReadonlySet<string>, afte
     }),
     ...remove.filter(id => id !== liked).map(async id => {
       if (target.kind === 'library') return store.removeSongFromPlaylist(id, target.songId).then(() => true, () => false);
-      return removeOnlineFromPlaylist(id, target.songId).then(() => true, () => false);
+      // The same ref the add and the membership read use (an `originId` can differ from the id's own).
+      return removeOnlineFromPlaylist(id, toMobileId(target.snapshot.ref)).then(() => true, () => false);
     }),
   ]);
   if (target.kind === 'online' && remove.some(id => id !== liked)) await usePlaylistStore.getState().fetchPlaylists().catch(() => undefined);

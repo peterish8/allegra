@@ -6,10 +6,11 @@
  *
  * Top: "Saved in" with New playlist, then the playlists that held the song when it opened (Liked songs first),
  * ticked. They keep their place when unticked, so a slip is one tap to undo. Then Find playlist / Sort and every
- * other playlist with ⊕. Nothing is written until Done; Cancel, the scrim, back or a swipe down leave it as it was.
+ * other playlist with ⊕. Where the song is saved is written only on Done; Cancel, the scrim, back or a swipe down
+ * leave it as it was. (New playlist creates its playlist at once, as Spotify does; the song joins it only on Done.)
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, TextInput, View } from 'react-native';
 
 import { applySavedIn, canSaveIn, loadSavedIn } from '../services/savedIn';
@@ -33,9 +34,11 @@ export default function SavedInSheet(): React.ReactElement | null {
   const song = useSavedInStore(state => state.song);
   const openedAt = useSavedInStore(state => state.openedAt);
   const close = useSavedInStore(state => state.close);
-  // The sheet keeps its content while it slides away after closing.
-  const [shown, setShown] = useState<{ song: Song; openedAt: number } | null>(null);
-  useEffect(() => { if (song) setShown({ song, openedAt }); }, [song, openedAt]);
+  // The sheet keeps its content while it slides away after closing. The open song is read during render, so a
+  // reopen swaps straight to a fresh sheet (keyed by when it opened) without one frame of the old one.
+  const [last, setLast] = useState<{ song: Song; openedAt: number } | null>(null);
+  useEffect(() => { if (song) setLast({ song, openedAt }); }, [song, openedAt]);
+  const shown = song ? { song, openedAt } : last;
   if (!shown) return null;
   return <SavedInBody key={shown.openedAt} song={shown.song} visible={!!song} onClose={close} />;
 }
@@ -48,18 +51,24 @@ function SavedInBody({ song, visible, onClose }: { song: Song; visible: boolean;
   const [pinned, setPinned] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
+  // A failed read must never look like "saved nowhere": that would offer Done a diff that un-likes the song.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  /** One Done at a time: two taps (top bar and pill) must not write the same edits twice. */
+  const inFlight = useRef(false);
 
   useEffect(() => {
     let current = true;
+    setLoadFailed(false);
     ready.catch(() => undefined).then(() => loadSavedIn(song)).then(held => {
       if (!current) return;
       const { playlists, defaultPlaylistId } = usePlaylistStore.getState();
       setBefore(held);
       setSelected(new Set(held));
       setPinned(playlists.filter(p => held.has(p.id)).sort((a, b) => Number(b.id === defaultPlaylistId) - Number(a.id === defaultPlaylistId)).map(p => p.id));
-    }, () => { if (current) { setBefore(new Set()); setFailed(true); } });
+    }, () => { if (current) setLoadFailed(true); });
     return () => { current = false; };
-  }, [song, ready]);
+  }, [song, ready, attempt]);
 
   const changed = useMemo(() => {
     if (!before) return false;
@@ -68,16 +77,24 @@ function SavedInBody({ song, visible, onClose }: { song: Song; visible: boolean;
   }, [before, selected]);
 
   const done = useCallback(async () => {
+    if (inFlight.current) return;
     if (!before || !changed) { onClose(); return; }
+    inFlight.current = true;
     setSaving(true);
     setFailed(false);
-    const ok = await applySavedIn(song, before, selected);
-    setSaving(false);
-    if (ok) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      onClose();
-    } else {
+    try {
+      const ok = await applySavedIn(song, before, selected);
+      if (ok) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        onClose();
+        return;
+      }
       setFailed(true);
+      // Re-base on what actually landed, so "Done" again only redoes what didn't.
+      setBefore(await loadSavedIn(song).catch(() => before));
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
     }
   }, [before, changed, song, selected, onClose]);
 
@@ -95,7 +112,9 @@ function SavedInBody({ song, visible, onClose }: { song: Song; visible: boolean;
     <Sheet visible={visible} onClose={onClose} expandable keyboard topBar={topBar} footer={footer}>
       <SavedInList
         song={song}
-        loading={before === null}
+        loading={before === null && !loadFailed}
+        loadFailed={loadFailed}
+        onRetryLoad={() => setAttempt(n => n + 1)}
         selected={selected}
         pinned={pinned}
         failed={failed}
@@ -119,6 +138,9 @@ function SavedInBody({ song, visible, onClose }: { song: Song; visible: boolean;
 interface ListProps {
   song: Song;
   loading: boolean;
+  /** Reading where the song is saved failed: show why and a retry, and offer no rows to edit. */
+  loadFailed: boolean;
+  onRetryLoad: () => void;
   selected: ReadonlySet<string>;
   pinned: readonly string[];
   failed: boolean;
@@ -127,7 +149,7 @@ interface ListProps {
 }
 
 /** The sheet's content. A child of the Sheet, so it can expand it (a search field or name field taking focus). */
-function SavedInList({ song, loading, selected, pinned, failed, onToggle, onCreated }: ListProps): React.ReactElement {
+function SavedInList({ song, loading, loadFailed, onRetryLoad, selected, pinned, failed, onToggle, onCreated }: ListProps): React.ReactElement {
   const sheet = useSheet();
   const playlists = usePlaylistStore(state => state.playlists);
   const likedId = usePlaylistStore(state => state.defaultPlaylistId);
@@ -180,7 +202,7 @@ function SavedInList({ song, loading, selected, pinned, failed, onToggle, onCrea
         icon={isLiked ? 'heart' : undefined}
         artwork={isLiked ? undefined : { uri: playlist.coverImageUri, title }}
         onPress={() => onToggle(playlist.id)}
-        accessibilityLabel={`${title}, ${on ? 'saved here, tap to remove' : 'not saved here, tap to add'}`}
+        checked={on}
         trailing={<MorphIcon on={on} onIcon="checkmark-circle" offIcon="add-circle-outline" size={26} color={on ? Signal.wave : OnMedia.secondary} />}
       />
     );
@@ -211,7 +233,12 @@ function SavedInList({ song, loading, selected, pinned, failed, onToggle, onCrea
       ) : null}
       {failed ? <Text variant="secondary" tone="danger" style={styles.notice}>Couldn’t save every change. Try Done again.</Text> : null}
       {!canSaveIn(song) ? <Text variant="secondary" tone="muted" style={styles.notice}>This song can’t be saved to playlists yet.</Text> : null}
-      {loading ? <ActivityIndicator color={Signal.wave} style={styles.loading} /> : savedRows.map(row)}
+      {loadFailed ? (
+        <View style={styles.notice}>
+          <Text variant="secondary" tone="danger">Couldn’t load your playlists.</Text>
+          <TextButton label="Try again" tone="accent" onPress={onRetryLoad} />
+        </View>
+      ) : loading ? <ActivityIndicator color={Signal.wave} style={styles.loading} /> : savedRows.map(row)}
       <View style={styles.divider} />
       <View style={styles.searchRow}>
         <View style={[styles.field, styles.search, styles.grow]}>
@@ -240,11 +267,11 @@ function SavedInList({ song, loading, selected, pinned, failed, onToggle, onCrea
   return (
     <SheetScrollable>
       <FlatList
-        data={loading ? [] : others}
+        data={loading || loadFailed ? [] : others}
         keyExtractor={item => item.id}
         renderItem={({ item }) => row(item)}
         ListHeaderComponent={header}
-        ListEmptyComponent={loading ? null : (
+        ListEmptyComponent={loading || loadFailed ? null : (
           <Text variant="secondary" tone="muted" style={styles.notice}>{query ? 'No playlists match.' : 'No other playlists yet.'}</Text>
         )}
         keyboardShouldPersistTaps="handled"

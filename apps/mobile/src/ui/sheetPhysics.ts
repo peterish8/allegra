@@ -10,9 +10,10 @@
  * Positions are the card's downward offset in points: 0 is fully open, larger is lower.
  */
 import { projectMomentum, rubberBand } from '../components/allegra/physics';
+import { Motion } from '../constants/allegraTheme';
 
 /** How far past the top rest a pull may stretch (the rubber band's dimension, pt). */
-export const SHEET_STRETCH = 72;
+export const SHEET_STRETCH = Motion.stretch.sheet;
 
 /** The card's offset under the finger: direct inside the travel, rubber-banded above the top rest. */
 export const dragPosition = (start: number, translation: number, top: number): number => {

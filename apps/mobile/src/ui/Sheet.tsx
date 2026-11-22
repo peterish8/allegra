@@ -76,6 +76,8 @@ type OnScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
  */
 export const SheetScrollable: React.FC<{ children: React.ReactElement<{ onScroll?: OnScroll; scrollEventThrottle?: number; scrollEnabled?: boolean }> }> = ({ children }) => {
   const sheet = useContext(SheetContext);
+  // One offset serves the sheet: a list that goes away (results swapped for a preview) must not leave its scroll behind.
+  useEffect(() => () => { if (sheet) sheet.offset.value = 0; }, [sheet]);
   const own = children.props.onScroll;
   const onScroll = useCallback<OnScroll>(e => {
     if (sheet) sheet.offset.value = e.nativeEvent.contentOffset.y;
@@ -147,6 +149,8 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
   const pos = useSharedValue(expandable ? fullH : windowH);
   const dragStart = useSharedValue(0);
   const dragFrom = useSharedValue(0);
+  /** True between a pan's start and its release: a tap never moves the sheet. */
+  const dragging = useSharedValue(false);
 
   /** Set when a swipe closed the sheet: its spring is already running, `visible` turning false must not restart it. */
   const swiped = useRef(false);
@@ -190,7 +194,9 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
   const expand = useCallback(() => {
     if (!expandable) return;
     setAtFull(true);
-    pos.value = reduce ? withTiming(0, { duration: Motion.duration.fast }) : withSpring(0, Motion.spring.open);
+    // Reduce Motion: a tap moves nothing — it is simply full.
+    if (reduce) pos.value = 0;
+    else pos.value = withSpring(0, Motion.spring.open);
   }, [expandable, reduce, pos]);
 
   const state = useMemo<SheetState>(() => ({ offset: scrolled, list, scrollable: atFull, expanded, expand }), [scrolled, list, atFull, expanded, expand]);
@@ -252,6 +258,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       })
       .onStart(() => {
         'worklet';
+        dragging.value = true;
         dragStart.value = pos.value;
         // The open rest the drag leaves from (never "closed": it is already moving).
         dragFrom.value = nearestRest(pos.value, expandable ? [0, shortY.value] : [0]);
@@ -262,12 +269,17 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
       })
       .onEnd(e => {
         'worklet';
+        dragging.value = false;
         settle(e.velocityY);
       })
       .onFinalize((_e, success) => {
         'worklet';
-        // A pan the list's scroll cancels never reaches onEnd: settle where the finger left it.
-        if (!success && Math.abs(pos.value - dragStart.value) > 0.5) settle(0);
+        // A pan the list's scroll cancels never reaches onEnd: settle where the finger left it. Only a drag that
+        // started: a plain tap also finalizes, and must not re-aim (or close) a sheet that is still springing.
+        if (!success && dragging.value) {
+          dragging.value = false;
+          settle(0);
+        }
       });
   };
   const bodyTwoWay = expandable && !atFull;
@@ -304,10 +316,32 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, tall = fa
             <View>
               {expandable ? (
                 <View style={styles.topBand}>
-                  <Animated.View style={[styles.grabberBand, grabberStyle]} pointerEvents="none">
-                    <View style={styles.grabber} accessibilityElementsHidden importantForAccessibility="no" />
+                  {/* At the short rest the list holds still: TalkBack gets an action on the grabber to show it all. */}
+                  <Animated.View
+                    style={[styles.grabberBand, grabberStyle]}
+                    pointerEvents="none"
+                    accessible={!atFull}
+                    accessibilityElementsHidden={atFull}
+                    importantForAccessibility={atFull ? 'no-hide-descendants' : 'yes'}
+                    accessibilityRole="button"
+                    accessibilityLabel="Show all"
+                    accessibilityHint="Expands the sheet to full height"
+                    accessibilityActions={[{ name: 'activate', label: 'Show all' }]}
+                    onAccessibilityAction={expand}
+                  >
+                    <View style={styles.grabber} />
                   </Animated.View>
-                  {topBar ? <Animated.View style={[StyleSheet.absoluteFill, topBarStyle]} pointerEvents={atFull ? 'box-none' : 'none'}>{topBar}</Animated.View> : null}
+                  {/* Hidden (and silent to TalkBack) until full height, so no invisible Cancel or second Done is read out. */}
+                  {topBar ? (
+                    <Animated.View
+                      style={[StyleSheet.absoluteFill, topBarStyle]}
+                      pointerEvents={atFull ? 'box-none' : 'none'}
+                      accessibilityElementsHidden={!atFull}
+                      importantForAccessibility={atFull ? 'auto' : 'no-hide-descendants'}
+                    >
+                      {topBar}
+                    </Animated.View>
+                  ) : null}
                 </View>
               ) : (
                 <View style={styles.grabber} accessibilityElementsHidden importantForAccessibility="no" />

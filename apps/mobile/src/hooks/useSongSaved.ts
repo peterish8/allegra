@@ -36,10 +36,14 @@ export function useSongSaved(song: Song | null | undefined): boolean {
  * "Saved in" so it can go into other playlists too; ✓ opens "Saved in" to change where it is saved.
  */
 export function tapSaved(song: Song, saved: boolean): void {
-  if (!saved && !isSongLikedNow(song)) {
-    const like = useSongsStore.getState().toggleLike(song.id);
-    openSavedIn(song, like);
+  if (saved || isSongLikedNow(song)) {
+    openSavedIn(song);
     return;
   }
-  openSavedIn(song);
+  // Just after a skip the mark may not know yet whether this song sits in a playlist: ask the database before
+  // liking, so ⊕ on a song already in "Gym" opens the sheet instead of adding a like nobody asked for.
+  const ready = isInAnyPlaylist(song)
+    .catch(() => false)
+    .then(inPlaylist => (inPlaylist ? undefined : useSongsStore.getState().toggleLike(song.id)));
+  openSavedIn(song, ready);
 }

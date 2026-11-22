@@ -103,6 +103,13 @@ export const getOnlinePlaylistSongs = (playlistId: string): Promise<OnlineSongRo
     )).map(fromDb),
   );
 
+/** Every playlist holding this online song (by ref), in one read. */
+export const getOnlinePlaylistIdsForRef = (ref: string): Promise<string[]> =>
+  withDbRead(async db =>
+    (await db.getAllAsync<{ playlist_id: string }>('SELECT playlist_id FROM playlist_online_songs WHERE ref = ?', [ref]))
+      .map(row => row.playlist_id),
+  );
+
 const upsertOnlinePlaylistSongIn = async (db: Db, playlistId: string, row: OnlineSongRow): Promise<boolean> =>
   changed(await db.runAsync(
     `INSERT INTO playlist_online_songs (playlist_id, ref, title, artist, album, artwork, duration, added_at)

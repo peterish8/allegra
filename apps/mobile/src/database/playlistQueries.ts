@@ -272,6 +272,13 @@ export const removeSongFromPlaylist = async (
 /**
  * Check if a song is in a playlist
  */
+/** Every playlist (Liked songs included) that holds this library song, in one read. */
+export const getPlaylistIdsForSong = (songId: string): Promise<string[]> =>
+  withDbRead(async (db) =>
+    (await db.getAllAsync<{ playlist_id: string }>('SELECT playlist_id FROM playlist_songs WHERE song_id = ?', [songId]))
+      .map(row => row.playlist_id),
+  );
+
 export const isSongInPlaylist = async (
   playlistId: string,
   songId: string

@@ -13,7 +13,7 @@ import UpdatePanel from './UpdatePanel';
 /** The panel grows out of the mark from this scale (a popover never starts from nothing). */
 const ENTER_SCALE = 0.95;
 /** How far a pull down on the grabber may stretch (the rubber band's dimension, pt). */
-const STRETCH = 32;
+const STRETCH = Motion.stretch.panel;
 
 interface Props {
   /** Screen-space top edge of the dropdown, just below the fixed Stream header. */
@@ -89,6 +89,13 @@ export function StreamUpdatesDropdown({ topOffset, rightOffset }: Props): React.
         if (finished) runOnJS(unmount)();
       });
       runOnJS(dismissedBySwipe)();
+    })
+    .onFinalize((_e, success) => {
+      'worklet';
+      // A pull the system cancels never reaches onEnd: put the panel back where it hangs.
+      if (success || drag.value === 0) return;
+      if (reduceMotion) drag.value = 0;
+      else drag.value = withSpring(0, Motion.spring.settle);
     });
 
   return (
