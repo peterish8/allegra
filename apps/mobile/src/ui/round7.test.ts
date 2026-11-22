@@ -117,7 +117,10 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
     const menu = read('components/nav/ProfileMenu.tsx');
     // Stays up until it has slid out, opens on a spring, follows a swipe shut.
     expect(menu).toMatch(/<Modal visible=\{mounted\}/);
-    expect(menu).toMatch(/if \(finished\) runOnJS\(setMounted\)\(false\)/);
+    expect(menu).toMatch(/if \(finished\) runOnJS\(unmount\)\(\)/);
+    // 2026-11: the swipe is thrown like the sheets — rubber band past open, rest projected from the release speed.
+    expect(menu).toMatch(/rubberBand\(x, STRETCH\)/);
+    expect(menu).toMatch(/projectMomentum\(e\.velocityX\)/);
     expect(menu).toMatch(/withSpring\(1, Motion\.spring\.open\)/);
     expect(menu).toMatch(/<GestureDetector gesture=\{swipe\}>/);
     expect(menu).toMatch(/<GestureHandlerRootView/);
@@ -149,7 +152,7 @@ describe('items 3 and 8: the bottom surface and navigation', () => {
     const pill = read('components/PillPlayer.tsx');
     expect(pill).toMatch(/<Marquee text=\{displayed\.title\} style=\{styles\.line\}/);
     expect(pill).toMatch(/\{status === 'error' \? 'Couldn’t play, tap to retry' : displayed\.artist \|\| ' '\}/);
-    expect(pill).toMatch(/name=\{liked \? 'checkmark-circle' : 'add-circle-outline'\}/);
+    expect(pill).toMatch(/<MorphIcon on=\{!!saved\} onIcon="checkmark-circle" offIcon="add-circle-outline"/);
     // The progress line stays on the card's top edge (owner).
     expect(pill.indexOf('<MiniScrubber ')).toBeLessThan(pill.indexOf('<Animated.View style={[styles.row'));
   });

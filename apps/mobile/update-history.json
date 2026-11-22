@@ -1,8 +1,33 @@
 {
   "entries": [
     {
+      "version": "1.72.0",
+      "description": "Save a song to any playlist from the mini player, and smoother sheets everywhere",
+      "changelog": [
+        {
+          "title": "New",
+          "items": [
+            "Tap the plus in the mini player to save the song to Liked songs and pick more playlists, just like Spotify",
+            "The plus turns into a tick once the song is saved. Tap the tick to add it to other playlists or remove it",
+            "Make a new playlist right there while saving a song",
+            "Songs you stream can go into playlists without downloading them first"
+          ]
+        },
+        {
+          "title": "Improved",
+          "items": [
+            "Every sheet and menu follows your finger, with a soft stretch at the top and a quick settle when you let go",
+            "Pull the playlist picker up for the full list, or pull it down to close",
+            "The updates menu can be swiped away, and the side menu closes at the speed you throw it"
+          ]
+        }
+      ]
+    },
+    {
       "version": "1.71.0",
       "description": "A quicker, smoother app on every phone",
+      "sourceCommit": "00b8f56f7f3e108422d1994b7557c1bcacfebde9",
+      "rollbackAsset": "LuvLyrics-rollback-1.71.0.apk",
       "changelog": [
         {
           "title": "Improved",
@@ -53,27 +78,6 @@
       ],
       "sourceCommit": "7a894a987de8d6a979f8ad5e0b5d0ab00e2a385a",
       "rollbackAsset": "LuvLyrics-rollback-1.70.2.apk"
-    },
-    {
-      "version": "1.70.1",
-      "description": "Checking for updates works on a weak signal, and you can always download the latest version",
-      "changelog": [
-        {
-          "title": "Fixed",
-          "items": [
-            "Checking for updates tries again once before it gives up, so a weak signal no longer shows the update server as down",
-            "The website's Android download now gives you the latest version, not an older one"
-          ]
-        },
-        {
-          "title": "Improved",
-          "items": [
-            "When the check fails, Updates offers to download the latest version straight away"
-          ]
-        }
-      ],
-      "sourceCommit": "63824476ae639e7b87432befbcd2ec0acab629e0",
-      "rollbackAsset": "LuvLyrics-rollback-1.70.1.apk"
     }
   ]
 }

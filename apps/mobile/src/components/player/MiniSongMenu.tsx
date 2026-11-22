@@ -19,6 +19,7 @@ import { toggleOnlineLike } from '../../services/sync/onlineLike';
 import { navigationRef } from '../../utils/navigationService';
 import type { UnifiedSong } from '../../types/song';
 import { usePlayerStore } from '../../store/playerStore';
+import { openSavedIn } from '../../store/savedInStore';
 import { songActionGroups, songActionRows, type SongActionRow } from './songActionRows';
 import { RecentCovers } from './RecentCovers';
 
@@ -129,10 +130,8 @@ export function MiniSongMenu({ song, visible, onClose, remote, current = true, c
     switch (row) {
       case 'playNext': return { icon: 'return-down-forward', label: 'Play next', onPress: () => queue('next') };
       case 'addToQueue': return { icon: 'list-outline', label: 'Add to queue', onPress: () => queue('end') };
-      case 'addToPlaylist': return { icon: 'add-outline', label: 'Add to playlist', onPress: () => {
-        if (stream) { void save(); setNotice('Download this song first, then add it to a playlist from your library.'); }
-        else { onClose(); if (navigationRef.isReady()) navigationRef.navigate('AddToPlaylist', { songId: song.id }); }
-      } };
+      // "Saved in": streamed songs are saved as online playlist items, no download needed.
+      case 'addToPlaylist': return { icon: 'add-outline', label: 'Add to playlist', onPress: () => { onClose(); openSavedIn(song); } };
       case 'radio': return { icon: 'radio-outline', label: 'Start song radio', onPress: () => { void StreamService.startRadio(song).then(n => setNotice(n ? 'Song radio started' : 'Could not start radio')).catch(() => setNotice('Could not start radio')); } };
       case 'artist': return { icon: 'person-outline', label: `Go to ${artist}`, chevron: true, onPress: artistPage };
       case 'upNext': return { icon: 'list-outline', label: 'Up next', onPress: () => toPlayer({ sheet: 'queue' }) };

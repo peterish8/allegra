@@ -40,19 +40,21 @@ export interface ListRowProps {
   /** The playing or chosen row: its title takes the accent. */
   active?: boolean;
   disabled?: boolean;
+  /** A row that toggles (a playlist in "Saved in"): read out as a checkbox with its state, not by colour or icon. */
+  checked?: boolean;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }
 
-export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, subtitleLines = 1, onPress, onLongPress, artwork, icon, iconStyle = 'disc', trailing, chevron, active, disabled, accessibilityLabel, style }) => (
+export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, subtitleLines = 1, onPress, onLongPress, artwork, icon, iconStyle = 'disc', trailing, chevron, active, disabled, checked, accessibilityLabel, style }) => (
   <TactileRow
     onPress={onPress}
     onLongPress={onLongPress}
     delayLongPress={350}
     disabled={disabled || (!onPress && !onLongPress)}
-    accessibilityRole="button"
+    accessibilityRole={checked === undefined ? 'button' : 'checkbox'}
     accessibilityLabel={accessibilityLabel ?? (subtitle ? `${title}, ${subtitle}` : title)}
-    accessibilityState={{ selected: !!active, disabled: !!disabled }}
+    accessibilityState={checked === undefined ? { selected: !!active, disabled: !!disabled } : { checked, disabled: !!disabled }}
     accessibilityHint={onLongPress ? 'Long press for more' : undefined}
     style={[styles.row, disabled && styles.disabled, style]}
   >

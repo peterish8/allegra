@@ -19,6 +19,17 @@ it('uses the branded button and keeps the updates-only dropdown accessible and d
   expect(source).not.toContain('Frosted');
 });
 
-it('avoids a modal fade when Reduce Motion is enabled', () => {
-  expect(source).toContain("animationType={reduceMotion ? 'none' : 'fade'}");
+it('animates itself: grows out of the mark, scales only without Reduce Motion', () => {
+  expect(source).toContain('animationType="none"');
+  expect(source).toContain("transformOrigin: 'top right'");
+  expect(source).toContain('scale: reduceMotion ? 1 : ENTER_SCALE');
+  expect(source).toContain('else shown.value = withSpring(1, Motion.spring.open)');
+});
+
+it('follows a finger on its grabber and is thrown away like the sheets', () => {
+  // 1:1 up, rubber-banded down, dismissal projected from the release speed.
+  expect(source).toContain('<GestureDetector gesture={pull}>');
+  expect(source).toContain('drag.value = y < 0 ? y : rubberBand(y, STRETCH)');
+  expect(source).toContain('projectMomentum(e.velocityY)');
+  expect(source).toContain('releaseSpring(e.velocityY, e.velocityY)');
 });

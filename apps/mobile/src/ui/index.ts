@@ -27,7 +27,7 @@ export { HeaderGlow, type HeaderGlowProps, type GlowColors } from './HeaderGlow'
 export { ListRow, SheetOption, CheckRow, ROW_HEIGHT, OPTION_HEIGHT, ROW_ART, type ListRowProps, type SheetOptionProps, type CheckRowProps } from './ListRow';
 
 // Surfaces
-export { Sheet, SheetScrollView, SheetScrollable, type SheetProps } from './Sheet';
+export { Sheet, SheetScrollView, SheetScrollable, useSheet, type SheetProps } from './Sheet';
 export { SheetIdentity, SheetDivider, identityMeta, IDENTITY_ART, type SheetIdentityProps } from './SheetIdentity';
 export { ConfirmSheet, type ConfirmSheetProps } from './ConfirmSheet';
 export { PageHeader, EmptyState, Panel, Placeholder, RowPlaceholder, GUTTER, type PageHeaderProps, type EmptyStateProps } from './Layout';

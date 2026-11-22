@@ -11,19 +11,15 @@ import {
   TextInput,
   View,
   type FlatListProps,
-  type ListRenderItem,
 } from 'react-native';
-import { displayPlaylistName } from '../utils/sentenceCase';
 
 import { Glass, Radius, Signal } from '../constants/allegraTheme';
 import * as playlistQueries from '../database/playlistQueries';
-import { getOnlinePlaylistSongs } from '../database/syncQueries';
-import { useOnlineLibraryStore } from '../store/onlineLibraryStore';
 import { usePlayerStore } from '../store/playerStore';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSongsStore } from '../store/songsStore';
 import { RootStackParamList } from '../types/navigation';
-import { Playlist, Song } from '../types/song';
+import { Song } from '../types/song';
 import { Button, IconButton, Sheet, SheetScrollable, TactileRow } from '../ui';
 import * as Haptics from '../utils/haptics';
 import { safeGoBack } from '../utils/navigationService';
@@ -31,13 +27,9 @@ import Artwork from './allegra/Artwork';
 
 type AddToPlaylistNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type AddToPlaylistRouteProp = RouteProp<RootStackParamList, 'AddToPlaylist'>;
-type AddToPlaylistMode = 'ADD_SONGS_TO_PLAYLIST' | 'ADD_SONG_TO_PLAYLISTS';
-type SelectableItem = Song | Playlist;
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_ITEM_WIDTH = (SCREEN_WIDTH - 48 - 12) / 3;
-
-const isSongItem = (item: SelectableItem): item is Song => 'title' in item;
 
 /** A FlatList inside the sheet: a drag down at its top moves the sheet. */
 function SheetList<T>(props: FlatListProps<T>): React.ReactElement {
@@ -48,10 +40,11 @@ function SheetList<T>(props: FlatListProps<T>): React.ReactElement {
   );
 }
 
+/** Add library songs to one playlist. A song into playlists is "Saved in" (`SavedInSheet`). */
 export const AddToPlaylistModal = () => {
   const navigation = useNavigation<AddToPlaylistNavigationProp>();
   const route = useRoute<AddToPlaylistRouteProp>();
-  const params = route.params || {};
+  const params = route.params;
   // The mini player pill floats over this sheet's button and last row; hide it while the sheet is in front.
   const setMiniPlayerHiddenSource = usePlayerStore(state => state.setMiniPlayerHiddenSource);
   useFocusEffect(useCallback(() => {
@@ -59,13 +52,8 @@ export const AddToPlaylistModal = () => {
     return () => setMiniPlayerHiddenSource('AddToPlaylist', false);
   }, [setMiniPlayerHiddenSource]));
 
-  const mode: AddToPlaylistMode = params.playlistId ? 'ADD_SONGS_TO_PLAYLIST' : 'ADD_SONG_TO_PLAYLISTS';
   const targetPlaylistId = params.playlistId;
-  const targetSongId = params.songId;
 
-  const playlists = usePlaylistStore(state => state.playlists);
-  const fetchPlaylists = usePlaylistStore(state => state.fetchPlaylists);
-  const addSongToPlaylist = usePlaylistStore(state => state.addSongToPlaylist);
   const addSongsToPlaylist = usePlaylistStore(state => state.addSongsToPlaylist);
   const songs = useSongsStore(state => state.songs);
   const fetchSongs = useSongsStore(state => state.fetchSongs);
@@ -80,26 +68,9 @@ export const AddToPlaylistModal = () => {
     const init = async () => {
       setLoading(true);
       try {
-        if (mode === 'ADD_SONGS_TO_PLAYLIST' && targetPlaylistId) {
-          if (songs.length === 0) await fetchSongs();
-          const currentSongs = await playlistQueries.getPlaylistSongs(targetPlaylistId);
-          setExistingItems(new Set(currentSongs.map(s => s.id)));
-        } else {
-          await fetchPlaylists();
-          if (targetSongId) {
-            const memberships = await Promise.all(usePlaylistStore.getState().playlists.map(async playlist => {
-              if (targetSongId.startsWith('stream:')) {
-                const ref = targetSongId.slice(7);
-                const exists = playlist.id === usePlaylistStore.getState().defaultPlaylistId
-                  ? useOnlineLibraryStore.getState().likedRefs.has(ref as never)
-                  : (await getOnlinePlaylistSongs(playlist.id)).some(song => song.ref === ref);
-                return exists ? playlist.id : null;
-              }
-              return await playlistQueries.isSongInPlaylist(playlist.id, targetSongId) ? playlist.id : null;
-            }));
-            setExistingItems(new Set(memberships.filter((id): id is string => id !== null)));
-          }
-        }
+        if (songs.length === 0) await fetchSongs();
+        const currentSongs = await playlistQueries.getPlaylistSongs(targetPlaylistId);
+        setExistingItems(new Set(currentSongs.map(s => s.id)));
       } catch (error) {
         console.error('Failed to init modal', error);
       } finally {
@@ -107,18 +78,13 @@ export const AddToPlaylistModal = () => {
       }
     };
     init();
-  }, [mode, targetPlaylistId, targetSongId, songs.length, fetchSongs, fetchPlaylists]);
+  }, [targetPlaylistId, songs.length, fetchSongs]);
 
-  const dataToRender = useMemo<SelectableItem[]>(() => {
-    if (mode === 'ADD_SONGS_TO_PLAYLIST') {
-      if (!searchQuery) return songs;
-      const lower = searchQuery.toLowerCase();
-      return songs.filter(s => s.title.toLowerCase().includes(lower) || s.artist?.toLowerCase().includes(lower));
-    }
-    if (!searchQuery) return playlists;
+  const dataToRender = useMemo<Song[]>(() => {
+    if (!searchQuery) return songs;
     const lower = searchQuery.toLowerCase();
-    return playlists.filter(p => p.name.toLowerCase().includes(lower));
-  }, [mode, songs, playlists, searchQuery]);
+    return songs.filter(s => s.title.toLowerCase().includes(lower) || s.artist?.toLowerCase().includes(lower));
+  }, [songs, searchQuery]);
 
   const toggleSelection = useCallback((id: string) => {
     if (existingItems.has(id)) return;
@@ -133,11 +99,7 @@ export const AddToPlaylistModal = () => {
   const handleDone = async () => {
     try {
       setLoading(true);
-      if (mode === 'ADD_SONGS_TO_PLAYLIST' && targetPlaylistId) {
-        await addSongsToPlaylist(targetPlaylistId, Array.from(selectedItems));
-      } else if (targetSongId) {
-        await Promise.all(Array.from(selectedItems).map(pid => addSongToPlaylist(pid, targetSongId)));
-      }
+      await addSongsToPlaylist(targetPlaylistId, Array.from(selectedItems));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       safeGoBack(navigation);
     } catch (e) {
@@ -205,67 +167,30 @@ export const AddToPlaylistModal = () => {
     );
   }, [selectedItems, existingItems, viewMode, toggleSelection]);
 
-  const renderPlaylistItem = useCallback(({ item }: { item: Playlist }) => {
-    const isExisting = existingItems.has(item.id);
-    const isSelected = selectedItems.has(item.id) || isExisting;
-    return (
-      <TactileRow
-        style={[styles.listItem, isSelected && styles.listItemSelected]}
-        onPress={() => toggleSelection(item.id)}
-        accessibilityRole="checkbox"
-        accessibilityLabel={displayPlaylistName(item.name)}
-        accessibilityState={{ checked: isSelected, disabled: isExisting }}
-      >
-        <View style={styles.listLeft}>
-          <View style={[styles.listImage, styles.placeholderList]}>
-            <Ionicons name="musical-notes" size={20} color={Signal.inkMuted} />
-          </View>
-          <View style={styles.listTextContainer}>
-            <Text style={styles.listTitle} numberOfLines={1}>{displayPlaylistName(item.name)}</Text>
-            <Text style={styles.listSubtitle} numberOfLines={1}>{isExisting ? 'Already in playlist' : item.songCount === 1 ? '1 song' : `${item.songCount} songs`}</Text>
-          </View>
-        </View>
-        <View style={styles.listCheckbox}>
-          {isSelected
-            ? <Ionicons name="checkmark-circle" size={24} color={Signal.wave} />
-            : <View style={styles.emptyCircle} />}
-        </View>
-      </TactileRow>
-    );
-  }, [selectedItems, existingItems, toggleSelection]);
-
-  const renderSelectableItem = useCallback<ListRenderItem<SelectableItem>>(({ item }) => {
-    if (mode === 'ADD_SONGS_TO_PLAYLIST' && isSongItem(item)) return renderSongItem({ item });
-    if (mode === 'ADD_SONG_TO_PLAYLISTS' && !isSongItem(item)) return renderPlaylistItem({ item });
-    return null;
-  }, [mode, renderSongItem, renderPlaylistItem]);
-
   return (
     <Sheet
       visible
       presentation="inline"
       keyboard
       tall
-      title={mode === 'ADD_SONGS_TO_PLAYLIST' ? 'Add songs' : 'Add to playlist'}
+      title="Add songs"
       onClose={() => safeGoBack(navigation)}
     >
-      {mode === 'ADD_SONGS_TO_PLAYLIST' ? (
-        <View style={styles.subHeader}>
-          <Text style={styles.subtitle}>{selectedItems.size} selected</Text>
-          <IconButton
-            icon={viewMode === 'grid' ? 'list' : 'grid'}
-            label={viewMode === 'grid' ? 'Show as list' : 'Show as grid'}
-            size="sm"
-            onPress={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}
-          />
-        </View>
-      ) : null}
+      <View style={styles.subHeader}>
+        <Text style={styles.subtitle}>{selectedItems.size} selected</Text>
+        <IconButton
+          icon={viewMode === 'grid' ? 'list' : 'grid'}
+          label={viewMode === 'grid' ? 'Show as list' : 'Show as grid'}
+          size="sm"
+          onPress={() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid')}
+        />
+      </View>
 
       <View style={styles.searchBar}>
         <Ionicons name="search" size={18} color={Signal.inkMuted} style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder={mode === 'ADD_SONGS_TO_PLAYLIST' ? 'Search your songs' : 'Search playlists'}
+          placeholder="Search your songs"
           placeholderTextColor={Signal.inkFaint}
           selectionColor={Signal.wave}
           value={searchQuery}
@@ -276,23 +201,21 @@ export const AddToPlaylistModal = () => {
       {loading ? (
         <ActivityIndicator color={Signal.wave} size="large" style={styles.loading} />
       ) : (
-        <SheetList<SelectableItem>
+        <SheetList<Song>
           key={viewMode}
           data={dataToRender}
           keyExtractor={(item) => item.id}
-          numColumns={mode === 'ADD_SONGS_TO_PLAYLIST' && viewMode === 'grid' ? 3 : 1}
-          renderItem={renderSelectableItem}
+          numColumns={viewMode === 'grid' ? 3 : 1}
+          renderItem={renderSongItem}
           contentContainerStyle={styles.listContent}
-          columnWrapperStyle={mode === 'ADD_SONGS_TO_PLAYLIST' && viewMode === 'grid' ? { gap: 6 } : undefined}
+          columnWrapperStyle={viewMode === 'grid' ? { gap: 6 } : undefined}
           initialNumToRender={20}
         />
       )}
 
       <View style={styles.footer}>
         <Button
-          label={mode !== 'ADD_SONGS_TO_PLAYLIST'
-            ? 'Done'
-            : selectedItems.size === 1 ? 'Add 1 song' : selectedItems.size > 1 ? `Add ${selectedItems.size} songs` : 'Add songs'}
+          label={selectedItems.size === 1 ? 'Add 1 song' : selectedItems.size > 1 ? `Add ${selectedItems.size} songs` : 'Add songs'}
           variant="primary"
           block
           disabled={selectedItems.size === 0}
@@ -321,7 +244,6 @@ const styles = StyleSheet.create({
   listItemSelected: { backgroundColor: Glass.selected, borderColor: Glass.selectedRim },
   listLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   listImage: { width: 48, height: 48, borderRadius: Radius.thumb, overflow: 'hidden', marginRight: 12 },
-  placeholderList: { justifyContent: 'center', alignItems: 'center', backgroundColor: Glass.fillPressed },
   listTextContainer: { flex: 1 },
   listTitle: { color: Signal.ink, fontSize: 16, fontWeight: '600', marginBottom: 2 },
   listTitleExisting: { color: Signal.inkFaint },

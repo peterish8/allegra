@@ -24,7 +24,7 @@ export type RootStackParamList = {
   EditLyrics: { songId: string };
   LuvsVault: undefined; // Luvs liked songs vault
   CreatePlaylist: { playlistId?: string, initialName?: string } | undefined; // Create or Edit playlist modal
-  AddToPlaylist: { songId?: string; playlistId?: string }; // NEW: Add song to playlist modal
+  AddToPlaylist: { playlistId: string }; // Add library songs to one playlist
   /** Scan a LuvLyrics code with the camera (Search → camera; 1.44.0). */
   ScanCode: undefined;
 };

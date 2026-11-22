@@ -57,10 +57,10 @@ import { NativeAudioPlayer } from '../services/NativeAudioPlayer';
 import { notifyIslandAppShownAfterDraw } from '../services/NativeDynamicIsland';
 import { refetchCurrent, setAsRingtone, shareSong, shuffleUpcoming } from '../services/player/playerMenuActions';
 import { StreamService } from '../services/stream/StreamService';
-import { isStreamSongId } from '../services/stream/streamSong';
 import { useLuvLinkStore } from '../store/luvLinkStore';
 import { usePlaybackModesStore } from '../store/playbackModesStore';
 import { playerControls, usePlayerStore } from '../store/playerStore';
+import { openSavedIn } from '../store/savedInStore';
 import { isCardPlayerBackground, useSettingsStore } from '../store/settingsStore';
 import { sleepLabel, useSleepTimerStore } from '../store/sleepTimerStore';
 import { RootStackScreenProps, BrowseStackParamList } from '../types/navigation';
@@ -753,7 +753,6 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
   const onMenuAction = useCallback(async (action: PlayerMenuAction) => {
     const song = currentSong;
     if (!song) return;
-    const stream = isStreamSongId(song.id);
     switch (action) {
       case 'radio': {
         setSheet(null);
@@ -764,8 +763,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
       }
       case 'add':
         setSheet(null);
-        if (stream) say(StreamService.save(song.id) ? 'Downloading — once it’s saved you can add it to a playlist' : 'Couldn’t save this song');
-        else navigation.navigate('AddToPlaylist', { songId: song.id });
+        openSavedIn(song);
         return;
       case 'share':
         shareSong(song);
@@ -831,7 +829,7 @@ const LocalNowPlayingScreen: React.FC<Props> = ({ navigation, route }) => {
         setSheet('advanced');
         return;
     }
-  }, [currentSong, navigation, say, showLyrics, setShowLyrics, onToggleLike, repeatOne, setRepeatOne, openArtist, openConnectDevices]);
+  }, [currentSong, say, showLyrics, setShowLyrics, onToggleLike, repeatOne, setRepeatOne, openArtist, openConnectDevices]);
 
   // The ••• button, the deep link and the mini player all open the app's one song sheet (owner, 2026-11-13).
   const answerPlayer = useCallback((request: PlayerRequest) => {
