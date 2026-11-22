@@ -1,8 +1,30 @@
 {
   "entries": [
     {
+      "version": "1.73.0",
+      "description": "Swipe through your Library, see playlists as a list, and download from where you save",
+      "changelog": [
+        {
+          "title": "New",
+          "items": [
+            "Swipe left or right in Library to move between Songs, Playlists, Artists and Albums",
+            "Playlists can now be shown as a list as well as a grid. Tap the button beside the count to switch, and we remember your choice",
+            "Tap the plus in the mini player and you can now download the song from the same place you pick its playlists"
+          ]
+        },
+        {
+          "title": "Improved",
+          "items": [
+            "The line under the Library tabs slides along with your finger as you swipe"
+          ]
+        }
+      ]
+    },
+    {
       "version": "1.72.0",
       "description": "Save a song to any playlist from the mini player, and smoother sheets everywhere",
+      "sourceCommit": "5ac0d54a4e77feae043257323d9de2e021bb15a3",
+      "rollbackAsset": "LuvLyrics-rollback-1.72.0.apk",
       "changelog": [
         {
           "title": "New",
@@ -63,21 +85,6 @@
           ]
         }
       ]
-    },
-    {
-      "version": "1.70.2",
-      "description": "A much smaller download, with the same features",
-      "changelog": [
-        {
-          "title": "Improved",
-          "items": [
-            "The app is about 30 MB smaller to download and install",
-            "Removed an unused part that only older builds of Your DJ needed"
-          ]
-        }
-      ],
-      "sourceCommit": "7a894a987de8d6a979f8ad5e0b5d0ab00e2a385a",
-      "rollbackAsset": "LuvLyrics-rollback-1.70.2.apk"
     }
   ]
 }

@@ -6,10 +6,12 @@ import { AppScreen } from '../components/AppScreen';
  * playlist's actions sheet, and deleting asks with a ConfirmSheet.
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React from 'react';
 import { FlatList, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { InfoTitleRow, InfoTour } from '../components/allegra/InfoTour';
 import { PLAYLISTS_TOUR, playlistsScene } from '../components/allegra/infoTours';
@@ -24,12 +26,15 @@ import { usePlaylistStore } from '../store/playlistStore';
 import { LibraryStackParamList, RootStackParamList } from '../types/navigation';
 import { Playlist, Song } from '../types/song';
 import {
-  ConfirmSheet, EmptyState, GUTTER, IconButton, Placeholder, Sheet, SheetOption, Signal, Space, Tactile, Text,
-  useBottomClearance,
+  ConfirmSheet, EmptyState, GUTTER, IconButton, ListRow, Motion, Placeholder, ROW_ART, Sheet, SheetOption, Signal, Space,
+  Tactile, Text, useBottomClearance,
 } from '../ui';
 import { countOf } from '../utils/formatters';
 import { displayPlaylistName } from '../utils/sentenceCase';
-import { filterPlaylists, PLAYLIST_MENU_ACTIONS, playlistsBody, type PlaylistMenuActionId } from './playlistsView';
+import {
+  filterPlaylists, PLAYLIST_MENU_ACTIONS, PLAYLISTS_LAYOUT_KEY, playlistsBody, readPlaylistsLayout, type PlaylistMenuActionId,
+  type PlaylistsLayout,
+} from './playlistsView';
 
 /** The grid's side padding and each card's margin: two folders share what is left of the width. */
 const GRID_PADDING = Space.sm;
@@ -57,11 +62,24 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
   const fetchPlaylists = usePlaylistStore(state => state.fetchPlaylists);
   const [playlistSongs, setPlaylistSongs] = React.useState<Record<string, Song[]>>({});
 
-  // Same room as Library: the live shader, tinted by the playing cover.
-
-
-
-
+  // Grid of covers or a list of rows, kept for next time. The new layout fades in (Reduce Motion: it just appears).
+  const reduce = useReducedMotion();
+  const [layout, setLayout] = React.useState<PlaylistsLayout>('grid');
+  React.useEffect(() => {
+    AsyncStorage.getItem(PLAYLISTS_LAYOUT_KEY).then(value => setLayout(readPlaylistsLayout(value))).catch(() => undefined);
+  }, []);
+  const toggleLayout = () => {
+    const next: PlaylistsLayout = layout === 'grid' ? 'list' : 'grid';
+    setLayout(next);
+    AsyncStorage.setItem(PLAYLISTS_LAYOUT_KEY, next).catch(() => undefined);
+  };
+  const layoutButton = (
+    <IconButton
+      icon={layout === 'grid' ? 'list-outline' : 'grid-outline'}
+      label={layout === 'grid' ? 'Show playlists as a list' : 'Show playlists as a grid'}
+      onPress={toggleLayout}
+    />
+  );
   // Load playlists on mount and refresh on focus
   useFocusEffect(
     React.useCallback(() => {
@@ -156,7 +174,7 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
     <Frame style={embedded ? styles.embedded : styles.container}>
       <SafeAreaView style={styles.safeArea} edges={embedded ? [] : ['top']}>
         <View style={styles.header}>
-          {embedded ? <Text variant="meta" tone="secondary" style={styles.titleFlex}>{countOf(playlists.length, 'playlist')}</Text> : <>
+          {embedded ? <><Text variant="meta" tone="secondary" style={styles.titleFlex}>{countOf(playlists.length, 'playlist')}</Text>{layoutButton}</> : <>
           {navigation.canGoBack() ? (
             <IconButton icon="chevron-back" label="Back" variant="plain" onPress={() => navigation.goBack()} />
           ) : null}
@@ -164,6 +182,7 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
             <Text variant="page" accessibilityRole="header">Playlists</Text>
             <InfoTour label="About playlists" steps={PLAYLISTS_TOUR} scene={playlistsScene} />
           </InfoTitleRow>
+          {layoutButton}
           <IconButton icon="ellipsis-vertical" label="Playlist options" onPress={() => setMenuOpen(true)} />
           </>}
         </View>
@@ -186,15 +205,30 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
             style={[styles.empty, { paddingBottom: bottom }]}
           />
         ) : (
+          <Animated.View key={layout} style={styles.safeArea} entering={reduce ? undefined : FadeIn.duration(Motion.duration.fast)}>
           <FlatList
             data={filterPlaylists(playlists, query)}
-            key={`grid-${columns}`}
-            numColumns={columns}
+            key={`${layout}-${columns}`}
+            numColumns={layout === 'list' ? 1 : columns}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={[styles.grid, { paddingBottom: bottom }]}
+            contentContainerStyle={[layout === 'list' ? null : styles.grid, { paddingBottom: bottom }]}
             renderItem={({ item }) => {
               const name = displayPlaylistName(item.name);
               const count = item.id.startsWith('generated:') ? 'Live - updates on this phone' : countOf(item.songCount || 0, 'song');
+              const fixed = item.isDefault || item.id.startsWith('generated:');
+              if (layout === 'list') {
+                return (
+                  <ListRow
+                    title={name}
+                    subtitle={count}
+                    leading={<MosaicCover songs={playlistSongs[item.id] || []} size={ROW_ART} name={name} />}
+                    onPress={() => handlePlaylistPress(item.id)}
+                    onLongPress={fixed ? undefined : () => handleLongPress(item)}
+                    accessibilityLabel={`Open ${name}, ${count}`}
+                    chevron
+                  />
+                );
+              }
               return (
                 <Tactile
                   wrapperStyle={[styles.playlistCard, { maxWidth: columns === 1 ? '100%' : '46%' }]}
@@ -216,6 +250,7 @@ export const PlaylistsScreen: React.FC<{ embedded?: boolean; query?: string }> =
               );
             }}
           />
+          </Animated.View>
         )}
       </SafeAreaView>
 

@@ -13,8 +13,12 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, TextInput, View } from 'react-native';
 
+import { useDownloadState } from '../hooks/useDownloadState';
 import { applySavedIn, canSaveIn, loadSavedIn } from '../services/savedIn';
 import { membershipChanges } from '../services/savedInChanges';
+import { StreamService } from '../services/stream/StreamService';
+import { isStreamSongId, parseStreamId } from '../services/stream/streamSong';
+import DownloadButton from './stream/DownloadButton';
 import { usePlaylistStore } from '../store/playlistStore';
 import { useSavedInStore } from '../store/savedInStore';
 import type { Playlist, Song } from '../types/song';
@@ -28,6 +32,38 @@ type Sort = 'recent' | 'name';
 
 const countLabel = (playlist: Playlist): string | undefined =>
   playlist.songCount === undefined ? undefined : playlist.songCount === 1 ? '1 song' : `${playlist.songCount} songs`;
+
+const DOWNLOAD_TITLE = {
+  idle: 'Download',
+  queued: 'Waiting to download',
+  downloading: 'Downloading',
+  paused: 'Download paused',
+  saved: 'Downloaded',
+  failed: 'Download failed',
+} as const;
+
+/**
+ * Download, right where the song is being saved (a streamed song only; one on the phone already is). The row
+ * starts it; the ring on the right is the app's one download control (`DownloadButton`), so it shows the same
+ * progress, pause and retry as every other surface, and keeps going after the sheet closes.
+ */
+function DownloadRow({ song }: { song: Song }): React.ReactElement {
+  // The download queue knows a stream by its provider id, as the song menu does.
+  const target = { id: parseStreamId(song.id)?.providerId ?? song.id, title: song.title, artist: song.artist };
+  const { phase } = useDownloadState(target);
+  const start = () => {
+    if (StreamService.save(song.id)) Haptics.selectionAsync().catch(() => {});
+  };
+  return (
+    <ListRow
+      title={DOWNLOAD_TITLE[phase]}
+      subtitle={phase === 'saved' ? 'On your phone, plays offline' : 'Save it to your phone to play offline'}
+      icon="download-outline"
+      onPress={phase === 'idle' || phase === 'failed' ? start : undefined}
+      trailing={<DownloadButton song={target} onSave={start} />}
+    />
+  );
+}
 
 /** Mounted once at the root; opens for whichever song `openSavedIn` names. */
 export default function SavedInSheet(): React.ReactElement | null {
@@ -231,6 +267,7 @@ function SavedInList({ song, loading, loadFailed, onRetryLoad, selected, pinned,
           <Button label="Create" size="sm" variant="primary" busy={creating} disabled={!name.trim()} onPress={create} />
         </View>
       ) : null}
+      {isStreamSongId(song.id) ? <DownloadRow song={song} /> : null}
       {failed ? <Text variant="secondary" tone="danger" style={styles.notice}>Couldn’t save every change. Try Done again.</Text> : null}
       {!canSaveIn(song) ? <Text variant="secondary" tone="muted" style={styles.notice}>This song can’t be saved to playlists yet.</Text> : null}
       {loadFailed ? (

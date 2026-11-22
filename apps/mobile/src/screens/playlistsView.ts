@@ -22,6 +22,12 @@ export const PLAYLIST_MENU_ACTIONS = [
 
 export type PlaylistMenuActionId = (typeof PLAYLIST_MENU_ACTIONS)[number]['id'];
 
+/** Playlists as cover cards in a grid, or as rows in a list (2026-11), chosen beside the count and kept for next time. */
+export type PlaylistsLayout = 'grid' | 'list';
+export const PLAYLISTS_LAYOUT_KEY = 'v6-playlists-layout';
+/** A stored choice, or the grid when there is none (or it is from an older build). */
+export const readPlaylistsLayout = (stored: string | null): PlaylistsLayout => (stored === 'list' ? 'list' : 'grid');
+
 /** The playlists a search keeps (case-insensitive, by name); the quick row stays whatever was typed. */
 export const filterPlaylists = <T extends { readonly name: string }>(playlists: readonly T[], query: string): T[] => {
   const needle = query.trim().toLowerCase();

@@ -30,6 +30,7 @@ export { ListRow, SheetOption, CheckRow, ROW_HEIGHT, OPTION_HEIGHT, ROW_ART, typ
 export { Sheet, SheetScrollView, SheetScrollable, useSheet, type SheetProps } from './Sheet';
 export { SheetIdentity, SheetDivider, identityMeta, IDENTITY_ART, type SheetIdentityProps } from './SheetIdentity';
 export { ConfirmSheet, type ConfirmSheetProps } from './ConfirmSheet';
+export { SwipePager, SwipeTabs, type SwipePagerProps, type SwipeTabsProps } from './SwipePager';
 export { PageHeader, EmptyState, Panel, Placeholder, RowPlaceholder, GUTTER, type PageHeaderProps, type EmptyStateProps } from './Layout';
 export { Frosted } from '../components/allegra/Frosted';
 export { default as Artwork } from '../components/allegra/Artwork';

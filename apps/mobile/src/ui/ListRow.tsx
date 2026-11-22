@@ -30,6 +30,8 @@ export interface ListRowProps {
   onLongPress?: () => void;
   /** A cover. Drawn through `Artwork`, so a missing cover gets the generated one, never a grey box. */
   artwork?: { uri?: string; title: string; artist?: string; round?: boolean };
+  /** A cover the caller draws itself (a playlist's mosaic), at `ROW_ART`; wins over `artwork` and `icon`. */
+  leading?: React.ReactNode;
   /** An icon in a glass disc, for rows without artwork. */
   icon?: IconName;
   /** `plain`: the icon alone, no disc (menus on black, like Spotify's side menu). */
@@ -46,7 +48,7 @@ export interface ListRowProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, subtitleLines = 1, onPress, onLongPress, artwork, icon, iconStyle = 'disc', trailing, chevron, active, disabled, checked, accessibilityLabel, style }) => (
+export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, subtitleLines = 1, onPress, onLongPress, artwork, leading, icon, iconStyle = 'disc', trailing, chevron, active, disabled, checked, accessibilityLabel, style }) => (
   <TactileRow
     onPress={onPress}
     onLongPress={onLongPress}
@@ -58,7 +60,7 @@ export const ListRow: React.FC<ListRowProps> = ({ title, subtitle, subtitleLines
     accessibilityHint={onLongPress ? 'Long press for more' : undefined}
     style={[styles.row, disabled && styles.disabled, style]}
   >
-    {artwork ? (
+    {leading ? <View style={styles.art}>{leading}</View> : artwork ? (
       <View style={[styles.art, artwork.round && styles.round]}>
         <Artwork uri={artwork.uri} title={artwork.title} artist={artwork.artist} size={ROW_ART} style={[StyleSheet.absoluteFill, artwork.round ? styles.round : styles.cover]} />
       </View>

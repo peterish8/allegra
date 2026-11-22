@@ -1,6 +1,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { filterPlaylists, PLAYLIST_MENU_ACTIONS, playlistsBody } from './playlistsView';
+import { filterPlaylists, PLAYLIST_MENU_ACTIONS, playlistsBody, readPlaylistsLayout } from './playlistsView';
+
+describe('Playlists layout: grid or list', () => {
+  it('reads a kept choice, and falls back to the grid for nothing or anything unknown', () => {
+    expect(readPlaylistsLayout('list')).toBe('list');
+    expect(readPlaylistsLayout('grid')).toBe('grid');
+    expect(readPlaylistsLayout(null)).toBe('grid');
+    expect(readPlaylistsLayout('table')).toBe('grid');
+  });
+
+  it('offers the toggle beside the count and draws list rows with the playlist mosaic', () => {
+    const page = fs.readFileSync(path.join(__dirname, 'PlaylistsScreen.tsx'), 'utf8');
+    expect(page).toMatch(/countOf\(playlists\.length, 'playlist'\)\}<\/Text>\{layoutButton\}/);
+    expect(page).toMatch(/leading=\{<MosaicCover songs=\{playlistSongs\[item\.id\] \|\| \[\]\} size=\{ROW_ART\}/);
+    expect(page).toMatch(/AsyncStorage\.setItem\(PLAYLISTS_LAYOUT_KEY, next\)/);
+  });
+});
 
 const playlists = (count: number) => Array.from({ length: count }, (_, i) => ({ id: `p${i}`, name: `Playlist ${i}` }));
 

@@ -3,7 +3,8 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, type NativeScrollEvent, type NativeSyntheticEvent, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { BackHandler, type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppScreen } from '../components/AppScreen';
 import { DownloadQueueModal } from '../components/DownloadQueueModal';
@@ -18,7 +19,7 @@ import { LibraryStackParamList, RootStackParamList, TabParamList } from '../type
 import type { Song } from '../types/song';
 import { countOf } from '../utils/formatters';
 import { filterLibraryCollections, indexLibraryCollections } from './libraryCollections';
-import { CollectionCard, Control, EmptyState, HeaderGlow, IconButton, ListRow, PageHeader, Radius, Sheet, SheetOption, Signal, SongRow, Space, Surface, Tactile, Text, TextButton, Typography, useBottomClearance } from '../ui';
+import { CollectionCard, Control, EmptyState, HeaderGlow, IconButton, ListRow, PageHeader, Radius, Sheet, SheetOption, Signal, SongRow, Space, Surface, SwipePager, SwipeTabs, Text, TextButton, Typography, useBottomClearance } from '../ui';
 import { ProfileButton } from '../components/nav/ProfileButton';
 import PlaylistsScreen from './PlaylistsScreen';
 import { PLAYLIST_MENU_ACTIONS } from './playlistsView';
@@ -68,15 +69,57 @@ export default function LibraryScreen() {
     && (!query || `${song.title} ${song.artist ?? ''}`.toLowerCase().includes(query.toLowerCase())))
     .sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title) : sort === 'artist' ? (a.artist ?? '').localeCompare(b.artist ?? '') : Date.parse(b.dateCreated) - Date.parse(a.dateCreated)), [visible, collection, query, sort]);
   const collectionIndex = useMemo(() => indexLibraryCollections(visible), [visible]);
-  const groups = useMemo(() => filterLibraryCollections(tab === 'Artists' ? collectionIndex.artists : collectionIndex.albums, query),
-    [tab, collectionIndex, query]);
+  const artistGroups = useMemo(() => filterLibraryCollections(collectionIndex.artists, query), [collectionIndex, query]);
+  const albumGroups = useMemo(() => filterLibraryCollections(collectionIndex.albums, query), [collectionIndex, query]);
+  // Swipe between the tabs (2026-11): the pager and the strip's underline share one position, in pages.
+  const tabIndex = Math.max(0, TABS.indexOf(tab));
+  const position = useSharedValue(tabIndex);
   const openPhone = () => navigation.navigate('Settings', { action: 'import-phone' });
   // Title, tabs and sort stay pinned; the header glow leaves and returns with whichever list is scrolling.
   const glow = useHeaderGlow();
   const glowScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => glow.onScroll(e.nativeEvent.contentOffset.y);
   const selectTab = (next: Tab) => { setTab(next); setQuery(''); setSearching(false); setCollection(null); glow.onScroll(0); };
-  const showSongs = tab === 'Songs' || collection !== null;
   const changeSort = (value: Sort) => { setSort(value); setSortOpen(false); AsyncStorage.setItem(SORT_KEY, value).catch(() => undefined); };
+
+  /** The song list: the Songs page, and an opened artist or album. Only the Songs page answers scroll-to-top. */
+  const songsView = (scrollRef?: typeof listRef) => <>
+    <View style={styles.tools}><TextButton label={LABELS[sort]} icon="chevron-down" onPress={() => setSortOpen(true)} /><Text variant="meta" tone="secondary">{countOf(list.length, 'song')}{searching ? ' · Songs only' : ''}</Text></View>
+    <FlashList ref={scrollRef} data={list} keyExtractor={song => song.id} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: bottom }}
+      onScroll={glowScroll} scrollEventThrottle={16}
+      renderItem={({ item, index }) => <SongRow title={item.title} artist={item.artist} artwork={item.coverImageUri} downloaded={!!item.audioUri && !item.audioUri.startsWith('http')} playing={item.id === current}
+        onPress={() => { playList('library', list, index); }} onActions={() => actions.open(item)} />}
+      ListEmptyComponent={<View style={styles.empty}>{query ? <EmptyState icon="search" title="No matches" body="Try another title or artist." />
+        : <><EmptyState icon="musical-notes-outline" title="Your next favorite starts here" body="Save songs from Stream, or add music files from this phone." action={{ label: 'Find music on Stream', onPress: () => navigation.navigate('Stream' as never) }} />
+          <TextButton label="Add songs from this phone" onPress={openPhone} /></>}</View>} />
+  </>;
+
+  /** Artists (round, one column) or Albums (square cards in a grid): a tap opens its songs. */
+  const groupsView = (kind: 'Artists' | 'Albums') => <FlashList
+    data={kind === 'Artists' ? artistGroups : albumGroups}
+    keyExtractor={group => group.name}
+    numColumns={kind === 'Albums' ? columns : 1}
+    contentContainerStyle={{ paddingBottom: bottom, paddingHorizontal: kind === 'Albums' ? Control.gutter : 0 }}
+    onScroll={glowScroll}
+    scrollEventThrottle={16}
+    renderItem={({ item: group }) => kind === 'Albums' ? (
+      <View style={styles.albumCell}>
+        <CollectionCard title={group.name} meta={`${group.songs[0]?.artist ?? 'Unknown artist'} · ${countOf(group.songs.length, 'song')}`}
+          uri={group.songs[0]?.coverImageUri} size={cardSize} onPress={() => setCollection({ type: 'Albums', name: group.name })} />
+      </View>
+    ) : (
+      <ListRow title={group.name} subtitle={countOf(group.songs.length, 'song')}
+        artwork={{ uri: group.songs[0]?.coverImageUri, title: group.name, round: true }} chevron
+        onPress={() => setCollection({ type: 'Artists', name: group.name })} />
+    )}
+    ListEmptyComponent={<EmptyState icon={kind === 'Artists' ? 'person-outline' : 'albums-outline'} title={`No ${kind.toLowerCase()}${query ? ' found' : ' yet'}`} body="Songs saved on this phone appear here." />}
+  />;
+
+  const renderPage = (i: number) => {
+    const page = TABS[i];
+    if (page === 'Songs') return songsView(listRef);
+    if (page === 'Playlists') return <PlaylistsScreen embedded query={tab === 'Playlists' ? query : ''} />;
+    return groupsView(page);
+  };
   return (
     <AppScreen style={{ paddingTop: insets.top }} staticGlow={false}>
       <HeaderGlow {...glow.props} />
@@ -85,38 +128,14 @@ export default function LibraryScreen() {
       {searching ? <View style={styles.search}><IconButton icon="arrow-back" label="Close library search" onPress={() => { setSearching(false); setQuery(''); }} />
         <TextInput autoFocus value={query} onChangeText={setQuery} style={styles.input} placeholder={`Search ${tab.toLowerCase()}`} placeholderTextColor={Signal.inkMuted} accessibilityLabel={`Search in ${tab}`} />
         {query ? <IconButton icon="close" label="Clear search" onPress={() => setQuery('')} /> : null}</View>
-        : <View style={styles.tabs}><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
-          {TABS.map(value => <Tactile key={value} onPress={() => selectTab(value)} haptic="select" accessibilityRole="tab" accessibilityState={{ selected: tab === value }} style={[styles.tab, tab === value && styles.selected]}>
-            <Text tone={tab === value ? 'primary' : 'secondary'}>{value}</Text></Tactile>)}
-        </ScrollView><IconButton icon="search" label={`Search in ${tab}`} onPress={() => setSearching(true)} /></View>}
-      {showSongs ? <><View style={styles.tools}><TextButton label={LABELS[sort]} icon="chevron-down" onPress={() => setSortOpen(true)} /><Text variant="meta" tone="secondary">{countOf(list.length, 'song')}{searching ? ' · Songs only' : ''}</Text></View>
-        <FlashList ref={listRef} data={list} keyExtractor={song => song.id} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: bottom }}
-          onScroll={glowScroll} scrollEventThrottle={16}
-          renderItem={({ item, index }) => <SongRow title={item.title} artist={item.artist} artwork={item.coverImageUri} downloaded={!!item.audioUri && !item.audioUri.startsWith('http')} playing={item.id === current}
-            onPress={() => { playList('library', list, index); }} onActions={() => actions.open(item)} />}
-          ListEmptyComponent={<View style={styles.empty}>{query ? <EmptyState icon="search" title="No matches" body="Try another title or artist." />
-            : <><EmptyState icon="musical-notes-outline" title="Your next favorite starts here" body="Save songs from Stream, or add music files from this phone." action={{ label: 'Find music on Stream', onPress: () => navigation.navigate('Stream' as never) }} />
-              <TextButton label="Add songs from this phone" onPress={openPhone} /></>}</View>} />
-      </> : tab === 'Playlists' ? <PlaylistsScreen embedded query={query} /> : <FlashList
-        key={tab}
-        data={groups}
-        keyExtractor={group => group.name}
-        numColumns={tab === 'Albums' ? columns : 1}
-        contentContainerStyle={{ paddingBottom: bottom, paddingHorizontal: tab === 'Albums' ? Control.gutter : 0 }}
-        onScroll={glowScroll}
-        scrollEventThrottle={16}
-        renderItem={({ item: group }) => tab === 'Albums' ? (
-          <View style={styles.albumCell}>
-            <CollectionCard title={group.name} meta={`${group.songs[0]?.artist ?? 'Unknown artist'} · ${countOf(group.songs.length, 'song')}`}
-              uri={group.songs[0]?.coverImageUri} size={cardSize} onPress={() => setCollection({ type: 'Albums', name: group.name })} />
-          </View>
-        ) : (
-          <ListRow title={group.name} subtitle={countOf(group.songs.length, 'song')}
-            artwork={{ uri: group.songs[0]?.coverImageUri, title: group.name, round: true }} chevron
-            onPress={() => setCollection({ type: 'Artists', name: group.name })} />
-        )}
-        ListEmptyComponent={<EmptyState icon={tab === 'Artists' ? 'person-outline' : 'albums-outline'} title={`No ${tab.toLowerCase()}${query ? ' found' : ' yet'}`} body="Songs saved on this phone appear here." />}
-      />}
+        : collection ? null : <SwipeTabs tabs={TABS} index={tabIndex} onSelect={i => selectTab(TABS[i])} position={position}
+          trailing={<IconButton icon="search" label={`Search in ${tab}`} onPress={() => setSearching(true)} />} />}
+      {/* An opened artist or album lies over the pages; the pages stay built underneath, scroll kept, for Back. */}
+      {collection ? songsView() : null}
+      <View style={collection ? styles.hidden : styles.pages}>
+        <SwipePager count={TABS.length} index={tabIndex} onIndexChange={i => selectTab(TABS[i])} position={position}
+          enabled={!searching && !collection} renderPage={renderPage} />
+      </View>
       <Sheet visible={sortOpen} onClose={() => setSortOpen(false)} title="Sort songs by">{(Object.keys(LABELS) as Sort[]).map(value => <SheetOption key={value} label={LABELS[value]} selected={sort === value} onPress={() => changeSort(value)} />)}<Text variant="meta" tone="secondary">Kept for next time.</Text></Sheet>
       <Sheet visible={menuOpen} onClose={() => setMenuOpen(false)} title="Library">
         {PLAYLIST_MENU_ACTIONS.map(action => (
@@ -134,11 +153,9 @@ export default function LibraryScreen() {
 }
 const styles = StyleSheet.create({
   albumCell: { flex: 1, alignItems: 'center', marginBottom: Space.sm },
-  tabs: { flexDirection: 'row', alignItems: 'center', paddingLeft: Control.gutter, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: Surface.divider },
-  tabContent: { gap: Space.md },
-  // The underline's space is always reserved and the weight never changes, so picking a tab moves nothing.
-  tab: { minHeight: Control.target, minWidth: Control.target, justifyContent: 'center', paddingVertical: Space.sm, borderBottomWidth: 2, borderColor: 'transparent' },
-  selected: { borderColor: Signal.wave },
+  pages: { flex: 1 },
+  // Kept mounted (each page keeps its scroll) while an opened artist or album is in front.
+  hidden: { display: 'none' },
   search: { marginHorizontal: Control.gutter, flexDirection: 'row', alignItems: 'center', borderRadius: Radius.control, backgroundColor: Surface.control },
   input: { flex: 1, ...Typography.body, color: Signal.ink, paddingVertical: Space.sm },
   tools: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Control.gutter },
