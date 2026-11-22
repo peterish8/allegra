@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, Modal, StyleSheet, TextInput, TouchableOpacity,
+  View, Text, StyleSheet, TextInput, TouchableOpacity,
   FlatList, ActivityIndicator, Alert, ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LyricsRepository, SearchResult } from '../services/LyricsRepository';
-import { Glass, Radius, Signal } from '../constants/allegraTheme';
+import { Glass, Radius, Signal, Space } from '../constants/allegraTheme';
+import { Sheet, SheetScrollable } from '../ui';
 
 interface LrcSearchModalProps {
   visible: boolean;
@@ -114,7 +115,8 @@ export const LrcSearchModal: React.FC<LrcSearchModalProps> = ({
   );
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    // A page-sized tool, so it opens full; it drags like every other sheet (pull down: short, then closed).
+    <Sheet visible={visible} onClose={onClose} expandable startFull keyboard>
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Choose a source</Text>
@@ -165,10 +167,12 @@ export const LrcSearchModal: React.FC<LrcSearchModalProps> = ({
                   </View>
                 </View>
               </View>
-              <ScrollView style={styles.previewScroll} contentContainerStyle={styles.previewScrollContent}>
-                <TextInput style={styles.previewInput} value={editedLyrics} onChangeText={setEditedLyrics}
-                  multiline scrollEnabled={false} textAlignVertical="top" autoCapitalize="none" autoCorrect={false} />
-              </ScrollView>
+              <SheetScrollable>
+                <ScrollView style={styles.previewScroll} contentContainerStyle={styles.previewScrollContent}>
+                  <TextInput style={styles.previewInput} value={editedLyrics} onChangeText={setEditedLyrics}
+                    multiline scrollEnabled={false} textAlignVertical="top" autoCapitalize="none" autoCorrect={false} />
+                </ScrollView>
+              </SheetScrollable>
             </View>
             <View style={styles.previewFooter}>
               <TouchableOpacity style={styles.applyButton} onPress={handleApply}>
@@ -182,25 +186,28 @@ export const LrcSearchModal: React.FC<LrcSearchModalProps> = ({
             <Text style={styles.loadingText}>{statusMessage}</Text>
           </View>
         ) : (
-          <FlatList
-            data={results} renderItem={renderItem} keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Ionicons name="musical-notes-outline" size={40} color={Signal.inkFaint} />
-                <Text style={styles.emptyText}>No lyrics found</Text>
-                <Text style={styles.emptySubText}>Try the title without extras like “(From …)”</Text>
-              </View>
-            }
-          />
+          <SheetScrollable>
+            <FlatList
+              data={results} renderItem={renderItem} keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContent}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="musical-notes-outline" size={40} color={Signal.inkFaint} />
+                  <Text style={styles.emptyText}>No lyrics found</Text>
+                  <Text style={styles.emptySubText}>Try the title without extras like “(From …)”</Text>
+                </View>
+              }
+            />
+          </SheetScrollable>
         )}
       </View>
-    </Modal>
+    </Sheet>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Signal.bg },
+  // Edge to edge inside the sheet's card: its own rows carry their padding.
+  container: { flex: 1, marginHorizontal: -Space.md },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16 },
   headerTitle: { fontSize: 20, fontWeight: '700', color: Signal.ink },
   closeButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: Glass.fillLight, borderWidth: StyleSheet.hairlineWidth, borderColor: Glass.hairline },

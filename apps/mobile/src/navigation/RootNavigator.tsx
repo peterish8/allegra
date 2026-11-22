@@ -23,6 +23,7 @@ import { MoreMenuHost } from '../components/MoreMenu';
 import { LuvLinkHost } from '../components/luvLink/LuvLinkHost';
 import { BackgroundDownloader } from '../components/BackgroundDownloader';
 import { VoiceSearchCard } from '../components/VoiceSearchCard';
+import SavedInSheet from '../components/SavedInSheet';
 import { PerformanceHUD } from '../components/PerformanceHUD';
 import { CreatePlaylistModal } from '../components/CreatePlaylistModal';
 import { AddToPlaylistModal } from '../components/AddToPlaylistModal';
@@ -140,6 +141,8 @@ export const RootNavigator: React.FC = () => {
         <BackgroundDownloader />
         {/* Hold the mic, say a song: the answer appears here, over everything. */}
         <VoiceSearchCard />
+        {/* "Saved in": the mini player's ⊕ / ✓ and every Add to playlist. */}
+        <SavedInSheet />
         {/* Settings → About → Show frame rate: over every screen, last so nothing covers it. */}
         <PerformanceHUD />
       </View>

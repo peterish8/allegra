@@ -33,12 +33,12 @@ const { Gesture, GestureDetector } = GestureHandler;
 
 import { Control, Glass, Motion, OnMedia, Signal, Surface, TypeScale } from '../constants/allegraTheme';
 import { CLASSIC_BAR_SCRIM, CLASSIC_BAR_SONG_FALLBACK, classicBarStops } from '../constants/classicBarThemes';
-import { Tactile, TactileRow } from './allegra/motion';
+import { MorphIcon, Tactile, TactileRow } from './allegra/motion';
 import { planLyricsSwap } from './player/lyricsSwap';
 import { getGradientColors } from '../constants/gradients';
 import { CLASSIC_MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from '../constants/layout';
 import { usePlayer } from '../contexts/PlayerContext';
-import { useIsSongLiked } from '../hooks/useIsSongLiked';
+import { tapSaved, useSongSaved } from '../hooks/useSongSaved';
 import { PILL_STACK_GAP, pillBarTop } from '../navigation/tabs';
 import { useConnect } from '../services/connect/ConnectProvider';
 import { notifyLuvLinkUserSeek } from '../services/luvLink/legacy/sync';
@@ -46,7 +46,6 @@ import { handleOwnedLuvLinkSeek, notifyOwnedLuvLinkUserSeek } from '../services/
 import { skipBackward as sharedSkipBackward, skipForward as sharedSkipForward } from '../services/player/skipControls';
 import { beginAudioLoad, endAudioLoad, playerControls, prepareNextInQueue, shouldPlayAfterLoad, takeResumePosition, usePlayerStore } from '../store/playerStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useSongsStore } from '../store/songsStore';
 import { diag } from '../utils/diag';
 import Artwork from './allegra/Artwork';
 
@@ -222,8 +221,8 @@ export const MiniPlayer: React.FC = () => {
   const classicBarBgMode = useSettingsStore(state => state.classicBarBgMode);
   const insets = useSafeAreaInsets();
   const navBarStyle = useSettingsStore(state => state.navBarStyle);
-  const toggleLike = useSongsStore(state => state.toggleLike);
-  const isLiked = useIsSongLiked(currentSong?.id, currentSong);
+  // Spotify's saved mark: ⊕ until the song is in Liked songs or any playlist, then ✓. Both open "Saved in".
+  const isSaved = useSongSaved(currentSong);
 
   // The pill stays mounted under the player sheet so it can hand over to it
   // (PillPlayer reads the sheet's progress); anything else hides it outright.
@@ -781,8 +780,8 @@ export const MiniPlayer: React.FC = () => {
         onRetry={() => usePlayerStore.getState().requestPlayback(true)}
         onSeek={handleClassicLyricSeek}
         onMore={() => songActions.open(currentSong, { current: true })}
-        liked={isLiked}
-        onToggleLike={() => { void toggleLike(currentSong.id); }}
+        saved={isSaved}
+        onSave={() => tapSaved(currentSong, isSaved)}
       />
       {songActions.element}
       </>
@@ -924,22 +923,25 @@ export const MiniPlayer: React.FC = () => {
                             onPress={onBarPress}
                             onBodyPress={onBarPress}
                         />
-                        {/* Like the currently playing song without leaving the bar. */}
+                        {/* Save the playing song without leaving the bar: ⊕ adds it to Liked songs and opens "Saved in". */}
                         <Tactile
                             onPress={(e) => {
                                 e.stopPropagation();
-                                if (currentSong) toggleLike(currentSong.id);
+                                if (currentSong) tapSaved(currentSong, isSaved);
                             }}
+                            haptic="select"
                             hitSlop={12}
                             style={styles.likeButton}
                             accessibilityRole="button"
-                            accessibilityLabel={isLiked ? 'Remove from liked songs' : 'Add to liked songs'}
-                            accessibilityState={{ selected: isLiked }}
+                            accessibilityLabel={isSaved ? 'Saved. Change where it is saved' : 'Save to Liked songs and choose playlists'}
+                            accessibilityState={{ selected: isSaved }}
                         >
-                            <Ionicons
-                                name={isLiked ? 'checkmark-circle' : 'add-circle-outline'}
+                            <MorphIcon
+                                on={isSaved}
+                                onIcon="checkmark-circle"
+                                offIcon="add-circle-outline"
                                 size={24}
-                                color={isLiked ? Signal.wave : OnMedia.primary}
+                                color={isSaved ? Signal.wave : OnMedia.primary}
                             />
                         </Tactile>
                         <PlaybackControls

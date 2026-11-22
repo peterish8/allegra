@@ -7,13 +7,13 @@
  * A panel slides in from the left over a dimmed app (transform and opacity only; a fade under Reduce Motion). Back,
  * a tap outside or picking a row closes it. About and Downloads open as their own sheets once it has closed.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Glass, ListRow, Motion, Signal, Space, Surface, Tactile, Text } from '../../ui';
+import { Glass, ListRow, Motion, Signal, Space, Surface, Tactile, Text, isFling, projectMomentum, releaseSpring, rubberBand } from '../../ui';
 import { Radius, ShellFrost } from '../../constants/allegraTheme';
 import appConfig from '../../../app.json';
 import { useAccount } from '../../services/account/AccountProvider';
@@ -27,6 +27,12 @@ import { PROFILE_PICTURE } from './ProfileButton';
 /** The panel's width: most of a phone, never wider than a comfortable reading column. */
 const PANEL_MAX = 340;
 const SCRIM_OPACITY = 0.62;
+/** The panel runs this far past the left edge, so a pull past open rubber-bands with no gap behind it. */
+const SKIRT = 48;
+/** How far a pull past open may stretch (the rubber band's dimension, pt). */
+const STRETCH = 40;
+/** A thrown close counts as finished once it is this close to shut and this slow (in panel widths). */
+const CLOSE_REST = { restDisplacementThreshold: 0.002, restSpeedThreshold: 0.02 } as const;
 
 export const ProfileMenu: React.FC<{ onAction: (action: Exclude<ProfileAction, 'about' | 'downloads'>) => void }> = ({ onAction }) => {
   const open = useShellMenuStore(s => s.profileOpen);
@@ -42,34 +48,53 @@ export const ProfileMenu: React.FC<{ onAction: (action: Exclude<ProfileAction, '
   // 1.44.0 (owner: "opening smooth"): the Modal stays up until the panel has slid all the way out (it used to vanish
   // the moment it was closed), it opens on a critically damped spring like the player sheet, and it follows a finger
   // swiping it shut, settling or closing with the finger's speed.
+  // 2026-11 (same rules as every Sheet): the drag is 1:1 and rubber-bands past open instead of a hard stop; a release
+  // is thrown — its rest is projected from the finger's speed, and the spring (closing too) starts at that speed.
   const shown = useSharedValue(0);
   const [mounted, setMounted] = useState(open);
+  /** Set when a swipe closed it: its spring already runs at the finger's speed; `open` turning false must not restart it. */
+  const swiped = useRef(false);
+  const unmount = () => setMounted(false);
   useEffect(() => {
     if (open) {
+      swiped.current = false;
       setMounted(true);
       shown.value = reduce ? withTiming(1, { duration: Motion.duration.fast }) : withSpring(1, Motion.spring.open);
-    } else {
+    } else if (!swiped.current) {
       shown.value = withTiming(0, { duration: Motion.duration.fast + 60, easing: Motion.ease.accelerate }, finished => {
-        if (finished) runOnJS(setMounted)(false);
+        if (finished) runOnJS(unmount)();
       });
     }
   }, [open, shown, reduce]);
-  const scrim = useAnimatedStyle(() => ({ opacity: SCRIM_OPACITY * shown.value }));
+  const scrim = useAnimatedStyle(() => ({ opacity: SCRIM_OPACITY * Math.min(1, shown.value) }));
   const panel = useAnimatedStyle(() => ({
-    opacity: reduce ? shown.value : 1,
+    opacity: reduce ? Math.min(1, shown.value) : 1,
     transform: [{ translateX: reduce ? 0 : (shown.value - 1) * panelWidth }],
   }));
   const close = () => setOpen(false);
+  const closedBySwipe = () => { swiped.current = true; close(); };
   const swipe = Gesture.Pan()
     .activeOffsetX([-12, 12])
     .failOffsetY([-14, 14])
     .onUpdate(e => {
-      shown.value = Math.min(1, Math.max(0, 1 + e.translationX / panelWidth));
+      'worklet';
+      const x = e.translationX;
+      // Past open (a pull right) it stretches a little and resists more the further it goes.
+      shown.value = x > 0 ? 1 + rubberBand(x, STRETCH) / panelWidth : Math.max(0, 1 + x / panelWidth);
     })
     .onEnd(e => {
-      const shut = e.velocityX < -Motion.flingVelocity || shown.value < 0.6;
-      if (shut) runOnJS(close)();
-      else shown.value = withSpring(1, Motion.spring.settle);
+      'worklet';
+      const projected = shown.value + projectMomentum(e.velocityX) / panelWidth;
+      const shut = (isFling(e.velocityX) && e.velocityX < 0) || projected < 0.5;
+      const velocity = e.velocityX / panelWidth;
+      if (!shut) {
+        shown.value = withSpring(1, releaseSpring(velocity, e.velocityX));
+        return;
+      }
+      shown.value = withSpring(0, { ...releaseSpring(velocity, e.velocityX), ...CLOSE_REST }, finished => {
+        if (finished) runOnJS(unmount)();
+      });
+      runOnJS(closedBySwipe)();
     });
   const pick = (action: ProfileAction) => {
     close();
@@ -87,7 +112,7 @@ export const ProfileMenu: React.FC<{ onAction: (action: Exclude<ProfileAction, '
         <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, scrim]} />
       </Tactile>
       <GestureDetector gesture={swipe}>
-      <Animated.View style={[styles.panel, { width: panelWidth, paddingTop: insets.top + Space.md }, panel]} accessibilityViewIsModal>
+      <Animated.View style={[styles.panel, { width: panelWidth + SKIRT, paddingTop: insets.top + Space.md }, panel]} accessibilityViewIsModal>
         <View style={styles.identity}>
           <View style={styles.picture}>
             {initial ? <Text variant="title">{initial}</Text> : <Ionicons name="person" size={26} color={Signal.inkSoft} />}
@@ -129,7 +154,7 @@ export const ProfileMenu: React.FC<{ onAction: (action: Exclude<ProfileAction, '
 const styles = StyleSheet.create({
   scrim: { backgroundColor: Surface.scrim },
   // True black like Spotify's side menu, closed off by a hairline on its right edge; no grey tiles behind the icons.
-  panel: { position: 'absolute', top: 0, bottom: 0, left: 0, backgroundColor: ShellFrost.menuBlack, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: Glass.hairline },
+  panel: { position: 'absolute', top: 0, bottom: 0, left: -SKIRT, paddingLeft: SKIRT, backgroundColor: ShellFrost.menuBlack, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: Glass.hairline },
   identity: { flexDirection: 'row', alignItems: 'center', gap: Space.md, paddingHorizontal: Space.md, paddingBottom: Space.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Glass.hairline, marginBottom: Space.sm },
   picture: { width: PROFILE_PICTURE * 1.75, height: PROFILE_PICTURE * 1.75, borderRadius: PROFILE_PICTURE * 0.875, backgroundColor: Glass.fillLight, alignItems: 'center', justifyContent: 'center' },
   identityText: { flex: 1, minWidth: 0 },

@@ -7,7 +7,6 @@ import { NativePlaybackControl as PlaybackButton } from './NativePlaybackControl
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Dimensions, I18nManager, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +21,7 @@ import { miniSwipe, swipeFollow } from '../playback/miniSwipe';
 import { durationSV, positionSV } from '../playback/positionBus';
 import { usePlayerStore } from '../store/playerStore';
 import { usePositionStore } from '../store/positionStore';
-import { Control, Motion, Radius, Signal, Space, Surface, Tactile, Text, Typography } from '../ui';
+import { Control, Motion, Radius, Signal, Space, Surface, MorphIcon, Tactile, Text, Typography } from '../ui';
 import Marquee from './allegra/Marquee';
 import Artwork from './allegra/Artwork';
 import { MiniPlayerGlow } from './MiniPlayerGlow';
@@ -43,15 +42,17 @@ interface Props {
   remote?: boolean;
   /** Song actions, saved mark, then play. Each shows only when its owner passes it. */
   onMore?: () => void;
-  liked?: boolean;
-  onToggleLike?: () => void;
+  /** In Liked songs or any playlist: the mark shows a tick. */
+  saved?: boolean;
+  /** The saved mark's tap: opens "Saved in" (and saves to Liked songs first when nothing holds the song). */
+  onSave?: () => void;
 }
 
 /** A skip that never lands (the queue's last song, a rejected remote command) gives the content back after this. */
 const SKIP_SETTLE_MS = 1200;
 
 const time = (value: number) => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
-export default function PillPlayer({ title, artist, coverImageUri, playing, remote, sheetUp, onOpen, onOpenTracking, onTogglePlay, onNext, onPrevious, onSeek, onRetry, onMore, liked, onToggleLike }: Props) {
+export default function PillPlayer({ title, artist, coverImageUri, playing, remote, sheetUp, onOpen, onOpenTracking, onTogglePlay, onNext, onPrevious, onSeek, onRetry, onMore, saved, onSave }: Props) {
   const { height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
@@ -264,10 +265,10 @@ export default function PillPlayer({ title, artist, coverImageUri, playing, remo
           close to the right edge. Each slot is 44 wide and answers a 48dp touch. */}
       <View style={styles.actions}>
         {/* Spotify's saved mark: a filled tick in a circle once saved, an outlined plus before. */}
-        {onToggleLike ? (
-          <Tactile onPress={onToggleLike} haptic="select" pressScale={0.9} hitSlop={ACTION_SLOP} accessibilityRole="button"
-            accessibilityLabel={liked ? 'Remove from Liked songs' : 'Add to Liked songs'} accessibilityState={{ selected: !!liked }} style={styles.action}>
-            <Ionicons name={liked ? 'checkmark-circle' : 'add-circle-outline'} size={ACTION_GLYPH} color={Signal.ink} />
+        {onSave ? (
+          <Tactile onPress={onSave} haptic="select" pressScale={0.9} hitSlop={ACTION_SLOP} accessibilityRole="button"
+            accessibilityLabel={saved ? 'Saved. Change where it is saved' : 'Save to Liked songs and choose playlists'} accessibilityState={{ selected: !!saved }} style={styles.action}>
+            <MorphIcon on={!!saved} onIcon="checkmark-circle" offIcon="add-circle-outline" size={ACTION_GLYPH} color={Signal.ink} />
           </Tactile>
         ) : null}
         <View style={styles.playButtonOffset}>

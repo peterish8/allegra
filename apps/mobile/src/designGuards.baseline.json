@@ -14,9 +14,7 @@
     "components/VoiceMicButton.tsx": 1,
     "components/VoiceSearchCard.tsx": 1
   },
-  "slideModal": {
-    "components/LrcSearchModal.tsx": 1
-  },
+  "slideModal": {},
   "weight": {
     "App.tsx": 1
   },

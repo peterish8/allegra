@@ -63,12 +63,12 @@ describe('mini player scrubber sits on the top edge', () => {
 });
 
 describe('mini player and navigation controls', () => {
-  // The mini player: the heart, then play, on a floating rounded card. Song options are a long press on the song
-  // (owner, 2026-11-13: no ••• on the mini player), also a TalkBack action. Next is the swipe, and TalkBack keeps
-  // its "Next song" action.
-  it('shows the heart and play, opens song options on a long press, and Next stays reachable', () => {
+  // The mini player: the saved mark (⊕ / ✓, opens "Saved in"), then play, on a floating rounded card. Song options
+  // are a long press on the song (owner, 2026-11-13: no ••• on the mini player), also a TalkBack action. Next is the
+  // swipe, and TalkBack keeps its "Next song" action.
+  it('shows the saved mark and play, opens song options on a long press, and Next stays reachable', () => {
     const pill = code(read('PillPlayer.tsx'));
-    const heart = pill.indexOf("'Remove from Liked songs' : 'Add to Liked songs'");
+    const heart = pill.indexOf("'Saved. Change where it is saved' : 'Save to Liked songs and choose playlists'");
     const play = pill.indexOf('<PlaybackButton size={48}');
     expect(pill).not.toMatch(/ellipsis-horizontal/);
     expect(pill).toMatch(/onLongPress=\{onMore\}/);
@@ -102,12 +102,12 @@ describe('mini player and navigation controls', () => {
     // Every control occupies the same 48dp slot.
     expect(pill).toMatch(/const ACTION_SLOP = \{ left: 0, right: 0, top: 0, bottom: 0 \}/);
     expect(code(read('..', 'ui', 'PlaybackButton.tsx'))).toMatch(/const glyph = plain \? 26 :/);
-    expect(pill).toMatch(/name=\{liked \? 'checkmark-circle' : 'add-circle-outline'\} size=\{ACTION_GLYPH\}/);
+    expect(pill).toMatch(/onIcon="checkmark-circle" offIcon="add-circle-outline" size=\{ACTION_GLYPH\}/);
   });
 
-  it('the local mini player passes song options and the heart; the Connect one passes song options', () => {
+  it('the local mini player passes song options and the saved mark; the Connect one passes song options', () => {
     const mini = code(read('MiniPlayer.tsx'));
-    expect(mini).toMatch(/onMore=\{\(\) => songActions\.open\(currentSong, \{ current: true \}\)\}\s*\n\s*liked=\{isLiked\}\s*\n\s*onToggleLike=/);
+    expect(mini).toMatch(/onMore=\{\(\) => songActions\.open\(currentSong, \{ current: true \}\)\}\s*\n\s*saved=\{isSaved\}\s*\n\s*onSave=\{\(\) => tapSaved\(currentSong, isSaved\)\}/);
     expect(code(read('connect', 'ConnectMiniPlayer.tsx'))).toMatch(/onMore=\{\(\) => setMenuOpen\(true\)\}/);
   });
 
