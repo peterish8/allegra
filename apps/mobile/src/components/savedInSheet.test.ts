@@ -28,6 +28,14 @@ describe('"Saved in" Done is idempotent', () => {
     expect(sheet).toMatch(/data=\{loading \|\| loadFailed \? \[\] : others\}/);
   });
 
+  it('offers Download for a streamed song through the one shared download control', () => {
+    // Only a stream (a song on the phone is already downloaded); the queue knows it by its provider id.
+    expect(sheet).toMatch(/\{isStreamSongId\(song\.id\) \? <DownloadRow song=\{song\} \/> : null\}/);
+    expect(sheet).toMatch(/id: parseStreamId\(song\.id\)\?\.providerId \?\? song\.id/);
+    expect(sheet).toMatch(/trailing=\{<DownloadButton song=\{target\} onSave=\{start\} \/>\}/);
+    expect(sheet).toMatch(/StreamService\.save\(song\.id\)/);
+  });
+
   it('removes an online song by the same ref it was added with', () => {
     expect(service).toMatch(/removeOnlineFromPlaylist\(id, toMobileId\(target\.snapshot\.ref\)\)/);
   });
