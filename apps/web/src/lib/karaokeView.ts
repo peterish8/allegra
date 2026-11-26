@@ -4,7 +4,7 @@
  */
 
 import type { KaraokeCoverage, KaraokeStage } from '../hooks/useLiveKaraoke';
-import type { LiveKaraokeStatus } from './liveKaraoke/types';
+import type { LiveKaraokeBackend, LiveKaraokeStatus } from './liveKaraoke/types';
 
 export interface KaraokeLabelInput {
   readonly active: boolean;
@@ -55,6 +55,33 @@ export function karaokeButtonAriaLabel(k: KaraokeLabelInput): string {
   if (k.busy) return `Turn karaoke off. ${karaokeButtonLabel(k)}`;
   if (k.status === 'catching-up') return `Turn karaoke off. ${karaokeButtonLabel(k)}`;
   return 'Turn karaoke off';
+}
+
+export interface KaraokeMixNoteInput {
+  readonly active: boolean;
+  readonly busy: boolean;
+  readonly status: LiveKaraokeStatus;
+  readonly backend: LiveKaraokeBackend | null;
+  readonly supportsMix: boolean;
+  /** Set when the AI model ran on this press and stopped. */
+  readonly fallbackReason: string | null;
+}
+
+/**
+ * The mix sheet's status line. After the AI model stopped it says so: inviting a first
+ * download again sent the listener round the same failure without telling them why.
+ */
+export function karaokeMixNote(k: KaraokeMixNoteInput): string {
+  if (k.active && k.backend === 'midside') {
+    return k.fallbackReason
+      ? 'The AI model stopped on this device, so the light remover is on. Retry below.'
+      : 'Choose AI below; you’ll confirm before its first download.';
+  }
+  if (k.busy) return 'Saved. AI mix applies as separation catches up.';
+  if (k.status === 'catching-up') return 'Saved. AI mix applies once separation catches up.';
+  if (!k.active) return 'Saved for next time. Turn on Karaoke to hear your mix.';
+  if (k.supportsMix) return 'AI separation is running on this device.';
+  return 'Saved for when AI separation is ready.';
 }
 
 export interface CoverageRun {

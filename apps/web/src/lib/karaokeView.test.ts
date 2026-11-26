@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { coverageGradient, coverageRuns, karaokeButtonAriaLabel, karaokeButtonLabel, workingSpan } from './karaokeView.ts';
+import { coverageGradient, coverageRuns, karaokeButtonAriaLabel, karaokeButtonLabel, karaokeMixNote, workingSpan } from './karaokeView.ts';
 
 const on = { active: true, busy: false, status: 'active' as const, stage: null };
 
@@ -15,6 +15,17 @@ test('the button says what karaoke is waiting on, never a bare percentage', () =
   assert.equal(karaokeButtonLabel({ ...on, busy: true, status: 'loading', stage: { kind: 'model-start' } }), 'Starting AI model');
   assert.equal(karaokeButtonLabel({ ...on, busy: true, status: 'loading', stage: { kind: 'separating', eta: 6.4 } }), 'Separating · ~6 s');
   assert.equal(karaokeButtonLabel({ ...on, busy: true, status: 'loading', stage: { kind: 'separating', eta: null } }), 'AI separating');
+});
+
+test('the mix sheet says the AI stopped instead of inviting a first download again', () => {
+  const light = { active: true, busy: false, status: 'active' as const, backend: 'midside' as const, supportsMix: false, fallbackReason: null };
+  assert.equal(karaokeMixNote(light), 'Choose AI below; you’ll confirm before its first download.');
+  assert.equal(
+    karaokeMixNote({ ...light, fallbackReason: 'Failed to run the model' }),
+    'The AI model stopped on this device, so the light remover is on. Retry below.'
+  );
+  assert.equal(karaokeMixNote({ ...light, backend: 'roformer', supportsMix: true }), 'AI separation is running on this device.');
+  assert.equal(karaokeMixNote({ ...light, active: false, backend: null }), 'Saved for next time. Turn on Karaoke to hear your mix.');
 });
 
 test('after a seek past the separated part, the button says it is catching up', () => {

@@ -29,8 +29,9 @@ Vocal removal that runs entirely on the listener's device. No server job, no upl
 
 ## Pace verdict
 
-The first two separated chunks are timed. Slower than playback falls back to the bridge for
-that song. The verdict is stored per device and model, with two rules: a chunk that ran while
+The first two separated chunks are timed. In Auto, slower than playback falls back to the
+bridge for that song. "Always AI" (what Choose picks) keeps separating, with the bridge covering
+what is not ready yet; falling back there brought the Choose button straight back, in a loop. The verdict is stored per device and model, with two rules: a chunk that ran while
 the tab was hidden is not timed (the browser throttles it), and one slow run after an "ok"
 only clears the verdict, so a busy GPU once never locks a capable device out.
 

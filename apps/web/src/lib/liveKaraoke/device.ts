@@ -71,6 +71,15 @@ export function verdictAfterSlowRun(previous: Verdict | null): Verdict | null {
   return previous === 'ok' ? null : 'too-slow';
 }
 
+/**
+ * Whether a measured slow pace hands this press back to the light remover. "Always AI"
+ * (what Choose picks) keeps separating, and the light remover covers what is not ready yet;
+ * dropping it there brought the Choose button straight back, so the listener looped.
+ */
+export function slowPaceStopsAi(mode: KaraokeMode): boolean {
+  return mode !== 'ai';
+}
+
 export function recordSlowRun(): void {
   const next = verdictAfterSlowRun(storedVerdict());
   if (next) saveVerdict(next);
