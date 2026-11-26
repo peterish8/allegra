@@ -34,6 +34,7 @@ export {
   recordSlowRun,
   saveDownloadConsent,
   saveVerdict,
+  slowPaceStopsAi,
   storedVerdict,
   usedKaraokeRecently,
   webgpuAvailable,

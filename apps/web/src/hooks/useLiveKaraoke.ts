@@ -28,6 +28,7 @@ import {
   roformerModelOnDevice,
   saveDownloadConsent,
   saveVerdict,
+  slowPaceStopsAi,
   usedKaraokeRecently,
   type AiBlock,
   type KaraokeBridge,
@@ -381,7 +382,7 @@ export function useLiveKaraoke(song: UnifiedSong | null, playback: LiveKaraokePl
         onKeepingUp: () => saveVerdict('ok'),
         onTooSlow: () => {
           recordSlowRun();
-          if (!stale()) settleOnBridge({ block: 'too-slow' });
+          if (!stale() && slowPaceStopsAi(settingsRef.current.karaokeMode)) settleOnBridge({ block: 'too-slow' });
         },
         onNeedsAudio: () => {
           void (async () => {

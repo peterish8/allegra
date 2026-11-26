@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { aiBlock, paceIsMeasurable, verdictAfterSlowRun, type DeviceFacts } from './liveKaraoke/device.ts';
+import { aiBlock, paceIsMeasurable, slowPaceStopsAi, verdictAfterSlowRun, type DeviceFacts } from './liveKaraoke/device.ts';
 
 const laptop: DeviceFacts = {
   mode: 'auto',
@@ -35,6 +35,12 @@ test('Always AI skips every device guess except the worker requirement', () => {
   const weak: DeviceFacts = { ...laptop, mode: 'ai', webgpu: false, mobile: true, deviceMemory: 2, verdict: 'too-slow', saveData: true };
   assert.equal(aiBlock(weak), null);
   assert.equal(aiBlock({ ...weak, worker: false }), 'no-worker');
+});
+
+test('a slow pace drops Auto to the light remover but never Always AI', () => {
+  assert.equal(slowPaceStopsAi('auto'), true);
+  // Choose picks Always AI: dropping it on pace brought the Choose button straight back, in a loop.
+  assert.equal(slowPaceStopsAi('ai'), false);
 });
 
 test('one slow run does not undo a device that already kept up', () => {

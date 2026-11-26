@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, type CSSProperties, type RefObject } from 're
 
 import type { LiveKaraokeController } from '../hooks/useLiveKaraoke';
 import { DEFAULT_KARAOKE_MIX, type KaraokeMix } from '../lib/karaokeMix';
+import { karaokeMixNote } from '../lib/karaokeView';
 import { motionTokens } from '../motion';
 
 interface KaraokeMixSheetProps {
@@ -67,17 +68,10 @@ export function KaraokeMixSheet({ open, karaoke, onClose, returnFocusRef }: Kara
     };
   }, [open, returnFocusRef]);
 
-  const { mix, setMix, supportsMix, active, busy, backend, status } = karaoke;
-  const basic = active && backend === 'midside';
-  const locked = basic;
-
-  let note: string;
-  if (basic) note = 'Choose AI below; you’ll confirm before its first download.';
-  else if (busy) note = 'Saved. AI mix applies as separation catches up.';
-  else if (status === 'catching-up') note = 'Saved. AI mix applies once separation catches up.';
-  else if (!active) note = 'Saved for next time. Turn on Karaoke to hear your mix.';
-  else if (supportsMix) note = 'AI separation is running on this device.';
-  else note = 'Saved for when AI separation is ready.';
+  const { mix, setMix, supportsMix, active, busy, backend } = karaoke;
+  const locked = active && backend === 'midside';
+  const stopped = locked && karaoke.fallbackReason !== null;
+  const note = karaokeMixNote(karaoke);
 
   const fader = (key: keyof KaraokeMix, label: string, icon: typeof Mic) => {
     const Icon = icon;
@@ -150,10 +144,10 @@ export function KaraokeMixSheet({ open, karaoke, onClose, returnFocusRef }: Kara
                 type="button"
                 className="karaoke-mix__model-action"
                 disabled={busy}
-                aria-label="Choose the on-device AI vocal remover, about 750 megabytes"
+                aria-label={stopped ? 'Retry the on-device AI vocal remover' : 'Choose the on-device AI vocal remover, about 750 megabytes'}
                 onClick={karaoke.chooseAiModel}
               >
-                {busy ? 'Preparing' : 'Choose'}
+                {busy ? 'Preparing' : stopped ? 'Retry' : 'Choose'}
               </button>
             </div>
           ) : null}
